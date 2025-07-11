@@ -1,6 +1,7 @@
 #include <Dictionaries/readInvalidateQuery.h>
 
 #include <Columns/IColumn.h>
+#include <Core/Block.h>
 #include <DataTypes/IDataType.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>

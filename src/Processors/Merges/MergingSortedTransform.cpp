@@ -13,7 +13,7 @@ namespace DB
 {
 
 MergingSortedTransform::MergingSortedTransform(
-    const Block & header,
+    SharedHeader header,
     size_t num_inputs,
     const SortDescription & description_,
     size_t max_block_size_rows,

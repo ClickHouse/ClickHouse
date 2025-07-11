@@ -36,7 +36,7 @@ static void checkForCarriageReturn(ReadBuffer & in)
 }
 
 TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
-    const Block & header_,
+    SharedHeader header_,
     ReadBuffer & in_,
     const Params & params_,
     bool with_names_,
@@ -48,7 +48,7 @@ TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
 }
 
 TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
-    const Block & header_,
+    SharedHeader header_,
     std::unique_ptr<PeekableReadBuffer> in_,
     const Params & params_,
     bool with_names_,
@@ -411,7 +411,7 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
                 IRowInputFormat::Params params,
                 const FormatSettings & settings)
             {
-                return std::make_shared<TabSeparatedRowInputFormat>(sample, buf, std::move(params), with_names, with_types, is_raw, settings);
+                return std::make_shared<TabSeparatedRowInputFormat>(std::make_shared<const Block>(sample), buf, std::move(params), with_names, with_types, is_raw, settings);
             });
         };
 

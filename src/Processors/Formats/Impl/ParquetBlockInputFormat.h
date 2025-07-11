@@ -56,7 +56,7 @@ class ParquetBlockInputFormat : public IInputFormat
 public:
     ParquetBlockInputFormat(
         ReadBuffer & buf,
-        const Block & header,
+        SharedHeader header,
         const FormatSettings & format_settings,
         size_t max_decoding_threads,
         size_t max_io_threads,

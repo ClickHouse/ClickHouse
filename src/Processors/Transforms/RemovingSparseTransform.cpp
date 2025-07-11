@@ -5,8 +5,8 @@
 namespace DB
 {
 
-RemovingSparseTransform::RemovingSparseTransform(const Block & header)
-    : ISimpleTransform(header, materializeBlock(header), false)
+RemovingSparseTransform::RemovingSparseTransform(SharedHeader header)
+    : ISimpleTransform(header, std::make_shared<const Block>(materializeBlock(*header)), false)
 {
 }
 

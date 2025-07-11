@@ -726,7 +726,7 @@ Chunk SummingSortedAlgorithm::SummingMergedData::pull()
 
 
 SummingSortedAlgorithm::SummingSortedAlgorithm(
-    const Block & header_,
+    SharedHeader header_,
     size_t num_inputs,
     SortDescription description_,
     const Names & column_names_to_sum,
@@ -736,7 +736,7 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
     const String & sum_function_name)
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, std::move(description_))
     , columns_definition(
-          defineColumns(header_, description, column_names_to_sum, partition_and_sorting_required_columns, sum_function_name))
+          defineColumns(*header_, description, column_names_to_sum, partition_and_sorting_required_columns, sum_function_name))
     , merged_data(max_block_size_rows, max_block_size_bytes, columns_definition)
 {
 }
@@ -744,7 +744,7 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
 void SummingSortedAlgorithm::initialize(Inputs inputs)
 {
     removeConstAndSparse(inputs);
-    merged_data.initialize(header, inputs);
+    merged_data.initialize(*header, inputs);
 
     for (auto & input : inputs)
         if (input.chunk)

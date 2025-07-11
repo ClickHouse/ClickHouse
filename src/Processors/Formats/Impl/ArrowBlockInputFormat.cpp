@@ -24,7 +24,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
-ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, bool stream_, const FormatSettings & format_settings_)
+ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, SharedHeader header_, bool stream_, const FormatSettings & format_settings_)
     : IInputFormat(header_, &in_)
     , stream(stream_)
     , block_missing_values(getPort().getHeader().columns())
@@ -254,7 +254,7 @@ void registerInputFormatArrow(FormatFactory & factory)
            const RowInputFormatParams & /* params */,
            const FormatSettings & format_settings)
         {
-            return std::make_shared<ArrowBlockInputFormat>(buf, sample, false, format_settings);
+            return std::make_shared<ArrowBlockInputFormat>(buf, std::make_shared<const Block>(sample), false, format_settings);
         });
     factory.markFormatSupportsSubsetOfColumns("Arrow");
     factory.registerInputFormat(
@@ -264,7 +264,7 @@ void registerInputFormatArrow(FormatFactory & factory)
            const RowInputFormatParams & /* params */,
            const FormatSettings & format_settings)
         {
-            return std::make_shared<ArrowBlockInputFormat>(buf, sample, true, format_settings);
+            return std::make_shared<ArrowBlockInputFormat>(buf, std::make_shared<const Block>(sample), true, format_settings);
         });
 }
 

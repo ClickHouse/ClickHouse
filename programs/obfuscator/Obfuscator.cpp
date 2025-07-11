@@ -1447,7 +1447,7 @@ try
 
         if (processed_rows + source_rows > limit)
         {
-            pipe.addSimpleTransform([&](const Block & cur_header)
+            pipe.addSimpleTransform([&](const SharedHeader & cur_header)
             {
                 return std::make_shared<LimitTransform>(cur_header, limit - processed_rows, 0);
             });

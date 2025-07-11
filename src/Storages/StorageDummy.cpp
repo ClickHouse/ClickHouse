@@ -56,8 +56,8 @@ ReadFromDummy::ReadFromDummy(
     const StorageSnapshotPtr & storage_snapshot_,
     const ContextPtr & context_,
     const StorageDummy & storage_)
-    : SourceStepWithFilter(SourceStepWithFilter::applyPrewhereActions(
-                storage_snapshot_->getSampleBlockForColumns(column_names_), query_info_.prewhere_info),
+    : SourceStepWithFilter(std::make_shared<const Block>(SourceStepWithFilter::applyPrewhereActions(
+                storage_snapshot_->getSampleBlockForColumns(column_names_), query_info_.prewhere_info)),
         column_names_,
         query_info_,
         storage_snapshot_,

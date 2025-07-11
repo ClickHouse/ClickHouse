@@ -57,7 +57,7 @@ protected:
     virtual void onException(std::exception_ptr /* exception */) { }
 
 public:
-    ExceptionKeepingTransform(const Block & in_header, const Block & out_header, bool ignore_on_start_and_finish_ = true);
+    ExceptionKeepingTransform(SharedHeader in_header, SharedHeader out_header, bool ignore_on_start_and_finish_ = true);
 
     Status prepare() override;
     void work() override;

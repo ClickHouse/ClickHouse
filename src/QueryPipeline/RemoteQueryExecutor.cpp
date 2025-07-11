@@ -64,7 +64,7 @@ namespace ErrorCodes
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     const String & query_,
-    const Block & header_,
+    SharedHeader header_,
     ContextPtr context_,
     const Scalars & scalars_,
     const Tables & external_tables_,
@@ -90,7 +90,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 RemoteQueryExecutor::RemoteQueryExecutor(
     ConnectionPoolPtr pool,
     const String & query_,
-    const Block & header_,
+    SharedHeader header_,
     ContextPtr context_,
     ThrottlerPtr throttler,
     const Scalars & scalars_,
@@ -154,7 +154,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 RemoteQueryExecutor::RemoteQueryExecutor(
     Connection & connection,
     const String & query_,
-    const Block & header_,
+    SharedHeader header_,
     ContextPtr context_,
     ThrottlerPtr throttler,
     const Scalars & scalars_,
@@ -175,7 +175,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 RemoteQueryExecutor::RemoteQueryExecutor(
     std::shared_ptr<Connection> connection_ptr,
     const String & query_,
-    const Block & header_,
+    SharedHeader header_,
     ContextPtr context_,
     ThrottlerPtr throttler,
     const Scalars & scalars_,
@@ -196,7 +196,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 RemoteQueryExecutor::RemoteQueryExecutor(
     std::vector<IConnectionPool::Entry> && connections_,
     const String & query_,
-    const Block & header_,
+    SharedHeader header_,
     ContextPtr context_,
     const ThrottlerPtr & throttler,
     const Scalars & scalars_,
@@ -218,7 +218,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 RemoteQueryExecutor::RemoteQueryExecutor(
     const ConnectionPoolWithFailoverPtr & pool,
     const String & query_,
-    const Block & header_,
+    SharedHeader header_,
     ContextPtr context_,
     const ThrottlerPtr & throttler,
     const Scalars & scalars_,
@@ -672,7 +672,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             /// We can actually return it, and the first call to RemoteQueryExecutor::read
             /// will return earlier. We should consider doing it.
             if (packet.block && (packet.block.rows() > 0))
-                return ReadResult(adaptBlockStructure(packet.block, header));
+                return ReadResult(adaptBlockStructure(packet.block, *header));
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
         case Protocol::Server::Exception:
@@ -709,13 +709,13 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
         case Protocol::Server::Totals:
             totals = packet.block;
             if (totals)
-                totals = adaptBlockStructure(totals, header);
+                totals = adaptBlockStructure(totals, *header);
             break;
 
         case Protocol::Server::Extremes:
             extremes = packet.block;
             if (extremes)
-                extremes = adaptBlockStructure(packet.block, header);
+                extremes = adaptBlockStructure(packet.block, *header);
             break;
 
         case Protocol::Server::Log:
@@ -940,7 +940,7 @@ void RemoteQueryExecutor::sendExternalTables()
                     auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context));
 
                     builder->resize(1);
-                    builder->addTransform(std::make_shared<LimitsCheckingTransform>(builder->getHeader(), limits));
+                    builder->addTransform(std::make_shared<LimitsCheckingTransform>(builder->getSharedHeader(), limits));
 
                     return builder;
                 };

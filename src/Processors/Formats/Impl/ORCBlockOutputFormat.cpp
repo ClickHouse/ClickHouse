@@ -79,12 +79,12 @@ void ORCOutputStream::write(const void* buf, size_t length)
     out.write(static_cast<const char *>(buf), length);
 }
 
-ORCBlockOutputFormat::ORCBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
+ORCBlockOutputFormat::ORCBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
     : IOutputFormat(header_, out_)
     , format_settings{format_settings_}
     , output_stream(out_)
 {
-    for (const auto & type : header_.getDataTypes())
+    for (const auto & type : header_->getDataTypes())
         data_types.push_back(recursiveRemoveLowCardinality(type));
 }
 
@@ -584,7 +584,7 @@ void registerOutputFormatORC(FormatFactory & factory)
             const Block & sample,
             const FormatSettings & format_settings)
     {
-        return std::make_shared<ORCBlockOutputFormat>(buf, sample, format_settings);
+        return std::make_shared<ORCBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings);
     });
     factory.markFormatHasNoAppendSupport("ORC");
     factory.markOutputFormatPrefersLargeBlocks("ORC");

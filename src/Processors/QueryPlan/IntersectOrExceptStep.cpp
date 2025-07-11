@@ -17,20 +17,20 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static Block checkHeaders(const Headers & input_headers)
+static SharedHeader checkHeaders(const SharedHeaders & input_headers)
 {
     if (input_headers.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot perform intersect/except on empty set of query plan steps");
 
-    Block res = input_headers.front();
+    SharedHeader res = input_headers.front();
     for (const auto & header : input_headers)
-        assertBlocksHaveEqualStructure(header, res, "IntersectOrExceptStep");
+        assertBlocksHaveEqualStructure(*header, *res, "IntersectOrExceptStep");
 
     return res;
 }
 
 IntersectOrExceptStep::IntersectOrExceptStep(
-    Headers input_headers_, Operator operator_, size_t max_threads_)
+    SharedHeaders input_headers_, Operator operator_, size_t max_threads_)
     : current_operator(operator_)
     , max_threads(max_threads_)
 {
@@ -49,7 +49,7 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
     if (pipelines.empty())
     {
         QueryPipelineProcessorsCollector collector(*pipeline, this);
-        pipeline->init(Pipe(std::make_shared<NullSource>(*output_header)));
+        pipeline->init(Pipe(std::make_shared<NullSource>(output_header)));
         processors = collector.detachProcessors();
         return pipeline;
     }
@@ -57,16 +57,16 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
     for (auto & cur_pipeline : pipelines)
     {
         /// Just in case.
-        if (!isCompatibleHeader(cur_pipeline->getHeader(), getOutputHeader()))
+        if (!isCompatibleHeader(cur_pipeline->getHeader(), *getOutputHeader()))
         {
             QueryPipelineProcessorsCollector collector(*cur_pipeline, this);
             auto converting_dag = ActionsDAG::makeConvertingActions(
                 cur_pipeline->getHeader().getColumnsWithTypeAndName(),
-                getOutputHeader().getColumnsWithTypeAndName(),
+                getOutputHeader()->getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name);
 
             auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
-            cur_pipeline->addSimpleTransform([&](const Block & cur_header)
+            cur_pipeline->addSimpleTransform([&](const SharedHeader & cur_header)
             {
                 return std::make_shared<ExpressionTransform>(cur_header, converting_actions);
             });

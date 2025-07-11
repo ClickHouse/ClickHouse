@@ -9,7 +9,7 @@
 namespace DB
 {
 
-IOutputFormat::IOutputFormat(const Block & header_, WriteBuffer & out_)
+IOutputFormat::IOutputFormat(SharedHeader header_, WriteBuffer & out_)
     : IProcessor({header_, header_, header_}, {}), out(out_)
 {
 }

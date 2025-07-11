@@ -331,7 +331,7 @@ class SourceFromQueryPipeline : public ISource
 {
 public:
     explicit SourceFromQueryPipeline(QueryPipeline pipeline_)
-        : ISource(pipeline_.getHeader())
+        : ISource(pipeline_.getSharedHeader())
         , pipeline(std::move(pipeline_))
         , executor(pipeline)
     {

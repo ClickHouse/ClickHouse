@@ -151,7 +151,7 @@ namespace ErrorCodes
 ConcurrentHashJoin::ConcurrentHashJoin(
     std::shared_ptr<TableJoin> table_join_,
     size_t slots_,
-    const Block & right_sample_block,
+    SharedHeader right_sample_block,
     const StatsCollectingParams & stats_collecting_params_,
     bool any_take_last_row_)
     : table_join(table_join_)

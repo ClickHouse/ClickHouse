@@ -28,7 +28,7 @@ class DistinctSortedTransform : public ISimpleTransform
 public:
     /// Empty columns_ means all columns.
     DistinctSortedTransform(
-        const Block & header,
+        SharedHeader header,
         const SortDescription & sort_description,
         const SizeLimits & set_size_limits_,
         UInt64 limit_hint_,

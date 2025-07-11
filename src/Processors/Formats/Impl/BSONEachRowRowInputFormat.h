@@ -51,7 +51,7 @@ class BSONEachRowRowInputFormat final : public IRowInputFormat
 {
 public:
     BSONEachRowRowInputFormat(
-        ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_);
+        ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "BSONEachRowRowInputFormat"; }
     void resetParser() override;

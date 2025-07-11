@@ -1392,7 +1392,7 @@ static BlockIO executeQueryImpl(
                     auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
                     auto source = std::make_shared<WaitForAsyncInsertSource>(std::move(result.future), timeout);
                     res.pipeline = QueryPipeline(Pipe(std::move(source)));
-                    res.pipeline.complete(std::make_shared<NullOutputFormat>(Block()));
+                    res.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(Block())));
                 }
 
                 const auto & table_id = insert_query->table_id;
@@ -1587,7 +1587,7 @@ static BlockIO executeQueryImpl(
                             && (!ast_contains_system_tables || system_table_handling == QueryResultCacheSystemTableHandling::Save))
                         {
                             QueryResultCache::Key key(
-                                out_ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getHeader(),
+                                out_ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getSharedHeader(),
                                 context->getCurrentQueryId(),
                                 context->getUserID(), context->getCurrentRoles(),
                                 settings[Setting::query_cache_share_between_users],

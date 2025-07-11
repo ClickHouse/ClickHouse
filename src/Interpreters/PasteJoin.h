@@ -20,9 +20,9 @@ namespace ErrorCodes
 class PasteJoin : public IJoin
 {
 public:
-    explicit PasteJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
+    explicit PasteJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader & right_sample_block_)
         : table_join(table_join_)
-        , right_sample_block(right_sample_block_)
+        , right_sample_header(right_sample_block_)
     {
         LOG_TRACE(getLogger("PasteJoin"), "Will use paste join");
     }
@@ -58,7 +58,7 @@ public:
     /// Used just to get result header
     void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /* not_processed */) override
     {
-        for (const auto & col : right_sample_block)
+        for (const auto & col : *right_sample_header)
             block.insert(col);
         block = materializeBlock(block).cloneEmpty();
     }
@@ -89,7 +89,7 @@ public:
 
 private:
     std::shared_ptr<TableJoin> table_join;
-    Block right_sample_block;
+    SharedHeader right_sample_header;
     Block totals;
 };
 

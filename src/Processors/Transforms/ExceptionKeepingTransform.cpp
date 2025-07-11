@@ -12,7 +12,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ExceptionKeepingTransform::ExceptionKeepingTransform(const Block & in_header, const Block & out_header, bool ignore_on_start_and_finish_)
+ExceptionKeepingTransform::ExceptionKeepingTransform(SharedHeader in_header, SharedHeader out_header, bool ignore_on_start_and_finish_)
     : IProcessor({in_header}, {out_header})
     , input(inputs.front()), output(outputs.front())
     , ignore_on_start_and_finish(ignore_on_start_and_finish_)

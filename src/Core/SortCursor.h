@@ -9,7 +9,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
-#include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/SortDescription.h>
 #include <Core/callOnTypeIndex.h>

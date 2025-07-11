@@ -111,7 +111,7 @@ namespace
         auto blocks = std::make_shared<Blocks>();
         blocks->push_back(tags_block);
 
-        auto header = tags_block.cloneEmpty();
+        auto header = std::make_shared<const Block>(tags_block.cloneEmpty());
         auto pipe = Pipe(std::make_shared<BlocksSource>(blocks, header));
 
         Block header_with_id;
@@ -126,7 +126,7 @@ namespace
                     context);
 
         auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(std::move(adding_missing_defaults_dag));
-        pipe.addSimpleTransform([&](const Block & stream_header)
+        pipe.addSimpleTransform([&](const SharedHeader & stream_header)
         {
             return std::make_shared<ExpressionTransform>(stream_header, adding_missing_defaults_actions);
         });
@@ -138,7 +138,7 @@ namespace
         auto actions = std::make_shared<ExpressionActions>(
             std::move(convert_actions_dag),
             ExpressionActionsSettings(context, CompileExpressions::yes));
-        pipe.addSimpleTransform([&](const Block & stream_header)
+        pipe.addSimpleTransform([&](const SharedHeader & stream_header)
         {
             return std::make_shared<ExpressionTransform>(stream_header, actions);
         });

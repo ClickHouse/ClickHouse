@@ -391,7 +391,7 @@ void StorageNATS::read(
             ActionsDAG::MatchColumnsMode::Name);
 
         auto converting = std::make_shared<ExpressionActions>(std::move(converting_dag));
-        auto converting_transform = std::make_shared<ExpressionTransform>(nats_source->getPort().getHeader(), std::move(converting));
+        auto converting_transform = std::make_shared<ExpressionTransform>(nats_source->getPort().getSharedHeader(), std::move(converting));
 
         pipes.emplace_back(std::move(nats_source));
         pipes.back().addTransform(std::move(converting_transform));
@@ -448,7 +448,7 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
     if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
         max_rows = local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].value;
     return std::make_shared<MessageQueueSink>(
-        metadata_snapshot->getSampleBlockNonMaterialized(), getFormatName(), max_rows, std::move(producer), getName(), modified_context);}
+        std::make_shared<const Block>(metadata_snapshot->getSampleBlockNonMaterialized()), getFormatName(), max_rows, std::move(producer), getName(), modified_context);}
 
 
 void StorageNATS::startup()

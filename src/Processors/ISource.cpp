@@ -12,7 +12,7 @@ namespace ErrorCodes
 
 ISource::~ISource() = default;
 
-ISource::ISource(Block header, bool enable_auto_progress)
+ISource::ISource(SharedHeader header, bool enable_auto_progress)
     : IProcessor({}, {std::move(header)})
     , auto_progress(enable_auto_progress)
     , output(outputs.front())

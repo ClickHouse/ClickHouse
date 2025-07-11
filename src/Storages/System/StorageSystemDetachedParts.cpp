@@ -88,7 +88,7 @@ struct WorkerState
 class DetachedPartsSource : public ISource
 {
 public:
-    DetachedPartsSource(Block header_, std::shared_ptr<SourceState> state_, std::vector<UInt8> columns_mask_, UInt64 block_size_)
+    DetachedPartsSource(SharedHeader header_, std::shared_ptr<SourceState> state_, std::vector<UInt8> columns_mask_, UInt64 block_size_)
         : ISource(std::move(header_))
         , state(state_)
         , columns_mask(std::move(columns_mask_))
@@ -288,7 +288,7 @@ public:
         size_t max_block_size_,
         size_t num_streams_)
         : SourceStepWithFilter(
-            std::move(sample_block),
+            std::make_shared<const Block>(std::move(sample_block)),
             column_names_,
             query_info_,
             storage_snapshot_,

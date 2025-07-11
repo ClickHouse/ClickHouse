@@ -958,7 +958,7 @@ updateIncludeTypeIds(DataTypePtr type, const orc::Type * orc_type, bool ignore_c
 }
 
 NativeORCBlockInputFormat::NativeORCBlockInputFormat(
-    ReadBuffer & in_, Block header_, const FormatSettings & format_settings_, bool use_prefetch_, size_t min_bytes_for_seek_)
+    ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_, bool use_prefetch_, size_t min_bytes_for_seek_)
     : IInputFormat(std::move(header_), &in_)
     , memory_pool(std::make_unique<MemoryPool>())
     , block_missing_values(getPort().getHeader().columns())

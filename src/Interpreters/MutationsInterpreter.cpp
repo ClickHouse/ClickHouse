@@ -1287,7 +1287,7 @@ void MutationsInterpreter::Source::read(
 
     if (!mutation_settings.can_execute)
     {
-        auto header = storage_snapshot->getSampleBlockForColumns(required_columns);
+        auto header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(required_columns));
         auto callback = []()
         {
             return DB::Exception(ErrorCodes::LOGICAL_ERROR, "Cannot execute a mutation because can_execute flag set to false");
@@ -1371,7 +1371,7 @@ void MutationsInterpreter::Source::read(
         if (!plan.isInitialized())
         {
             /// It may be possible when there is nothing to read from storage.
-            auto header = storage_snapshot->getSampleBlockForColumns(required_columns);
+            auto header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(required_columns));
             auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(header)));
             plan.addStep(std::move(read_from_pipe));
         }
@@ -1402,7 +1402,7 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
             {
                 auto dag = step->actions()->dag.clone();
                 if (step->actions()->project_input)
-                    dag.appendInputsForUnusedColumns(plan.getCurrentHeader());
+                    dag.appendInputsForUnusedColumns(*plan.getCurrentHeader());
                 /// Execute DELETEs.
                 plan.addStep(std::make_unique<FilterStep>(plan.getCurrentHeader(), std::move(dag), stage.filter_column_names[i], false));
             }
@@ -1410,7 +1410,7 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
             {
                 auto dag = step->actions()->dag.clone();
                 if (step->actions()->project_input)
-                    dag.appendInputsForUnusedColumns(plan.getCurrentHeader());
+                    dag.appendInputsForUnusedColumns(*plan.getCurrentHeader());
                 /// Execute UPDATE or final projection.
                 plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(dag)));
             }
@@ -1424,7 +1424,7 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
 
     auto pipeline = std::move(*plan.buildQueryPipeline(do_not_optimize_plan_settings, BuildQueryPipelineSettings(context)));
 
-    pipeline.addSimpleTransform([&](const Block & header)
+    pipeline.addSimpleTransform([&](const SharedHeader & header)
     {
         return std::make_shared<MaterializingTransform>(header);
     });
@@ -1483,7 +1483,7 @@ QueryPipelineBuilder MutationsInterpreter::execute()
     /// in this case we don't read sorting key, so just we don't check anything.
     if (auto sort_desc = getStorageSortDescriptionIfPossible(builder.getHeader()))
     {
-        builder.addSimpleTransform([&](const Block & header)
+        builder.addSimpleTransform([&](const SharedHeader & header)
         {
             return std::make_shared<CheckSortedTransform>(header, *sort_desc);
         });

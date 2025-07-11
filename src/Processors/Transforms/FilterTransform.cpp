@@ -61,7 +61,7 @@ Block FilterTransform::transformHeader(
 }
 
 FilterTransform::FilterTransform(
-    const Block & header_,
+    SharedHeader header_,
     ExpressionActionsPtr expression_,
     String filter_column_name_,
     bool remove_filter_column_,
@@ -70,7 +70,7 @@ FilterTransform::FilterTransform(
     std::optional<std::pair<UInt64, String>> condition_)
     : ISimpleTransform(
             header_,
-            transformHeader(header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_),
+            std::make_shared<const Block>(transformHeader(*header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_)),
             true)
     , expression(std::move(expression_))
     , filter_column_name(std::move(filter_column_name_))

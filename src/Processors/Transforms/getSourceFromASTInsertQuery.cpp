@@ -83,7 +83,7 @@ Pipe getSourceFromInputFormat(
         const auto & columns = metadata_snapshot->getColumns();
         if (columns.hasDefaults())
         {
-            pipe.addSimpleTransform([&](const Block & cur_header)
+            pipe.addSimpleTransform([&](const SharedHeader & cur_header)
             {
                 return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *format, context);
             });

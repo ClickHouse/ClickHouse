@@ -92,7 +92,7 @@ void SourceStepWithFilter::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_i
 {
     query_info.prewhere_info = prewhere_info_value;
     prewhere_info = prewhere_info_value;
-    output_header = applyPrewhereActions(*output_header, prewhere_info);
+    output_header = std::make_shared<const Block>(applyPrewhereActions(*output_header, prewhere_info));
 }
 
 void SourceStepWithFilter::describeActions(FormatSettings & format_settings) const

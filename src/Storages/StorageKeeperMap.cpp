@@ -133,7 +133,7 @@ class StorageKeeperMapSink : public SinkToStorage
     ContextPtr context;
 
 public:
-    StorageKeeperMapSink(StorageKeeperMap & storage_, Block header, ContextPtr context_)
+    StorageKeeperMapSink(StorageKeeperMap & storage_, SharedHeader header, ContextPtr context_)
         : SinkToStorage(header), storage(storage_), context(std::move(context_))
     {
         auto primary_key = storage.getPrimaryKey();
@@ -285,22 +285,17 @@ class StorageKeeperMapSource : public ISource, WithContext
 
     bool with_version_column = false;
 
-    static Block getHeader(Block header)
-    {
-        return header;
-    }
-
 public:
     StorageKeeperMapSource(
         const StorageKeeperMap & storage_,
-        const Block & header,
+        SharedHeader header,
         size_t max_block_size_,
         KeyContainerPtr container_,
         KeyContainerIter begin_,
         KeyContainerIter end_,
         bool with_version_column_,
         ContextPtr context_)
-        : ISource(getHeader(header))
+        : ISource(header)
         , WithContext(std::move(context_))
         , storage(storage_)
         , max_block_size(max_block_size_)
@@ -611,7 +606,7 @@ public:
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        Block sample_block,
+        SharedHeader sample_block,
         const StorageKeeperMap & storage_,
         size_t max_block_size_,
         size_t num_streams_,
@@ -669,7 +664,7 @@ void StorageKeeperMap::read(
                     std::make_shared<DataTypeInt32>(), std::string{version_column_name}});
 
     auto reading = std::make_unique<ReadFromKeeperMap>(
-        column_names, query_info, storage_snapshot, context_, std::move(sample_block), *this, max_block_size, num_streams, with_version_column);
+        column_names, query_info, storage_snapshot, context_, std::make_shared<const Block>(std::move(sample_block)), *this, max_block_size, num_streams, with_version_column);
 
     query_plan.addStep(std::move(reading));
 }
@@ -687,7 +682,7 @@ void ReadFromKeeperMap::applyFilters(ActionDAGNodes added_filter_nodes)
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
 
     const auto & sample_block = getOutputHeader();
-    auto primary_key_data_type = sample_block.getByName(storage.primary_key).type;
+    auto primary_key_data_type = sample_block->getByName(storage.primary_key).type;
     std::tie(keys, all_scan) = getFilterKeys(storage.primary_key, primary_key_data_type, filter_actions_dag, context);
 }
 
@@ -773,7 +768,7 @@ void ReadFromKeeperMap::describeActions(JSONBuilder::JSONMap & map) const
 SinkToStoragePtr StorageKeeperMap::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     checkTable<true>(local_context);
-    return std::make_shared<StorageKeeperMapSink>(*this, metadata_snapshot->getSampleBlock(), local_context);
+    return std::make_shared<StorageKeeperMapSink>(*this, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()), local_context);
 }
 
 void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
@@ -1545,7 +1540,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
     PullingPipelineExecutor executor(pipeline);
 
-    auto sink = std::make_shared<StorageKeeperMapSink>(*this, executor.getHeader(), local_context);
+    auto sink = std::make_shared<StorageKeeperMapSink>(*this, executor.getSharedHeader(), local_context);
 
     Block block;
     while (executor.pull(block))

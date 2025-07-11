@@ -1010,7 +1010,7 @@ void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & 
 }
 
 
-AvroRowInputFormat::AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
+AvroRowInputFormat::AvroRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_), format_settings(format_settings_)
 {
 }
@@ -1192,7 +1192,7 @@ static uint32_t readConfluentSchemaId(ReadBuffer & in)
 }
 
 AvroConfluentRowInputFormat::AvroConfluentRowInputFormat(
-    const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
+    SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_)
     , schema_registry(getConfluentSchemaRegistry(format_settings_))
     , format_settings(format_settings_)
@@ -1410,7 +1410,7 @@ void registerInputFormatAvro(FormatFactory & factory)
         const RowInputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<AvroRowInputFormat>(sample, buf, params, settings);
+        return std::make_shared<AvroRowInputFormat>(std::make_shared<const Block>(sample), buf, params, settings);
     });
 
     factory.markFormatSupportsSubsetOfColumns("Avro");
@@ -1421,7 +1421,7 @@ void registerInputFormatAvro(FormatFactory & factory)
         const RowInputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<AvroConfluentRowInputFormat>(sample, buf, params, settings);
+        return std::make_shared<AvroConfluentRowInputFormat>(std::make_shared<const Block>(sample), buf, params, settings);
     });
 
     factory.markFormatSupportsSubsetOfColumns("AvroConfluent");

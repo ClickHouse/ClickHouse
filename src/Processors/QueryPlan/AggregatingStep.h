@@ -20,7 +20,7 @@ class AggregatingStep : public ITransformingStep
 {
 public:
     AggregatingStep(
-        const Header & input_header_,
+        const SharedHeader & input_header_,
         Aggregator::Params params_,
         GroupingSetsParamsList grouping_sets_params_,
         bool final_,
@@ -36,7 +36,7 @@ public:
         bool memory_bound_merging_of_aggregation_results_enabled_,
         bool explicit_sorting_required_for_aggregation_in_order_);
 
-    static Block appendGroupingColumn(Block block, const Names & keys, bool has_grouping, bool use_nulls);
+    static Block appendGroupingColumn(const Block & block, const Names & keys, bool has_grouping, bool use_nulls);
 
     String getName() const override { return "Aggregating"; }
 
@@ -65,10 +65,10 @@ public:
     /// When we apply aggregate projection (which is full), this step will only merge data.
     /// Argument input_stream replaces current single input.
     /// Probably we should replace this step to MergingAggregated later? (now, aggregation-in-order will not work)
-    void requestOnlyMergeForAggregateProjection(const Header & input_header);
+    void requestOnlyMergeForAggregateProjection(const SharedHeader & input_header);
     /// When we apply aggregate projection (which is partial), this step should be replaced to AggregatingProjection.
     /// Argument input_stream would be the second input (from projection).
-    std::unique_ptr<AggregatingProjectionStep> convertToAggregatingProjection(const Header & input_header) const;
+    std::unique_ptr<AggregatingProjectionStep> convertToAggregatingProjection(const SharedHeader & input_header) const;
 
     static ActionsDAG makeCreatingMissingKeysForGroupingSetDAG(
         const Block & in_header,
@@ -136,7 +136,7 @@ class AggregatingProjectionStep : public IQueryPlanStep
 {
 public:
     AggregatingProjectionStep(
-        Blocks input_headers_,
+        SharedHeaders input_headers_,
         Aggregator::Params params_,
         bool final_,
         size_t merge_threads_,

@@ -106,7 +106,7 @@ static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(QueryPlan
     const auto & filter_column_name = filter->getFilterColumnName();
     bool removes_filter = filter->removesFilterColumn();
 
-    const auto & all_inputs = child->getInputHeaders()[child_idx].getColumnsWithTypeAndName();
+    const auto & all_inputs = child->getInputHeaders()[child_idx]->getColumnsWithTypeAndName();
     bool allow_deterministic_functions = !step_changes_the_number_of_rows;
     return expression.splitActionsForFilterPushDown(filter_column_name, removes_filter, available_inputs, all_inputs, allow_deterministic_functions);
 }
@@ -191,7 +191,7 @@ static size_t simplePushDownOverStep(QueryPlan::Node * parent_node, bool step_ch
 {
     if (typeid_cast<Step *>(child.get()))
     {
-        Names allowed_inputs = child->getOutputHeader().getNames();
+        Names allowed_inputs = child->getOutputHeader()->getNames();
         if (auto updated_steps = tryAddNewFilterStep(parent_node, step_changes_the_number_of_rows, nodes, allowed_inputs))
             return updated_steps;
     }
@@ -280,8 +280,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         {
             const auto & left_table_key_name = join_clause.key_names_left[i];
             const auto & right_table_key_name = join_clause.key_names_right[i];
-            const auto & left_table_column = left_stream_input_header.getByName(left_table_key_name);
-            const auto & right_table_column = right_stream_input_header.getByName(right_table_key_name);
+            const auto & left_table_column = left_stream_input_header->getByName(left_table_key_name);
+            const auto & right_table_column = right_stream_input_header->getByName(right_table_key_name);
 
             if (!left_table_column.type->equals(*right_table_column.type))
                 continue;
@@ -306,15 +306,15 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             return available_input_columns_for_filter;
 
         const auto & input_header = push_to_left_stream ? left_stream_input_header : right_stream_input_header;
-        const auto & input_columns_names = input_header.getNames();
+        const auto & input_columns_names = input_header->getNames();
 
         for (const auto & name : input_columns_names)
         {
-            if (!join_header.has(name))
+            if (!join_header->has(name))
                 continue;
 
             /// Skip if type is changed. Push down expression expect equal types.
-            if (!input_header.getByName(name).type->equals(*join_header.getByName(name).type))
+            if (!input_header->getByName(name).type->equals(*join_header->getByName(name).type))
                 continue;
 
             available_input_columns_for_filter.push_back(name);
@@ -367,9 +367,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     auto join_filter_push_down_actions = filter->getExpression().splitActionsForJOINFilterPushDown(filter->getFilterColumnName(),
         filter->removesFilterColumn(),
         left_stream_available_columns_to_push_down,
-        left_stream_input_header,
+        *left_stream_input_header,
         right_stream_available_columns_to_push_down,
-        right_stream_input_header,
+        *right_stream_input_header,
         equivalent_columns_to_push_down,
         equivalent_left_stream_column_to_right_stream_column,
         equivalent_right_stream_column_to_left_stream_column);
@@ -574,7 +574,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
         Names keys;
         const auto & header = totals_having->getInputHeaders().front();
-        for (const auto & column : header)
+        for (const auto & column : *header)
             if (typeid_cast<const DataTypeAggregateFunction *>(column.type.get()) == nullptr)
                 keys.push_back(column.name);
 
@@ -596,7 +596,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         const auto & array_join_header = array_join->getInputHeaders().front();
 
         Names allowed_inputs;
-        for (const auto & column : array_join_header)
+        for (const auto & column : *array_join_header)
             if (!keys_set.contains(column.name))
                 allowed_inputs.push_back(column.name);
 
@@ -627,7 +627,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (typeid_cast<SortingStep *>(child.get()))
     {
-        Names allowed_inputs = child->getOutputHeader().getNames();
+        Names allowed_inputs = child->getOutputHeader()->getNames();
         if (auto updated_steps = tryAddNewFilterStep(parent_node, false, nodes, allowed_inputs))
             return updated_steps;
     }
@@ -641,7 +641,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (typeid_cast<CreateSetAndFilterOnTheFlyStep *>(child.get()))
     {
-        Names allowed_inputs = child->getOutputHeader().getNames();
+        Names allowed_inputs = child->getOutputHeader()->getNames();
         if (auto updated_steps = tryAddNewFilterStep(parent_node, false, nodes, allowed_inputs))
             return updated_steps;
     }

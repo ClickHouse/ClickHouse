@@ -12,7 +12,7 @@ class JoiningTransform;
 class ExpressionStep : public ITransformingStep
 {
 public:
-    explicit ExpressionStep(const Header & input_header_, ActionsDAG actions_dag_);
+    explicit ExpressionStep(SharedHeader input_header_, ActionsDAG actions_dag_);
 
     ExpressionStep(const ExpressionStep & other)
         : ITransformingStep(other)

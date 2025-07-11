@@ -29,7 +29,7 @@ protected:
 
 public:
     /// ReadBuffer can be nullptr for random-access formats.
-    IInputFormat(Block header, ReadBuffer * in_);
+    IInputFormat(SharedHeader header, ReadBuffer * in_);
 
     Chunk generate() override;
 

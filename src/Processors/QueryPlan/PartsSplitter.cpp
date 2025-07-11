@@ -1118,7 +1118,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     {
         auto pipe = in_order_reading_step_getter(ranges);
 
-        pipe.addSimpleTransform([sorting_expr](const Block & header)
+        pipe.addSimpleTransform([sorting_expr](const SharedHeader & header)
         {
             return std::make_shared<ExpressionTransform>(header, sorting_expr);
         });
@@ -1205,7 +1205,7 @@ Pipes readByLayers(
                                                   i ? ::toString(borders[i - 1]) : "-inf",
                                                   i < borders.size() ? ::toString(borders[i]) : "+inf");
         merging_pipes[i].addSimpleTransform(
-            [&](const Block & header)
+            [&](const SharedHeader & header)
             {
                 auto step = std::make_shared<FilterSortedStreamByRange>(header, expression_actions, filter_function->getColumnName(), true);
                 step->setDescription(description);

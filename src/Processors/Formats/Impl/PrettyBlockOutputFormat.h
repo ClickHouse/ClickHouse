@@ -27,7 +27,7 @@ public:
     };
 
     /// no_escapes - do not use ANSI escape sequences - to display in the browser, not in the console.
-    PrettyBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, Style style_, bool mono_block_, bool color_, bool glue_chunks_);
+    PrettyBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, Style style_, bool mono_block_, bool color_, bool glue_chunks_);
     ~PrettyBlockOutputFormat() override;
 
     String getName() const override { return "PrettyBlockOutputFormat"; }

@@ -111,7 +111,7 @@ ASTPtr rewriteSelectQuery(
 
 
 SelectStreamFactory::SelectStreamFactory(
-    const Block & header_,
+    SharedHeader header_,
     const ColumnsDescriptionByShardNum & objects_by_shard_,
     const StorageSnapshotPtr & storage_snapshot_,
     QueryProcessingStage::Enum processed_stage_)
@@ -164,18 +164,18 @@ void SelectStreamFactory::createForShardImpl(
     UInt32 shard_count,
     bool parallel_replicas_enabled,
     AdditionalShardFilterGenerator shard_filter_generator,
-    bool has_missing_objects)
+    bool has_missing_objects) const
 {
     auto emplace_local_stream = [&]()
     {
         local_plans.emplace_back(createLocalPlan(
-            query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects));
+            query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects));
     };
 
     // If lazy is true, a lazy pipe will be created. It will try to use the local replica and, if not possible, will use DelayedSource for reading from remote replica.
     auto emplace_remote_stream = [&](bool lazy = false)
     {
-        Block shard_header;
+        SharedHeader shard_header;
         PlannerContextPtr planner_context;
         std::unique_ptr<QueryPlan> query_plan;
 
@@ -186,7 +186,7 @@ void SelectStreamFactory::createForShardImpl(
         if (settings[Setting::allow_experimental_analyzer] && settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
         {
             query_plan = createLocalPlan(
-                query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects, true, shard_info.default_database);
+                query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects, true, shard_info.default_database);
 
             shard_header = query_plan->getCurrentHeader();
         }

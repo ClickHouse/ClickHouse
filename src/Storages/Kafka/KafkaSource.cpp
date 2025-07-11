@@ -44,7 +44,7 @@ KafkaSource::KafkaSource(
     LoggerPtr log_,
     size_t max_block_size_,
     bool commit_in_suffix_)
-    : ISource(storage_snapshot_->getSampleBlockForColumns(columns))
+    : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)

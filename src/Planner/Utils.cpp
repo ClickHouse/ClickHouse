@@ -99,10 +99,10 @@ String dumpQueryPipeline(const QueryPlan & query_plan)
     return query_pipeline_buffer.str();
 }
 
-Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode union_mode)
+Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUnionMode union_mode)
 {
     size_t num_selects = queries_headers.size();
-    Block common_header = queries_headers.front();
+    Block common_header = *queries_headers.front();
     size_t columns_size = common_header.columns();
 
     for (size_t query_number = 1; query_number < num_selects; ++query_number)
@@ -116,12 +116,12 @@ Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode 
         else
             error_code = ErrorCodes::INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH;
 
-        if (queries_headers.at(query_number).columns() != columns_size)
+        if (queries_headers.at(query_number)->columns() != columns_size)
             throw Exception(error_code,
                             "Different number of columns in {} elements: {} and {}",
                             toString(union_mode),
                             common_header.dumpNames(),
-                            queries_headers[query_number].dumpNames());
+                            queries_headers[query_number]->dumpNames());
     }
 
     std::vector<const ColumnWithTypeAndName *> columns(num_selects);
@@ -129,7 +129,7 @@ Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode 
     for (size_t column_number = 0; column_number < columns_size; ++column_number)
     {
         for (size_t i = 0; i < num_selects; ++i)
-            columns[i] = &queries_headers[i].getByPosition(column_number);
+            columns[i] = &queries_headers[i]->getByPosition(column_number);
 
         ColumnWithTypeAndName & result_element = common_header.getByPosition(column_number);
         result_element = getLeastSuperColumn(columns);
@@ -141,17 +141,17 @@ Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode 
 void addConvertingToCommonHeaderActionsIfNeeded(
     std::vector<std::unique_ptr<QueryPlan>> & query_plans,
     const Block & union_common_header,
-    Blocks & query_plans_headers)
+    SharedHeaders & query_plans_headers)
 {
     size_t queries_size = query_plans.size();
     for (size_t i = 0; i < queries_size; ++i)
     {
         auto & query_node_plan = query_plans[i];
-        if (blocksHaveEqualStructure(query_node_plan->getCurrentHeader(), union_common_header))
+        if (blocksHaveEqualStructure(*query_node_plan->getCurrentHeader(), union_common_header))
             continue;
 
         auto actions_dag = ActionsDAG::makeConvertingActions(
-            query_node_plan->getCurrentHeader().getColumnsWithTypeAndName(),
+            query_node_plan->getCurrentHeader()->getColumnsWithTypeAndName(),
             union_common_header.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Position);
         auto converting_step = std::make_unique<ExpressionStep>(query_node_plan->getCurrentHeader(), std::move(actions_dag));

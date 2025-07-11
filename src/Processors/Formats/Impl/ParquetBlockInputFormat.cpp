@@ -570,7 +570,7 @@ const parquet::ColumnDescriptor * getColumnDescriptorIfBloomFilterIsPresent(
 
 ParquetBlockInputFormat::ParquetBlockInputFormat(
     ReadBuffer & buf,
-    const Block & header_,
+    SharedHeader header_,
     const FormatSettings & format_settings_,
     size_t max_decoding_threads_,
     size_t max_io_threads_,
@@ -1243,7 +1243,7 @@ void registerInputFormatParquet(FormatFactory & factory)
                 size_t min_bytes_for_seek = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
                 return std::make_shared<ParquetBlockInputFormat>(
                     buf,
-                    sample,
+                    std::make_shared<const Block>(sample),
                     settings,
                     max_parsing_threads,
                     max_download_threads,

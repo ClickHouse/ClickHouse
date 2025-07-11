@@ -26,7 +26,7 @@ static ITransformingStep::Traits getTraits()
 struct MarshallBlocksTransform : ISimpleTransform
 {
 public:
-    explicit MarshallBlocksTransform(const Block & header_, BlockMarshallingCallback callback_)
+    explicit MarshallBlocksTransform(SharedHeader header_, BlockMarshallingCallback callback_)
         : ISimpleTransform(header_, header_, false)
         , callback(std::move(callback_))
     {
@@ -46,7 +46,7 @@ private:
     BlockMarshallingCallback callback;
 };
 
-BlocksMarshallingStep::BlocksMarshallingStep(const Header & input_header_)
+BlocksMarshallingStep::BlocksMarshallingStep(const SharedHeader & input_header_)
     : ITransformingStep(input_header_, input_header_, getTraits())
 {
 }
@@ -56,10 +56,10 @@ void BlocksMarshallingStep::transformPipeline(QueryPipelineBuilder & pipeline, c
     // The getNumStreams() == 1 is special, because it may indicate that pipeline ended with a sorting or aggregation, i.e. we should preserve chunks order.
     const bool single_stream = pipeline.getNumStreams() == 1;
     if (single_stream)
-        pipeline.addTransform(std::make_shared<AddSequenceNumber>(pipeline.getHeader()));
+        pipeline.addTransform(std::make_shared<AddSequenceNumber>(pipeline.getSharedHeader()));
     const size_t num_threads = pipeline.getNumThreads();
     pipeline.resize(num_threads);
-    pipeline.addSimpleTransform([&](const Block & header)
+    pipeline.addSimpleTransform([&](const SharedHeader & header)
                                 { return std::make_shared<MarshallBlocksTransform>(header, settings.block_marshalling_callback); });
     if (single_stream)
         pipeline.addTransform(std::make_shared<SortChunksBySequenceNumber>(pipeline.getHeader(), num_threads));

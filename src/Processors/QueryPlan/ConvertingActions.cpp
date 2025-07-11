@@ -7,7 +7,7 @@ namespace DB
 
 void addConvertingActions(QueryPlan & plan, const Block & header, bool has_missing_objects)
 {
-    if (blocksHaveEqualStructure(plan.getCurrentHeader(), header))
+    if (blocksHaveEqualStructure(*plan.getCurrentHeader(), header))
         return;
 
     auto mode = has_missing_objects ? ActionsDAG::MatchColumnsMode::Position : ActionsDAG::MatchColumnsMode::Name;
@@ -24,7 +24,7 @@ void addConvertingActions(QueryPlan & plan, const Block & header, bool has_missi
             true);
     };
 
-    auto convert_actions_dag = get_converting_dag(plan.getCurrentHeader(), header);
+    auto convert_actions_dag = get_converting_dag(*plan.getCurrentHeader(), header);
     auto converting = std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(convert_actions_dag));
     plan.addStep(std::move(converting));
 }

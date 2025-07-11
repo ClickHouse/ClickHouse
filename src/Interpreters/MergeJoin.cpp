@@ -482,10 +482,10 @@ void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns,
 }
 
 
-MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
+MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block_)
     : table_join(table_join_)
     , size_limits(table_join->sizeLimits())
-    , right_sample_block(right_sample_block_)
+    , right_sample_block(*right_sample_block_)
     , is_any_join(table_join->strictness() == JoinStrictness::Any)
     , is_all_join(table_join->strictness() == JoinStrictness::All)
     , is_semi_join(table_join->strictness() == JoinStrictness::Semi)
@@ -607,7 +607,7 @@ void MergeJoin::mergeInMemoryRightBlocks()
 
     /// TODO: there should be no split keys by blocks for RIGHT|FULL JOIN
     builder.addTransform(std::make_shared<MergeSortingTransform>(
-        builder.getHeader(),
+        builder.getSharedHeader(),
         right_sort_description,
         max_rows_in_right_block,
         /*max_block_bytes=*/0,

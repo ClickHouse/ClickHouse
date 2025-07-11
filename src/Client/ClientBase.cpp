@@ -624,7 +624,7 @@ try
         /// Ignore all results when fuzzing as they can be huge.
         if (query_fuzzer_runs)
         {
-            output_format = std::make_shared<NullOutputFormat>(block);
+            output_format = std::make_shared<NullOutputFormat>(std::make_shared<const Block>(block));
             return;
         }
 
@@ -769,7 +769,7 @@ If you want to output it into a file, use the "INTO OUTFILE" modifier in the que
 Do you want to output it anyway? [y/N] )", current_format);
 
             if (!ask(question, *std_in, *std_out))
-                output_format = std::make_shared<NullOutputFormat>(block);
+                output_format = std::make_shared<NullOutputFormat>(std::make_shared<const Block>(block));
 
             *std_out << '\n';
         }
@@ -1982,7 +1982,7 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
 
     if (columns_description.hasDefaults())
     {
-        pipe.addSimpleTransform([&](const Block & header)
+        pipe.addSimpleTransform([&](const SharedHeader & header)
         {
             return std::make_shared<AddingDefaultsTransform>(header, columns_description, *source, client_context);
         });

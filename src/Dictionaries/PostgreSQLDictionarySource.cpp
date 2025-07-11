@@ -64,7 +64,7 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Configuration & configuration_,
     postgres::PoolWithFailoverPtr pool_,
-    const Block & sample_block_)
+    SharedHeader sample_block_)
     : dict_struct(dict_struct_)
     , configuration(configuration_)
     , pool(std::move(pool_))
@@ -143,7 +143,7 @@ std::string PostgreSQLDictionarySource::doInvalidateQuery(const std::string & re
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    return readInvalidateQuery(QueryPipeline(std::make_unique<PostgreSQLSource<>>(pool->get(), request, invalidate_sample_block, 1)));
+    return readInvalidateQuery(QueryPipeline(std::make_unique<PostgreSQLSource<>>(pool->get(), request, std::make_shared<const Block>(std::move(invalidate_sample_block)), 1)));
 }
 
 
@@ -330,7 +330,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
             bg_reconnect);
 
 
-        return std::make_unique<PostgreSQLDictionarySource>(dict_struct, dictionary_configuration.value(), pool, sample_block);
+        return std::make_unique<PostgreSQLDictionarySource>(dict_struct, dictionary_configuration.value(), pool, std::make_shared<const Block>(sample_block));
 #else
         (void)dict_struct;
         (void)config;

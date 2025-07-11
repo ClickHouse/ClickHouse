@@ -61,6 +61,7 @@
 #include <Analyzer/Identifier.h>
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
 #include <Analyzer/RecursiveCTE.h>
+#include <Analyzer/QueryTreePassManager.h>
 
 #include <Analyzer/Resolve/CorrelatedColumnsCollector.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
@@ -679,7 +680,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         if (only_analyze)
         {
             /// If query is only analyzed, then constants are not correct.
-            scalar_block = interpreter->getSampleBlock();
+            scalar_block = *interpreter->getSampleBlock();
             for (auto & column : scalar_block)
             {
                 if (column.column->empty())
@@ -708,7 +709,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
             if (block.rows() == 0)
             {
-                auto types = interpreter->getSampleBlock().getDataTypes();
+                auto types = interpreter->getSampleBlock()->getDataTypes();
                 if (types.size() != 1)
                     types = {std::make_shared<DataTypeTuple>(types)};
 

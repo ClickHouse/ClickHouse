@@ -15,7 +15,7 @@ bool addPlansForSets(const QueryPlanOptimizationSettings & optimization_settings
     auto plans = DelayedCreatingSetsStep::makePlansForSets(std::move(*delayed), optimization_settings);
     node.children.reserve(1 + plans.size());
 
-    Headers input_headers;
+    SharedHeaders input_headers;
     input_headers.reserve(1 + plans.size());
     input_headers.push_back(node.children.front()->step->getOutputHeader());
 

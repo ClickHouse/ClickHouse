@@ -43,8 +43,8 @@ class JoiningTransform : public IProcessor
 {
 public:
     JoiningTransform(
-        const Block & input_header,
-        const Block & output_header,
+        SharedHeader input_header,
+        SharedHeader output_header,
         JoinPtr join_,
         size_t max_block_size_,
         bool on_totals_ = false,
@@ -99,7 +99,7 @@ private:
 class FillingRightJoinSideTransform : public IProcessor
 {
 public:
-    FillingRightJoinSideTransform(Block input_header, JoinPtr join_, FinishCounterPtr finish_counter_);
+    FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_);
     String getName() const override { return "FillingRightJoinSide"; }
 
     InputPort * addTotalsPort();
@@ -160,7 +160,7 @@ class DelayedJoinedBlocksWorkerTransform : public IProcessor
 public:
     using NonJoinedStreamBuilder = std::function<IBlocksStreamPtr()>;
     explicit DelayedJoinedBlocksWorkerTransform(
-        Block output_header_,
+        SharedHeader output_header_,
         NonJoinedStreamBuilder non_joined_stream_builder_);
 
     String getName() const override { return "DelayedJoinedBlocksWorkerTransform"; }
