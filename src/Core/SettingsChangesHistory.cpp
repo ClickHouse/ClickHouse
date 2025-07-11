@@ -50,6 +50,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"write_through_distributed_cache_buffer_size", 0, 0, "New cloud setting"},
             {"min_joined_block_size_rows", 0, DEFAULT_BLOCK_SIZE, "New setting."},
             {"table_engine_read_through_distributed_cache", false, false, "New setting"},
+            {"allow_experimental_ytsaurus_table_engine", false, false, "New setting."},
+            {"allow_experimental_ytsaurus_table_function", false, false, "New setting."},
+            {"allow_experimental_ytsaurus_dictionary_source", false, false, "New setting."},
             {"distributed_cache_alignment", 0, 0, "Rename of distributed_cache_read_alignment"},
         });
         addSettingsChanges(settings_changes_history, "25.6",

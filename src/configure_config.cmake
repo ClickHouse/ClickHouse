@@ -203,6 +203,8 @@ endif()
 if (TARGET ch_contrib::sha3iuf)
     set(USE_SHA3IUF 1)
 endif()
+set (USE_YTSAURUS 1)
+
 
 if (TARGET ch_contrib::sz3)
     set(USE_SZ3 1)
