@@ -14,11 +14,7 @@ else()
     set(MAX_COMPILER_MEMORY 1500)
 endif()
 
-if (BUILD_FUZZERS)
-    set(MAX_LINKER_MEMORY 5000)
-else()
-    set(MAX_LINKER_MEMORY 3500)
-endif ()
+set(MAX_LINKER_MEMORY 3500)
 include(../cmake/limit_jobs.cmake)
 
 include (../cmake/version.cmake)
