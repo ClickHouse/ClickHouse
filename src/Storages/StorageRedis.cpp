@@ -251,7 +251,7 @@ private:
     size_t num_streams;
 
     FieldVectorPtr keys;
-    bool all_scan = false;
+    bool all_scan = true;
 };
 
 void StorageRedis::read(
