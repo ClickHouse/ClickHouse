@@ -22,7 +22,7 @@ static SharedHeader checkHeaders(const SharedHeaders & input_headers)
     if (input_headers.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot perform intersect/except on empty set of query plan steps");
 
-   SharedHeader res = input_headers.front();
+    SharedHeader res = input_headers.front();
     for (const auto & header : input_headers)
         assertBlocksHaveEqualStructure(*header, *res, "IntersectOrExceptStep");
 
