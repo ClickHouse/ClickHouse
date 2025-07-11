@@ -453,10 +453,18 @@ void TCPHandler::runImpl()
 
             while (tcp_server.isOpen() && !server.isCancelled() && !in->poll(timeout_ms))
             {
-                if (idle_time.elapsedSeconds() > idle_connection_timeout)
+                const auto elapsed_seconds = idle_time.elapsedSeconds();
+
+                if (elapsed_seconds > idle_connection_timeout)
                 {
                     LOG_TRACE(log, "Closing idle connection");
                     return;
+                }
+
+                if (elapsed_seconds > poll_interval && query_count > 0)
+                {
+                    LOG_TRACE(log, "Resetting query count for idle connection");
+                    query_count = 0;
                 }
             }
 
