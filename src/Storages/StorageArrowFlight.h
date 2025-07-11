@@ -1,5 +1,8 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_ARROWFLIGHT
 #include <Core/Names.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageConfiguration.h>
@@ -58,3 +61,5 @@ private:
 void registerStorageArrowFlight(StorageFactory & factory);
 
 }
+
+#endif

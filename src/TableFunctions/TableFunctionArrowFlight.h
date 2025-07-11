@@ -1,5 +1,8 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_ARROWFLIGHT
 #include <Storages/StorageArrowFlight.h>
 #include <TableFunctions/ITableFunction.h>
 
@@ -29,3 +32,5 @@ private:
 };
 
 }
+
+#endif

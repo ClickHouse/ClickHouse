@@ -1,5 +1,8 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_ARROWFLIGHT
 #include <DataTypes/DataTypeFactory.h>
 #include <Processors/ISource.h>
 #include <arrow/flight/api.h>
@@ -38,3 +41,5 @@ private:
 };
 
 }
+
+#endif
