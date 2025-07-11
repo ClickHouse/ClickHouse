@@ -1,3 +1,4 @@
+#include <Poco/Logger.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -124,6 +125,12 @@ void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
         size_t row_idx = row_num_offset + i;
         if (bitmap.rb_contains(row_idx))
         {
+            LOG_DEBUG(
+                &Poco::Logger::get("IcebergBitmapPositionDeleteTransform"),
+                "Position {} is marked for deletion in data file {}",
+                row_idx,
+                iceberg_object_info->getIcebergDataPath());
+
             delete_vector[i] = false;
             num_rows_after_filtration--;
         }
@@ -152,6 +159,11 @@ void IcebergBitmapPositionDeleteTransform::initialize()
             {
                 auto position_to_delete = position_column->get64(i);
                 bitmap.add(position_to_delete);
+                LOG_DEBUG(
+                    &Poco::Logger::get("IcebergBitmapPositionDeleteTransform"),
+                    "Adding position {} to delete bitmap for data file {}",
+                    position_to_delete,
+                    filename_column->getDataAt(i).toString());
             }
         }
     }

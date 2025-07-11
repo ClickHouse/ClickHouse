@@ -1,10 +1,11 @@
-#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/PullingOutputFormat.h>
+#include <Processors/Sources/NullSource.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
-#include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Sources/NullSource.h>
+#include "Common/logger_useful.h"
 
 namespace DB
 {
@@ -44,15 +45,27 @@ bool PullingPipelineExecutor::pull(Chunk & chunk)
 {
     if (!executor)
     {
+        LOG_DEBUG(
+            &Poco::Logger::get("PullingPipelineExecutor"),
+            "Creating PipelineExecutor for pulling pipeline, because it was not created yet");
         executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
         executor->setReadProgressCallback(pipeline.getReadProgressCallback());
     }
 
     if (!executor->checkTimeLimitSoft())
+    {
+        LOG_DEBUG(
+            &Poco::Logger::get("PullingPipelineExecutor"),
+            "PipelineExecutor for pulling pipeline has reached time limit, stopping execution");
         return false;
+    }
 
     if (!executor->executeStep(&has_data_flag))
+    {
+        LOG_DEBUG(
+            &Poco::Logger::get("PullingPipelineExecutor"), "execute step returned false, meaning that pipeline execution is finished");
         return false;
+    }
 
     chunk = pulling_format->getChunk();
     return true;

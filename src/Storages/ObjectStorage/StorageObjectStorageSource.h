@@ -39,13 +39,16 @@ public:
         UInt64 max_block_size_,
         std::shared_ptr<IObjectIterator> file_iterator_,
         FormatParserGroupPtr parser_group_,
-        bool need_only_count_);
+        bool need_only_count_,
+        size_t thread_order_number_);
 
     ~StorageObjectStorageSource() override;
 
     String getName() const override { return name; }
 
     Chunk generate() override;
+
+    Chunk generateImpl();
 
     void onFinish() override { parser_group->finishStream(); }
 
@@ -114,7 +117,6 @@ protected:
         ObjectInfoPtr getObjectInfo() const { return object_info; }
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
 
-    private:
         ObjectInfoPtr object_info;
         std::unique_ptr<ReadBuffer> read_buf;
         std::shared_ptr<ISource> source;
@@ -125,6 +127,8 @@ protected:
     ReaderHolder reader;
     ThreadPoolCallbackRunnerUnsafe<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
+
+    size_t thread_order_number;
 
     /// Recreate ReadBuffer and Pipeline for each file.
     static ReaderHolder createReader(
@@ -139,7 +143,8 @@ protected:
         const LoggerPtr & log,
         size_t max_block_size,
         FormatParserGroupPtr parser_group,
-        bool need_only_count);
+        bool need_only_count,
+        size_t thread_order_number);
 
     ReaderHolder createReader();
 

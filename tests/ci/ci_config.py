@@ -624,7 +624,7 @@ class CI:
         check_name = check_name.replace("arm_", "").replace(
             "amd_", ""
         )  # hack for new names in praktika
-        check_name = re.sub(r",\s*\d+/\d+\)", ")", check_name)
+        check_name = re.sub(r",\s*\d+/\d+.*\)", ")", check_name)
         return cls.JOB_CONFIGS[check_name]
 
     @classmethod

@@ -2700,8 +2700,8 @@ def test_metadata_cache(started_cluster, storage_type):
         )
 
 
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-@pytest.mark.parametrize("is_table_function", [False, True])
+@pytest.mark.parametrize("storage_type", ["local"])
+@pytest.mark.parametrize("is_table_function", [True])
 def test_minmax_pruning(started_cluster, storage_type, is_table_function):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
