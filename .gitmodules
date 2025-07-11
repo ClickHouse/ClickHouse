@@ -375,3 +375,9 @@
 [submodule "contrib/chdig"]
 	path = contrib/chdig
 	url = https://github.com/azat/chdig.git
+[submodule "contrib/TurboPFor"]
+	path = contrib/TurboPFor
+	url = https://github.com/powturbo/TurboPFor-Integer-Compression
+[submodule "contrib/SIMDCompressionAndIntersection"]
+	path = contrib/SIMDCompressionAndIntersection
+	url = https://github.com/fast-pack/SIMDCompressionAndIntersection
