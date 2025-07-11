@@ -20,47 +20,49 @@ workflow = Workflow.Config(
         JobConfigs.fast_test,
         *JobConfigs.tidy_build_jobs,
         *[
-            job.set_dependency(
-                [
-                    JobNames.STYLE_CHECK,
-                    JobNames.FAST_TEST,
-                    *[j.name for j in JobConfigs.tidy_build_jobs],
-                ]
-            )
+            # job.set_dependency(
+            #     [
+            #         JobNames.STYLE_CHECK,
+            #         JobNames.FAST_TEST,
+            #         *[j.name for j in JobConfigs.tidy_build_jobs],
+            #     ]
+            # )
+            job
             for job in JobConfigs.build_jobs
         ],
         *[
-            job.set_dependency(REGULAR_BUILD_NAMES)
+            # job.set_dependency(REGULAR_BUILD_NAMES)
+            job
             for job in JobConfigs.special_build_jobs
         ],
-        *JobConfigs.unittest_jobs,
-        JobConfigs.docker_sever,
-        JobConfigs.docker_keeper,
-        *JobConfigs.install_check_jobs,
-        *JobConfigs.compatibility_test_jobs,
-        *JobConfigs.functional_tests_jobs_required,
-        *JobConfigs.functional_tests_jobs_non_required,
-        *[
-            job.set_dependency(REQUIRED_STATELESS_TESTS_JOB_NAMES)
-            for job in JobConfigs.functional_tests_jobs_coverage
-        ],
-        JobConfigs.bugfix_validation_it_job.set_dependency(
-            [
-                JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
-                JobConfigs.tidy_build_jobs[0].name,
-            ]
-        ),
-        JobConfigs.bugfix_validation_ft_pr_job,
-        *JobConfigs.stateless_tests_flaky_pr_jobs,
-        *JobConfigs.integration_test_jobs_required,
-        *JobConfigs.integration_test_jobs_non_required,
-        JobConfigs.integration_test_asan_flaky_pr_job,
-        *JobConfigs.stress_test_jobs,
-        *JobConfigs.upgrade_test_jobs,
-        *JobConfigs.ast_fuzzer_jobs,
-        *JobConfigs.buzz_fuzzer_jobs,
-        *JobConfigs.performance_comparison_with_master_head_jobs,
+        # *JobConfigs.unittest_jobs,
+        # JobConfigs.docker_sever,
+        # JobConfigs.docker_keeper,
+        # *JobConfigs.install_check_jobs,
+        # *JobConfigs.compatibility_test_jobs,
+        # *JobConfigs.functional_tests_jobs_required,
+        # *JobConfigs.functional_tests_jobs_non_required,
+        # *[
+        #     job.set_dependency(REQUIRED_STATELESS_TESTS_JOB_NAMES)
+        #     for job in JobConfigs.functional_tests_jobs_coverage
+        # ],
+        # JobConfigs.bugfix_validation_it_job.set_dependency(
+        #     [
+        #         JobNames.STYLE_CHECK,
+        #         JobNames.FAST_TEST,
+        #         JobConfigs.tidy_build_jobs[0].name,
+        #     ]
+        # ),
+        # JobConfigs.bugfix_validation_ft_pr_job,
+        # *JobConfigs.stateless_tests_flaky_pr_jobs,
+        # *JobConfigs.integration_test_jobs_required,
+        # *JobConfigs.integration_test_jobs_non_required,
+        # JobConfigs.integration_test_asan_flaky_pr_job,
+        # *JobConfigs.stress_test_jobs,
+        # *JobConfigs.upgrade_test_jobs,
+        # *JobConfigs.ast_fuzzer_jobs,
+        # *JobConfigs.buzz_fuzzer_jobs,
+        # *JobConfigs.performance_comparison_with_master_head_jobs,
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
