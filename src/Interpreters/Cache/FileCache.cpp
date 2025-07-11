@@ -604,7 +604,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
     }
 }
 
-FileSegmentsHolderPtr FileCache::set(
+FileSegmentsHolderPtr FileCache::trySet(
     const Key & key,
     size_t offset,
     size_t size,
@@ -618,7 +618,7 @@ FileSegmentsHolderPtr FileCache::set(
 
     auto file_segments = getImpl(*locked_key, range, /* file_segments_limit */0);
     if (!file_segments.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Having intersection with already existing cache");
+        return nullptr;
 
     if (create_settings.unbounded)
     {
@@ -635,6 +635,19 @@ FileSegmentsHolderPtr FileCache::set(
     }
 
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
+}
+
+FileSegmentsHolderPtr FileCache::set(
+    const Key & key,
+    size_t offset,
+    size_t size,
+    const CreateFileSegmentSettings & create_settings,
+    const UserInfo & user)
+{
+    if (auto holder = trySet(key, offset, size, create_settings, user))
+        return holder;
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Having intersection with already existing cache");
 }
 
 FileSegmentsHolderPtr
@@ -1280,6 +1293,14 @@ void FileCache::removeFileSegment(const Key & key, size_t offset, const UserID &
     assertInitialized();
     auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::THROW, UserInfo(user_id));
     locked_key->removeFileSegment(offset);
+}
+
+void FileCache::removeFileSegmentIfExists(const Key & key, size_t offset, const UserID & user_id)
+{
+    assertInitialized();
+    auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::RETURN_NULL, UserInfo(user_id));
+    if (locked_key)
+        locked_key->removeFileSegmentIfExists(offset);
 }
 
 void FileCache::removePathIfExists(const String & path, const UserID & user_id)
