@@ -98,7 +98,7 @@ namespace DeduplicationToken
     class CheckTokenTransform : public ISimpleTransform
     {
     public:
-        CheckTokenTransform(String debug_, const Block & header_)
+        CheckTokenTransform(String debug_, SharedHeader header_)
             : ISimpleTransform(header_, header_, true)
             , debug(std::move(debug_))
         {

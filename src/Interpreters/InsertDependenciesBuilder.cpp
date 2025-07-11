@@ -1127,7 +1127,7 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDPrivate view_id) const
     }
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
-    result.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right before Inner query", input_header));
+    // result.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right before Inner query", input_header));
 #endif
 
     return result;

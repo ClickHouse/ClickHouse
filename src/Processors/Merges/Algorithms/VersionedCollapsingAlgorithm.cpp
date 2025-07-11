@@ -1,5 +1,6 @@
 #include <Processors/Merges/Algorithms/VersionedCollapsingAlgorithm.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/Block.h>
 #include <IO/WriteBuffer.h>
 
 namespace DB

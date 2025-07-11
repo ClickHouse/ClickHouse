@@ -3,7 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/DateLUT.h>
-#include <DataTypes/DataTypeDateTime.h>
+#include <Core/Block.h>
 
 
 namespace DB

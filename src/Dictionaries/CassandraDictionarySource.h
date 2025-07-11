@@ -7,9 +7,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/ExternalQueryBuilder.h>
-#include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
-#include <Poco/Logger.h>
 #include <mutex>
 
 namespace DB

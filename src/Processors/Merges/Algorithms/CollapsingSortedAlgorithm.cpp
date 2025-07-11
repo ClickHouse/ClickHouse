@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldVisitorToString.h>
+#include <Core/Block.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>

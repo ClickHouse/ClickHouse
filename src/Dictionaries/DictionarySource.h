@@ -4,8 +4,6 @@
 #include <memory>
 #include <Columns/IColumn_fwd.h>
 #include <Core/Names.h>
-#include <Core/Block.h>
-#include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
 
 

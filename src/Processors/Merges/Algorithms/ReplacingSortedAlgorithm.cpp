@@ -2,6 +2,7 @@
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 
 #include <Columns/ColumnsNumber.h>
+#include <Core/Block.h>
 #include <IO/WriteBuffer.h>
 #include <Columns/IColumn.h>
 #include <Processors/Merges/Algorithms/RowRef.h>

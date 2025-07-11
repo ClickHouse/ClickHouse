@@ -3,7 +3,6 @@
 #include "config.h"
 #if USE_CAPNP
 
-#include <Core/Block.h>
 #include <Formats/CapnProtoSchema.h>
 #include <Formats/CapnProtoSerializer.h>
 #include <Processors/Formats/IRowInputFormat.h>

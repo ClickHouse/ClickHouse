@@ -1,8 +1,8 @@
 #pragma once
+
+#include <Core/Block_fwd.h>
 #include <atomic>
 #include <memory>
-
-#include "Processors/QueryPlan/IQueryPlanStep.h"
 
 namespace DB
 {
