@@ -108,7 +108,7 @@ protected:
                     result_columns[pos] = index_column->convertToFullColumnIfConst();
                 }
             }
-            else if (minmax_header->has(column_name))
+            else if (minmax_header && minmax_header->has(column_name))
             {
                 size_t minmax_pos = minmax_header->getPositionByName(column_name);
                 if (minmax_pos >= part->minmax_idx->hyperrectangle.size())
