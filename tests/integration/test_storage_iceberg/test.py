@@ -41,14 +41,11 @@ from helpers.s3_tools import (
     prepare_s3_bucket,
 )
 from helpers.test_tools import TSV
-import duckdb
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
 def get_spark():
-    os.environ["PYSPARK_TRACE_BACK"] = "true"
-
     builder = (
         pyspark.sql.SparkSession.builder.appName("spark_test")
         .config(
@@ -62,8 +59,6 @@ def get_spark():
             "spark.sql.extensions",
             "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
         )
-        .config("spark.executor.extraJavaOptions", "-Dlog4j.configuration=file:log4j.properties")
-        .config("spark.driver.extraJavaOptions", "-Dlog4j.configuration=file:log4j.properties")
         .master("local")
     )
     return builder.master("local").getOrCreate()
