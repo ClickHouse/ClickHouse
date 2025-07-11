@@ -2243,6 +2243,7 @@ class ClickHouseCluster:
 
         if result:
             decoded_data = base64.b64decode(result)
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
             with open(local_path, "wb") as f:
                 f.write(decoded_data)
         else:

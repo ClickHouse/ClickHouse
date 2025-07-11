@@ -41,6 +41,7 @@ from helpers.s3_tools import (
     prepare_s3_bucket,
 )
 from helpers.test_tools import TSV
+import duckdb
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -3203,7 +3204,7 @@ def test_writes(started_cluster, format_version, storage_type):
     )
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
-    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1);")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (42);")
 
     default_upload_directory(
         started_cluster,
@@ -3212,13 +3213,15 @@ def test_writes(started_cluster, format_version, storage_type):
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
-    #instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL")
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES (123);")
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '1\n123\n'
-    #instance.query(f"INSERT INTO {TABLE_NAME} VALUES (456);")
-    #assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '1\n123\n456\n'
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '42\n123\n'
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (456);")
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '42\n123\n456\n'
 
-    result_download = default_download_directory(
+    if storage_type != "local":
+        return
+
+    default_download_directory(
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
@@ -3226,24 +3229,10 @@ def test_writes(started_cluster, format_version, storage_type):
     )
 
     with open(f"/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text", "wb") as f:
-        f.write(b"3")
-
-    #if storage_type == "local":
-    #    df = spark.sql(f"SELECT * FROM spark_catalog.default.{TABLE_NAME}.snapshots;").collect()
-    #    raise ValueError(len(df), df)
-    #df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
-    #raise ValueError(df)
-    #with open(f"/iceberg_data/default/{TABLE_NAME}/metadata/.version-hint.text.crc", "rb") as f:
-    #    raise ValueError(f.read())
-
-
-    #os.remove(f"/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text")
-    #with open(f"/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text", "rb") as f:
-    #    raise ValueError(f.read())
+        f.write(b"4")
 
     df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
-    raise ValueError(df)
-    #raise ValueError([file for file in os.listdir(f"/iceberg_data/default/{TABLE_NAME}/metadata")], result_download)
+    assert len(df) == 3
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
@@ -3269,6 +3258,22 @@ def test_writes_from_zero(started_cluster, format_version, storage_type):
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '123\n'
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES (456);")
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '123\n456\n'
+
+    if storage_type != "local":
+        return
+
+    default_download_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    with open(f"/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text", "wb") as f:
+        f.write(b"3")
+
+    df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
+    assert len(df) == 2
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
@@ -3329,3 +3334,19 @@ def test_writes_with_partitioned_table(started_cluster, format_version, storage_
     )
 
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '1\tAlice\t10.5\t2024-01-20\t2024-01-20 10:00:00.000000\n2\tBob\t20\t2024-01-21\t2024-01-21 11:00:00.000000\n3\tCharlie\t30.5\t2024-01-22\t2024-01-22 12:00:00.000000\n4\tDiana\t40\t2024-01-23\t2024-01-23 13:00:00.000000\n5\tEve\t50.5\t2024-01-24\t2024-01-24 14:00:00.000000\n10\tAlice\t10.5\t2024-01-20\t2024-01-20 10:00:00.000000\n20\tBob\t20\t2024-01-21\t2024-01-21 11:00:00.000000\n30\tCharlie\t30.5\t2024-01-22\t2024-01-22 12:00:00.000000\n40\tDiana\t40\t2024-01-23\t2024-01-23 13:00:00.000000\n50\tEve\t50.5\t2024-01-24\t2024-01-24 14:00:00.000000\n'
+
+    if storage_type != "local":
+        return
+
+    default_download_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    with open(f"/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text", "wb") as f:
+        f.write(b"3")
+
+    df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
+    assert len(df) == 10

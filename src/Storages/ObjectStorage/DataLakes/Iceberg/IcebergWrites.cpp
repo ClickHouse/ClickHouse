@@ -205,7 +205,7 @@ void generateManifestFile(
         set_versioned_field(sequence_number, "file_sequence_number");
     }
     avro::GenericRecord & data_file = manifest.field("data_file").value<avro::GenericRecord>();
-    auto set_null_field = [&](const String & field_name)
+    /*auto set_stats = [&](const String & field_name)
     {
         size_t field_index;
         if (!data_file.schema()->nameIndex(field_name, field_index))
@@ -213,22 +213,93 @@ void generateManifestFile(
 
         const avro::NodePtr & union_schema = data_file.schema()->leafAt(static_cast<UInt32>(field_index));
         avro::GenericUnion field(union_schema);
-        field.selectBranch(0);
-        field.datum() = avro::GenericDatum();
+        field.selectBranch(1);
+
+        avro::GenericDatum datum_array(union_schema->leafAt(1));
+        avro::GenericArray & array = datum_array.value<avro::GenericArray>();
+        avro::GenericDatum datum_stat(union_schema->leafAt(1)->leafAt(0));
+        avro::GenericRecord & record_stat = datum_stat.value<avro::GenericRecord>();
+        record_stat.field("key") = 1;
+        record_stat.field("value") = 0;
+        array.value().push_back(datum_stat);
+
+        field.datum() = datum_array;
         data_file.field(field_name) = avro::GenericDatum(union_schema, field);
     };
 
-    set_null_field("column_sizes");
-    set_null_field("value_counts");
-    set_null_field("null_value_counts");
-    set_null_field("nan_value_counts");
-    set_null_field("lower_bounds");
-    set_null_field("upper_bounds");
-    set_null_field("key_metadata");
-    set_null_field("split_offsets");
-    if (version > 1)
-        set_null_field("equality_ids");
-    set_null_field("sort_order_id");
+    auto set_stats_with_bytes = [&](const String & field_name)
+    {
+        size_t field_index;
+        if (!data_file.schema()->nameIndex(field_name, field_index))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found field {} in schema", field_name);
+
+        const avro::NodePtr & union_schema = data_file.schema()->leafAt(static_cast<UInt32>(field_index));
+        avro::GenericUnion field(union_schema);
+        field.selectBranch(1);
+
+        avro::GenericDatum datum_array(union_schema->leafAt(1));
+        avro::GenericArray & array = datum_array.value<avro::GenericArray>();
+        avro::GenericDatum datum_stat(union_schema->leafAt(1)->leafAt(0));
+        avro::GenericRecord & record_stat = datum_stat.value<avro::GenericRecord>();
+        record_stat.field("key") = 1;
+        record_stat.field("value") = avro::GenericDatum(std::vector<uint8_t>{0, 0, 0});
+        array.value().push_back(datum_stat);
+
+        field.datum() = datum_array;
+        data_file.field(field_name) = avro::GenericDatum(union_schema, field);
+    };*/
+
+
+    /*set_stats("column_sizes");
+    set_stats("value_counts");
+    set_stats("null_value_counts");
+    set_stats("nan_value_counts");
+    set_stats_with_bytes("lower_bounds");
+    set_stats_with_bytes("upper_bounds");
+
+    {
+        size_t field_index;
+        if (!data_file.schema()->nameIndex("key_metadata", field_index))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found field {} in schema", "key_metadata");
+
+        const avro::NodePtr & union_schema = data_file.schema()->leafAt(static_cast<UInt32>(field_index));
+        avro::GenericUnion field(union_schema);
+        field.selectBranch(0);
+        field.datum() = avro::GenericDatum();
+        data_file.field("key_metadata") = avro::GenericDatum(union_schema, field);
+    }
+
+    {
+        size_t field_index;
+        if (!data_file.schema()->nameIndex("split_offsets", field_index))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found field {} in schema", "split_offsets");
+
+        const avro::NodePtr & union_schema = data_file.schema()->leafAt(static_cast<UInt32>(field_index));
+        avro::GenericUnion field(union_schema);
+        field.selectBranch(1);
+
+        avro::GenericDatum datum_array(union_schema->leafAt(1));
+        avro::GenericArray & array = datum_array.value<avro::GenericArray>();
+        array.value().push_back(avro::GenericDatum(4));
+
+        field.datum() = datum_array;
+        data_file.field("split_offsets") = avro::GenericDatum(union_schema, field);
+    }
+
+    {
+        size_t field_index;
+        if (!data_file.schema()->nameIndex("sort_order_id", field_index))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found field {} in schema", "key_metadata");
+
+        const avro::NodePtr & union_schema = data_file.schema()->leafAt(static_cast<UInt32>(field_index));
+        avro::GenericUnion field(union_schema);
+        field.selectBranch(1);
+        field.datum() = 0;
+        data_file.field("sort_order_id") = avro::GenericDatum(union_schema, field);
+    }*/
+
+    //if (version > 1)
+    //    set_stats("equality_ids");
 
     if (version > 1)
         data_file.field(Iceberg::f_content) = avro::GenericDatum(0);
@@ -298,7 +369,8 @@ void generateManifestList(
 
         entry.field(Iceberg::f_manifest_path) = manifest_entry_name;
         entry.field(Iceberg::f_manifest_length) = manifest_length;
-        entry.field(Iceberg::f_partition_spec_id) = 1;
+        std::cerr << "manifest_length " << manifest_length << '\n';
+        entry.field(Iceberg::f_partition_spec_id) = 0;
         //avro::GenericDatum empty_array(avro::GenericArray());
         {
             size_t parititons_index;
@@ -309,7 +381,7 @@ void generateManifestList(
             avro::GenericUnion field(partitiions_schema);
             field.selectBranch(1);
             field.datum() = avro::GenericDatum(partitiions_schema->leafAt(1));
-            entry.field("partitions") = avro::GenericDatum(partitiions_schema->leafAt(1));
+            entry.field("partitions") = avro::GenericDatum(partitiions_schema, field);
         }
         if (version > 1)
         {
@@ -343,7 +415,7 @@ void generateManifestList(
         if (version == 1)
         {
             set_versioned_field(1, Iceberg::f_added_data_files_count);
-            set_versioned_field(new_snapshot->getObject(Iceberg::f_summary)->getValue<Int32>(Iceberg::f_total_data_files), Iceberg::f_existing_data_files_count);
+            set_versioned_field(std::stoi(new_snapshot->getObject(Iceberg::f_summary)->getValue<String>(Iceberg::f_total_data_files)), Iceberg::f_existing_data_files_count);
             set_versioned_field(0, Iceberg::f_deleted_data_files_count);
         }
         else
@@ -381,7 +453,6 @@ void generateManifestList(
 
                 const avro::ValidSchema & prev_schema = reader.readerSchema();
 
-                std::cerr << "spark schema\n";
                 prev_schema.toFlatList(std::cerr);
                 avro::GenericDatum datum(prev_schema);
 
@@ -440,6 +511,7 @@ std::pair<Poco::JSON::Object::Ptr, String> MetadataGenerator::generateNextMetada
     Int32 added_files_size,
     Int32 num_partitions)
 {
+    std::cerr << "bp0\n";
     int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
     Poco::JSON::Object::Ptr new_snapshot = new Poco::JSON::Object;
     if (format_version > 1)
@@ -448,16 +520,19 @@ std::pair<Poco::JSON::Object::Ptr, String> MetadataGenerator::generateNextMetada
         new_snapshot->set(f_sequence_number, getMaxSequenceNumber() + 1);
         metadata_object->set(Iceberg::f_last_sequence_number, sequence_number);
     }
+    std::cerr << "bp0.1\n";
     Int32 snapshot_id = dis(gen);
 
     auto manifest_list_name = generator.generateManifestListName(snapshot_id, format_version);
     new_snapshot->set(f_snapshot_id, snapshot_id);
     new_snapshot->set(f_parent_snapshot_id, parent_snapshot_id);
+    std::cerr << "bp0.2\n";
 
     auto now = std::chrono::system_clock::now();
     auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
     new_snapshot->set(Iceberg::f_timestamp_ms, ms.count());
 
+    std::cerr << "bp0.3\n";
     auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
     Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
     summary->set("operation", "append");
@@ -465,6 +540,7 @@ std::pair<Poco::JSON::Object::Ptr, String> MetadataGenerator::generateNextMetada
     summary->set(Iceberg::f_added_records, std::to_string(added_records));
     summary->set(Iceberg::f_added_files_size, std::to_string(added_files_size));
     summary->set(Iceberg::f_changed_partition_count, std::to_string(num_partitions));
+    std::cerr << "bp0.4\n";
 
     auto sum_with_parent_snapshot = [&](const char * field_name, Int32 snapshot_value)
     {
@@ -480,13 +556,28 @@ std::pair<Poco::JSON::Object::Ptr, String> MetadataGenerator::generateNextMetada
     sum_with_parent_snapshot(Iceberg::f_total_equality_deletes, 0);
     new_snapshot->set(Iceberg::f_summary, summary);
 
+    std::cerr << "bp0.5\n";
     new_snapshot->set(Iceberg::f_schema_id, parent_snapshot ? parent_snapshot->getValue<Int32>(Iceberg::f_schema_id) : 0);
     new_snapshot->set(Iceberg::f_manifest_list, manifest_list_name);
 
+    std::cerr << "bp0.6\n";
     metadata_object->getArray(Iceberg::f_snapshots)->add(new_snapshot);
     metadata_object->set(Iceberg::f_current_snapshot_id, snapshot_id);
 
-    if (metadata_object->has(Iceberg::f_refs))
+    std::cerr << "bp0.7\n";
+    if (!metadata_object->has(Iceberg::f_refs))
+        metadata_object->set(Iceberg::f_refs, new Poco::JSON::Object);
+
+    std::cerr << "bp0.8\n";
+    if (!metadata_object->getObject(Iceberg::f_refs)->has("main"))
+    {
+        Poco::JSON::Object::Ptr branch = new Poco::JSON::Object;
+        branch->set(Iceberg::f_snapshot_id, snapshot_id);
+        branch->set(Iceberg::f_type, "branch");
+
+        metadata_object->getObject(Iceberg::f_refs)->set("main", branch);
+    }
+    else
         metadata_object->getObject(Iceberg::f_refs)->getObject("main")->set(Iceberg::f_snapshot_id, snapshot_id);
 
     std::cerr << "bp1\n";
@@ -709,7 +800,6 @@ void IcebergStorageSink::consume(Chunk & chunk)
     if (isCancelled())
         return;
     total_rows += chunk.getNumRows();
-    total_chunks_size += chunk.bytes();
 
     std::unordered_map<ChunkPartitioner::PartitionKey, Chunk, ChunkPartitioner::PartitionKeyHasher> partition_result;
     if (partitioner)
@@ -776,6 +866,7 @@ void IcebergStorageSink::finalizeBuffers()
         }
 
         write_buffers[partition_key]->finalize();
+        total_chunks_size += write_buffers[partition_key]->count();
     }
     initializeMetadata();
 }
@@ -809,6 +900,7 @@ void IcebergStorageSink::initializeMetadata()
         filename_generator, metadata_name, parent_snapshot, 1, total_rows, total_chunks_size, static_cast<Int32>(data_filenames.size()));
 
     Strings manifest_entries;
+    Int32 manifest_lengths = 0;
     for (const auto & [partition_key, data_filename] : data_filenames)
     {
         auto manifest_entry_name = filename_generator.generateManifestEntryName();
@@ -818,6 +910,7 @@ void IcebergStorageSink::initializeMetadata()
             StoredObject(manifest_entry_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
         generateManifestFile(metadata, partitioner->getColumns(), partition_key, data_filename, new_snapshot, configuration->format, partititon_spec, partition_spec_id, *buffer_manifest_entry);
         buffer_manifest_entry->finalize();
+        manifest_lengths += buffer_manifest_entry->count();
     }
 
     {
@@ -825,7 +918,7 @@ void IcebergStorageSink::initializeMetadata()
             StoredObject(manifest_list_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
         generateManifestList(
-            metadata, object_storage, context, manifest_entries, new_snapshot, 0, *buffer_manifest_list);
+            metadata, object_storage, context, manifest_entries, new_snapshot, manifest_lengths, *buffer_manifest_list);
         buffer_manifest_list->finalize();
     }
 
