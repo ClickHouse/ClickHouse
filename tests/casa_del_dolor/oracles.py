@@ -154,7 +154,7 @@ class ElOraculoDeTablas:
                         f"Hash mismatch for table {next_tbl.get_sql_escaped_full_name()}"
                     )
                     logger.warn(message)
-                    raise Exception(message)
+                    raise ValueError(message)
 
             try:
                 # Rename back
