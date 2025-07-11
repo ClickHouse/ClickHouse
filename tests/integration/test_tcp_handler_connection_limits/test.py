@@ -4,7 +4,7 @@ import time
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance('node', main_configs=['configs/config.d/tcp_connection_limits.xml'])
+node = cluster.add_instance("node", main_configs=["configs/config.d/tcp_connection_limits.xml"])
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -49,9 +49,9 @@ def test_query_count_limit(started_cluster):
     queries = ["SELECT 1;", "SELECT 2;", "SELECT 3;", "SELECT 4;", "SELECT 5;"]
     stdout, stderr = execute_queries_persistent_connection(queries)
 
-    assert '1' in stdout and '2' in stdout and '3' in stdout
-    assert '4' not in stdout and '5' not in stdout
-    assert 'TCP_CONNECTION_LIMIT_REACHED' in stderr
+    assert "1" in stdout and "2" in stdout and "3" in stdout
+    assert "4" not in stdout and "5" not in stdout
+    assert "TCP_CONNECTION_LIMIT_REACHED" in stderr
 
     final_count = get_connection_done_count()
     assert final_count == initial_count + 1, f"Expected exactly 1 connection closure, got {final_count - initial_count}"
@@ -62,8 +62,8 @@ def test_time_limit(started_cluster):
     queries = ["SELECT sleep(3);", "SELECT 1;", "SELECT 2;"]
     stdout, stderr = execute_queries_persistent_connection(queries)
 
-    assert '1' not in stdout and '2' not in stdout
-    assert 'TCP_CONNECTION_LIMIT_REACHED' in stderr
+    assert "1" not in stdout and "2" not in stdout
+    assert "TCP_CONNECTION_LIMIT_REACHED" in stderr
 
     final_count = get_connection_done_count()
     assert final_count == initial_count + 1, f"Expected exactly 1 connection closure, got {final_count - initial_count}"
