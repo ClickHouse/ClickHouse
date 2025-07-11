@@ -22,16 +22,14 @@ def kafka_cluster():
 
 # check_method for bad_messages_parsing_mode
 def view_test(expected_num_messages, *_):
-    attempt = 0
-    rows = 0
-    while attempt < 500:
-        time.sleep(0.1)
-        rows = int(instance.query("SELECT count() FROM view"))
-        if rows == expected_num_messages:
-            break
-        attempt += 1
+    rows = instance.query_with_retry(
+        "SELECT count() FROM view",
+        retry_count=500,
+        sleep_time=0.1,
+        check_callback=lambda x: int(x) == expected_num_messages,
+    )
 
-    assert rows == expected_num_messages
+    assert int(rows) == expected_num_messages
 
 
 # check_method for bad_messages_parsing_mode
@@ -41,19 +39,13 @@ def dead_letter_test(expected_num_messages, topic_name):
     #  but since nothing goes to target MV we don't know when it happens
     instance.query("SYSTEM FLUSH LOGS")
 
-    attempt = 0
-    rows = 0
-    while attempt < 500:
-        time.sleep(0.1)
-        rows = int(
-            instance.query(
-                f"SELECT count() FROM system.dead_letter WHERE kafka_topic_name = '{topic_name}'"
-            )
-        )
-        if rows == expected_num_messages:
-            break
-        attempt += 1
-    assert rows == expected_num_messages
+    rows = instance.query_with_retry(
+        f"SELECT count() FROM system.dead_letter WHERE kafka_topic_name = '{topic_name}'",
+        retry_count=500,
+        sleep_time=0.1,
+        check_callback=lambda x: int(x) == expected_num_messages,
+    )
+    assert int(rows) == expected_num_messages
 
     result = instance.query(
         f"SELECT * FROM system.dead_letter WHERE kafka_topic_name = '{topic_name}' FORMAT Vertical"
