@@ -97,6 +97,36 @@ loadPerformanceMetric(const JSONParserImpl::Element & jobj, const uint32_t defau
     return PerformanceMetric(enabled, threshold, minimum);
 }
 
+static std::function<void(const JSONObjectType &)> parseErrorCodes(std::unordered_set<uint32_t> & res)
+{
+    return [&](const JSONObjectType & value)
+    {
+        using std::operator""sv;
+        constexpr auto delim{","sv};
+
+        for (const auto word : std::views::split(String(value.getString()), delim))
+        {
+            uint32_t result;
+            const auto & sv = std::string_view(word);
+            auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), result);
+
+            if (ec == std::errc::invalid_argument)
+            {
+                throw std::invalid_argument("Not a valid number for an error code");
+            }
+            else if (ec == std::errc::result_out_of_range)
+            {
+                throw std::out_of_range("Number out of range for uint32_t");
+            }
+            else if (ptr != sv.data() + sv.size())
+            {
+                throw std::invalid_argument("Invalid characters in input");
+            }
+            res.insert(result);
+        }
+    };
+}
+
 FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
     : cb(c)
     , log(getLogger("BuzzHouse"))
@@ -233,33 +263,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
                  type_mask &= (~type_entries.at(entry));
              }
          }},
-        {"disallowed_error_codes",
-         [&](const JSONObjectType & value)
-         {
-             using std::operator""sv;
-             constexpr auto delim{","sv};
-
-             for (const auto word : std::views::split(String(value.getString()), delim))
-             {
-                 uint32_t result;
-                 const auto & sv = std::string_view(word);
-                 auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), result);
-
-                 if (ec == std::errc::invalid_argument)
-                 {
-                     throw std::invalid_argument("Not a valid number for an error code");
-                 }
-                 else if (ec == std::errc::result_out_of_range)
-                 {
-                     throw std::out_of_range("Number out of range for uint32_t");
-                 }
-                 else if (ptr != sv.data() + sv.size())
-                 {
-                     throw std::invalid_argument("Invalid characters in input");
-                 }
-                 disallowed_error_codes.insert(result);
-             }
-         }}};
+        {"disallowed_error_codes", parseErrorCodes(disallowed_error_codes)},
+        {"oracle_ignore_error_codes", parseErrorCodes(oracle_ignore_error_codes)}};
 
     for (const auto [key, value] : object.getObject())
     {

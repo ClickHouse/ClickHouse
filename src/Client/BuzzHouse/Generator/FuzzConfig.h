@@ -145,7 +145,7 @@ public:
     std::optional<ServerCredentials> clickhouse_server, mysql_server, postgresql_server, sqlite_server, mongodb_server, redis_server,
         minio_server, http_server, azurite_server;
     std::unordered_map<String, PerformanceMetric> metrics;
-    std::unordered_set<uint32_t> disallowed_error_codes;
+    std::unordered_set<uint32_t> disallowed_error_codes, oracle_ignore_error_codes;
     String host = "localhost", keeper_map_path_prefix;
     bool read_log = false, fuzz_floating_points = true, test_with_fill = true, dump_table_oracle_compare_content = true,
          compare_success_results = false, measure_performance = false, allow_infinite_tables = false, compare_explains = false,

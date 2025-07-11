@@ -2535,19 +2535,16 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
             }
             case MultiQueryProcessingStage::PARSING_FAILED:
             {
-                have_error |= buzz_house;
                 return true;
             }
             case MultiQueryProcessingStage::CONTINUE_PARSING:
             {
                 is_first = false;
-                have_error |= buzz_house;
                 continue;
             }
             case MultiQueryProcessingStage::PARSING_EXCEPTION:
             {
                 is_first = false;
-                have_error |= buzz_house;
                 this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
 
                 // Try to find test hint for syntax error. We don't know where
@@ -2783,7 +2780,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
                 if (buzz_house && have_error)
                 {
-                    // Test if error is disallowed by BuzzHouse
+                    // Retrieve the right error code for BuzzHouse
                     const auto * exception = server_exception ? server_exception.get() : (client_exception ? client_exception.get() : nullptr);
                     error_code = exception ? exception->code() : 0;
                 }
@@ -2793,8 +2790,8 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     processError(full_query);
 
                 // Stop processing queries if needed.
-                if (have_error && !ignore_error)
-                    return is_interactive;
+                if (have_error && (buzz_house || !ignore_error))
+                    return buzz_house || is_interactive;
 
                 if (!need_retry)
                     this_query_begin = this_query_end;

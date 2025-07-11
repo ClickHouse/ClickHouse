@@ -792,7 +792,8 @@ void QueryOracle::resetOracleValues()
 {
     peer_query = PeerQuery::AllPeers;
     measure_performance = false;
-    first_success = other_steps_sucess = true;
+    first_errcode = 0;
+    other_steps_sucess = true;
     can_test_oracle_result = fc.compare_success_results;
     res1 = PerformanceResult();
     res2 = PerformanceResult();
@@ -803,9 +804,9 @@ void QueryOracle::setIntermediateStepSuccess(const bool success)
     other_steps_sucess &= success;
 }
 
-void QueryOracle::processFirstOracleQueryResult(const bool success, ExternalIntegrations & ei)
+void QueryOracle::processFirstOracleQueryResult(const int errcode, ExternalIntegrations & ei)
 {
-    if (success)
+    if (!errcode)
     {
         if (measure_performance)
         {
@@ -816,18 +817,21 @@ void QueryOracle::processFirstOracleQueryResult(const bool success, ExternalInte
             md5_hash1.hashFile(qcfile.generic_string(), first_digest);
         }
     }
-    first_success = success;
+    first_errcode = errcode;
 }
 
-void QueryOracle::processSecondOracleQueryResult(const bool success, ExternalIntegrations & ei, const String & oracle_name)
+void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalIntegrations & ei, const String & oracle_name)
 {
     if (other_steps_sucess && can_test_oracle_result)
     {
-        if (first_success != success)
+        if (first_errcode != errcode
+            && ((first_errcode && errcode)
+                || fc.oracle_ignore_error_codes.find(static_cast<uint32_t>(first_errcode ? first_errcode : errcode))
+                    == fc.oracle_ignore_error_codes.end()))
         {
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "{}: failed with different success results", oracle_name);
         }
-        if (first_success && success)
+        if (!first_errcode && !errcode)
         {
             if (measure_performance)
             {
