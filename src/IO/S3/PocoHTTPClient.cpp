@@ -331,7 +331,7 @@ void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3La
         }
     }(type);
 
-    const String http_method_label = [](Aws::Http::HttpMethod m)
+    const String http_method_label = [](const Aws::Http::HttpMethod m)
     {
         switch (m)
         {
