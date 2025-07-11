@@ -266,7 +266,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         }
         auto engine = std::make_shared<ASTFunction>();
         engine->name = "Atomic";
-        engine->no_empty_args = true;
         create.storage->set(create.storage->engine, engine);
     }
     else if ((create.columns_list
@@ -1171,7 +1170,6 @@ namespace
 
         auto engine_ast = std::make_shared<ASTFunction>();
         engine_ast->name = SettingFieldDefaultTableEngine(engine).toString();
-        engine_ast->no_empty_args = true;
         storage.set(storage.engine, engine_ast);
     }
 
@@ -1184,7 +1182,6 @@ namespace
 
         auto engine_ast = std::make_shared<ASTFunction>();
         engine_ast->name = "Null";
-        engine_ast->no_empty_args = true;
         storage.set(storage.engine, engine_ast);
     }
 
