@@ -877,9 +877,9 @@ def test_shutdown_logs(started_cluster):
 
 def test_shutdown_order(started_cluster):
     node = started_cluster.instances["instance"]
-    table_name = f"test_shutdown_order_{uuid.uuid4()}"
+    table_name = f"test_shutdown_order_{generate_random_string()}"
     dst_table_name = f"a_{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}}"
     files_path = f"{table_name}_data"
 
     format = "column1 Int32, column2 String"
