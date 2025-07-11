@@ -149,7 +149,7 @@ void InterpreterDescribeQuery::fillColumnsFromSubquery(const ASTTableExpression 
     }
 
     for (auto && column : *sample_block)
-        columns.emplace_back(std::move(column.name), std::move(column.type));
+        columns.emplace_back(column.name, column.type);
 }
 
 void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpression & table_expression)

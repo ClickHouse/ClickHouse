@@ -1464,8 +1464,8 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
     PlannerContextPtr & planner_context,
     const SelectQueryInfo & select_query_info)
 {
-    auto & left_header = left_plan.getCurrentHeader();
-    auto & right_header = right_plan.getCurrentHeader();
+    const auto & left_header = left_plan.getCurrentHeader();
+    const auto & right_header = right_plan.getCurrentHeader();
 
     auto columns_from_left_table = left_header->getNamesAndTypesList();
     auto columns_from_right_table = right_header->getNamesAndTypesList();

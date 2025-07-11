@@ -228,7 +228,7 @@ void QueryPipelineBuilder::addDefaultTotals()
     if (pipe.getTotalsPort())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Totals having transform was already added to pipeline");
 
-    auto & current_header = getSharedHeader();
+    const auto & current_header = getSharedHeader();
     Columns columns;
     columns.reserve(current_header->columns());
 

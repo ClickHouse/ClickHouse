@@ -2141,7 +2141,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 auto actual_header = Aggregator::Params::getHeader(
                     header_before_aggregation, /*only_merge*/ false, keys, aggregates, /*final*/ true);
                 actual_header
-                    = AggregatingStep::appendGroupingColumn(std::move(actual_header), keys, has_grouping, settings[Setting::group_by_use_nulls]);
+                    = AggregatingStep::appendGroupingColumn(actual_header, keys, has_grouping, settings[Setting::group_by_use_nulls]);
 
                 Block expected_header;
                 for (const auto & expected : query_analyzer.aggregated_columns)

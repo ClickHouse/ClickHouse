@@ -164,7 +164,7 @@ void SelectStreamFactory::createForShardImpl(
     UInt32 shard_count,
     bool parallel_replicas_enabled,
     AdditionalShardFilterGenerator shard_filter_generator,
-    bool has_missing_objects)
+    bool has_missing_objects) const
 {
     auto emplace_local_stream = [&]()
     {

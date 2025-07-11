@@ -1486,7 +1486,7 @@ void StorageWindowView::writeIntoWindowView(
         LOG_TRACE(window_view.log, "New max watermark: {}", window_view.max_watermark);
     }
 
-    Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(block))));
+    Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(block)));
 
     UInt32 lateness_bound = 0;
     UInt32 t_max_watermark = 0;

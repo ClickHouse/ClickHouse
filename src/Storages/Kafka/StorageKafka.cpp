@@ -260,7 +260,7 @@ SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & 
 
     const Settings & settings = getContext()->getSettingsRef();
     size_t poll_timeout = settings[Setting::stream_poll_timeout_ms].totalMilliseconds();
-    const auto & header = metadata_snapshot->getSampleBlockNonMaterialized();
+    auto header = metadata_snapshot->getSampleBlockNonMaterialized();
 
     auto producer = std::make_unique<KafkaProducer>(
         std::make_shared<cppkafka::Producer>(conf), topics[0], std::chrono::milliseconds(poll_timeout), shutdown_called, header);

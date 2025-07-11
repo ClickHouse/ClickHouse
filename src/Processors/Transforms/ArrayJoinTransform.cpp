@@ -22,7 +22,7 @@ Block transformHeaderImpl(const Block & header, const Container & array_join_col
 
 Block ArrayJoinTransform::transformHeader(const Block & header, const Names & array_join_columns)
 {
-    return transformHeaderImpl(std::move(header), array_join_columns);
+    return transformHeaderImpl(header, array_join_columns);
 }
 
 ArrayJoinTransform::ArrayJoinTransform(

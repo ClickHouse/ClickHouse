@@ -155,7 +155,7 @@ namespace DB
 
         if (pipe.empty())
         {
-            assert(output_header != std::nullopt);
+            chassert(output_header != nullptr);
             pipe = Pipe(std::make_shared<NullSource>(output_header));
         }
 

@@ -565,7 +565,7 @@ public:
 
         for (size_t i = 0; i < sample_block->columns(); ++i)
         {
-            auto & [_, type, name] = sample_block->getByPosition(i);
+            const auto & [_, type, name] = sample_block->getByPosition(i);
             if (join->right_table_keys.has(name))
             {
                 key_pos = i;
