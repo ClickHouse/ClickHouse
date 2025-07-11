@@ -928,6 +928,16 @@ bool LockedKey::removeAllFileSegments(bool if_releasable)
     return removed_all;
 }
 
+KeyMetadata::iterator LockedKey::removeFileSegmentIfExists(size_t offset, bool can_be_broken, bool invalidate_queue_entry)
+{
+    auto it = key_metadata->find(offset);
+    if (it == key_metadata->end())
+        return {};
+
+    auto file_segment = it->second->file_segment;
+    return removeFileSegmentImpl(it, file_segment->lock(), can_be_broken, invalidate_queue_entry);
+}
+
 KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, bool can_be_broken, bool invalidate_queue_entry)
 {
     auto it = key_metadata->find(offset);
