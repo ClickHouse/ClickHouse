@@ -2696,7 +2696,7 @@ bool TCPHandler::connectionLimitReached()
 {
     ++query_count;
 
-    const auto & server_settings = server.context()->getServerSettings();
+    const auto & server_settings = session->globalContext()->getServerSettings();
     UInt64 max_queries = server_settings[ServerSetting::tcp_close_connection_after_queries_num];
     UInt64 max_seconds = server_settings[ServerSetting::tcp_close_connection_after_queries_seconds];
 
