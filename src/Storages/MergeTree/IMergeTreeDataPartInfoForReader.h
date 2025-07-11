@@ -93,9 +93,15 @@ public:
 
     virtual void reportBroken() = 0;
 
-    virtual void setReadHints(const RangesInDataPartReadHints & read_hints_, const NamesAndTypesList & read_columns) = 0;
+    virtual void setReadHints(const RangesInDataPartReadHints & /*read_hints_*/, const NamesAndTypesList & /*read_columns*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setReadHints not implemented for this reader");
+    } 
 
-    virtual const RangesInDataPartReadHints & getReadHints() const = 0;
+    virtual const RangesInDataPartReadHints & getReadHints() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReadHints not implemented for this reader"); 
+    }
 };
 
 using MergeTreeDataPartInfoForReaderPtr = std::shared_ptr<IMergeTreeDataPartInfoForReader>;
