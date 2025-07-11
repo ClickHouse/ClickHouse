@@ -104,9 +104,6 @@ bool MutatePlainMergeTreeTask::executeStep()
                     return true;
 
                 new_part = mutate_task->getFuture().get();
-                auto & data_part_storage = new_part->getDataPartStorage();
-                if (data_part_storage.hasActiveTransaction())
-                    data_part_storage.precommitTransaction();
 
                 MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
                 /// FIXME Transactions: it's too optimistic, better to lock parts before starting transaction

@@ -4703,6 +4703,10 @@ void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, DataParts
 
 void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, bool need_rename, bool rename_in_transaction)
 {
+    part->getDataPartStorage().precommitTransaction();
+
+    checkChecksumsFileIsConsistentWithFileSystem(part);
+
     part->is_temp = false;
     part->setState(DataPartState::PreActive);
 
