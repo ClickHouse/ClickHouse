@@ -396,7 +396,8 @@ SinkToStoragePtr StorageObjectStorage::write(
         }
     }
 
-    if (configuration->isDataLakeConfiguration())
+    /// Delta lake does not support writes yet.
+    if (configuration->isDataLakeConfiguration() && configuration->supportsWrites())
     {
 #if USE_AVRO
         return std::make_shared<IcebergStorageSink>(
