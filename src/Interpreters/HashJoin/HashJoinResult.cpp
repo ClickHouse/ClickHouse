@@ -1,10 +1,6 @@
-#include <algorithm>
 #include <Interpreters/HashJoin/HashJoinResult.h>
 #include <Interpreters/castColumn.h>
 #include <Common/memcpySmall.h>
-#include "Columns/IColumn.h"
-#include "Interpreters/HashJoin/AddedColumns.h"
-#include "Interpreters/TableJoin.h"
 
 namespace DB
 {
