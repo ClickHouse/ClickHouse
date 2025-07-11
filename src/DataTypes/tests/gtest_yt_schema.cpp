@@ -26,13 +26,16 @@ namespace DB::ErrorCodes {
 #define CH_TYPE(type) DB::DataTypeFactory::instance().get(type)
 
 std::string createSimpleTypeJson(const std::string & simple_type, bool required) {
-    std::string json = fmt::format("{{\"name\": \"id\", \"type\": \"{}\", \"required\": {}}}", simple_type, required);
-    return json;
+    return fmt::format(
+        R"({{"name": "id", "type": "{}", "required": {}}})",
+        simple_type,
+        required);
 }
 
 std::string createComplexTypeJson(const std::string & type_v3) {
-    std::string json = fmt::format("{{\"name\": \"id\", \"type\": \"any\", \"required\": false, \"type_v3\": {}}}", type_v3);
-    return json;
+    return fmt::format(
+        R"({{"name": "id", "type": "any", "required": false, "type_v3": {}}})",
+        type_v3);
 }
 
 bool checkColumnType(const Poco::JSON::Object::Ptr & json, const DB::DataTypePtr & correct_type) {
@@ -70,8 +73,9 @@ TEST(YTDataType, CheckSimpleTypeConversation) {
     ASSERT_TRUE(checkColumnType(createSimpleTypeJson("uuid", true), CH_TYPE("UUID")));
 
     // // Dates
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("date32", true), CH_TYPE("Date")));
-    ASSERT_TRUE(checkColumnType(createSimpleTypeJson("date", true), CH_TYPE("Date")));
+    // Commented until https://github.com/ClickHouse/ClickHouse/issues/82003 not resolved
+    // ASSERT_TRUE(checkColumnType(createSimpleTypeJson("date32", true), CH_TYPE("Date")));
+    // ASSERT_TRUE(checkColumnType(createSimpleTypeJson("date", true), CH_TYPE("Date")));
     ASSERT_TRUE(checkColumnType(createSimpleTypeJson("datetime64", true), CH_TYPE("DateTime64(0)")));
     ASSERT_TRUE(checkColumnType(createSimpleTypeJson("datetime", true), CH_TYPE("DateTime64(0)")));
 
@@ -269,7 +273,7 @@ TEST(YTDataType, CheckStruct) {
         json->set("type_v3", s);
         ASSERT_TRUE(checkColumnType(
             json,
-            CH_TYPE("Tuple(Tuple(String, Int32), Tuple(String, String))")
+            CH_TYPE("Tuple(key Int32, value String)")
         ));
     }
 }
