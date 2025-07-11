@@ -3,7 +3,7 @@
 #include <Compression/ICompressionCodec.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
-#include <Analyzer/Utils.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
