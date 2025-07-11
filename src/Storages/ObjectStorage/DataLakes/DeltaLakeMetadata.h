@@ -32,7 +32,7 @@ class DeltaLakeMetadata final : public IDataLakeMetadata
 public:
     static constexpr auto name = "DeltaLake";
 
-    DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationObserverPtr configuration_, ContextPtr context_);
+    DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_);
 
     NamesAndTypesList getTableSchema() const override { return schema; }
 
@@ -48,7 +48,7 @@ public:
 
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationObserverPtr configuration,
+        StorageObjectStorageConfigurationWeakPtr configuration,
         ContextPtr local_context);
 
     static DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);

@@ -11,7 +11,7 @@ namespace DB
 
 DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationObserverPtr configuration_)
+    StorageObjectStorageConfigurationWeakPtr configuration_)
     : log(getLogger("DeltaLakeMetadata"))
     , table_snapshot(
         std::make_shared<DeltaLake::TableSnapshot>(

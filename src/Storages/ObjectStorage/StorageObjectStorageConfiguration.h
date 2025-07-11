@@ -158,7 +158,7 @@ protected:
 };
 
 using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;
-using StorageObjectStorageConfigurationObserverPtr = std::weak_ptr<StorageObjectStorageConfiguration>;
+using StorageObjectStorageConfigurationWeakPtr = std::weak_ptr<StorageObjectStorageConfiguration>;
 
 
 }

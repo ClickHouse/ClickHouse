@@ -26,7 +26,7 @@ public:
 
     DeltaLakeMetadataDeltaKernel(
         ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationObserverPtr configuration_);
+        StorageObjectStorageConfigurationWeakPtr configuration_);
 
     bool supportsUpdate() const override { return true; }
 
@@ -46,7 +46,7 @@ public:
 
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationObserverPtr configuration,
+        StorageObjectStorageConfigurationWeakPtr configuration,
         ContextPtr /* context */)
     {
         auto configuration_ptr = configuration.lock();

@@ -36,7 +36,7 @@ public:
 
     IcebergMetadata(
         ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationObserverPtr configuration_,
+        StorageObjectStorageConfigurationWeakPtr configuration_,
         const ContextPtr & context_,
         Int32 metadata_version_,
         Int32 format_version_,
@@ -54,7 +54,7 @@ public:
 
     static DataLakeMetadataPtr create(
         const ObjectStoragePtr & object_storage,
-        const StorageObjectStorageConfigurationObserverPtr & configuration,
+        const StorageObjectStorageConfigurationWeakPtr & configuration,
         const ContextPtr & local_context);
 
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, const String & data_path) const override;
@@ -82,7 +82,7 @@ protected:
 
 private:
     const ObjectStoragePtr object_storage;
-    const StorageObjectStorageConfigurationObserverPtr configuration;
+    const StorageObjectStorageConfigurationWeakPtr configuration;
     mutable IcebergSchemaProcessor schema_processor;
     LoggerPtr log;
 
