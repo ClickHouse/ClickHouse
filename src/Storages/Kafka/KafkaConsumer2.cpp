@@ -43,7 +43,8 @@ bool KafkaConsumer2::TopicPartition::operator<(const TopicPartition & other) con
 
 KafkaConsumer2::KafkaConsumer2(
     LoggerPtr log_, size_t max_batch_size, size_t poll_timeout_, const std::atomic<bool> & stopped_, const Names & topics_)
-    : log(log_)
+    : exceptions_buffer(EXCEPTIONS_DEPTH)
+    , log(log_)
     , batch_size(max_batch_size)
     , poll_timeout(poll_timeout_)
     , stopped(stopped_)
