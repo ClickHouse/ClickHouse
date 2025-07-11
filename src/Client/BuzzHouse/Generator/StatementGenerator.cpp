@@ -928,7 +928,6 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
         SelectParen * sparen = ins->mutable_select();
         Select * sel = sparen->mutable_select();
 
-        sparen->set_paren(rg.nextSmallNumber() < 4);
         if (generate_random && nopt < (hardcoded_insert + random_values + generate_random + 1))
         {
             /// Use generateRandom
@@ -965,6 +964,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
         }
         else if (insert_select && nopt < (hardcoded_insert + random_values + generate_random + insert_select + 1))
         {
+            sparen->set_paren(rg.nextSmallNumber() < 4);
             this->levels[this->current_level] = QueryLevel(this->current_level);
             if (rg.nextMediumNumber() < 13)
             {
