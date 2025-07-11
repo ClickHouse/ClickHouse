@@ -22,7 +22,7 @@ JoinOnKeyColumns::JoinOnKeyColumns(
 {
 }
 
-void LazyOutput::buildOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end)
+void LazyOutput::buildOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const
 {
     if (!output_by_row_list)
         buildOutputFromBlocks<false>(size_to_reserve, columns, row_refs_begin, row_refs_end);
@@ -35,7 +35,7 @@ void LazyOutput::buildOutput(size_t size_to_reserve, MutableColumns & columns, c
     }
 }
 
-void LazyOutput::buildOutputFromRowRefLists(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end)
+void LazyOutput::buildOutputFromRowRefLists(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const
 {
     for (size_t i = 0; i < columns.size(); ++i)
     {
@@ -45,7 +45,7 @@ void LazyOutput::buildOutputFromRowRefLists(size_t size_to_reserve, MutableColum
     }
 }
 
-void LazyOutput::buildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end)
+void LazyOutput::buildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const
 {
     for (size_t i = 0; i < columns.size(); ++i)
     {
@@ -69,7 +69,7 @@ void LazyOutput::buildJoinGetOutput(size_t size_to_reserve, MutableColumns & col
 }
 
 template<bool from_row_list>
-void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end)
+void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const
 {
     if (columns.empty())
         return;

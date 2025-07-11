@@ -450,10 +450,12 @@ public:
 
     std::shared_ptr<JoinStuff::JoinUsedFlags> getUsedFlags() const { return used_flags; }
 
+    static bool isUsedByAnotherAlgorithm(const TableJoin & table_join);
+    static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
+
 private:
     friend class NotJoinedHash;
     friend class JoinSource;
-    friend class HashJoinResult;
     friend class CrossJoinResult;
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>

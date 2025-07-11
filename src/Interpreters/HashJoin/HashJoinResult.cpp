@@ -1,6 +1,10 @@
+#include <algorithm>
 #include <Interpreters/HashJoin/HashJoinResult.h>
 #include <Interpreters/castColumn.h>
 #include <Common/memcpySmall.h>
+#include "Columns/IColumn.h"
+#include "Interpreters/HashJoin/AddedColumns.h"
+#include "Interpreters/TableJoin.h"
 
 namespace DB
 {
@@ -74,20 +78,17 @@ static ColumnWithTypeAndName copyLeftKeyColumnToRight(
 
 static void appendRightColumns(
     Block & block,
-    //const HashJoin * join,
-    TableJoin & table_join,
-    bool can_remove_columns_from_left_block,
-    const Block & required_right_keys,
-    const std::vector<String> & required_right_keys_sources,
-    HashJoinResult::Data data,
+    MutableColumns columns,
+    const IColumn::Offsets & offsets,
+    const IColumn::Filter & filter,
     const NamesAndTypes & type_name,
-    bool need_filter,
-    bool is_asof_join)
+    const HashJoinResult::Properties & properties)
 {
     size_t existing_columns = block.columns();
+    const auto & table_join = properties.table_join;
 
     std::set<size_t> block_columns_to_erase;
-    if (can_remove_columns_from_left_block)
+    if (HashJoin::canRemoveColumnsFromLeftBlock(table_join))
     {
         std::unordered_set<String> left_output_columns;
         for (const auto & out_column : table_join.getOutputColumns(JoinTableSide::Left))
@@ -99,39 +100,38 @@ static void appendRightColumns(
         }
     }
 
-    for (size_t i = 0; i < data.columns.size(); ++i)
+    for (size_t i = 0; i < columns.size(); ++i)
     {
         ColumnWithTypeAndName col;
-        col.column = std::move(data.columns[i]);
+        col.column = std::move(columns[i]);
         col.name = table_join.renamedRightColumnName(type_name[i].name);
         col.type = type_name[i].type;
         block.insert(std::move(col));
     }
 
+    bool is_asof_join = table_join.strictness() == JoinStrictness::Asof;
     std::vector<size_t> right_keys_to_replicate;
 
     /// Add join key columns from right block if needed.
-    for (size_t i = 0; i < required_right_keys.columns(); ++i)
+    for (size_t i = 0; i < properties.required_right_keys.columns(); ++i)
     {
-        const auto & right_key = required_right_keys.getByPosition(i);
+        const auto & right_key = properties.required_right_keys.getByPosition(i);
         /// asof column is already in block.
         if (is_asof_join && right_key.name == table_join.getOnlyClause().key_names_right.back())
             continue;
 
-        const auto & left_column = block.getByName(required_right_keys_sources[i]);
+        const auto & left_column = block.getByName(properties.required_right_keys_sources[i]);
         const auto & right_col_name = table_join.renamedRightColumnName(right_key.name);
-        const auto * filter_ptr = need_filter ? nullptr : &data.filter;
+        const auto * filter_ptr = properties.need_filter ? nullptr : &filter;
         auto right_col = copyLeftKeyColumnToRight(right_key.type, right_col_name, left_column, filter_ptr);
         block.insert(std::move(right_col));
 
-        if (!data.offsets_to_replicate.empty())
+        if (!offsets.empty())
             right_keys_to_replicate.push_back(block.getPositionByName(right_col_name));
     }
 
-    if (!data.offsets_to_replicate.empty())
+    if (!offsets.empty())
     {
-        IColumn::Offsets & offsets = data.offsets_to_replicate;
-
         chassert(block);
         chassert(offsets.size() == block.rows());
 
@@ -147,41 +147,87 @@ static void appendRightColumns(
     block.erase(block_columns_to_erase);
 }
 
+static Block generateBlock(
+    ScatteredBlock scattered_block,
+    const LazyOutput & lazy_output,
+    size_t rows_to_reserve,
+    size_t row_ref_begin,
+    size_t row_ref_end,
+    MutableColumns columns,
+    const HashJoinResult::Properties & properties,
+    const IColumn::Offsets & offsets,
+    const IColumn::Filter & filter)
+{
+    const auto * off_data = lazy_output.row_refs.data();
+    if (properties.is_join_get)
+        lazy_output.buildJoinGetOutput(
+            rows_to_reserve, columns,
+            off_data + row_ref_begin, off_data + row_ref_end);
+    else
+        lazy_output.buildOutput(
+            rows_to_reserve, columns,
+            off_data + row_ref_begin, off_data + row_ref_end);
+
+    /// Note: need_filter flag cannot be replaced with !added_columns.need_filter.empty()
+    /// This is because e.g. for ALL LEFT JOIN filter is used to replace non-matched right keys to defaults.
+    /// TODO: Technically, filter can be restored from the offsets.
+    //        We can check if this faster vs building filter in main join loop.
+    if (properties.need_filter)
+        scattered_block.filter(filter);
+
+    scattered_block.filterBySelector();
+
+    auto block = std::move(scattered_block).getSourceBlock();
+    appendRightColumns(
+        block,
+        std::move(columns),
+        offsets,
+        filter,
+        lazy_output.type_name,
+        properties);
+
+    return block;
+}
+
+static size_t numLeftRowsForNextBlock(
+    size_t next_row,
+    const IColumn::Offsets & offsets,
+    size_t max_joined_block_rows)
+{
+    if (offsets.empty() || max_joined_block_rows == 0)
+        return 0;
+
+    const size_t prev_offset = next_row ? offsets[next_row - 1] : 0;
+    const size_t next_allowed_offset = prev_offset + max_joined_block_rows;
+
+    size_t res = 0;
+    /// Note: this can be replaced to bin search, but
+    /// with max_joined_block_rows it will be more complex.
+    for (size_t i = next_row, size = offsets.size(); i < size; ++i)
+    {
+        if (offsets[i] > next_allowed_offset)
+            break;
+
+        ++res;
+    }
+
+    return std::max<size_t>(res, 1);
+}
+
 HashJoinResult::HashJoinResult(
     LazyOutput && lazy_output_,
     MutableColumns columns_,
-    IColumn::Offsets offsets_to_replicate_,
+    IColumn::Offsets offsets_,
     IColumn::Filter filter_,
-    bool need_filter_,
-    bool is_join_get_,
-    bool is_asof_join_,
     ScatteredBlock && block_,
-    const HashJoin * join_)
+    Properties properties_)
     : lazy_output(std::move(lazy_output_))
+    , properties(std::move(properties_))
     , scattered_block(std::move(block_))
-    , data({std::move(columns_), std::move(offsets_to_replicate_), std::move(filter_)})
-    , join(join_)
-    , need_filter(need_filter_)
-    , is_join_get(is_join_get_)
-    , is_asof_join(is_asof_join_)
+    , columns(std::move(columns_))
+    , offsets(std::move(offsets_))
+    , filter(std::move(filter_))
 {
-    num_rows_to_join = lazy_output.row_count;
-    if (!data.offsets_to_replicate.empty())
-    {
-        auto rows_count = data.offsets_to_replicate.back();
-        if (lazy_output.row_count)
-        {
-            if (rows_count != lazy_output.row_count)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Init Row count mismatch 1 {} {}", rows_count, lazy_output.row_count);
-        }
-        if (!lazy_output.row_refs.empty())
-        {
-            if (!lazy_output.output_by_row_list && rows_count != lazy_output.row_refs.size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Init Row count mismatch 2 {} {}", rows_count, lazy_output.row_refs.size());
-            // if (lazy_output.output_by_row_list && lazy_output.row_refs.size() != lazy_output.offsets_to_replicate.size())
-            //     throw Exception(ErrorCodes::LOGICAL_ERROR, "Init Row count mismatch 3 {} {}", lazy_output.row_refs.size(), lazy_output.offsets_to_replicate.size());
-        }
-    }
 }
 
 IJoinResult::JoinResultBlock HashJoinResult::next()
@@ -189,135 +235,116 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     if (!scattered_block)
         return {};
 
-    auto current_block = std::move(scattered_block);
-    auto current_data = std::move(data);
-    size_t rows_to_reserve = num_rows_to_join;
-    bool is_last = true;
-
-    size_t row_ref_begin = next_row_ref;
-    size_t row_ref_end = lazy_output.row_refs.size();
-
-    size_t rows_count = 0;
-    if (!current_data.offsets_to_replicate.empty())
-        rows_count = current_data.offsets_to_replicate.back();
-
-    if (join->max_joined_block_rows && rows_count > join->max_joined_block_rows)
+    auto num_lhs_rows = numLeftRowsForNextBlock(next_row, offsets, properties.max_joined_block_rows);
+    if (num_lhs_rows == 0 || (num_lhs_rows == 0 && num_lhs_rows >= lazy_output.row_count))
     {
-        size_t prev_offset = 0;
-        if (next_row)
-            prev_offset = current_data.offsets_to_replicate[next_row - 1];
+        auto block = generateBlock(
+            std::move(*scattered_block),
+            lazy_output,
+            lazy_output.row_count,
+            0,
+            lazy_output.row_refs.size(),
+            std::move(columns),
+            properties,
+            offsets,
+            filter);
 
-        size_t num_lhs_rows = 0;
-
-        size_t prev_row_offset = prev_offset;
-        size_t num_missing = 0;
-        for (size_t i = next_row; i < current_data.offsets_to_replicate.size(); ++i)
-        {
-            auto offset = current_data.offsets_to_replicate[i];
-            if (num_lhs_rows && offset > prev_offset + join->max_joined_block_rows)
-                break;
-            ++num_lhs_rows;
-            if (offset == prev_row_offset)
-                ++num_missing;
-            prev_row_offset = offset;
-        }
-
-        is_last = num_lhs_rows + next_row >= current_data.offsets_to_replicate.size();
-        size_t num_rhs_rows = prev_row_offset - prev_offset;
-        size_t num_refs_to_cut = num_rhs_rows;
-
-        if (lazy_output.output_by_row_list)
-        {
-            num_refs_to_cut = num_lhs_rows;
-            bool add_missing = isLeftOrFull(join->table_join->kind()) && join->table_join->strictness() != JoinStrictness::Semi;
-            if (!add_missing)
-                num_refs_to_cut -= num_missing;
-        }
-
-        // if (lazy_output.output_by_row_list && !lazy_output.row_refs.empty())
-        // {
-        //     num_refs_to_cut = 0;
-        //     size_t num_joined = 0;
-        //     for (size_t i = next_row_ref; i < lazy_output.row_refs.size(); ++i)
-        //     {
-        //         if (num_joined >= num_rhs_rows)
-        //             break;
-        //         ++num_refs_to_cut;
-        //         if (const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(lazy_output.row_refs[i]))
-        //             num_joined += row_ref_list->rows;
-        //         else
-        //             ++num_joined;
-        //     }
-
-        //     if (num_joined != num_rhs_rows)
-        //         throw Exception(ErrorCodes::LOGICAL_ERROR, "Row count mismatch 7 {} {}", num_joined, num_rhs_rows);
-        // }
-
-        scattered_block = current_block->cut(num_lhs_rows);
-        std::swap(data, current_data);
-
-        current_data.offsets_to_replicate.resize(num_lhs_rows);
-        for (size_t row = 0; row < num_lhs_rows; ++row)
-            current_data.offsets_to_replicate[row] = data.offsets_to_replicate[row + next_row] - prev_offset;
-
-        if (!data.filter.empty())
-        {
-            current_data.filter.resize(num_lhs_rows);
-            memcpySmallAllowReadWriteOverflow15(current_data.filter.data(), data.filter.data() + next_row, num_lhs_rows);
-        }
-
-        next_row += num_lhs_rows;
-        next_row_ref += num_refs_to_cut;
-        row_ref_end = next_row_ref;
-
-        if (!lazy_output.row_refs.empty() && row_ref_end > lazy_output.row_refs.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "The number of rows {} is less than expected rest number of rows {}",
-                lazy_output.row_refs.size(), row_ref_end);
-
-        if (!lazy_output.row_refs.empty())
-        {
-            if (rows_to_reserve < num_rhs_rows)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "The number or joined rows {} is less than expected rest number of rows {}",
-                    rows_to_reserve, num_rhs_rows);
-            num_rows_to_join -= num_rhs_rows;
-            rows_to_reserve = num_rhs_rows;
-        }
-
-        current_data.columns.reserve(data.columns.size());
-        for (auto & column : data.columns)
-            current_data.columns.push_back(column->cloneEmpty());
+        scattered_block.reset();
+        return {std::move(block), true};
     }
 
-    // LOG_TRACE(getLogger("HashJoinResult"), "{} {} {} {}", row_ref_begin, row_ref_end, lazy_output.row_count, lazy_output.row_refs.size());
+    const size_t prev_offset = next_row ? offsets[next_row - 1] : 0;
+    size_t num_rhs_rows = offsets[next_row + num_lhs_rows - 1] - prev_offset;
 
-    const auto * off_data = lazy_output.row_refs.data();
-    if (is_join_get)
-        lazy_output.buildJoinGetOutput(
-            rows_to_reserve, current_data.columns,
-            off_data + row_ref_begin, off_data + row_ref_end);
+    auto current_block = std::move(*scattered_block);
+    scattered_block = current_block.cut(num_lhs_rows);
+
+    bool add_missing = isLeftOrFull(properties.table_join.kind()) && properties.table_join.strictness() != JoinStrictness::Semi;
+    size_t num_skipped_not_matched_rows_in_row_ref_list = 0;
+
+    IColumn::Offsets partial_offsets;
+    partial_offsets.reserve(num_lhs_rows);
+
+    if (lazy_output.output_by_row_list && !add_missing && !lazy_output.row_refs.empty())
+    {
+        /// In case of ALL INNER/RIGHT JOIN, non-matched rows are not added to row_refs.
+        /// In order to understand, how many row_refs we need to process,
+        /// we also need to count how many non-matched rows we have.
+        /// Row is non-matched when the offset did not change.
+        size_t last_offset = prev_offset;
+        for (size_t row = 0; row < num_lhs_rows; ++row)
+        {
+            auto offset = offsets[row + next_row];
+            partial_offsets.push_back( offset- prev_offset);
+            if (offset == last_offset)
+                ++num_skipped_not_matched_rows_in_row_ref_list;
+            last_offset = offset;
+        }
+    }
     else
-        lazy_output.buildOutput(
-            rows_to_reserve, current_data.columns,
-            off_data + row_ref_begin, off_data + row_ref_end);
+    {
+        for (size_t row = 0; row < num_lhs_rows; ++row)
+            partial_offsets.push_back(offsets[row + next_row] - prev_offset);
+    }
 
-    if (need_filter)
-        current_block->filter(current_data.filter);
+    size_t num_refs = 0;
+    if (!lazy_output.row_refs.empty())
+    {
+        num_refs = num_rhs_rows;
+        if (lazy_output.output_by_row_list)
+            num_refs = num_lhs_rows - num_skipped_not_matched_rows_in_row_ref_list;
+    }
 
-    current_block->filterBySelector();
+    IColumn::Filter partial_filter;
+    if (!filter.empty())
+    {
+        partial_filter.resize(num_lhs_rows);
+        memcpySmallAllowReadWriteOverflow15(partial_filter.data(), filter.data() + next_row, num_lhs_rows);
+    }
 
-    auto block = std::move(*current_block).getSourceBlock();
-    appendRightColumns(
-        block,
-        *join->table_join,
-        join->canRemoveColumnsFromLeftBlock(),
-        join->required_right_keys,
-        join->required_right_keys_sources,
-        std::move(current_data),
-        lazy_output.type_name,
-        need_filter,
-        is_asof_join);
+    const auto row_ref_start = next_row_ref;
+
+    next_row += num_lhs_rows;
+    next_row_ref += num_refs;
+    num_joined_rows += num_rhs_rows;
+
+    if (!lazy_output.row_refs.empty())
+    {
+        if (next_row_ref > lazy_output.row_refs.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "The number of joined row_refs {} is more than expected number of row_refs {}",
+                lazy_output.row_refs.size(), next_row_ref);
+
+        if (num_joined_rows > lazy_output.row_count)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "The number or joined rows {} is more than expected number of rows {}",
+                num_joined_rows, lazy_output.row_count);
+    }
+
+    bool is_last = next_row >= offsets.size();
+
+    MutableColumns next_columns;
+    if (!is_last)
+    {
+        next_columns.reserve(columns.size());
+        for (auto & column : columns)
+            next_columns.push_back(column->cloneEmpty());
+    }
+
+    auto block = generateBlock(
+        std::move(current_block),
+        lazy_output,
+        num_rhs_rows,
+        row_ref_start,
+        next_row_ref,
+        std::move(columns),
+        properties,
+        partial_offsets,
+        partial_filter);
+
+    columns = std::move(next_columns);
+    if (is_last)
+        scattered_block.reset();
 
     return {std::move(block), is_last};
 }

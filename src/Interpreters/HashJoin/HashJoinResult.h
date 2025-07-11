@@ -8,41 +8,42 @@ namespace DB
 class HashJoinResult : public IJoinResult
 {
 public:
+
+    struct Properties
+    {
+        const TableJoin & table_join;
+        const Block & required_right_keys;
+        const std::vector<String> & required_right_keys_sources;
+
+        size_t max_joined_block_rows;
+
+        bool need_filter;
+        bool is_join_get;
+    };
+
     HashJoinResult(
         LazyOutput && lazy_output_,
         MutableColumns columns_,
-        IColumn::Offsets offsets_to_replicate_,
+        IColumn::Offsets offsets_,
         IColumn::Filter filter_,
-        bool need_filter_,
-        bool is_join_get_,
-        bool is_asof_join_,
         ScatteredBlock && block_,
-        const HashJoin * join_);
+        Properties properties_);
 
     JoinResultBlock next() override;
 
-    struct Data
-    {
-        MutableColumns columns;
-        IColumn::Offsets offsets_to_replicate;
-        IColumn::Filter filter;
-    };
-
 private:
-    LazyOutput lazy_output;
+    const LazyOutput lazy_output;
+    const Properties properties;
 
     std::optional<ScatteredBlock> scattered_block;
 
-    Data data;
+    MutableColumns columns;
+    const IColumn::Offsets offsets;
+    const IColumn::Filter filter;
+
     size_t next_row = 0;
     size_t next_row_ref = 0;
-    size_t num_rows_to_join = 0;
-
-    const HashJoin * join;
-
-    bool need_filter;
-    bool is_join_get;
-    bool is_asof_join;
+    size_t num_joined_rows = 0;
 };
 
 }

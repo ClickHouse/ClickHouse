@@ -116,11 +116,15 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         std::move(added_columns.columns),
         std::move(added_columns.offsets_to_replicate),
         std::move(added_columns.filter),
-        join_features.need_filter,
-        is_join_get,
-        join_features.is_asof_join,
         std::move(block),
-        &join);
+        HashJoinResult::Properties{
+            *join.table_join,
+            join.required_right_keys,
+            join.required_right_keys_sources,
+            join.max_joined_block_rows,
+            join_features.need_filter,
+            is_join_get
+        });
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>

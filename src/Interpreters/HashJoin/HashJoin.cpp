@@ -497,14 +497,23 @@ size_t HashJoin::getTotalByteCount() const
     return res;
 }
 
+bool HashJoin::isUsedByAnotherAlgorithm(const TableJoin & table_join)
+{
+    return table_join.isEnabledAlgorithm(JoinAlgorithm::AUTO) || table_join.isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH);
+}
+bool HashJoin::canRemoveColumnsFromLeftBlock(const TableJoin & table_join)
+{
+    return table_join.enableAnalyzer() && !table_join.hasUsing() && !isUsedByAnotherAlgorithm(table_join) && table_join.strictness() != JoinStrictness::RightAny;
+}
+
 bool HashJoin::isUsedByAnotherAlgorithm() const
 {
-    return table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO) || table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH);
+    return isUsedByAnotherAlgorithm(*table_join);
 }
 
 bool HashJoin::canRemoveColumnsFromLeftBlock() const
 {
-    return table_join->enableAnalyzer() && !table_join->hasUsing() && !isUsedByAnotherAlgorithm() && strictness != JoinStrictness::RightAny;
+    return canRemoveColumnsFromLeftBlock(*table_join);
 }
 
 void HashJoin::initRightBlockStructure(Block & saved_block_sample)
