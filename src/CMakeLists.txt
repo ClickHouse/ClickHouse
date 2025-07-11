@@ -187,6 +187,10 @@ if (ENABLE_BUZZHOUSE)
     add_headers_and_sources(dbms Client/BuzzHouse/Utils)
 endif()
 
+if (ENABLE_CLIENT_AI)
+    add_headers_and_sources(dbms Client/AI)
+endif()
+
 if (OS_LINUX)
     add_headers_and_sources(dbms Storages/FileLog)
 else()
@@ -521,6 +525,10 @@ if (TARGET OpenSSL::Crypto)
     dbms_target_link_libraries (PRIVATE OpenSSL::Crypto)
     target_link_libraries (clickhouse_common_io PRIVATE OpenSSL::Crypto)
 endif ()
+
+if (ENABLE_CLIENT_AI AND TARGET ch_contrib::ai-sdk-cpp)
+    dbms_target_link_libraries (PUBLIC ch_contrib::ai-sdk-cpp)
+endif()
 
 if (TARGET ch_contrib::ldap)
     dbms_target_link_libraries (PRIVATE ch_contrib::ldap ch_contrib::lber)
