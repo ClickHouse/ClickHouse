@@ -26,6 +26,10 @@ struct WorkloadSettings
     Float64 max_bytes_per_second = 0; // Zero means unlimited
     Float64 max_burst_bytes = 0; // default is `default_burst_seconds * max_bytes_per_second`
 
+    /// CPU throttling constraints
+    Float64 max_cpus = 0; // Zero means unlimited
+    Float64 max_burst_cpu_seconds = 1.0;
+
     /// Query throttling constraints
     Float64 max_queries_per_second = 0; // Zero means unlimited
     Float64 max_burst_queries = 0; // default is `default_burst_seconds * max_queries_per_second`
