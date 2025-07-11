@@ -449,9 +449,9 @@ void TCPHandler::runImpl()
         /// We are waiting for a packet from the client. Thus, every `poll_interval` seconds check whether we need to shut down.
         {
             Stopwatch idle_time;
-            UInt64 timeout_ms = std::min(poll_interval, idle_connection_timeout) * 1000000;
+            UInt64 timeout_us = std::min(poll_interval, idle_connection_timeout) * 1000000;
 
-            while (tcp_server.isOpen() && !server.isCancelled() && !in->poll(timeout_ms))
+            while (tcp_server.isOpen() && !server.isCancelled() && !in->poll(timeout_us))
             {
                 const auto elapsed_seconds = idle_time.elapsedSeconds();
 
