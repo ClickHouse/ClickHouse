@@ -75,7 +75,6 @@ struct QueryGraph
 };
 
 
-
 DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph);
 
 }

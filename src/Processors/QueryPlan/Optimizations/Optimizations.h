@@ -148,8 +148,7 @@ std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(
 bool convertLogicalJoinToPhysical(
     QueryPlan::Node & node,
     QueryPlan::Nodes &,
-    const QueryPlanOptimizationSettings & optimization_settings,
-    std::optional<UInt64> rhs_size_estimation);
+    const QueryPlanOptimizationSettings & optimization_settings);
 
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 

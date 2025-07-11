@@ -5,9 +5,9 @@
 #include <limits>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
-#include "Core/Joins.h"
-#include "Interpreters/JoinExpressionActions.h"
-#include "base/defines.h"
+#include <Core/Joins.h>
+#include <Interpreters/JoinExpressionActions.h>
+#include <base/defines.h>
 #include <IO/Operators.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Interpreters/JoinOperator.h>
@@ -25,6 +25,10 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 DPJoinEntry::DPJoinEntry(size_t id, size_t rows)
     : relations()
@@ -89,7 +93,6 @@ private:
 
     LoggerPtr log = getLogger("JoinOrderOptimizer");
 };
-
 
 
 const ColumnStats * getColumnStats(BitSet rels, const String & column_name, const std::vector<RelationStats> & relation_stats)

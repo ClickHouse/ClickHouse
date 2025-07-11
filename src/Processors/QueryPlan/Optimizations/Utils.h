@@ -24,5 +24,7 @@ bool makeFilterNodeOnTopOf(
     QueryPlan::Node & node, ActionsDAG actions_dag, const String & filter_column_name, bool remove_filer, QueryPlan::Nodes & nodes,
     std::string_view step_description = {});
 
+bool isPassthroughActions(const ActionsDAG & actions_dag);
+
 
 }

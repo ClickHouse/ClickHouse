@@ -44,10 +44,10 @@ std::string_view toString(JoinConditionOperator op)
 }
 
 
-String toString(const BitSet & bs)
+String toString(const BitSet & bitset)
 {
     std::string str;
-    boost::to_string(bs.bitset, str);
+    boost::to_string(bitset.bitset, str);
     return str;
 }
 

@@ -11,7 +11,7 @@ namespace DB::ErrorCodes
 namespace DB
 {
 
-static bool isPassthroughActions(const ActionsDAG & actions_dag)
+bool isPassthroughActions(const ActionsDAG & actions_dag)
 {
     return actions_dag.getOutputs() == actions_dag.getInputs() && actions_dag.trivial();
 }

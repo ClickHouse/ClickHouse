@@ -145,7 +145,7 @@ REGISTER_FUNCTION(FirstTruthy)
         {"...", "Additional arguments to check"},
     };
 
-    doc.returned_value = FunctionDocumentation::ReturnedValue{"Result type is the supertype of all arguments", {"Supertype of arguments"}};
+    doc.returned_value = FunctionDocumentation::ReturnedValue{"Result type is the supertype of all arguments", {}};
     doc.examples = {
         {"integers", "SELECT firstTruthy(0, 1, 2)", "1"},
         {"strings", "SELECT firstTruthy('', 'hello', 'world')", "'hello'"},

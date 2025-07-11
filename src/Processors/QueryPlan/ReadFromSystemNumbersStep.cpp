@@ -30,7 +30,8 @@ namespace Setting
 
 namespace ErrorCodes
 {
-extern const int TOO_MANY_ROWS;
+    extern const int TOO_MANY_ROWS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace

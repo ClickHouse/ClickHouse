@@ -21,11 +21,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 /* Read dummy stats from query parameter
  * The parameter should be a JSON object with the following structure:
  * SET param__internal_join_table_stat_hints = '{

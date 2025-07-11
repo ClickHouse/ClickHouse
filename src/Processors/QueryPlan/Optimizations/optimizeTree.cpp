@@ -181,7 +181,7 @@ void optimizeTreeSecondPass(
         }
 
         {
-            convertLogicalJoinToPhysical(*frame.node, nodes, optimization_settings, {});
+            convertLogicalJoinToPhysical(*frame.node, nodes, optimization_settings);
         }
 
         stack.pop_back();

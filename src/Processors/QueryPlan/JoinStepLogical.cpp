@@ -3,7 +3,7 @@
 #include <Common/JSONBuilder.h>
 #include <Common/safe_cast.h>
 #include <Common/typeid_cast.h>
-#include "Core/ColumnWithTypeAndName.h"
+#include <Core/ColumnWithTypeAndName.h>
 
 #include <Core/Joins.h>
 #include <Core/Settings.h>

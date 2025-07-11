@@ -392,8 +392,7 @@ void addSortingForMergeJoin(
 bool convertLogicalJoinToPhysical(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
-    const QueryPlanOptimizationSettings & optimization_settings,
-    std::optional<UInt64> )
+    const QueryPlanOptimizationSettings & optimization_settings)
 {
     bool keep_logical = optimization_settings.keep_logical_steps;
     if (keep_logical)
@@ -452,7 +451,7 @@ struct QueryGraphBuilder
 
     bool hasCompatibleSettings(const JoinStepLogical & join_step) const
     {
-        return context && join_step.getJoinSettings() == context->join_settings && join_step.getSortingSettings() == context->sorting_settings;
+        return context && join_step.getJoinSettings() == context->join_settings; // && join_step.getSortingSettings() == context->sorting_settings;
     }
 };
 
@@ -509,8 +508,24 @@ static String dumpStatsForLogs(const RelationStats & stats)
             }), ", "));
 }
 
+
+static bool isTrivialStep(const QueryPlan::Node * node)
+{
+    if (node->children.size() != 1)
+        return false;
+
+    auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
+    if (!expression_step)
+        return false;
+
+    return isPassthroughActions(expression_step->getExpression());
+}
+
 size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, std::string_view label = {})
 {
+    if (isTrivialStep(node))
+        node = node->children[0];
+
     auto * child_join_step = typeid_cast<JoinStepLogical *>(node->step.get());
     if (child_join_step && graph.hasCompatibleSettings(*child_join_step))
     {
@@ -774,7 +789,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             auto current_dag = current_expression_actions.getActionsDAG();
             auto & dag_outputs = current_dag->getOutputs();
             if (required_output_nodes.size() != dag_outputs.size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Required output nodes size {} does not match current output nodes size in dag {}", required_output_nodes.size(),  current_dag->dumpDAG());
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Required output nodes size {} does not match current output nodes size in dag {}", required_output_nodes.size(), current_dag->dumpDAG());
 
             auto join_expression_map = std::ranges::to<ActionsDAG::NodeMapping>(std::views::zip(required_output_nodes, dag_outputs));
             for (auto & action : join_operator.expression)
