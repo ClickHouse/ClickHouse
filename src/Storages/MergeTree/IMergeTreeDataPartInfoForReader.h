@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 class IDataPartStorage;
 using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;
 
@@ -96,11 +101,11 @@ public:
     virtual void setReadHints(const RangesInDataPartReadHints & /*read_hints_*/, const NamesAndTypesList & /*read_columns*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setReadHints not implemented for this reader");
-    } 
+    }
 
     virtual const RangesInDataPartReadHints & getReadHints() const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReadHints not implemented for this reader"); 
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReadHints not implemented for this reader");
     }
 };
 
