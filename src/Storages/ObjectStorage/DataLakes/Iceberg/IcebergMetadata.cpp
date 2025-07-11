@@ -4,8 +4,11 @@
 
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
+#include <Columns/ColumnSet.h>
+#include <DataTypes/DataTypeSet.h>
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/ReadSchemaUtils.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -17,7 +20,11 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/CompressedReadBufferWrapper.h>
-
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/tuple.h>
+#include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Transforms/FilterTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
@@ -59,8 +66,12 @@ extern const int UNSUPPORTED_METHOD;
 
 namespace Setting
 {
+extern const SettingsUInt64 max_block_size;
+extern const SettingsUInt64 max_bytes_in_set;
+extern const SettingsUInt64 max_rows_in_set;
 extern const SettingsInt64 iceberg_timestamp_ms;
 extern const SettingsInt64 iceberg_snapshot_id;
+    extern const SettingsOverflowMode set_overflow_mode;
 extern const SettingsBool use_iceberg_metadata_files_cache;
 extern const SettingsBool use_iceberg_partition_pruning;
 }
@@ -520,12 +531,6 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
         schema_id_by_data_files_initialized = false;
         schema_id_by_data_file.clear();
 
-        {
-            std::lock_guard cache_lock(cache_mutex);
-            cached_unprunned_position_deletes_files_for_last_processed_snapshot = std::nullopt;
-            cached_unprunned_files_for_last_processed_snapshot = std::nullopt;
-        }
-
         return true;
     }
     return previous_snapshot_schema_id != relevant_snapshot_schema_id;
@@ -915,15 +920,6 @@ IcebergMetadata::getFilesImpl(const ActionsDAG * filter_dag, FileContentType fil
     }
     bool use_partition_pruning = filter_dag && local_context->getSettingsRef()[Setting::use_iceberg_partition_pruning];
 
-    auto & cached_files = (file_content_type == FileContentType::DATA)
-        ? cached_unprunned_files_for_last_processed_snapshot
-        : cached_unprunned_position_deletes_files_for_last_processed_snapshot;
-    {
-        std::lock_guard cache_lock(cache_mutex);
-        if (!use_partition_pruning && cached_files.has_value())
-            return cached_files.value();
-    }
-
     std::vector<Iceberg::ManifestFileEntry> files;
     {
         SharedLockGuard lock(mutex);
@@ -949,13 +945,6 @@ IcebergMetadata::getFilesImpl(const ActionsDAG * filter_dag, FileContentType fil
     }
     std::sort(files.begin(), files.end());
 
-    if (!use_partition_pruning)
-    {
-        std::lock_guard cache_lock(cache_mutex);
-        cached_files = files;
-        return cached_files.value();
-    }
-
     return files;
 }
 
@@ -968,6 +957,11 @@ std::vector<Iceberg::ManifestFileEntry> IcebergMetadata::getDataFiles(const Acti
 std::vector<Iceberg::ManifestFileEntry> IcebergMetadata::getPositionalDeleteFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const
 {
     return getFilesImpl(filter_dag, FileContentType::POSITIONAL_DELETE, local_context);
+}
+
+std::vector<Iceberg::ManifestFileEntry> IcebergMetadata::getEqualityDeleteFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const
+{
+    return getFilesImpl(filter_dag, FileContentType::EQUALITY_DELETE, local_context);
 }
 
 std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
@@ -1045,7 +1039,13 @@ ObjectIterator IcebergMetadata::iterate(
     ContextPtr local_context) const
 {
     SharedLockGuard lock(mutex);
-    return std::make_shared<IcebergKeysIterator>(*this, getDataFiles(filter_dag, local_context), getPositionalDeleteFiles(filter_dag, local_context), object_storage, callback);
+    return std::make_shared<IcebergKeysIterator>(
+        *this,
+        getDataFiles(filter_dag, local_context),
+        getPositionalDeleteFiles(filter_dag, local_context),
+        getEqualityDeleteFiles(filter_dag, local_context),
+        object_storage,
+        callback);
 }
 
 bool IcebergMetadata::hasPositionDeleteTransformer(const ObjectInfoPtr & object_info) const
@@ -1055,6 +1055,15 @@ bool IcebergMetadata::hasPositionDeleteTransformer(const ObjectInfoPtr & object_
         return false;
 
     return !iceberg_object_info->position_deletes_objects.empty();
+}
+
+bool IcebergMetadata::hasEqualityDeleteTransformer(const ObjectInfoPtr & object_info) const
+{
+    auto iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
+    if (!iceberg_object_info)
+        return false;
+
+    return !iceberg_object_info->equality_deletes_objects.empty();
 }
 
 std::shared_ptr<ISimpleTransform> IcebergMetadata::getPositionDeleteTransformer(
@@ -1078,60 +1087,177 @@ std::shared_ptr<ISimpleTransform> IcebergMetadata::getPositionDeleteTransformer(
         header, iceberg_object_info, object_storage, format_settings, context_, delete_object_format, delete_object_compression_method);
 }
 
+std::shared_ptr<ISimpleTransform> IcebergMetadata::getEqualityDeleteTransformer(
+    const ObjectInfoPtr & object_info,
+    const Block & header,
+    const std::optional<FormatSettings> & format_settings,
+    ContextPtr local_context) const
+{
+    auto iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
+    if (!iceberg_object_info)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The object info is not IcebergDataObjectInfo");
+
+    auto configuration_ptr = configuration.lock();
+    if (!configuration_ptr)
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg configuration has expired");
+
+    std::vector<const ManifestFileEntry *> delete_files;
+    for (const auto & delete_file_entry : iceberg_object_info->equality_deletes_objects)
+    {
+        delete_files.push_back(&delete_file_entry);
+    }
+
+    LOG_DEBUG(log, "Constructing fileter transform for equality delete, there are {} delete files", delete_files.size());
+    const ManifestFileEntry & delete_file = *(delete_files[0]);
+    /// get header of delete file
+    Block delete_file_header;
+    ObjectInfo delete_file_object(delete_file.file_path);
+    {
+        auto schema_read_buffer = StorageObjectStorageSource::createReadBuffer(delete_file_object, object_storage, local_context, log);
+        auto schema_reader = FormatFactory::instance().getSchemaReader(configuration_ptr->format, *schema_read_buffer, local_context);
+        auto columns_with_names = schema_reader->readSchema();
+        ColumnsWithTypeAndName initial_header_data;
+        for (const auto & elem : columns_with_names)
+        {
+            initial_header_data.push_back(ColumnWithTypeAndName(elem.type, elem.name));
+        }
+        delete_file_header = Block(initial_header_data);
+    }
+    /// with equality ids, we can know which columns should be deleted, here we calculate the indexes.
+    const std::vector<Int32> & equality_ids = *(delete_file.equality_ids);
+    Block block_for_set;
+    std::vector<size_t> equality_indexes_delete_file;
+    for (Int32 col_id : equality_ids)
+    {
+        NameAndTypePair name_and_type = schema_processor.getFieldCharacteristics(delete_file.schema_id, col_id);
+        block_for_set.insert(ColumnWithTypeAndName(name_and_type.type, name_and_type.name));
+        equality_indexes_delete_file.push_back(delete_file_header.getPositionByName(name_and_type.name));
+    }
+    /// Then we read the content of the delete file.
+    auto mutable_columns_for_set = block_for_set.cloneEmptyColumns();
+    std::unique_ptr<ReadBuffer> data_read_buffer = StorageObjectStorageSource::createReadBuffer(delete_file_object, object_storage, local_context, log);
+    CompressionMethod compression_method = chooseCompressionMethod(delete_file.file_path, configuration_ptr->compression_method);
+    auto delete_format = FormatFactory::instance().getInput(configuration_ptr->format, *data_read_buffer, delete_file_header, local_context, local_context->getSettingsRef()[DB::Setting::max_block_size], format_settings, nullptr, true, compression_method);
+    /// only get the delete columns and construct a set by 'block_for_set'
+    while(true)
+    {
+        Chunk delete_chunk = delete_format->read();
+        if (!delete_chunk)
+            break;
+        size_t rows = delete_chunk.getNumRows();
+        Columns delete_columns = delete_chunk.detachColumns();
+        for (size_t i = 0; i < equality_indexes_delete_file.size(); i++)
+        {
+            mutable_columns_for_set[i]->insertRangeFrom(*delete_columns[equality_indexes_delete_file[i]], 0, rows);
+            /// debug
+            for (size_t j = 0; j < rows; j++)
+                LOG_DEBUG(log, "id {}", mutable_columns_for_set[i]->getInt(j));
+        }
+    }
+    block_for_set.setColumns(std::move(mutable_columns_for_set));
+    /// we are constructing a 'not in' expression
+    const auto & settings = local_context->getSettingsRef();
+    SizeLimits size_limits_for_set = {settings[Setting::max_rows_in_set], settings[Setting::max_bytes_in_set], settings[Setting::set_overflow_mode]};
+    FutureSetPtr future_set = std::make_shared<FutureSetFromTuple>(CityHash_v1_0_2::uint128(), nullptr, block_for_set.getColumnsWithTypeAndName(), true, size_limits_for_set);
+    ColumnPtr set_col = ColumnSet::create(1, future_set);
+    ActionsDAG dag(header.getColumnsWithTypeAndName());
+    /// Construct right argument of 'not in' expression, it is the column set.
+    const ActionsDAG::Node * in_rhs_arg = &dag.addColumn({set_col, std::make_shared<DataTypeSet>(), "set column"});
+    /// Construct left argument of 'not in' expression
+    std::vector<const ActionsDAG::Node *> left_columns;
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> outputs;
+    for (const auto & output : dag.getOutputs())
+        outputs.emplace(output->result_name, output);
+    /// select columns to use in 'notIn' function
+    for (Int32 col_id : equality_ids)
+    {
+        NameAndTypePair name_and_type = schema_processor.getFieldCharacteristics(iceberg_object_info->data_object.schema_id, col_id);
+        auto it = outputs.find(name_and_type.name);
+        if (it == outputs.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find column {} in dag outputs", name_and_type.name);
+        left_columns.push_back(it->second);
+    }
+    FunctionOverloadResolverPtr func_tuple_builder =
+        std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>());
+    const ActionsDAG::Node * in_lhs_arg = left_columns.size() == 1 ?
+        left_columns.front() :
+        &dag.addFunction(func_tuple_builder, std::move(left_columns), {});
+    /// we got the NOT IN function
+    auto func_not_in = FunctionFactory::instance().get("notIn", nullptr);
+    const auto & not_in_node = dag.addFunction(func_not_in, {in_lhs_arg, in_rhs_arg}, "notInResult");
+    dag.getOutputs().push_back(&not_in_node);
+    LOG_DEBUG(log, "Use expression {} in equality deletes", dag.dumpDAG());
+    std::shared_ptr<ISimpleTransform> filter_transform = std::make_shared<FilterTransform>(
+        header,
+        std::make_shared<ExpressionActions>(std::move(dag)),
+        "notInResult",
+        true
+    );
+    return filter_transform;
+}
 
 IcebergDataObjectInfo::IcebergDataObjectInfo(
     const IcebergMetadata & iceberg_metadata,
     Iceberg::ManifestFileEntry data_object_,
     std::optional<ObjectMetadata> metadata_,
-    const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_)
+    const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_,
+    const std::vector<Iceberg::ManifestFileEntry> & equality_deletes_objects_)
     : RelativePathWithMetadata(data_object_.file_path, std::move(metadata_))
     , data_object(data_object_)
 {
-    /// Object in position_deletes_objects_ are sorted by common_partition_specification, partition_key_value and added_sequence_number.
-    /// It is done to have an invariant that position deletes objects which corresponds
-    /// to the data object form a subsegment in a position_deletes_objects_ vector.
-    /// We need to take all position deletes objects which has the same partition schema and value and has added_sequence_number
+    position_deletes_objects = selectDeleteFiles(position_deletes_objects_);
+    equality_deletes_objects = selectDeleteFiles(equality_deletes_objects_);
+    if ((!position_deletes_objects.empty() || !equality_deletes_objects.empty()) && iceberg_metadata.configuration.lock()->format != "Parquet")
+    {
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "Deletes are only supported for data files of Parquet format in Iceberg, but got {}",
+            iceberg_metadata.configuration.lock()->format);
+    }
+};
+
+std::span<const Iceberg::ManifestFileEntry> IcebergDataObjectInfo::selectDeleteFiles(const std::vector<Iceberg::ManifestFileEntry> & deletes_objects_)
+{
+    /// Object in deletes_objects_ are sorted by common_partition_specification, partition_key_value and added_sequence_number.
+    /// It is done to have an invariant that deletes objects which corresponds
+    /// to the data object form a subsegment in a deletes_objects_ vector.
+    /// We need to take all deletes objects which has the same partition schema and value and has added_sequence_number
     /// greater than or equal to the data object added_sequence_number (https://iceberg.apache.org/spec/#scan-planning)
     /// ManifestFileEntry has comparator by default which helps to do that.
-    auto beg_it = std::lower_bound(position_deletes_objects_.begin(), position_deletes_objects_.end(), data_object_);
+    auto beg_it = std::lower_bound(deletes_objects_.begin(), deletes_objects_.end(), data_object);
     auto end_it = std::upper_bound(
-        position_deletes_objects_.begin(),
-        position_deletes_objects_.end(),
-        data_object_,
+        deletes_objects_.begin(),
+        deletes_objects_.end(),
+        data_object,
         [](const Iceberg::ManifestFileEntry & lhs, const Iceberg::ManifestFileEntry & rhs)
         {
             return std::tie(lhs.common_partition_specification, lhs.partition_key_value)
                 < std::tie(rhs.common_partition_specification, rhs.partition_key_value);
         });
-    if (beg_it - position_deletes_objects_.begin() > end_it - position_deletes_objects_.begin())
+    if (beg_it - deletes_objects_.begin() > end_it - deletes_objects_.begin())
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Position deletes objects are not sorted by common_partition_specification and partition_key_value, "
-            "beginning: {}, end: {}, position_deletes_objects size: {}",
-            beg_it - position_deletes_objects_.begin(),
-            end_it - position_deletes_objects_.begin(),
-            position_deletes_objects_.size());
+            "beginning: {}, end: {}, deletes_objects size: {}",
+            beg_it - deletes_objects_.begin(),
+            end_it - deletes_objects_.begin(),
+            deletes_objects_.size());
     }
-    position_deletes_objects = std::span<const Iceberg::ManifestFileEntry>{beg_it, end_it};
-    if (!position_deletes_objects.empty() && iceberg_metadata.configuration.lock()->format != "Parquet")
-    {
-        throw Exception(
-            ErrorCodes::UNSUPPORTED_METHOD,
-            "Position deletes are only supported for data files of Parquet format in Iceberg, but got {}",
-            iceberg_metadata.configuration.lock()->format);
-    }
-};
+    return std::span<const Iceberg::ManifestFileEntry>{beg_it, end_it};
+}
 
 IcebergKeysIterator::IcebergKeysIterator(
     const IcebergMetadata & iceberg_metadata_,
     std::vector<Iceberg::ManifestFileEntry> && data_files_,
     std::vector<Iceberg::ManifestFileEntry> && position_deletes_files_,
+    std::vector<Iceberg::ManifestFileEntry> && equality_deletes_files_,
     ObjectStoragePtr object_storage_,
     IDataLakeMetadata::FileProgressCallback callback_)
     : iceberg_metadata(iceberg_metadata_)
     , data_files(data_files_)
     , position_deletes_files(position_deletes_files_)
+    , equality_deletes_files(equality_deletes_files_)
     , object_storage(object_storage_)
     , callback(callback_)
 {
@@ -1153,7 +1279,7 @@ ObjectInfoPtr IcebergKeysIterator::next(size_t)
             callback(FileProgress(0, object_metadata.size_bytes));
 
         return std::make_shared<IcebergDataObjectInfo>(
-            iceberg_metadata, data_files[current_index], std::move(object_metadata), position_deletes_files);
+            iceberg_metadata, data_files[current_index], std::move(object_metadata), position_deletes_files, equality_deletes_files);
     }
 }
 

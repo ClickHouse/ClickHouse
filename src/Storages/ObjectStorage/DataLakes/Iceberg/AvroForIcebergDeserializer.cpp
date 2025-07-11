@@ -68,7 +68,7 @@ Field AvroForIcebergDeserializer::getValueFromRowByName(size_t row_num, const st
     if (expected_type && WhichDataType(current_data_type).idx != *expected_type)
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                         "Got wrong data type for key {} in manifest file {}, expected {}, got {}",
-                        path, manifest_file_path, *expected_type, WhichDataType(current_data_type).idx);
+                        path, manifest_file_path, *expected_type, current_data_type->getName());
     Field result;
     current_column->get(row_num, result);
     return result;

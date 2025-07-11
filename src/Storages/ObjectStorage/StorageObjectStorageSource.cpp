@@ -495,6 +495,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 { return configuration->getPositionDeleteTransformer(object_info, header, format_settings, context_); });
         }
 
+        if (configuration->hasEqualityDeleteTransformer(object_info))
+        {
+            builder.addSimpleTransform([&](const Block & header)
+            {
+                return configuration->getEqualityDeleteTransformer(object_info, header, format_settings, context_);
+            });
+        }
 
         std::shared_ptr<const ActionsDAG> transformer;
         if (object_info->data_lake_metadata)

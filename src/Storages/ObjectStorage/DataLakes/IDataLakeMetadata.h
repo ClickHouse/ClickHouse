@@ -45,6 +45,7 @@ public:
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, const String & /* path */) const { return {}; }
 
     virtual bool hasPositionDeleteTransformer(const ObjectInfoPtr & /*object_info*/) const { return false; }
+    virtual bool hasEqualityDeleteTransformer(const ObjectInfoPtr & /*object_info*/) const { return false; }
     virtual std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
         const ObjectInfoPtr & /* object_info */,
         const Block & /* header */,
@@ -54,6 +55,14 @@ public:
         return {};
     }
 
+    virtual std::shared_ptr<ISimpleTransform> getEqualityDeleteTransformer(
+        const ObjectInfoPtr & /* object_info */,
+        const Block & /* header */,
+        const std::optional<FormatSettings> & /* format_settings */,
+        ContextPtr /*context*/) const
+    {
+        return {};
+    }
     /// Whether metadata is updateable (instead of recreation from scratch)
     /// to the latest version of table state in data lake.
     virtual bool supportsUpdate() const { return false; }

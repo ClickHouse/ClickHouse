@@ -128,7 +128,7 @@ const std::vector<ManifestFileEntry> & ManifestFileContent::getFiles(FileContent
     else if (content_type == FileContentType::POSITIONAL_DELETE)
         return position_deletes_files;
     else
-        throw DB::Exception(DB::ErrorCodes::UNSUPPORTED_METHOD, "Unsupported content type: {}", static_cast<int>(content_type));
+        return equality_deletes_files;
 }
 
 
@@ -209,9 +209,6 @@ ManifestFileContent::ManifestFileContent(
         if (format_version_ > 1)
         {
             content_type = FileContentType(manifest_file_deserializer.getValueFromRowByName(i, c_data_file_content, TypeIndex::Int32).safeGet<UInt64>());
-            if (content_type == FileContentType::EQUALITY_DELETE)
-                throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: files of content type {} are not supported", content_type);
         }
         const auto status = ManifestEntryStatus(manifest_file_deserializer.getValueFromRowByName(i, f_status, TypeIndex::Int32).safeGet<UInt64>());
 
@@ -337,16 +334,26 @@ ManifestFileContent::ManifestFileContent(
                     partition_key_value,
                     common_partition_specification,
                     columns_infos,
-                    /*reference_data_file = */ std::nullopt);
+                    /*reference_data_file = */ std::nullopt,
+                    std::nullopt,
+                    schema_id);
                 break;
-            case FileContentType::POSITIONAL_DELETE: {
+            case FileContentType::POSITIONAL_DELETE:
+            {
                 /// reference_file_path can be absent in schema for some reason, though it is present in specification: https://iceberg.apache.org/spec/#manifests
                 std::optional<String> reference_file_path = std::nullopt;
                 if (manifest_file_deserializer.hasPath(c_data_file_referenced_data_file))
                 {
-                    reference_file_path
-                        = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_referenced_data_file, TypeIndex::String)
-                              .safeGet<String>();
+                    try
+                    {
+                        reference_file_path
+                            = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_referenced_data_file, TypeIndex::String)
+                                .safeGet<String>();
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                    }
                 }
                 this->position_deletes_files.emplace_back(
                     file_path_key,
@@ -356,12 +363,37 @@ ManifestFileContent::ManifestFileContent(
                     partition_key_value,
                     common_partition_specification,
                     columns_infos,
-                    reference_file_path);
+                    reference_file_path,
+                    std::nullopt,
+                    schema_id);
                 break;
             }
-            default:
-                throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD, "FileContentType {} is not supported", content_type);
+            case FileContentType::EQUALITY_DELETE:
+            {
+                std::vector<Int32> equality_ids;
+                if (manifest_file_deserializer.hasPath(c_data_file_equality_ids))
+                {
+                    Field equality_ids_field = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_equality_ids);
+                    for (const Field & id : equality_ids_field.safeGet<Array>())
+                        equality_ids.push_back(id.safeGet<Int32>());
+                }
+                else
+                    throw Exception(
+                            DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                            "Couldn't find field {} in equality delete file entry", c_data_file_equality_ids);
+                this->equality_deletes_files.emplace_back(
+                    file_path_key,
+                    file_path,
+                    status,
+                    added_sequence_number,
+                    partition_key_value,
+                    common_partition_specification,
+                    columns_infos,
+                    std::nullopt,
+                    equality_ids,
+                    schema_id);
+                break;
+            }
         }
     }
 }

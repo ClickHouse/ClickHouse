@@ -61,8 +61,15 @@ public:
     std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, const String & data_path) const override;
 
     bool hasPositionDeleteTransformer(const ObjectInfoPtr & object_info) const override;
+    bool hasEqualityDeleteTransformer(const ObjectInfoPtr & object_info) const override;
 
     std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
+        const ObjectInfoPtr & /* object_info */,
+        const Block & /* header */,
+        const std::optional<FormatSettings> & /* format_settings */,
+        ContextPtr /* context */) const override;
+
+    std::shared_ptr<ISimpleTransform> getEqualityDeleteTransformer(
         const ObjectInfoPtr & /* object_info */,
         const Block & /* header */,
         const std::optional<FormatSettings> & /* format_settings */,
@@ -117,11 +124,8 @@ private:
     Int64 relevant_snapshot_id TSA_GUARDED_BY(mutex) {-1};
     const String table_location;
 
-    mutable std::optional<std::vector<Iceberg::ManifestFileEntry>> cached_unprunned_files_for_last_processed_snapshot TSA_GUARDED_BY(cache_mutex);
-    mutable std::optional<std::vector<Iceberg::ManifestFileEntry>> cached_unprunned_position_deletes_files_for_last_processed_snapshot TSA_GUARDED_BY(cache_mutex);
-    mutable std::mutex cache_mutex;
-
     std::vector<Iceberg::ManifestFileEntry> getPositionalDeleteFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const;
+    std::vector<Iceberg::ManifestFileEntry> getEqualityDeleteFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const;
     std::vector<Iceberg::ManifestFileEntry> getDataFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const;
 
     void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object, bool metadata_file_changed) TSA_REQUIRES(mutex);
@@ -143,11 +147,14 @@ struct IcebergDataObjectInfo : public RelativePathWithMetadata
         const IcebergMetadata & iceberg_metadata,
         Iceberg::ManifestFileEntry data_object_,
         std::optional<ObjectMetadata> metadata_ = std::nullopt,
-        const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_ = {});
+        const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_ = {},
+        const std::vector<Iceberg::ManifestFileEntry> & equality_deletes_objects_ = {});
 
     const Iceberg::ManifestFileEntry data_object;
     std::span<const Iceberg::ManifestFileEntry> position_deletes_objects;
+    std::span<const Iceberg::ManifestFileEntry> equality_deletes_objects;
 
+    std::span<const Iceberg::ManifestFileEntry> selectDeleteFiles(const std::vector<Iceberg::ManifestFileEntry> & deletes_objects_);
     // Return the path in the Iceberg metadata
     std::string getIcebergDataPath() const { return data_object.file_path_key; }
 };
@@ -160,6 +167,7 @@ public:
         const IcebergMetadata & iceberg_metadata_,
         std::vector<Iceberg::ManifestFileEntry>&& data_files_,
         std::vector<Iceberg::ManifestFileEntry>&& position_deletes_files_,
+        std::vector<Iceberg::ManifestFileEntry>&& equality_deletes_files_,
         ObjectStoragePtr object_storage_,
         IDataLakeMetadata::FileProgressCallback callback_);
 
@@ -174,6 +182,7 @@ private:
     const IcebergMetadata & iceberg_metadata;
     std::vector<Iceberg::ManifestFileEntry> data_files;
     std::vector<Iceberg::ManifestFileEntry> position_deletes_files;
+    std::vector<Iceberg::ManifestFileEntry> equality_deletes_files;
     ObjectStoragePtr object_storage;
     std::atomic<size_t> index = 0;
     IDataLakeMetadata::FileProgressCallback callback;

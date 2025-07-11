@@ -64,6 +64,8 @@ struct ManifestFileEntry
     std::unordered_map<Int32, ColumnInfo> columns_infos;
 
     std::optional<String> reference_data_file_path; // For position delete files only.
+    std::optional<std::vector<Int32>> equality_ids; /// for equality deletes
+    Int32 schema_id;
 };
 
 /**
@@ -137,6 +139,7 @@ private:
     std::vector<ManifestFileEntry> data_files;
     // Partition level deletes files
     std::vector<ManifestFileEntry> position_deletes_files;
+    std::vector<ManifestFileEntry> equality_deletes_files;
 
     std::set<Int32> column_ids_which_have_bounds;
 

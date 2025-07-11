@@ -276,6 +276,7 @@ public:
         bool check_consistent_with_previous_metadata);
 
     virtual bool hasPositionDeleteTransformer(const ObjectInfoPtr & /*object_info*/) const { return false; }
+    virtual bool hasEqualityDeleteTransformer(const ObjectInfoPtr & /*object_info*/) const { return false; }
 
     virtual std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
         const ObjectInfoPtr & /*object_info*/,
@@ -286,6 +287,18 @@ public:
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Method getPositionDeleteTransformer() is not implemented for configuration type {}",
+            getTypeName());
+    }
+
+    virtual std::shared_ptr<ISimpleTransform> getEqualityDeleteTransformer(
+        const ObjectInfoPtr & /*object_info*/,
+        const Block & /*header*/,
+        const std::optional<FormatSettings> & /*format_settings*/,
+        ContextPtr /*context_*/) const
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method getEqualityDeleteTransformer() is not implemented for configuration type {}",
             getTypeName());
     }
 

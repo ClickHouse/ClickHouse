@@ -62,6 +62,7 @@ DEFINE_ICEBERG_FIELD_ALIAS(partition_name, name);
 /// These are compound fields like `data_file.file_path`, we use prefix 'c_' to distinguish them.
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_path);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, content);
+DEFINE_ICEBERG_FIELD_COMPOUND(data_file, equality_ids);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, partition);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, value_counts);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, column_sizes);

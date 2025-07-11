@@ -133,6 +133,24 @@ public:
         return current_metadata->getPositionDeleteTransformer(object_info, header, format_settings, context_);
     }
 
+    bool hasEqualityDeleteTransformer(const ObjectInfoPtr & object_info) const override
+    {
+        if (!current_metadata)
+            return false;
+        return current_metadata->hasEqualityDeleteTransformer(object_info);
+    }
+
+    std::shared_ptr<ISimpleTransform> getEqualityDeleteTransformer(
+        const ObjectInfoPtr & object_info,
+        const Block & header,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr context_) const override
+    {
+        if (!current_metadata)
+            return {};
+        return current_metadata->getEqualityDeleteTransformer(object_info, header, format_settings, context_);
+    }
+
     bool hasExternalDynamicMetadata() override
     {
         assertInitialized();
