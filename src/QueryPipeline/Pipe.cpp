@@ -314,7 +314,7 @@ Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors, bool allow
 
     for (auto & pipe : pipes)
     {
-        if (!allow_empty_header || pipe.header)
+        if (!allow_empty_header || *pipe.header)
             assertCompatibleHeader(*pipe.header, *res.header, "Pipe::unitePipes");
 
         res.processors->insert(res.processors->end(), pipe.processors->begin(), pipe.processors->end());
@@ -832,7 +832,7 @@ void Pipe::setSinks(const Pipe::ProcessorGetterSharedHeaderWithStreamKind & gett
     add_transform(extremes_port, StreamType::Extremes);
 
     output_ports.clear();
-    header.reset();
+    header = std::make_shared<const Block>(Block{});
 }
 
 void Pipe::transform(const Transformer & transformer, bool check_ports)

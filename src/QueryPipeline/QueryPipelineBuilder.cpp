@@ -109,7 +109,7 @@ void QueryPipelineBuilder::init(QueryPipeline & pipeline)
     else
     {
         pipe.output_ports.clear();
-        pipe.header = {};
+        pipe.header = std::make_shared<const Block>(Block{});
     }
 
     pipe.totals_port = pipeline.totals;
@@ -272,8 +272,6 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
 {
     if (pipelines.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite an empty set of pipelines");
-
-    Block common_header = pipelines.front()->getHeader();
 
     /// Should we limit the number of threads for united pipeline. True if all pipelines have max_threads != 0.
     /// If true, result max_threads will be sum(max_threads).

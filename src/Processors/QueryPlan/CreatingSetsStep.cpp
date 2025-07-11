@@ -95,7 +95,7 @@ CreatingSetsStep::CreatingSetsStep(SharedHeaders input_headers_)
     output_header = input_headers.front();
 
     for (size_t i = 1; i < input_headers.size(); ++i)
-        if (input_headers[i])
+        if (*input_headers[i])
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Creating set input must have empty header. Got: {}",
                             input_headers[i]->dumpStructure());
 }
