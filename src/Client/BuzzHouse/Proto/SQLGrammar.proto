@@ -1860,8 +1860,9 @@ enum UnaryOperator {
 }
 
 message UnaryExpr {
-    required UnaryOperator unary_op = 1;
-    required Expr expr = 2;
+    optional bool paren = 1;
+    required UnaryOperator unary_op = 2;
+    required Expr expr = 3;
 }
 
 enum BinaryOperator {
@@ -1894,15 +1895,17 @@ message BinaryExpr {
 }
 
 message CastExpr {
-    required Expr expr = 1;
-    required TypeName type_name = 2;
+    optional bool simple = 1;
+    required Expr expr = 2;
+    required TypeName type_name = 3;
 }
 
 message ExprBetween {
-    required bool not = 1;
-    required Expr expr1 = 2;
-    required Expr expr2 = 3;
-    required Expr expr3 = 4;
+    optional bool paren = 1;
+    required bool not = 2;
+    required Expr expr1 = 3;
+    required Expr expr2 = 4;
+    required Expr expr3 = 5;
 }
 
 message ExprList {
@@ -1963,9 +1966,10 @@ message ExprLike {
 }
 
 message CondExpr {
-    required Expr expr1 = 1;
-    required Expr expr2 = 2;
-    required Expr expr3 = 3;
+    optional bool paren = 1;
+    required Expr expr1 = 2;
+    required Expr expr2 = 3;
+    required Expr expr3 = 4;
 }
 
 message LambdaExpr {

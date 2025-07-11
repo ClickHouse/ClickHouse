@@ -1078,6 +1078,7 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool
                     {
                         UnaryExpr * uexpr = expr->mutable_comp_expr()->mutable_unary_expr();
 
+                        uexpr->set_paren(true);
                         uexpr->set_unary_op(UnaryOperator::UNOP_NOT);
                         expr = uexpr->mutable_expr();
                     }
@@ -1199,6 +1200,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
         Expr * expr2 = bexpr->mutable_expr2();
         Expr * expr3 = bexpr->mutable_expr3();
 
+        bexpr->set_paren(rg.nextMediumNumber() < 96);
         bexpr->set_not_(rg.nextBool());
         if (noption2 < 34)
         {
@@ -1370,6 +1372,7 @@ void StatementGenerator::generateWherePredicate(RandomGenerator & rg, Expr * exp
                 {
                     UnaryExpr * uexpr = expr->mutable_comp_expr()->mutable_unary_expr();
 
+                    uexpr->set_paren(true);
                     uexpr->set_unary_op(UnaryOperator::UNOP_NOT);
                     expr = uexpr->mutable_expr();
                 }

@@ -410,10 +410,7 @@ CONV_FN(IntLiteral, int_val)
 
 CONV_FN(SpecialVal, val)
 {
-    if (val.paren())
-    {
-        ret += "(";
-    }
+    ret += val.paren() ? "(" : "";
     switch (val.val())
     {
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL:
@@ -623,10 +620,7 @@ CONV_FN(SpecialVal, val)
             ret += "*";
             break;
     }
-    if (val.paren())
-    {
-        ret += ")";
-    }
+    ret += val.paren() ? ")" : "";
 }
 
 CONV_FN(LiteralValue, lit_val)
@@ -675,7 +669,7 @@ CONV_FN(LiteralValue, lit_val)
 
 CONV_FN(UnaryExpr, uexpr)
 {
-    ret += "(";
+    ret += uexpr.paren() ? "(" : "";
     switch (uexpr.unary_op())
     {
         case UNOP_MINUS:
@@ -689,7 +683,7 @@ CONV_FN(UnaryExpr, uexpr)
             break;
     }
     ExprToString(ret, uexpr.expr());
-    ret += ")";
+    ret += uexpr.paren() ? ")" : "";
 }
 
 CONV_FN(BinaryOperator, bop)
@@ -1122,11 +1116,21 @@ CONV_FN_QUOTE(TypeName, tp)
 
 CONV_FN(CastExpr, cexpr)
 {
-    ret += "CAST(";
-    ExprToString(ret, cexpr.expr());
-    ret += " AS ";
-    TypeNameToString(ret, 0, cexpr.type_name());
-    ret += ")";
+    if (cexpr.simple())
+    {
+        ExprToString(ret, cexpr.expr());
+        ret += "::`";
+        TypeNameToString(ret, 1, cexpr.type_name());
+        ret += "`";
+    }
+    else
+    {
+        ret += "CAST(";
+        ExprToString(ret, cexpr.expr());
+        ret += " AS ";
+        TypeNameToString(ret, 0, cexpr.type_name());
+        ret += ")";
+    }
 }
 
 CONV_FN(ExprLike, elike)
@@ -1142,13 +1146,13 @@ CONV_FN(ExprLike, elike)
 
 CONV_FN(CondExpr, econd)
 {
-    ret += "((";
+    ret += econd.paren() ? "(" : "";
     ExprToString(ret, econd.expr1());
-    ret += ") ? (";
+    ret += " ? ";
     ExprToString(ret, econd.expr2());
-    ret += ") : (";
+    ret += " : ";
     ExprToString(ret, econd.expr3());
-    ret += "))";
+    ret += econd.paren() ? ")" : "";
 }
 
 CONV_FN(ExprNullTests, ent)
@@ -1161,16 +1165,16 @@ CONV_FN(ExprNullTests, ent)
 
 CONV_FN(ExprBetween, ebetween)
 {
-    ret += "((";
+    ret += ebetween.paren() ? "(" : "";
     ExprToString(ret, ebetween.expr1());
-    ret += ") ";
+    ret += " ";
     if (ebetween.not_())
         ret += "NOT ";
-    ret += "BETWEEN (";
+    ret += "BETWEEN ";
     ExprToString(ret, ebetween.expr2());
-    ret += ") AND (";
+    ret += " AND ";
     ExprToString(ret, ebetween.expr3());
-    ret += "))";
+    ret += ebetween.paren() ? ")" : "";
 }
 
 CONV_FN(ExplainQuery, explain);
