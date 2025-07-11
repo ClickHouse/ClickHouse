@@ -572,14 +572,14 @@ CONV_FN(SpecialVal, val)
             }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_TIME64:
-            ret += "'000:00:00'";
+            ret += "'-999:59:59.999999999'";
             if (val.paren())
             {
                 ret += "::Time64";
             }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_TIME64:
-            ret += "'999:59:59.99999999'";
+            ret += "'999:59:59.999999999'";
             if (val.paren())
             {
                 ret += "::Time64";
@@ -2707,6 +2707,30 @@ CONV_FN(ColumnStatistics, cst)
     }
 }
 
+CONV_FN(IndexParam, ip)
+{
+    using IndexParamType = IndexParam::IndexParamOneofCase;
+    switch (ip.index_param_oneof_case())
+    {
+        case IndexParamType::kIval:
+            ret += std::to_string(ip.ival());
+            break;
+        case IndexParamType::kDval:
+            ret += std::to_string(ip.dval());
+            break;
+        case IndexParamType::kSval:
+            ret += "'";
+            ret += ip.sval();
+            ret += "'";
+            break;
+        case IndexParamType::kUnescapedSval:
+            ret += ip.unescaped_sval();
+            break;
+        default:
+            ret += "0";
+    }
+}
+
 CONV_FN(CodecParam, cp)
 {
     ret += CompressionCodec_Name(cp.codec()).substr(5);
@@ -2719,7 +2743,7 @@ CONV_FN(CodecParam, cp)
             {
                 ret += ", ";
             }
-            ret += std::to_string(cp.params(i));
+            IndexParamToString(ret, cp.params(i));
         }
         ret += ")";
     }
@@ -2832,9 +2856,8 @@ CONV_FN(CodecList, cl)
 
 CONV_FN(ColumnDef, cdf)
 {
-    ret += "`";
-    ColumnToString(ret, 1, cdf.col());
-    ret += "` ";
+    ColumnPathToString(ret, 0, cdf.col());
+    ret += " ";
     TypeNameToString(ret, 0, cdf.type());
     if (cdf.has_nullable())
     {
@@ -2876,30 +2899,6 @@ CONV_FN(ColumnDef, cdf)
         ret += " SETTINGS(";
         SettingValuesToString(ret, cdf.setting_values());
         ret += ")";
-    }
-}
-
-CONV_FN(IndexParam, ip)
-{
-    using IndexParamType = IndexParam::IndexParamOneofCase;
-    switch (ip.index_param_oneof_case())
-    {
-        case IndexParamType::kIval:
-            ret += std::to_string(ip.ival());
-            break;
-        case IndexParamType::kDval:
-            ret += std::to_string(ip.dval());
-            break;
-        case IndexParamType::kSval:
-            ret += "'";
-            ret += ip.sval();
-            ret += "'";
-            break;
-        case IndexParamType::kUnescapedSval:
-            ret += ip.unescaped_sval();
-            break;
-        default:
-            ret += "0";
     }
 }
 
@@ -3579,30 +3578,30 @@ CONV_FN(CheckTable, ct)
     }
 }
 
-CONV_FN(DescTable, dt)
+CONV_FN(DescribeStatement, ds)
 {
     ret += "DESCRIBE ";
-    using DescType = DescTable::DescOneofCase;
-    switch (dt.desc_oneof_case())
+    using DescType = DescribeStatement::DescOneofCase;
+    switch (ds.desc_oneof_case())
     {
         case DescType::kEst:
-            ExprSchemaTableToString(ret, dt.est());
+            ExprSchemaTableToString(ret, ds.est());
             break;
         case DescType::kSel:
             ret += "(";
-            SelectToString(ret, dt.sel());
+            ExplainQueryToString(ret, ds.sel());
             ret += ")";
             break;
         case DescType::kStf:
-            SQLTableFuncCallToString(ret, dt.stf());
+            SQLTableFuncCallToString(ret, ds.stf());
             break;
         default:
             ret += "t0";
     }
-    if (dt.has_setting_values())
+    if (ds.has_setting_values())
     {
         ret += " SETTINGS ";
-        SettingValuesToString(ret, dt.setting_values());
+        SettingValuesToString(ret, ds.setting_values());
     }
 }
 
@@ -4712,7 +4711,6 @@ CONV_FN(SystemCommand, cmd)
             break;
         case CmdType::kDropSchemaCache:
             ret += "DROP SCHEMA CACHE";
-            can_set_cluster = true;
             break;
         case CmdType::kDropS3ClientCache:
             ret += "DROP S3 CLIENT CACHE";
@@ -4745,6 +4743,14 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kDropQueryConditionCache:
             ret += "DROP QUERY CONDITION CACHE";
             can_set_cluster = true;
+            break;
+        case CmdType::kEnableFailpoint:
+            ret += "ENABLE FAILPOINT ";
+            ret += FailPoint_Name(cmd.enable_failpoint());
+            break;
+        case CmdType::kDisableFailpoint:
+            ret += "DISABLE FAILPOINT ";
+            ret += FailPoint_Name(cmd.disable_failpoint());
             break;
         default:
             ret += "FLUSH LOGS";
@@ -4955,7 +4961,7 @@ CONV_FN(SQLQueryInner, query)
             CheckTableToString(ret, query.check());
             break;
         case QueryType::kDesc:
-            DescTableToString(ret, query.desc());
+            DescribeStatementToString(ret, query.desc());
             break;
         case QueryType::kExchange:
             ExchangeToString(ret, query.exchange());

@@ -795,13 +795,11 @@ struct ContextSharedPart : boost::noncopyable
         /// Waiting for current backups/restores to be finished. This must be done before `DatabaseCatalog::shutdown()`.
         SHUTDOWN(log, "backups worker", backups_worker, shutdown());
 
-        /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
-          *  Note that part changes at shutdown won't be logged to part log.
-          */
-        SHUTDOWN(log, "system logs", system_logs, flushAndShutdown());
-
         LOG_TRACE(log, "Shutting down database catalog");
-        DatabaseCatalog::shutdown();
+        DatabaseCatalog::shutdown([this]()
+        {
+            SHUTDOWN(log, "system logs", TSA_SUPPRESS_WARNING_FOR_READ(system_logs), flushAndShutdown());
+        });
 
         NamedCollectionFactory::instance().shutdown();
 
@@ -1130,6 +1128,7 @@ ContextMutablePtr Context::createGlobal(ContextSharedPart * shared_part)
     res->shared = shared_part;
     res->query_access_info = std::make_shared<QueryAccessInfo>();
     res->query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
+    res->async_read_counters = std::make_shared<AsyncReadCounters>();
     return res;
 }
 
@@ -3056,6 +3055,7 @@ void Context::makeQueryContext()
     local_write_query_throttler.reset();
     backups_query_throttler.reset();
     query_privileges_info = std::make_shared<QueryPrivilegesInfo>(*query_privileges_info);
+    async_read_counters = std::make_shared<AsyncReadCounters>();
 }
 
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
@@ -6522,9 +6522,6 @@ WriteSettings Context::getWriteSettings() const
 
 std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
 {
-    std::lock_guard lock(mutex);
-    if (!async_read_counters)
-        async_read_counters = std::make_shared<AsyncReadCounters>();
     return async_read_counters;
 }
 

@@ -135,7 +135,7 @@ NameAndTypePair IcebergSchemaProcessor::getFieldCharacteristics(Int32 schema_ver
 
     auto it = clickhouse_types_by_source_ids.find({schema_version, source_id});
     if (it == clickhouse_types_by_source_ids.end())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Field with source id {} is unknown", source_id);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Field with source id {} in schema version {} is unknown", source_id, schema_version);
     return it->second;
 }
 

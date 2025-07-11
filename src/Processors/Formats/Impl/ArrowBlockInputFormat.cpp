@@ -1,4 +1,4 @@
-#include "ArrowBlockInputFormat.h"
+#include <Processors/Formats/Impl/ArrowBlockInputFormat.h>
 #include <optional>
 
 #if USE_ARROW
@@ -11,8 +11,8 @@
 #include <arrow/api.h>
 #include <arrow/ipc/reader.h>
 #include <arrow/result.h>
-#include "ArrowBufferedStreams.h"
-#include "ArrowColumnToCHColumn.h"
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 
 
 namespace DB

@@ -349,7 +349,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_sl
             {
                 /// Communicate with resource scheduler or ConcurrencyControl
                 /// Do upscaling, downscaling, or sleep for preemption
-                if (!controlConcurrency(cpu_lease, spawn_status == ExecutorTasks::SHOULD_SPAWN))
+                if (!controlConcurrency(cpu_lease, pool && spawn_status == ExecutorTasks::SHOULD_SPAWN))
                 {
                     yield = true;
                     break;
