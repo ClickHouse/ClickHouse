@@ -1,4 +1,6 @@
-#include "StorageArrowFlight.h"
+#include <Storages/StorageArrowFlight.h>
+
+#if USE_ARROWFLIGHT
 #include <sstream>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -152,7 +154,7 @@ public:
         const int port_,
         const String & dataset_name_,
         bool)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , metadata_snapshot(metadata_snapshot_)
         , dataset_name(dataset_name_)
     {
@@ -304,3 +306,5 @@ void registerStorageArrowFlight(StorageFactory & factory)
 }
 
 }
+
+#endif

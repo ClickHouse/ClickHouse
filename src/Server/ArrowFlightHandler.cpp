@@ -1,5 +1,6 @@
-#include "ArrowFlightHandler.h"
+#include <Server/ArrowFlightHandler.h>
 
+#if USE_ARROWFLIGHT
 #include <memory>
 #include <arrow/compute/api.h>
 #include <arrow/flight/api.h>
@@ -431,14 +432,14 @@ arrow::Status ArrowFlightHandler::DoPut(
             }
             Block header = io.pipeline.getHeader();
 
-            ArrowColumnToCHColumn converter(
-                header,
-                "arrow",
-                /*allow_missing_columns=*/true,
-                /*validate_names=*/true,
-                FormatSettings::DateTimeOverflowBehavior::Throw,
-                /*use_objects=*/false,
-                /*is_nullable=*/false);
+            ArrowColumnToCHColumn converter(header, "Arrow",
+                                            /* format_settings= */ {},
+                                            /* parquet_columns_to_clickhouse= */ std::nullopt,
+                                            /* clickhouse_columns_to_parquet= */ std::nullopt,
+                                            /* allow_missing_columns = */ true,
+                                            /* null_as_default = */ true,
+                                            FormatSettings::DateTimeOverflowBehavior::Throw,
+                                            /* allow_geoparquet_parser = */ false);
 
             while (true)
             {
@@ -457,9 +458,9 @@ arrow::Status ArrowFlightHandler::DoPut(
                     return arrow::Status::IOError("Failed to read batch: " + batch_result.status().ToString());
                 }
                 auto arrow_table = batch_result.ValueOrDie();
-                auto chunk = converter.arrowTableToCHChunk(arrow_table, batch->num_rows());
+                auto chunk = converter.arrowTableToCHChunk(arrow_table, batch->num_rows(), nullptr, nullptr);
 
-                auto input = std::make_shared<SourceFromSingleChunk>(header, std::move(chunk));
+                auto input = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(header), std::move(chunk));
                 io.pipeline.complete(Pipe(std::move(input)));
 
                 CompletedPipelineExecutor executor(io.pipeline);
@@ -481,8 +482,14 @@ arrow::Status ArrowFlightHandler::DoPut(
 
         Block header = metadata_snapshot->getSampleBlock();
 
-        ArrowColumnToCHColumn converter(header, "Arrow", true, true, FormatSettings::DateTimeOverflowBehavior::Throw, false, false);
-
+        ArrowColumnToCHColumn converter(header, "Arrow",
+                                        /* format_settings= */ {},
+                                        /* parquet_columns_to_clickhouse= */ std::nullopt,
+                                        /* clickhouse_columns_to_parquet= */ std::nullopt,
+                                        /* allow_missing_columns = */ true,
+                                        /* null_as_default = */ true,
+                                        FormatSettings::DateTimeOverflowBehavior::Throw,
+                                        /* allow_geoparquet_parser = */ false);
 
         while (true)
         {
@@ -498,7 +505,7 @@ arrow::Status ArrowFlightHandler::DoPut(
                 return arrow::Status::IOError("Failed to read batch: " + batch_result.status().ToString());
             }
             auto arrow_table = batch_result.ValueOrDie();
-            auto chunk = converter.arrowTableToCHChunk(arrow_table, batch->num_rows());
+            auto chunk = converter.arrowTableToCHChunk(arrow_table, batch->num_rows(), nullptr, nullptr);
 
             auto insert_context = Context::createCopy(query_context);
 
@@ -519,7 +526,7 @@ arrow::Status ArrowFlightHandler::DoPut(
                 /* no_destination */ false,
                 /* async_isnert */ false);
             auto io = interpreter.execute();
-            auto input = std::make_shared<SourceFromSingleChunk>(header, std::move(chunk));
+            auto input = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(header), std::move(chunk));
 
             io.pipeline.complete(Pipe(std::move(input)));
 
@@ -558,3 +565,5 @@ ArrowFlightHandler::ListActions(const arrow::flight::ServerCallContext & /*conte
 }
 
 }
+
+#endif

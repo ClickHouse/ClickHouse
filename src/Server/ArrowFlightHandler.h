@@ -1,5 +1,8 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_ARROWFLIGHT
 #include <atomic>
 #include <memory>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -101,3 +104,5 @@ private:
     virtual std::unique_ptr<Session> createSession(const arrow::flight::ServerCallContext & context);
 };
 }
+
+#endif

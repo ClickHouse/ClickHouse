@@ -1,5 +1,6 @@
-#include "ArrowFlightSource.h"
+#include <Processors/Sources/ArrowFlightSource.h>
 
+#if USE_ARROWFLIGHT
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -28,7 +29,7 @@ ArrowFlightSource::ArrowFlightSource(
     const Block & sample_block_,
     const std::vector<std::string> & column_names_,
     UInt64 /*max_block_size_*/)
-    : ISource(sample_block_.cloneEmpty())
+    : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))
     , client(std::move(client_))
     , query(query_)
     , sample_block(sample_block_)
@@ -96,22 +97,22 @@ Chunk ArrowFlightSource::generate()
 
     MutableColumns columns;
 
-    ArrowColumnToCHColumn converter(
-        sample_block,
-        "Arrow",
-        true /* allow_missing_columns */,
-        true /* null_as_default */,
-        FormatSettings::DateTimeOverflowBehavior::Throw,
-        false /* case_insensitive_matching */,
-        false /* is_stream */
-    );
+    ArrowColumnToCHColumn converter(sample_block, "Arrow",
+                                    /* format_settings= */ {},
+                                    /* parquet_columns_to_clickhouse= */ std::nullopt,
+                                    /* clickhouse_columns_to_parquet= */ std::nullopt,
+                                    /* allow_missing_columns = */ true,
+                                    /* null_as_default = */ true,
+                                    FormatSettings::DateTimeOverflowBehavior::Throw,
+                                    /* allow_geoparquet_parser = */ false);
+
     auto batch_result = arrow::Table::FromRecordBatches({batch});
     if (!batch_result.ok())
     {
         throw Exception(ErrorCodes::ARROWFLIGHT_INTERNAL_ERROR, "Arrow Flight internal error: {}", batch_result.status().ToString());
     }
     auto table = std::move(batch_result).ValueOrDie();
-    auto ch_chunk = converter.arrowTableToCHChunk(table, batch->num_rows());
+    auto ch_chunk = converter.arrowTableToCHChunk(table, batch->num_rows(), nullptr, nullptr);
     for (auto & col : ch_chunk.getColumns())
         columns.push_back(IColumn::mutate(col->cloneResized(batch->num_rows())));
 
@@ -120,3 +121,5 @@ Chunk ArrowFlightSource::generate()
 }
 
 }
+
+#endif

@@ -3090,6 +3090,7 @@ void Server::createServers(
             });
         }
 
+#if USE_ARROWFLIGHT
         if (server_type.shouldStart(ServerType::Type::ARROW_FLIGHT))
         {
             port_name = "arrowflight_port";
@@ -3107,6 +3108,7 @@ void Server::createServers(
                     true);
             });
         }
+#endif
 
         if (server_type.shouldStart(ServerType::Type::TCP_SECURE))
         {

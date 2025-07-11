@@ -1,5 +1,6 @@
 #include <TableFunctions/TableFunctionArrowFlight.h>
 
+#if USE_ARROWFLIGHT
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -111,3 +112,5 @@ void registerTableFunctionArrowFlight(TableFunctionFactory & factory)
 }
 
 }
+
+#endif
