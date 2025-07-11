@@ -383,7 +383,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"distributed_push_down_limit", trueOrFalseSetting},
     {"do_not_merge_across_partitions_select_final", trueOrFalseSettingNoOracle},
     {"empty_result_for_aggregation_by_constant_keys_on_empty_set", trueOrFalseSettingNoOracle},
-    {"empty_result_for_aggregation_by_empty_set", trueOrFalseSettingNoOracle},
+    //{"empty_result_for_aggregation_by_empty_set", trueOrFalseSettingNoOracle}, the oracle doesn't get output
     {"enable_blob_storage_log", trueOrFalseSettingNoOracle},
     {"enable_early_constant_folding", trueOrFalseSettingNoOracle},
     {"enable_extended_results_for_datetime_functions", trueOrFalseSettingNoOracle},
