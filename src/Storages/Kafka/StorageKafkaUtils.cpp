@@ -313,7 +313,7 @@ void registerStorageKafka(StorageFactory & factory)
         creator_fn,
         StorageFactory::StorageFeatures{
             .supports_settings = true,
-            .source_access_type = AccessType::KAFKA,
+            .source_access_type = AccessTypeObjects::Source::KAFKA,
             .has_builtin_setting_fn = KafkaSettings::hasBuiltin,
         });
 }
