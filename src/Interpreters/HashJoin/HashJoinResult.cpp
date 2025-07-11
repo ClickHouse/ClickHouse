@@ -271,7 +271,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         for (size_t row = 0; row < num_lhs_rows; ++row)
         {
             auto offset = offsets[row + next_row];
-            partial_offsets.push_back( offset- prev_offset);
+            partial_offsets.push_back(offset - prev_offset);
             if (offset == last_offset)
                 ++num_skipped_not_matched_rows_in_row_ref_list;
             last_offset = offset;
