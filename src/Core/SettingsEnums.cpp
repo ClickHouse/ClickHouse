@@ -326,4 +326,11 @@ IMPLEMENT_SETTING_ENUM(
     {{"lat_lon", GeoToH3ArgumentOrder::LAT_LON},
      {"lon_lat", GeoToH3ArgumentOrder::LON_LAT}})
 
+
+IMPLEMENT_SETTING_ENUM(
+    S3UriStyle,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", S3UriStyle::AUTO},
+     {"path", S3UriStyle::PATH},
+     {"virtual_hosted", S3UriStyle::VIRTUAL_HOSTED}})
 }

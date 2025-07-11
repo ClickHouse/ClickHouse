@@ -9,6 +9,7 @@
 #include <Common/Throttler.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -53,6 +54,7 @@ namespace S3AuthSetting
     extern const S3AuthSettingsBool use_adaptive_timeouts;
     extern const S3AuthSettingsBool use_environment_credentials;
     extern const S3AuthSettingsBool use_insecure_imds_request;
+    extern const S3AuthSettingsS3UriStyle uri_style;
 }
 
 namespace ErrorCodes
@@ -66,7 +68,7 @@ std::unique_ptr<S3::Client> getClient(
     ContextPtr context,
     bool for_disk_s3)
 {
-    auto url = S3::URI(endpoint);
+    auto url = S3::URI(endpoint, false, settings.auth_settings[S3AuthSetting::uri_style]);
     if (!url.key.ends_with('/'))
         url.key.push_back('/');
     return getClient(url, settings, context, for_disk_s3);
