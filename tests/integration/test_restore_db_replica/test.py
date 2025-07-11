@@ -483,10 +483,10 @@ def test_restore_db_replica_with_diffrent_table_metadata(
             look_behind_lines=1000,
         )
 
-    assert [f"{count_test_table_1}"] == node_1.query(
+    assert [f"{count_test_table_1}"] == node_1.query_with_retry(
         f"SELECT count(*) FROM {exclusive_database_name}.{test_table_1}"
     ).split()
-    assert [f"{count_test_table_1}"] == node_2.query(
+    assert [f"{count_test_table_1}"] == node_2.query_with_retry(
         f"SELECT count(*) FROM {exclusive_database_name}.{test_table_1}"
     ).split()
 
@@ -625,7 +625,6 @@ def test_restore_db_replica_on_cluster(
     assert zk.exists(f"/clickhouse/{exclusive_database_name}") is None
 
     node_1.query(f"SYSTEM RESTORE DATABASE REPLICA ON CLUSTER `test_cluster` {exclusive_database_name}")
-    # node_1.query(f"SYSTEM RESTORE DATABASE REPLICA ON CLUSTER `test_cluster` {exclusive_database_name}")
     assert node_1.wait_for_log_line(
         f"{exclusive_database_name}): All tables are created successfully",
         look_behind_lines=1000,
@@ -638,10 +637,6 @@ def test_restore_db_replica_on_cluster(
     assert ["1"] == node_1.query(
         f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}'"
     ).split()
-
-    # assert [f"{count_test_table}"] == node_1.query(
-    #     f"SELECT count(*) FROM {exclusive_database_name}.{test_table_1}"
-    # ).split()
 
     check_contains_table(
         node_1, f"{exclusive_database_name}.{test_table_1}", count_test_table
@@ -659,11 +654,3 @@ def test_restore_db_replica_on_cluster(
     check_contains_table(
         node_2, f"{exclusive_database_name}.{test_table_2}", count_test_table
     )
-
-    # expected_count = ["0"]
-    # assert (
-    #     expected_count
-    #     == node_1.query(
-    #         f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}' AND table='{test_table_2}'"
-    #     ).split()
-    # )
