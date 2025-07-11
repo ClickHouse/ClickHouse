@@ -89,6 +89,8 @@ static struct InitFiu
     PAUSEABLE(storage_merge_tree_background_clear_old_parts_pause) \
     PAUSEABLE(database_replicated_startup_pause) \
     ONCE(keeper_leader_sets_invalid_digest) \
+    REGULAR(database_replicated_delay_recovery) \
+    REGULAR(database_replicated_delay_entry_execution)
 
 
 namespace FailPoints
