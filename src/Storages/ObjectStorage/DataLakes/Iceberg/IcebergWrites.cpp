@@ -32,7 +32,7 @@
 #include <Common/isValidUTF8.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
-#include "Columns/IColumn.h"
+#include <Columns/IColumn.h>
 
 #include <memory>
 #include <sstream>
