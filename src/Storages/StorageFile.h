@@ -256,7 +256,6 @@ private:
         std::unique_ptr<ReadBuffer> read_buf_,
         bool need_only_count_);
 
-
     /**
       * If specified option --rename_files_after_processing and files created by TableFunctionFile
       * Last reader will rename files according to specified pattern if desctuctor of reader was called without uncaught exceptions

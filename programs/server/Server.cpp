@@ -770,7 +770,7 @@ void sanityChecks(Server & server)
                 Context::WarningType::DELAY_ACCOUNTING_DISABLED,
                 PreformattedMessage::create(
                     "Delay accounting is not enabled, OSIOWaitMicroseconds will not be gathered. You can enable it "
-                    "using `echo 1 > {}` or by using sysctl.",
+                    "using `sudo sh -c 'echo 1 > {}'` or by using sysctl.",
                     String(filename)));
     }
     catch (...) // NOLINT(bugprone-empty-catch)
