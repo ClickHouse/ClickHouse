@@ -1628,7 +1628,7 @@ public:
         UInt64 scaling = 1ULL << fraction_bit_num;
 
         /// Check for overflows. (3) With all integer types, value * (1ULL << fraction_bit_num) cannot overflow as fraction_bit_num is
-        /// always 0. (1) Overflow can only occur when value is a UInt64 that is out of bounds of Int64. (2) With flating point value, we
+        /// always 0. (1) Overflow can only occur when value is a UInt64 that is out of bounds of Int64. (2) With floating point value, we
         /// are concerned that casting Float(32/64) result will overflow Int64 destination.
         if constexpr (std::is_same_v<ValueType, UInt64>)
         {
