@@ -873,9 +873,9 @@ def test_kafka_protobuf_transaction_oneof(kafka_cluster):
                 sell_payment_card_value Float64,
                 sell_customer_name String,
                 sell_items_sold Int32,
-                payment_details Enum8('ommited' = 0, 'buy' = 2, 'sell' = 3),
-                buy_payment_value Enum8('ommited' = 0, 'cash_value' = 1, 'card_value' = 2),
-                sell_payment_value Enum8('ommited' = 0, 'cash_value' = 1, 'card_value' = 2),
+                payment_details Enum8('omitted' = 0, 'buy' = 2, 'sell' = 3),
+                buy_payment_value Enum8('omitted' = 0, 'cash_value' = 1, 'card_value' = 2),
+                sell_payment_value Enum8('omitted' = 0, 'cash_value' = 1, 'card_value' = 2),
             )
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
@@ -891,7 +891,7 @@ def test_kafka_protobuf_transaction_oneof(kafka_cluster):
         kafka_cluster, "pb_transaction_oneof", 0, 1
     )
 
-    expected="1000000	10	0	dell	1	0	0		0	buy	cash_value	ommited\n"
+    expected="1000000	10	0	dell	1	0	0		0	buy	cash_value	omitted\n"
     result = ""
     while True:
         result += instance.query("SELECT * FROM test.kafka", ignore_error=True)

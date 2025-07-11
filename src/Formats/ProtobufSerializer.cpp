@@ -2014,7 +2014,7 @@ namespace
 
         void writeRow([[maybe_unused]] size_t row_num) override
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "OneOf is not inplemented for writes");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "OneOf is not implemented for writes");
             // Should be as simple as
             //   if (static_cast<int>(presence_column->getInt(row_num)) == field_tag)
             //       nested_serializer->writeRow(row_num);
@@ -4201,7 +4201,7 @@ NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * 
                     if (!known_oneofs.contains(oneof_descriptor->name()))
                     {
                         std::vector<std::pair<String, Int8>> values;
-                        values.emplace_back("ommited", 0);
+                        values.emplace_back("omitted", 0);
 
                         for (int fnum = 0; fnum < oneof_descriptor->field_count(); ++fnum)
                         {

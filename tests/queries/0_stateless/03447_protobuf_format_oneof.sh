@@ -77,9 +77,9 @@ CREATE TABLE transaction_3447
     sell_payment_card_value Float64,
     sell_customer_name String,
     sell_items_sold Int32,
-    payment_details Enum8('ommited' = 0, 'buy' = 2, 'sell' = 3),
-    buy_payment_value Enum8('ommited' = 0, 'cash_value' = 1, 'card_value' = 2),
-    sell_payment_value Enum8('ommited' = 0, 'cash_value' = 1, 'card_value' = 2),
+    payment_details Enum8('omitted' = 0, 'buy' = 2, 'sell' = 3),
+    buy_payment_value Enum8('omitted' = 0, 'cash_value' = 1, 'card_value' = 2),
+    sell_payment_value Enum8('omitted' = 0, 'cash_value' = 1, 'card_value' = 2),
 )
 ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO transaction_3447 from INFILE '$CURDIR/data_protobuf/tbuy' SETTINGS format_schema='$SCHEMADIR/03447_oneof_transaction.proto:Transaction' FORMAT ProtobufSingle;

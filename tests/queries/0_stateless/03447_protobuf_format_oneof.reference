@@ -29,7 +29,7 @@ sell_payment_card_value: 0
 sell_customer_name:      bas&friends
 sell_items_sold:         2
 payment_details:         sell
-buy_payment_value:       ommited
+buy_payment_value:       omitted
 sell_payment_value:      cash_value
 
 Row 2:
@@ -45,7 +45,7 @@ sell_customer_name:
 sell_items_sold:         0
 payment_details:         buy
 buy_payment_value:       cash_value
-sell_payment_value:      ommited
+sell_payment_value:      omitted
 
 Row 3:
 ──────
@@ -59,8 +59,8 @@ sell_payment_card_value: 0
 sell_customer_name:      
 sell_items_sold:         0
 payment_details:         sell
-buy_payment_value:       ommited
-sell_payment_value:      ommited
+buy_payment_value:       omitted
+sell_payment_value:      omitted
 >> oneof_repeated
 Row 1:
 ──────
