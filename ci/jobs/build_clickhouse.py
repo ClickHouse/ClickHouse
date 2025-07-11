@@ -168,7 +168,7 @@ def main():
     files = []
     if res and JobStages.BUILD in stages:
         run_shell("sccache stats", "sccache --show-stats")
-        if build_type == BuildTypes.AMD_DEBUG:
+        if build_type == BuildTypes.AMD_DEBUG or 'ENABLE_EXAMPLES=1' in cmake_cmd:
             targets = "-k0 all"
         elif build_type == BuildTypes.FUZZERS:
             targets = "fuzzers"
