@@ -155,7 +155,7 @@ HashJoin::HashJoin(
             column.column = column.type->createColumn();
     }
 
-    LOG_TRACE(
+    LOG_TEST(
         log,
         "{}Keys: {}, datatype: {}, kind: {}, strictness: {}, right header: {}",
         instance_log_id,

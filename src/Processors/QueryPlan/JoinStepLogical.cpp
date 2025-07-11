@@ -497,12 +497,13 @@ JoinActionRef buildSingleActionForJoinExpression(const JoinExpression & join_exp
 
 void JoinStepLogical::setPreparedJoinStorage(PreparedJoinStorage storage) { prepared_join_storage = std::move(storage); }
 
-static Block blockWithColumns(ColumnsWithTypeAndName columns)
+static SharedHeader blockWithActionsDAGOutput(const ActionsDAG & actions_dag)
 {
-    Block block;
-    for (const auto & column : columns)
-        block.insert(ColumnWithTypeAndName(column.column ? column.column : column.type->createColumn(), column.type, column.name));
-    return block;
+    ColumnsWithTypeAndName columns;
+    columns.reserve(actions_dag.getOutputs().size());
+    for (const auto & node : actions_dag.getOutputs())
+        columns.emplace_back(node->column ? node->column : node->result_type->createColumn(), node->result_type, node->result_name);
+    return std::make_shared<const Block>(Block{columns});
 }
 
 static void addToNullableActions(ActionsDAG & dag, const FunctionOverloadResolverPtr & to_nullable_function)
@@ -732,8 +733,8 @@ JoinPtr JoinStepLogical::convertToPhysical(
     table_join->setUsedColumns(expression_actions.post_join_actions->getRequiredColumnsNames());
     table_join->setJoinInfo(join_info);
 
-    SharedHeader left_sample_block = std::make_shared<const Block>(blockWithColumns(expression_actions.left_pre_join_actions->getResultColumns()));
-    SharedHeader right_sample_block = std::make_shared<const Block>(blockWithColumns(expression_actions.right_pre_join_actions->getResultColumns()));
+    SharedHeader left_sample_block = blockWithActionsDAGOutput(*expression_actions.left_pre_join_actions);
+    SharedHeader right_sample_block = blockWithActionsDAGOutput(*expression_actions.right_pre_join_actions);
 
     if (swap_inputs)
     {
