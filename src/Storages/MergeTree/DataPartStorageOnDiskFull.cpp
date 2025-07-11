@@ -253,20 +253,22 @@ void DataPartStorageOnDiskFull::commitTransaction()
 
 void DataPartStorageOnDiskFull::validateDiskTransaction(std::function<void(IDiskTransaction&)> check_function)
  {
-    const auto in_transaction = bool(transaction);
-    scope_guard commit_transaction;
-    if (!in_transaction)
+    auto active_transaction = transaction;
+
+    LOG_DEBUG(getLogger("DataPartStorageOnDiskFull"),
+    "add validate tx operation for relative path: {}, has active transaction {}",
+        getRelativePath(), bool(active_transaction));
+
+    if (!active_transaction)
+        active_transaction = std::make_shared<FakeDiskTransaction>(*volume->getDisk());
+
+    scope_guard commit_transaction = [&]()
     {
-        commit_transaction = [&]()
-        {
-            transaction->commit();
-            transaction.reset();
-        };
+        if (active_transaction != transaction)
+            active_transaction->commit();
+    };
 
-        transaction = std::make_shared<FakeDiskTransaction>(*volume->getDisk());
-    }
-
-    transaction->validateTransaction(std::move(check_function));
+    active_transaction->validateTransaction(std::move(check_function));
 }
 
 bool DataPartStorageOnDiskFull::isTransactional() const
