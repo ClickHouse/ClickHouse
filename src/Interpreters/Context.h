@@ -3,7 +3,7 @@
 #include <base/types.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Common/IThrottler.h>
+#include <Common/Throttler_fwd.h>
 #include <Common/SettingSource.h>
 #include <Common/SharedMutex.h>
 #include <Common/SharedMutexHelper.h>
@@ -234,9 +234,7 @@ using InputInitializer = std::function<void(ContextPtr, const StoragePtr &)>;
 using InputBlocksReader = std::function<Block(ContextPtr)>;
 
 /// Used in distributed task processing
-struct ClusterFunctionReadTaskResponse;
-using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
-using ClusterFunctionReadTaskCallback = std::function<ClusterFunctionReadTaskResponsePtr()>;
+using ReadTaskCallback = std::function<String()>;
 
 using MergeTreeAllRangesCallback = std::function<void(InitialAllRangesAnnouncement)>;
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
@@ -353,7 +351,7 @@ protected:
 
     /// Used in s3Cluster table function. With this callback, a worker node could ask an initiator
     /// about next file to read from s3.
-    std::optional<ClusterFunctionReadTaskCallback> next_task_callback;
+    std::optional<ReadTaskCallback> next_task_callback;
     /// Used in parallel reading from replicas. A replica tells about its intentions to read
     /// some ranges from some part and initiator will tell the replica about whether it is accepted or denied.
     std::optional<MergeTreeReadTaskCallback> merge_tree_read_task_callback;
@@ -685,7 +683,6 @@ public:
     void addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const;
     void addWarningMessageAboutDatabaseOrdinary(const String & database_name) const;
     void removeWarningMessage(WarningType warning) const;
-    void removeAllWarnings() const;
 
     VolumePtr getGlobalTemporaryVolume() const; /// TODO: remove, use `getTempDataOnDisk`
 
@@ -1073,9 +1070,6 @@ public:
     double getMinOSCPUWaitTimeRatioToDropConnection() const;
     double getMaxOSCPUWaitTimeRatioToDropConnection() const;
     void setOSCPUOverloadSettings(double min_os_cpu_wait_time_ratio_to_drop_connection, double max_os_cpu_wait_time_ratio_to_drop_connection);
-
-    bool getS3QueueDisableStreaming() const;
-    void setS3QueueDisableStreaming(bool s3queue_disable_streaming) const;
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
@@ -1504,8 +1498,8 @@ public:
     AsynchronousInsertQueue * tryGetAsynchronousInsertQueue() const;
     void setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr);
 
-    ClusterFunctionReadTaskCallback getClusterFunctionReadTaskCallback() const;
-    void setClusterFunctionReadTaskCallback(ClusterFunctionReadTaskCallback && callback);
+    ReadTaskCallback getReadTaskCallback() const;
+    void setReadTaskCallback(ReadTaskCallback && callback);
 
     MergeTreeReadTaskCallback getMergeTreeReadTaskCallback() const;
     void setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback);

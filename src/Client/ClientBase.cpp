@@ -2136,7 +2136,6 @@ void ClientBase::processParsedSingleQuery(
 {
     resetOutput();
     have_error = false;
-    error_code = 0;
     cancelled = false;
     cancelled_printed = false;
     client_exception.reset();
@@ -2463,6 +2462,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 {
     bool echo_query = echo_queries;
 
+    assert(!buzz_house);
     {
         /// disable logs if expects errors
         TestHint test_hint(all_queries_text);
@@ -2516,19 +2516,16 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
             }
             case MultiQueryProcessingStage::PARSING_FAILED:
             {
-                have_error |= buzz_house;
                 return true;
             }
             case MultiQueryProcessingStage::CONTINUE_PARSING:
             {
                 is_first = false;
-                have_error |= buzz_house;
                 continue;
             }
             case MultiQueryProcessingStage::PARSING_EXCEPTION:
             {
                 is_first = false;
-                have_error |= buzz_house;
                 this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
 
                 // Try to find test hint for syntax error. We don't know where
@@ -2739,7 +2736,6 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     server_exception.reset();
 
                     have_error = false;
-                    error_code = 0;
 
                     if (!connection->checkConnected(connection_parameters.timeouts))
                         connect();
@@ -2760,13 +2756,6 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                         all_queries_end,
                         static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_depth]),
                         static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_backtracks]));
-                }
-
-                if (buzz_house && have_error)
-                {
-                    // Test if error is disallowed by BuzzHouse
-                    const auto * exception = server_exception ? server_exception.get() : (client_exception ? client_exception.get() : nullptr);
-                    error_code = exception ? exception->code() : 0;
                 }
 
                 // Report error.
@@ -2790,6 +2779,7 @@ bool ClientBase::processQueryText(const String & text)
 {
     auto trimmed_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
 
+    assert(!buzz_house);
     if (exit_strings.end() != exit_strings.find(trimmed_input))
         return false;
 
@@ -3208,12 +3198,12 @@ void ClientBase::runInteractive()
 
 
 #if USE_REPLXX
-    replxx::Replxx::highlighter_callback_with_pos_t highlight_callback{};
+    replxx::Replxx::highlighter_callback_t highlight_callback{};
 
     if (getClientConfiguration().getBool("highlight", true))
-        highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors, int pos)
+        highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors)
         {
-            highlight(query, colors, *client_context, pos);
+            highlight(query, colors, *client_context);
         };
 
     /// Don't allow embedded client to read from and write to any file on the server's filesystem.

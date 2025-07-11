@@ -71,7 +71,6 @@ using MergedPartOffsetsPtr = std::shared_ptr<MergedPartOffsets>;
 class MergeTask
 {
 public:
-    static constexpr auto TEMP_DIRECTORY_PREFIX = "tmp_merge_";
 
     MergeTask(
         FutureMergedMutatedPartPtr future_part_,

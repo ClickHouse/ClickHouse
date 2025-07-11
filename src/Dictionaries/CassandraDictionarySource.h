@@ -4,9 +4,9 @@
 
 #if USE_CASSANDRA
 
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/IDictionarySource.h>
-#include <Dictionaries/ExternalQueryBuilder.h>
+#include "DictionaryStructure.h"
+#include "IDictionarySource.h"
+#include "ExternalQueryBuilder.h"
 #include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
 #include <Poco/Logger.h>

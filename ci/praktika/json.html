@@ -88,8 +88,6 @@
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
         }
 
         #toggle-status-bar {
@@ -789,8 +787,6 @@
 
     function addStorageUsageChartToStatus(usage_data) {
         const statusContainer = document.getElementById("status-container");
-        
-        // Note: We don't need the extra style element anymore as we now handle margins directly
 
         if (!usage_data || !usage_data.uploaded || !usage_data.uploaded_details) {
             console.error("Invalid or missing storage usage data.");
@@ -799,8 +795,6 @@
 
         const uploaded = usage_data.uploaded;
         const originalDetails = usage_data.uploaded_details;
-        // Calculate total size in MB - define it at this scope level so it's available throughout the function
-        const uploadedMB = (uploaded / (1024 * 1024)).toFixed(2);
 
         // Group small files and sort
         let sortedEntries = Object.entries(originalDetails)
@@ -817,166 +811,138 @@
         const values = grouped.map(([, value]) => value);
 
         const chartWrapper = document.createElement("div");
-        chartWrapper.className = 'status-widget';
+        chartWrapper.className = 'status-widget'
 
-        // Create fixed-height info container (2 lines)
-        const infoContainer = document.createElement("div");
-        infoContainer.style.height = "2.2em";
-        infoContainer.style.display = "flex";
-        infoContainer.style.flexDirection = "column";
-        infoContainer.style.fontSize = "0.8em";
+        // Total uploaded row
+        const totalRow = document.createElement("div");
+        totalRow.style.display = "flex";
+        totalRow.style.justifyContent = "space-between";
+        totalRow.style.margin = 0;
 
-        // First line: Item name or "total uploaded"
-        const nameRow = document.createElement("div");
-        nameRow.style.height = "1.3em";
-        nameRow.style.lineHeight = "1.3em";
-        nameRow.style.overflow = "hidden";
-        nameRow.style.whiteSpace = "nowrap";
-        nameRow.style.textOverflow = "ellipsis";
-        nameRow.style.letterSpacing = "-0.02em"; // Slightly condensed letter spacing
-        nameRow.id = "storage-usage-name";
-        nameRow.textContent = "uploaded:";
-        
-        // Second line: XX% ...padding... YYYMB
-        const detailsRow = document.createElement("div");
-        detailsRow.style.display = "flex";
-        detailsRow.style.justifyContent = "space-between";
-        detailsRow.style.height = "1.3em";
-        detailsRow.style.lineHeight = "1.3em";
-        detailsRow.id = "storage-usage-details";
-        detailsRow.style.fontSize = "0.85em";
-        detailsRow.style.color = "#666";
-        
-        // Combined size and percentage info (right-aligned)
-        const sizeAndPercentEl = document.createElement("span");
-        sizeAndPercentEl.id = "storage-usage-size-percent";
-        sizeAndPercentEl.style.marginLeft = "auto"; // Push to the right
-        sizeAndPercentEl.textContent = `${uploadedMB} MB (100%)`; // Both size and percentage
-        
-        detailsRow.appendChild(sizeAndPercentEl);
-        
-        infoContainer.appendChild(nameRow);
-        infoContainer.appendChild(detailsRow);
-        chartWrapper.appendChild(infoContainer);
+        const totalLabel = document.createElement("span");
+        totalLabel.textContent = "uploaded:";
+        const uploadedMB = (uploaded / (1024 * 1024)).toFixed(2);
+        const totalSize = document.createElement("span");
+        totalSize.textContent = `${uploadedMB} MB`;
 
-        // Fixed dimensions for the horizontal bar chart
-        const barHeight = 24; // Thick bar
-        
-        // Bar chart container - use 100% width to fit the widget perfectly
-        const chartContainer = document.createElement("div");
-        chartContainer.style.height = `${barHeight}px`;
-        chartContainer.style.position = "relative";
-        chartContainer.style.margin = "10px 0 0 0";
-        chartContainer.style.cursor = "pointer";
-        
-        // Create bars for each entry
-        const barData = [];
-        
-        // Use percentage-based widths instead of fixed pixels
+        totalRow.appendChild(totalLabel);
+        totalRow.appendChild(totalSize);
+        chartWrapper.appendChild(totalRow);
+
+        // Canvas
+        const canvas = document.createElement("canvas");
+        canvas.width = 400;
+        canvas.height = 400;
+        canvas.style.width = "100%";
+        canvas.style.maxWidth = "400px";
+        canvas.style.margin = "0";
+        chartWrapper.appendChild(canvas);
+
+        const ctx = canvas.getContext("2d");
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const radius = 150;
+
+        const sliceData = [];
+        let startAngle = 0;
         labels.forEach((label, index) => {
             const value = values[index];
-            const percent = value / uploaded;
-            // Convert to percentage width with minimum visibility
-            const percentWidth = Math.max(percent * 100, 0.5);
+            const sliceAngle = (value / uploaded) * 2 * Math.PI;
             const color = stringToColor(label);
-            
-            const bar = document.createElement("div");
-            bar.style.position = "absolute";
-            bar.style.left = barData.length > 0 ? `${barData.reduce((sum, b) => sum + b.percentWidth, 0)}%` : "0";
-            bar.style.width = `${percentWidth}%`;
-            bar.style.height = `${barHeight}px`;
-            bar.style.backgroundColor = color;
-            bar.style.transition = "opacity 0.2s";
-            bar.dataset.label = label;
-            
-            // Create tooltip data for this bar
-            const sizeMB = (value / (1024 * 1024)).toFixed(2);
-            const percentValue = ((value / uploaded) * 100).toFixed(1);
-            bar.dataset.tooltip = `${label}: ${sizeMB} MB (${percentValue}%)`;
-            
-            chartContainer.appendChild(bar);
-            
-            barData.push({
+
+            sliceData.push({
                 label,
-                element: bar,
-                percentWidth,
+                startAngle,
+                endAngle: startAngle + sliceAngle,
                 color,
-                value,
-                tooltip: `${label}: ${sizeMB} MB (${percentValue}%)`
             });
+
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            ctx.arc(centerX, centerY, radius, startAngle, startAngle + sliceAngle);
+            ctx.closePath();
+            ctx.fillStyle = color;
+            ctx.fill();
+
+            startAngle += sliceAngle;
         });
-        
-        chartWrapper.appendChild(chartContainer);
+
+        // Legend + label mapping
+        const legend = document.createElement("div");
+        const legendMap = {}; // label => element
+
+        labels.forEach((label, index) => {
+            const value = values[index];
+            const percent = ((value / uploaded) * 100).toFixed(1);
+            const sizeMB = (value / (1024 * 1024)).toFixed(2);
+            const color = stringToColor(label);
+
+            const row = document.createElement("div");
+            row.style.display = "flex";
+            row.style.alignItems = "center";
+            row.style.justifyContent = "space-between";
+            row.style.fontSize = "10px";
+            row.style.cursor = "pointer";
+
+            const left = document.createElement("span");
+            left.style.display = "flex";
+            left.style.alignItems = "center";
+
+            const dot = document.createElement("span");
+            dot.style.display = "inline-block";
+            dot.style.width = "8px";
+            dot.style.height = "8px";
+            dot.style.flexShrink = "0";
+            dot.style.marginRight = "6px";
+            dot.style.backgroundColor = color;
+
+            const labelText = document.createElement("span");
+            labelText.textContent = label;
+
+            left.appendChild(dot);
+            left.appendChild(labelText);
+
+            const right = document.createElement("span");
+            right.textContent = `${sizeMB} MB (${percent}%)`;
+
+            row.appendChild(left);
+            row.appendChild(right);
+            legend.appendChild(row);
+
+            legendMap[label] = row;
+
+            // Hover from legend to chart
+            row.addEventListener("mouseenter", () => drawChart(label));
+            row.addEventListener("mouseleave", () => drawChart(null));
+        });
+
+        chartWrapper.appendChild(legend);
         statusContainer.appendChild(chartWrapper);
 
-        // Helper function to update display elements
-        const updateDisplay = (name, sizeMB, percent) => {
-            const nameEl = document.getElementById("storage-usage-name");
-            const sizePercentEl = document.getElementById("storage-usage-size-percent");
-            
-            if (nameEl && sizePercentEl) {
-                nameEl.textContent = name;
-                sizePercentEl.textContent = `${sizeMB} MB (${percent}%)`;
-            }
-        };
-        
-        // Show the total uploaded by default
-        const showTotalUploaded = () => {
-            updateDisplay("uploaded:", uploadedMB, 100);
-        };
+        function drawChart(hoveredLabel) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            sliceData.forEach((slice) => {
+                ctx.beginPath();
+                ctx.moveTo(centerX, centerY);
+                ctx.arc(centerX, centerY, radius, slice.startAngle, slice.endAngle);
+                ctx.closePath();
+                ctx.fillStyle = slice.color;
+                ctx.fill();
+                if (slice.label === hoveredLabel) {
+                    ctx.strokeStyle = "#000";
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
 
-        // Show details for specific segment
-        const showSegmentDetails = (segment) => {
-            const sizeMB = (segment.value / (1024 * 1024)).toFixed(2);
-            const percent = ((segment.value / uploaded) * 100).toFixed(1);
-            updateDisplay(segment.label, sizeMB, percent);
-        };
-        
-        // Highlight bar function
-        function highlightBar(hoveredLabel) {
-            let hoveredSegment = null;
-            
-            barData.forEach(bar => {
-                if (bar.label === hoveredLabel) {
-                    bar.element.style.opacity = "1";
-                    //bar.element.style.boxShadow = "0 0 0 2px #000";
-                    hoveredSegment = bar;
-                } else {
-                    bar.element.style.opacity = "0.5";
+                // Legend underline toggle
+                const row = legendMap[slice.label];
+                if (row) {
+                    row.style.textDecoration = slice.label === hoveredLabel ? "underline" : "none";
                 }
             });
-            
-            // Show details for hovered segment
-            if (hoveredSegment) {
-                showSegmentDetails(hoveredSegment);
-            }
         }
 
-        // Reset bars function
-        function resetBars() {
-            barData.forEach(bar => {
-                bar.element.style.opacity = "1";
-                bar.element.style.boxShadow = "none";
-            });
-            
-            // Reset to show total uploaded
-            showTotalUploaded();
-        }
-        
-        // Add hover effects to the bar segments
-        barData.forEach(bar => {
-            bar.element.addEventListener("mouseenter", () => highlightBar(bar.label));
-            bar.element.addEventListener("mouseleave", () => resetBars());
-        });
-        
-        // Reset wrapper padding to default for text, but adjust for the bar
-        chartWrapper.style.padding = "10px"; // Restore the standard padding
-        chartWrapper.style.paddingBottom = "10px"; // Add extra bottom padding
-        
-        // Only adjust the chart container (bar) to have full width
-        chartContainer.style.marginLeft = "-10px"; // Offset the parent padding
-        chartContainer.style.marginRight = "-10px"; // Offset the parent padding
-        chartContainer.style.width = "calc(100% + 20px)"; // Compensate for the negative margins
+        drawChart(null); // Initial draw
     }
 
     function addTimeTraceWidget(results, statusWidget, originalTask) {
@@ -1003,7 +969,7 @@
         canvas.style.height = `${totalHeight}px`;
         canvas.style.display = "block";
         widget.appendChild(canvas);
-        
+
         function resizeCanvas() {
             canvas.width = widget.clientWidth;
             canvas.height = totalHeight;
@@ -1011,7 +977,7 @@
         }
         resizeCanvas();
         window.addEventListener("resize", resizeCanvas);
-        
+
         function getColorFromName(name) {
             let hash = 0;
             for (let i = 0; i < name.length; i++) {
@@ -1050,7 +1016,7 @@
                     width = task.duration * scaleX;
                     color = getColorFromName(task.name);
                 }
-                
+
                 ctx.fillStyle = color;
                 ctx.fillRect(x, y, width, height);
 
@@ -1069,17 +1035,17 @@
             });
 
             // Event listeners
-        canvas.addEventListener("mousemove", (event) => {
-            const rect = canvas.getBoundingClientRect();
-            const mouseY = event.clientY - rect.top;
+            canvas.addEventListener("mousemove", (event) => {
+                const rect = canvas.getBoundingClientRect();
+                const mouseY = event.clientY - rect.top;
 
-            let hoveredTask = null;
-            for (let { y, height, task } of taskRects) {
-                if (mouseY >= y && mouseY <= y + height) {
-                    hoveredTask = task;
-                    break;
+                let hoveredTask = null;
+                for (let { y, height, task } of taskRects) {
+                    if (mouseY >= y && mouseY <= y + height) {
+                        hoveredTask = task;
+                        break;
+                    }
                 }
-            }
 
                 if (hoveredTask && statusWidget?.update) {
                     statusWidget.update(
@@ -1088,19 +1054,19 @@
                         hoveredTask.start_time,
                         hoveredTask.duration
                     );
-            }
-        });
+                }
+            });
 
-        canvas.addEventListener("mouseleave", () => {
-            if (statusWidget?.update && originalTask) {
-                statusWidget.update(
-                    originalTask.name,
-                    originalTask.status,
-                    originalTask.start_time,
-                    originalTask.duration
-                );
-            }
-        });
+            canvas.addEventListener("mouseleave", () => {
+                if (statusWidget?.update && originalTask) {
+                    statusWidget.update(
+                        originalTask.name,
+                        originalTask.status,
+                        originalTask.start_time,
+                        originalTask.duration
+                    );
+                }
+            });
         }
 
         drawTimeline();
@@ -1120,6 +1086,11 @@
             const line = document.createElement('div');
             line.textContent = value;
 
+            // Truncate long names
+            line.style.whiteSpace = "nowrap";
+            line.style.overflow = "hidden";
+            line.style.textOverflow = "ellipsis";
+
             if (className) line.classList.add(className);
             widget.appendChild(line);
         }
@@ -1127,18 +1098,8 @@
         // Make widget re-usable by external updates
         widget.update = function (name, status, start_time, duration) {
             widget.innerHTML = '';
-            
-            // Create name line with fixed height for two lines
-            const nameLine = document.createElement('div');
-            nameLine.textContent = name;
-            nameLine.style.whiteSpace = "normal";
-            nameLine.style.overflow = "hidden";
-            nameLine.style.maxWidth = "100%";
-            nameLine.style.height = "2.6em"; // Reserve space for 2 lines
-            nameLine.style.lineHeight = "1.3em";
-            nameLine.style.textAlign = "left";
-            widget.appendChild(nameLine);
-            
+
+            addLine(name);
             addLine(status, getStatusClass(status));
             addLine(start_time ? formatTimestamp(start_time) : "0:00:00");
             if (duration != null) {
@@ -1303,12 +1264,8 @@
         // Check if the next row is already an "info" row
         if (nextRow && nextRow.classList.contains('info-row')) {
             nextRow.remove(); // If it's there, remove it
-            closedInfoCnt++;
-            console.log(`Info row closed. Count: ${openedInfoCnt - closedInfoCnt}. Auto-refresh ${openedInfoCnt - closedInfoCnt > 0 ? 'disabled' : 'enabled'}.`);
         } else {
             // Otherwise, create a new row for the info text
-            openedInfoCnt++;
-            console.log(`Info row opened. Count: ${openedInfoCnt - closedInfoCnt}. Auto-refresh ${openedInfoCnt - closedInfoCnt > 0 ? 'disabled' : 'enabled'}.`);
             const infoRow = document.createElement('tr');
             infoRow.classList.add('info-row');
 
@@ -1693,29 +1650,14 @@
         return hasNewData;
     }
 
-    // Track for autorefresh toggle
-    let openedInfoCnt = 0;
-    let closedInfoCnt = 0;
-    
-    function renderResultsAuto(PR, REF, sha, nameParams) {
-
+    function startAutoRefresh(PR, REF, sha, nameParams) {
         function clearPage() {
             // Clear the main content areas
             // document.getElementById('content').innerHTML = '';
             document.getElementById('result-container').innerHTML = '';
             document.getElementById('status-container').innerHTML = '';
         }
-
-        async function checkForUpdatesAndRender(force = false) {
-            if (
-                !(nameParams?.length === 1 && ["running", "pending"].includes(runtimeCache?.json0?.status))
-                && !(nameParams?.length === 2 && ["running", "pending"].includes(runtimeCache?.json1?.status) || runtimeCache?.json1 == null)
-                && !force
-                || openedInfoCnt - closedInfoCnt > 0
-            ) {
-                return
-            }
-
+        async function checkForUpdates() {
             const statusContainer = document.getElementById('status-container');
             const scrollTop = statusContainer.scrollTop;
 
@@ -1726,10 +1668,7 @@
                 statusContainer.scrollTop = scrollTop;
             }
         }
-
-        checkForUpdatesAndRender(true)
-        console.log("Auto-reload started");
-        setInterval(checkForUpdatesAndRender, 30000);
+        setInterval(checkForUpdates, 30000);
     }
 
     function updatePageTitle(PR, REF, sha, nameParams) {
@@ -1763,10 +1702,19 @@
         });
 
         await fetchData(PR, REF, sha, nameParams);
-        renderResultsAuto(PR, REF, sha, nameParams);
+        await renderResults(PR, sha, nameParams);
         renderFooter(nameParams)
         updatePageTitle(PR, REF, sha, nameParams)
         fetchStatistics(nameParams[0])
+        if (
+            (nameParams?.length === 1 &&
+                ["running", "pending"].includes(runtimeCache?.json0?.status)) ||
+            (nameParams?.length === 2 &&
+                (["running", "pending"].includes(runtimeCache?.json1?.status) || runtimeCache?.json1 == null))
+        ) {
+            console.log("Auto-reload started");
+            startAutoRefresh(PR, REF, sha, nameParams);
+        }
     }
 
     document.addEventListener('DOMContentLoaded', async () => {

@@ -100,7 +100,7 @@ cmake -D CMAKE_BUILD_TYPE=Debug ..
 Run ninja to build:
 
 ```sh
-ninja clickhouse
+ninja clickhouse-server clickhouse-client
 ```
 
 If you like to build all the binaries (utilities and tests), run ninja without parameters:

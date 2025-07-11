@@ -13,7 +13,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/InsertQuerySettingsPushDownVisitor.h>
 #include <Common/typeid_cast.h>
-#include <Parsers/IAST_fwd.h>
+#include "Parsers/IAST_fwd.h"
 
 
 namespace DB

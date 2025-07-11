@@ -1,4 +1,4 @@
-#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
+#include "ParquetBlockInputFormat.h"
 
 #if USE_PARQUET
 
@@ -18,9 +18,9 @@
 #include <parquet/bloom_filter_reader.h>
 #include <parquet/file_reader.h>
 #include <parquet/statistics.h>
-#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
-#include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
-#include <Processors/Formats/Impl/ArrowFieldIndexUtil.h>
+#include "ArrowBufferedStreams.h"
+#include "ArrowColumnToCHColumn.h"
+#include "ArrowFieldIndexUtil.h"
 #include <base/scope_guard.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeLowCardinality.h>
