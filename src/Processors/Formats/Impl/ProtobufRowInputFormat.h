@@ -46,12 +46,12 @@ private:
     bool readRow(MutableColumns & columns, RowReadExtension & row_read_extension) override;
     bool allowSyncAfterError() const override;
     void syncAfterError() override;
-    void resetParserOnError();
 
     bool supportsCountRows() const override { return true; }
     size_t countRows(size_t max_block_size) override;
 
     void createReaderAndSerializer();
+    void destroyReaderAndSerializer();
 
     std::unique_ptr<ProtobufReader> reader;
     std::vector<size_t> missing_column_indices;

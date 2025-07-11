@@ -41,6 +41,12 @@ void ProtobufRowInputFormat::createReaderAndSerializer()
         *reader);
 }
 
+void ProtobufRowInputFormat::destroyReaderAndSerializer()
+{
+    serializer.reset();
+    reader.reset();
+}
+
 bool ProtobufRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & row_read_extension)
 try
 {
@@ -64,7 +70,7 @@ try
 }
 catch (...)
 {
-    resetParserOnError();
+    destroyReaderAndSerializer();
     throw;
 }
 
@@ -85,12 +91,6 @@ void ProtobufRowInputFormat::syncAfterError()
     reader->endMessage(true);
 }
 
-void ProtobufRowInputFormat::resetParserOnError()
-{
-    serializer.reset();
-    reader.reset();
-}
-
 size_t ProtobufRowInputFormat::countRows(size_t max_block_size)
 try
 {
@@ -109,7 +109,7 @@ try
 }
 catch (...)
 {
-    resetParserOnError();
+    destroyReaderAndSerializer();
     throw;
 }
 
