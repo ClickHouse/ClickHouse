@@ -106,6 +106,7 @@ RestCatalog::RestCatalog(
     const std::string & auth_scope_,
     const std::string & auth_header_,
     const std::string & oauth_server_uri_,
+    bool oauth_server_use_request_body_,
     DB::ContextPtr context_)
     : ICatalog(warehouse_)
     , DB::WithContext(context_)
@@ -113,6 +114,7 @@ RestCatalog::RestCatalog(
     , log(getLogger("RestCatalog(" + warehouse_ + ")"))
     , auth_scope(auth_scope_)
     , oauth_server_uri(oauth_server_uri_)
+    , oauth_server_use_request_body(oauth_server_use_request_body_)
 {
     if (!catalog_credential_.empty())
     {
@@ -204,17 +206,32 @@ std::string RestCatalog::retrieveAccessToken() const
 
     Poco::URI url;
     DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
-    if (oauth_server_uri.empty())
-        url = Poco::URI(base_url / oauth_tokens_endpoint);
-    else
-        url = Poco::URI(oauth_server_uri);
-
-    out_stream_callback = [&](std::ostream & os)
+    if (oauth_server_uri.empty() && !oauth_server_use_request_body)
     {
-        os << fmt::format(
-            "grant_type=client_credentials&scope={}&client_id={}&client_secret={}",
-            auth_scope, client_id, client_secret);
-    };
+        url = Poco::URI(base_url / oauth_tokens_endpoint);
+
+        Poco::URI::QueryParameters params = {
+            {"grant_type", "client_credentials"},
+            {"scope", auth_scope},
+            {"client_id", client_id},
+            {"client_secret", client_secret},
+        };
+        url.setQueryParameters(params);
+    }
+    else
+    {
+        out_stream_callback = [&](std::ostream & os)
+        {
+            os << fmt::format(
+                "grant_type=client_credentials&scope={}&client_id={}&client_secret={}",
+                auth_scope, client_id, client_secret);
+        };
+
+        if (oauth_server_uri.empty())
+            url = Poco::URI(base_url / oauth_tokens_endpoint);
+        else
+            url = Poco::URI(oauth_server_uri);
+    }
 
     const auto & context = getContext();
     auto wb = DB::BuilderRWBufferFromHTTP(url)
