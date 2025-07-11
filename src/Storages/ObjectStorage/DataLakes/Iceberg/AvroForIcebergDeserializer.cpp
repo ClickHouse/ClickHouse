@@ -27,8 +27,6 @@ AvroForIcebergDeserializer::AvroForIcebergDeserializer(
         = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
 
     avro::NodePtr root_node = manifest_file_reader->dataSchema().root();
-    std::cerr << "manifest_file_path_ " << manifest_file_path_ << '\n';
-    //std::cerr << "readed schema " << manifest_file_reader->dataSchema().toJson() << '\n';
     auto data_type = AvroSchemaReader::avroNodeToDataType(root_node);
 
     MutableColumns columns;
@@ -38,20 +36,8 @@ AvroForIcebergDeserializer::AvroForIcebergDeserializer(
     RowReadExtension ext;
     while (manifest_file_reader->hasMore())
     {
-        std::cerr << "================= new record\n\n";
         manifest_file_reader->decr();
         deserializer.deserializeRow(columns, manifest_file_reader->decoder(), ext);
-
-        for (const auto & col : columns)
-        {
-            std::cerr << "==== new column\n\n";
-            Field res;
-            for (size_t i = 0; i < col->size(); ++i)
-            {
-                col->get(i, res);
-                std::cerr << "dump first val " << i << ' ' << res.dump() << '\n';
-            }
-        }
     }
 
     metadata = manifest_file_reader->metadata();

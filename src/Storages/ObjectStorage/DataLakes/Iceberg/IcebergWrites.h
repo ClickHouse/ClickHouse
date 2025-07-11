@@ -83,11 +83,6 @@ public:
         Int32 added_files_size,
         Int32 num_partitions);
 
-    static constexpr const char * f_sequence_number = "sequence-number";
-    static constexpr const char * f_snapshots = "snapshots";
-    static constexpr const char * f_snapshot_id = "snapshot-id";
-    static constexpr const char * f_parent_snapshot_id = "parent-snapshot-id";
-
 private:
     Poco::JSON::Object::Ptr metadata_object;
 

@@ -61,11 +61,17 @@ DEFINE_ICEBERG_FIELD(file_path);
 DEFINE_ICEBERG_FIELD(file_format);
 DEFINE_ICEBERG_FIELD(file_size_in_bytes);
 DEFINE_ICEBERG_FIELD(refs);
+DEFINE_ICEBERG_FIELD(branch);
+DEFINE_ICEBERG_FIELD(main);
+DEFINE_ICEBERG_FIELD(operation);
+DEFINE_ICEBERG_FIELD(append);
+DEFINE_ICEBERG_FIELD(file_sequence_number);
+DEFINE_ICEBERG_FIELD(snapshot_id);
 
 /// These variables replace `-` with underscore `_` to be compatible with c++ code.
 DEFINE_ICEBERG_FIELD_ALIAS(format_version, format-version);
 DEFINE_ICEBERG_FIELD_ALIAS(current_snapshot_id, current-snapshot-id);
-DEFINE_ICEBERG_FIELD_ALIAS(snapshot_id, snapshot-id);
+DEFINE_ICEBERG_FIELD_ALIAS(metadata_snapshot_id, snapshot-id);
 DEFINE_ICEBERG_FIELD_ALIAS(parent_snapshot_id, parent-snapshot-id);
 DEFINE_ICEBERG_FIELD_ALIAS(snapshot_log, snapshot-log);
 DEFINE_ICEBERG_FIELD_ALIAS(schema_id, schema-id);
@@ -91,6 +97,9 @@ DEFINE_ICEBERG_FIELD_ALIAS(total_position_deletes, total-position-deletes);
 DEFINE_ICEBERG_FIELD_ALIAS(total_equality_deletes, total-equality-deletes);
 DEFINE_ICEBERG_FIELD_ALIAS(field_id, field-id);
 DEFINE_ICEBERG_FIELD_ALIAS(last_sequence_number, last-sequence-number);
+DEFINE_ICEBERG_FIELD_ALIAS(metadata_file, metadata-file);
+DEFINE_ICEBERG_FIELD_ALIAS(metadata_log, metadata-log);
+DEFINE_ICEBERG_FIELD_ALIAS(metadata_sequence_number, sequence-number);
 /// These are compound fields like `data_file.file_path`, we use prefix 'c_' to distinguish them.
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_path);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, content);
