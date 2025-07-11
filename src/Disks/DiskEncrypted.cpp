@@ -29,8 +29,7 @@ namespace
 
     constexpr Algorithm DEFAULT_ENCRYPTION_ALGORITHM = Algorithm::AES_128_CTR;
 
-    template<typename String>
-    String unhexKey(const String & hex)
+    NoDumpString unhexKey(const NoDumpString & hex)
     {
         try
         {
