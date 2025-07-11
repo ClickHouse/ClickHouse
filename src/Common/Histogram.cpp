@@ -55,8 +55,7 @@ namespace DB::Histogram
         assert(label_values.size() == labels.size());
         {
             std::shared_lock lock(mutex);
-            auto it = metrics.find(label_values);
-            if (it != metrics.end())
+            if (auto it = metrics.find(label_values); it != metrics.end())
             {
                 return *it->second;
             }
