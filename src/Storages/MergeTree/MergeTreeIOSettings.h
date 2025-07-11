@@ -61,7 +61,7 @@ struct MergeTreeReaderSettings
     bool use_prefixes_deserialization_thread_pool = false;
     size_t filesystem_prefetches_limit = 0;
 
-    static MergeTreeReaderSettings Create(const ContextPtr & context, const SelectQueryInfo & query_info);
+    static MergeTreeReaderSettings create(const ContextPtr & context, const SelectQueryInfo & query_info);
 };
 
 struct MergeTreeWriterSettings
