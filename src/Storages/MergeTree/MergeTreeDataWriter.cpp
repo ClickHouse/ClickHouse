@@ -90,9 +90,6 @@ namespace ErrorCodes
     extern const int NOT_ENOUGH_SPACE;
 }
 
-namespace
-{
-
 void buildScatterSelector(
         const ColumnRawPtrs & columns,
         PODArray<size_t> & partition_num_to_first_row,
@@ -160,6 +157,9 @@ void buildScatterSelector(
                          client_info.initial_user, client_info.initial_query_id, partitions_count);
     }
 }
+
+namespace
+{
 
 /// Computes ttls and updates ttl infos
 void updateTTL(

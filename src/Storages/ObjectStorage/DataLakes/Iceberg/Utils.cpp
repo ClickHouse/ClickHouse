@@ -51,6 +51,60 @@ namespace Iceberg
 
 using namespace DB;
 
+std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src)
+{
+    std::string transform_name = Poco::toLower(transform_name_src);
+
+    if (transform_name == "year" || transform_name == "years")
+        return TransformAndArgument{"toYearNumSinceEpoch", std::nullopt};
+
+    if (transform_name == "month" || transform_name == "months")
+        return TransformAndArgument{"toMonthNumSinceEpoch", std::nullopt};
+
+    if (transform_name == "day" || transform_name == "date" || transform_name == "days" || transform_name == "dates")
+        return TransformAndArgument{"toRelativeDayNum", std::nullopt};
+
+    if (transform_name == "hour" || transform_name == "hours")
+        return TransformAndArgument{"toRelativeHourNum", std::nullopt};
+
+    if (transform_name == "identity")
+        return TransformAndArgument{"identity", std::nullopt};
+
+    if (transform_name == "void")
+        return TransformAndArgument{"tuple", std::nullopt};
+
+    if (transform_name.starts_with("truncate") || transform_name.starts_with("bucket"))
+    {
+        /// should look like transform[N] or bucket[N]
+
+        if (transform_name.back() != ']')
+            return std::nullopt;
+
+        auto argument_start = transform_name.find('[');
+
+        if (argument_start == std::string::npos)
+            throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Incorrect transform name {}", transform_name);
+
+        auto argument_width = transform_name.length() - 2 - argument_start;
+        std::string argument_string_representation = transform_name.substr(argument_start + 1, argument_width);
+        size_t argument;
+        bool parsed = DB::tryParse<size_t>(argument, argument_string_representation);
+
+        if (!parsed)
+            return std::nullopt;
+
+        if (transform_name.starts_with("truncate"))
+        {
+            return TransformAndArgument{"icebergTruncate", argument};
+        }
+        else if (transform_name.starts_with("bucket"))
+        {
+            return TransformAndArgument{"icebergBucket", argument};
+        }
+    }
+    return std::nullopt;
+}
+
 // This function is used to get the file path inside the directory which corresponds to iceberg table from the full blob path which is written in manifest and metadata files.
 // For example, if the full blob path is s3://bucket/table_name/data/00000-1-1234567890.avro, the function will return table_name/data/00000-1-1234567890.avro
 // Common path should end with "<table_name>" or "<table_name>/".

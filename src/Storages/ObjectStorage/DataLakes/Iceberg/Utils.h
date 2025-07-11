@@ -24,6 +24,14 @@ namespace Iceberg
 
 std::string getProperFilePathFromMetadataInfo(std::string_view data_path, std::string_view common_path, std::string_view table_location);
 
+struct TransformAndArgument
+{
+    String transform_name;
+    std::optional<size_t> argument;
+};
+
+std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src);
+
 }
 
 namespace DB

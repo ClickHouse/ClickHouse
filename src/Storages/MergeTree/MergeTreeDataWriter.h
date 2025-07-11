@@ -19,6 +19,13 @@
 namespace DB
 {
 
+void buildScatterSelector(
+    const ColumnRawPtrs & columns,
+    PODArray<size_t> & partition_num_to_first_row,
+    IColumn::Selector & selector,
+    size_t max_parts,
+    ContextPtr context);
+
 struct MergeTreeTemporaryPart
 {
     MergeTreeData::MutableDataPartPtr part;

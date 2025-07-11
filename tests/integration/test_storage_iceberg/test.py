@@ -3303,7 +3303,7 @@ def test_writes_with_partitioned_table(started_cluster, format_version, storage_
                 event_time TIMESTAMP
             )
             USING iceberg
-            PARTITIONED BY (bucket(3, id), bucket(2, name), bucket(4, value), bucket(5, created_at), bucket(3, event_time))
+            PARTITIONED BY (bucket(3, id), bucket(2, name), bucket(5, created_at), bucket(3, event_time))
             OPTIONS('format-version'='{format_version}')
         """
     )

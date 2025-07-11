@@ -9,21 +9,21 @@
 
 #if USE_AVRO
 
-#    include <Interpreters/Context_fwd.h>
-#    include <Processors/Formats/IOutputFormat.h>
-#    include <Storages/ObjectStorage/StorageObjectStorage.h>
-#    include <Storages/PartitionedSink.h>
-#    include <Common/randomSeed.h>
+#include <Interpreters/Context_fwd.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/PartitionedSink.h>
+#include <Common/randomSeed.h>
 
-#    include <Poco/JSON/Array.h>
-#    include <Poco/JSON/Object.h>
-#    include <Poco/JSON/Parser.h>
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 
-#    include <Compiler.hh>
-#    include <Encoder.hh>
-#    include <Generic.hh>
-#    include <Stream.hh>
-#    include <ValidSchema.hh>
+#include <Compiler.hh>
+#include <Encoder.hh>
+#include <Generic.hh>
+#include <Stream.hh>
+#include <ValidSchema.hh>
 
 namespace DB
 {
@@ -33,7 +33,7 @@ String removeEscapedSlashes(const String & json_str);
 class FileNamesGenerator
 {
 public:
-    explicit FileNamesGenerator(const String & metadata_dir_);
+    explicit FileNamesGenerator(const String & table_dir);
 
     String generateDataFileName();
     String generateManifestEntryName();
@@ -99,7 +99,7 @@ public:
     explicit ChunkPartitioner(
         Poco::JSON::Array::Ptr partition_specification, Poco::JSON::Object::Ptr schema, ContextPtr context, const Block & sample_block_);
 
-    using PartitionKey = std::vector<Field>;
+    using PartitionKey = Row;
     struct PartitionKeyHasher
     {
         size_t operator()(const PartitionKey & key) const;
@@ -107,7 +107,7 @@ public:
         mutable std::hash<String> hasher;
     };
 
-    std::unordered_map<PartitionKey, Chunk, PartitionKeyHasher> participateChunk(const Chunk & chunk);
+    std::vector<std::pair<PartitionKey, Chunk>> partitionChunk(const Chunk & chunk);
 
     const std::vector<String> & getColumns() const { return columns_to_apply; }
 
@@ -155,7 +155,7 @@ private:
     void finalizeBuffers();
     void releaseBuffers();
     void cancelBuffers();
-    void initializeMetadata();
+    bool initializeMetadata();
 
     FileNamesGenerator filename_generator;
     std::optional<ChunkPartitioner> partitioner;

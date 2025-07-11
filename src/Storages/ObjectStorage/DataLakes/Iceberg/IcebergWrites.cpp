@@ -23,6 +23,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <base/defines.h>
 #include <base/types.h>
@@ -31,6 +32,7 @@
 #include <Common/isValidUTF8.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
+#include "Columns/IColumn.h"
 
 #include <memory>
 #include <sstream>
@@ -69,10 +71,10 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 }
 
-FileNamesGenerator::FileNamesGenerator(const String & metadata_dir_)
-    : metadata_dir(metadata_dir_ + "metadata/")
+FileNamesGenerator::FileNamesGenerator(const String & table_dir)
+    : data_dir(table_dir + "data/")
+    , metadata_dir(table_dir + "metadata/")
 {
-    data_dir = metadata_dir_ + "data/";
 }
 
 String FileNamesGenerator::generateDataFileName()
@@ -497,65 +499,14 @@ ChunkPartitioner::ChunkPartitioner(
         auto source_id = partition_specification_field->getValue<Int32>(Iceberg::f_source_id);
         auto column_name = id_to_column[source_id];
 
-        std::optional<size_t> transform_param;
         auto & factory = FunctionFactory::instance();
 
-        if (transform_name == "year" || transform_name == "years")
-            transform = factory.get("toYearNumSinceEpoch", context);
+        auto transform_and_argument = Iceberg::parseTransformAndArgument(transform_name);
+        if (!transform_and_argument)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown transform {}", transform_name);
 
-        if (transform_name == "month" || transform_name == "months")
-            transform = factory.get("toMonthNumSinceEpoch", context);
-
-        if (transform_name == "day" || transform_name == "date" || transform_name == "days" || transform_name == "dates")
-            transform = factory.get("toRelativeDayNum", context);
-
-        if (transform_name == "hour" || transform_name == "hours")
-            transform = factory.get("toRelativeHourNum", context);
-
-        if (transform_name == "identity")
-            transform = factory.get("identity", context);
-
-        if (transform_name == "void")
-            continue;
-
-        if (transform_name.starts_with("truncate") || transform_name.starts_with("bucket"))
-        {
-            /// should look like transform[N] or bucket[N]
-            if (transform_name.back() != ']')
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown transform {}", transform_name);
-            }
-
-            auto argument_start = transform_name.find('[');
-
-            if (argument_start == std::string::npos)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown transform {}", transform_name);
-            }
-
-            auto argument_width = transform_name.length() - 2 - argument_start;
-            std::string argument_string_representation = transform_name.substr(argument_start + 1, argument_width);
-            size_t argument;
-            bool parsed = DB::tryParse<size_t>(argument, argument_string_representation);
-
-            if (!parsed)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown transform {}", transform_name);
-            }
-
-            transform_param = argument;
-            if (transform_name.starts_with("truncate"))
-            {
-                transform = factory.get("icebergTruncate", context);
-            }
-            else if (transform_name.starts_with("bucket"))
-            {
-                transform = factory.get("icebergBucket", context);
-            }
-        }
-
-        functions.push_back(transform);
-        function_params.push_back(transform_param);
+        functions.push_back(factory.get(transform_and_argument->transform_name, context));
+        function_params.push_back(transform_and_argument->argument);
         columns_to_apply.push_back(column_name);
     }
 }
@@ -568,8 +519,8 @@ size_t ChunkPartitioner::PartitionKeyHasher::operator()(const PartitionKey & key
     return result;
 }
 
-std::unordered_map<ChunkPartitioner::PartitionKey, Chunk, ChunkPartitioner::PartitionKeyHasher>
-ChunkPartitioner::participateChunk(const Chunk & chunk)
+std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>>
+ChunkPartitioner::partitionChunk(const Chunk & chunk)
 {
     std::unordered_map<String, ColumnWithTypeAndName> name_to_column;
     for (size_t i = 0; i < sample_block.columns(); ++i)
@@ -598,26 +549,42 @@ ChunkPartitioner::participateChunk(const Chunk & chunk)
         {
             Field field;
             result->get(i, field);
-            transform_results[i].push_back(field.dump());
+            transform_results[i].push_back(field);
         }
     }
 
-    std::unordered_map<ChunkPartitioner::PartitionKey, Chunk, ChunkPartitioner::PartitionKeyHasher> result;
-    for (const auto & transform_result : transform_results)
-        result.insert({transform_result, Chunk{}});
-
-    for (auto & [transform_result, cur_chunk] : result)
+    auto get_partition = [&](size_t row_num)
     {
-        PaddedPODArray<UInt8> mask(chunk.getNumRows());
-        for (size_t i = 0; i < chunk.getNumRows(); ++i)
-        {
-            mask[i] = (transform_results[i] == transform_result);
-        }
+        return transform_results[row_num];
+    };
 
-        for (size_t i = 0; i < chunk.getNumColumns(); ++i)
-        {
-            cur_chunk.addColumn(chunk.getColumns()[i]->filter(mask, 0));
-        }
+    PODArray<size_t> partition_num_to_first_row;
+    IColumn::Selector selector;
+    ColumnRawPtrs raw_columns;
+    for (const auto & column : chunk.getColumns())
+        raw_columns.push_back(column.get());
+    buildScatterSelector(raw_columns, partition_num_to_first_row, selector, 0, Context::getGlobalContextInstance());
+
+    size_t partitions_count = partition_num_to_first_row.size();
+    std::vector<std::pair<ChunkPartitioner::PartitionKey, MutableColumns>> result_columns;
+    result_columns.reserve(partitions_count);
+
+    for (size_t i = 0; i < partitions_count; ++i)
+        result_columns.push_back({get_partition(partition_num_to_first_row[i]), chunk.cloneEmptyColumns()});
+
+    for (size_t col = 0; col < chunk.getNumColumns(); ++col)
+    {
+        MutableColumns scattered = chunk.getColumns()[col]->scatter(partitions_count, selector);
+        for (size_t i = 0; i < partitions_count; ++i)
+            result_columns[i].second[col] = std::move(scattered[i]);
+    }
+
+    std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>> result;
+    result.reserve(result_columns.size());
+    for (auto && [key, partition_columns] : result_columns)
+    {
+        size_t column_size = partition_columns[0]->size();
+        result.push_back({key, Chunk(std::move(partition_columns), column_size)});
     }
     return result;
 }
@@ -663,7 +630,8 @@ IcebergStorageSink::IcebergStorageSink(
         if (current_partition_spec->getValue<Int64>(Iceberg::f_spec_id) == partition_spec_id)
         {
             partititon_spec = current_partition_spec;
-            partitioner = ChunkPartitioner(current_partition_spec->getArray(Iceberg::f_fields), current_schema, context_, sample_block_);
+            if (current_partition_spec->getArray(Iceberg::f_fields)->size() > 0)
+                partitioner = ChunkPartitioner(current_partition_spec->getArray(Iceberg::f_fields), current_schema, context_, sample_block_);
             break;
         }
     }
@@ -675,15 +643,11 @@ void IcebergStorageSink::consume(Chunk & chunk)
         return;
     total_rows += chunk.getNumRows();
 
-    std::unordered_map<ChunkPartitioner::PartitionKey, Chunk, ChunkPartitioner::PartitionKeyHasher> partition_result;
+    std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>> partition_result;
     if (partitioner)
-    {
-        partition_result = partitioner->participateChunk(chunk);
-    }
+        partition_result = partitioner->partitionChunk(chunk);
     else
-    {
-        partition_result[{}] = chunk.clone();
-    }
+        partition_result.push_back({{}, chunk.clone()});
 
     for (const auto & [partition_key, part_chunk] : partition_result)
     {
@@ -692,18 +656,16 @@ void IcebergStorageSink::consume(Chunk & chunk)
             auto data_filename = filename_generator.generateDataFileName();
             data_filenames[partition_key] = data_filename;
 
-            const auto & settings = context->getSettingsRef();
-            const auto chosen_compression_method = chooseCompressionMethod(data_filename, configuration->compression_method);
-
             auto buffer = object_storage->writeObject(
                 StoredObject(data_filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
-            write_buffers[partition_key] = wrapWriteBufferWithCompressionMethod(
-                std::move(buffer),
-                chosen_compression_method,
-                static_cast<int>(settings[Setting::output_format_compression_level]),
-                static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]));
-
+            write_buffers[partition_key] = std::move(buffer);
+            if (format_settings)
+            {
+                format_settings->parquet.write_page_index = true;
+                format_settings->parquet.bloom_filter_push_down = true;
+                format_settings->parquet.filter_push_down = true;
+            }
             writers[partition_key] = FormatFactory::instance().getOutputFormatParallelIfPossible(
                 configuration->format, *write_buffers[partition_key], sample_block, context, format_settings);
         }
@@ -741,7 +703,10 @@ void IcebergStorageSink::finalizeBuffers()
         write_buffers[partition_key]->finalize();
         total_chunks_size += write_buffers[partition_key]->count();
     }
-    initializeMetadata();
+
+    while (!initializeMetadata())
+    {
+    }
 }
 
 void IcebergStorageSink::releaseBuffers()
@@ -764,13 +729,13 @@ void IcebergStorageSink::cancelBuffers()
     }
 }
 
-void IcebergStorageSink::initializeMetadata()
+bool IcebergStorageSink::initializeMetadata()
 {
     auto metadata_name = filename_generator.generateMetadataName();
 
     Int64 parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
     auto [new_snapshot, manifest_list_name] = MetadataGenerator(metadata).generateNextMetadata(
-        filename_generator, metadata_name, parent_snapshot, 1, total_rows, total_chunks_size, static_cast<Int32>(data_filenames.size()));
+        filename_generator, metadata_name, parent_snapshot, write_buffers.size(), total_rows, total_chunks_size, static_cast<Int32>(data_filenames.size()));
 
     Strings manifest_entries;
     Int32 manifest_lengths = 0;
@@ -781,7 +746,7 @@ void IcebergStorageSink::initializeMetadata()
 
         auto buffer_manifest_entry = object_storage->writeObject(
             StoredObject(manifest_entry_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
-        generateManifestFile(metadata, partitioner->getColumns(), partition_key, data_filename, new_snapshot, configuration->format, partititon_spec, partition_spec_id, *buffer_manifest_entry);
+        generateManifestFile(metadata, partitioner ? partitioner->getColumns() : std::vector<String>{}, partition_key, data_filename, new_snapshot, configuration->format, partititon_spec, partition_spec_id, *buffer_manifest_entry);
         buffer_manifest_entry->finalize();
         manifest_lengths += buffer_manifest_entry->count();
     }
@@ -800,11 +765,21 @@ void IcebergStorageSink::initializeMetadata()
         Poco::JSON::Stringifier::stringify(metadata, oss, 4);
         std::string json_representation = removeEscapedSlashes(oss.str());
 
+        if (object_storage->exists(StoredObject(metadata_name)))
+        {
+            for (const auto & [_, data_filename] : data_filenames)
+                object_storage->removeObjectIfExists(StoredObject(data_filename));
+
+            object_storage->removeObjectIfExists(StoredObject(manifest_list_name));
+            return false;
+        }
+
         auto buffer_metadata = object_storage->writeObject(
             StoredObject(metadata_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
         buffer_metadata->write(json_representation.data(), json_representation.size());
         buffer_metadata->finalize();
     }
+    return true;
 }
 
 }

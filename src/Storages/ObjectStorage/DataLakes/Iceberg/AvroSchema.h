@@ -171,6 +171,7 @@ static constexpr const char * manifest_list_v2_schema = R"(
 }
 )";
 
+/// NOTE: This string is just a template for the actual schema. To use it, you must first replace "#" with the correct value.
 static constexpr const char * manifest_entry_v1_schema = R"(
 {
     "type": "record",
@@ -357,6 +358,7 @@ static constexpr const char * manifest_entry_v1_schema = R"(
 }
 )";
 
+/// NOTE: This string is just a template for the actual schema. To use it, you must first replace "#" with the correct value.
 static constexpr const char * manifest_entry_v2_schema = R"(
 {
     "type": "record",
