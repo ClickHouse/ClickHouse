@@ -11,17 +11,19 @@ if(NOT ENABLE_GOOGLE_CLOUD_CPP)
     return()
 endif()
 
-if (CLICKHOUSE_CLOUD)
+if(CLICKHOUSE_CLOUD)
     set(ENABLE_GOOGLE_CLOUD_CPP_KMS_DEFAULT ON)
 endif()
 
 option(ENABLE_GOOGLE_CLOUD_CPP_KMS "Enable Google Cloud Cpp KMS" ${ENABLE_GOOGLE_CLOUD_CPP_KMS_DEFAULT})
 
 if(NOT ENABLE_GRPC)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use Google Cloud Cpp without gRPC")
+    message(STATUS "Can't use Google Cloud Cpp without gRPC")
+    return()
 endif()
-if (NOT ENABLE_PROTOBUF)
-    message( ${RECONFIGURE_MESSAGE_LEVEL} "Can't use Google Cloud Cpp without protobuf")
+if(NOT ENABLE_PROTOBUF)
+    message(STATUS "Can't use Google Cloud Cpp without protobuf")
+    return()
 endif()
 
 # To supress the following warning:
@@ -68,7 +70,7 @@ include(google_cloud_cpp_common)
 include(google_cloud_cpp_grpc_utils)
 
 # KMS
-if (ENABLE_GOOGLE_CLOUD_CPP_KMS)
+if(ENABLE_GOOGLE_CLOUD_CPP_KMS)
     google_cloud_cpp_add_library_protos(kms)
 
     SET(GOOGLE_CLOUD_CPP_KMS_DIR "${GOOGLE_CLOUD_CPP_DIR}/google/cloud/kms")
@@ -113,7 +115,7 @@ list(APPEND GOOGLE_CLOUD_CPP_PRIVATE_LIBS
     ch_contrib::nlohmann_json
 )
 
-if (ENABLE_GOOGLE_CLOUD_CPP_KMS)
+if(ENABLE_GOOGLE_CLOUD_CPP_KMS)
     list(APPEND GOOGLE_CLOUD_CPP_SOURCES ${GOOGLE_CLOUD_CPP_KMS_SRC})
     add_library(_gcloud ${GOOGLE_CLOUD_CPP_SOURCES})
 
@@ -125,7 +127,7 @@ if (ENABLE_GOOGLE_CLOUD_CPP_KMS)
     )
 
     # The library is large - avoid bloat.
-    if (OMIT_HEAVY_DEBUG_SYMBOLS)
+    if(OMIT_HEAVY_DEBUG_SYMBOLS)
         target_compile_options(_gcloud PRIVATE -g0)
     endif()
 
