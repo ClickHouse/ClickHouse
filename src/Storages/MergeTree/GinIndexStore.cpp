@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <Columns/ColumnString.h>
 #include <Common/FST.h>
+#include "base/types.h"
 #include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
 #include <DataTypes/DataTypeArray.h>
@@ -10,9 +11,11 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
+#include <IO/VarInt.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
+#include <boost/dynamic_bitset/dynamic_bitset.hpp>
 #include <vector>
 #include <unordered_map>
 #include <algorithm>
@@ -36,121 +39,82 @@ const CompressionCodecPtr & GinIndexCompressionFactory::zstdCodec()
 }
 
 GinIndexPostingsBuilder::GinIndexPostingsBuilder(UInt64 limit)
-    : rowid_lst{}
-    , size_limit(limit)
+    : size_limit(limit)
 {}
 
 bool GinIndexPostingsBuilder::contains(UInt32 row_id) const
 {
-    if (useRoaring())
-        return rowid_bitmap.contains(row_id);
-
-    const auto it = std::find(rowid_lst.begin(), rowid_lst.begin() + rowid_lst_length, row_id);
-    return it != rowid_lst.begin() + rowid_lst_length;
+    return rowid_bitmap.contains(row_id);
 }
 
 void GinIndexPostingsBuilder::add(UInt32 row_id)
 {
-    if (containsAllRows())
-        return;
-
-    if (useRoaring())
-    {
-        if (rowid_bitmap.cardinality() == size_limit)
-        {
-            /// reset the postings list with MATCH ALWAYS;
-            rowid_lst_length = 1; /// makes sure useRoaring() returns false;
-            rowid_lst[0] = CONTAINS_ALL; /// set CONTAINS_ALL flag;
-        }
-        else
-            rowid_bitmap.add(row_id);
-    }
-    else
-    {
-        assert(rowid_lst_length < MIN_SIZE_FOR_ROARING_ENCODING);
-        rowid_lst[rowid_lst_length] = row_id;
-        rowid_lst_length++;
-
-        if (rowid_lst_length == MIN_SIZE_FOR_ROARING_ENCODING)
-        {
-            for (size_t i = 0; i < rowid_lst_length; i++)
-                rowid_bitmap.add(rowid_lst[i]);
-
-            rowid_lst_length = USES_BIT_MAP;
-        }
-    }
+    rowid_bitmap.add(row_id);
 }
 
 UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer)
 {
-    UInt64 written_bytes = 0;
-    buffer.write(rowid_lst_length);
-    written_bytes += 1;
+    UInt32 rowid_min = rowid_bitmap.minimum();
+    UInt32 rowid_max = rowid_bitmap.maximum();
+    UInt32 range_size = (rowid_max - rowid_min) + 1;
 
-    if (useRoaring())
+    boost::dynamic_bitset<> bitset(range_size);
+    for (const auto rowid : rowid_bitmap)
     {
-        rowid_bitmap.runOptimize();
-        auto size = rowid_bitmap.getSizeInBytes();
-        auto buf = std::make_unique<char[]>(size);
-        rowid_bitmap.write(buf.get());
-
-        const auto & codec = GinIndexCompressionFactory::zstdCodec();
-        Memory<> memory;
-        memory.resize(codec->getCompressedReserveSize(static_cast<UInt32>(size)));
-        auto compressed_size = codec->compress(buf.get(), static_cast<UInt32>(size), memory.data());
-
-        writeVarUInt(size, buffer);
-        written_bytes += getLengthOfVarUInt(size);
-
-        writeVarUInt(compressed_size, buffer);
-        written_bytes += getLengthOfVarUInt(compressed_size);
-
-        buffer.write(memory.data(), compressed_size);
-        written_bytes += compressed_size;
-    }
-    else
-    {
-        for (size_t i = 0; i <  rowid_lst_length; ++i)
-        {
-            writeVarUInt(rowid_lst[i], buffer);
-            written_bytes += getLengthOfVarUInt(rowid_lst[i]);
-        }
+        size_t id = rowid - rowid_min;
+        bitset.set(id, true);
     }
 
-    return written_bytes;
+    const UInt64 block_size = sizeof(boost::dynamic_bitset<>::block_type);
+    const UInt64 uncompressed_size = bitset.num_blocks() * block_size;
+
+    std::vector<boost::dynamic_bitset<>::block_type> blocks(bitset.num_blocks());
+    boost::to_block_range(bitset, blocks.begin());
+
+    const auto & codec = GinIndexCompressionFactory::zstdCodec();
+    Memory<> memory;
+    memory.resize(codec->getCompressedReserveSize(static_cast<UInt32>(uncompressed_size)));
+    UInt64 compressed_size = codec->compress(reinterpret_cast<char *>(blocks.data()), uncompressed_size, memory.data());
+
+    writeVarUInt(rowid_min, buffer);
+    writeVarUInt(blocks.size(), buffer);
+    writeVarUInt(compressed_size, buffer);
+    buffer.write(memory.data(), compressed_size);
+
+    return getLengthOfVarUInt(rowid_min) + getLengthOfVarUInt(blocks.size()) + getLengthOfVarUInt(compressed_size) + compressed_size;
 }
 
 GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer & buffer)
 {
-    UInt8 postings_list_size = 0;
-    buffer.readStrict(reinterpret_cast<char &>(postings_list_size));
-
-    if (postings_list_size == USES_BIT_MAP)
-    {
-        size_t size = 0;
-        size_t compressed_size = 0;
-        readVarUInt(size, buffer);
-        readVarUInt(compressed_size, buffer);
-        auto buf = std::make_unique<char[]>(compressed_size);
-        buffer.readStrict(reinterpret_cast<char *>(buf.get()), compressed_size);
-
-        Memory<> memory;
-        memory.resize(size);
-        const auto & codec = GinIndexCompressionFactory::zstdCodec();
-        codec->decompress(buf.get(), static_cast<UInt32>(compressed_size), memory.data());
-
-        GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>(GinIndexPostingsList::read(memory.data()));
-
-        return postings_list;
-    }
-
-    assert(postings_list_size < MIN_SIZE_FOR_ROARING_ENCODING);
     GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>();
-    UInt32 row_ids[MIN_SIZE_FOR_ROARING_ENCODING];
+    {
+        UInt32 rowid_min;
+        UInt32 num_blocks;
+        UInt64 compressed_size;
+        readVarUInt(rowid_min, buffer);
+        readVarUInt(num_blocks, buffer);
+        readVarUInt(compressed_size, buffer);
+        using block_type = boost::dynamic_bitset<>::block_type;
+        std::vector<block_type> blocks(num_blocks);
 
-    for (auto i = 0; i < postings_list_size; ++i)
-        readVarUInt(row_ids[i], buffer);
-    postings_list->addMany(postings_list_size, row_ids);
+        Memory<> memory(compressed_size);
+        buffer.readStrict(memory.data(), compressed_size);
+        const auto & codec = DB::GinIndexCompressionFactory::zstdCodec();
+        codec->decompress(memory.data(), static_cast<UInt32>(compressed_size), reinterpret_cast<char *>(blocks.data()));
+
+        const size_t bits_per_block = sizeof(block_type) * 8;
+        for (size_t block_idx = 0; const auto & block : blocks)
+        {
+            if (block == 0)
+                continue;
+
+            const size_t block_base = rowid_min + (block_idx * bits_per_block);
+            for (size_t offset = 0; offset < bits_per_block; ++offset)
+                if (block & (block_type(1) << offset))
+                    postings_list->add(block_base + offset);
+            ++block_idx;
+        }
+    }
     return postings_list;
 }
 
