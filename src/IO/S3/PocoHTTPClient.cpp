@@ -320,7 +320,7 @@ void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3La
         return;
     }
 
-    const String attempt_label = [](S3LatencyType t)
+    const String attempt_label = [](const S3LatencyType t)
     {
         switch (t)
         {
