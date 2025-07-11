@@ -244,9 +244,8 @@ void StorageObjectStorageSource::lazyInitialize()
     initialized = true;
 }
 
-Chunk StorageObjectStorageSource::generate()
+Chunk StorageObjectStorageSource::generateImpl()
 {
-
     lazyInitialize();
 
     while (true)
@@ -294,12 +293,14 @@ Chunk StorageObjectStorageSource::generate()
 
             LOG_DEBUG(
                 &Poco::Logger::get("StorageObjectStorageSource, generate"),
-                "Read {} rows from file with name: {}, object storage source: {}, total rows in file: {}, thread_order_number: {}",
+                "Read {} rows from file with name: {}, object storage source: {}, total rows in file: {}, thread_order_number: {}, chunk "
+                "empty: {}",
                 num_rows,
                 reader.getObjectInfo()->getPath(),
                 configuration->getTypeName(),
                 total_rows_in_file,
-                thread_order_number);
+                thread_order_number,
+                chunk.empty());
 
             size_t chunk_size = 0;
             if (const auto * input_format = reader.getInputFormat())
@@ -376,6 +377,19 @@ Chunk StorageObjectStorageSource::generate()
             }
 #endif
 
+            LOG_DEBUG(
+                &Poco::Logger::get("StorageObjectStorageSource, generate"),
+                "Read {} rows from file with name: {}, object storage source: {}, total rows in file: {}, thread_order_number: {}, "
+                "chunk.empty(): {}. Leaving "
+                "cycle.",
+                chunk.getNumRows(),
+                reader.getObjectInfo()->getPath(),
+                configuration->getTypeName(),
+                total_rows_in_file,
+                thread_order_number,
+                chunk.empty());
+
+
             return chunk;
         }
 
@@ -416,6 +430,19 @@ Chunk StorageObjectStorageSource::generate()
     }
 
     return {};
+}
+
+
+Chunk StorageObjectStorageSource::generate()
+{
+    auto chunk = generateImpl();
+    LOG_DEBUG(
+        &Poco::Logger::get("StorageObjectStorageSource, generate finsh"),
+        "Generated chunk: {}, object storage source: {}, is empty: {}, thread_order_number: {}",
+        chunk.getNumRows(),
+        configuration->getTypeName(),
+        chunk.empty(),
+        thread_order_number);
 }
 
 void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
@@ -672,13 +699,13 @@ std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource
                 &Poco::Logger::get("StorageObjectStorageSource, createReaderAsync"),
                 "Created reader for object: {}, size: {}, has_current_reader: {}, has_pipeline: {}, has_read_buf: {}, has_source: {}, "
                 "thread_order_number: {}",
-                reader.getObjectInfo() ? reader.getObjectInfo()->getPath() : "null",
-                (reader.getObjectInfo() && reader.getObjectInfo()->metadata) ? reader.getObjectInfo()->metadata->size_bytes
-                                                                             : std::numeric_limits<uint64_t>::max(),
-                reader.reader != nullptr,
-                reader.pipeline != nullptr,
-                reader.read_buf != nullptr,
-                reader.source != nullptr,
+                real_reader.getObjectInfo() ? real_reader.getObjectInfo()->getPath() : "null",
+                (real_reader.getObjectInfo() && real_reader.getObjectInfo()->metadata) ? real_reader.getObjectInfo()->metadata->size_bytes
+                                                                                       : std::numeric_limits<uint64_t>::max(),
+                real_reader.reader != nullptr,
+                real_reader.pipeline != nullptr,
+                real_reader.read_buf != nullptr,
+                real_reader.source != nullptr,
                 thread_order_number);
             return real_reader;
         },
