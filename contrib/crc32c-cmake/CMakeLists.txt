@@ -34,7 +34,6 @@ target_compile_options(_crc32c PRIVATE ${CRC32C_FLAGS})
 target_include_directories(_crc32c
   PUBLIC
     $<BUILD_INTERFACE:${CRC32C_DIR}/include>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 add_library(ch_contrib::crc32c ALIAS _crc32c)
