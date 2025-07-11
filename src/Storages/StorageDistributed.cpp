@@ -1382,12 +1382,6 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     {
         return distributedWriteFromClusterStorage(*src_storage_cluster, query, local_context);
     }
-    if (local_context->getClientInfo().distributed_depth == 0)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parallel distributed INSERT SELECT is not possible. "\
-                        "Reason: distributed reading is supported only from Distributed engine "
-                        "or *Cluster table functions, but got {} storage", src_storage->getName());
-    }
 
     return {};
 }
@@ -2141,7 +2135,7 @@ void registerStorageDistributed(StorageFactory & factory)
         .supports_settings = true,
         .supports_parallel_insert = true,
         .supports_schema_inference = true,
-        .source_access_type = AccessType::REMOTE,
+        .source_access_type = AccessTypeObjects::Source::REMOTE,
         .has_builtin_setting_fn = DistributedSettings::hasBuiltin,
     });
 }

@@ -2,6 +2,7 @@
 #include <Poco/String.h>
 #include <IO/Operators.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -21,7 +22,7 @@ void ASTDictionaryRange::formatImpl(WriteBuffer & ostr,
                                     FormatState &,
                                     FormatStateStacked) const
 {
-    ostr << "RANGE(MIN " << min_attr_name << " MAX " << max_attr_name << ")";
+    ostr << "RANGE(MIN " << backQuoteIfNeed(min_attr_name) << " MAX " << backQuoteIfNeed(max_attr_name) << ")";
 }
 
 

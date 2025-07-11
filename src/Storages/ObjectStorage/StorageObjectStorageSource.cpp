@@ -665,7 +665,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
 
     bool prefer_bigger_buffer_size = effective_read_settings.filesystem_cache_prefer_bigger_buffer_size && impl->isCached();
     size_t buffer_size = prefer_bigger_buffer_size
-        ? std::max<size_t>(effective_read_settings.remote_fs_buffer_size, DBMS_DEFAULT_BUFFER_SIZE)
+        ? std::max<size_t>(effective_read_settings.remote_fs_buffer_size, effective_read_settings.prefetch_buffer_size)
         : effective_read_settings.remote_fs_buffer_size;
     if (object_size)
         buffer_size = std::min<size_t>(object_size, buffer_size);

@@ -828,7 +828,7 @@ protected:
 };
 
 /// Tweaks for better highlighting of LIKE and REGEXP functions.
-static void highlightRegexps(IParser::Pos pos, const ASTPtr & node, Expected & expected)
+static void highlightRegexps(const ASTPtr & node, Expected & expected)
 {
     if (!expected.enable_highlighting)
         return;
@@ -842,9 +842,6 @@ static void highlightRegexps(IParser::Pos pos, const ASTPtr & node, Expected & e
 
     ASTExpressionList * args = func->arguments->as<ASTExpressionList>();
     if (!args)
-        return;
-
-    if (args->children.size() != 2)
         return;
 
     bool is_like = false;
@@ -864,22 +861,23 @@ static void highlightRegexps(IParser::Pos pos, const ASTPtr & node, Expected & e
         is_regexp = true;
     }
     else
+    {
+        for (const auto & arg : args->children)
+            highlightRegexps(arg, expected);
+    }
+
+    if (args->children.size() != 2)
         return;
 
-    if (!args->children[1]->as<ASTLiteral>())
-        return;
+    auto * literal = args->children[1]->as<ASTLiteral>();
 
-    --pos;
-    if (pos->type == TokenType::ClosingRoundBracket)
-        --pos;
-
-    if (pos->type != TokenType::StringLiteral || *pos->begin != '\'')
+    if (!literal || literal->value.getType() != Field::Types::String)
         return;
 
     chassert(is_like || is_regexp);
     expected.highlight({
-       .begin = pos->begin,
-       .end = pos->end,
+       .begin = literal->begin.value()->begin,
+       .end = literal->begin.value()->end,
        .highlight = is_like ? Highlight::string_like : Highlight::string_regexp});
 }
 
@@ -2385,7 +2383,7 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto start = std::make_unique<ExpressionLayer>(false, allow_trailing_commas);
     if (ParserExpressionImpl().parse(std::move(start), pos, node, expected))
     {
-        highlightRegexps(pos, node, expected);
+        highlightRegexps(node, expected);
         return true;
     }
     return false;
