@@ -46,16 +46,58 @@ inline void copy8(UInt8 * dst, const UInt8 * src)
     memcpy(dst, src, 8);
 }
 
-inline void wildCopy8(UInt8 * dst, const UInt8 * src, const UInt8 * dst_end)
+
+inline void wildCopy8(UInt8 *dst, const UInt8 *src,
+                                 const UInt8 *dst_end)
 {
-    /// Unrolling with clang is doing >10% performance degrade.
-    #pragma nounroll
-    do
-    {
+    
+    /* -------- Small blocks: keep scalar -------- */
+    if (dst_end - dst < 128) {   
+        do {
+            copy8(dst, src);
+            dst += 8;  src += 8;
+        } while (dst < dst_end);
+        return;
+    }
+
+#if defined(__AVX512F__)        /* -------- AVX-512 path (64 B / iter) ------- */
+    const UInt8 *const orig_end = dst_end;
+    /* Align destination to 64 B for best store-forwarding behaviour        */
+    while (((uintptr_t)dst & 63) && dst < orig_end) {
         copy8(dst, src);
-        dst += 8;
-        src += 8;
+        dst += 8;  src += 8;
+    }
+
+    /* Main vectorised loop */
+    while (dst + 64 <= orig_end) {
+        __m512i v  = _mm512_loadu_si512((const void *)src);
+        _mm512_storeu_si512((void *)dst, v);
+        dst += 64;  src += 64;
+    }
+#elif defined(__AVX2__)         /* -------- AVX2 path (32 B / iter) --------- */
+    const UInt8 *const orig_end = dst_end;
+    while (((uintptr_t)dst & 31) && dst < orig_end) {
+        copy8(dst, src);
+        dst += 8;  src += 8;
+    }
+
+    while (dst + 32 <= orig_end) {
+        __m256i v  = _mm256_loadu_si256((const __m256i *)src);
+        _mm256_storeu_si256((__m256i *)dst, v);
+        dst += 32;  src += 32;
+    }
+#else  
+  /* -------- Fallback: original scalar ------- */
+    do {
+        copy8(dst, src);
+        dst += 8;  src += 8;
     } while (dst < dst_end);
+#endif
+    /* -------- Scalar tail (≤64 B) -------- */
+    while (dst < dst_end) {
+        copy8(dst, src);
+        dst += 8;  src += 8;
+    }
 }
 
 inline void copyOverlap8(UInt8 * op, const UInt8 *& match, size_t offset)
@@ -241,6 +283,7 @@ inline void wildCopy16(UInt8 * dst, const UInt8 * src, const UInt8 * dst_end)
     } while (dst < dst_end);
 }
 
+
 inline void copyOverlap16(UInt8 * op, const UInt8 *& match, const size_t offset)
 {
     /// 4 % n.
@@ -363,6 +406,11 @@ inline void copy32(UInt8 * dst, const UInt8 * src)
     memcpy(dst + 16, src + 16, 16);
 #endif
 }
+/*  Copy exactly 32 bytes from src to dst.
+    – Uses one 256-bit move when AVX2 is available,
+      otherwise falls back to two 128-bit SSE moves,
+      or portable memcpy.                                            */
+
 
 inline void wildCopy32(UInt8 * dst, const UInt8 * src, const UInt8 * dst_end)
 {
@@ -375,6 +423,8 @@ inline void wildCopy32(UInt8 * dst, const UInt8 * src, const UInt8 * dst_end)
         src += 32;
     } while (dst < dst_end);
 }
+
+
 
 inline void copyOverlap32(UInt8 * op, const UInt8 *& match, const size_t offset)
 {
