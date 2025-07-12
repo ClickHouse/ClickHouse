@@ -2859,4 +2859,17 @@ void ReadFromMergeTree::describeProjections(JSONBuilder::JSONMap & map) const
     }
 }
 
+void ReadFromMergeTree::cancelParallelReading()
+{
+    if (!is_parallel_reading_from_replicas)
+        return;
+
+    is_parallel_reading_from_replicas = false;
+    if (all_ranges_callback.has_value())
+        all_ranges_callback.reset();
+
+    if (read_task_callback.has_value())
+        read_task_callback.reset();
+}
+
 }

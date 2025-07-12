@@ -4,7 +4,7 @@
 -- { echo ON }
 
 set enable_analyzer = 1;
-set enable_parallel_replicas = 0;
+set parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1;
 set optimize_use_projection_filtering = 1;
 
 drop table if exists t;

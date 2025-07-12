@@ -52,6 +52,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"min_joined_block_size_rows", 0, DEFAULT_BLOCK_SIZE, "New setting."},
             {"table_engine_read_through_distributed_cache", false, false, "New setting"},
             {"distributed_cache_alignment", 0, 0, "Rename of distributed_cache_read_alignment"},
+            {"parallel_replicas_support_projection", false, false, "New setting.Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan."},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
