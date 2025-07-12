@@ -187,6 +187,7 @@ public:
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const = 0;
 
+
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
         const StoredObject & object,

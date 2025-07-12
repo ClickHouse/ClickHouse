@@ -8,9 +8,12 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTLiteral.h>
+#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <ranges>
+
+#include <fmt/ranges.h>
 
 namespace ProfileEvents
 {
@@ -129,6 +132,19 @@ AlterConversions::AlterConversions(
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Applying patch parts is not supported with more than one on-fly ALTER MODIFY");
     }
+
+    Strings renames = [&]()
+    {
+        Strings result;
+        for (const auto & item : rename_map)
+        {
+            result.push_back(fmt::format("{} -> {}", item.rename_from, item.rename_to));
+        }
+        return result;
+    }();
+    LOG_TEST(getLogger("AlterConversions"),
+        "mutations from snapshot have produce a rename_map: {}",
+        fmt::join(renames, ", "));
 }
 
 bool AlterConversions::hasLightweightDelete() const

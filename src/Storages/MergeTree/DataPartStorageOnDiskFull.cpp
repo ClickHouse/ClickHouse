@@ -1,3 +1,4 @@
+#include <memory>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 
 #include <Disks/IDiskTransaction.h>
@@ -7,6 +8,9 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <Interpreters/Context.h>
 #include <Common/typeid_cast.h>
+#include <Disks/FakeDiskTransaction.h>
+
+#include <base/scope_guard.h>
 
 namespace DB
 {
@@ -241,8 +245,37 @@ void DataPartStorageOnDiskFull::commitTransaction()
     if (has_shared_transaction)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot commit shared transaction");
 
+    LOG_DEBUG(getLogger("DataPartStorageOnDiskPacked"), "commit transaction for part {}", getRelativePath());
+
     transaction->commit();
     transaction.reset();
+}
+
+void DataPartStorageOnDiskFull::validateDiskTransaction(std::function<void(IDiskTransaction&)> check_function)
+ {
+    auto active_transaction = transaction;
+
+    LOG_DEBUG(getLogger("DataPartStorageOnDiskFull"),
+    "add validate tx operation for relative path: {}, has active transaction {}",
+        getRelativePath(), bool(active_transaction));
+
+    if (!active_transaction)
+        active_transaction = std::make_shared<FakeDiskTransaction>(*volume->getDisk());
+
+    scope_guard commit_transaction = [&]()
+    {
+        if (active_transaction != transaction)
+            active_transaction->commit();
+    };
+
+    active_transaction->validateTransaction(std::move(check_function));
+}
+
+bool DataPartStorageOnDiskFull::isTransactional() const
+{
+    auto tx = volume->getDisk()->createTransaction();
+    SCOPE_EXIT({ tx->undo(); });
+    return tx->isTransactional();
 }
 
 }

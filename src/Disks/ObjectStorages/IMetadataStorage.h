@@ -160,6 +160,11 @@ public:
         throwNotImplemented();
     }
 
+    /// Get objects that are going to be created inside transaction if they exists
+    virtual std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string &) const = 0;
+
+    virtual std::vector<std::string> listUncommittedDirectory(const std::string &) const = 0;
+
     virtual ~IMetadataTransaction() = default;
 
 protected:
@@ -284,6 +289,11 @@ public:
         if (existsFile(path))
             return getStorageObjects(path);
         return std::nullopt;
+    }
+
+    virtual bool isTransactional() const
+    {
+        return false;
     }
 
 protected:

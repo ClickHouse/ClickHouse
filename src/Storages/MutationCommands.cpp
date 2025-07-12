@@ -223,6 +223,9 @@ std::shared_ptr<ASTExpressionList> MutationCommands::ast(bool with_pure_metadata
     auto res = std::make_shared<ASTExpressionList>();
     for (const MutationCommand & command : *this)
     {
+        if (!command.ast)
+            continue;
+
         if (command.type != MutationCommand::ALTER_WITHOUT_MUTATION || with_pure_metadata_commands)
             res->children.push_back(command.ast->clone());
     }
@@ -256,6 +259,8 @@ void MutationCommands::readText(ReadBuffer & in)
 
 std::string MutationCommands::toString() const
 {
+    if (empty())
+        return "no commands";
     return ast()->formatWithSecretsOneLine();
 }
 

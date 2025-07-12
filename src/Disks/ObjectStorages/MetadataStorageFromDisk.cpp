@@ -5,6 +5,7 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/logger_useful.h>
 
 #include <memory>
 #include <shared_mutex>
@@ -268,4 +269,18 @@ TruncateFileOperationOutcomePtr MetadataStorageFromDiskTransaction::truncateFile
     return result;
 }
 
+std::optional<StoredObjects> MetadataStorageFromDiskTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
+{
+    if (metadata_storage.existsFileOrDirectory(path))
+        return metadata_storage.getStorageObjects(path);
+    return std::nullopt;
+}
+
+std::vector<std::string> MetadataStorageFromDiskTransaction::listUncommittedDirectory(const std::string & path) const
+{
+    chassert(!metadata_storage.isTransactional());
+    std::vector<std::string> result;
+    metadata_storage.disk->listFiles(path, result);
+    return result;
+}
 }
