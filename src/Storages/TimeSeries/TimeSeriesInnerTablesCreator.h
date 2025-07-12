@@ -23,18 +23,18 @@ public:
     ~TimeSeriesInnerTablesCreator();
 
     /// Returns a column description of an inner table.
-    ColumnsDescription getInnerTableColumnsDescription(ViewTarget::Kind inner_table_kind) const;
+    ColumnsDescription getInnerTableColumnsDescription(ASTViewTarget::Kind inner_table_kind) const;
 
     /// Returns a StorageID of an inner table.
-    StorageID getInnerTableID(ViewTarget::Kind inner_table_kind, const UUID & inner_table_uuid) const;
+    StorageID getInnerTableID(ASTViewTarget::Kind inner_table_kind, const UUID & inner_table_uuid) const;
 
     /// Generates a CREATE TABLE query for an inner table.
-    std::shared_ptr<ASTCreateQuery> getInnerTableCreateQuery(ViewTarget::Kind inner_table_kind,
+    std::shared_ptr<ASTCreateQuery> getInnerTableCreateQuery(ASTViewTarget::Kind inner_table_kind,
                                                              const UUID & inner_table_uuid,
                                                              const std::shared_ptr<ASTStorage> & inner_storage_def) const;
 
     /// Creates an inner table.
-    StorageID createInnerTable(ViewTarget::Kind inner_table_kind,
+    StorageID createInnerTable(ASTViewTarget::Kind inner_table_kind,
                                const UUID & inner_table_uuid,
                                const std::shared_ptr<ASTStorage> & inner_storage_def) const;
 
