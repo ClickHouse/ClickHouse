@@ -11,11 +11,9 @@
 namespace DB
 {
 
-class StorageS3Configuration : public StorageObjectStorage::Configuration
+class StorageS3Configuration : public StorageObjectStorageConfiguration
 {
 public:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
-
     static constexpr auto type = ObjectStorageType::S3;
     static constexpr auto type_name = "s3";
     static constexpr auto namespace_name = "bucket";
@@ -78,7 +76,7 @@ public:
 
     String getNamespace() const override { return url.bucket; }
     String getDataSourceDescription() const override;
-    StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
+    StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
 
     bool isArchive() const override { return url.archive_pattern.has_value(); }
     std::string getPathInArchive() const override;

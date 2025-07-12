@@ -28,7 +28,7 @@ namespace Setting
 
 ReadFromObjectStorageStep::ReadFromObjectStorageStep(
     ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
+    StorageObjectStorageConfigurationPtr configuration_,
     const String & name_,
     const Names & columns_to_read,
     const NamesAndTypesList & virtual_columns_,

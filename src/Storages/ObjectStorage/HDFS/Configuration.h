@@ -9,11 +9,9 @@
 namespace DB
 {
 
-class StorageHDFSConfiguration : public StorageObjectStorage::Configuration
+class StorageHDFSConfiguration : public StorageObjectStorageConfiguration
 {
 public:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
-
     static constexpr auto type = ObjectStorageType::HDFS;
     static constexpr auto type_name = "hdfs";
     static constexpr auto engine_name = "HDFS";
@@ -50,7 +48,7 @@ public:
 
     String getNamespace() const override { return ""; }
     String getDataSourceDescription() const override { return url; }
-    StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
+    StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
 
     void check(ContextPtr context) const override;
 

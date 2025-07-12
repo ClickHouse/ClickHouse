@@ -28,14 +28,14 @@ namespace
 #if USE_AWS_S3 || USE_AZURE_BLOB_STORAGE || USE_HDFS || USE_AVRO
 
 std::shared_ptr<StorageObjectStorage>
-createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorage::ConfigurationPtr configuration)
+createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorageConfigurationPtr configuration)
 {
     auto & engine_args = args.engine_args;
     if (engine_args.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
     const auto context = args.getLocalContext();
-    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, context, false);
+    StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current

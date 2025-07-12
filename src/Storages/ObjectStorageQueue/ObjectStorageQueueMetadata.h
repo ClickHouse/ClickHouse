@@ -20,7 +20,6 @@ class StorageObjectStorageQueue;
 struct ObjectStorageQueueSettings;
 struct ObjectStorageQueueTableMetadata;
 struct StorageInMemoryMetadata;
-using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
 /**
  * A class for managing ObjectStorageQueue metadata in zookeeper, e.g.

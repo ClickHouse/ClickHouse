@@ -156,7 +156,7 @@ public:
 
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context)
     {
-        StorageObjectStorage::Configuration::initialize(*getConfiguration(), args, context, true);
+        StorageObjectStorageConfiguration::initialize(*getConfiguration(), args, context, true);
     }
 
     static void updateStructureAndFormatArgumentsIfNeeded(
@@ -178,8 +178,6 @@ public:
     }
 
 protected:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
-
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
         ContextPtr context,
@@ -193,11 +191,11 @@ protected:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     ObjectStoragePtr getObjectStorage(const ContextPtr & context, bool create_readonly) const;
-    ConfigurationPtr getConfiguration() const;
+    StorageObjectStorageConfigurationPtr getConfiguration() const;
 
     static std::shared_ptr<Settings> createEmptySettings();
 
-    mutable ConfigurationPtr configuration;
+    mutable StorageObjectStorageConfigurationPtr configuration;
     mutable ObjectStoragePtr object_storage;
     ColumnsDescription structure_hint;
     std::shared_ptr<Settings> settings;
