@@ -58,6 +58,8 @@ public:
     virtual std::optional<size_t> totalRows(ContextPtr) const { return {}; }
     virtual std::optional<size_t> totalBytes(ContextPtr) const { return {}; }
 
+    virtual std::shared_ptr<void> getOpaque() const { return nullptr; }
+
 protected:
     ObjectIterator createKeysIterator(
         Strings && data_files_,

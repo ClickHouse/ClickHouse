@@ -25,6 +25,7 @@ public:
         const Block & header_,
         const std::string & format_name_,
         const FormatSettings & format_settings_,
+        const std::optional<std::vector<Int32>> & column_indices_,
         bool allow_missing_columns_,
         bool null_as_default_,
         FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
@@ -90,6 +91,8 @@ private:
     /// To avoid converting dictionary from Arrow Dictionary
     /// to LowCardinality every chunk we save it and reuse.
     std::unordered_map<std::string, DictionaryInfo> dictionary_infos;
+
+    std::optional<std::vector<Int32>> column_indices;
 };
 
 }
