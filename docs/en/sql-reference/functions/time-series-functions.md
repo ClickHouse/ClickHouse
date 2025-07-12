@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for Time Series Functions'
 sidebar_label: 'Time Series'
-sidebar_position: 172
 slug: /sql-reference/functions/time-series-functions
 title: 'Time Series Functions'
 ---
