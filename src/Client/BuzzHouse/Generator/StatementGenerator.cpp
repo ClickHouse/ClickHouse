@@ -293,6 +293,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     const uint32_t view_ncols = (rg.nextMediumNumber() % fc.max_columns) + UINT32_C(1);
     const bool prev_enforce_final = this->enforce_final;
     const bool prev_allow_not_deterministic = this->allow_not_deterministic;
+    SelectParen * sparen = cv->mutable_select();
 
     SQLBase::setDeterministic(rg, next);
     this->allow_not_deterministic = !next.is_deterministic;
@@ -347,7 +348,11 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         }
         if (!has_to)
         {
-            generateEngineDetails(rg, createViewRelation("", view_ncols), next, true, te);
+            for (uint32_t i = 0; i < view_ncols; i++)
+            {
+                next.cols.insert(i);
+            }
+            generateEngineDetails(rg, createViewRelation("", next), next, true, te);
         }
         if (next.isMergeTreeFamily() && !next.is_deterministic && rg.nextMediumNumber() < 16)
         {
@@ -408,6 +413,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     {
         cv->mutable_cluster()->set_cluster(next.cluster.value());
     }
+    sparen->set_paren(rg.nextSmallNumber() < 9);
     this->levels[this->current_level] = QueryLevel(this->current_level);
     this->allow_in_expression_alias = rg.nextSmallNumber() < 3;
     generateSelect(
@@ -416,12 +422,12 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         false,
         view_ncols,
         next.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
-        cv->mutable_select());
+        sparen->mutable_select());
     this->levels.clear();
     this->allow_in_expression_alias = true;
     this->enforce_final = prev_enforce_final;
     this->allow_not_deterministic = prev_allow_not_deterministic;
-    matchQueryAliases(next, cv->release_select(), cv->mutable_select());
+    matchQueryAliases(next, sparen->release_select(), sparen->mutable_select());
     if (rg.nextSmallNumber() < 3)
     {
         cv->set_comment(nextComment(rg));
@@ -919,7 +925,8 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
     }
     else
     {
-        Select * sel = ins->mutable_select();
+        SelectParen * sparen = ins->mutable_select();
+        Select * sel = sparen->mutable_select();
 
         if (generate_random && nopt < (hardcoded_insert + random_values + generate_random + 1))
         {
@@ -957,6 +964,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
         }
         else if (insert_select && nopt < (hardcoded_insert + random_values + generate_random + insert_select + 1))
         {
+            sparen->set_paren(rg.nextSmallNumber() < 4);
             this->levels[this->current_level] = QueryLevel(this->current_level);
             if (rg.nextMediumNumber() < 13)
             {
@@ -1275,14 +1283,18 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
             std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
             const uint32_t nopt = next_dist(rg.generator);
 
+            ati->set_paren(rg.nextSmallNumber() < 9);
             if (alter_refresh && nopt < (alter_refresh + 1))
             {
                 generateNextRefreshableView(rg, ati->mutable_refresh());
             }
             else if (alter_query && nopt < (alter_refresh + alter_query + 1))
             {
+                SelectParen * sparen = ati->mutable_modify_query();
+
                 v.staged_ncols
                     = v.has_with_cols ? static_cast<uint32_t>(v.cols.size()) : ((rg.nextMediumNumber() % fc.max_columns) + UINT32_C(1));
+                sparen->set_paren(rg.nextSmallNumber() < 9);
                 this->levels[this->current_level] = QueryLevel(this->current_level);
                 this->allow_in_expression_alias = rg.nextSmallNumber() < 3;
                 generateSelect(
@@ -1291,10 +1303,10 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                     false,
                     v.staged_ncols,
                     v.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
-                    ati->mutable_modify_query());
+                    sparen->mutable_select());
                 this->levels.clear();
                 this->allow_in_expression_alias = true;
-                matchQueryAliases(v, ati->release_modify_query(), ati->mutable_modify_query());
+                matchQueryAliases(v, sparen->release_select(), sparen->mutable_select());
             }
             else if (comment_view && nopt < (alter_refresh + alter_query + comment_view + 1))
             {
@@ -1380,6 +1392,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
             std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
             const uint32_t nopt = next_dist(rg.generator);
 
+            ati->set_paren(rg.nextSmallNumber() < 9);
             if (alter_order_by && nopt < (alter_order_by + 1))
             {
                 TableKey * tkey = ati->mutable_order();
@@ -1403,6 +1416,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 AddColumn * add_col = ati->mutable_add_column();
                 ColumnDef * def = add_col->mutable_new_col();
                 const uint32_t type_mask_backup = this->next_type_mask;
+                std::vector<uint32_t> nested_ids;
 
                 if (next_option < 4)
                 {
@@ -1422,7 +1436,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                     {
                         if (val.tp->getTypeClass() == SQLTypeClass::NESTED)
                         {
-                            this->ids.emplace_back(key);
+                            nested_ids.emplace_back(key);
                         }
                     }
                     this->next_type_mask = fc.type_mask & ~(allow_nested);
@@ -1431,11 +1445,11 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 addTableColumn(rg, t, ncname, true, false, rg.nextMediumNumber() < 6, ColumnSpecial::NONE, def);
                 this->next_type_mask = type_mask_backup;
 
-                if (!this->ids.empty())
+                if (!nested_ids.empty())
                 {
                     std::unordered_map<uint32_t, SQLColumn> nested_cols;
                     SQLColumn ncol = std::move(t.staged_cols[ncname]);
-                    SQLColumn & nested_col = t.cols.at(rg.pickRandomly(this->ids));
+                    SQLColumn & nested_col = t.cols.at(rg.pickRandomly(nested_ids));
                     NestedType * ntp = dynamic_cast<NestedType *>(nested_col.tp);
 
                     ntp->subtypes.emplace_back(NestedSubType(ncname, ncol.tp));
@@ -1446,7 +1460,6 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
 
                     ncol.tp = nullptr;
                     t.staged_cols.erase(ncname);
-                    this->ids.clear();
                 }
             }
             else if (materialize_column && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + 1))
@@ -1507,6 +1520,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 AddColumn * add_col = ati->mutable_modify_column();
                 ColumnDef * def = add_col->mutable_new_col();
                 const uint32_t type_mask_backup = this->next_type_mask;
+                std::vector<uint32_t> nested_ids;
 
                 if (next_option < 4)
                 {
@@ -1526,20 +1540,20 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                     {
                         if (val.tp->getTypeClass() == SQLTypeClass::NESTED)
                         {
-                            this->ids.emplace_back(key);
+                            nested_ids.emplace_back(key);
                         }
                     }
                     this->next_type_mask = fc.type_mask & ~(allow_nested);
                 }
 
-                const uint32_t ncol = this->ids.empty() ? rg.pickRandomly(t.cols) : t.col_counter++;
+                const uint32_t ncol = nested_ids.empty() ? rg.pickRandomly(t.cols) : t.col_counter++;
                 addTableColumn(rg, t, ncol, true, true, rg.nextMediumNumber() < 6, ColumnSpecial::NONE, def);
                 this->next_type_mask = type_mask_backup;
 
-                if (!this->ids.empty())
+                if (!nested_ids.empty())
                 {
                     std::unordered_map<uint32_t, SQLColumn> nested_cols;
-                    const SQLColumn & nested_col = t.cols.at(rg.pickRandomly(this->ids));
+                    const SQLColumn & nested_col = t.cols.at(rg.pickRandomly(nested_ids));
 
                     nested_cols[nested_col.cname] = nested_col;
                     flatTableColumnPath(flat_nested, nested_cols, [](const SQLColumn &) { return true; });
@@ -1549,7 +1563,6 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                     this->entries.clear();
                     t.staged_cols[refcol] = std::move(t.staged_cols[ncol]);
                     t.staged_cols.erase(ncol);
-                    this->ids.clear();
                 }
             }
             else if (
@@ -2197,6 +2210,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
         {
             AlterItem * ati = i == 0 ? at->mutable_alter() : at->add_other_alters();
 
+            ati->set_paren(rg.nextSmallNumber() < 9);
             ati->set_comment(nextComment(rg));
         }
     }

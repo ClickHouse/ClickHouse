@@ -454,6 +454,7 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             UnaryExpr * unexp = cexpr->mutable_unary_expr();
 
+            unexp->set_paren(rg.nextMediumNumber() < 96);
             unexp->set_unary_op(UnaryOperator::UNOP_NOT);
             this->depth++;
             if (rg.nextSmallNumber() < 5)
@@ -491,6 +492,7 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             ExprBetween * bexpr = cexpr->mutable_expr_between();
 
+            bexpr->set_paren(rg.nextMediumNumber() < 96);
             bexpr->set_not_(rg.nextBool());
             this->depth++;
             this->generateExpression(rg, bexpr->mutable_expr1());
@@ -987,6 +989,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         const uint32_t type_mask_backup = this->next_type_mask;
         CastExpr * casexpr = expr->mutable_comp_expr()->mutable_cast_expr();
 
+        casexpr->set_simple(rg.nextBool());
         this->depth++;
         this->next_type_mask = fc.type_mask & ~(allow_nested);
         auto tp
@@ -1000,6 +1003,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         UnaryExpr * uexpr = expr->mutable_comp_expr()->mutable_unary_expr();
 
         this->depth++;
+        uexpr->set_paren(rg.nextMediumNumber() < 96);
         uexpr->set_unary_op(static_cast<UnaryOperator>((rg.nextRandomUInt32() % static_cast<uint32_t>(UnaryOperator::UNOP_PLUS)) + 1));
         this->generateExpression(rg, uexpr->mutable_expr());
         this->depth--;
@@ -1041,6 +1045,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     {
         CondExpr * conexpr = expr->mutable_comp_expr()->mutable_expr_cond();
 
+        conexpr->set_paren(rg.nextMediumNumber() < 96);
         this->depth++;
         this->generateExpression(rg, conexpr->mutable_expr1());
         this->width++;
