@@ -1058,7 +1058,7 @@ static BlockIO executeQueryImpl(
             /// TODO: parser should fail early when max_query_size limit is reached.
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
-#if 1 //#ifndef NDEBUG
+#ifndef NDEBUG
             try
             {
                 /// Verify that AST formatting is consistent:
