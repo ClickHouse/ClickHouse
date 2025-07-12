@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/ExpressionActions.h>
@@ -131,26 +130,11 @@ StorageNATS::StorageNATS(
 
     event_loop_thread = std::make_unique<ThreadFromGlobalPool>([this] { event_handler.runLoop(); });
 
-    try
-    {
-        createConsumersConnection();
-    }
-    catch (...)
-    {
-        if (throw_on_startup_failure)
-        {
-            stopEventLoop();
-            throw;
-        }
-
-        tryLogCurrentException(log);
-    }
-
     streaming_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSStreamingTask", [this] { streamingToViewsFunc(); });
     streaming_task->deactivate();
 
-    initialize_consumers_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSInitializeConsumersTask", [this] { initializeConsumersFunc(); });
-    initialize_consumers_task->deactivate();
+    subscribe_consumers_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSSubscribeConsumersTask", [this] { subscribeConsumersFunc(); });
+    subscribe_consumers_task->deactivate();
 }
 StorageNATS::~StorageNATS()
 {
@@ -237,53 +221,44 @@ void StorageNATS::stopEventLoop()
     LOG_TRACE(log, "Event loop thread finished in {} ms.", watch.elapsedMilliseconds());
 }
 
-void StorageNATS::initializeConsumersFunc()
+void StorageNATS::incrementReader()
+{
+    ++readers_count;
+}
+
+
+void StorageNATS::decrementReader()
+{
+    --readers_count;
+}
+
+
+void StorageNATS::subscribeConsumersFunc()
 {
     if (consumers_ready)
         return;
 
-    try
+    if (!consumers_connection)
     {
-        createConsumersConnection();
-        createConsumers();
+        try
+        {
+            createConsumers();
+        }
+        catch (...)
+        {
+            subscribe_consumers_task->scheduleAfter(RESCHEDULE_MS);
+            return;
+        }
     }
-    catch (...)
-    {
-        LOG_WARNING(log, "Cannot initialize consumers: {}", getCurrentExceptionMessage(false));
-        initialize_consumers_task->scheduleAfter(RESCHEDULE_MS);
-        return;
-    }
-
-    size_t num_views = DatabaseCatalog::instance().getDependentViews(getStorageID()).size();
-    if (num_views == 0)
-    {
-        initialize_consumers_task->scheduleAfter(RESCHEDULE_MS);
-        return;
-    }
-    mv_attached.store(true);
 
     if (!subscribeConsumers())
-    {
-        initialize_consumers_task->scheduleAfter(RESCHEDULE_MS);
-        return;
-    }
-
-    streaming_task->activateAndSchedule();
-}
-
-void StorageNATS::createConsumersConnection()
-{
-    if (consumers_connection)
-        return;
-
-    auto connect_future = event_handler.createConnection(configuration);
-    consumers_connection = connect_future.get();
+        subscribe_consumers_task->scheduleAfter(RESCHEDULE_MS);
 }
 
 void StorageNATS::createConsumers()
 {
-    if (num_created_consumers != 0)
-        return;
+    auto connect_future = event_handler.createConnection(configuration);
+    consumers_connection = connect_future.get();
 
     for (size_t i = 0; i < num_consumers; ++i)
     {
@@ -298,10 +273,9 @@ void StorageNATS::createConsumers()
         }
     }
 }
-
 bool StorageNATS::subscribeConsumers()
 {
-    std::lock_guard lock(consumers_mutex);
+    std::unique_lock lock(consumers_mutex);
     size_t num_initialized = 0;
     for (auto & consumer : consumers)
     {
@@ -316,21 +290,15 @@ bool StorageNATS::subscribeConsumers()
             break;
         }
     }
+    lock.unlock();
 
     const bool are_consumers_initialized = num_initialized == num_created_consumers;
     if (are_consumers_initialized)
+    {
         consumers_ready.store(true);
-
+        streaming_task->activateAndSchedule();
+    }
     return are_consumers_initialized;
-}
-
-void StorageNATS::unsubscribeConsumers()
-{
-    std::lock_guard lock(consumers_mutex);
-    for (auto & consumer : consumers)
-        consumer->unsubscribe();
-
-    consumers_ready.store(false);
 }
 
 
@@ -362,8 +330,11 @@ void StorageNATS::read(
         size_t /* max_block_size */,
         size_t /* num_streams */)
 {
-    if (!consumers_connection || num_created_consumers == 0)
-        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "NATS consumers setup not finished. Connection might be not established");
+    if (!consumers_ready)
+        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "NATS consumers setup not finished. Connection might be lost");
+
+    if (num_created_consumers == 0)
+        return;
 
     if (!local_context->getSettingsRef()[Setting::stream_like_engine_allow_direct_select])
         throw Exception(
@@ -375,7 +346,9 @@ void StorageNATS::read(
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
     auto modified_context = addSettings(local_context);
 
-    if (!consumers_connection->isConnected())
+    if (!consumers_connection)
+        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "No connection to NATS server");
+    else if (!consumers_connection->isConnected())
         throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "No connection to {}", consumers_connection->connectionInfoForLog());
 
     Pipes pipes;
@@ -453,7 +426,23 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
 
 void StorageNATS::startup()
 {
-    initialize_consumers_task->activateAndSchedule();
+    try
+    {
+        createConsumers();
+    }
+    catch (...)
+    {
+        if (throw_on_startup_failure)
+        {
+            stopEventLoop();
+            throw;
+        }
+
+        tryLogCurrentException(log);
+    }
+
+    if (!consumers_connection || !subscribeConsumers())
+        subscribe_consumers_task->activateAndSchedule();
 }
 
 
@@ -466,13 +455,17 @@ void StorageNATS::shutdown(bool /* is_drop */)
     deactivateTask(streaming_task);
 
     /// In case it has not yet been able to setup connection;
-    deactivateTask(initialize_consumers_task);
+    deactivateTask(subscribe_consumers_task);
 
     /// Just a paranoid try catch, it is not actually needed.
     try
     {
         if (drop_table)
-            unsubscribeConsumers();
+        {
+            std::lock_guard lock(consumers_mutex);
+            for (auto & consumer : consumers)
+                consumer->unsubscribe();
+        }
 
         if (consumers_connection)
         {
@@ -575,12 +568,13 @@ bool StorageNATS::isSubjectInSubscriptions(const std::string & subject)
     return false;
 }
 
+
 bool StorageNATS::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
     auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
     if (view_ids.empty())
-        return false;
+        return true;
 
     // Check the dependencies are ready?
     for (const auto & view_id : view_ids)
@@ -593,20 +587,27 @@ bool StorageNATS::checkDependencies(const StorageID & table_id)
         auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
         if (materialized_view && !materialized_view->tryGetTargetTable())
             return false;
+
+        // Check all its dependencies
+        if (!checkDependencies(view_id))
+            return false;
     }
 
     return true;
 }
 
+
 void StorageNATS::streamingToViewsFunc()
 {
-    auto table_id = getStorageID();
-
-    bool consumers_queues_are_empty = false;
-
+    bool do_reschedule_with_delay = false;
     try
     {
-        if (consumers_connection && consumers_connection->isConnected())
+        auto table_id = getStorageID();
+
+        // Check if at least one direct dependency is attached
+        size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
+
+        if (num_views && consumers_connection && consumers_connection->isConnected())
         {
             auto start_time = std::chrono::steady_clock::now();
 
@@ -616,17 +617,14 @@ void StorageNATS::streamingToViewsFunc()
             while (!shutdown_called && num_created_consumers > 0)
             {
                 if (!checkDependencies(table_id))
-                {
-                    consumers_queues_are_empty = true;
                     break;
-                }
 
-                LOG_DEBUG(log, "Started streaming to attached views");
+                LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
                 if (streamToViews())
                 {
                     /// Reschedule with backoff.
-                    consumers_queues_are_empty = true;
+                    do_reschedule_with_delay = true;
                     break;
                 }
 
@@ -635,7 +633,7 @@ void StorageNATS::streamingToViewsFunc()
                 if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
                 {
                     LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded");
-                    consumers_queues_are_empty = false;
+                    do_reschedule_with_delay = false;
                     break;
                 }
             }
@@ -646,31 +644,15 @@ void StorageNATS::streamingToViewsFunc()
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    if (shutdown_called)
-        return;
+    mv_attached.store(false);
 
-    size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-
-    if (num_views != 0)
+    if (!shutdown_called)
     {
-        if (consumers_queues_are_empty)
+        if (do_reschedule_with_delay)
             streaming_task->scheduleAfter(RESCHEDULE_MS);
         else
             streaming_task->schedule();
-
-        return;
     }
-    else if (consumers_ready)
-        unsubscribeConsumers();
-
-    if (!consumers_queues_are_empty)
-    {
-        streaming_task->schedule();
-        return;
-    }
-
-    initialize_consumers_task->schedule();
-    mv_attached.store(false);
 }
 
 
@@ -783,7 +765,7 @@ void registerStorageNATS(StorageFactory & factory)
         creator_fn,
         StorageFactory::StorageFeatures{
             .supports_settings = true,
-            .source_access_type = AccessTypeObjects::Source::NATS,
+            .source_access_type = AccessType::NATS,
             .has_builtin_setting_fn = NATSSettings::hasBuiltin,
         });
 }

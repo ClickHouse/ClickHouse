@@ -44,7 +44,6 @@ title: 'Regular Functions'
 | [Distance](/sql-reference/functions/distance-functions) | Functions for calculating vector norms, distances, normalization, and common operations in linear algebra and machine learning. |
 | [Bitmap](/sql-reference/functions/bitmap-functions) | Functions for bitmaps.                                                                                                          |
 | [Math](/sql-reference/functions/math-functions)  | Mathematical functions.                                                                                                         |
-| [Financial](/sql-reference/functions/financial-functions) | Financial functions.                                                                                                            |
 | [Encryption](/sql-reference/functions/encryption-functions) | Functions for encryption.                                                                                                       |
 | [Arithmetic](/sql-reference/functions/arithmetic-functions) | Functions for performing arithmetic on `UInt`, `Int` or `Float` types.                                                          |
 | [Embedded Dictionaries](/sql-reference/functions/ym-dict-functions) | Functions for Working with Embedded Dictionaries                                                                                |

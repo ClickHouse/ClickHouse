@@ -53,6 +53,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_join_condition;
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsBool join_any_take_last_row;
     extern const SettingsBool join_use_nulls;
@@ -244,10 +245,8 @@ const ActionsDAG::Node * appendExpression(
     const PlannerContextPtr & planner_context,
     const JoinNode & join_node)
 {
-    ColumnNodePtrWithHashSet empty_correlated_columns_set;
-    PlannerActionsVisitor join_expression_visitor(planner_context, empty_correlated_columns_set);
-    auto [join_expression_dag_node_raw_pointers, correlated_subtrees] = join_expression_visitor.visit(dag, expression);
-    correlated_subtrees.assertEmpty("in JOINs");
+    PlannerActionsVisitor join_expression_visitor(planner_context);
+    auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(dag, expression);
     if (join_expression_dag_node_raw_pointers.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "JOIN {} ON clause contains multiple expressions",
@@ -360,11 +359,14 @@ void buildJoinClauseImpl(
         }
         else
         {
+            auto support_mixed_join_condition
+                = planner_context->getQueryContext()->getSettingsRef()[Setting::allow_experimental_join_condition];
             auto join_use_nulls = planner_context->getQueryContext()->getSettingsRef()[Setting::join_use_nulls];
-            /// If join_use_nulls = true, the columns nullability will be changed later which make this expression not right.
-            if (!join_use_nulls)
+            /// If join_use_nulls = true, the columns' nullability will be changed later which make this expression not right.
+            if (support_mixed_join_condition && !join_use_nulls)
             {
                 /// expression involves both tables.
+                /// `expr1(left.col1, right.col2) == expr2(left.col3, right.col4)`
                 const auto * node = appendExpression(joined_dag, join_expression, planner_context, join_node);
                 join_clause.addResidualCondition(node);
             }
@@ -912,10 +914,8 @@ JoinClausesAndActions buildJoinClausesAndActions(
         if (result.join_clauses.size() > 1)
         {
             ActionsDAG residual_join_expressions_actions(result_relation_columns);
-            ColumnNodePtrWithHashSet empty_correlated_columns_set;
-            PlannerActionsVisitor join_expression_visitor(planner_context, empty_correlated_columns_set);
-            auto [join_expression_dag_node_raw_pointers, correlated_subtrees] = join_expression_visitor.visit(residual_join_expressions_actions, join_expression);
-            correlated_subtrees.assertEmpty("in JOIN condition");
+            PlannerActionsVisitor join_expression_visitor(planner_context);
+            auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(residual_join_expressions_actions, join_expression);
             if (join_expression_dag_node_raw_pointers.size() != 1)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR, "JOIN {} ON clause contains multiple expressions", join_node.formatASTForErrorMessage());

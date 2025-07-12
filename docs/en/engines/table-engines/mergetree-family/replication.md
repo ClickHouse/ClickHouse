@@ -14,7 +14,8 @@ In ClickHouse Cloud replication is managed for you. Please create your tables wi
 ```sql
 ENGINE = ReplicatedMergeTree(
     '/clickhouse/tables/{shard}/table_name',
-    '{replica}'
+    '{replica}',
+    ver
 )
 ```
 
@@ -57,7 +58,7 @@ Don't neglect the security setting. ClickHouse supports the `digest` [ACL scheme
 
 Example of setting the addresses of the ClickHouse Keeper cluster:
 
-```xml
+``` xml
 <zookeeper>
     <node>
         <host>example1</host>
@@ -79,7 +80,7 @@ In other words, it supports storing the metadata of different tables in differen
 
 Example of setting the addresses of the auxiliary ZooKeeper cluster:
 
-```xml
+``` xml
 <auxiliary_zookeepers>
     <zookeeper2>
         <node>
@@ -139,26 +140,39 @@ The system monitors data synchronicity on replicas and is able to recover after 
 ## Creating Replicated Tables {#creating-replicated-tables}
 
 :::note
-In ClickHouse Cloud, replication is handled automatically.
+In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:
+```sql
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}', ver)
+```
+with:
+```sql
+ENGINE = ReplicatedMergeTree
+```
+:::
 
-Create tables using [`MergeTree`](/engines/table-engines/mergetree-family/mergetree) without replication arguments. The system internally rewrites [`MergeTree`](/engines/table-engines/mergetree-family/mergetree) to [`SharedMergeTree`](/cloud/reference/shared-merge-tree) for replication and data distribution.
+The `Replicated` prefix is added to the table engine name. For example:`ReplicatedMergeTree`.
 
-Avoid using `ReplicatedMergeTree` or specifying replication parameters, as replication is managed by the platform.
-
+:::tip
+Adding `Replicated` is optional in ClickHouse Cloud, as all of the tables are replicated.
 :::
 
 ### Replicated\*MergeTree parameters {#replicatedmergetree-parameters}
 
-| Parameter       | Description                                                                  |
-|-----------------|------------------------------------------------------------------------------|
-| `zoo_path`      | The path to the table in ClickHouse Keeper.                                  |
-| `replica_name`  | The replica name in ClickHouse Keeper.                                       |
-| `other_parameters` | Parameters of an engine used for creating the replicated version, for example, version in `ReplacingMergeTree`. |
+#### zoo_path {#zoo_path}
 
+`zoo_path` — The path to the table in ClickHouse Keeper.
+
+#### replica_name {#replica_name}
+
+`replica_name` — The replica name in ClickHouse Keeper.
+
+#### other_parameters {#other_parameters}
+
+`other_parameters` — Parameters of an engine which is used for creating the replicated version, for example, version in `ReplacingMergeTree`.
 
 Example:
 
-```sql
+``` sql
 CREATE TABLE table_name
 (
     EventDate DateTime,
@@ -175,7 +189,7 @@ SAMPLE BY intHash32(UserID);
 
 <summary>Example in deprecated syntax</summary>
 
-```sql
+``` sql
 CREATE TABLE table_name
 (
     EventDate DateTime,
@@ -190,7 +204,7 @@ As the example shows, these parameters can contain substitutions in curly bracke
 
 Example:
 
-```xml
+``` xml
 <macros>
     <shard>02</shard>
     <replica>example05-02-1</replica>
@@ -225,7 +239,7 @@ You can specify default arguments for `Replicated` table engine in the server co
 
 In this case, you can omit arguments when creating tables:
 
-```sql
+``` sql
 CREATE TABLE table_name (
     x UInt32
 ) ENGINE = ReplicatedMergeTree
@@ -234,7 +248,7 @@ ORDER BY x;
 
 It is equivalent to:
 
-```sql
+``` sql
 CREATE TABLE table_name (
     x UInt32
 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/table_name', '{replica}')
@@ -265,7 +279,7 @@ If the local set of data differs too much from the expected one, a safety mechan
 
 To start recovery, create the node `/path_to_table/replica_name/flags/force_restore_data` in ClickHouse Keeper with any content, or run the command to restore all replicated tables:
 
-```bash
+``` bash
 sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 ```
 

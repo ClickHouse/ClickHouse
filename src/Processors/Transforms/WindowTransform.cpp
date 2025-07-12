@@ -1532,7 +1532,7 @@ namespace recurrent_detail
 {
     template<typename T> T getValue(const WindowTransform * /*transform*/, size_t /*function_index*/, size_t /*column_index*/, RowNumber /*row*/)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "recurrent_detail::getValue is not implemented for {} type", typeid(T).name());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "recurrent_detail::getValue() is not implemented for {} type", typeid(T).name());
     }
 
     template<> Float64 getValue<Float64>(const WindowTransform * transform, size_t function_index, size_t column_index, RowNumber row)
@@ -1545,7 +1545,7 @@ namespace recurrent_detail
     template<typename T> void setValueToOutputColumn(const WindowTransform * /*transform*/, size_t /*function_index*/, T /*value*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "recurrent_detail::setValueToOutputColumn is not implemented for {} type", typeid(T).name());
+                        "recurrent_detail::setValueToOutputColumn() is not implemented for {} type", typeid(T).name());
     }
 
     template<> void setValueToOutputColumn<Float64>(const WindowTransform * transform, size_t function_index, Float64 value)
@@ -2702,21 +2702,7 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
                 name, argument_types, parameters);
         }, properties});
 
-    factory.registerFunction("lag", {[](const std::string & name,
-            const DataTypes & argument_types, const Array & parameters, const Settings *)
-        {
-            return std::make_shared<WindowFunctionLagLeadInFrame<false>>(
-                name, argument_types, parameters);
-        }, properties});
-
     factory.registerFunction("leadInFrame", {[](const std::string & name,
-            const DataTypes & argument_types, const Array & parameters, const Settings *)
-        {
-            return std::make_shared<WindowFunctionLagLeadInFrame<true>>(
-                name, argument_types, parameters);
-        }, properties});
-
-    factory.registerFunction("lead", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLeadInFrame<true>>(

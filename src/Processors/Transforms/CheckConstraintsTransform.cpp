@@ -9,7 +9,6 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
-#include <Parsers/ASTConstraintDeclaration.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/ConstraintsDescription.h>
 

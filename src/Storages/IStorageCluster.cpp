@@ -5,7 +5,6 @@
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ConnectionTimeouts.h>
-#include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -93,7 +92,7 @@ private:
 
     std::optional<RemoteQueryExecutor::Extension> extension;
 
-    void createExtension(const ActionsDAG::Node * predicate, size_t number_of_replicas);
+    void createExtension(const ActionsDAG::Node * predicate);
     ContextPtr updateSettings(const Settings & settings);
 };
 
@@ -105,23 +104,15 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
 
-    auto max_replicas_to_use = static_cast<UInt64>(cluster->getShardsInfo().size());
-    if (context->getSettingsRef()[Setting::max_parallel_replicas] > 1)
-        max_replicas_to_use = std::min(max_replicas_to_use, context->getSettingsRef()[Setting::max_parallel_replicas].value);
-
-    createExtension(predicate, max_replicas_to_use);
+    createExtension(predicate);
 }
 
-void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate, size_t number_of_replicas)
+void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
 {
     if (extension)
         return;
 
-    extension = storage->getTaskIteratorExtension(
-        predicate,
-        filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get(),
-        context,
-        number_of_replicas);
+    extension = storage->getTaskIteratorExtension(predicate, context);
 }
 
 /// The code executes on initiator
@@ -187,6 +178,8 @@ void IStorageCluster::read(
 
 void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    createExtension(nullptr);
+
     const Scalars & scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
@@ -195,12 +188,9 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
     const auto & current_settings = new_context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
-    size_t replica_index = 0;
     auto max_replicas_to_use = static_cast<UInt64>(cluster->getShardsInfo().size());
     if (current_settings[Setting::max_parallel_replicas] > 1)
         max_replicas_to_use = std::min(max_replicas_to_use, current_settings[Setting::max_parallel_replicas].value);
-
-    createExtension(nullptr, max_replicas_to_use);
 
     for (const auto & shard_info : cluster->getShardsInfo())
     {
@@ -219,8 +209,6 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
         if (try_results.empty())
             continue;
 
-        IConnections::ReplicaInfo replica_info{.number_of_current_replica = replica_index++};
-
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             std::vector<IConnectionPool::Entry>{try_results.front()},
             query_to_send->formatWithSecretsOneLine(),
@@ -230,17 +218,14 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
             scalars,
             Tables(),
             processed_stage,
-            nullptr,
-            RemoteQueryExecutor::Extension{.task_iterator = extension->task_iterator, .replica_info = std::move(replica_info)});
+            extension);
 
         remote_query_executor->setLogger(log);
-        Pipe pipe{std::make_shared<RemoteSource>(
+        pipes.emplace_back(std::make_shared<RemoteSource>(
             remote_query_executor,
             add_agg_info,
             current_settings[Setting::async_socket_for_remote],
-            current_settings[Setting::async_query_sending_for_remote])};
-        pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
-        pipes.emplace_back(std::move(pipe));
+            current_settings[Setting::async_query_sending_for_remote]));
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));

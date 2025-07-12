@@ -1,14 +1,13 @@
-#include <Columns/ColumnBLOB.h>
-#include <Columns/IColumn.h>
-#include <Compression/CompressionFactory.h>
-#include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <Compression/CompressionFactory.h>
+#include <Columns/IColumn.h>
+#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteHelpers.h>
-#include <base/EnumReflection.h>
 #include <Common/escapeForFileName.h>
-#include <Common/typeid_cast.h>
+#include <DataTypes/NestedUtils.h>
+#include <base/EnumReflection.h>
+
 
 namespace DB
 {
@@ -25,9 +24,6 @@ ISerialization::Kind ISerialization::getKind(const IColumn & column)
     if (column.isSparse())
         return Kind::SPARSE;
 
-    if (const auto * column_blob = typeid_cast<const ColumnBLOB *>(&column))
-        return column_blob->wrappedColumnIsSparse() ? Kind::DETACHED_OVER_SPARSE : Kind::DETACHED;
-
     return Kind::DEFAULT;
 }
 
@@ -39,10 +35,6 @@ String ISerialization::kindToString(Kind kind)
             return "Default";
         case Kind::SPARSE:
             return "Sparse";
-        case Kind::DETACHED:
-            return "Detached";
-        case Kind::DETACHED_OVER_SPARSE:
-            return "DetachedOverSparse";
     }
 }
 
@@ -50,12 +42,8 @@ ISerialization::Kind ISerialization::stringToKind(const String & str)
 {
     if (str == "Default")
         return Kind::DEFAULT;
-    else if (str == "Sparse")
+    if (str == "Sparse")
         return Kind::SPARSE;
-    else if (str == "Detached")
-        return Kind::DETACHED;
-    else if (str == "DetachedOverSparse")
-        return Kind::DETACHED_OVER_SPARSE;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind '{}'", str);
 }
 
@@ -121,7 +109,7 @@ void ISerialization::serializeBinaryBulk(const IColumn & column, WriteBuffer &, 
     throw Exception(ErrorCodes::MULTIPLE_STREAMS_REQUIRED, "Column {} must be serialized with multiple streams", column.getName());
 }
 
-void ISerialization::deserializeBinaryBulk(IColumn & column, ReadBuffer &, size_t, size_t, double) const
+void ISerialization::deserializeBinaryBulk(IColumn & column, ReadBuffer &, size_t, double) const
 {
     throw Exception(ErrorCodes::MULTIPLE_STREAMS_REQUIRED, "Column {} must be deserialized with multiple streams", column.getName());
 }
@@ -141,7 +129,6 @@ void ISerialization::serializeBinaryBulkWithMultipleStreams(
 
 void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & /* state */,
@@ -157,7 +144,7 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
         auto mutable_column = column->assumeMutable();
-        deserializeBinaryBulk(*mutable_column, *stream, rows_offset, limit, settings.avg_value_size_hint);
+        deserializeBinaryBulk(*mutable_column, *stream, limit, settings.avg_value_size_hint);
         column = std::move(mutable_column);
         addToSubstreamsCache(cache, settings.path, column);
     }
@@ -189,8 +176,6 @@ String getNameForSubstreamPath(
             ++array_level;
         else if (it->type == Substream::DictionaryKeys)
             stream_name += ".dict";
-        else if (it->type == Substream::DictionaryKeysPrefix)
-            stream_name += ".dict_prefix";
         else if (it->type == Substream::SparseOffsets)
             stream_name += ".sparse.idx";
         else if (Substream::named_types.contains(it->type))
@@ -208,8 +193,6 @@ String getNameForSubstreamPath(
         }
         else if (it->type == Substream::VariantDiscriminators)
             stream_name += ".variant_discr";
-        else if (it->type == Substream::VariantDiscriminatorsPrefix)
-            stream_name += ".variant_discr_prefix";
         else if (it->type == Substream::VariantOffsets)
             stream_name += ".variant_offsets";
         else if (it->type == Substream::VariantElement)
@@ -467,7 +450,7 @@ bool ISerialization::isDynamicOrObjectStructureSubcolumn(const DB::ISerializatio
     return path[path.size() - 1].type == SubstreamType::DynamicStructure || path[path.size() - 1].type == SubstreamType::ObjectStructure;
 }
 
-bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, bool use_specialized_prefixes_substreams)
+bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path)
 {
     if (path.empty())
         return false;
@@ -477,12 +460,9 @@ bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, b
         case SubstreamType::DynamicStructure: [[fallthrough]];
         case SubstreamType::ObjectStructure: [[fallthrough]];
         case SubstreamType::DeprecatedObjectStructure: [[fallthrough]];
-        case SubstreamType::DictionaryKeysPrefix: [[fallthrough]];
-        case SubstreamType::VariantDiscriminatorsPrefix:
-            return true;
         case SubstreamType::DictionaryKeys: [[fallthrough]];
         case SubstreamType::VariantDiscriminators:
-            return !use_specialized_prefixes_substreams;
+            return true;
         default:
             return false;
     }

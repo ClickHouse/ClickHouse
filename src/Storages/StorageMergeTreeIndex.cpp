@@ -16,12 +16,10 @@
 #include <Access/Common/AccessFlags.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/escapeForFileName.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -29,7 +27,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int CORRUPTED_DATA;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NOT_IMPLEMENTED;
 }
@@ -40,7 +37,6 @@ public:
     MergeTreeIndexSource(
         Block header_,
         Block index_header_,
-        Block minmax_header_,
         MergeTreeData::DataPartsVector data_parts_,
         ContextPtr context_,
         bool with_marks_)
@@ -48,7 +44,6 @@ public:
         , WithContext(context_)
         , header(std::move(header_))
         , index_header(std::move(index_header_))
-        , minmax_header(std::move(minmax_header_))
         , data_parts(std::move(data_parts_))
         , with_marks(with_marks_)
     {
@@ -67,13 +62,7 @@ protected:
 
         std::shared_ptr<MergeTreeMarksLoader> marks_loader;
         if (with_marks && isCompactPart(part))
-        {
-            marks_loader = createMarksLoader(
-                part,
-                MergeTreeDataPartCompact::DATA_FILE_NAME,
-                part->index_granularity_info.mark_type.with_substreams ? part->getColumnsSubstreams().getTotalSubstreams()
-                                                                       : part->getColumns().size());
-        }
+            marks_loader = createMarksLoader(part, MergeTreeDataPartCompact::DATA_FILE_NAME, part->getColumns().size());
 
         size_t num_columns = header.columns();
         size_t num_rows = index_granularity->getMarksCount();
@@ -107,22 +96,6 @@ protected:
                     auto index_column = column_type->createColumnConstWithDefaultValue(num_rows);
                     result_columns[pos] = index_column->convertToFullColumnIfConst();
                 }
-            }
-            else if (minmax_header.has(column_name))
-            {
-                size_t minmax_pos = minmax_header.getPositionByName(column_name);
-                if (minmax_pos >= part->minmax_idx->hyperrectangle.size())
-                    throw Exception(
-                        ErrorCodes::CORRUPTED_DATA,
-                        "Part {} has broken minmax_idx: size = {} but {} has pos = {}",
-                        part->name,
-                        part->minmax_idx->hyperrectangle.size(),
-                        column_name,
-                        minmax_pos);
-
-                auto column = column_type->createColumnConst(
-                    num_rows, Tuple{part->minmax_idx->hyperrectangle[minmax_pos].left, part->minmax_idx->hyperrectangle[minmax_pos].right});
-                result_columns[pos] = column->convertToFullColumnIfConst();
             }
             else if (column_name == part_name_column.name)
             {
@@ -203,22 +176,11 @@ private:
         }
         else if (isCompactPart(part))
         {
-            if (part->index_granularity_info.mark_type.with_substreams)
+            auto unescaped_name = unescapeForFileName(column_name);
+            if (auto col_idx_opt = part->getColumnPosition(unescaped_name))
             {
-                if (auto col_idx_opt = part->getColumnsSubstreams().tryGetSubstreamPosition(column_name))
-                {
-                    col_idx = *col_idx_opt;
-                    has_marks_in_part = true;
-                }
-            }
-            else
-            {
-                auto unescaped_name = unescapeForFileName(column_name);
-                if (auto col_idx_opt = part->getColumnPosition(unescaped_name))
-                {
-                    col_idx = *col_idx_opt;
-                    has_marks_in_part = true;
-                }
+                col_idx = *col_idx_opt;
+                has_marks_in_part = true;
             }
         }
         else
@@ -256,7 +218,6 @@ private:
 
     Block header;
     Block index_header;
-    Block minmax_header;
     MergeTreeData::DataPartsVector data_parts;
     bool with_marks;
 
@@ -272,32 +233,17 @@ StorageMergeTreeIndex::StorageMergeTreeIndex(
     const StorageID & table_id_,
     const StoragePtr & source_table_,
     const ColumnsDescription & columns,
-    bool with_marks_,
-    bool with_minmax_)
+    bool with_marks_)
     : IStorage(table_id_)
     , source_table(source_table_)
     , with_marks(with_marks_)
-    , with_minmax(with_minmax_)
 {
     const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table.get());
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeIndex expected MergeTree table, got: {}", source_table->getName());
 
     data_parts = merge_tree->getDataPartsVectorForInternalUsage();
-    std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
-
     key_sample_block = merge_tree->getInMemoryMetadataPtr()->getPrimaryKey().sample_block;
-
-    if (with_minmax)
-    {
-        const auto & partition_key = merge_tree->getInMemoryMetadataPtr()->getPartitionKey();
-        if (!partition_key.column_names.empty() && partition_key.expression)
-        {
-            for (const auto & column : partition_key.expression->getRequiredColumnsWithTypes())
-                minmax_sample_block.insert(
-                    {nullptr, std::make_shared<DataTypeTuple>(DataTypes{column.type, column.type}), fmt::format("minmax_{}", column.name)});
-        }
-    }
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
@@ -404,19 +350,12 @@ void ReadFromMergeTreeIndex::initializePipeline(QueryPipelineBuilder & pipeline,
 {
     auto filtered_parts = storage->getFilteredDataParts(virtual_columns_filter);
 
-    LOG_DEBUG(log, "Reading index{}{} from {} parts of table {}",
-        storage->with_marks ? " with marks" : "",
-        storage->with_minmax ? " with minmax_idx" : "",
+    LOG_DEBUG(log, "Reading index{}from {} parts of table {}",
+        storage->with_marks ? " with marks " : " ",
         filtered_parts.size(),
         storage->source_table->getStorageID().getNameForLogs());
 
-    pipeline.init(Pipe(std::make_shared<MergeTreeIndexSource>(
-        getOutputHeader(),
-        storage->key_sample_block,
-        storage->minmax_sample_block,
-        std::move(filtered_parts),
-        context,
-        storage->with_marks)));
+    pipeline.init(Pipe(std::make_shared<MergeTreeIndexSource>(getOutputHeader(), storage->key_sample_block, std::move(filtered_parts), context, storage->with_marks)));
 }
 
 MergeTreeData::DataPartsVector StorageMergeTreeIndex::getFilteredDataParts(const ExpressionActionsPtr & virtual_columns_filter) const

@@ -12,7 +12,7 @@ Both parts the `arg` and the `max` behave as [aggregate functions](/sql-referenc
 
 **Syntax**
 
-```sql
+``` sql
 argMax(arg, val)
 ```
 
@@ -31,7 +31,7 @@ Type: matches `arg` type.
 
 Input table:
 
-```text
+``` text
 ┌─user─────┬─salary─┐
 │ director │   5000 │
 │ manager  │   3000 │
@@ -41,13 +41,13 @@ Input table:
 
 Query:
 
-```sql
+``` sql
 SELECT argMax(user, salary) FROM salary;
 ```
 
 Result:
 
-```text
+``` text
 ┌─argMax(user, salary)─┐
 │ director             │
 └──────────────────────┘
@@ -65,7 +65,7 @@ ENGINE = Memory AS
 SELECT *
 FROM VALUES(('a', 1), ('b', 2), ('c', 2), (NULL, 3), (NULL, NULL), ('d', NULL));
 
-SELECT * FROM test;
+select * from test;
 ┌─a────┬────b─┐
 │ a    │    1 │
 │ b    │    2 │

@@ -19,27 +19,6 @@ public:
     {
     }
 
-    SourceStepWithFilterBase(const SourceStepWithFilterBase & other)
-        : ISourceStep(other)
-        , filter_nodes()
-        , filter_dags()
-        , limit(other.limit)
-        , filter_actions_dag()
-    {
-        filter_dags.reserve(other.filter_dags.size());
-        filter_nodes.nodes.reserve(other.filter_dags.size());
-
-        for (size_t i = 0; i < other.filter_dags.size(); ++i)
-        {
-            filter_dags.push_back(other.filter_dags[i].clone());
-            filter_nodes.nodes.push_back(&filter_dags.back().findInOutputs(other.filter_nodes.nodes[i]->result_name));
-        }
-
-        if (other.filter_actions_dag)
-            filter_actions_dag = std::make_shared<const ActionsDAG>(other.filter_actions_dag->clone());
-    }
-    SourceStepWithFilterBase(SourceStepWithFilterBase &&) = default;
-
     void addFilter(ActionsDAG filter_dag, std::string column_name)
     {
         filter_nodes.nodes.push_back(&filter_dag.findInOutputs(column_name));
@@ -64,15 +43,8 @@ public:
     virtual void applyFilters(ActionDAGNodes added_filter_nodes);
     virtual PrewhereInfoPtr getPrewhereInfo() const { return nullptr; }
 
-    const std::shared_ptr<const ActionsDAG> & getFilterActionsDAG() const { return filter_actions_dag; }
-    std::shared_ptr<const ActionsDAG> detachFilterActionsDAG() { return std::move(filter_actions_dag); }
-
-    bool hasCorrelatedExpressions() const override
-    {
-        if (filter_actions_dag)
-            return filter_actions_dag->hasCorrelatedColumns();
-        return false;
-    }
+    const std::optional<ActionsDAG> & getFilterActionsDAG() const { return filter_actions_dag; }
+    std::optional<ActionsDAG> detachFilterActionsDAG() { return std::move(filter_actions_dag); }
 
 private:
     /// Will be cleared after applyFilters() is called.
@@ -81,7 +53,7 @@ private:
 
 protected:
     std::optional<size_t> limit;
-    std::shared_ptr<const ActionsDAG> filter_actions_dag;
+    std::optional<ActionsDAG> filter_actions_dag;
 };
 
 /** Source step that can use filters and limit for more efficient pipeline initialization.
@@ -108,8 +80,6 @@ public:
         , context(context_)
     {
     }
-
-    SourceStepWithFilter(const SourceStepWithFilter &) = default;
 
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
     PrewhereInfoPtr getPrewhereInfo() const override { return prewhere_info; }

@@ -45,7 +45,7 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 {
     auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings());
 
-    pipeline.addSimpleTransform([&](const ConstBlockPtr & header)
+    pipeline.addSimpleTransform([&](const Block & header)
     {
         return std::make_shared<ExpressionTransform>(header, expression);
     });
@@ -58,7 +58,7 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
                 ActionsDAG::MatchColumnsMode::Name);
         auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), settings.getActionsSettings());
 
-        pipeline.addSimpleTransform([&](const ConstBlockPtr & header)
+        pipeline.addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<ExpressionTransform>(header, convert_actions);
         });
@@ -95,11 +95,6 @@ std::unique_ptr<IQueryPlanStep> ExpressionStep::deserialize(Deserialization & ct
         throw Exception(ErrorCodes::INCORRECT_DATA, "ExpressionStep must have one input stream");
 
     return std::make_unique<ExpressionStep>(ctx.input_headers.front(), std::move(actions_dag));
-}
-
-QueryPlanStepPtr ExpressionStep::clone() const
-{
-    return std::make_unique<ExpressionStep>(*this);
 }
 
 void registerExpressionStep(QueryPlanStepRegistry & registry)

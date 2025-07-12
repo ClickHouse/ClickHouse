@@ -5,6 +5,7 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
+#include <Common/quoteString.h>
 #include <IO/Operators.h>
 
 
