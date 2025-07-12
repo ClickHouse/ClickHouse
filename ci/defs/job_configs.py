@@ -119,6 +119,7 @@ class JobConfigs:
             BuildTypes.ARM_ASAN,
             BuildTypes.ARM_COVERAGE,
             BuildTypes.ARM_BINARY,
+            BuildTypes.FUZZERS,
         ],
         provides=[
             [
@@ -166,6 +167,7 @@ class JobConfigs:
             ],
             [ArtifactNames.DEB_COV, ArtifactNames.CH_COV_BIN],
             [ArtifactNames.CH_ARM_BIN],
+            [],  # no need for fuzzers artifacts in normal pr run [ArtifactNames.FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         ],
         runs_on=[
             RunnerLabels.BUILDER_AMD,
@@ -179,6 +181,7 @@ class JobConfigs:
             RunnerLabels.BUILDER_ARM,
             RunnerLabels.BUILDER_ARM,
             RunnerLabels.BUILDER_ARM,
+            RunnerLabels.BUILDER_ARM,  # fuzzers
         ],
     )
     special_build_jobs = Job.Config(
@@ -206,7 +209,6 @@ class JobConfigs:
             BuildTypes.RISCV64,
             BuildTypes.S390X,
             BuildTypes.LOONGARCH64,
-            BuildTypes.FUZZERS,
         ],
         provides=[
             [ArtifactNames.CH_AMD_DARWIN_BIN],
@@ -219,7 +221,6 @@ class JobConfigs:
             [ArtifactNames.CH_RISCV64],
             [ArtifactNames.CH_S390X],
             [ArtifactNames.CH_LOONGARCH64],
-            [],  # no need for fuzzers artifacts in normal pr run [ArtifactNames.FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         ],
         runs_on=[
             RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_DARWIN,
@@ -232,7 +233,6 @@ class JobConfigs:
             RunnerLabels.BUILDER_ARM,  # BuildTypes.RISCV64,
             RunnerLabels.BUILDER_AMD,  # BuildTypes.S390X,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.LOONGARCH64
-            RunnerLabels.BUILDER_ARM,  # fuzzers
         ],
     )
     builds_for_tests = [b.name for b in build_jobs] + [tidy_build_jobs[0]]
