@@ -45,8 +45,8 @@ struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescripti
 /// A vehicle which transports additional information to optimize searches
 struct RangesInDataPartReadHints
 {
-    /// 1) Exact part offsets positions 2) a pre-computed "_distance" virtual column
-    std::optional<NearestNeighbours> ann_search_results;
+    /// Currently only information related to vector search
+    std::optional<NearestNeighbours> vector_search_results;
 };
 
 struct RangesInDataPart

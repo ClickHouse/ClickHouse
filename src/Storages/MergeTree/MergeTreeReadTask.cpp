@@ -93,22 +93,17 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             extras.profile_callback);
     };
 
-    auto has_read_hints = read_info->read_hints.ann_search_results.has_value();
     new_readers.main = create_reader(read_info->task_columns.columns, false);
-    if (has_read_hints)
-    {
-        new_readers.main->data_part_info_for_read->setReadHints(
-            read_info->read_hints, read_info->task_columns.columns);
-    }
+
+    bool is_vector_search = read_info->read_hints.vector_search_results.has_value();
+    if (is_vector_search)
+        new_readers.main->data_part_info_for_read->setReadHints(read_info->read_hints, read_info->task_columns.columns);
 
     for (const auto & pre_columns_per_step : read_info->task_columns.pre_columns)
     {
         new_readers.prewhere.push_back(create_reader(pre_columns_per_step, true));
-        if (has_read_hints)
-        {
-            new_readers.prewhere.back()->data_part_info_for_read->setReadHints(
-                read_info->read_hints, pre_columns_per_step);
-        }
+        if (is_vector_search)
+            new_readers.prewhere.back()->data_part_info_for_read->setReadHints(read_info->read_hints, pre_columns_per_step);
     }
 
     auto create_patch_reader = [&](size_t part_idx)

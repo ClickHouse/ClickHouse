@@ -90,7 +90,7 @@ struct MergeTreeReadTaskInfo
     size_t min_marks_per_task = 0;
     size_t approx_size_of_mark = 0;
     /// Cache of the columns prefixes for this part.
-    DeserializationPrefixesCachePtr deserialization_prefixes_cache{};
+    DeserializationPrefixesCachePtr deserialization_prefixes_cache;
     /// Extra info for optimizations - exact row processing, calculated virtual columns.
     RangesInDataPartReadHints read_hints;
 };

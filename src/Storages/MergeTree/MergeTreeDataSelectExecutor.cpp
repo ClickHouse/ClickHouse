@@ -995,8 +995,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     RangesInDataParts & parts_with_ranges,
     const SelectQueryInfo & select_query_info,
-    const ContextPtr & context,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
+    const ContextPtr & context,
     LoggerPtr log)
 {
     const auto & settings = context->getSettingsRef();
@@ -1751,10 +1751,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
                 if (index_helper->isVectorSimilarityIndex())
                 {
-                    read_hints.ann_search_results = condition->calculateApproximateNearestNeighbors(granule);
+                    read_hints.vector_search_results = condition->calculateApproximateNearestNeighbors(granule);
 
                     /// We need to sort the result ranges ascendingly
-                    auto rows = read_hints.ann_search_results.value().rows;
+                    auto rows = read_hints.vector_search_results.value().rows;
                     std::sort(rows.begin(), rows.end());
 #ifndef NDEBUG
                     /// Duplicates should in theory not be possible but better be safe than sorry ...
@@ -1762,7 +1762,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     if (has_duplicates)
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Usearch returned duplicate row numbers");
 #endif
-                    if (!(read_hints.ann_search_results.value().distances.has_value()))
+                    if (!(read_hints.vector_search_results.value().distances.has_value()))
                         read_hints = {};
 
                     for (auto row : rows)

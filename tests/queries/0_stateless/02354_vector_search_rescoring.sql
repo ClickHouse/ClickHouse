@@ -1,6 +1,6 @@
 -- Tags: no-fasttest, no-ordinary-database
 
--- Test for vector search optimization
+-- Test for setting 'vector_search_with_rescoring'
 
 SET allow_experimental_vector_similarity_index = 1;
 SET enable_analyzer = 1;
@@ -50,7 +50,7 @@ SELECT trimLeft(explain) AS explain FROM (
 WHERE (explain LIKE '%_distance%');
 
 SELECT 'Test "SELECT id, vec" without and with rescoring';
--- In this case, the optimization is not triggered even if vector_search_with_rescoring = 0.
+-- SELECTing id disables the optimization
 
 WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec
