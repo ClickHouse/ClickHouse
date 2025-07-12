@@ -10,7 +10,12 @@
 #include <boost/algorithm/hex.hpp>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+<<<<<<< HEAD
 
+=======
+#include <Common/logger_useful.h>
+#include <Core/KMS.h>
+>>>>>>> b18029d0e71 (fix encrypred disk)
 
 namespace DB
 {
@@ -286,6 +291,7 @@ DiskEncrypted::DiskEncrypted(
     const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_)
     : DiskEncrypted(name_, parseDiskEncryptedSettings(name_, config_, config_prefix_, map_), config_, config_prefix_)
 {
+    LOG_DEBUG(getLogger("DiskEncrypted"), "1 Creating encrypted disk '{}' with path '{}', use_fake_transaction {}, tx {}", encrypted_name, disk_absolute_path, use_fake_transaction, size_t(this));
 }
 
 DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_,
@@ -298,6 +304,7 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
     , current_settings(std::move(settings_))
     , use_fake_transaction(config_.getBool(config_prefix_ + ".use_fake_transaction", true))
 {
+    LOG_DEBUG(getLogger("DiskEncrypted"), "2 Creating encrypted disk '{}' with path '{}', use_fake_transaction {}, tx {}", encrypted_name, disk_absolute_path, use_fake_transaction, size_t(this));
     delegate->createDirectories(disk_path);
 }
 
@@ -310,6 +317,7 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
     , current_settings(std::move(settings_))
     , use_fake_transaction(true)
 {
+    LOG_DEBUG(getLogger("DiskEncrypted"), "3 Creating encrypted disk '{}' with path '{}', use_fake_transaction {}, tx {}", encrypted_name, disk_absolute_path, use_fake_transaction, size_t(this));
     delegate->createDirectories(disk_path);
 }
 

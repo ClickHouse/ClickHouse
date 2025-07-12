@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Interpreters/Context.h>
@@ -656,6 +657,11 @@ void DataPartStorageOnDiskBase::rename(
 
     String from = getRelativePath();
 
+<<<<<<< HEAD
+=======
+    LOG_DEBUG(getLogger("DataPartStorageOnDiskBase"), "DataPartStorageOnDiskBase: Renaming part {} to {}", from, to);
+
+>>>>>>> b18029d0e71 (fix encrypred disk)
     /// Why?
     executeWriteOperation([&](auto & disk)
     {

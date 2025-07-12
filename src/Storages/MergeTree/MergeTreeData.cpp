@@ -46,6 +46,12 @@
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
+<<<<<<< HEAD
+=======
+#include <Disks/IDiskTransaction.h>
+#include <Disks/DiskEncryptedTransaction.h>
+#include <IO/Expect404ResponseScope.h>
+>>>>>>> b18029d0e71 (fix encrypred disk)
 #include <IO/Operators.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
@@ -5035,6 +5041,10 @@ void MergeTreeData::checkChecksumsFileIsConsistentWithFileSystem(MutableDataPart
     part->getDataPartStorage().validateDiskTransaction(
     [current_part_dir = fs::path(part->getDataPartStorage().getRelativePath()), part, files_in_checksums, projections_in_checksums] (IDiskTransaction & tx)
     {
+        LOG_DEBUG(getLogger("checkChecksumsFileIsConsistentWithFileSystem"),
+            "Checking checksums.txt file is consistent with the files on file system for part {}, relative path: {} tx {}",
+            current_part_dir, part->getDataPartStorage().getRelativePath(), size_t(&tx));
+
         // This is a pedantic check that the checksums file contains exactly the records with actual files
         // There are some suspicion that some time it could contain excess files
         Strings files_in_part = tx.listUncommittedDirectoryInTransaction(current_part_dir);

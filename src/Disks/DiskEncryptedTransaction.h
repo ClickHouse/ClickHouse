@@ -1,7 +1,9 @@
 #pragma once
 
 #include <IO/ReadBufferFromFileBase.h>
-#include "config.h"
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
+#include <config.h>
 
 #if USE_SSL
 
@@ -34,6 +36,7 @@ class DiskEncryptedTransaction : public IDiskTransaction
 public:
     static String wrappedPath(const String disk_path, const String & path)
     {
+        LOG_DEBUG(getLogger("DiskEncryptedTransaction"), "Wrapping path '{}' with disk path '{}'", path, disk_path);
         // if path starts_with disk_path -> got already wrapped path
         if (!disk_path.empty() && path.starts_with(disk_path))
             return path;
@@ -45,13 +48,20 @@ public:
         , disk_path(disk_path_)
         , current_settings(current_settings_)
         , delegate_disk(delegate_disk_)
-    {}
+    {
+        LOG_DEBUG(getLogger("DiskEncryptedTransaction"), "c-tor Creating encrypted transaction with disk path '{}', tx {}", disk_path, size_t(this));
+    }
 
     /// Tries to commit all accumulated operations simultaneously.
     /// If something fails rollback and throw exception.
     void commit() override // NOLINT
     {
+<<<<<<< HEAD
         delegate_transaction->commit();
+=======
+        LOG_DEBUG(getLogger("DiskEncryptedTransaction"), "Committing encrypted transaction with disk path '{}', tx {}", disk_path, size_t(this));
+        delegate_transaction->commit(options);
+>>>>>>> b18029d0e71 (fix encrypred disk)
     }
 
     void undo() override
@@ -59,6 +69,15 @@ public:
         delegate_transaction->undo();
     }
 
+<<<<<<< HEAD
+=======
+    TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override
+    {
+        LOG_DEBUG(getLogger("DiskEncryptedTransaction"), "try Committing encrypted transaction with disk path '{}', tx {}", disk_path, size_t(this));
+        return delegate_transaction->tryCommit(options);
+    }
+
+>>>>>>> b18029d0e71 (fix encrypred disk)
     ~DiskEncryptedTransaction() override = default;
 
     /// Create directory.
@@ -255,6 +274,7 @@ public:
     std::vector<std::string> listUncommittedDirectoryInTransaction(const std::string & path) const override
     {
         auto wrapped_path = wrappedPath(path);
+        LOG_DEBUG(getLogger("DiskEncryptedTransaction"), "litting uncommitted directory in transaction with wrapped_path '{}', tx {}", wrapped_path, size_t(this));
         return delegate_transaction->listUncommittedDirectoryInTransaction(wrapped_path);
     }
 
@@ -265,6 +285,7 @@ public:
         std::optional<size_t> file_size) const override
     {
         auto wrapped_path = wrappedPath(path);
+        LOG_DEBUG(getLogger("DiskEncryptedTransaction"), "Read uncommitted path in transaction with wrapped_path '{}', tx {}", wrapped_path, size_t(this));
         return delegate_transaction->readUncommittedFileInTransaction(wrapped_path, settings, read_hint, file_size);
     }
 
@@ -275,16 +296,20 @@ public:
 
     void validateTransaction(std::function<void (IDiskTransaction&)> check_function) override
     {
-        delegate_transaction->validateTransaction(std::move(check_function));
+        LOG_DEBUG(getLogger("DiskEncryptedTransaction"), "Validating transaction with check function tx: {}", size_t(this));
+        auto wrapped = [&, moved_func = std::move(check_function)] (IDiskTransaction&)
+        {
+            return moved_func(*this);
+        };
+        delegate_transaction->validateTransaction(std::move(wrapped));
     }
-
-private:
 
     String wrappedPath(const String & path) const
     {
         return wrappedPath(disk_path, path);
     }
 
+private:
     DiskTransactionPtr delegate_transaction;
     std::string disk_path;
     DiskEncryptedSettings current_settings;
