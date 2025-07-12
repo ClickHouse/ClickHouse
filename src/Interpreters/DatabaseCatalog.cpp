@@ -239,7 +239,7 @@ void DatabaseCatalog::startupBackgroundTasks()
         (*drop_task)->schedule();
 }
 
-void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
+void DatabaseCatalog::shutdownImpl()
 {
     is_shutting_down = true;
     wait_table_finally_dropped.notify_all();
@@ -278,9 +278,6 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
         LOG_TRACE(log, "Shutting down database {}", database.first);
         database.second->shutdown();
     }
-
-    LOG_TRACE(log, "Shutting down system logs");
-    shutdown_system_logs();
 
     LOG_TRACE(log, "Shutting down system databases");
     for (auto & database : databases_with_delayed_shutdown)
@@ -935,13 +932,13 @@ DatabaseCatalog & DatabaseCatalog::instance()
     return *database_catalog;
 }
 
-void DatabaseCatalog::shutdown(std::function<void()> shutdown_system_logs)
+void DatabaseCatalog::shutdown()
 {
     // The catalog might not be initialized yet by init(global_context). It can
     // happen if some exception was thrown on first steps of startup.
     if (database_catalog)
     {
-        database_catalog->shutdownImpl(std::move(shutdown_system_logs));
+        database_catalog->shutdownImpl();
     }
 }
 

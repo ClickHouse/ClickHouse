@@ -8,7 +8,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/ITupleFunction.h>
 #include <Functions/castTypeToEither.h>
-#include <Functions/IFunction.h>
+#include "Functions/IFunction.h"
 
 namespace DB
 {
@@ -1597,7 +1597,7 @@ addTupleOfIntervals(datetime, intervals)
         {"datetime", "Date or date with time to add intervals to. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
         {"intervals", "Tuple of intervals to add to `datetime`. [`tuple`](../data-types/tuple.md)([`interval`](../data-types/special-data-types/interval.md))."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_addTupleOfIntervals = {"Returns `date` with added `intervals`", {"Date", "Date32", "DateTime", "DateTime64"}};
+    FunctionDocumentation::ReturnedValue returned_value_addTupleOfIntervals = "Returns `date` with added `intervals`. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md).";
     FunctionDocumentation::Examples examples_addTupleOfIntervals = {
         {"Add tuple of intervals to date", R"(
 WITH toDate('2018-01-01') AS date
@@ -1634,7 +1634,7 @@ subtractTupleOfIntervals(datetime, intervals)
         {"datetime", "Date or date with time to subtract intervals from. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
         {"intervals", "Tuple of intervals to subtract from `datetime`. [`Tuple(T)`](../data-types/tuple.md)([`interval`](../data-types/special-data-types/interval.md))."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_subtractTupleOfIntervals = {"Returns `date` with subtracted `intervals`", {"Date", "Date32", "DateTime", "DateTime64"}};
+    FunctionDocumentation::ReturnedValue returned_value_subtractTupleOfIntervals = "Returns `date` with subtracted `intervals`. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md).";
     FunctionDocumentation::Examples examples_subtractTupleOfIntervals = {
         {"Subtract tuple of intervals from date", R"(
 WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))
@@ -1672,7 +1672,7 @@ addInterval(interval_1, interval_2)
         {"interval_1", "First interval or tuple of intervals. [`interval`](../data-types/special-data-types/interval.md)/[`tuple`](../data-types/tuple.md)([`interval`](../data-types/special-data-types/interval.md))."},
         {"interval_2", "Second interval to be added. [`interval`](../data-types/special-data-types/interval.md)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_addInterval = {"Returns a tuple of intervals", {"Tuple(Interval)"}};
+    FunctionDocumentation::ReturnedValue returned_value_addInterval = "Returns a tuple of intervals. [`tuple`](../data-types/tuple.md)([`interval`](../data-types/special-data-types/interval.md)).";
     FunctionDocumentation::Examples examples_addInterval = {
         {"Add intervals", R"(
 SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH);
@@ -1715,12 +1715,11 @@ passed then the result will be `(1)` rather than `(2,1)`.
     FunctionDocumentation::Syntax syntax_subtractInterval = R"(
 subtractInterval(interval_1, interval_2)
     )";
-    FunctionDocumentation::Arguments arguments_subtractInterval =
-    {
-        {"interval_1", "First interval or interval of tuples.", {"Interval", "Tuple(Interval)"}},
-        {"interval_2", "Second interval to be negated.", {"Interval"}}
+    FunctionDocumentation::Arguments arguments_subtractInterval = {
+        {"interval_1", "First interval or interval of tuples. [`interval`](../data-types/special-data-types/interval.md)/[`tuple`](../data-types/tuple.md)([`interval`](../data-types/special-data-types/interval.md))."},
+        {"interval_2", "Second interval to be negated. [`interval`](../data-types/special-data-types/interval.md)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_subtractInterval = {"Returns a tuple of intervals", {"Tuple(T)"}};
+    FunctionDocumentation::ReturnedValue returned_value_subtractInterval = "Returns a tuple of intervals. [`tuple`](../data-types/tuple.md)([`interval`](../data-types/special-data-types/interval.md)).";
     FunctionDocumentation::Examples examples_subtractInterval = {
         {"Subtract intervals", R"(
 SELECT subtractInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH);

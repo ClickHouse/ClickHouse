@@ -484,26 +484,11 @@ static WriteBuffer & operator << (WriteBuffer & out, const ExpressionActions::Ar
 std::string ExpressionActions::Action::toString() const
 {
     WriteBufferFromOwnString out;
-
-    auto display_preview = [&](auto && name)
-    {
-        static constexpr size_t max_length_to_display = 100;
-        if (name.size() <= max_length_to_display)
-            out << name;
-        else
-            out << std::string_view(name).substr(0, max_length_to_display) << "...";
-        /// Note: it will cut UTF-8 strings incorrectly, but it's acceptable here.
-    };
-
     switch (node->type)
     {
         case ActionsDAG::ActionType::COLUMN:
-            out << "COLUMN ";
-
-            if (!node->column)
-                out << "(no column)";
-            else
-                display_preview(node->column->getName());
+            out << "COLUMN "
+                << (node->column ? node->column->getName() : "(no column)");
             break;
 
         case ActionsDAG::ActionType::ALIAS:
@@ -511,30 +496,19 @@ std::string ExpressionActions::Action::toString() const
             break;
 
         case ActionsDAG::ActionType::FUNCTION:
-            out << "FUNCTION ";
-            if (node->is_function_compiled)
-                out << "[compiled] ";
-
-            if (node->function_base)
-                out << node->function_base->getName();
-            else
-                out << "(no function)";
-
-            out << "(";
+            out << "FUNCTION " << (node->is_function_compiled ? "[compiled] " : "")
+                << (node->function_base ? node->function_base->getName() : "(no function)") << "(";
             for (size_t i = 0; i < node->children.size(); ++i)
             {
                 if (i)
                     out << ", ";
-                display_preview(node->children[i]->result_name);
-                out << " " << arguments[i];
+                out << node->children[i]->result_name << " " << arguments[i];
             }
             out << ")";
             break;
 
         case ActionsDAG::ActionType::ARRAY_JOIN:
-            out << "ARRAY JOIN ";
-            display_preview(node->children.front()->result_name);
-            out << " " << arguments.front();
+            out << "ARRAY JOIN " << node->children.front()->result_name << " " << arguments.front();
             break;
 
         case ActionsDAG::ActionType::INPUT:
@@ -542,15 +516,13 @@ std::string ExpressionActions::Action::toString() const
             break;
 
         case ActionsDAG::ActionType::PLACEHOLDER:
-            out << "PLACEHOLDER ";
-            display_preview(node->result_name);
+            out << "PLACEHOLDER " << node->result_name;
             break;
 
     }
 
-    out << " -> ";
-    display_preview(node->result_name);
-    out << " " << (node->result_type ? node->result_type->getName() : "(no type)") << " : " << result_position;
+    out << " -> " << node->result_name
+        << " " << (node->result_type ? node->result_type->getName() : "(no type)") << " : " << result_position;
     return out.str();
 }
 

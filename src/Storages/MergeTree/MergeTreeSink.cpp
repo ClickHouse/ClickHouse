@@ -229,7 +229,7 @@ bool MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr & part, const String 
     MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
     {
         auto lock = storage.lockParts();
-        auto block_holder = storage.fillNewPartName(part, lock);
+        storage.fillNewPartName(part, lock);
 
         auto * deduplication_log = storage.getDeduplicationLog();
 

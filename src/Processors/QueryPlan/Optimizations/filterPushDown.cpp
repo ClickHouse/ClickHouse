@@ -145,7 +145,6 @@ static size_t addNewFilterStepOrThrow(
     String split_filter_column_name = split_filter.dag.getOutputs()[split_filter.filter_pos]->result_name;
     node.step = std::make_unique<FilterStep>(
         node.children.at(0)->step->getOutputHeader(), std::move(split_filter.dag), std::move(split_filter_column_name), split_filter.remove_filter);
-    node.step->setStepDescription(filter->getStepDescription());
 
     child->updateInputHeader(node.step->getOutputHeader(), child_idx);
 
@@ -156,12 +155,9 @@ static size_t addNewFilterStepOrThrow(
 
         if (!filter_node || filter_is_constant)
         {
-            auto filter_description = filter->getStepDescription();
-
             /// This means that all predicates of filter were pushed down.
             /// Replace current actions to expression, as we don't need to filter anything.
             parent = std::make_unique<ExpressionStep>(child->getOutputHeader(), std::move(expression));
-            parent->setStepDescription(std::move(filter_description));
         }
         else
         {

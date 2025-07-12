@@ -1,4 +1,3 @@
-#include <Columns/IColumn.h>
 #include <Interpreters/Context.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
@@ -11,7 +10,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/IStorage.h>
-
 
 namespace DB
 {
@@ -76,24 +74,14 @@ namespace DB
                     loop = true;
                 }
                 Chunk chunk;
-
-                if (query_info.trivial_limit > 0 && rows_read >= query_info.trivial_limit)
-                    return chunk;
-
                 if (executor && executor->pull(chunk))
                 {
-                    rows_read += chunk.getNumRows();
-                    retries_count = 0;
-                    if (query_info.trivial_limit == 0 || rows_read <= query_info.trivial_limit)
-                        return chunk;
-
-                    size_t remaining_rows = query_info.trivial_limit + chunk.getNumRows() - rows_read;
-                    auto columns = chunk.detachColumns();
-                    for (auto & col : columns)
+                    if (chunk)
                     {
-                        col = col->cut(0, remaining_rows);
+                        retries_count = 0;
+                        return chunk;
                     }
-                    return {std::move(columns), remaining_rows};
+
                 }
                 else
                 {
@@ -120,7 +108,6 @@ namespace DB
         // add retries. If inner_storage failed to pull X times in a row we'd better to fail here not to hang
         size_t retries_count = 0;
         size_t max_retries_count = 3;
-        size_t rows_read = 0;
         bool loop = false;
         QueryPipeline query_pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;

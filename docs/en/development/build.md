@@ -67,8 +67,8 @@ As with C++ dependencies, ClickHouse uses vendoring to control exactly what's in
 Although in release mode any rust modern rustup toolchain version should work with these dependencies, if you plan to enable sanitizers you must use a version that matches the exact same `std` as the one used in CI (for which we vendor the crates):
 
 ```bash
-rustup toolchain install nightly-2025-07-07
-rustup default nightly-2025-07-07
+rustup toolchain install nightly-2024-12-01
+rustup default nightly-2024-12-01
 rustup component add rust-src
 ```
 ## Build ClickHouse {#build-clickhouse}
@@ -100,7 +100,7 @@ cmake -D CMAKE_BUILD_TYPE=Debug ..
 Run ninja to build:
 
 ```sh
-ninja clickhouse
+ninja clickhouse-server clickhouse-client
 ```
 
 If you like to build all the binaries (utilities and tests), run ninja without parameters:

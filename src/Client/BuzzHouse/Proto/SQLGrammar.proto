@@ -2098,16 +2098,14 @@ message WindowDefn {
 enum WindowFuncs {
     WINdense_rank = 1;
     WINfirst_value = 2;
-    WINlag = 3;
-    WINlagInFrame = 4;
-    WINlast_value = 5;
-    WINleadInFrame = 6;
-    WINlead = 7;
-    WINnth_value = 8;
-    WINntile = 9;
-    WINpercent_rank = 10;
-    WINrank = 11;
-    WINrow_number = 12;
+    WINlagInFrame = 3;
+    WINlast_value = 4;
+    WINleadInFrame = 5;
+    WINnth_value = 6;
+    WINntile = 7;
+    WINpercent_rank = 8;
+    WINrank = 9;
+    WINrow_number = 10;
 }
 
 message SQLWindowCall {
@@ -2173,7 +2171,6 @@ message ComplicatedExpr {
         string columns = 18;
         ExprList array = 19;
         ExprList tuple = 20;
-        Table table = 21;
     }
 }
 
@@ -2195,12 +2192,18 @@ message ResultColumn {
     oneof result_col_oneof {
         ExprSchemaTableColumn etc = 1;
         ExprColAlias eca = 2;
+        Table table_star = 3;
     }
 }
 
 message ExprSchemaTable {
     optional Database database = 1;
     required Table table = 2;
+}
+
+message ExprColumnList {
+    required ExprColumn col = 1;
+    repeated ExprColumn extra_cols = 2;
 }
 
 enum InFormat {
@@ -2214,61 +2217,55 @@ enum InFormat {
     IN_CSVWithNames = 8;
     IN_CSVWithNamesAndTypes = 9;
     IN_CustomSeparated = 10;
-    IN_CustomSeparatedIgnoreSpaces = 11;
-    IN_CustomSeparatedIgnoreSpacesWithNames = 12;
-    IN_CustomSeparatedIgnoreSpacesWithNamesAndTypes = 13;
-    IN_CustomSeparatedWithNames = 14;
-    IN_CustomSeparatedWithNamesAndTypes = 15;
-    IN_DWARF = 16;
-    IN_Form = 17;
-    IN_JSON = 18;
-    IN_JSONAsObject = 19;
-    IN_JSONAsString = 20;
-    IN_JSONColumns = 21;
-    IN_JSONColumnsWithMetadata = 22;
-    IN_JSONCompact = 23;
-    IN_JSONCompactColumns = 24;
-    IN_JSONCompactEachRow = 25;
-    IN_JSONCompactEachRowWithNames = 26;
-    IN_JSONCompactEachRowWithNamesAndTypes = 27;
-    IN_JSONCompactStringsEachRow = 28;
-    IN_JSONCompactStringsEachRowWithNames = 29;
-    IN_JSONCompactStringsEachRowWithNamesAndTypes = 30;
-    IN_JSONEachRow = 31;
-    IN_JSONLines = 32;
-    IN_JSONObjectEachRow = 33;
-    IN_JSONStrings = 34;
-    IN_JSONStringsEachRow = 35;
-    IN_LineAsString = 36;
-    IN_MsgPack = 37;
-    IN_MySQLDump = 38;
-    IN_MySQLWire = 39;
-    IN_Native = 40;
-    IN_Npy = 41;
-    IN_One = 42;
-    IN_ORC = 43;
-    IN_Parquet = 44;
-    IN_ParquetMetadata = 45;
-    IN_PostgreSQLWire = 46;
-    IN_Protobuf = 47;
-    IN_ProtobufList = 48;
-    IN_ProtobufSingle = 49;
-    IN_RawBLOB = 50;
-    IN_Regexp = 51;
-    IN_RowBinary = 52;
-    IN_RowBinaryWithDefaults = 53;
-    IN_RowBinaryWithNames = 54;
-    IN_RowBinaryWithNamesAndTypes = 55;
-    IN_TabSeparated = 56;
-    IN_TabSeparatedRaw = 57;
-    IN_TabSeparatedRawWithNames = 58;
-    IN_TabSeparatedRawWithNamesAndTypes = 59;
-    IN_TabSeparatedWithNames = 60;
-    IN_TabSeparatedWithNamesAndTypes = 61;
-    IN_Template = 62;
-    IN_TemplateIgnoreSpaces = 63;
-    IN_TSKV = 64;
-    IN_Values = 65;
+    IN_CustomSeparatedWithNames = 11;
+    IN_CustomSeparatedWithNamesAndTypes = 12;
+    IN_DWARF = 13;
+    IN_Form = 14;
+    IN_JSON = 15;
+    IN_JSONAsObject = 16;
+    IN_JSONAsString = 17;
+    IN_JSONColumns = 18;
+    IN_JSONColumnsWithMetadata = 19;
+    IN_JSONCompact = 20;
+    IN_JSONCompactColumns = 21;
+    IN_JSONCompactEachRow = 22;
+    IN_JSONCompactEachRowWithNames = 23;
+    IN_JSONCompactEachRowWithNamesAndTypes = 24;
+    IN_JSONCompactStringsEachRow = 25;
+    IN_JSONCompactStringsEachRowWithNames = 26;
+    IN_JSONCompactStringsEachRowWithNamesAndTypes = 27;
+    IN_JSONEachRow = 28;
+    IN_JSONObjectEachRow = 29;
+    IN_JSONStrings = 30;
+    IN_JSONStringsEachRow = 31;
+    IN_LineAsString = 32;
+    IN_MsgPack = 33;
+    IN_MySQLDump = 34;
+    IN_Native = 35;
+    IN_Npy = 36;
+    IN_One = 37;
+    IN_ORC = 38;
+    IN_Parquet = 39;
+    IN_ParquetMetadata = 40;
+    IN_Protobuf = 41;
+    IN_ProtobufList = 42;
+    IN_ProtobufSingle = 43;
+    IN_RawBLOB = 44;
+    IN_Regexp = 45;
+    IN_RowBinary = 46;
+    IN_RowBinaryWithDefaults = 47;
+    IN_RowBinaryWithNames = 48;
+    IN_RowBinaryWithNamesAndTypes = 49;
+    IN_TabSeparated = 50;
+    IN_TabSeparatedRaw = 51;
+    IN_TabSeparatedRawWithNames = 52;
+    IN_TabSeparatedRawWithNamesAndTypes = 53;
+    IN_TabSeparatedWithNames = 54;
+    IN_TabSeparatedWithNamesAndTypes = 55;
+    IN_Template = 56;
+    IN_TemplateIgnoreSpaces = 57;
+    IN_TSKV = 58;
+    IN_Values = 59;
 }
 
 enum OutFormat {
@@ -2297,55 +2294,51 @@ enum OutFormat {
     OUT_JSONCompactStringsEachRowWithNamesAndTypes = 23;
     OUT_JSONEachRow = 24;
     OUT_JSONEachRowWithProgress = 25;
-    OUT_JSONLines = 26;
-    OUT_JSONObjectEachRow = 27;
-    OUT_JSONStrings = 28;
-    OUT_JSONStringsEachRow = 29;
-    OUT_JSONStringsEachRowWithProgress = 30;
-    OUT_LineAsString = 31;
-    OUT_LineAsStringWithNames = 32;
-    OUT_LineAsStringWithNamesAndTypes = 33;
-    OUT_Markdown = 34;
-    OUT_MsgPack = 35;
-    OUT_Native = 36;
-    OUT_Npy = 37;
-    OUT_Null = 38;
-    OUT_ODBCDriver2 = 39;
-    OUT_ORC = 40;
-    OUT_Parquet = 41;
-    OUT_Pretty = 42;
-    OUT_PrettyCompact = 43;
-    OUT_PrettyCompactMonoBlock = 44;
-    OUT_PrettyCompactNoEscapes = 45;
-    OUT_PrettyCompactNoEscapesMonoBlock = 46;
-    OUT_PrettyJSONEachRow = 47;
-    OUT_PrettyMonoBlock = 48;
-    OUT_PrettyNoEscapes = 49;
-    OUT_PrettyNoEscapesMonoBlock = 50;
-    OUT_PrettySpace = 51;
-    OUT_PrettySpaceMonoBlock = 52;
-    OUT_PrettySpaceNoEscapes = 53;
-    OUT_PrettySpaceNoEscapesMonoBlock = 54;
-    OUT_Prometheus = 55;
-    OUT_Protobuf = 56;
-    OUT_ProtobufList = 57;
-    OUT_ProtobufSingle = 58;
-    OUT_RawBLOB = 59;
-    OUT_RowBinary = 60;
-    OUT_RowBinaryWithNames = 61;
-    OUT_RowBinaryWithNamesAndTypes = 62;
-    OUT_SQLInsert = 63;
-    OUT_TabSeparated = 64;
-    OUT_TabSeparatedRaw = 65;
-    OUT_TabSeparatedRawWithNames = 66;
-    OUT_TabSeparatedRawWithNamesAndTypes = 67;
-    OUT_TabSeparatedWithNames = 68;
-    OUT_TabSeparatedWithNamesAndTypes = 69;
-    OUT_Template = 70;
-    OUT_TSKV = 71;
-    OUT_Values = 72;
-    OUT_Vertical = 73;
-    OUT_XML = 74;
+    OUT_JSONObjectEachRow = 26;
+    OUT_JSONStrings = 27;
+    OUT_JSONStringsEachRow = 28;
+    OUT_JSONStringsEachRowWithProgress = 29;
+    OUT_LineAsString = 30;
+    OUT_Markdown = 31;
+    OUT_MsgPack = 32;
+    OUT_Native = 33;
+    OUT_Npy = 34;
+    OUT_Null = 35;
+    OUT_ORC = 36;
+    OUT_Parquet = 37;
+    OUT_Pretty = 38;
+    OUT_PrettyCompact = 39;
+    OUT_PrettyCompactMonoBlock = 40;
+    OUT_PrettyCompactNoEscapes = 41;
+    OUT_PrettyCompactNoEscapesMonoBlock = 42;
+    OUT_PrettyJSONEachRow = 43;
+    OUT_PrettyMonoBlock = 44;
+    OUT_PrettyNoEscapes = 45;
+    OUT_PrettyNoEscapesMonoBlock = 46;
+    OUT_PrettySpace = 47;
+    OUT_PrettySpaceMonoBlock = 48;
+    OUT_PrettySpaceNoEscapes = 49;
+    OUT_PrettySpaceNoEscapesMonoBlock = 50;
+    OUT_Prometheus = 51;
+    OUT_Protobuf = 52;
+    OUT_ProtobufList = 53;
+    OUT_ProtobufSingle = 54;
+    OUT_RawBLOB = 55;
+    OUT_RowBinary = 56;
+    OUT_RowBinaryWithNames = 57;
+    OUT_RowBinaryWithNamesAndTypes = 58;
+    OUT_SQLInsert = 59;
+    OUT_TabSeparated = 60;
+    OUT_TabSeparatedRaw = 61;
+    OUT_TabSeparatedRawWithNames = 62;
+    OUT_TabSeparatedRawWithNamesAndTypes = 63;
+    OUT_TabSeparatedWithNames = 64;
+    OUT_TabSeparatedWithNamesAndTypes = 65;
+    OUT_Template = 66;
+    OUT_TSKV = 67;
+    OUT_Values = 68;
+    OUT_Vertical = 69;
+    OUT_XML = 70;
 }
 
 enum InOutFormat {
@@ -2371,35 +2364,29 @@ enum InOutFormat {
     INOUT_JSONCompactStringsEachRowWithNames = 20;
     INOUT_JSONCompactStringsEachRowWithNamesAndTypes = 21;
     INOUT_JSONEachRow = 22;
-    INOUT_JSONLines = 23;
-    INOUT_JSONObjectEachRow = 24;
-    INOUT_JSONStringsEachRow = 25;
-    INOUT_LineAsString = 26;
-    INOUT_MsgPack = 27;
-    INOUT_Native = 28;
-    INOUT_Npy = 29;
-    INOUT_ORC = 30;
-    INOUT_Parquet = 31;
-    INOUT_Protobuf = 32;
-    INOUT_ProtobufList = 33;
-    INOUT_ProtobufSingle = 34;
-    INOUT_RawBLOB = 35;
-    INOUT_RowBinary = 36;
-    INOUT_RowBinaryWithNames = 37;
-    INOUT_RowBinaryWithNamesAndTypes = 38;
-    INOUT_TabSeparated = 39;
-    INOUT_TabSeparatedRaw = 40;
-    INOUT_TabSeparatedRawWithNames = 41;
-    INOUT_TabSeparatedRawWithNamesAndTypes = 42;
-    INOUT_TabSeparatedWithNames = 43;
-    INOUT_TabSeparatedWithNamesAndTypes = 44;
-    INOUT_Template = 45;
-    INOUT_TSKV = 46;
-    INOUT_Values = 47;
+    INOUT_JSONObjectEachRow = 23;
+    INOUT_JSONStringsEachRow = 24;
+    INOUT_MsgPack = 25;
+    INOUT_Native = 26;
+    INOUT_Npy = 27;
+    INOUT_ORC = 28;
+    INOUT_Parquet = 29;
+    INOUT_Protobuf = 30;
+    INOUT_ProtobufList = 31;
+    INOUT_ProtobufSingle = 32;
+    INOUT_RawBLOB = 33;
+    INOUT_RowBinary = 34;
+    INOUT_RowBinaryWithNames = 35;
+    INOUT_RowBinaryWithNamesAndTypes = 36;
+    INOUT_TabSeparated = 37;
+    INOUT_TabSeparatedWithNames = 38;
+    INOUT_TabSeparatedWithNamesAndTypes = 39;
+    INOUT_TSKV = 40;
+    INOUT_Values = 41;
 }
 
 message UsingExpr {
-    repeated ExprColumn columns = 1;
+    required ExprColumnList col_list = 1;
 }
 
 message JoinConstraint {
@@ -2612,7 +2599,7 @@ message MergeTreeIndexFunc {
 message GenerateRandomFunc {
     required Expr structure = 1;
     optional uint64 random_seed = 2;
-    optional uint32 max_string_length = 3;
+    optional uint64 max_string_length = 3;
     optional uint64 max_array_length = 4;
 }
 
@@ -2767,7 +2754,7 @@ message SetQuery {
     }
     required ExplainQuery sel1 = 1;
     required SetOp set_op = 2;
-    optional AllOrDistinct s_or_d = 3;
+    required AllOrDistinct s_or_d = 3;
     required ExplainQuery sel2 = 4;
 }
 
@@ -2845,7 +2832,6 @@ message CreateDatabase {
     optional Cluster cluster = 3;
     required DatabaseEngine dengine = 4;
     optional string comment = 5;
-    optional SettingValues setting_values = 6;
 }
 
 message CreateFunction {
@@ -3032,23 +3018,13 @@ enum CompressionCodec {
     COMP_Gorilla = 11;
     COMP_FPC = 12;
     COMP_T64 = 13;
-    COMP_SZ3 = 14;
-    COMP_AES_128_GCM_SIV = 15;
-    COMP_AES_256_GCM_SIV = 16;
-}
-
-message IndexParam {
-    oneof index_param_oneof {
-        double dval = 1;
-        uint32 ival = 2;
-        string sval = 3;
-        string unescaped_sval = 4;
-    }
+    COMP_AES_128_GCM_SIV = 14;
+    COMP_AES_256_GCM_SIV = 15;
 }
 
 message CodecParam {
     required CompressionCodec codec = 1;
-    repeated IndexParam params = 2;
+    repeated uint32 params = 2;
 }
 
 message CodecList {
@@ -3057,7 +3033,7 @@ message CodecList {
 }
 
 message ColumnDef {
-    required ColumnPath col = 1;
+    required Column col = 1;
     required TypeName type = 2;
     optional bool nullable = 3;
     optional DefaultModifier defaultv = 4;
@@ -3078,6 +3054,15 @@ enum IndexType {
     IDX_ngrambf_v1 = 6;
     IDX_tokenbf_v1 = 7;
     IDX_text = 8;
+}
+
+message IndexParam {
+    oneof index_param_oneof {
+        double dval = 1;
+        uint32 ival = 2;
+        string sval = 3;
+        string unescaped_sval = 4;
+    }
 }
 
 message IndexDef {
@@ -3409,10 +3394,10 @@ message CheckTable {
     optional SettingValues setting_values = 4;
 }
 
-message DescribeStatement {
+message DescTable {
     oneof desc_oneof {
         ExprSchemaTable est = 1;
-        ExplainQuery sel = 2;
+        Select sel = 2;
         SQLTableFuncCall stf = 3;
     }
     optional SettingValues setting_values = 4;
@@ -3646,7 +3631,7 @@ message CreateDictionary {
     required DictionaryColumn col = 5;
     repeated DictionaryColumn other_cols = 6;
     required TableKey primary_key = 7;
-    optional DictionarySource source = 8;
+    required DictionarySource source = 8;
     required DictionaryLayout layout = 9;
     optional DictionaryRange range = 10;
     optional DictionaryLifetime lifetime = 11;
@@ -3777,69 +3762,6 @@ message SyncReplica {
     required SyncPolicy policy = 2;
 }
 
-enum FailPoint {
-    replicated_merge_tree_commit_zk_fail_after_op = 1;
-    replicated_queue_fail_next_entry = 2;
-    replicated_queue_unfail_entries = 3;
-    replicated_merge_tree_insert_quorum_fail_0 = 4;
-    replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault = 5;
-    use_delayed_remote_source = 6;
-    cluster_discovery_faults = 7;
-    replicated_sends_failpoint = 8;
-    stripe_log_sink_write_fallpoint = 9;
-    smt_commit_merge_mutate_zk_fail_after_op = 10;
-    smt_commit_merge_mutate_zk_fail_before_op = 11;
-    smt_commit_write_zk_fail_after_op = 12;
-    smt_commit_write_zk_fail_before_op = 13;
-    smt_commit_merge_change_version_before_op = 14;
-    smt_merge_mutate_intention_freeze_in_destructor = 15;
-    smt_add_part_sleep_after_add_before_commit = 16;
-    smt_sleep_in_constructor = 17;
-    meta_in_keeper_create_metadata_failure = 18;
-    smt_insert_retry_timeout = 19;
-    smt_insert_fake_hardware_error = 20;
-    smt_sleep_after_hardware_in_insert = 21;
-    smt_throw_keeper_exception_after_successful_insert = 22;
-    smt_lightweight_snapshot_fail = 23;
-    object_storage_queue_fail_commit = 24;
-    smt_dont_merge_first_part = 25;
-    smt_sleep_in_schedule_data_processing_job = 26;
-    cache_warmer_stall = 27;
-    file_cache_dynamic_resize_fail_to_evict = 28;
-    check_table_query_delay_for_part = 29;
-    dummy_failpoint = 30;
-    prefetched_reader_pool_failpoint = 31;
-    shared_set_sleep_during_update = 32;
-    smt_outdated_parts_exception_response = 33;
-    object_storage_queue_fail_in_the_middle_of_file = 34;
-    replicated_merge_tree_insert_retry_pause = 35;
-    finish_set_quorum_failed_parts = 36;
-    finish_clean_quorum_failed_parts = 37;
-    dummy_pausable_failpoint = 38;
-    execute_query_calling_empty_set_result_func_on_exception = 39;
-    receive_timeout_on_table_status_response = 40;
-    keepermap_fail_drop_data = 41;
-    lazy_pipe_fds_fail_close = 42;
-    infinite_sleep = 43;
-    stop_moving_part_before_swap_with_active = 44;
-    slowdown_index_analysis = 45;
-    replicated_merge_tree_all_replicas_stale = 46;
-    zero_copy_lock_zk_fail_before_op = 47;
-    zero_copy_lock_zk_fail_after_op = 48;
-    plain_object_storage_write_fail_on_directory_create = 49;
-    plain_object_storage_write_fail_on_directory_move = 50;
-    zero_copy_unlock_zk_fail_before_op = 51;
-    zero_copy_unlock_zk_fail_after_op = 52;
-    plain_rewritable_object_storage_azure_not_found_on_init = 53;
-    storage_merge_tree_background_clear_old_parts_pause = 54;
-    database_replicated_startup_pause = 55;
-    keeper_leader_sets_invalid_digest = 56;
-    parallel_replicas_wait_for_unused_replicas = 57;
-    plain_object_storage_copy_fail_on_file_move = 58;
-    plain_object_storage_copy_temp_source_file_fail_on_file_move = 59;
-    plain_object_storage_copy_temp_target_file_fail_on_file_move = 60;
-}
-
 message SystemCommand {
     oneof system_cmd_oneof {
         bool reload_embedded_dictionaries = 1;
@@ -3910,10 +3832,8 @@ message SystemCommand {
         ExprSchemaTable stop_distributed_sends = 65;
         ExprSchemaTable start_distributed_sends = 66;
         bool drop_query_condition_cache = 67;
-        FailPoint enable_failpoint = 68;
-        FailPoint disable_failpoint = 69;
     }
-    optional Cluster cluster = 70;
+    optional Cluster cluster = 68;
 }
 
 message BackupRestoreObject {
@@ -3951,16 +3871,12 @@ message BackupRestore {
     }
     required BackupOutput out = 5;
     repeated string out_params = 6;
-    optional SettingValues setting_values = 7;
-    enum SyncOrAsync {
-        SYNC = 1;
-        ASYNC = 2;
-    }
-    optional SyncOrAsync sync = 8;
     oneof backup_format_oneof {
-        InFormat informat = 9;
-        OutFormat outformat = 10;
+        InFormat informat = 7;
+        OutFormat outformat = 8;
     }
+    optional SettingValues setting_values = 9;
+    optional bool async = 10;
     /// Need to know backup number
     required uint32 backup_number = 11;
 }
@@ -3971,27 +3887,6 @@ message Rename {
     required SQLObjectName new_object = 3;
     optional Cluster cluster = 4;
     optional SettingValues setting_values = 5;
-}
-
-message Kill {
-    enum KillEnum {
-        QUERY = 1;
-        MUTATION = 2;
-    }
-    required KillEnum command = 1;
-    optional Cluster cluster = 2;
-    required WhereStatement where = 3;
-    enum KillOption {
-        SYNC = 1;
-        ASYNC = 2;
-        TEST = 3;
-    }
-    optional KillOption option = 4;
-    oneof kill_format_oneof {
-        InFormat informat = 5;
-        OutFormat outformat = 6;
-    }
-    optional SettingValues setting_values = 7;
 }
 
 message SQLQueryInner {
@@ -4005,7 +3900,7 @@ message SQLQueryInner {
         Truncate trunc = 7;
         OptimizeTable opt = 8;
         CheckTable check = 9;
-        DescribeStatement desc = 10;
+        DescTable desc = 10;
         Exchange exchange = 11;
         Alter alter = 12;
         SettingValues setting_values = 13;
@@ -4018,7 +3913,6 @@ message SQLQueryInner {
         BackupRestore backup_restore = 20;
         CreateDictionary create_dictionary = 21;
         Rename rename = 22;
-        Kill kill = 23;
     }
 }
 
@@ -4041,9 +3935,6 @@ message ExplainOption {
         actions = 15;
         header = 16;
         compact = 17;
-        run_query_tree_passes = 18;
-        query_tree_passes = 19;
-        projections = 20;
     }
     required ExplainOpt opt = 1;
     required uint32 val = 2;

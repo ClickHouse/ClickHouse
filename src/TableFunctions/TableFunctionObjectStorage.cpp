@@ -127,8 +127,7 @@ ColumnsDescription TableFunctionObjectStorage<
 {
     if (configuration->structure == "auto")
     {
-        if (const auto access_object = getSourceAccessObject())
-            context->checkAccess(AccessType::READ, toStringSource(*access_object));
+        context->checkAccess(getSourceAccessType());
 
         auto storage = getObjectStorage(context, !is_insert_query);
         configuration->update(

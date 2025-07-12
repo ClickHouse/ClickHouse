@@ -1,4 +1,4 @@
-#include <Dictionaries/ExecutableDictionarySource.h>
+#include "ExecutableDictionarySource.h"
 
 #include <filesystem>
 

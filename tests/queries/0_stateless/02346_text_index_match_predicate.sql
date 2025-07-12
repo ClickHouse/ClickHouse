@@ -1,6 +1,6 @@
 -- Tags: no-parallel-replicas
 
--- Tests that match() utilizes the text index
+-- Tests that match() utilizes the inverted index
 
 SET allow_experimental_full_text_index = true;
 
