@@ -38,6 +38,7 @@
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Utils/IndexAdvisor/ASTIndexAdvisorQuery.h>
 
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
@@ -387,6 +388,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTParallelWithQuery>())
     {
         interpreter_name = "InterpreterParallelWithQuery";
+    }
+    else if (query->as<ASTIndexAdvisorQuery>())
+    {
+        interpreter_name = "InterpreterIndexAdvisorQuery";
     }
 
     if (!interpreters.contains(interpreter_name))
