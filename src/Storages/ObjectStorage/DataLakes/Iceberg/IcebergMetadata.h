@@ -67,6 +67,7 @@ public:
     static Int32 parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger);
 
     bool supportsUpdate() const override { return true; }
+    bool supportsWrites() const override { return true; }
 
     bool update(const ContextPtr & local_context) override;
 
