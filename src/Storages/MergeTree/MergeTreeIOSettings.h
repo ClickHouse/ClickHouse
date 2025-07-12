@@ -55,6 +55,7 @@ struct MergeTreeReaderSettings
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
     bool query_condition_cache_store_conditions_as_plaintext = false;
+    double  query_condition_cache_selectivity_threshold = 1.0;
     bool use_deserialization_prefixes_cache = false;
     bool use_prefixes_deserialization_thread_pool = false;
 };
