@@ -9,7 +9,6 @@
 #include <Common/parseGlobs.h>
 #include <Core/Settings.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/Context.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
@@ -405,7 +404,7 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
         if (shutdown_called)
         {
-            LOG_DEBUG(log, "Shutdown was called, stopping file iterator");
+            LOG_TEST(log, "Shutdown was called, stopping file iterator");
             return {};
         }
 
@@ -722,7 +721,6 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     ProcessingProgressPtr progress_,
     const ReadFromFormatInfo & read_from_format_info_,
     const std::optional<FormatSettings> & format_settings_,
-    FormatParserGroupPtr parser_group_,
     const CommitSettings & commit_settings_,
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
     ContextPtr context_,
@@ -743,7 +741,6 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , progress(progress_)
     , read_from_format_info(read_from_format_info_)
     , format_settings(format_settings_)
-    , parser_group(std::move(parser_group_))
     , commit_settings(commit_settings_)
     , files_metadata(files_metadata_)
     , max_block_size(max_block_size_)
@@ -797,11 +794,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
             /// Are there any started, but not finished files?
             if (processed_files.empty() || processed_files.back().state != FileState::Processing)
             {
-                LOG_DEBUG(
-                    log, "Reader was cancelled "
-                    "(processed files: {}, last processed file state: {})",
-                    processed_files.size(),
-                    processed_files.empty() ? "None" : magic_enum::enum_name(processed_files.back().state));
                 /// No unfinished files, just stop processing.
                 break;
             }
@@ -819,16 +811,11 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
         if (shutdown_called)
         {
-            LOG_TEST(log, "Shutdown was called"); /// test_drop_table depends on this log message
+            LOG_TEST(log, "Shutdown was called");
 
             /// Are there any started, but not finished files?
             if (processed_files.empty() || processed_files.back().state != FileState::Processing)
             {
-                LOG_DEBUG(
-                    log, "Shutdown was called "
-                    "(processed files: {}, last processed file state: {})",
-                    processed_files.size(),
-                    processed_files.empty() ? "None" : magic_enum::enum_name(processed_files.back().state));
                 /// No unfinished files, just stop processing.
                 break;
             }
@@ -866,11 +853,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
         {
             if (shutdown_called)
             {
-                LOG_DEBUG(
-                    log, "Shutdown was called "
-                    "(processed files: {}, last processed file state: {})",
-                    processed_files.size(),
-                    processed_files.empty() ? "None" : magic_enum::enum_name(processed_files.back().state));
+                LOG_TEST(log, "Shutdown called");
                 /// Stop processing.
                 break;
             }
@@ -883,11 +866,12 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 object_storage,
                 read_from_format_info,
                 format_settings,
+                nullptr,
                 context,
                 nullptr,
                 log,
                 max_block_size,
-                parser_group,
+                context->getSettingsRef()[Setting::max_parsing_threads].value,
                 /* need_only_count */ false);
 
             if (!reader)
@@ -988,14 +972,11 @@ Chunk ObjectStorageQueueSource::generateImpl()
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadRows, chunk.getNumRows());
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadBytes, chunk.bytes());
 
-            const auto & object_metadata = reader.getObjectInfo()->metadata;
-
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk, read_from_format_info.requested_virtual_columns,
                 {
                     .path = path,
-                    .size = object_metadata->size_bytes,
-                    .last_modified = object_metadata->last_modified
+                    .size = reader.getObjectInfo()->metadata->size_bytes
                 }, getContext());
 
             return chunk;

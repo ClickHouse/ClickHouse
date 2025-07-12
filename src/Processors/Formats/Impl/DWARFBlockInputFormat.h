@@ -11,7 +11,7 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 #include <Common/Elf.h>
-#include <Common/threadPoolCallbackRunner.h>
+#include <Common/ThreadPool.h>
 #include <Columns/ColumnVector.h>
 
 namespace DB
@@ -79,7 +79,7 @@ private:
     std::atomic<int> is_stopped{0};
     size_t approx_bytes_read_for_chunk = 0;
 
-    std::optional<ThreadPoolCallbackRunnerLocal<void>> runner;
+    std::optional<ThreadPool> pool;
     std::mutex mutex;
     std::condition_variable deliver_chunk;
     std::condition_variable wake_up_threads;

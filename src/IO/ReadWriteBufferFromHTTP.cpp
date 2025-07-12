@@ -1,4 +1,6 @@
-#include <IO/ReadWriteBufferFromHTTP.h>
+#include "ReadWriteBufferFromHTTP.h"
+#include <sstream>
+#include <string_view>
 
 #include <IO/HTTPCommon.h>
 #include <Common/NetException.h>
