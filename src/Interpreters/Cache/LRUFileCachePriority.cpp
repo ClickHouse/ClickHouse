@@ -56,7 +56,7 @@ IFileCachePriority::IteratorPtr LRUFileCachePriority::add( /// NOLINT
 
 LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(EntryPtr entry, const CachePriorityGuard::Lock & lock)
 {
-    if (entry->size == 0)
+    if (entry->getSize() == 0)
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -68,7 +68,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(EntryPtr entry, cons
     for (const auto & queue_entry : queue)
     {
         /// entry.size == 0 means entry was invalidated.
-        if (queue_entry->size != 0
+        if (queue_entry->getSize() != 0
             && !queue_entry->isEvicting(lock)
             && queue_entry->key == entry->key && queue_entry->offset == entry->offset)
         {
@@ -80,7 +80,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(EntryPtr entry, cons
     }
 #endif
 
-    if (!canFit(entry->size, 1, lock))
+    if (!canFit(entry->getSize(), 1, lock))
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -89,13 +89,12 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(EntryPtr entry, cons
     }
 
     auto iterator = queue.insert(queue.end(), entry);
-
-    updateSize(entry->size);
+    updateSize(entry->getSize());
     updateElementsCount(1);
 
     LOG_TEST(
         log, "Added entry into LRU queue, key: {}, offset: {}, size: {}",
-        entry->key, entry->offset, entry->size.load());
+        entry->key, entry->offset, entry->getSize());
 
     return LRUIterator(this, iterator);
 }
@@ -105,15 +104,15 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Lo
 {
     /// If size is 0, entry is invalidated, current_elements_num was already updated.
     const auto & entry = **it;
-    if (entry.size)
+    if (entry.getSize())
     {
-        updateSize(-entry.size);
+        updateSize(-entry.getSize());
         updateElementsCount(-1);
     }
 
     LOG_TEST(
         log, "Removed entry from LRU queue, key: {}, offset: {}, size: {}",
-        entry.key, entry.offset, entry.size.load());
+        entry.key, entry.offset, entry.getSize());
 
     return queue.erase(it);
 }
@@ -170,9 +169,9 @@ void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::L
     {
         const auto & entry = **it;
 
-        if (entry.size == 0)
+        if (entry.getSize() == 0)
         {
-            /// entry.size == 0 means that queue entry was invalidated,
+            /// entry.getSize() == 0 means that queue entry was invalidated,
             /// valid (active) queue entries always have size > 0,
             /// so we can safely remove it.
             it = remove(it, lock);
@@ -189,7 +188,7 @@ void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::L
         }
 
         auto locked_key = entry.key_metadata->tryLock();
-        if (!locked_key || entry.size == 0)
+        if (!locked_key || entry.getSize() == 0)
         {
             /// locked_key == nullptr means that the cache key of
             /// the file segment of this queue entry no longer exists.
@@ -209,14 +208,25 @@ void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::L
             continue;
         }
 
-        if (metadata->size() != entry.size)
+        if (metadata->size(FileSegment::SizeAlignment::NOT_ALIGNED) != entry.getSize(IFileCachePriority::Entry::SizeAlignment::NOT_ALIGNED))
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Mismatch of file segment non-aligned size in file segment metadata "
+                "and priority queue: {} != {} ({})",
+                entry.getSize(IFileCachePriority::Entry::SizeAlignment::NOT_ALIGNED), metadata->size(FileSegment::SizeAlignment::NOT_ALIGNED), metadata->file_segment->getInfoForLog());
+        }
+
+        if (metadata->size() != entry.getSize())
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Mismatch of file segment size in file segment metadata "
                 "and priority queue: {} != {} ({})",
-                entry.size.load(), metadata->size(), metadata->file_segment->getInfoForLog());
+                entry.getSize(), metadata->size(), metadata->file_segment->getInfoForLog()
+            );
         }
+
 
         auto result = func(*locked_key, metadata);
         switch (result)
@@ -373,12 +383,12 @@ void LRUFileCachePriority::iterateForEviction(
         if (segment_metadata->releasable())
         {
             res.add(segment_metadata, locked_key, lock);
-            stat.update(segment_metadata->size(), file_segment->getKind(), true);
+            stat.update(file_segment->getSize(), file_segment->getKind(), true);
         }
         else
         {
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedFileSegments);
-            stat.update(segment_metadata->size(), file_segment->getKind(), false);
+            stat.update(file_segment->getSize(), file_segment->getKind(), false);
         }
 
         return IterationResult::CONTINUE;
@@ -396,7 +406,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(
     const CachePriorityGuard::Lock &)
 {
     const auto & entry = *it.getEntry();
-    if (entry.size == 0)
+    if (entry.getSize() == 0)
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -407,7 +417,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(
     for (const auto & queue_entry : queue)
     {
         /// entry.size == 0 means entry was invalidated.
-        if (queue_entry->size != 0 && queue_entry->key == entry.key && queue_entry->offset == entry.offset)
+        if (queue_entry->getSize() != 0 && queue_entry->key == entry.key && queue_entry->offset == entry.offset)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Attempt to add duplicate queue entry to queue: {}",
@@ -417,10 +427,10 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(
 
     queue.splice(queue.end(), other.queue, it.iterator);
 
-    updateSize(entry.size);
+    updateSize(entry.getSize());
     updateElementsCount(1);
 
-    other.updateSize(-entry.size);
+    other.updateSize(-entry.getSize());
     other.updateElementsCount(-1);
     return LRUIterator(this, it.iterator);
 }
@@ -479,15 +489,15 @@ void LRUFileCachePriority::LRUIterator::invalidate()
 
     const auto & entry = *iterator;
 
-    chassert(entry->size != 0);
-    cache_priority->updateSize(-entry->size);
+    chassert(entry->getSize() != 0);
+    cache_priority->updateSize(-entry->getSize());
     cache_priority->updateElementsCount(-1);
 
     LOG_TEST(cache_priority->log,
              "Invalidated entry in LRU queue {}: {}",
              entry->toString(), cache_priority->getApproxStateInfoForLog());
 
-    entry->size = 0;
+    entry->setSize(0);
 }
 
 void LRUFileCachePriority::LRUIterator::incrementSize(size_t size, const CachePriorityGuard::Lock & lock)
@@ -497,21 +507,40 @@ void LRUFileCachePriority::LRUIterator::incrementSize(size_t size, const CachePr
 
     const auto & entry = *iterator;
 
-    if (!cache_priority->canFit(size, /* elements */0, lock))
+    if (entry->useRealDiskSize())
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        size_t fit_size = entry->key_metadata->alignFileSize(entry->getSize(IFileCachePriority::Entry::SizeAlignment::NOT_ALIGNED) + size) - entry->getSize();
+
+        if (!cache_priority->canFit(fit_size, 0, lock))
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Cannot increment size by {} for entry {}. Current state: {}",
-                        size, entry->toString(), cache_priority->getStateInfoForLog(lock));
+                        fit_size, entry->toString(), cache_priority->getStateInfoForLog(lock));
+        }
+    }
+    else
+    {
+        if (!cache_priority->canFit(size, /* elements */0, lock))
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Cannot increment size by {} for entry {}. Current state: {}",
+                            size, entry->toString(), cache_priority->getStateInfoForLog(lock));
+        }
     }
 
     LOG_TEST(
         cache_priority->log,
         "Incrementing size with {} in LRU queue for entry {}",
         size, entry->toString());
-
-    cache_priority->updateSize(size);
-    entry->size += size;
-
+    /// We recalculate `diff_size` (not using `size` for `cache_priority` update)
+    /// because if `use_read_cache_size = 1`, the actual size update could be different from `size` as a result of file size alignment.
+    size_t prev_size = entry->getSize();
+    entry->increaseSize(size);
+    size_t diff = entry->getSize() - prev_size;
+    if (diff > 0)
+    { // Could be false for aligned cache size
+        cache_priority->updateSize(diff);
+    }
     cache_priority->check(lock);
 }
 
@@ -525,10 +554,16 @@ void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
              size, entry->toString());
 
     chassert(size);
-    chassert(entry->size >= size);
-
-    cache_priority->updateSize(-size);
-    entry->size -= size;
+    /// We recalculate `diff_size` (not using `size` for `cache_priority` update)
+    /// because if `use_read_cache_size = 1`, the actual size update could be different from `size` as a result of file size alignment.
+    size_t prev_size = entry->getSize();
+    chassert(prev_size >= size);
+    entry->decreaseSize(size);
+    size_t diff_size = prev_size - entry->getSize();
+    if (diff_size != 0)
+    { // Could be false for aligned cache size
+        cache_priority->updateSize(-diff_size);
+    }
 }
 
 size_t LRUFileCachePriority::LRUIterator::increasePriority(const CachePriorityGuard::Lock & lock)
