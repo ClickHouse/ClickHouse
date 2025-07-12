@@ -1,3 +1,4 @@
+#include <memory>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 #if USE_PARQUET
@@ -632,7 +633,32 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         format_settings.parquet.case_insensitive_column_matching,
         format_settings.parquet.allow_missing_columns);
 
-    auto index_mapping = field_util.findRequiredIndices(getPort().getHeader(), *schema, *metadata);
+    std::vector<ArrowFieldIndexUtil::ClickHouseIndexToParquetIndex> index_mapping;
+    if (parser_group->opaque)
+    {
+        auto parquet_opaque = std::static_pointer_cast<ParquetOpaque>(parser_group->opaque);
+        auto header = getPort().getHeader();
+        const auto & group_node = metadata->schema()->group_node();
+
+        std::unordered_map<Int32, Int32> parquet_field_ids;
+        for (int i = 0; i < group_node->field_count(); ++i)
+            parquet_field_ids[group_node->field(i)->field_id()] = i;
+
+        for (size_t i = 0; i < header.columns(); ++i)
+        {
+            auto column_name = header.getNames()[i];
+            ArrowFieldIndexUtil::ClickHouseIndexToParquetIndex mapping{
+                .clickhouse_index = i,
+                .parquet_indexes = {parquet_field_ids[parquet_opaque->column_name_to_parquet_field_id[column_name]]}
+            };
+            index_mapping.push_back(mapping);
+        }
+    }
+    else
+    {
+        index_mapping = field_util.findRequiredIndices(getPort().getHeader(), *schema, *metadata);
+        std::cerr << "OPAQUE IS NULL IN PARQUET\n";
+    }
 
     for (const auto & [clickhouse_header_index, parquet_indexes] : index_mapping)
     {
@@ -842,16 +868,19 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
                 "parquet native reader only supports little endian system currently");
 #pragma clang diagnostic pop
 
+        std::cerr << "USE THIS READER\n";
         row_group_batch.native_record_reader = std::make_shared<ParquetRecordReader>(
             getPort().getHeader(),
             arrow_properties,
             reader_properties,
             arrow_file,
             format_settings,
-            row_group_batch.row_groups_idxs);
+            row_group_batch.row_groups_idxs,
+            column_indices);
     }
     else
     {
+        std::cerr << "USE THIS READER bp2\n";
         parquet::arrow::FileReaderBuilder builder;
         THROW_ARROW_NOT_OK(builder.Open(arrow_file, reader_properties, metadata));
         builder.properties(arrow_properties);
@@ -861,6 +890,7 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
         THROW_ARROW_NOT_OK(builder.Build(&row_group_batch.file_reader));
         if (row_group_prefetch)
         {
+            std::cerr << "USE THIS READER bp1\n";
             row_group_batch.prefetch_iterator = std::make_unique<RowGroupPrefetchIterator>(parquet_file_reader, row_group_batch, column_indices, min_bytes_for_seek);
             row_group_batch.record_batch_reader = row_group_batch.prefetch_iterator->nextRowGroupReader();
         }
@@ -875,6 +905,7 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
             getPort().getHeader(),
             "Parquet",
             format_settings,
+            column_indices,
             format_settings.parquet.allow_missing_columns,
             format_settings.null_as_default,
             format_settings.date_time_overflow_behavior,

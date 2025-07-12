@@ -51,6 +51,11 @@ class ParquetRecordReader;
 // parallel reading+decoding, instead of using ParallelReadBuffer and ParallelParsingInputFormat.
 // That's what RandomAccessInputCreator in FormatFactory is about.
 
+struct ParquetOpaque
+{
+    std::unordered_map<String, Int64> column_name_to_parquet_field_id;
+};
+
 class ParquetBlockInputFormat : public IInputFormat
 {
 public:

@@ -166,6 +166,11 @@ public:
         current_metadata->modifyFormatSettings(settings_);
     }
 
+    std::shared_ptr<void> getOpaque() const override
+    {
+        return current_metadata->getOpaque();
+    }
+
 private:
     DataLakeMetadataPtr current_metadata;
     LoggerPtr log = getLogger("DataLakeConfiguration");

@@ -38,7 +38,8 @@ public:
         const Strings & requested_columns,
         const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context,
-        bool supports_subset_of_columns) override;
+        bool supports_subset_of_columns,
+        std::shared_ptr<void> opaque) override;
 
     bool operator ==(const IDataLakeMetadata &) const override;
 

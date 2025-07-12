@@ -1468,6 +1468,7 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     const Block & header_,
     const std::string & format_name_,
     const FormatSettings & format_settings_,
+    const std::optional<std::vector<Int32>> & column_indices_,
     bool allow_missing_columns_,
     bool null_as_default_,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
@@ -1485,6 +1486,7 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     , case_insensitive_matching(case_insensitive_matching_)
     , is_stream(is_stream_)
     , enable_json_parsing(enable_json_parsing_)
+    , column_indices(column_indices_)
 {
 }
 
@@ -1496,20 +1498,39 @@ Chunk ArrowColumnToCHColumn::arrowTableToCHChunk(
 {
     NameToArrowColumn name_to_arrow_column;
 
-    for (auto column_name : table->ColumnNames())
+    if (!column_indices)
     {
-        auto arrow_column = table->GetColumnByName(column_name);
-        if (!arrow_column)
-            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column '{}' is duplicated", column_name);
+        for (auto column_name : table->ColumnNames())
+        {
+            auto arrow_column = table->GetColumnByName(column_name);
+            if (!arrow_column)
+                throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column '{}' is duplicated", column_name);
 
-        auto arrow_field = table->schema()->GetFieldByName(column_name);
+            auto arrow_field = table->schema()->GetFieldByName(column_name);
 
-        if (case_insensitive_matching)
-            boost::to_lower(column_name);
+            if (case_insensitive_matching)
+                boost::to_lower(column_name);
 
-        name_to_arrow_column[std::move(column_name)] = {std::move(arrow_column), std::move(arrow_field)};
+            name_to_arrow_column[std::move(column_name)] = {std::move(arrow_column), std::move(arrow_field)};
+        }
     }
+    else
+    {
+        for (int i = 0; i < table->num_columns(); ++i)
+        {
+            auto column_name = header.getNames()[i];
+            auto arrow_column = table->column(i);
+            if (!arrow_column)
+                throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column '{}' is duplicated", column_name);
 
+            auto arrow_field = table->schema()->field(i);
+
+            if (case_insensitive_matching)
+                boost::to_lower(column_name);
+
+            name_to_arrow_column[std::move(column_name)] = {std::move(arrow_column), std::move(arrow_field)};
+        }
+    }
     return arrowColumnsToCHChunk(name_to_arrow_column, num_rows, metadata, block_missing_values);
 }
 

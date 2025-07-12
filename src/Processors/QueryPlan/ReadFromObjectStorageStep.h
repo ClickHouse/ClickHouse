@@ -45,6 +45,7 @@ private:
     const size_t max_block_size;
     size_t num_streams;
     const bool distributed_processing;
+    std::shared_ptr<void> opaque;
 
     void createIterator();
 };

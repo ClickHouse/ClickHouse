@@ -73,6 +73,8 @@ public:
     std::optional<size_t> totalRows(ContextPtr Local_context) const override;
     std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
 
+    std::shared_ptr<void> getOpaque() const override { return opaque; }
+
 protected:
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
@@ -107,6 +109,8 @@ private:
 
     mutable std::optional<Strings> cached_unprunned_files_for_last_processed_snapshot TSA_GUARDED_BY(cached_unprunned_files_for_last_processed_snapshot_mutex);
     mutable std::mutex cached_unprunned_files_for_last_processed_snapshot_mutex;
+
+    std::shared_ptr<void> opaque;
 
     void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object, bool metadata_file_changed) TSA_REQUIRES(mutex);
     Strings getDataFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const;
