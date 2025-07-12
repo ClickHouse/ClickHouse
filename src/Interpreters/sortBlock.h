@@ -8,7 +8,7 @@ namespace DB
 
 class Block;
 class SortDescription;
-using IColumnPermutation = PaddedPODArray<size_t>;
+using IColumnPermutation = PaddedPODArray<UInt32>;
 
 /// Sort one block by `description`. If limit != 0, then the partial sort of the first `limit` rows is produced.
 void sortBlock(Block & block, const SortDescription & description, UInt64 limit = 0);

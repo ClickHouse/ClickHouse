@@ -7,7 +7,7 @@
 namespace DB
 {
 
-using IColumnPermutation = PaddedPODArray<size_t>;
+using IColumnPermutation = PaddedPODArray<UInt32>;
 
 class IMergingAlgorithm
 {
