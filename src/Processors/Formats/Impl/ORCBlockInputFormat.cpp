@@ -139,6 +139,7 @@ void ORCBlockInputFormat::prepareReader()
         getPort().getHeader(),
         "ORC",
         format_settings,
+        std::nullopt,
         format_settings.orc.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.date_time_overflow_behavior,

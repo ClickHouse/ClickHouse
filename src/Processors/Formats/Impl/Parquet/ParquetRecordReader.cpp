@@ -318,6 +318,7 @@ ParquetRecordReader::ParquetRecordReader(
     std::shared_ptr<::arrow::io::RandomAccessFile> arrow_file,
     const FormatSettings & format_settings,
     std::vector<int> row_groups_indices_,
+    const std::optional<std::vector<Int32>> & column_indices_,
     std::shared_ptr<parquet::FileMetaData> metadata)
     : file_reader(createFileReader(std::move(arrow_file), reader_properties_, std::move(metadata)))
     , arrow_properties(arrow_properties_)
@@ -338,20 +339,26 @@ ParquetRecordReader::ParquetRecordReader(
 
     parquet_col_indice.reserve(header.columns());
     column_readers.reserve(header.columns());
-    for (const auto & col_with_name : header)
+    if (!column_indices_)
     {
-        auto it = parquet_columns.find(col_with_name.name);
-        if (it == parquet_columns.end())
-            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "no column with '{}' in parquet file", col_with_name.name);
+        for (const auto & col_with_name : header)
+        {
+            auto it = parquet_columns.find(col_with_name.name);
+            if (it == parquet_columns.end())
+                throw Exception(ErrorCodes::PARQUET_EXCEPTION, "no column with '{}' in parquet file", col_with_name.name);
 
-        const auto & node = it->second;
-        if (!node->is_primitive())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "arrays and maps are not implemented in native parquet reader");
+            const auto & node = it->second;
+            if (!node->is_primitive())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "arrays and maps are not implemented in native parquet reader");
 
-        auto idx = file_reader->metadata()->schema()->ColumnIndex(*node);
-        chassert(idx >= 0);
-        parquet_col_indice.push_back(idx);
+            auto idx = file_reader->metadata()->schema()->ColumnIndex(*node);
+            chassert(idx >= 0);
+            parquet_col_indice.push_back(idx);
+        }
     }
+    else
+        parquet_col_indice = *column_indices_;
+
     if (arrow_properties.pre_buffer())
     {
         THROW_PARQUET_EXCEPTION(file_reader->PreBuffer(

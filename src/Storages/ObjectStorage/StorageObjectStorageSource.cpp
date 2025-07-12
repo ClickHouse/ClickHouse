@@ -23,6 +23,7 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
+#include "Core/ColumnWithTypeAndName.h"
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Cache/FileCache.h>
@@ -482,7 +483,18 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             initial_header = sample_header;
         }
 
+        /*String result_parquet;
+        while (true)
+        {
+            char symb;
+            if (!read_buf->read(symb))
+                break;
+            result_parquet.push_back(symb);
+        }
+        std::cerr << "PARQUET CONTENT " << result_parquet << '\n';*/
 
+        parser_group->opaque = configuration->getOpaque();
+        std::cerr << "OPAQUE OF CONF " << (configuration->getOpaque() != nullptr) << ' ' << configuration << '\n';
         auto input_format = FormatFactory::instance().getInput(
             configuration->format,
             *read_buf,
@@ -495,6 +507,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             compression_method,
             need_only_count);
 
+        /*auto sample_chunk = input_format->generate();
+        Field sample_field;
+        sample_chunk.getColumns()[0]->get(0, sample_field);*/
         input_format->setSerializationHints(read_from_format_info.serialization_hints);
 
         if (need_only_count)
