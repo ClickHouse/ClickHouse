@@ -210,7 +210,7 @@ static size_t numLeftRowsForNextBlock(
             lhs = mid;
     }
 
-    return std::max<size_t>(offsets.size() - lhs, 1);
+    return std::max<size_t>(lhs - next_row, 1);
 }
 
 HashJoinResult::HashJoinResult(
