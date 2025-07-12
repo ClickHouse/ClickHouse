@@ -54,16 +54,13 @@ public:
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool addBlockToJoin(const Block & right_block_, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
-    void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override;
+    JoinResultPtr joinBlock(Block block) override;
     void setTotals(const Block & block) override;
     const Block & getTotals() const override;
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
-
-    bool isScatteredJoin() const override { return true; }
-    void joinBlock(Block & block, ExtraScatteredBlocks & extra_blocks, std::vector<Block> & res) override;
 
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;

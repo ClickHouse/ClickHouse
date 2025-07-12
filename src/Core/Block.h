@@ -192,15 +192,6 @@ private:
     friend class ActionsDAG;
 };
 
-
-/// Extends block with extra data in derived classes
-struct ExtraBlock
-{
-    Block block;
-
-    bool empty() const { return !block; }
-};
-
 /// Compare number of columns, data types, column types, column names, and values of constant columns.
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs);
 

@@ -293,7 +293,7 @@ void TableJoin::setInputColumns(NamesAndTypesList left_output_columns, NamesAndT
     columns_from_joined_table = std::move(right_output_columns);
 }
 
-const NamesAndTypesList & TableJoin::getOutputColumns(JoinTableSide side)
+const NamesAndTypesList & TableJoin::getOutputColumns(JoinTableSide side) const
 {
     if (side == JoinTableSide::Left)
         return result_columns_from_left_table;
