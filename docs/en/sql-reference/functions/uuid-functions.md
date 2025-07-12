@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for Functions for Working with UUIDs'
 sidebar_label: 'UUIDs'
-sidebar_position: 205
 slug: /sql-reference/functions/uuid-functions
 title: 'Functions for Working with UUIDs'
 ---

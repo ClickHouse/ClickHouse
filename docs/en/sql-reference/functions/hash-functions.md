@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for Hash Functions'
 sidebar_label: 'Hash'
-sidebar_position: 85
 slug: /sql-reference/functions/hash-functions
 title: 'Hash Functions'
 ---

@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for Array Functions'
 sidebar_label: 'Arrays'
-sidebar_position: 10
 slug: /sql-reference/functions/array-functions
 title: 'Array Functions'
 ---
