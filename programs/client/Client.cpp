@@ -666,65 +666,66 @@ void Client::printHelpMessage(const OptionsDescription & options_description)
 void Client::addExtraOptions(OptionsDescription & options_description)
 {
     /// Main commandline options related to client functionality and all parameters from Settings.
-    options_description.main_description->add_options()("config,c", po::value<std::string>(), "config-file path (another shorthand)")(
-        "connection", po::value<std::string>(), "connection to use (from the client config), by default connection name is hostname")(
-        "secure,s", "Use TLS connection")("no-secure", "Don't use TLS connection")(
-        "user,u", po::value<std::string>()->default_value("default"), "user")("password", po::value<std::string>(), "password")(
-        "ask-password",
-        "ask-password")("ssh-key-file", po::value<std::string>(), "File containing the SSH private key for authenticate with the server.")(
-        "ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")(
-        "quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")(
-        "jwt", po::value<std::string>(), "Use JWT for authentication")
-
+    options_description.main_description->add_options()
+        ("config,c", po::value<std::string>(), "config-file path (another shorthand)")
+        ("connection", po::value<std::string>(), "connection to use (from the client config), by default connection name is hostname")
+        ("secure,s", "Use TLS connection")
+        ("no-secure", "Don't use TLS connection")
+        ("user,u", po::value<std::string>()->default_value("default"), "user")
+        ("password", po::value<std::string>(), "password")
+        ("ask-password", "ask-password")
+        ("ssh-key-file", po::value<std::string>(), "File containing the SSH private key for authenticate with the server.")
+        ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")
+        ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
+        ("jwt", po::value<std::string>(), "Use JWT for authentication")
         ("max_client_network_bandwidth",
-         po::value<int>(),
-         "the maximum speed of data exchange over the network for the client in bytes per second.")(
-            "compression",
+            po::value<int>(),
+            "the maximum speed of data exchange over the network for the client in bytes per second.")
+        ("compression",
             po::value<bool>(),
             "enable or disable compression (enabled by default for remote communication and disabled for localhost communication).")
-
-            ("query-fuzzer-runs",
-             po::value<int>()->default_value(0),
-             "After executing every SELECT query, do random mutations in it and run again specified number of times. This is used for "
-             "testing to discover unexpected corner cases.")("create-query-fuzzer-runs", po::value<int>()->default_value(0), "")(
-                "buzz-house-config", po::value<std::string>(), "Path to configuration file for BuzzHouse")(
-                "interleave-queries-file",
-                po::value<std::vector<std::string>>()->multitoken(),
-                "file path with queries to execute before every file from 'queries-file'; multiple files can be specified (--queries-file "
-                "file1 file2...); this is needed to enable more aggressive fuzzing of newly added tests (see 'query-fuzzer-runs' option)")
-
-                ("opentelemetry-traceparent",
-                 po::value<std::string>(),
-                 "OpenTelemetry traceparent header as described by W3C Trace Context recommendation")(
-                    "opentelemetry-tracestate",
-                    po::value<std::string>(),
-                    "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
-
-                    ("no-warnings", "disable warnings when client connects to server")
+        ("query-fuzzer-runs",
+            po::value<int>()->default_value(0),
+            "After executing every SELECT query, do random mutations in it and run again specified number of times. This is used for "
+            "testing to discover unexpected corner cases.")
+        ("create-query-fuzzer-runs", po::value<int>()->default_value(0), "")
+        ("buzz-house-config", po::value<std::string>(), "Path to configuration file for BuzzHouse")
+        ("interleave-queries-file",
+            po::value<std::vector<std::string>>()->multitoken(),
+            "file path with queries to execute before every file from 'queries-file'; multiple files can be specified (--queries-file "
+            "file1 file2...); this is needed to enable more aggressive fuzzing of newly added tests (see 'query-fuzzer-runs' option)")
+        ("opentelemetry-traceparent",
+            po::value<std::string>(),
+            "OpenTelemetry traceparent header as described by W3C Trace Context recommendation")
+        ("opentelemetry-tracestate",
+            po::value<std::string>(),
+            "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
+        ("no-warnings", "disable warnings when client connects to server")
         /// TODO: Left for compatibility as it's used in upgrade check, remove after next release and use server setting ignore_drop_queries_probability
-        ("fake-drop", "Ignore all DROP queries, should be used only for testing")(
-            "accept-invalid-certificate",
+        ("fake-drop", "Ignore all DROP queries, should be used only for testing")
+        ("accept-invalid-certificate",
             "Ignore certificate verification errors, equal to config parameters "
             "openSSL.client.invalidCertificateHandler.name=AcceptCertificateHandler and openSSL.client.verificationMode=none");
 
     /// Commandline options related to external tables.
 
     options_description.external_description.emplace(createOptionsDescription("External tables options", terminal_width));
-    options_description.external_description->add_options()("file", po::value<std::string>(), "data file or - for stdin")(
-        "name", po::value<std::string>()->default_value("_data"), "name of the table")(
-        "format", po::value<std::string>()->default_value("TabSeparated"), "data format")(
-        "structure", po::value<std::string>(), "structure")("types", po::value<std::string>(), "types");
+    options_description.external_description->add_options()
+        ("file", po::value<std::string>(), "data file or - for stdin")
+        ("name", po::value<std::string>()->default_value("_data"), "name of the table")
+        ("format", po::value<std::string>()->default_value("TabSeparated"), "data format")
+        ("structure", po::value<std::string>(), "structure")
+        ("types", po::value<std::string>(), "types");
 
     /// Commandline options related to hosts and ports.
     options_description.hosts_and_ports_description.emplace(createOptionsDescription("Hosts and ports options", terminal_width));
-    options_description.hosts_and_ports_description->add_options()(
-        "host,h",
-        po::value<String>()->default_value("localhost"),
-        "Server hostname. Multiple hosts can be passed via multiple arguments"
-        "Example of usage: '--host host1 --host host2 --port port2 --host host3 ...'"
-        "Each '--port port' will be attached to the last seen host that doesn't have a port yet,"
-        "if there is no such host, the port will be attached to the next first host or to default host.")(
-        "port", po::value<UInt16>(), "server ports");
+    options_description.hosts_and_ports_description->add_options()
+        ("host,h", po::value<String>()->default_value("localhost"),
+            "Server hostname. Multiple hosts can be passed via multiple arguments"
+            "Example of usage: '--host host1 --host host2 --port port2 --host host3 ...'"
+            "Each '--port port' will be attached to the last seen host that doesn't have a port yet,"
+            "if there is no such host, the port will be attached to the next first host or to default host.")
+        ("port", po::value<UInt16>(), "server ports");
 }
 
 
