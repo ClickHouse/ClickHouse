@@ -3894,7 +3894,7 @@ Result:
 
 ## toDateTimeOrNull {#todatetimeornull}
 
-The same as [toDateTime](#todatetime) but returns `NULL` if an invalid argument is received. Only [String](../data-types/string.md) argument is supported.
+The same as [toDateTime](#todatetime) but returns `NULL` if an invalid argument is received. Only [String](../data-types/string.md) and [Integer](../data-types/int-uint.md) arguments are supported.
 
 **Example**
 
@@ -3910,6 +3910,18 @@ Result:
 ┌─toDateTimeOrNull('2022-12-30 13:44:17')─┬─toDateTimeOrNull('')─┐
 │                     2022-12-30 13:44:17 │                 ᴺᵁᴸᴸ │
 └─────────────────────────────────────────┴──────────────────────┘
+```
+
+```sql
+SELECT toDateTimeOrNull(0), toDateTimeOrNull(1583851242), toDateTimeOrNull(4294967296);
+```
+
+Result:
+
+```response
+┌─toDateTimeOrNull(0)─┬─toDateTimeOrNull(1583851242)─┬─toDateTimeOrNull(4294967296)─┐
+│ 1970-01-01 05:30:00 │     2020-03-10 20:10:42      │             ᴺᵁᴸᴸ             │ 
+└─────────────────────┴──────────────────────────────┴──────────────────────────────┘
 ```
 
 
