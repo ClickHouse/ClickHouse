@@ -64,6 +64,8 @@ public:
     /// Add transform with simple input and simple output for each port.
     void addSimpleTransform(const Pipe::ProcessorGetter & getter);
     void addSimpleTransform(const Pipe::ProcessorGetterWithStreamKind & getter);
+    void addSimpleTransform(const Pipe::ProcessorGetterSharedHeader & getter);
+    void addSimpleTransform(const Pipe::ProcessorGetterSharedHeaderWithStreamKind & getter);
     /// Add transform with getNumStreams() input ports.
     void addTransform(ProcessorPtr transform);
     void addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes);
