@@ -34,6 +34,7 @@
 #include <Common/formatReadable.h>
 #include <Common/ThrottlerArray.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 
 #include <boost/range/adaptor/map.hpp>
 
@@ -55,7 +56,12 @@ namespace DB
 
 namespace Setting
 {
-extern const SettingsBool s3_disable_checksum;
+    extern const SettingsBool s3_disable_checksum;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool shutdown_wait_backups_and_restores;
 }
 
 namespace ErrorCodes
@@ -314,6 +320,7 @@ BackupsWorker::BackupsWorker(ContextMutablePtr global_context, size_t num_backup
     : thread_pools(std::make_unique<ThreadPools>(num_backup_threads, num_restore_threads))
     , allow_concurrent_backups(global_context->getConfigRef().getBool("backups.allow_concurrent_backups", true))
     , allow_concurrent_restores(global_context->getConfigRef().getBool("backups.allow_concurrent_restores", true))
+    , shutdown_wait_backups_and_restores(global_context->getServerSettings()[ServerSetting::shutdown_wait_backups_and_restores])
     , remove_backup_files_after_failure(global_context->getConfigRef().getBool("backups.remove_backup_files_after_failure", true))
     , test_randomize_order(global_context->getConfigRef().getBool("backups.test_randomize_order", false))
     , test_inject_sleep(global_context->getConfigRef().getBool("backups.test_inject_sleep", false))
@@ -1316,8 +1323,11 @@ std::vector<BackupOperationInfo> BackupsWorker::getAllInfos() const
 
 void BackupsWorker::shutdown()
 {
-    /// Cancel running backups and restores.
-    cancelAll(/* wait= */ true);
+    /// Wait or cancel running backups and restores.
+    if (shutdown_wait_backups_and_restores)
+        waitAll();
+    else
+        cancelAll(/* wait= */ true);
 
     /// Wait for our thread pools (it must be done before destroying them).
     thread_pools->wait();

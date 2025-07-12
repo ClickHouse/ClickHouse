@@ -28,7 +28,7 @@ public:
 
     String tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context, bool internal_query);
 
-    void shutdown() override;
+    void stopWatching() override;
 
     bool waitForReplicaToProcessAllEntries(UInt64 timeout_ms);
 

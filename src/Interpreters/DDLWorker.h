@@ -83,11 +83,16 @@ public:
 
     std::string getReplicasDir() const { return replicas_dir; }
 
-    void startup();
-    virtual void shutdown();
+    /// Starts watching DDL queue in ZooKeeper and executing tasks.
+    virtual void startWatching();
+
+    /// Stops watching DDL queue in ZooKeeper and waits until currently executed tasks finish.
+    virtual void stopWatching();
+
+    void startup() { startWatching(); }
+    void shutdown() { stopWatching(); }
 
     bool isCurrentlyActive() const { return initialized && !stop_flag; }
-
 
     /// Returns cached ZooKeeper session (possibly expired).
     ZooKeeperPtr tryGetZooKeeper() const;

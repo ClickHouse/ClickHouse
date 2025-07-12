@@ -794,11 +794,12 @@ struct ContextSharedPart : boost::noncopyable
         SHUTDOWN(log, "UDFs loader", external_user_defined_executable_functions_loader, enablePeriodicUpdates(false));
         SHUTDOWN(log, "another UDFs storage", user_defined_sql_objects_storage, stopWatching());
         SHUTDOWN(log, "workload entity storage", workload_entity_storage, stopWatching());
+        SHUTDOWN(log, "ddl worker", ddl_worker, stopWatching());
 
         LOG_TRACE(log, "Shutting down named sessions");
         Session::shutdownNamedSessions();
 
-        /// Waiting for current backups/restores to be finished. This must be done before `DatabaseCatalog::shutdown()`.
+        /// Waiting for current backups/restores to be finished. This must be done before `DatabaseCatalog::shutdown()` and after DDLWorker::stopWatching().
         SHUTDOWN(log, "backups worker", backups_worker, shutdown());
 
         LOG_TRACE(log, "Shutting down object storage queue streaming");
@@ -835,19 +836,6 @@ struct ContextSharedPart : boost::noncopyable
 
         std::unique_ptr<DDLWorker> delete_ddl_worker;
         std::unique_ptr<AccessControl> delete_access_control;
-
-        /// Delete DDLWorker before zookeeper.
-        /// Cause it can call Context::getZooKeeper and resurrect it.
-
-        {
-            std::lock_guard lock(mutex);
-            delete_ddl_worker = std::move(ddl_worker);
-        }
-
-        /// DDLWorker should be deleted without lock, cause its internal thread can
-        /// take it as well, which will cause deadlock.
-        LOG_TRACE(log, "Shutting down DDLWorker");
-        delete_ddl_worker.reset();
 
         /// Background operations in cache use background schedule pool.
         /// Deactivate them before destructing it.
@@ -931,6 +919,7 @@ struct ContextSharedPart : boost::noncopyable
             delete_distributed_schedule_pool = std::move(distributed_schedule_pool);
             delete_message_broker_schedule_pool = std::move(message_broker_schedule_pool);
 
+            delete_ddl_worker = std::move(ddl_worker);
             delete_access_control = std::move(access_control);
 
             /// Stop trace collector if any

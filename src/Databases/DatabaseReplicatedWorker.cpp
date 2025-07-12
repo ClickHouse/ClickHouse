@@ -130,9 +130,9 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
     return false;
 }
 
-void DatabaseReplicatedDDLWorker::shutdown()
+void DatabaseReplicatedDDLWorker::stopWatching()
 {
-    DDLWorker::shutdown();
+    DDLWorker::stopWatching();
     wait_current_task_change.notify_all();
 }
 
