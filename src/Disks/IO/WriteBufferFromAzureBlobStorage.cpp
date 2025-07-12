@@ -4,6 +4,7 @@
 
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <IO/AzureBlobStorage/isRetryableAzureException.h>
+#include <IO/AzureBlobStorage/PocoHTTPClient.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/Throttler.h>
@@ -105,14 +106,14 @@ WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
     task_tracker->safeWaitAll();
 }
 
-void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, size_t num_tries, size_t cost)
+void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void(size_t)> func, size_t num_tries, size_t cost)
 {
     for (size_t i = 0; i < num_tries; ++i)
     {
         try
         {
             ResourceGuard rlock(ResourceGuard::Metrics::getIOWrite(), write_settings.io_scheduling.write_resource_link, cost); // Note that zero-cost requests are ignored
-            func();
+            func(i);
             rlock.unlock(cost);
             break;
         }
@@ -160,7 +161,16 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
             auto part_data = std::move(detached_part_data.front());
             Azure::Core::IO::MemoryBodyStream memory_stream(
                 reinterpret_cast<const uint8_t *>(part_data.memory.data()), part_data.data_size);
-            execWithRetry([&]() { block_blob_client.Upload(memory_stream); }, max_unexpected_write_error_retries, part_data.data_size);
+            execWithRetry(
+                [&](size_t retry_attempt)
+                {
+                    block_blob_client.Upload(
+                        memory_stream,
+                        Azure::Storage::Blobs::UploadBlockBlobOptions{},
+                        azure_context.WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), retry_attempt));
+                },
+                max_unexpected_write_error_retries,
+                part_data.data_size);
             LOG_TRACE(log, "Committed single block for blob `{}`", blob_path);
 
             detached_part_data.pop_front();
@@ -170,7 +180,16 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
         else if (detached_part_data.empty())
         {
             Azure::Core::IO::MemoryBodyStream memory_stream(nullptr, 0);
-            execWithRetry([&]() { block_blob_client.Upload(memory_stream); }, max_unexpected_write_error_retries, 0);
+            execWithRetry(
+                [&](size_t retry_attempt)
+                {
+                    block_blob_client.Upload(
+                        memory_stream,
+                        Azure::Storage::Blobs::UploadBlockBlobOptions{},
+                        azure_context.WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), retry_attempt));
+                },
+                max_unexpected_write_error_retries,
+                0);
             LOG_TRACE(log, "Committed single empty block for blob `{}`", blob_path);
             return;
         }
@@ -198,7 +217,15 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
         if (blob_container_client->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureCommitBlockList);
 
-        execWithRetry([&](){ block_blob_client.CommitBlockList(block_ids); }, max_unexpected_write_error_retries);
+        execWithRetry(
+            [&](size_t retry_attetmpt)
+            {
+                block_blob_client.CommitBlockList(
+                    block_ids,
+                    Azure::Storage::Blobs::CommitBlockListOptions{},
+                    azure_context.WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), retry_attetmpt));
+            },
+            max_unexpected_write_error_retries);
         LOG_TRACE(log, "Committed {} blocks for blob `{}`", block_ids.size(), blob_path);
     }
 
@@ -336,7 +363,17 @@ void WriteBufferFromAzureBlobStorage::writePart(WriteBufferFromAzureBlobStorage:
             ProfileEvents::increment(ProfileEvents::DiskAzureStageBlock);
 
         Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(std::get<1>(*worker_data).memory.data()), data_size);
-        execWithRetry([&](){ block_blob_client.StageBlock(data_block_id, memory_stream); }, max_unexpected_write_error_retries, data_size);
+        execWithRetry(
+            [&](size_t retry_attempt)
+            {
+                block_blob_client.StageBlock(
+                    data_block_id,
+                    memory_stream,
+                    Azure::Storage::Blobs::StageBlockOptions{},
+                    azure_context.WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), retry_attempt));
+            },
+            max_unexpected_write_error_retries,
+            data_size);
     };
 
     task_tracker->add(std::move(upload_worker));
