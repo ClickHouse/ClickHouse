@@ -4,6 +4,7 @@
 #include <IO/WriteBufferDecorator.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Port.h>
+#include <Common/ThreadFuzzer.h>
 
 
 namespace DB
@@ -194,6 +195,8 @@ void IOutputFormat::setExtremes(const Block & extremes)
 
 void IOutputFormat::onProgress(const Progress & progress)
 {
+    ThreadFuzzer::maybeInjectSleep();
+
     statistics.progress.incrementPiecewiseAtomically(progress);
     UInt64 elapsed_ns = statistics.watch.elapsedNanoseconds();
     statistics.progress.elapsed_ns = elapsed_ns;
