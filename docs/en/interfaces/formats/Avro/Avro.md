@@ -8,7 +8,7 @@ slug: /interfaces/formats/Avro
 title: 'Avro'
 ---
 
-import DataTypesMatching from './_snippets/data-types-matching.md'
+import DataTypeMapping from './_snippets/data-types-matching.md'
 
 | Input | Output | Alias |
 |-------|--------|-------|
@@ -18,10 +18,9 @@ import DataTypesMatching from './_snippets/data-types-matching.md'
 
 [Apache Avro](https://avro.apache.org/) is a row-oriented serialization format that uses binary encoding for efficient data processing. The `Avro` format supports reading and writing [Avro data files](https://avro.apache.org/docs/++version++/specification/#object-container-files). This format expects self-describing messages with an embedded schema. If you're using Avro with a schema registry, refer to the [`AvroConfluent`](./AvroConfluent.md) format.
 
-<a id="data-types-matching"></a>
 ## Data type mapping {#data-type-mapping}
 
-<DataTypesMatching/>
+<DataTypeMapping/>
 
 ## Format settings {#format-settings}
 
