@@ -19,31 +19,32 @@ namespace ErrorCodes
 
 namespace 
 {
-class FunctionColorSRGBToOkLCH : public ITupleFunction
+class FunctionOkLCHToSRGB : public ITupleFunction
 {
 private:
 
     static constexpr Float64 eps          = 1e-6;
-    static constexpr Float64 rad2deg      = 57.2957795131;  
+    static constexpr Float64 deg2rad      = 0.01745329251;
     static constexpr size_t  channels_num = 3;
 
     using Colors = std::array<Float64, channels_num>;
     using Mat3x3 = std::array<Float64, 9>;
 
-    static constexpr Mat3x3 rgb_to_lms = {0.4122214708, 0.5363325363, 0.0514459929,
-                                       0.2119034982, 0.6806995451, 0.1073969566,
-                                       0.0883024619, 0.2817188376, 0.6299787005};
+
+    static constexpr Mat3x3 oklab_to_lms = {1,  0.3963377774,  0.2158037573,
+                                            1, -0.1055613458, -0.0638541728,
+                                            1, -0.0894841775, -1.2914855480};
     
-    static constexpr Mat3x3 lms_to_oklab_base = {0.2104542553,  0.7936177850, -0.0040720468,
-                                       1.9779984951, -2.4285922050,  0.45059370996,
-                                       0.0259040371,  0.7827717662, -0.8086757660};
+    static constexpr Mat3x3 lms_to_linear_rgb_base = {4.0767416621, -3.3077115913,  0.2309699292,
+                                                     -1.2684380046,  2.6097574011, -0.3413193965,
+                                                     -0.0041960863, -0.7034186147,  1.7076147010};
 
 public:
 
-    static constexpr auto name = "colorSRGBToOkLCH";
+    static constexpr auto name = "colorOkLCHToSRGB";
 
-    explicit FunctionColorSRGBToOkLCH(ContextPtr context_) : ITupleFunction(context_) {}
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionColorSRGBToOkLCH>(context_); }
+    explicit FunctionOkLCHToSRGB(ContextPtr context_) : ITupleFunction(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionOkLCHToSRGB>(context_); }
 
     String  getName() const override { return name; }
     bool    isVariadic() const override { return true; }
@@ -115,101 +116,98 @@ public:
             gamma = ColumnFloat64::create(input_rows_count, 2.2);
         }
 
-        const auto & r_data     = assert_cast<const ColumnFloat64 &>(*rgb_cols[0]).getData();
-        const auto & g_data     = assert_cast<const ColumnFloat64 &>(*rgb_cols[1]).getData();
-        const auto & b_data     = assert_cast<const ColumnFloat64 &>(*rgb_cols[2]).getData();
+        const auto & l_data     = assert_cast<const ColumnFloat64 &>(*rgb_cols[0]).getData();
+        const auto & c_data     = assert_cast<const ColumnFloat64 &>(*rgb_cols[1]).getData();
+        const auto & h_data     = assert_cast<const ColumnFloat64 &>(*rgb_cols[2]).getData();
         const auto & gamma_data = assert_cast<const ColumnFloat64 &>(*gamma).getData();
 
-        auto col_l = ColumnFloat64::create();
-        auto col_c = ColumnFloat64::create();
-        auto col_h = ColumnFloat64::create();
+        auto col_r = ColumnFloat64::create();
+        auto col_g = ColumnFloat64::create();
+        auto col_b = ColumnFloat64::create();
 
-        auto & l_data = col_l->getData();
-        auto & c_data = col_c->getData();
-        auto & h_data = col_h->getData();
-        l_data.reserve(input_rows_count);
-        c_data.reserve(input_rows_count);
-        h_data.reserve(input_rows_count);
+        auto & r_data = col_r->getData();
+        auto & g_data = col_g->getData();
+        auto & b_data = col_b->getData();
+        r_data.reserve(input_rows_count);
+        g_data.reserve(input_rows_count);
+        b_data.reserve(input_rows_count);
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            Colors rgb_data{r_data[row], 
-                            g_data[row],
-                            b_data[row]};
-            Colors res = srgb_to_oklch_base(rgb_data, gamma_data[row]);
-            l_data.push_back(res[0]);
-            c_data.push_back(res[1]);
-            h_data.push_back(res[2]);
+            Colors lch_data{l_data[row], 
+                            c_data[row],
+                            h_data[row]};
+            Colors res = oklch_to_srgb_base(lch_data, gamma_data[row]);
+            r_data.push_back(res[0]);
+            g_data.push_back(res[1]);
+            b_data.push_back(res[2]);
         }
 
-        return ColumnTuple::create(Columns({std::move(col_l), std::move(col_c), std::move(col_h)}));
+        return ColumnTuple::create(Columns({std::move(col_r), std::move(col_g), std::move(col_b)}));
     }
 
 private:
 
-    Colors srgb_to_oklch_base(const Colors & rgb, Float64 gamma) const
+    Colors oklch_to_srgb_base(const Colors & oklch, Float64 gamma) const
     {
-        Colors rgb_lin;
-        for (size_t i = 0; i < channels_num; ++i) 
-        {
-            rgb_lin[i] = std::pow(rgb[i] / 255.0, gamma);     
-        }
+        Float64 c = oklch[1];
+        Float64 h = oklch[2] * deg2rad; 
+
+        Colors oklab = oklch;
+
+        oklab[1] = c * std::cos(h);
+        oklab[2] = c * std::sin(h);
 
         Colors lms{};
         for (size_t i = 0; i < channels_num; ++i) 
         {
             for (size_t channel = 0; channel < channels_num; ++channel) 
             {
-                lms[i] += rgb_lin[channel] * rgb_to_lms[(3 * i) + channel];
+                lms[i] += oklab[channel] * oklab_to_lms[(3 * i) + channel];
             } 
-            lms[i] = std::cbrt(lms[i]);  
+            lms[i] = std::pow(lms[i], 3);  
         }
  
-        Colors oklab{};
+        Colors rgb{};
         for (size_t i = 0; i < channels_num; ++i) 
         {
             for (size_t channel = 0; channel < channels_num; ++channel) 
             {
-                oklab[i] += lms[channel] * lms_to_oklab_base[(3 * i) + channel];
-            } 
+                rgb[i] += lms[channel] * lms_to_linear_rgb_base[(3 * i) + channel];
+            }
         }
 
-        Colors oklch = oklab;
-        Float64 a = oklab[1];
-        Float64 b = oklab[2];
-
-        oklch[1] = std::sqrt(a * a + b * b);
-        if (oklab[1] < eps) 
+        if (gamma == 0) 
         {
-            oklab[1] = 0;
-            oklab[2] = 0;
-        } 
-        else 
-        {
-            Float64 degrees = std::atan2(b, a) * rad2deg;                  
-            oklch[2]  = std::fmod(degrees + 360.0, 360.0);
+            gamma = eps;
         }
 
-        return oklab;
+        for (size_t i = 0; i < channels_num; ++i) 
+        {
+            Float64 power = 1 / gamma;
+            rgb[i] = std::pow(rgb[i], power) * 255.0;     
+        }
+
+        return rgb;
     }
 
 };
 
 }
 
-REGISTER_FUNCTION(ColorSRGBToOkLCH)
+REGISTER_FUNCTION(FunctionOkLCHToSRGB)
 {
     const FunctionDocumentation description = {
-        .description=R"(Convers sRGB color into OkLCH color space. Takes an optional parameter
-gamma, that is defaulted at 2.2 in case not provided. Dual of colorOkLCHToSRGB)",
+        .description=R"(Convers OkLCH color into sRGB color space. Takes an optional parameter
+gamma, that is defaulted at 2.2 in case not provided. Dual of colorSRGBToOkLCH)",
         .arguments={
-            {"rgb_tuple", "A 3-element tuple of numeric values (e.g. integers from 0 to255)"},
-            {"gamma", "Optional gamma exponent to linearize sRGB before conversion. Defaults to 2.2."},
+            {"oklch_tuple", "A 3-element tuple of numeric values representing OKLCH coordinates: L (lightness in [0...1]), C (chroma >= 0), and H (hue in degrees [0...360])"},
+            {"gamma", "Optional gamma exponent for sRGB transfer function. Defaults to 2.2 if ommited."},
         },
-        .returned_value{"Returns a 3-element tuple of OkLCH values", {"Tuple(Float64, Float64, Float64)"}},
+        .returned_value{"Returns a 3-element tuple of sRGB values", {"Tuple(Float64, Float64, Float64)"}},
         .category = FunctionDocumentation::Category::Other
     };
-    factory.registerFunction<FunctionColorSRGBToOkLCH>(description);
+    factory.registerFunction<FunctionOkLCHToSRGB>(description);
 }
 
 }
