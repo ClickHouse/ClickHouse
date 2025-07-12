@@ -25,14 +25,21 @@ public:
     }
 
     /// Use `amount` tokens on all throttlers
-    UInt64 add(size_t amount) override
+    bool throttle(size_t amount, size_t max_block_us) override
     {
-        UInt64 total_sleep_ns = 0;
+        bool result = false;
         for (const auto & throttler : throttlers)
         {
-            total_sleep_ns += throttler->add(amount);
+            bool blocked = throttler->throttle(amount, max_block_us);
+            result = result || blocked;
         }
-        return total_sleep_ns;
+        return result;
+    }
+
+    void throttleNonBlocking(size_t amount) override
+    {
+        for (const auto & throttler : throttlers)
+            throttler->throttleNonBlocking(amount);
     }
 
     /// Check if any throttler is currently throttling
