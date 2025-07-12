@@ -1,13 +1,20 @@
+#include <memory>
 #include <optional>
+#include <unordered_map>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Poco/JSON/Stringifier.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
+#include <Columns/IColumn.h>
+#include <Functions/IFunction.h>
+#include <base/types.h>
 #include <Common/SharedLockGuard.h>
 #include <base/scope_guard.h>
 
@@ -27,6 +34,7 @@
 
 #include <IO/ReadHelpers.h>
 
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ComplexTypeSchemaProcessorFunctions.h>
 
 namespace DB
 {
@@ -35,7 +43,6 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
-extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -59,12 +66,6 @@ bool equals(const T & first, const T & second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JSON Parsing failed");
     }
     return first_string_stream.str() == second_string_stream.str();
-}
-
-
-bool operator==(const Poco::JSON::Object & first, const Poco::JSON::Object & second)
-{
-    return equals(first, second);
 }
 
 bool operator==(const Poco::JSON::Array & first, const Poco::JSON::Array & second)
@@ -339,26 +340,20 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
         if (old_node_it != old_schema_entries.end())
         {
             auto [old_json, old_node] = old_node_it->second;
-            if (field->isObject(f_type))
+            if (field->isObject(f_type)
+                && (field->getObject(f_type)->getValue<std::string>(f_type) == "struct"
+                    || field->getObject(f_type)->getValue<std::string>(f_type) == "list"
+                    || field->getObject(f_type)->getValue<std::string>(f_type) == "map"))
             {
-                if (*old_json != *field)
-                {
-                    throw Exception(
-                        ErrorCodes::UNSUPPORTED_METHOD,
-                        "Schema evolution is not supported for complex types yet, field id is {}, old schema id is {}, new schema id "
-                        "is {}",
-                        id,
-                        old_id,
-                        new_id);
-                }
-                else
-                {
-                    outputs.push_back(old_node);
-                }
+                auto old_type = getFieldType(old_json, "type", required);
+                auto transform = std::make_shared<EvolutionFunctionStruct>(std::vector{type}, std::vector{old_type}, old_json, field);
+                old_node = &dag->addFunction(transform, std::vector<const Node *>{old_node}, name);
+
+                outputs.push_back(old_node);
             }
             else
             {
-                if (old_json->isObject(f_type))
+                if (old_json->isObject(f_type) && !field->isObject(f_type))
                 {
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
@@ -387,17 +382,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
         }
         else
         {
-            if (field->isObject(f_type))
-            {
-                throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD,
-                    "Adding a default column with id {} and complex type is not supported yet. Old schema id is {}, new schema id is "
-                    "{}",
-                    id,
-                    old_id,
-                    new_id);
-            }
-            if (!type->isNullable())
+            if (!type->isNullable() && !field->isObject(f_type))
             {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,

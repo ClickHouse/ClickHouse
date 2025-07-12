@@ -8,7 +8,7 @@ slug: /interfaces/formats/Avro
 title: 'Avro'
 ---
 
-import DataTypesMatching from './_snippets/data-types-matching.md'
+import DataTypeMapping from './_snippets/data-types-matching.md'
 
 | Input | Output | Alias |
 |-------|--------|-------|
@@ -16,18 +16,28 @@ import DataTypesMatching from './_snippets/data-types-matching.md'
 
 ## Description {#description}
 
-[Apache Avro](https://avro.apache.org/) is a row-oriented data serialization framework developed within Apache's Hadoop project.
-ClickHouse's `Avro` format supports reading and writing [Avro data files](https://avro.apache.org/docs/current/spec.html#Object+Container+Files).
+[Apache Avro](https://avro.apache.org/) is a row-oriented serialization format that uses binary encoding for efficient data processing. The `Avro` format supports reading and writing [Avro data files](https://avro.apache.org/docs/++version++/specification/#object-container-files). This format expects self-describing messages with an embedded schema. If you're using Avro with a schema registry, refer to the [`AvroConfluent`](./AvroConfluent.md) format.
 
-## Data Types Matching {#data-types-matching}
+## Data type mapping {#data-type-mapping}
 
-<DataTypesMatching/>
+<DataTypeMapping/>
 
-## Example Usage {#example-usage}
+## Format settings {#format-settings}
 
-### Inserting Data {#inserting-data}
+| Setting                                     | Description                                                                                         | Default |
+|---------------------------------------------|-----------------------------------------------------------------------------------------------------|---------|
+| `input_format_avro_allow_missing_fields`    | Whether to use a default value instead of throwing an error when a field is not found in the schema. | `0`     |
+| `input_format_avro_null_as_default`         | Whether to use a default value instead of throwing an error when inserting a `null` value into a non-nullable column. |   `0`   |
+| `output_format_avro_codec`                  | Compression algorithm for Avro output files. Possible values: `null`, `deflate`, `snappy`, `zstd`.            |         |
+| `output_format_avro_sync_interval`          | Sync marker frequency in Avro files (in bytes). | `16384` |
+| `output_format_avro_string_column_pattern`  | Regular expression to identify `String` columns for Avro string type mapping. By default, ClickHouse `String` columns are written as Avro `bytes` type.                                 |         |
+| `output_format_avro_rows_in_file`           | Maximum number of rows per Avro output file. When this limit is reached, a new file is created (if the storage system supports file splitting).                                                         | `1`     |
 
-To insert data from an Avro file into a ClickHouse table:
+## Examples {#examples}
+
+### Reading Avro data {#reading-avro-data}
+
+To read data from an Avro file into a ClickHouse table:
 
 ```bash
 $ cat file.avro | clickhouse-client --query="INSERT INTO {some_table} FORMAT Avro"
@@ -42,9 +52,9 @@ Data types of ClickHouse table columns can differ from the corresponding fields 
 
 While importing data, when a field is not found in the schema and setting [`input_format_avro_allow_missing_fields`](/operations/settings/settings-formats.md/#input_format_avro_allow_missing_fields) is enabled, the default value will be used instead of throwing an error.
 
-### Selecting Data {#selecting-data}
+### Writing Avro data {#writing-avro-data}
 
-To select data from a ClickHouse table into an Avro file:
+To write data from a ClickHouse table into an Avro file:
 
 ```bash
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Avro" > file.avro
@@ -55,17 +65,16 @@ Column names must:
 - Start with `[A-Za-z_]`
 - Be followed by only `[A-Za-z0-9_]`
 
-Output Avro file compression and sync interval can be configured with settings [`output_format_avro_codec`](/operations/settings/settings-formats.md/#output_format_avro_codec) and [`output_format_avro_sync_interval`](/operations/settings/settings-formats.md/#output_format_avro_sync_interval) respectively.
+The output compression and sync interval for Avro files can be configured using the [`output_format_avro_codec`](/operations/settings/settings-formats.md/#output_format_avro_codec) and [`output_format_avro_sync_interval`](/operations/settings/settings-formats.md/#output_format_avro_sync_interval) settings, respectively.
 
-### Example Data {#example-data}
+### Inferring the Avro schema {#inferring-the-avro-schema}
 
 Using the ClickHouse [`DESCRIBE`](/sql-reference/statements/describe-table) function, you can quickly view the inferred format of an Avro file like the following example. 
 This example includes the URL of a publicly accessible Avro file in the ClickHouse S3 public bucket:
 
-```sql title="Query"
+```sql
 DESCRIBE url('https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/hits.avro','Avro);
-```
-```response title="Response"
+
 ┌─name───────────────────────┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ WatchID                    │ Int64           │              │                    │         │                  │                │
 │ JavaEnable                 │ Int32           │              │                    │         │                  │                │
@@ -83,15 +92,3 @@ DESCRIBE url('https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/h
 │ RequestTry                 │ Int32           │              │                    │         │                  │                │
 └────────────────────────────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-
-## Format Settings {#format-settings}
-
-| Setting                                     | Description                                                                                         | Default |
-|---------------------------------------------|-----------------------------------------------------------------------------------------------------|---------|
-| `input_format_avro_allow_missing_fields`    | For Avro/AvroConfluent format: when field is not found in schema use default value instead of error | `0`     |
-| `input_format_avro_null_as_default`         | For Avro/AvroConfluent format: insert default in case of null and non Nullable column                 |   `0`   |
-| `format_avro_schema_registry_url`           | For AvroConfluent format: Confluent Schema Registry URL.                                            |         |
-| `output_format_avro_codec`                  | Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.            |         |
-| `output_format_avro_sync_interval`          | Sync interval in bytes.                                                                             | `16384` |
-| `output_format_avro_string_column_pattern`  | For Avro format: regexp of String columns to select as AVRO string.                                 |         |
-| `output_format_avro_rows_in_file`           | Max rows in a file (if permitted by storage)                                                         | `1`     |

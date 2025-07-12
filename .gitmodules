@@ -375,3 +375,6 @@
 [submodule "contrib/chdig"]
 	path = contrib/chdig
 	url = https://github.com/azat/chdig.git
+[submodule "contrib/ai-sdk-cpp"]
+	path = contrib/ai-sdk-cpp
+	url = https://github.com/ClickHouse/ai-sdk-cpp

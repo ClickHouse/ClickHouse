@@ -1,5 +1,7 @@
     ReadFromKeeperMap
     ReadType: FullScan
+ReadFromKeeperMap
+ReadType:FullScan
 1
 "rows_read":1,
     ReadFromKeeperMap

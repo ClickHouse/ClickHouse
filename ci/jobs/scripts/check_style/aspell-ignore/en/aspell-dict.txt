@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3283 
+personal_ws-1.1 en 3285 
 AArch
 ACLs
 ALTERs
@@ -28,6 +28,7 @@ Akka
 AlertManager
 Alexey
 AnyEvent
+Anthropic
 AppleClang
 Approximative
 ArrayJoin
@@ -790,6 +791,7 @@ OpenSSL
 OpenSUSE
 OpenSky
 OpenStack
+OpenAI
 OpenTelemetry
 OrDefault
 OrNull
@@ -808,8 +810,6 @@ PagerDuty
 ParallelFormattingOutputFormatThreads
 ParallelFormattingOutputFormatThreadsActive
 ParallelParsingInputFormat
-ParallelParsingInputFormatThreads
-ParallelParsingInputFormatThreadsActive
 ParallelReplicasMode
 ParquetCompression
 ParquetMetadata

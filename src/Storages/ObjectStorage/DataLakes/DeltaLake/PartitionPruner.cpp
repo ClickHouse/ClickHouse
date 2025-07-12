@@ -10,7 +10,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 
-#include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ExpressionVisitor.h>

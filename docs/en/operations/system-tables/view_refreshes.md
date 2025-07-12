@@ -32,7 +32,7 @@ Columns:
 - `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of bytes read during the current refresh. Not available if status is `RunningOnAnotherReplica`.
 - `total_rows` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Estimated total number of rows that need to be read by the current refresh. Not available if status is `RunningOnAnotherReplica`.
 - `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of rows written during the current refresh. Not available if status is `RunningOnAnotherReplica`.
-- `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number rof bytes written during the current refresh. Not available if status is `RunningOnAnotherReplica`.
+- `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of bytes written during the current refresh. Not available if status is `RunningOnAnotherReplica`.
 
 **Example**
 

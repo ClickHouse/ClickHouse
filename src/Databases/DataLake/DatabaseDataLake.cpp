@@ -2,6 +2,7 @@
 #include <Core/SettingsEnums.h>
 #include <Databases/DataLake/HiveCatalog.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Databases/DataLake/DatabaseDataLakeSettings.h>
 
 #if USE_AVRO && USE_PARQUET
 
@@ -41,6 +42,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString auth_scope;
     extern const DatabaseDataLakeSettingsString storage_endpoint;
     extern const DatabaseDataLakeSettingsString oauth_server_uri;
+    extern const DatabaseDataLakeSettingsBool oauth_server_use_request_body;
     extern const DatabaseDataLakeSettingsBool vended_credentials;
     extern const DatabaseDataLakeSettingsString aws_access_key_id;
     extern const DatabaseDataLakeSettingsString aws_secret_access_key;
@@ -138,6 +140,7 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 settings[DatabaseDataLakeSetting::auth_scope].value,
                 settings[DatabaseDataLakeSetting::auth_header],
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
+                settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 Context::getGlobalContextInstance());
             break;
         }
