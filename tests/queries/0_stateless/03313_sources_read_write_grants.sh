@@ -35,4 +35,7 @@ ${CLICKHOUSE_CLIENT} --query "GRANT FILE ON *.* TO $user";
 ${CLICKHOUSE_CLIENT} --user $user --query "INSERT INTO FUNCTION file('$file') SELECT 'a', 'b'";
 ${CLICKHOUSE_CLIENT} --user $user --query "SELECT count() FROM file('$file')";
 
+${CLICKHOUSE_CLIENT} --query "REVOKE FILE ON system.* FROM $user";
+${CLICKHOUSE_CLIENT} --user $user --query "SELECT count() FROM file('$file')";
+
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user;";
