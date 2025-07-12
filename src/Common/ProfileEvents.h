@@ -22,6 +22,7 @@ namespace ProfileEvents
     using Event = StrongTypedef<size_t, struct EventTag>;
     using Count = size_t;
     using Increment = Int64;
+    /// Avoid false sharing when multiple threads increment different counters close to each other.
     struct alignas(64) Counter : public std::atomic<Count>
     {
         using std::atomic<Count>::atomic;
