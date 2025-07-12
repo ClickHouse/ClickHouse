@@ -196,18 +196,21 @@ static size_t numLeftRowsForNextBlock(
     const size_t prev_offset = next_row ? offsets[next_row - 1] : 0;
     const size_t next_allowed_offset = prev_offset + max_joined_block_rows;
 
-    size_t res = 0;
-    /// Note: this can be replaced to bin search, but
-    /// with max_joined_block_rows it will be more complex.
-    for (size_t i = next_row, size = offsets.size(); i < size; ++i)
-    {
-        if (offsets[i] > next_allowed_offset)
-            break;
+    if (offsets.back() <= next_allowed_offset)
+        return offsets.size() - next_row;
 
-        ++res;
+    size_t lhs = next_row;
+    size_t rhs = offsets.size();
+    while (rhs - lhs > 1)
+    {
+        size_t mid = (lhs + rhs) / 2;
+        if (offsets[mid] > next_allowed_offset)
+            rhs = mid;
+        else
+            lhs = mid;
     }
 
-    return std::max<size_t>(res, 1);
+    return std::max<size_t>(offsets.size() - lhs, 1);
 }
 
 HashJoinResult::HashJoinResult(
@@ -232,7 +235,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         return {};
 
     auto num_lhs_rows = numLeftRowsForNextBlock(next_row, offsets, properties.max_joined_block_rows);
-    if (num_lhs_rows == 0 || (num_lhs_rows == 0 && num_lhs_rows >= lazy_output.row_count))
+    if (num_lhs_rows == 0 || (next_row == 0 && num_lhs_rows >= scattered_block->rows()))
     {
         auto block = generateBlock(
             std::move(*scattered_block),
@@ -259,7 +262,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     size_t num_skipped_not_matched_rows_in_row_ref_list = 0;
 
     IColumn::Offsets partial_offsets;
-    partial_offsets.reserve(num_lhs_rows);
+    partial_offsets.resize(num_lhs_rows);
 
     if (lazy_output.output_by_row_list && !add_missing && !lazy_output.row_refs.empty())
     {
@@ -271,7 +274,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         for (size_t row = 0; row < num_lhs_rows; ++row)
         {
             auto offset = offsets[row + next_row];
-            partial_offsets.push_back(offset - prev_offset);
+            partial_offsets[row] = offset - prev_offset;
             if (offset == last_offset)
                 ++num_skipped_not_matched_rows_in_row_ref_list;
             last_offset = offset;
@@ -280,7 +283,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     else
     {
         for (size_t row = 0; row < num_lhs_rows; ++row)
-            partial_offsets.push_back(offsets[row + next_row] - prev_offset);
+            partial_offsets[row] = offsets[row + next_row] - prev_offset;
     }
 
     size_t num_refs = 0;
