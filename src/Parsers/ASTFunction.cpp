@@ -268,7 +268,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     {
         std::string nl_or_nothing = settings.one_line ? "" : "\n";
         std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
-        ostr << (settings.hilite ? hilite_function : "") << name << (settings.hilite ? hilite_none : "");
+        ostr << (settings.hilite ? hilite_function : "") << backQuoteIfNeed(name) << (settings.hilite ? hilite_none : "");
         ostr << (settings.hilite ? hilite_function : "") << "(" << (settings.hilite ? hilite_none : "");
         ostr << nl_or_nothing;
         FormatStateStacked frame_nested = frame;
@@ -659,7 +659,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         return;
     }
 
-    ostr << (settings.hilite ? hilite_function : "") << name;
+    ostr << (settings.hilite ? hilite_function : "") << backQuoteIfNeed(name);
 
     if (parameters)
     {
