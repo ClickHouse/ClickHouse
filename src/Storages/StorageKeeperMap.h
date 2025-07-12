@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/IKeyValueEntity.h>
 
 #include <QueryPipeline/Pipe.h>
@@ -26,7 +26,6 @@ namespace ErrorCodes
 // KV store using (Zoo|CH)Keeper
 class StorageKeeperMap final : public IStorage, public IKeyValueEntity, WithContext
 {
-    friend class ReadFromKeeperMap;
 public:
     StorageKeeperMap(
         ContextPtr context_,
@@ -37,13 +36,12 @@ public:
         const std::string & root_path_,
         UInt64 keys_limit_);
 
-    void read(
-        QueryPlan & query_plan,
+    Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
-        ContextPtr context_,
-        QueryProcessingStage::Enum /*processed_stage*/,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
 

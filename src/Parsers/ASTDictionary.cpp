@@ -2,7 +2,6 @@
 #include <Poco/String.h>
 #include <IO/Operators.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/quoteString.h>
 
 
 namespace DB
@@ -29,11 +28,11 @@ void ASTDictionaryRange::formatImpl(WriteBuffer & ostr,
                   << (settings.hilite ? hilite_keyword : "")
                   << "MIN "
                   << (settings.hilite ? hilite_none : "")
-                  << backQuoteIfNeed(min_attr_name) << " "
+                  << min_attr_name << " "
                   << (settings.hilite ? hilite_keyword : "")
                   << "MAX "
                   << (settings.hilite ? hilite_none : "")
-                  << backQuoteIfNeed(max_attr_name) << ")";
+                  << max_attr_name << ")";
 }
 
 

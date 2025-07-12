@@ -155,11 +155,6 @@ public:
         res.x = x ^ 0b1000000000000000;
         return res;
     }
-
-    constexpr const UInt16 & raw() const
-    {
-        return x;
-    }
 };
 
 

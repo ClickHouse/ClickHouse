@@ -14,7 +14,8 @@ In ClickHouse Cloud replication is managed for you. Please create your tables wi
 ```sql
 ENGINE = ReplicatedMergeTree(
     '/clickhouse/tables/{shard}/table_name',
-    '{replica}'
+    '{replica}',
+    ver
 )
 ```
 
@@ -139,22 +140,35 @@ The system monitors data synchronicity on replicas and is able to recover after 
 ## Creating Replicated Tables {#creating-replicated-tables}
 
 :::note
-In ClickHouse Cloud, replication is handled automatically.
+In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:
+```sql
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}', ver)
+```
+with:
+```sql
+ENGINE = ReplicatedMergeTree
+```
+:::
 
-Create tables using [`MergeTree`](/engines/table-engines/mergetree-family/mergetree) without replication arguments. The system internally rewrites [`MergeTree`](/engines/table-engines/mergetree-family/mergetree) to [`SharedMergeTree`](/cloud/reference/shared-merge-tree) for replication and data distribution.
+The `Replicated` prefix is added to the table engine name. For example:`ReplicatedMergeTree`.
 
-Avoid using `ReplicatedMergeTree` or specifying replication parameters, as replication is managed by the platform.
-
+:::tip
+Adding `Replicated` is optional in ClickHouse Cloud, as all of the tables are replicated.
 :::
 
 ### Replicated\*MergeTree parameters {#replicatedmergetree-parameters}
 
-| Parameter       | Description                                                                  |
-|-----------------|------------------------------------------------------------------------------|
-| `zoo_path`      | The path to the table in ClickHouse Keeper.                                  |
-| `replica_name`  | The replica name in ClickHouse Keeper.                                       |
-| `other_parameters` | Parameters of an engine used for creating the replicated version, for example, version in `ReplacingMergeTree`. |
+#### zoo_path {#zoo_path}
 
+`zoo_path` — The path to the table in ClickHouse Keeper.
+
+#### replica_name {#replica_name}
+
+`replica_name` — The replica name in ClickHouse Keeper.
+
+#### other_parameters {#other_parameters}
+
+`other_parameters` — Parameters of an engine which is used for creating the replicated version, for example, version in `ReplacingMergeTree`.
 
 Example:
 

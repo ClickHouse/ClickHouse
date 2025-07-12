@@ -1,4 +1,4 @@
-#include <Dictionaries/PolygonDictionary.h>
+#include "PolygonDictionary.h"
 
 #include <cmath>
 

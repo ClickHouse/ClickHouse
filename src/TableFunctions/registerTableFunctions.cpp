@@ -1,4 +1,4 @@
-#include <TableFunctions/registerTableFunctions.h>
+#include "registerTableFunctions.h"
 #include <TableFunctions/TableFunctionFactory.h>
 
 namespace DB
@@ -27,7 +27,6 @@ void registerTableFunctions()
 #endif
     registerTableFunctionRedis(factory);
     registerTableFunctionMergeTreeIndex(factory);
-    registerTableFunctionMergeTreeProjection(factory);
     registerTableFunctionFuzzQuery(factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerTableFunctionFuzzJSON(factory);

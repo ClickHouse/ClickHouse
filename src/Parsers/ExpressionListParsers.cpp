@@ -827,60 +827,6 @@ protected:
     int state = 0;
 };
 
-/// Tweaks for better highlighting of LIKE and REGEXP functions.
-static void highlightRegexps(const ASTPtr & node, Expected & expected)
-{
-    if (!expected.enable_highlighting)
-        return;
-
-    ASTFunction * func = node->as<ASTFunction>();
-    if (!func)
-        return;
-
-    if (func->parameters)
-        return;
-
-    ASTExpressionList * args = func->arguments->as<ASTExpressionList>();
-    if (!args)
-        return;
-
-    bool is_like = false;
-    bool is_regexp = false;
-    if (func->name == "like" || func->name == "notLike"
-        || func->name == "ilike" || func->name == "notILike")
-    {
-        is_like = true;
-    }
-    else if (func->name == "match"
-             || func->name == "extract" || func->name == "extractAll"
-             || func->name == "extractGroups" || func->name == "extractAllGroups"
-             || func->name == "replaceRegexpOne" || func->name == "replaceRegexpAll"
-             || func->name == "countMatches" || func->name == "splitByRegexp"
-             || func->name == "regexp_replace" || func->name == "REGEXP_REPLACE")
-    {
-        is_regexp = true;
-    }
-    else
-    {
-        for (const auto & arg : args->children)
-            highlightRegexps(arg, expected);
-    }
-
-    if (args->children.size() != 2)
-        return;
-
-    auto * literal = args->children[1]->as<ASTLiteral>();
-
-    if (!literal || literal->value.getType() != Field::Types::String)
-        return;
-
-    chassert(is_like || is_regexp);
-    expected.highlight({
-       .begin = literal->begin.value()->begin,
-       .end = literal->begin.value()->end,
-       .highlight = is_like ? Highlight::string_like : Highlight::string_regexp});
-}
-
 struct ParserExpressionImpl
 {
     static const std::vector<std::pair<std::string_view, Operator>> operators_table;
@@ -2202,6 +2148,7 @@ private:
 class KustoLayer : public Layer
 {
 public:
+
     KustoLayer() : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
@@ -2381,12 +2328,7 @@ bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expecte
 bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto start = std::make_unique<ExpressionLayer>(false, allow_trailing_commas);
-    if (ParserExpressionImpl().parse(std::move(start), pos, node, expected))
-    {
-        highlightRegexps(node, expected);
-        return true;
-    }
-    return false;
+    return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
 }
 
 bool ParserTableFunctionExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -2411,8 +2353,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         auto start = getFunctionLayer(identifier, is_table_function, allow_function_parameters);
         start->is_table_function = is_table_function;
-        if (ParserExpressionImpl().parse(std::move(start), pos, node, expected))
-            return true;
+        return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
     }
 
     return false;

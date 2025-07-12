@@ -256,7 +256,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     size_t blocks_left = 0;
     for (const auto & block : dispatched_blocks)
     {
-        if (block.rows())
+        if (block)
         {
             ++blocks_left;
         }
@@ -270,7 +270,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
             auto & hash_join = hash_joins[i];
             auto & dispatched_block = dispatched_blocks[i];
 
-            if (dispatched_block.rows())
+            if (dispatched_block)
             {
                 /// if current hash_join is already processed by another thread, skip it and try later
                 std::unique_lock<std::mutex> lock(hash_join->mutex, std::try_to_lock);
