@@ -1,4 +1,3 @@
-
 #include <Storages/buildQueryTreeForShard.h>
 
 #include <Analyzer/ColumnNode.h>
@@ -24,6 +23,7 @@
 #include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
+#include <Analyzer/UnionNode.h>
 
 
 namespace DB
@@ -36,6 +36,7 @@ namespace Setting
     extern const SettingsUInt64 min_external_table_block_size_bytes;
     extern const SettingsBool parallel_replicas_prefer_local_join;
     extern const SettingsBool prefer_global_in_and_join;
+    extern const SettingsBool enable_add_distinct_to_in_subqueries;
 }
 
 namespace ErrorCodes
@@ -253,6 +254,21 @@ private:
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
 };
 
+// Helper function to add DISTINCT to all QueryNode objects inside a query/union subtree
+void addDistinctRecursively(const QueryTreeNodePtr & node)
+{
+    if (auto * query_node = node->as<QueryNode>())
+    {
+        if (!query_node->isDistinct())
+            query_node->setIsDistinct(true);
+    }
+    else if (auto * union_node = node->as<UnionNode>())
+    {
+        for (auto & child : union_node->getQueries().getNodes())
+            addDistinctRecursively(child);
+    }
+}
+
 /** Execute subquery node and put result in mutable context temporary table.
   * Returns table node that is initialized with temporary table storage.
   */
@@ -424,11 +440,15 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                         subquery_to_execute,
                         planner_context->getQueryContext());
 
+                // If DISTINCT optimization is enabled, add DISTINCT before executing the subquery
+                if (planner_context->getQueryContext()->getSettingsRef()[Setting::enable_add_distinct_to_in_subqueries])
+                    addDistinctRecursively(subquery_to_execute);
+
                 temporary_table_expression_node = executeSubqueryNode(
                     subquery_to_execute,
                     planner_context->getMutableQueryContext(),
                     global_in_or_join_node.subquery_depth);
-                    replacement_table_expression = temporary_table_expression_node;
+                replacement_table_expression = temporary_table_expression_node;
             }
             else
             {
