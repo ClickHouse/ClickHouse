@@ -26,7 +26,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
-#include "Processors/Formats/Impl/ParquetBlockInputFormat.h"
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>

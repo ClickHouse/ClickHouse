@@ -1,8 +1,7 @@
 #include <memory>
 #include <Poco/JSON/Stringifier.h>
-#include "Common/Exception.h"
-#include "Processors/Formats/Impl/ParquetBlockInputFormat.h"
-#include "config.h"
+#include <Common/Exception.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 #if USE_AVRO
 

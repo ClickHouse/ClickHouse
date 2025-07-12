@@ -23,7 +23,7 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
-#include "Core/ColumnWithTypeAndName.h"
+#include <Core/ColumnWithTypeAndName.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Cache/FileCache.h>
