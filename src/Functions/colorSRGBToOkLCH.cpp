@@ -99,37 +99,26 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * tuple_type       = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
-        const auto & tuple_elem_types = tuple_type->getElements();
-        const auto   float_type       = std::make_shared<DataTypeFloat64>();
+        const auto float_64_ptr  = std::make_shared<DataTypeFloat64>();
+        const auto tuple_f64_ptr = std::make_shared<DataTypeTuple>(DataTypes(channels_num, float_64_ptr));
 
-        const auto   tuple_elems      = getTupleElements(*arguments[0].column);
-        Columns      rgb_float(channels_num);
-
-        for (size_t i = 0; i < channels_num; ++i) 
-        {
-            ColumnWithTypeAndName  tuple_elem_wrapped{tuple_elems[i], tuple_elem_types[i], ""};
-            rgb_float[i] = castColumn(tuple_elem_wrapped, float_type);
-        }
+        const auto   tuple_f64_arg    = castColumn(arguments[0], tuple_f64_ptr);
+        const auto   rgb_cols         = getTupleElements(*tuple_f64_arg);
 
         ColumnPtr gamma;
         if (arguments.size() == 2) 
         {
-            gamma = castColumn(arguments[1], float_type);
+            gamma = castColumn(arguments[1], float_64_ptr);
         }
         else 
         {
             gamma = ColumnFloat64::create(input_rows_count, 2.2);
         }
 
-        // const auto & r_data = getFloat64Data(rgb_float[0]); 
-        // const auto & g_data = getFloat64Data(rgb_float[1]); 
-        // const auto & b_data = getFloat64Data(rgb_float[2]); 
-
-        const auto * gamma_float_ptr = checkAndGetColumn<ColumnFloat64>(gamma.get());
-        const auto * r_float_ptr =  checkAndGetColumn<ColumnFloat64>(rgb_float[0].get());
-        const auto * g_float_ptr = checkAndGetColumn<ColumnFloat64>(rgb_float[1].get());
-        const auto * b_float_ptr = checkAndGetColumn<ColumnFloat64>(rgb_float[2].get());
+        const auto & r_data     = assert_cast<const ColumnFloat64 &>(*rgb_cols[0]).getData();
+        const auto & g_data     = assert_cast<const ColumnFloat64 &>(*rgb_cols[1]).getData();
+        const auto & b_data     = assert_cast<const ColumnFloat64 &>(*rgb_cols[2]).getData();
+        const auto & gamma_data = assert_cast<const ColumnFloat64 &>(*gamma).getData();
 
         auto col_l = ColumnFloat64::create();
         auto col_c = ColumnFloat64::create();
@@ -144,11 +133,11 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            Colors rgb_data{r_float_ptr->getFloat64(row), 
-                            g_float_ptr->getFloat64(row), 
-                            b_float_ptr->getFloat64(row)};
+            Colors rgb_data{r_data[row], 
+                            g_data[row],
+                            b_data[row]};
 
-            Colors res = srgb_to_oklch_base(rgb_data, gamma_float_ptr->getFloat64(row));
+            Colors res = srgb_to_oklch_base(rgb_data, gamma_data[row]);
             l_data.push_back(res[0]);
             c_data.push_back(res[1]);
             h_data.push_back(res[2]);
