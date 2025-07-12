@@ -8,7 +8,7 @@ namespace DB
 
 void ASTInterpolateElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-        ostr << column << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
+        ostr << column << " AS ";
         expr->format(ostr, settings, state, frame);
 }
 

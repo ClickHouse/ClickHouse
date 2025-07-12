@@ -18,40 +18,36 @@ ASTPtr ASTShowColumnsQuery::clone() const
 
 void ASTShowColumnsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "")
+    ostr
                   << "SHOW "
                   << (extended ? "EXTENDED " : "")
                   << (full ? "FULL " : "")
                   << "COLUMNS"
-                  << (settings.hilite ? hilite_none : "");
+                 ;
 
-    ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(table);
+    ostr << " FROM " << backQuoteIfNeed(table);
     if (!database.empty())
-        ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(database);
+        ostr << " FROM " << backQuoteIfNeed(database);
 
 
     if (!like.empty())
     {
         ostr
-            << (settings.hilite ? hilite_keyword : "")
+
             << (not_like ? " NOT" : "")
             << (case_insensitive_like ? " ILIKE " : " LIKE")
-            << (settings.hilite ? hilite_none : "");
-        if (settings.hilite)
-            highlightStringWithMetacharacters(quoteString(like), ostr, "%_");
-        else
-            ostr << quoteString(like);
+            << quoteString(like);
     }
 
     if (where_expression)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
+        ostr << " WHERE ";
         where_expression->format(ostr, settings, state, frame);
     }
 
     if (limit_length)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << " LIMIT " << (settings.hilite ? hilite_none : "");
+        ostr << " LIMIT ";
         limit_length->format(ostr, settings, state, frame);
     }
 }

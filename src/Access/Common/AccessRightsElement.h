@@ -105,7 +105,7 @@ struct AccessRightsElement
     String toStringWithoutOptions() const;
 
     void formatColumnNames(WriteBuffer & buffer) const;
-    void formatONClause(WriteBuffer & buffer, bool hilite = false) const;
+    void formatONClause(WriteBuffer & buffer) const;
 };
 
 
@@ -136,7 +136,7 @@ public:
     /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
     String toString() const;
     String toStringWithoutOptions() const;
-    void formatElementsWithoutOptions(WriteBuffer & buffer, bool hilite) const;
+    void formatElementsWithoutOptions(WriteBuffer & buffer) const;
 };
 
 }
