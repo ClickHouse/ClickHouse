@@ -23,12 +23,12 @@ class FunctionColorSRGBToOkLCH : public ITupleFunction
 {
 private:
 
-    static constexpr double eps = 1e-6;
-    static constexpr double rad2deg = 57.2957795131;  
+    static constexpr Float64 eps = 1e-6;
+    static constexpr Float64 rad2deg = 57.2957795131;  
     static constexpr size_t channels_num = 3;
 
-    using Colors = std::array<double, channels_num>;
-    using Mat3x3 = std::array<double, 9>;
+    using Colors = std::array<Float64, channels_num>;
+    using Mat3x3 = std::array<Float64, 9>;
 
     static constexpr Mat3x3 matrix1 = { 0.4122214708, 0.5363325363, 0.0514459929,
                                         0.2119034982, 0.6806995451, 0.1073969566,
@@ -122,10 +122,14 @@ public:
             gamma = ColumnFloat64::create(input_rows_count, 2.2);
         }
 
-        const auto & gamma_data = getFloat64Data(gamma.get());
-        const auto & r_data = getFloat64Data(rgb_float[0]); 
-        const auto & g_data = getFloat64Data(rgb_float[1]); 
-        const auto & b_data = getFloat64Data(rgb_float[2]); 
+        // const auto & r_data = getFloat64Data(rgb_float[0]); 
+        // const auto & g_data = getFloat64Data(rgb_float[1]); 
+        // const auto & b_data = getFloat64Data(rgb_float[2]); 
+
+        const auto * gamma_float_ptr = checkAndGetColumn<ColumnFloat64>(gamma.get());
+        const auto * r_float_ptr =  checkAndGetColumn<ColumnFloat64>(rgb_float[0].get());
+        const auto * g_float_ptr = checkAndGetColumn<ColumnFloat64>(rgb_float[1].get());
+        const auto * b_float_ptr = checkAndGetColumn<ColumnFloat64>(rgb_float[2].get());
 
         auto col_l = ColumnFloat64::create();
         auto col_c = ColumnFloat64::create();
@@ -140,7 +144,11 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            Colors res = srgb_to_oklch_base({r_data[row], g_data[row], b_data[row]}, gamma_data[row]);
+            Colors rgb_data{r_float_ptr->getFloat64(row), 
+                            g_float_ptr->getFloat64(row), 
+                            b_float_ptr->getFloat64(row)};
+
+            Colors res = srgb_to_oklch_base(rgb_data, gamma_float_ptr->getFloat64(row));
             l_data.push_back(res[0]);
             c_data.push_back(res[1]);
             h_data.push_back(res[2]);
@@ -151,18 +159,7 @@ public:
 
 private:
 
-    const PaddedPODArray<Float64> & getFloat64Data(const ColumnPtr & col_ptr) const
-    {
-        if (const auto * vec = checkAndGetColumn<ColumnFloat64>(col_ptr.get()))
-            return vec->getData();
-
-         throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-            , "In function {} arguments must contain or be numeric types."
-            , getName());
-    }
-
-    Colors srgb_to_oklch_base(const Colors & rgb, double gamma) const
+    Colors srgb_to_oklch_base(const Colors & rgb, Float64 gamma) const
     {
         Colors rgb_lin;
         for (size_t i = 0; i < channels_num; ++i) 
@@ -189,8 +186,8 @@ private:
             } 
         }
 
-        double a = second_base[1];
-        double b = second_base[2];
+        Float64 a = second_base[1];
+        Float64 b = second_base[2];
 
         second_base[1] = std::sqrt(a * a + b * b);
         if (second_base[1] < eps) 
@@ -200,8 +197,8 @@ private:
         } 
         else 
         {
-            double degrees = std::atan2(b, a) * rad2deg;                  
-            second_base[2] = std::fmod(degrees + 360.0, 360.0);
+            Float64 degrees = std::atan2(b, a) * rad2deg;                  
+            second_base[2]  = std::fmod(degrees + 360.0, 360.0);
         }
 
         return second_base;
