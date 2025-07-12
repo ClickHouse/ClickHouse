@@ -484,7 +484,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         }
 
         parser_group->opaque = configuration->getOpaque();
-        std::cerr << "OPAQUE OF CONF " << (configuration->getOpaque() != nullptr) << ' ' << configuration << '\n';
         auto input_format = FormatFactory::instance().getInput(
             configuration->format,
             *read_buf,
