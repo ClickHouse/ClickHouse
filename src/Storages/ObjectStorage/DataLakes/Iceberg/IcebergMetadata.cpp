@@ -569,11 +569,8 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
             if (configuration_ptr->format == "Parquet")
                 opaque = std::make_shared<ParquetOpaque>();
 
-            std::cerr << "initialize meta " << this << '\n';
-
             if (opaque)
             {
-                std::cerr << "UPDATE OPAQUE\n";
                 auto parquet_opaque = std::static_pointer_cast<ParquetOpaque>(opaque);
 
                 Int32 schema_id = snapshot->getValue<Int32>(f_schema_id);

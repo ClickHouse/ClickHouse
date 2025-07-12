@@ -38,16 +38,6 @@ AvroForIcebergDeserializer::AvroForIcebergDeserializer(
     {
         manifest_file_reader->decr();
         deserializer.deserializeRow(columns, manifest_file_reader->decoder(), ext);
-        for (const auto & col : columns)
-        {
-            std::cerr << "=======new col\n";
-            for (size_t i = 0; i < col->size(); ++i)
-            {
-                Field res;
-                col->get(i, res);
-                std::cerr << res.dump() << '\n';
-            }
-        }
     }
 
     metadata = manifest_file_reader->metadata();
