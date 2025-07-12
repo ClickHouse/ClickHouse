@@ -74,6 +74,8 @@ namespace Net
     //
     inline bool HTTPServerSession::canKeepAlive() const
     {
+        if (connected() && socket().available())
+            return false;
         return getKeepAlive() && _maxKeepAliveRequests > 0;
     }
 
