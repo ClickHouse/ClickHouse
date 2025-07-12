@@ -53,7 +53,8 @@ void PartitionedSink::consume(Chunk & source_chunk)
     const ColumnPtr partition_by_result_column = partition_strategy->computePartitionKey(source_chunk);
 
     /// Not all columns are serialized using the format writer (e.g, hive partitioning stores partition columns in the file path)
-    const auto columns_to_consume = partition_strategy->getFormatChunkColumns(source_chunk);
+    const auto format_chunk = partition_strategy->getFormatChunk(source_chunk);
+    const auto & columns_to_consume = format_chunk.getColumns();
 
     if (columns_to_consume.empty())
     {
@@ -62,7 +63,7 @@ void PartitionedSink::consume(Chunk & source_chunk)
                         "Consider setting `partition_columns_in_data_file=1`");
     }
 
-    size_t chunk_rows = source_chunk.getNumRows();
+    size_t chunk_rows = format_chunk.getNumRows();
     chunk_row_index_to_partition_index.resize(chunk_rows);
 
     partition_id_to_chunk_index.clear();

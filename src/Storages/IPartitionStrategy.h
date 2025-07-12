@@ -32,17 +32,7 @@ struct IPartitionStrategy
     virtual std::string getPathForRead(const std::string & prefix) = 0;
     virtual std::string getPathForWrite(const std::string & prefix, const std::string & partition_key) = 0;
 
-    virtual ColumnRawPtrs getFormatChunkColumns(const Chunk & chunk)
-    {
-        ColumnRawPtrs result_columns;
-
-        for (const auto & column : chunk.getColumns())
-        {
-            result_columns.emplace_back(column.get());
-        }
-
-        return result_columns;
-    }
+    virtual Chunk getFormatChunk(const Chunk & chunk) { return chunk.clone(); }
 
     virtual Block getFormatHeader() { return sample_block; }
 
@@ -123,7 +113,7 @@ struct HiveStylePartitionStrategy : IPartitionStrategy
     std::string getPathForRead(const std::string & prefix) override;
     std::string getPathForWrite(const std::string & prefix, const std::string & partition_key) override;
 
-    ColumnRawPtrs getFormatChunkColumns(const Chunk & chunk) override;
+    Chunk getFormatChunk(const Chunk & chunk) override;
     Block getFormatHeader() override;
 
 private:
