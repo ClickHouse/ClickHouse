@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include <IO/S3/getAvailabilityZone.h>
 
 #if USE_AWS_S3
 
@@ -22,14 +23,12 @@ namespace DB::S3
 /// In GCP metadata service can be accessed via DNS regardless of IPv4 or IPv6.
 static inline constexpr char GCP_METADATA_SERVICE_ENDPOINT[] = "http://metadata.google.internal";
 
-/// getRunningAvailabilityZone returns the availability zone of the underlying compute resources where the current process runs.
-std::string getRunningAvailabilityZone();
-std::string tryGetRunningAvailabilityZone();
 
 class AWSEC2MetadataClient : public Aws::Internal::AWSHttpResourceClient
 {
     static constexpr char EC2_SECURITY_CREDENTIALS_RESOURCE[] = "/latest/meta-data/iam/security-credentials";
     static constexpr char EC2_AVAILABILITY_ZONE_RESOURCE[] = "/latest/meta-data/placement/availability-zone";
+    static constexpr char EC2_AVAILABILITY_ZONE_ID_RESOURCE[] = "/latest/meta-data/placement/availability-zone-id";
     static constexpr char EC2_IMDS_TOKEN_RESOURCE[] = "/latest/api/token";
     static constexpr char EC2_IMDS_TOKEN_HEADER[] = "x-aws-ec2-metadata-token";
     static constexpr char EC2_IMDS_TOKEN_TTL_DEFAULT_VALUE[] = "21600";
@@ -58,11 +57,11 @@ public:
 
     virtual Aws::String getCurrentRegion() const;
 
-    friend String getRunningAvailabilityZone();
+    friend String getRunningAvailabilityZone(bool is_zone_id, AZFacilities az_facility);
 
 private:
     std::pair<Aws::String, Aws::Http::HttpResponseCode> getEC2MetadataToken(const std::string & user_agent_string) const;
-    static String getAvailabilityZoneOrException();
+    static String getAvailabilityZoneOrException(bool is_zone_id = false);
 
     const Aws::String endpoint;
     mutable std::recursive_mutex token_mutex;
@@ -187,18 +186,4 @@ public:
 
 }
 
-#else
-
-#    include <string>
-
-namespace DB
-{
-
-namespace S3
-{
-std::string getRunningAvailabilityZone();
-std::string tryGetRunningAvailabilityZone();
-}
-
-}
 #endif
