@@ -65,6 +65,26 @@ The second query additionally shows subcolumns:
 └───────────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┴──────────────┘
 ```
 
+The DESCRIBE statement can also be used with subqueries or scalar expressions:
+
+``` SQL
+DESCRIBE SELECT 1 FORMAT TSV;
+```
+
+or
+
+``` SQL
+DESCRIBE (SELECT 1) FORMAT TSV;
+```
+
+Result:
+
+``` text
+1       UInt8
+```
+
+This usage returns metadata about the result columns of the specified query or subquery. It is useful for understanding the structure of complex queries before execution.
+
 **See Also**
 
 - [describe_include_subcolumns](../../operations/settings/settings.md#describe_include_subcolumns) setting.
