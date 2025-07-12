@@ -34,14 +34,23 @@ def start_cluster():
 
 
 def test_connect_with_password(start_cluster):
-    check_on_cluster(
-        [nodes["node0"], nodes["node1"]],
-        len(nodes),
-        cluster_name="test_auto_cluster_with_pwd",
-        what="count()",
-        msg="Wrong nodes count in cluster",
-        query_params={"password": "passwordAbc"},
-    )
+    # Queries with `clusterAllReplicas` below are run without any retry.
+    # Let's wait until all clusters are available on all nodes in system.clusters.
+    all_clusters = [
+        "test_auto_cluster_with_pwd",
+        "test_auto_cluster_with_wrong_pwd",
+        "test_auto_cluster_with_secret",
+        "test_auto_cluster_with_wrong_secret",
+    ]
+    for cluster_name in all_clusters:
+        check_on_cluster(
+            [nodes["node0"], nodes["node1"]],
+            len(nodes),
+            cluster_name=cluster_name,
+            what="count()",
+            msg="Wrong nodes count in cluster",
+            query_params={"password": "passwordAbc"},
+        )
 
     result = nodes["node0"].query(
         "SELECT sum(number) FROM clusterAllReplicas('test_auto_cluster_with_pwd', numbers(3)) GROUP BY hostname()",
