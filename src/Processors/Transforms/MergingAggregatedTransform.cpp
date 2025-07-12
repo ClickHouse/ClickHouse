@@ -75,7 +75,7 @@ MergingAggregatedTransform::MergingAggregatedTransform(
                 "Header {}", header_.dumpStructure());
 
         auto in_header = header_;
-        in_header.erase(header_.getPositionByName("__grouping_set"));
+        in_header.erase("__grouping_set");
         auto out_header = params.getHeader(header_, final);
 
         grouping_sets.reserve(grouping_sets_params.size());
