@@ -207,6 +207,11 @@ static void injectionImpl(
     if (!ThreadFuzzer::isStarted())
         return;
 
+    if (yield_probability == 0.0 &&
+        migrate_probability == 0.0 &&
+        sleep_probability == 0.0)
+        return;
+
     if (yield_probability > 0
         && std::bernoulli_distribution(yield_probability)(thread_local_rng))
     {
