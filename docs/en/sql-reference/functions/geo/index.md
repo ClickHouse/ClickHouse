@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for Index'
 sidebar_label: 'Geo'
-
 slug: /sql-reference/functions/geo/
 title: 'Geo Functions'
 ---

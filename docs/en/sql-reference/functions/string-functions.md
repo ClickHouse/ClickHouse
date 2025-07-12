@@ -1,6 +1,6 @@
 ---
 description: 'Documentation for Functions for Working with Strings'
-sidebar_label: 'Strings'
+sidebar_label: 'String'
 slug: /sql-reference/functions/string-functions
 title: 'Functions for Working with Strings'
 ---
