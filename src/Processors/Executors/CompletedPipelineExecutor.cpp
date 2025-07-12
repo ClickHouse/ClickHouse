@@ -7,9 +7,17 @@
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <base/defines.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsMaxThreads max_threads;
+}
 
 namespace ErrorCodes
 {
@@ -65,6 +73,16 @@ void CompletedPipelineExecutor::setCancelCallback(std::function<bool()> is_cance
 
 void CompletedPipelineExecutor::execute()
 {
+    size_t num_threads = pipeline.getNumThreads();
+
+    chassert(num_threads == [] -> size_t
+    {
+        auto query_context = CurrentThread::getQueryContext();
+        if (query_context)
+            return query_context->getSettingsRef()[Setting::max_threads];
+        return 0;
+    }());
+
     if (interactive_timeout_ms)
     {
         data = std::make_unique<Data>();
@@ -75,7 +93,7 @@ void CompletedPipelineExecutor::execute()
         /// Destructor of unique_ptr copy raw ptr into local variable first, only then calls object destructor.
         auto func = [
             data_ptr = data.get(),
-            num_threads = pipeline.getNumThreads(),
+            num_threads,
             thread_group = CurrentThread::getGroup(),
             concurrency_control = pipeline.getConcurrencyControl()]
         {
@@ -102,7 +120,7 @@ void CompletedPipelineExecutor::execute()
     {
         PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
         executor.setReadProgressCallback(pipeline.getReadProgressCallback());
-        executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
+        executor.execute(num_threads, pipeline.getConcurrencyControl());
     }
 }
 
