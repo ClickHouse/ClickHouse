@@ -2,19 +2,13 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelectorFactory.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-
 #include <Storages/MergeTree/Compaction/MergePredicates/IMergePredicate.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Common/logger_useful.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 namespace MergeTreeSetting
 {
@@ -36,83 +30,97 @@ namespace MergeTreeSetting
 namespace
 {
 
-std::optional<MergeSelectorChoice> tryChooseTTLMerge(
-    const MergeSelectorApplier & applier,
-    const PartsRanges & ranges,
-    const IMergePredicate & predicate,
-    const StorageMetadataPtr & metadata_snapshot,
-    const MergeTreeSettingsPtr & data_settings,
-    const PartitionIdToTTLs & next_delete_times,
-    const PartitionIdToTTLs & next_recompress_times,
-    time_t current_time)
+struct ChooseContext
+{
+    const PartsRanges & ranges;
+    const IMergePredicate & predicate;
+    const IMergeSelector::RangeFilter & range_filter;
+    const IMergeSelector::MergeSizes & max_merge_sizes;
+    const StorageInMemoryMetadata & metadata_snapshot;
+    const MergeTreeSettings & merge_tree_settings;
+    const PartitionIdToTTLs & next_delete_times;
+    const PartitionIdToTTLs & next_recompress_times;
+    const time_t current_time;
+    const bool aggressive;
+};
+
+MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, MergeType type)
 {
     auto create_choice = [&](PartsRange && parts, MergeType merge_type)
     {
-        const bool apply_patch_parts = (*data_settings)[MergeTreeSetting::apply_patches_on_merge];
-        PartsRange patch_parts = apply_patch_parts ? predicate.getPatchesToApplyOnMerge(parts) : PartsRange{};
+        const bool apply_patch_parts = ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge];
+        PartsRange patch_parts = apply_patch_parts ? ctx.predicate.getPatchesToApplyOnMerge(parts) : PartsRange{};
         return MergeSelectorChoice{std::move(parts), std::move(patch_parts), merge_type};
     };
 
+    MergeSelectorChoices choices;
+    choices.reserve(ranges.size());
+
+    for (auto & range : ranges)
+        choices.push_back(create_choice(std::move(range), type));
+
+    return choices;
+}
+
+MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
+{
     /// Delete parts - 1 priority
+    if (!ctx.max_merge_sizes.empty())
     {
-        const size_t max_size = (*data_settings)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool];
-        TTLPartDeleteMergeSelector drop_ttl_selector(next_delete_times, current_time);
+        std::vector<size_t> max_sizes(ctx.max_merge_sizes.size(), ctx.merge_tree_settings[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool]);
+        TTLPartDeleteMergeSelector drop_ttl_selector(ctx.next_delete_times, ctx.current_time);
 
         /// The size of the completely expired part of TTL drop is not affected by the merge pressure and the size of the storage space
-        if (auto parts = drop_ttl_selector.select(ranges, max_size, applier.range_filter); !parts.empty())
-            return create_choice(std::move(parts), MergeType::TTLDelete);
+        if (auto merge_ranges = drop_ttl_selector.select(ctx.ranges, max_sizes, ctx.range_filter); !merge_ranges.empty())
+            return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete);
     }
 
     /// Delete rows - 2 priority
-    if (!(*data_settings)[MergeTreeSetting::ttl_only_drop_parts])
+    if (!ctx.max_merge_sizes.empty() && !ctx.merge_tree_settings[MergeTreeSetting::ttl_only_drop_parts])
     {
-        TTLRowDeleteMergeSelector delete_ttl_selector(next_delete_times, current_time);
+        TTLRowDeleteMergeSelector delete_ttl_selector(ctx.next_delete_times, ctx.current_time);
 
-        if (auto parts = delete_ttl_selector.select(ranges, applier.max_total_size_to_merge, applier.range_filter); !parts.empty())
-            return create_choice(std::move(parts), MergeType::TTLDelete);
+        if (auto merge_ranges = delete_ttl_selector.select(ctx.ranges, ctx.max_merge_sizes, ctx.range_filter); !merge_ranges.empty())
+            return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete);
     }
 
     /// Recompression - 3 priority
-    if (metadata_snapshot->hasAnyRecompressionTTL())
+    if (!ctx.max_merge_sizes.empty() && ctx.metadata_snapshot.hasAnyRecompressionTTL())
     {
-        TTLRecompressMergeSelector recompress_ttl_selector(next_recompress_times, current_time);
+        TTLRecompressMergeSelector recompress_ttl_selector(ctx.next_recompress_times, ctx.current_time);
 
-        if (auto parts = recompress_ttl_selector.select(ranges, applier.max_total_size_to_merge, applier.range_filter); !parts.empty())
-            return create_choice(std::move(parts), MergeType::TTLRecompress);
+        if (auto merge_ranges = recompress_ttl_selector.select(ctx.ranges, ctx.max_merge_sizes, ctx.range_filter); !merge_ranges.empty())
+            return pack(ctx, std::move(merge_ranges), MergeType::TTLRecompress);
     }
 
-    return std::nullopt;
+    return {};
 }
 
-std::optional<MergeSelectorChoice> tryChooseRegularMerge(
-    const MergeSelectorApplier & applier,
-    const PartsRanges & ranges,
-    const IMergePredicate & predicate,
-    const MergeTreeSettingsPtr & data_settings)
+MergeSelectorChoices tryChooseRegularMerge(const ChooseContext & ctx)
 {
-    const auto algorithm = (*data_settings)[MergeTreeSetting::merge_selector_algorithm];
+    const auto algorithm = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_algorithm];
 
     std::any merge_settings;
     if (algorithm == MergeSelectorAlgorithm::SIMPLE || algorithm == MergeSelectorAlgorithm::STOCHASTIC_SIMPLE)
     {
         SimpleMergeSelector::Settings simple_merge_settings;
         /// Override value from table settings
-        simple_merge_settings.window_size = (*data_settings)[MergeTreeSetting::merge_selector_window_size];
-        simple_merge_settings.max_parts_to_merge_at_once = (*data_settings)[MergeTreeSetting::max_parts_to_merge_at_once];
-        simple_merge_settings.enable_heuristic_to_remove_small_parts_at_right = (*data_settings)[MergeTreeSetting::merge_selector_enable_heuristic_to_remove_small_parts_at_right];
-        simple_merge_settings.base = (*data_settings)[MergeTreeSetting::merge_selector_base];
-        simple_merge_settings.min_parts_to_merge_at_once = (*data_settings)[MergeTreeSetting::min_parts_to_merge_at_once];
+        simple_merge_settings.window_size = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_window_size];
+        simple_merge_settings.max_parts_to_merge_at_once = ctx.merge_tree_settings[MergeTreeSetting::max_parts_to_merge_at_once];
+        simple_merge_settings.enable_heuristic_to_remove_small_parts_at_right = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_enable_heuristic_to_remove_small_parts_at_right];
+        simple_merge_settings.base = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_base];
+        simple_merge_settings.min_parts_to_merge_at_once = ctx.merge_tree_settings[MergeTreeSetting::min_parts_to_merge_at_once];
 
-        if (!(*data_settings)[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
-            simple_merge_settings.min_age_to_force_merge = (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds];
+        if (!ctx.merge_tree_settings[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
+            simple_merge_settings.min_age_to_force_merge = ctx.merge_tree_settings[MergeTreeSetting::min_age_to_force_merge_seconds];
 
-        if (applier.aggressive)
+        if (ctx.aggressive)
             simple_merge_settings.base = 1;
 
         if (algorithm == MergeSelectorAlgorithm::STOCHASTIC_SIMPLE)
         {
-            simple_merge_settings.parts_to_throw_insert = (*data_settings)[MergeTreeSetting::parts_to_throw_insert];
-            simple_merge_settings.blurry_base_scale_factor = (*data_settings)[MergeTreeSetting::merge_selector_blurry_base_scale_factor];
+            simple_merge_settings.parts_to_throw_insert = ctx.merge_tree_settings[MergeTreeSetting::parts_to_throw_insert];
+            simple_merge_settings.blurry_base_scale_factor = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_blurry_base_scale_factor];
             simple_merge_settings.use_blurry_base = simple_merge_settings.blurry_base_scale_factor != 0;
             simple_merge_settings.enable_stochastic_sliding = true;
         }
@@ -120,42 +128,54 @@ std::optional<MergeSelectorChoice> tryChooseRegularMerge(
         merge_settings = simple_merge_settings;
     }
 
-    auto parts = MergeSelectorFactory::instance().get(algorithm, merge_settings)->select(ranges, applier.max_total_size_to_merge, applier.range_filter);
-
-    /// Do not allow to "merge" part with itself for regular merges, unless it is a TTL-merge where it is ok to remove some values with expired ttl
-    if (parts.size() == 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge selector returned only one part to merge");
-
-    if (!parts.empty())
-    {
-        const bool apply_patch_parts = (*data_settings)[MergeTreeSetting::apply_patches_on_merge];
-        PartsRange patch_parts = apply_patch_parts ? predicate.getPatchesToApplyOnMerge(parts) : PartsRange{};
-        return MergeSelectorChoice{std::move(parts), std::move(patch_parts), MergeType::Regular};
-    }
-
-    return std::nullopt;
+    auto merge_ranges = MergeSelectorFactory::instance().get(algorithm, merge_settings)->select(ctx.ranges, ctx.max_merge_sizes, ctx.range_filter);
+    return pack(ctx, std::move(merge_ranges), MergeType::Regular);
 }
 
 }
 
-std::optional<MergeSelectorChoice> MergeSelectorApplier::chooseMergeFrom(
+MergeSelectorApplier::MergeSelectorApplier(
+    std::vector<size_t> && max_merge_sizes_,
+    bool merge_with_ttl_allowed_,
+    bool aggressive_,
+    IMergeSelector::RangeFilter range_filter_)
+    : max_merge_sizes(std::move(max_merge_sizes_))
+    , merge_with_ttl_allowed(merge_with_ttl_allowed_)
+    , aggressive(aggressive_)
+    , range_filter(std::move(range_filter_))
+{
+    chassert(!max_merge_sizes.empty(), "At least one merge size constraint should be passed");
+    chassert(std::is_sorted(max_merge_sizes.rbegin(), max_merge_sizes.rend()), "Merge size constraints must be sorted in desc order");
+}
+
+MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
     const PartsRanges & ranges,
     const IMergePredicate & predicate,
     const StorageMetadataPtr & metadata_snapshot,
-    const MergeTreeSettingsPtr & data_settings,
+    const MergeTreeSettingsPtr & merge_tree_settings,
     const PartitionIdToTTLs & next_delete_times,
     const PartitionIdToTTLs & next_recompress_times,
     bool can_use_ttl_merges,
     time_t current_time) const
 {
+    ChooseContext ctx{
+        .ranges = ranges,
+        .predicate = predicate,
+        .range_filter = range_filter,
+        .max_merge_sizes = max_merge_sizes,
+        .metadata_snapshot = *metadata_snapshot,
+        .merge_tree_settings = *merge_tree_settings,
+        .next_delete_times = next_delete_times,
+        .next_recompress_times = next_recompress_times,
+        .current_time = current_time,
+        .aggressive = aggressive,
+    };
+
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && can_use_ttl_merges)
-        if (auto choice = tryChooseTTLMerge(*this, ranges, predicate, metadata_snapshot, data_settings, next_delete_times, next_recompress_times, current_time))
-            return choice;
+        if (auto choices = tryChooseTTLMerge(ctx); !choices.empty())
+            return choices;
 
-    if (auto choice = tryChooseRegularMerge(*this, ranges, predicate, data_settings))
-        return choice;
-
-    return std::nullopt;
+    return tryChooseRegularMerge(ctx);
 }
 
 }
