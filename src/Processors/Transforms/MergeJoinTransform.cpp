@@ -51,49 +51,17 @@ bool ALWAYS_INLINE isNullAt(const IColumn & column, size_t row)
     return false;
 }
 
-template <bool has_left_nulls, bool has_right_nulls>
+template <bool has_nulls>
 int nullableCompareAt(const IColumn & left_column, const IColumn & right_column, size_t lhs_pos, size_t rhs_pos, int null_direction_hint)
 {
-    if constexpr (has_left_nulls && has_right_nulls)
+    int res = left_column.compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
+    if constexpr (has_nulls)
     {
-        const auto * left_nullable = checkAndGetColumn<ColumnNullable>(&left_column);
-        const auto * right_nullable = checkAndGetColumn<ColumnNullable>(&right_column);
-
-        if (left_nullable && right_nullable)
-        {
-            int res = left_nullable->compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
-            if (res != 0)
-                return res;
-
-            /// NULL != NULL case
-            if (left_nullable->isNullAt(lhs_pos))
-                return null_direction_hint;
-
-            return 0;
-        }
+        /// NULL != NULL case
+        if (res == 0 && left_column.isNullAt(lhs_pos))
+            return null_direction_hint;
     }
-
-    if constexpr (has_left_nulls)
-    {
-        if (const auto * left_nullable = checkAndGetColumn<ColumnNullable>(&left_column))
-        {
-            if (left_nullable->isNullAt(lhs_pos))
-                return null_direction_hint;
-            return left_nullable->getNestedColumn().compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
-        }
-    }
-
-    if constexpr (has_right_nulls)
-    {
-        if (const auto * right_nullable = checkAndGetColumn<ColumnNullable>(&right_column))
-        {
-            if (right_nullable->isNullAt(rhs_pos))
-                return -null_direction_hint;
-            return left_column.compareAt(lhs_pos, rhs_pos, right_nullable->getNestedColumn(), null_direction_hint);
-        }
-    }
-
-    return left_column.compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
+    return res;
 }
 
 int ALWAYS_INLINE compareCursors(const SortCursorImpl & lhs, size_t lpos,
@@ -104,7 +72,7 @@ int ALWAYS_INLINE compareCursors(const SortCursorImpl & lhs, size_t lpos,
     for (size_t i = 0; i < key_length; ++i)
     {
         /// TODO(@vdimir): use nullableCompareAt only if there's nullable columns
-        int cmp = nullableCompareAt<true, true>(*lhs.sort_columns[i], *rhs.sort_columns[i], lpos, rpos, null_direction_hint);
+        int cmp = nullableCompareAt<true>(*lhs.sort_columns[i], *rhs.sort_columns[i], lpos, rpos, null_direction_hint);
         if (cmp != 0)
             return cmp;
     }
@@ -118,7 +86,7 @@ int ALWAYS_INLINE compareCursors(const SortCursorImpl & lhs, const SortCursorImp
 
 int compareAsofCursors(const FullMergeJoinCursor & lhs, const FullMergeJoinCursor & rhs, int null_direction_hint)
 {
-    return nullableCompareAt<true, true>(*lhs.getAsofColumn(), *rhs.getAsofColumn(), lhs->getRow(), rhs->getRow(), null_direction_hint);
+    return nullableCompareAt<true>(*lhs.getAsofColumn(), *rhs.getAsofColumn(), lhs->getRow(), rhs->getRow(), null_direction_hint);
 }
 
 bool ALWAYS_INLINE totallyLess(SortCursorImpl & lhs, SortCursorImpl & rhs, int null_direction_hint)
@@ -284,8 +252,7 @@ bool JoinKeyRow::equals(const FullMergeJoinCursor & cursor) const
 
     for (size_t i = 0; i < cursor->sort_columns_size; ++i)
     {
-        // int cmp = this->row[i]->compareAt(0, cursor->getRow(), *(cursor->sort_columns[i]), cursor->desc[i].nulls_direction);
-        int cmp = nullableCompareAt<true, true>(*this->row[i], *cursor->sort_columns[i], 0, cursor->getRow(), cursor->desc[i].nulls_direction);
+        int cmp = nullableCompareAt<true>(*this->row[i], *cursor->sort_columns[i], 0, cursor->getRow(), cursor->desc[i].nulls_direction);
         if (cmp != 0)
             return false;
     }
