@@ -197,6 +197,7 @@ bool ThreadFuzzer::isStarted()
     return started.load(std::memory_order_relaxed);
 }
 
+__attribute__((always_inline))
 static void injectionImpl(
     double yield_probability,
     double migrate_probability,
