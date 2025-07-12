@@ -11,6 +11,7 @@ namespace DataLake
 
 using StorageType = DB::DatabaseDataLakeStorageType;
 StorageType parseStorageTypeFromLocation(const std::string & location);
+StorageType parseStorageTypeFromString(const std::string &type);
 
 struct DataLakeSpecificProperties
 {
@@ -37,6 +38,7 @@ public:
     void setLocation(const std::string & location_);
     std::string getLocation() const;
     std::string getLocationWithEndpoint(const std::string & endpoint_) const;
+    std::string getMetadataLocation(const std::string & iceberg_metadata_file_location) const;
 
     void setEndpoint(const std::string & endpoint_);
     std::string getEndpoint() const { return endpoint; }
@@ -80,6 +82,8 @@ private:
     /// Path to table's data: `/path/to/table/data/`
     std::string path;
     DB::NamesAndTypesList schema;
+    // Type of storage
+    std::string storage_type_str;
 
     std::string bucket;
     /// Endpoint is set and used in case we have non-AWS storage implementation, for example, Minio.
