@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include "DNSPTRResolver.h"
+#include <Common/DNSPTRResolver.h>
 
 namespace DB
 {

@@ -25,7 +25,7 @@ Resolution: 1 second.
 
 The `Date` data type is faster than `DateTime` under _most_ conditions.
 
-The `Date` type requires 2 bytes of storage, while `DateTime` requires 4. However, when the database compresses the database, this difference is amplified. This amplification is due to the minutes and seconds in `DateTime` being less compressible. Filtering and aggregating `Date` instead of `DateTime` is also faster.
+The `Date` type requires 2 bytes of storage, while `DateTime` requires 4. However, during compression, the size difference between Date and DateTime becomes more significant. This amplification is due to the minutes and seconds in `DateTime` being less compressible. Filtering and aggregating `Date` instead of `DateTime` is also faster.
 
 ## Usage Remarks {#usage-remarks}
 

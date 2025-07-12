@@ -55,8 +55,6 @@ inline void readTimeText(time_t & x, ReadBuffer & istr, const FormatSettings & s
             parseTimeBestEffortUS(x, istr, time_zone, utc_time_zone);
             break;
     }
-
-    x = std::max<time_t>(0, x);
 }
 
 inline void readAsIntText(time_t & x, ReadBuffer & istr)

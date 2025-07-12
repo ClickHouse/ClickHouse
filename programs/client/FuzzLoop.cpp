@@ -1,5 +1,5 @@
-#include <base/scope_guard.h>
 #include <Client.h>
+#include <base/scope_guard.h>
 
 #include <Core/Settings.h>
 
@@ -505,11 +505,18 @@ static void finishBuzzHouse(int num)
     buzz_done = 1;
 }
 
+bool Client::fuzzLoopReconnect()
+{
+    connection->disconnect();
+    return tryToReconnect(fuzz_config->max_reconnection_attempts, fuzz_config->time_to_sleep_between_reconnects);
+}
+
 /// Returns false when server is not available.
 bool Client::buzzHouse()
 {
     bool server_up = true;
     String full_query;
+    static const String & restart_cmd = "--Reconnecting client";
 
     /// Set time to run, but what if a query runs for too long?
     buzz_done = 0;
@@ -525,7 +532,14 @@ bool Client::buzzHouse()
 
         while (server_up && !buzz_done && std::getline(infile, full_query))
         {
-            server_up &= processBuzzHouseQuery(full_query);
+            if (full_query == restart_cmd)
+            {
+                server_up &= fuzzLoopReconnect();
+            }
+            else
+            {
+                server_up &= processBuzzHouseQuery(full_query);
+            }
             full_query.resize(0);
         }
     }
@@ -535,7 +549,7 @@ bool Client::buzzHouse()
         std::vector<BuzzHouse::SQLQuery> peer_queries;
         bool replica_setup = true;
         bool has_cloud_features = true;
-        BuzzHouse::RandomGenerator rg(fuzz_config->seed);
+        BuzzHouse::RandomGenerator rg(fuzz_config->seed, fuzz_config->min_string_length, fuzz_config->max_string_length);
         BuzzHouse::SQLQuery sq1;
         BuzzHouse::SQLQuery sq2;
         BuzzHouse::SQLQuery sq3;
@@ -602,13 +616,13 @@ bool Client::buzzHouse()
             }
             else
             {
-                const uint32_t correctness_oracle = 30;
-                const uint32_t settings_oracle = 30;
-                const uint32_t dump_oracle = 30
+                const uint32_t correctness_oracle = 20;
+                const uint32_t settings_oracle = 20;
+                const uint32_t dump_oracle = 10
                     * static_cast<uint32_t>(fuzz_config->use_dump_table_oracle > 0
                                             && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_to_test_format));
                 const uint32_t peer_oracle
-                    = 30 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_table_peer_oracle));
+                    = 20 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_table_peer_oracle));
                 const uint32_t restart_client = 1 * static_cast<uint32_t>(fuzz_config->allow_client_restarts);
                 const uint32_t run_query = 910;
                 const uint32_t prob_space = correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + run_query;
@@ -790,10 +804,9 @@ bool Client::buzzHouse()
                 }
                 else if (restart_client && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + 1))
                 {
-                    fuzz_config->outf << "--Reconnecting client" << std::endl;
-                    connection->disconnect();
+                    fuzz_config->outf << restart_cmd << std::endl;
                     gen.setInTransaction(false);
-                    server_up &= tryToReconnect(fuzz_config->max_reconnection_attempts, fuzz_config->time_to_sleep_between_reconnects);
+                    server_up &= fuzzLoopReconnect();
                 }
                 else if (
                     run_query && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + run_query + 1))
