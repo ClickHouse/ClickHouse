@@ -165,7 +165,7 @@ class JobConfigs:
                 ArtifactNames.DEB_ARM_ASAN,
             ],
             [ArtifactNames.DEB_COV, ArtifactNames.CH_COV_BIN],
-            [ArtifactNames.CH_ARM_BIN],
+            [ArtifactNames.CH_ARM_BINARY],
         ],
         runs_on=[
             RunnerLabels.BUILDER_AMD,
@@ -286,110 +286,168 @@ class JobConfigs:
         ),
         result_name_for_cidb="Tests",
     )
-    functional_tests_jobs_required = common_ft_job_config.parametrize(
+    functional_tests_jobs = common_ft_job_config.parametrize(
         parameter=[
-            "amd_asan, distributed plan, 1/2",
-            "amd_asan, distributed plan, 2/2",
-            "amd_binary",
-            "amd_binary, old analyzer, s3 storage, DatabaseReplicated, 1/2",
-            "amd_binary, old analyzer, s3 storage, DatabaseReplicated, 2/2",
-            "amd_binary, ParallelReplicas, s3 storage",
-            "amd_debug, AsyncInsert, s3 storage",
+            "amd_asan, distributed plan, parallel, 1/2",
+            "amd_asan, distributed plan, parallel, 2/2",
+            "amd_asan, distributed plan, sequential",
+            "amd_binary, old analyzer, s3 storage, DatabaseReplicated, parallel",
+            "amd_binary, old analyzer, s3 storage, DatabaseReplicated, sequential",
+            "amd_binary, ParallelReplicas, s3 storage, parallel",
+            "amd_binary, ParallelReplicas, s3 storage, sequential",
+            "amd_debug, AsyncInsert, s3 storage, parallel",
+            "amd_debug, AsyncInsert, s3 storage, sequential",
+            "amd_debug, parallel",
+            "amd_debug, sequential",
+            "amd_tsan, parallel, 1/2",
+            "amd_tsan, parallel, 2/2",
+            "amd_tsan, sequential",
+            "amd_msan, parallel, 1/2",
+            "amd_msan, sequential, 1/2",
+            "amd_msan, parallel, 2/2",
+            "amd_msan, sequential, 2/2",
+            "amd_ubsan, parallel",
+            "amd_ubsan, sequential",
+            "amd_debug, distributed plan, s3 storage, parallel",
+            "amd_debug, distributed plan, s3 storage, sequential",
+            "amd_tsan, s3 storage, parallel",
+            "amd_tsan, s3 storage, sequential",
+            "arm_binary, parallel",
+            "arm_binary, sequential",
         ],
         runs_on=[
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_AMD,
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_asan, distributed plan, parallel, 1/2
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_asan, distributed plan, parallel, 2/2
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_asan, distributed plan, sequential
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_binary, old analyzer, s3 storage, DatabaseReplicated, parallel
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_binary, old analyzer, s3 storage, DatabaseReplicated, sequential
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_binary, ParallelReplicas, s3 storage, parallel
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_binary, ParallelReplicas, s3 storage, sequential
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_debug, AsyncInsert, s3 storage, parallel
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_debug, AsyncInsert, s3 storage, sequential
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_debug, parallel
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_debug, sequential
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_tsan, parallel, 1/2
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_tsan, parallel, 2/2
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_tsan, sequential
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_msan, parallel, 1/2
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_msan, sequential, 1/2
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_msan, parallel, 2/2
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_msan, sequential, 2/2
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_ubsan, parallel
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_ubsan, sequential
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_debug, distributed plan, s3 storage, parallel
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_debug, distributed plan, s3 storage, sequential
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_tsan, s3 storage, parallel
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_tsan, s3 storage, sequential
+            RunnerLabels.FUNC_TESTER_ARM,  # arm_binary, parallel
+            RunnerLabels.FUNC_TESTER_ARM,  # arm_binary, sequential
         ],
         requires=[
-            [ArtifactNames.CH_AMD_ASAN],
-            [ArtifactNames.CH_AMD_ASAN],
-            [ArtifactNames.CH_AMD_BINARY],
-            [ArtifactNames.CH_AMD_BINARY],
-            [ArtifactNames.CH_AMD_BINARY],
-            [ArtifactNames.CH_AMD_BINARY],
-            [ArtifactNames.CH_AMD_DEBUG],
+            [
+                ArtifactNames.CH_AMD_ASAN,
+            ],  # amd_asan, distributed plan, parallel, 1/2
+            [
+                ArtifactNames.CH_AMD_ASAN,
+            ],  # amd_asan, distributed plan, parallel, 2/2
+            [
+                ArtifactNames.CH_AMD_ASAN,
+            ],  # amd_asan, distributed plan, sequential
+            [
+                ArtifactNames.CH_AMD_BINARY,
+            ],  # amd_binary, old analyzer, s3 storage, DatabaseReplicated, parallel
+            [
+                ArtifactNames.CH_AMD_BINARY,
+            ],  # amd_binary, old analyzer, s3 storage, DatabaseReplicated, sequential
+            [
+                ArtifactNames.CH_AMD_BINARY,
+            ],  # amd_binary, ParallelReplicas, s3 storage, parallel
+            [
+                ArtifactNames.CH_AMD_BINARY,
+            ],  # amd_binary, ParallelReplicas, s3 storage, sequential
+            [
+                ArtifactNames.CH_AMD_DEBUG,
+            ],  # amd_debug, AsyncInsert, s3 storage, parallel
+            [
+                ArtifactNames.CH_AMD_DEBUG,
+            ],  # amd_debug, AsyncInsert, s3 storage, sequential
+            [
+                ArtifactNames.CH_AMD_DEBUG,
+            ],  # amd_debug, parallel
+            [
+                ArtifactNames.CH_AMD_DEBUG,
+            ],  # amd_debug, sequential
+            [
+                ArtifactNames.CH_AMD_TSAN,
+            ],  # amd_tsan, parallel, 1/2
+            [
+                ArtifactNames.CH_AMD_TSAN,
+            ],  # amd_tsan, parallel, 2/2
+            [
+                ArtifactNames.CH_AMD_TSAN,
+            ],  # amd_tsan, sequential
+            [
+                ArtifactNames.CH_AMD_MSAN,
+            ],  # amd_msan, parallel, 1/2
+            [
+                ArtifactNames.CH_AMD_MSAN,
+            ],  # amd_msan, sequential, 1/2
+            [
+                ArtifactNames.CH_AMD_MSAN,
+            ],  # amd_msan, parallel, 2/2
+            [
+                ArtifactNames.CH_AMD_MSAN,
+            ],  # amd_msan, sequential, 2/2
+            [
+                ArtifactNames.CH_AMD_UBSAN,
+            ],  # amd_ubsan, parallel
+            [
+                ArtifactNames.CH_AMD_UBSAN,
+            ],  # amd_ubsan, sequential
+            [
+                ArtifactNames.CH_AMD_DEBUG,
+            ],  # amd_debug, distributed plan, s3 storage, parallel
+            [
+                ArtifactNames.CH_AMD_DEBUG,
+            ],  # amd_debug, distributed plan, s3 storage, sequential
+            [
+                ArtifactNames.CH_AMD_TSAN,
+            ],  # amd_tsan, s3 storage, parallel
+            [
+                ArtifactNames.CH_AMD_TSAN,
+            ],  # amd_tsan, s3 storage, sequential
+            [
+                ArtifactNames.CH_ARM_BINARY,
+            ],  # arm_binary, parallel
+            [
+                ArtifactNames.CH_ARM_BINARY,
+            ],  # arm_binary, sequential
         ],
     )
     functional_tests_jobs_coverage = common_ft_job_config.set_allow_merge_on_failure(
         True
     ).parametrize(
-        parameter=[f"amd_coverage,{i}/6" for i in range(1, 7)],
+        parameter=[f"amd_coverage, {i}/6" for i in range(1, 7)],
         runs_on=[RunnerLabels.FUNC_TESTER_ARM for _ in range(6)],
         requires=[[ArtifactNames.CH_COV_BIN] for _ in range(6)],
-    )
-    functional_tests_jobs_non_required = (
-        common_ft_job_config.set_allow_merge_on_failure(True).parametrize(
-            parameter=[
-                "amd_debug",
-                "amd_tsan, 1/3",
-                "amd_tsan, 2/3",
-                "amd_tsan, 3/3",
-                "amd_msan, 1/4",
-                "amd_msan, 2/4",
-                "amd_msan, 3/4",
-                "amd_msan, 4/4",
-                "amd_ubsan",
-                "amd_debug, distributed plan, s3 storage",
-                "amd_tsan, s3 storage, 1/3",
-                "amd_tsan, s3 storage, 2/3",
-                "amd_tsan, s3 storage, 3/3",
-                "arm_binary",
-            ],
-            runs_on=[
-                RunnerLabels.FUNC_TESTER_AMD,
-                RunnerLabels.FUNC_TESTER_AMD,
-                RunnerLabels.FUNC_TESTER_AMD,
-                RunnerLabels.FUNC_TESTER_AMD,
-                RunnerLabels.FUNC_TESTER_AMD,
-                RunnerLabels.FUNC_TESTER_AMD,
-                RunnerLabels.FUNC_TESTER_AMD,
-                RunnerLabels.FUNC_TESTER_AMD,
-                RunnerLabels.FUNC_TESTER_AMD,
-                RunnerLabels.FUNC_TESTER_AMD,
-                RunnerLabels.FUNC_TESTER_AMD,
-                RunnerLabels.FUNC_TESTER_AMD,
-                RunnerLabels.FUNC_TESTER_AMD,
-                RunnerLabels.FUNC_TESTER_ARM,
-            ],
-            requires=[
-                [ArtifactNames.CH_AMD_DEBUG],
-                [ArtifactNames.CH_AMD_TSAN],
-                [ArtifactNames.CH_AMD_TSAN],
-                [ArtifactNames.CH_AMD_TSAN],
-                [ArtifactNames.CH_AMD_MSAN],
-                [ArtifactNames.CH_AMD_MSAN],
-                [ArtifactNames.CH_AMD_MSAN],
-                [ArtifactNames.CH_AMD_MSAN],
-                [ArtifactNames.CH_AMD_UBSAN],
-                [ArtifactNames.CH_AMD_DEBUG],
-                [ArtifactNames.CH_AMD_TSAN],
-                [ArtifactNames.CH_AMD_TSAN],
-                [ArtifactNames.CH_AMD_TSAN],
-                [ArtifactNames.CH_ARM_BIN],
-            ],
-        )
     )
     functional_tests_jobs_azure_master_only = (
         common_ft_job_config.set_allow_merge_on_failure(True).parametrize(
             runs_on=[
                 RunnerLabels.FUNC_TESTER_ARM,
                 RunnerLabels.FUNC_TESTER_ARM,
-                RunnerLabels.FUNC_TESTER_ARM,
             ],
             parameter=[
-                "arm_asan, azure, 1/3",
-                "arm_asan, azure, 2/3",
-                "arm_asan, azure, 3/3",
+                "arm_asan, azure, parallel",
+                "arm_asan, azure, sequential",
             ],
             requires=[
-                [ArtifactNames.CH_ARM_ASAN],  # azure asan 1
-                [ArtifactNames.CH_ARM_ASAN],  # azure asan 2
-                [ArtifactNames.CH_ARM_ASAN],  # azure asan 3
+                [
+                    ArtifactNames.CH_ARM_ASAN,
+                ],
+                [
+                    ArtifactNames.CH_ARM_ASAN,
+                ],
             ],
         )
     )
@@ -822,7 +880,7 @@ class JobConfigs:
             ],
         ),
         run_in_docker="clickhouse/docs-builder",
-        requires=[JobNames.STYLE_CHECK, ArtifactNames.CH_ARM_BIN],
+        requires=[JobNames.STYLE_CHECK, ArtifactNames.CH_ARM_BINARY],
     )
     docker_sever = Job.Config(
         name=JobNames.DOCKER_SERVER,

@@ -330,7 +330,7 @@ class ArtifactNames:
     CH_ARM_ASAN = "CH_ARM_ASAN"
 
     CH_COV_BIN = "CH_COV_BIN"
-    CH_ARM_BIN = "CH_ARM_BIN"
+    CH_ARM_BINARY = "CH_ARM_BIN"
     CH_TIDY_BIN = "CH_TIDY_BIN"
     CH_AMD_DARWIN_BIN = "CH_AMD_DARWIN_BIN"
     CH_ARM_DARWIN_BIN = "CH_ARM_DARWIN_BIN"
@@ -398,7 +398,7 @@ class ArtifactConfigs:
             ArtifactNames.CH_ARM_RELEASE,
             ArtifactNames.CH_ARM_ASAN,
             ArtifactNames.CH_COV_BIN,
-            ArtifactNames.CH_ARM_BIN,
+            ArtifactNames.CH_ARM_BINARY,
             ArtifactNames.CH_TIDY_BIN,
             ArtifactNames.CH_AMD_DARWIN_BIN,
             ArtifactNames.CH_ARM_DARWIN_BIN,
