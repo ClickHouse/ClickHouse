@@ -37,9 +37,6 @@
 
 #include <Functions/FunctionFactory.h>
 
-#include <pcg_random.hpp>
-
-
 namespace DB
 {
 namespace Setting
