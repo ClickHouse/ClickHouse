@@ -5,6 +5,6 @@
 namespace DB
 {
 
-UInt64 generateSnowflakeID();
+uint64_t generateSnowflakeID();
 
 }
