@@ -56,6 +56,8 @@ bool inline memoryTrackerCanThrow(VariableContext level, bool fault_injection)
 namespace CurrentMetrics
 {
     extern const Metric MemoryTrackingUncorrected;
+    extern const Metric MemoryTracking;
+    extern const Metric MergesMutationsMemoryTracking;
 }
 
 namespace DB
@@ -127,16 +129,29 @@ using namespace std::chrono_literals;
 
 static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
 
-MemoryTracker total_memory_tracker(nullptr, VariableContext::Global);
-MemoryTracker background_memory_tracker(&total_memory_tracker, VariableContext::User, false);
+MemoryTracker total_memory_tracker(nullptr, VariableContext::Global, CurrentMetrics::MemoryTracking, "(total)");
+MemoryTracker background_memory_tracker(&total_memory_tracker, VariableContext::User, false, CurrentMetrics::MergesMutationsMemoryTracking, "(background)");
 
-MemoryTracker::MemoryTracker(VariableContext level_) : parent(&total_memory_tracker), level(level_) {}
-MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_) : parent(parent_), level(level_) {}
+MemoryTracker::MemoryTracker(VariableContext level_, CurrentMetrics::Metric metric_, const char * description)
+    : parent(&total_memory_tracker)
+    , metric(metric_)
+    , description_ptr(description)
+    , level(level_)
+{}
+MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_, CurrentMetrics::Metric metric_, const char * description)
+    : parent(parent_)
+    , metric(metric_)
+    , description_ptr(description)
+    , level(level_)
+{}
 
-MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_, bool log_peak_memory_usage_in_destructor_)
-    : parent(parent_), log_peak_memory_usage_in_destructor(log_peak_memory_usage_in_destructor_), level(level_)
-{
-}
+MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_, bool log_peak_memory_usage_in_destructor_, CurrentMetrics::Metric metric_, const char * description)
+    : parent(parent_)
+    , metric(metric_)
+    , description_ptr(description)
+    , log_peak_memory_usage_in_destructor(log_peak_memory_usage_in_destructor_)
+    , level(level_)
+{}
 
 MemoryTracker::~MemoryTracker()
 {
