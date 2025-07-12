@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <base/range.h>
 
 #include <Columns/ColumnsNumber.h>
@@ -290,66 +291,184 @@ private:
     /// Applies conditions only to events with strictly increasing timestamps
     bool strict_increase;
 
-    /// Loop through the entire events_list, update the event timestamp value
-    /// The level path must be 1---2---3---...---check_events_size, find the max event level that satisfied the path in the sliding window.
-    /// If found, returns the max event level, else return 0.
-    /// The algorithm works in O(n) time, but the overall function works in O(n * log(n)) due to sorting.
-    UInt8 getEventLevelNonStrictOnce(const AggregateFunctionWindowFunnelData<T>::TimestampEvents & events_list) const
+    /// When enabled, returns conversion times between funnel steps
+    bool conversion_time;
+
+    struct FunnelResult
     {
-        /// events_timestamp stores the timestamp of the first and previous i-th level event happen within time window
-        std::vector<std::optional<std::pair<UInt64, UInt64>>> events_timestamp(events_size);
-        bool first_event = false;
-        for (size_t i = 0; i < events_list.size(); ++i)
+        UInt8 max_level = 0;
+        std::vector<T> conversion_times;
+    };
+
+    /// The algorithm works in O(n) time, but the overall function works in O(n * log(n)) due to sorting.
+    FunnelResult getEventLevelNonStrictOnce(const AggregateFunctionWindowFunnelData<T>::TimestampEvents & events_list) const
+    {
+        /// candidate_events_timestamp stores {first_event_ts, last_event_ts} for the latest candidate sequence reaching level i+1.
+        std::vector<std::optional<std::pair<T, T>>> candidate_events_timestamp(events_size);
+
+        /// Stores the specific timestamps for each step of the sequence that achieved the current overall_max_level.
+        std::vector<std::optional<T>> winning_sequence_timestamps(events_size);
+        UInt8 overall_max_level = 0;
+
+        // Helper lambda calculates based on stored winning_sequence_timestamps for the best sequence found
+        auto calculate_conversion_times = [&](UInt8 current_max_level) -> std::vector<T>
         {
-            const T & timestamp = events_list[i].first;
-            const auto & event_idx = events_list[i].second - 1;
-            if (strict_order && event_idx == -1)
+            std::vector<T> times;
+            if (conversion_time && current_max_level > 1)
             {
-                if (first_event)
-                    break;
-                continue;
+                times.resize(events_size - 1, 0);
+                for (size_t i = 0; i < current_max_level - 1; ++i)
+                {
+                    // Ensure both current and next step timestamps exist in the stored best sequence
+                    if (winning_sequence_timestamps[i].has_value() && winning_sequence_timestamps[i+1].has_value())
+                    {
+                         // Calculate difference from the consistent sequence timestamps
+                         times[i] = *winning_sequence_timestamps[i+1] - *winning_sequence_timestamps[i];
+                    }
+                }
             }
+            else if (conversion_time) // Ensure vector has correct size even if max_level <= 1
+            {
+                // Resize to events_size - 1, initialized to 0
+                times.resize(events_size - 1, 0);
+            }
+            // If not conversion_time, times remains empty, which is fine.
+            return times;
+        };
+
+        bool first_event_occurred = false; // Track if any event 1 has occurred in strict_order mode
+
+        for (const auto & event_pair : events_list)
+        {
+            const T & timestamp = event_pair.first;
+            const auto & event_type = event_pair.second; // This is 1-based event type
+            const UInt8 event_idx = event_type - 1; // 0-based index, max value is events_size-1 (<= 31)
+            const UInt8 current_event_level = event_idx + 1;
+
+            bool extended_winner = false;
+            bool promoted_candidate = false;
+
+            if (strict_order && event_type == 0)
+            {
+                if (first_event_occurred)
+                    break; // Stop processing sequence if non-matching event occurs after first event
+                continue; // Ignore non-matching events before the first event
+            }
+
+            // If strict_deduplication, and this event's level has already been achieved by the winning sequence,
+            // stop processing further events for this funnel.
+            if (strict_deduplication && event_idx > 0 && winning_sequence_timestamps[event_idx].has_value())
+            {
+                break;
+            }
+
+            // --- A. Try to extend the current winning sequence ---
             if (event_idx == 0)
             {
-                events_timestamp[0] = std::make_pair(timestamp, timestamp);
-                first_event = true;
-            }
-            else if (strict_deduplication && events_timestamp[event_idx].has_value())
-            {
-                return events_list[i - 1].second;
-            }
-            else if (strict_order && first_event && !events_timestamp[event_idx - 1].has_value())
-            {
-                for (size_t event = 0; event < events_timestamp.size(); ++event)
+                first_event_occurred = true; // Mark that the first event has happened (for strict_order)
+
+                if (overall_max_level < 1) // First event establishes level 1
                 {
-                    if (!events_timestamp[event].has_value())
-                        return event;
+                    overall_max_level = 1;
+                    winning_sequence_timestamps.assign(events_size, std::nullopt);
+                    winning_sequence_timestamps[0] = timestamp;
+                    extended_winner = true;
                 }
             }
-            else if (events_timestamp[event_idx - 1].has_value())
+            else if (overall_max_level >= event_idx && winning_sequence_timestamps[event_idx - 1].has_value())
             {
-                auto first_timestamp = events_timestamp[event_idx - 1]->first;
-                bool time_matched = timestamp <= first_timestamp + window;
-                if (strict_increase)
-                    time_matched = time_matched && events_timestamp[event_idx - 1]->second < timestamp;
-                if (time_matched)
+                // Check if previous step exists in the current winning sequence
+                const T first_winning_ts = winning_sequence_timestamps[0].value();
+                const T prev_winning_ts = winning_sequence_timestamps[event_idx - 1].value();
+
+                bool time_check = timestamp <= first_winning_ts + window;
+                bool strict_check = (!strict_increase || timestamp > prev_winning_ts);
+
+                if (time_check && strict_check)
                 {
-                    events_timestamp[event_idx] = std::make_pair(first_timestamp, timestamp);
-                    if (event_idx + 1 == events_size)
-                        return events_size;
+                    if (current_event_level > overall_max_level)
+                    {
+                        // New max level achieved by extending the winner
+                        overall_max_level = current_event_level;
+                        winning_sequence_timestamps[event_idx] = timestamp;
+                        extended_winner = true;
+                    }
                 }
+            }
+
+            // --- B. Update candidate paths ---
+            bool candidate_can_progress = false;
+            T first_ts_for_this_candidate = 0;
+
+            if (event_idx == 0)
+            {
+                candidate_can_progress = true;
+                first_ts_for_this_candidate = timestamp;
+            }
+            else if (candidate_events_timestamp[event_idx - 1].has_value())
+            {
+                const T first_candidate_ts = candidate_events_timestamp[event_idx - 1]->first;
+                const T prev_candidate_ts = candidate_events_timestamp[event_idx - 1]->second;
+
+                bool time_check = timestamp <= first_candidate_ts + window;
+                bool strict_check = (!strict_increase || timestamp > prev_candidate_ts);
+
+                if (time_check && strict_check)
+                {
+                    candidate_can_progress = true;
+                    first_ts_for_this_candidate = first_candidate_ts;
+                }
+            }
+
+            if (candidate_can_progress)
+            {
+                // Update the candidate path for this level
+                candidate_events_timestamp[event_idx] = {first_ts_for_this_candidate, timestamp};
+            }
+
+            // --- C. Check if a candidate overtook the winner ---
+            if (candidate_can_progress && current_event_level > overall_max_level)
+            {
+                // Candidate achieved a new max level, higher than the winner
+                overall_max_level = current_event_level;
+
+                // Rebuild winning_sequence_timestamps from the promoted candidate path
+                winning_sequence_timestamps.assign(events_size, std::nullopt);
+                for (UInt8 k = 0; k <= event_idx; ++k)
+                {
+                    if (candidate_events_timestamp[k].has_value())
+                        winning_sequence_timestamps[k] = candidate_events_timestamp[k]->second; // Use the timestamp of the event completing step k+1
+                }
+                promoted_candidate = true;
+            }
+
+            if (strict_order && event_idx > 0 && first_event_occurred && !candidate_events_timestamp[event_idx - 1].has_value())
+            {
+                 // If an event arrived when its prerequisite wasn't met in the candidate path *after* the first event occurred.
+                 break;
+            }
+
+            // --- D. Early exit if max level reached ---
+            // Need to check if the level was *just* reached in this iteration
+            if (overall_max_level == events_size && (extended_winner || promoted_candidate))
+            {
+                FunnelResult result;
+                result.max_level = overall_max_level;
+                result.conversion_times = calculate_conversion_times(overall_max_level);
+                return result;
             }
         }
 
-        for (size_t event = events_timestamp.size(); event > 0; --event)
-        {
-            if (events_timestamp[event - 1].has_value())
-                return event;
-        }
-        return 0;
+        // Return the highest level found and its corresponding conversion times.
+        FunnelResult result;
+        result.max_level = overall_max_level; // Use the max level found during the iteration
+        // Calculate conversion times based on the stored best sequence timestamps
+        result.conversion_times = calculate_conversion_times(overall_max_level);
+
+        return result;
     }
 
-    UInt8 getEventLevelStrictOnce(const AggregateFunctionWindowFunnelStrictOnceData<T>::TimestampEvents & events_list) const
+    FunnelResult getEventLevelStrictOnce(const AggregateFunctionWindowFunnelStrictOnceData<T>::TimestampEvents & events_list) const
     {
         /// Stores the timestamp of the first and last i-th level event happen within time window
         struct EventMatchTimeWindow
@@ -357,6 +476,7 @@ private:
             UInt64 first_timestamp;
             UInt64 last_timestamp;
             std::array<UInt64, MAX_EVENTS> event_path;
+            std::array<std::optional<T>, MAX_EVENTS> step_timestamps; // Store timestamp for each step
 
             EventMatchTimeWindow() = default;
             EventMatchTimeWindow(UInt64 first_ts, UInt64 last_ts)
@@ -369,6 +489,25 @@ private:
         /// The second occurrence of 'a' should be counted only once in one sequence.
         /// However, we do not know in advance if the next event will be 'b' or 'end', so we try to keep both paths.
         std::vector<std::list<EventMatchTimeWindow>> event_sequences(events_size);
+
+        // Helper lambda to calculate conversion times from a winning sequence
+        auto calculate_conversion_times = [&](const EventMatchTimeWindow & winning_seq, UInt8 current_max_level) -> std::vector<T>
+        {
+            std::vector<T> times;
+            if (conversion_time && current_max_level > 1)
+            {
+                times.resize(events_size - 1, 0); // Initialize all times to 0
+                for (size_t i = 0; i < current_max_level - 1; ++i)
+                {
+                    // Ensure both current and next step timestamps exist
+                    if (winning_seq.step_timestamps[i].has_value() && winning_seq.step_timestamps[i+1].has_value())
+                    {
+                         times[i] = *winning_seq.step_timestamps[i+1] - *winning_seq.step_timestamps[i];
+                    }
+                }
+            }
+            return times;
+        };
 
         bool has_first_event = false;
         for (size_t i = 0; i < events_list.size(); ++i)
@@ -389,19 +528,18 @@ private:
             {
                 auto & event_seq = event_sequences[0].emplace_back(timestamp, timestamp);
                 event_seq.event_path[0] = unique_id;
+                event_seq.step_timestamps[0] = timestamp; // Store timestamp for step 0
                 has_first_event = true;
             }
             else if (strict_deduplication && !event_sequences[event_idx].empty())
             {
-                return events_list[i - 1].event_type;
+                // Duplicate detected. Stop processing this path.
+                break;
             }
             else if (strict_order && has_first_event && event_sequences[event_idx - 1].empty())
             {
-                for (size_t event = 0; event < event_sequences.size(); ++event)
-                {
-                    if (event_sequences[event].empty())
-                        return event;
-                }
+                // Intervention detected. Stop processing events for this path.
+                break;
             }
             else if (!event_sequences[event_idx - 1].empty())
             {
@@ -437,29 +575,61 @@ private:
 
                         auto & new_seq = event_sequences[event_idx].emplace_back(first_ts, timestamp);
                         new_seq.event_path = std::move(prev_path);
+                        new_seq.step_timestamps = it->step_timestamps;
+                        new_seq.step_timestamps[event_idx] = timestamp;
+
                         if (event_idx + 1 == events_size)
-                            return events_size;
+                        {
+                             // Calculate times before returning early
+                             auto times = calculate_conversion_times(new_seq, events_size);
+                             return FunnelResult{events_size, std::move(times)};
+                        }
                     }
                     ++it;
                 }
             }
         }
 
+        UInt8 max_level = 0;
         for (size_t event = event_sequences.size(); event > 0; --event)
         {
             if (!event_sequences[event - 1].empty())
-                return event;
+            {
+                max_level = event;
+                break;
+            }
         }
-        return 0;
+
+        FunnelResult result;
+        result.max_level = max_level;
+
+        // If conversion_time is enabled and we found a successful funnel path
+        if (conversion_time && max_level > 1)
+        {
+            // Get the first valid sequence that reached the max_level
+            if (!event_sequences[max_level - 1].empty())
+            {
+                const auto& winning_sequence = event_sequences[max_level - 1].front();
+                result.conversion_times = calculate_conversion_times(winning_sequence, max_level);
+            }
+            // Ensure conversion_times has the correct size even if calculation failed
+            if (result.conversion_times.empty())
+                 result.conversion_times.resize(events_size - 1, 0);
+        }
+        else if (conversion_time) // Ensure vector has correct size even if max_level <= 1
+        {
+             result.conversion_times.resize(events_size - 1, 0);
+        }
+
+        return result;
     }
 
-
-    UInt8 getEventLevel(Data & data) const
+    FunnelResult getEventLevel(Data & data) const
     {
         if (data.size() == 0)
-            return 0;
+            return FunnelResult{0, {}};
         if (!strict_order && events_size == 1)
-            return 1;
+            return FunnelResult{1, {}};
 
         data.sort();
 
@@ -476,7 +646,9 @@ public:
     }
 
     AggregateFunctionWindowFunnel(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionWindowFunnel<T, Data>>(arguments, params, std::make_shared<DataTypeUInt8>())
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionWindowFunnel<T, Data>>(arguments, params,
+          // We'll decide on the return type based on conversion_time flag
+          getReturnType(arguments, params))
     {
         events_size = arguments.size() - 1;
         window = params.at(0).safeGet<UInt64>();
@@ -484,6 +656,8 @@ public:
         strict_deduplication = false;
         strict_order = false;
         strict_increase = false;
+        conversion_time = false;
+
         for (size_t i = 1; i < params.size(); ++i)
         {
             String option = params.at(i).safeGet<String>();
@@ -496,11 +670,40 @@ public:
             else if (option == "strict_once")
                 /// Checked in factory
                 chassert(Data::strict_once_enabled);
+            else if (option == "conversion_time")
+                conversion_time = true;
             else if (option == "strict")
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "strict is replaced with strict_deduplication in Aggregate function {}", getName());
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} doesn't support a parameter: {}", getName(), option);
         }
+    }
+
+    static DataTypePtr getReturnType(const DataTypes & arguments, const Array & params)
+    {
+        bool has_conversion_time = false;
+        for (size_t i = 1; i < params.size(); ++i)
+            if (params.at(i).safeGet<String>() == "conversion_time")
+                has_conversion_time = true;
+
+        if (!has_conversion_time)
+            return std::make_shared<DataTypeUInt8>();
+
+        DataTypes tuple_types;
+        Strings tuple_names;
+
+        tuple_types.push_back(std::make_shared<DataTypeUInt8>());
+        tuple_names.push_back("max_level");
+
+        size_t events_size = arguments.size() - 1;
+        // Add conversion time slots
+        for (size_t i = 0; i < events_size - 1; ++i)
+        {
+            tuple_types.push_back(std::make_shared<DataTypeUInt64>());
+            tuple_names.push_back("time_" + toString(i + 1) + "_to_" + toString(i + 2));
+        }
+
+        return std::make_shared<DataTypeTuple>(tuple_types, tuple_names);
     }
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -544,7 +747,28 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        assert_cast<ColumnUInt8 &>(to).getData().push_back(getEventLevel(this->data(place)));
+        auto result = getEventLevel(this->data(place));
+
+        if (!conversion_time)
+        {
+            // just insert the max level
+            assert_cast<ColumnUInt8 &>(to).getData().push_back(result.max_level);
+        }
+        else
+        {
+            // insert tuple (max_level, conversion_times...)
+            auto & tuple_col = assert_cast<ColumnTuple &>(to);
+            auto & level_col = assert_cast<ColumnUInt8 &>(tuple_col.getColumn(0));
+            level_col.getData().push_back(result.max_level);
+
+            // add conversion times to the tuple
+            for (size_t i = 0; i < events_size - 1; ++i)
+            {
+                auto & time_col = assert_cast<ColumnUInt64 &>(tuple_col.getColumn(i + 1));
+                UInt64 time_val = (i < result.conversion_times.size()) ? static_cast<UInt64>(result.conversion_times[i]) : 0;
+                time_col.getData().push_back(time_val);
+            }
+        }
     }
 };
 
