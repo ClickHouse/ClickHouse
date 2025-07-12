@@ -185,7 +185,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         readStringBinary(step_name, in);
         readStringBinary(step_description, in);
 
-        Header output_header  = deserializeHeader(in);
+        Header output_header = deserializeHeader(in);
 
         QueryPlanSerializationSettings settings;
         settings.readBinary(in);
