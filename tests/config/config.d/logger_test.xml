@@ -1,5 +1,5 @@
 <clickhouse>
     <logger>
-        <level>test</level>
+        <level>information</level>
     </logger>
 </clickhouse>
