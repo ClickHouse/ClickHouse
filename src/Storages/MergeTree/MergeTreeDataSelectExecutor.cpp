@@ -100,8 +100,8 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
-    extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
+    extern const SettingsBool vector_search_with_rescoring;
 }
 
 namespace MergeTreeSetting
@@ -1619,7 +1619,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
     VectorSimilarityIndexCache * vector_similarity_index_cache,
-    const bool is_pk_range_pruning_revert,
+    bool is_pk_range_pruning_revert,
     LoggerPtr log)
 {
     if (!index_helper->getDeserializedFormat(part->getDataPartStorage(), index_helper->getFileName()))
@@ -1645,11 +1645,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
     /// The vector similarity index can only be used if the PK did not prune some ranges within the part.
     /// (the vector index is built on the entire part).
-    RangesInDataPartReadHints read_hints = in_read_hints;
     const bool all_match  = (marks_count == ranges.getNumberOfMarks());
     if (index_helper->isVectorSimilarityIndex() && !all_match)
     {
-        return {ranges, read_hints};
+        return {ranges, in_read_hints};
     }
     else if (index_helper->isVectorSimilarityIndex() && is_pk_range_pruning_revert)
     {
@@ -1677,6 +1676,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
     MarkRanges res;
     size_t ranges_size = ranges.size();
+    RangesInDataPartReadHints read_hints = in_read_hints;
 
     if (bulk_filtering)
     {
@@ -1753,17 +1753,18 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 {
                     read_hints.ann_search_results = condition->calculateApproximateNearestNeighbors(granule);
 
-                    /// corresponding ranges have to be returned in ascending order
+                    /// We need to sort the result ranges ascendingly
                     auto rows = read_hints.ann_search_results.value().rows;
                     std::sort(rows.begin(), rows.end());
 #ifndef NDEBUG
-                    /// Duplicates should in theory not be possible but who knows ...
+                    /// Duplicates should in theory not be possible but better be safe than sorry ...
                     const bool has_duplicates = std::adjacent_find(rows.begin(), rows.end()) != rows.end();
                     if (has_duplicates)
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Usearch returned duplicate row numbers");
 #endif
                     if (!(read_hints.ann_search_results.value().distances.has_value()))
                         read_hints = {};
+
                     for (auto row : rows)
                     {
                         size_t num_marks = part->index_granularity->countMarksForRows(index_mark * index_granularity, row);

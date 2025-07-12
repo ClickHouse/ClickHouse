@@ -75,9 +75,9 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     ContextPtr context_,
     UInt64 max_block_size_,
     std::shared_ptr<IObjectIterator> file_iterator_,
-    size_t max_parsing_threads_,
+    FormatParserGroupPtr parser_group_,
     bool need_only_count_)
-    : SourceWithKeyCondition(info.source_header, false)
+    : ISource(info.source_header, false)
     , name(std::move(name_))
     , object_storage(object_storage_)
     , configuration(configuration_)
@@ -85,7 +85,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , format_settings(format_settings_)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
-    , max_parsing_threads(max_parsing_threads_)
+    , parser_group(std::move(parser_group_))
     , read_from_format_info(info)
     , create_reader_pool(std::make_shared<ThreadPool>(
         CurrentMetrics::StorageObjectStorageThreads,
@@ -101,11 +101,6 @@ StorageObjectStorageSource::StorageObjectStorageSource(
 StorageObjectStorageSource::~StorageObjectStorageSource()
 {
     create_reader_pool->wait();
-}
-
-void StorageObjectStorageSource::setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_)
-{
-    setKeyConditionImpl(filter_actions_dag, context_, read_from_format_info.format_header);
 }
 
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
@@ -337,7 +332,7 @@ Chunk StorageObjectStorageSource::generate()
         }
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && (!key_condition || key_condition->alwaysUnknownOrTrue()))
+            && !parser_group->filter_actions_dag)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -373,12 +368,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         object_storage,
         read_from_format_info,
         format_settings,
-        key_condition,
         read_context,
         &schema_cache,
         log,
         max_block_size,
-        max_parsing_threads,
+        parser_group,
         need_only_count);
 }
 
@@ -389,12 +383,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     const ObjectStoragePtr & object_storage,
     ReadFromFormatInfo & read_from_format_info,
     const std::optional<FormatSettings> & format_settings,
-    const std::shared_ptr<const KeyCondition> & key_condition_,
     const ContextPtr & context_,
     SchemaCache * schema_cache,
     const LoggerPtr & log,
     size_t max_block_size,
-    size_t max_parsing_threads,
+    FormatParserGroupPtr parser_group,
     bool need_only_count)
 {
     ObjectInfoPtr object_info;
@@ -497,16 +490,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             context_,
             max_block_size,
             format_settings,
-            need_only_count ? 1 : max_parsing_threads,
-            std::nullopt,
+            parser_group,
             true /* is_remote_fs */,
             compression_method,
             need_only_count);
 
         input_format->setSerializationHints(read_from_format_info.serialization_hints);
-
-        if (key_condition_)
-            input_format->setKeyCondition(key_condition_);
 
         if (need_only_count)
             input_format->needOnlyCount();

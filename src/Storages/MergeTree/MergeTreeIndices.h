@@ -117,6 +117,7 @@ struct NearestNeighbours
     std::vector<UInt64> rows;
     std::optional<std::vector<float>> distances;
 };
+
 /// ---------------------------------------------
 
 /// Stores some info about a single block of data.
@@ -197,10 +198,9 @@ public:
     }
 
     /// Special method for vector similarity indexes:
-    /// Returns the N nearest neighbors for a reference vector in the index granule.
-    /// The nearest neighbors are returned as row positions. Optionally, if VectorSearchParameters::return_distances = 1, then the distances
-    /// are returned as well.
-    /// The returned row numbers are guaranteed to be sorted and unique.
+    /// Returns the N nearest neighbors of a reference vector in the index granule.
+    /// The nearest neighbors are returned as row positions.
+    /// If VectorSearchParameters::return_distances = true, then the distances are returned as well.
     virtual NearestNeighbours calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr /*granule*/) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
