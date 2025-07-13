@@ -17,23 +17,27 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+/** Function that converts color from OkLCH perceptual color space
+  * to sRGB color space. 
+  * Returns a tuple of type Tuple(Float64, Float64, Float64).
+  */
+
 namespace 
 {
 class FunctionOkLCHToSRGB : public ITupleFunction
 {
 private:
 
-    static constexpr Float64 eps          = 1e-6;
-    static constexpr Float64 deg2rad      = 0.01745329251;
-    static constexpr size_t  channels_num = 3;
+    static constexpr Float64 gamma_fallback = 1e-6;
+    static constexpr Float64 deg2rad        = 0.01745329251;
+    static constexpr size_t  channels_num   = 3;
 
     using Colors = std::array<Float64, channels_num>;
     using Mat3x3 = std::array<Float64, 9>;
 
-
-    static constexpr Mat3x3 oklab_to_lms = {1,  0.3963377774,  0.2158037573,
-                                            1, -0.1055613458, -0.0638541728,
-                                            1, -0.0894841775, -1.2914855480};
+    static constexpr Mat3x3 oklab_to_lms_base = {1,  0.3963377774,  0.2158037573,
+                                                 1, -0.1055613458, -0.0638541728,
+                                                 1, -0.0894841775, -1.2914855480};
     
     static constexpr Mat3x3 lms_to_linear_rgb_base = {4.0767416621, -3.3077115913,  0.2309699292,
                                                      -1.2684380046,  2.6097574011, -0.3413193965,
@@ -65,7 +69,7 @@ public:
         if (!isTuple(first_arg)) 
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First arguement for function {} must be a tuple.",
+                "First argument for function {} must be a tuple.",
                 getName());
 
         const auto * type = checkAndGetDataType<DataTypeTuple>(first_arg);
@@ -83,7 +87,7 @@ public:
             if (!isNumber(elem)) 
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "In fuction {} tuple elements must be numbers.",
+                    "In function {} tuple elements must be numbers.",
                     getName());
         }
         
@@ -137,7 +141,7 @@ public:
             Colors lch_data{l_data[row], 
                             c_data[row],
                             h_data[row]};
-            Colors res = oklch_to_srgb_base(lch_data, gamma_data[row]);
+            Colors res = oklchToSrgbBase(lch_data, gamma_data[row]);
             r_data.push_back(res[0]);
             g_data.push_back(res[1]);
             b_data.push_back(res[2]);
@@ -148,7 +152,7 @@ public:
 
 private:
 
-    Colors oklch_to_srgb_base(const Colors & oklch, Float64 gamma) const
+    Colors oklchToSrgbBase(const Colors & oklch, Float64 gamma) const
     {
         Float64 c = oklch[1];
         Float64 h = oklch[2] * deg2rad; 
@@ -163,9 +167,9 @@ private:
         {
             for (size_t channel = 0; channel < channels_num; ++channel) 
             {
-                lms[i] += oklab[channel] * oklab_to_lms[(3 * i) + channel];
+                lms[i] = std::fma(oklab[channel], oklab_to_lms_base[(3 * i) + channel], lms[i]);
             } 
-            lms[i] = std::pow(lms[i], 3);  
+            lms[i] = lms[i] * lms[i] * lms[i];  
         }
  
         Colors rgb{};
@@ -173,18 +177,19 @@ private:
         {
             for (size_t channel = 0; channel < channels_num; ++channel) 
             {
-                rgb[i] += lms[channel] * lms_to_linear_rgb_base[(3 * i) + channel];
+                rgb[i] = std::fma(lms[channel], lms_to_linear_rgb_base[(3 * i) + channel], rgb[i]);
             }
         }
 
         if (gamma == 0) 
         {
-            gamma = eps;
+            gamma = gamma_fallback;
         }
 
+        Float64 power = 1 / gamma;
         for (size_t i = 0; i < channels_num; ++i) 
         {
-            Float64 power = 1 / gamma;
+            rgb[i] = std::clamp(rgb[i], 0.0, 1.0);
             rgb[i] = std::pow(rgb[i], power) * 255.0;     
         }
 
@@ -198,11 +203,12 @@ private:
 REGISTER_FUNCTION(FunctionOkLCHToSRGB)
 {
     const FunctionDocumentation description = {
-        .description=R"(Convers OkLCH color into sRGB color space. Takes an optional parameter
-gamma, that is defaulted at 2.2 in case not provided. Dual of colorSRGBToOkLCH)",
+        .description=R"(Converts color from OkLCH perceptual color space to sRGB color space. 
+Takes an optional parameter gamma, that is defaulted at 2.2 in case it is not provided. Dual of colorSRGBToOkLCH)",
         .arguments={
-            {"oklch_tuple", "A 3-element tuple of numeric values representing OKLCH coordinates: L (lightness in [0...1]), C (chroma >= 0), and H (hue in degrees [0...360])"},
-            {"gamma", "Optional gamma exponent for sRGB transfer function. Defaults to 2.2 if ommited."},
+            {"oklch_tuple", R"(A 3-element tuple of numeric values representing OkLCH coordinates: L (lightness in [0...1]), 
+C (chroma >= 0), and H (hue in degrees [0...360]))"},
+            {"gamma", "Optional gamma exponent for sRGB transfer function. Defaults to 2.2 if omitted."},
         },
         .returned_value{"Returns a 3-element tuple of sRGB values", {"Tuple(Float64, Float64, Float64)"}},
         .category = FunctionDocumentation::Category::Other

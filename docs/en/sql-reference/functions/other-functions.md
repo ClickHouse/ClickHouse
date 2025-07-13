@@ -639,6 +639,114 @@ Result:
 ```response
 ['default']
 ```
+## colorSRGBToOkLCH {#colorsrgbtooklch}
+
+Converts a colour encoded in the **sRGB** colour space to the perceptually uniform **OkLCH** colour space.
+
+If any input channel is outside **[0...255]** or the gamma value is non-positive, the behaviour is implementation-defined.
+
+:::note
+**OkLCH** is a cylindrical version of the Oklab colour space. Its three coordinates are **L (lightness 0-1)**, **C (chroma >= 0)** and **H (hue in degrees 0-360)**.  
+Oklab/OkLCH is designed to be perceptually uniform while remaining cheap to compute.
+:::
+
+**Syntax**
+
+```sql
+colorSRGBToOkLCH(tuple [, gamma])
+```
+
+**Arguments**
+
+- tuple - Three numeric values R, G, B in the range [0...255]. [Tuple](../data-types/tuple.md).
+- gamma - Optional numeric value. Exponent that is used to linearize sRGB (x / 255)^gamma. Defaults to 2.2.
+
+**Returned values**
+
+- A tuple (L, C, H) of type Tuple(Float64, Float64, Float64). 
+
+**Implementation details**
+
+The conversion consists of three stages: 
+
+1) sRGB to Linear sRGB
+2) Linear sRGB to OkLab
+3) OkLab to OkLCH.
+
+Second argument gamma is used in the first stage, when computing linear sRGB. For that we normalize sRGB values and take the power of gamma. Observe, that this lacks some presicion due to float point rounding. This design choise was made in order to be able to quickly compute values for different gammas, and since the difference does not changed the perseption of the color significantly.
+
+Two stages involve matrix multiplication and trigonometry conversions respectively. For more details on maths please see see Björn Ottosson’s article on OkLab color space: https://bottosson.github.io/posts/oklab/
+
+In order to have some references for colors in OkLCH space, and how they correspond to sRGB colors please see https://oklch.com/
+
+**Example**
+
+```sql
+SELECT colorSRGBToOkLCH((128, 64, 32), 2.2) AS lch;
+```
+
+Result:
+``` response
+┌─lch─────────────────────────────────────────────────────────┐
+│ (0.4436238384931984,0.10442699545678624,45.907345481930236) │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## colorOkLCHToSRGB {#coloroklchtosrgb}
+
+Converts a colour from the **OkLCH** perceptual colour space to the familiar **sRGB** colour space.
+
+If **L** is outside **[0...1]**, **C** is negative, or **H** is outside **[0...360]**, the result is implementation-defined.
+
+:::note
+**OkLCH** is a cylindrical version of the Oklab colour space. Its three coordinates are **L (lightness 0-1)**, **C (chroma >= 0)** and **H (hue in degrees 0-360)**.  
+Oklab/OkLCH is designed to be perceptually uniform while remaining cheap to compute.
+:::
+
+**Syntax**
+
+```sql
+colorOkLCHToSRGB(tuple [, gamma])
+```
+
+**Arguments**
+
+- tuple - Three numeric values L, C, H, presented as tuple where:
+    - L is in range [0...1],
+    - C >= 0 and
+    - H is in range [0...360]. [Tuple](../data-types/tuple.md).
+- gamma - Optional numeric value. Exponent that is used to linearize sRGB (x / 255)^gamma. Defaults to 2.2.
+
+**Returned values**
+
+- A tuple (R, G, B) of type Tuple(Float64, Float64, Float64).
+
+**Implementation details**
+
+The conversion is inverse of `colorSRGBToOkLCH`: 
+
+1) OkLCH to OkLab.
+2) OkLab to Linear sRGB
+3) Linear sRGB to sRGB
+
+Second argument gamma is used at the last stage. Note, that all three vhannels are clipped in range `[0...1]` right before computing linear sRGB, and then set in power `1 / gamma`. In case `gamma` is `0`, `1 / gamma` is changed for `1'000'000`. Thus, irrespectively of the input we noramlly will have returned floats in range `[0...255]`.
+
+As in case of `colorSRGBToOkLCH`, two other stages involve trigonometry conversions and matrix multiplication respectively. For more details on maths please see see Björn Ottosson’s article on OkLab color space: https://bottosson.github.io/posts/oklab/
+
+In order to have some references for colors in OkLCH space, and how they correspond to sRGB colors please see https://oklch.com/
+
+**Example**
+
+```sql
+SELECT colorOkLCHToSRGB((0.4466, 0.0991, 45.44), 2.2) AS rgb
+```
+
+Result:
+``` response
+┌─rgb──────────────────────────────────────────────────────┐
+│ (127.03349738778945,66.06672044472008,37.11802592155851) │
+└──────────────────────────────────────────────────────────┘
+```
 
 ## isConstant {#isconstant}
 

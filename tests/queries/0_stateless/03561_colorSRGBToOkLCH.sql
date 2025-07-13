@@ -16,13 +16,16 @@ SELECT colorSRGBToOkLCH((129, 87, 220));
 
 SELECT '--- Varying gamma';
 SELECT colorSRGBToOkLCH((128, 64, 32), 1.0);
+SELECT colorSRGBToOkLCH((128, 64, 32), 1.8);
+SELECT colorSRGBToOkLCH((128, 64, 32), 2.2);
 SELECT colorSRGBToOkLCH((128, 64, 32), 2.4);
 SELECT colorSRGBToOkLCH((128, 64, 32), 3.0);
 
 SELECT '--- Edge case colors';
 SELECT colorSRGBToOkLCH((128, 128, 128));
+SELECT colorSRGBToOkLCH((0.628, 0.2577, 29.2));
 SELECT colorSRGBToOkLCH((-53, -134, -180));
 SELECT colorSRGBToOkLCH((53, 134, 180), 0);
 SELECT colorSRGBToOkLCH((53, 134, 180), -1000);
 SELECT colorSRGBToOkLCH((53, 134, 180), 1000);
-SELECT colorSRGBToOkLCH((-1e3, -1e6, 180));
+SELECT colorSRGBToOkLCH((1e-3, 1e-6, 180));
