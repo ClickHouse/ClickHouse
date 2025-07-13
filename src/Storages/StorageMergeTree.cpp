@@ -51,6 +51,13 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event PatchesAcquireLockTries;
+    extern const Event PatchesAcquireLockMicroseconds;
+}
+
 namespace DB
 {
 
@@ -739,6 +746,9 @@ std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightwei
 
     if (parallel_mode == UpdateParallelMode::SYNC)
     {
+        ProfileEvents::increment(ProfileEvents::PatchesAcquireLockTries);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PatchesAcquireLockMicroseconds);
+
         update_lock->sync_lock = std::unique_lock(lightweight_updates_sync.sync_mutex, std::defer_lock);
         bool res = update_lock->sync_lock.try_lock_for(std::chrono::milliseconds(timeout_ms));
 
@@ -749,6 +759,9 @@ std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightwei
     }
     else if (parallel_mode == UpdateParallelMode::AUTO)
     {
+        ProfileEvents::increment(ProfileEvents::PatchesAcquireLockTries);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PatchesAcquireLockMicroseconds);
+
         auto affected_columns = getUpdateAffectedColumns(commands, local_context);
         lightweight_updates_sync.lockColumns(affected_columns, timeout_ms);
 
@@ -2301,8 +2314,6 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
         LOG_INFO(log, "Finished attaching part");
     }
 
-    /// New parts with other data may appear in place of deleted parts.
-    local_context->clearCaches();
     return results;
 }
 
