@@ -1841,7 +1841,10 @@ static void buildIndexes(
     /// from the function, we cannot create a reference to the same object.
     /// If this finally works, the we can consider to not copy, but create a shared_pointer between both. The issue with that is that
     /// shared_ptr are not thread safe so a thread save approach needs to be implemented to avoid calling the destructor concurrently.
-    context->setSkippingIndices(std::make_shared<UsefulSkipIndexes>(skip_indexes));
+    context->setSkippingIndices(
+        std::make_shared<UsefulSkipIndexes>(skip_indexes),
+        std::make_shared<RangesInDataParts>(parts)
+    );
     indexes->skip_indexes = std::move(skip_indexes);
 }
 
