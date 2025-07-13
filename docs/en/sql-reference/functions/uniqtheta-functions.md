@@ -5,7 +5,7 @@ slug: /sql-reference/functions/uniqtheta-functions
 title: 'uniqTheta Functions'
 ---
 
-# uniqTheta Functions
+# uniqTheta functions
 
 uniqTheta functions work for two uniqThetaSketch objects to do set operation calculations such as  ∪ / ∩ / × (union/intersect/not), it is to return a new uniqThetaSketch object contain the result.
 

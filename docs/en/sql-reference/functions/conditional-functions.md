@@ -5,7 +5,7 @@ slug: /sql-reference/functions/conditional-functions
 title: 'Conditional Functions'
 ---
 
-# Conditional Functions
+# Conditional functions
 
 ## Overview {#overview}
 

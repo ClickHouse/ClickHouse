@@ -5,7 +5,7 @@ slug: /sql-reference/functions/ip-address-functions
 title: 'Functions for Working with IPv4 and IPv6 Addresses'
 ---
 
-# Functions for Working with IPv4 and IPv6 Addresses
+# Functions for working with IPv4 and IPv6 addresses
 
 ## IPv4NumToString {#IPv4NumToString}
 

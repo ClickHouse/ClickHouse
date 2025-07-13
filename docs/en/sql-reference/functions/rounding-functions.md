@@ -5,7 +5,7 @@ slug: /sql-reference/functions/rounding-functions
 title: 'Rounding Functions'
 ---
 
-# Rounding Functions
+# Rounding functions
 
 ## floor {#floor}
 

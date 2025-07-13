@@ -5,7 +5,7 @@ slug: /sql-reference/functions/encoding-functions
 title: 'Encoding Functions'
 ---
 
-# Encoding Functions
+# Encoding functions
 
 ## char {#char}
 

@@ -7,7 +7,7 @@ title: 'Functions for Working with UUIDs'
 
 import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
 
-# Functions for Working with UUIDs
+# Functions for working with UUIDs
 
 ## generateUUIDv4 {#generateuuidv4}
 

@@ -5,7 +5,7 @@ slug: /sql-reference/functions/arithmetic-functions
 title: 'Arithmetic Functions'
 ---
 
-# Arithmetic Functions
+# Arithmetic functions
 
 ## Overview {#overview}
 
