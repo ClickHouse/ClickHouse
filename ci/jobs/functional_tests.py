@@ -123,6 +123,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "ParallelReplicas": "--no-zookeeper --no-shard --no-parallel-replicas",
     "AsyncInsert": " --no-async-insert",
     "DatabaseReplicated": " --no-stateful --replicated-database --jobs 3",
+    "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
 }
 
 
@@ -247,6 +248,7 @@ def main():
             f"./tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client {config_installs_args}",
             f"clickhouse-server --version",
             f"sed -i 's|>/test/chroot|>{temp_dir}/chroot|' /etc/clickhouse-server**/config.d/*.xml",
+            CH.set_random_timezone,
         ]
 
         if is_flaky_check:
@@ -286,13 +288,6 @@ def main():
 
         def start():
             res = CH.start_minio(test_type="stateless") and CH.start_azurite()
-            time.sleep(7)
-            Shell.check("ps -ef | grep minio", verbose=True)
-            # TODO: sometimes fails with AWS errors, e.g.: Access denied, no such bucket; looks like a conflict with aws infra
-            # res = res and Shell.check(
-            #     "aws s3 ls s3://test --endpoint-url http://localhost:11111/",
-            #     verbose=True,
-            # )
             res = res and CH.start()
             res = res and CH.wait_ready()
             if res:
@@ -386,7 +381,7 @@ def main():
         results.append(
             Result.create_from(
                 name="Check errors",
-                results=CH.check_fatal_messeges_in_logs(),
+                results=CH.check_fatal_messages_in_logs(),
                 status=Result.Status.SUCCESS,
                 stopwatch=sw_,
             )
@@ -409,7 +404,8 @@ def main():
                 command=collect_logs,
             )
         )
-        results[-1].results = CH.extra_tests_results
+        if test_result and CH.extra_tests_results:
+            test_result.extend_sub_results(CH.extra_tests_results)
 
     Result.create_from(
         results=results,

@@ -119,7 +119,7 @@ void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate, size_t
 
     extension = storage->getTaskIteratorExtension(
         predicate,
-        filter_actions_dag.has_value() ? &filter_actions_dag.value() : query_info.filter_actions_dag.get(),
+        filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get(),
         context,
         number_of_replicas);
 }
@@ -219,7 +219,7 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
         if (try_results.empty())
             continue;
 
-        IConnections::ReplicaInfo replica_info{ .number_of_current_replica = replica_index++ };
+        IConnections::ReplicaInfo replica_info{.number_of_current_replica = replica_index++};
 
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             std::vector<IConnectionPool::Entry>{try_results.front()},
@@ -234,13 +234,13 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
             RemoteQueryExecutor::Extension{.task_iterator = extension->task_iterator, .replica_info = std::move(replica_info)});
 
         remote_query_executor->setLogger(log);
-            Pipe pipe{std::make_shared<RemoteSource>(
-                remote_query_executor,
-                add_agg_info,
-                current_settings[Setting::async_socket_for_remote],
-                current_settings[Setting::async_query_sending_for_remote])};
-            pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
-            pipes.emplace_back(std::move(pipe));
+        Pipe pipe{std::make_shared<RemoteSource>(
+            remote_query_executor,
+            add_agg_info,
+            current_settings[Setting::async_socket_for_remote],
+            current_settings[Setting::async_query_sending_for_remote])};
+        pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
+        pipes.emplace_back(std::move(pipe));
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));

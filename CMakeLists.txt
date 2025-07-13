@@ -368,6 +368,15 @@ elseif (ENABLE_THINLTO)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
 endif ()
 
+if(COMPILER_PIPE)
+    set(MAX_COMPILER_MEMORY 2500)
+else()
+    set(MAX_COMPILER_MEMORY 1500)
+endif()
+set(MAX_LINKER_MEMORY 5000)
+include(cmake/limit_jobs.cmake)
+
+
 # Turns on all external libs like s3, kafka, ODBC, ...
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 
@@ -576,6 +585,9 @@ option(CHECK_LARGE_OBJECT_SIZES "Check that there are no large object files afte
 
 add_subdirectory (base)
 add_subdirectory (src)
+if (LEXER_STANDALONE_BUILD)
+    add_subdirectory(tests/lexer)
+endif ()
 add_subdirectory (programs)
 add_subdirectory (utils)
 

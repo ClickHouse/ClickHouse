@@ -40,6 +40,7 @@ namespace ErrorCodes
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int CANNOT_DECOMPRESS;
     extern const int CORRUPTED_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 using Checksum = CityHash_v1_0_2::uint128;
@@ -367,6 +368,15 @@ CompressedReadBufferBase::CompressedReadBufferBase(ReadBuffer * in, bool allow_d
 {
 }
 
+void CompressedReadBufferBase::seek(size_t, size_t)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressedReadBufferBase does not implements seek");
+}
+
+off_t CompressedReadBufferBase::getPosition() const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressedReadBufferBase does not implement getPosition");
+}
 
 CompressedReadBufferBase::~CompressedReadBufferBase() = default; /// Proper destruction of unique_ptr of forward-declared type.
 
