@@ -34,7 +34,12 @@ enum class DynamicTableTag : int64_t
     GNU_HASH = 0x6ffffef5,
 };
 
-struct ElfHeader
+enum SectionHeaderFlag : uint64_t
+{
+    COMPRESSED = 1 << 11,
+};
+
+struct __attribute__((__packed__)) ElfHeader
 {
     uint8_t ident[16];
     uint16_t type;
@@ -52,7 +57,7 @@ struct ElfHeader
     uint16_t shstrndx;
 };
 
-struct ElfSectionHeader
+struct __attribute__((__packed__)) ElfSectionHeader
 {
     uint32_t name;
     SectionHeaderType type;
@@ -66,7 +71,7 @@ struct ElfSectionHeader
     uint64_t entsize;
 };
 
-struct ElfProgramHeader
+struct __attribute__((__packed__)) ElfProgramHeader
 {
     ProgramHeaderType type;
     uint32_t flags;
@@ -78,7 +83,7 @@ struct ElfProgramHeader
     uint64_t align;
 };
 
-struct ElfSymbol
+struct __attribute__((__packed__)) ElfSymbol
 {
     uint32_t name;
     uint8_t info;
@@ -88,14 +93,14 @@ struct ElfSymbol
     uint64_t size;
 };
 
-struct ElfNameHeader
+struct __attribute__((__packed__)) ElfNameHeader
 {
     uint32_t namesz;
     uint32_t descsz;
     NameHeaderType type;
 };
 
-struct ElfDyn
+struct __attribute__((__packed__)) ElfDyn
 {
     DynamicTableTag tag;
     union
