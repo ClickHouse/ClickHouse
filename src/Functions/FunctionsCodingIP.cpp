@@ -1,5 +1,5 @@
 #include <functional>
-#include "DataTypes/DataTypeLowCardinality.h"
+#include <DataTypes/DataTypeLowCardinality.h>
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
 #include <Functions/FunctionsCodingIP.h>
