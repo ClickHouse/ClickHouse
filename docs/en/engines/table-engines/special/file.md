@@ -7,7 +7,7 @@ slug: /engines/table-engines/special/file
 title: 'File Table Engine'
 ---
 
-# File table engine
+# `File` table engine
 
 The File table engine keeps the data in a file in one of the supported [file formats](/interfaces/formats#formats-overview) (`TabSeparated`, `Native`, etc.).
 

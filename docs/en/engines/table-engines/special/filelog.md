@@ -7,7 +7,7 @@ slug: /engines/table-engines/special/filelog
 title: 'FileLog Engine'
 ---
 
-# FileLog engine {#filelog-engine}
+# `FileLog` engine {#filelog-engine}
 
 This engine allows processing of application log files as a stream of records.
 

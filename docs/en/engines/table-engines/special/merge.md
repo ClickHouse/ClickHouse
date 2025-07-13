@@ -21,14 +21,14 @@ CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
 
 ## Engine parameters {#engine-parameters}
 
-### Db_name {#db_name}
+### `db_name` {#db_name}
 
 `db_name` — Possible values:
     - database name,
     - constant expression that returns a string with a database name, for example, `currentDatabase()`,
     - `REGEXP(expression)`, where `expression` is a regular expression to match the DB names.
 
-### Tables_regexp {#tables_regexp}
+### `tables_regexp` {#tables_regexp}
 
 `tables_regexp` — A regular expression to match the table names in the specified DB or DBs.
 

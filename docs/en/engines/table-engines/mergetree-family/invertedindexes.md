@@ -116,16 +116,16 @@ The conditions in the `WHERE` clause contains calls of the functions that operat
 If the column is a part of an index, ClickHouse tries to use this index when performing the functions.
 ClickHouse supports different subsets of functions for the `text` index.
 
-#### Equals and notEquals {#functions-example-equals-notequals}
+#### `equals` and `notEquals` functions {#functions-example-equals-notequals}
 
 Functions `=` (equals) and `!=` (notEquals) check if the column contains rows which match the entire search term.
 
-#### In and notIn {#functions-example-in-notin}
+#### `in` and `notIn` functions {#functions-example-in-notin}
 
 Functions `IN` (in) and `NOT IN` (`notIn`) are similar to functions `equals` and `notEquals` respectively.
 Instead of matching a single term, they return true if any (`IN`) or no (`NOT IN`) search term matches a row value.
 
-#### Like, notLike and match {#functions-example-like-notlike-match}
+#### `like`, `notLike` and `match` functions {#functions-example-like-notlike-match}
 
 :::note
 Currently, these functions use the text index for filtering only if the index tokenizer is either `default` or `ngram`.

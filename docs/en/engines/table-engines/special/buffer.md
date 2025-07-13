@@ -22,25 +22,25 @@ Buffer(database, table, num_layers, min_time, max_time, min_rows, max_rows, min_
 
 ### Engine parameters {#engine-parameters}
 
-#### Database {#database}
+#### `database` {#database}
 
 `database` – Database name. You can use `currentDatabase()` or another constant expression that returns a string.
 
-#### Table {#table}
+#### `table` {#table}
 
 `table` – Table to flush data to.
 
-#### Num_layers {#num_layers}
+#### `num_layers` {#num_layers}
 
 `num_layers` – Parallelism layer. Physically, the table will be represented as `num_layers` of independent buffers.
 
-#### Min_time, max_time, min_rows, max_rows, min_bytes, and max_bytes {#min_time-max_time-min_rows-max_rows-min_bytes-and-max_bytes}
+#### `min_time`, `max_time`, `min_rows`, `max_rows`, `min_bytes`, and `max_bytes` {#min_time-max_time-min_rows-max_rows-min_bytes-and-max_bytes}
 
 Conditions for flushing data from the buffer.
 
 ### Optional engine parameters {#optional-engine-parameters}
 
-#### Flush_time, flush_rows, and flush_bytes {#flush_time-flush_rows-and-flush_bytes}
+#### `flush_time`, `flush_rows`, and `flush_bytes` {#flush_time-flush_rows-and-flush_bytes}
 
 Conditions for flushing data from the buffer in the background (omitted or zero means no `flush*` parameters).
 
@@ -48,15 +48,15 @@ Data is flushed from the buffer and written to the destination table if all the 
 
 Also, if at least one `flush*` condition is met, a flush is initiated in the background. This differs from `max*` since `flush*` allows you to configure background flushes separately to avoid adding latency for `INSERT` queries into Buffer tables.
 
-#### Min_time, max_time, and flush_time {#min_time-max_time-and-flush_time}
+#### `min_time`, `max_time`, and `flush_time` {#min_time-max_time-and-flush_time}
 
 Condition for the time in seconds from the moment of the first write to the buffer.
 
-#### Min_rows, max_rows, and flush_rows {#min_rows-max_rows-and-flush_rows}
+#### `min_rows`, `max_rows`, and `flush_rows` {#min_rows-max_rows-and-flush_rows}
 
 Condition for the number of rows in the buffer.
 
-#### Min_bytes, max_bytes, and flush_bytes {#min_bytes-max_bytes-and-flush_bytes}
+#### `min_bytes`, `max_bytes`, and `flush_bytes` {#min_bytes-max_bytes-and-flush_bytes}
 
 Condition for the number of bytes in the buffer.
 

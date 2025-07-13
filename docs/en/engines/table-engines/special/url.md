@@ -7,7 +7,7 @@ slug: /engines/table-engines/special/url
 title: 'URL Table Engine'
 ---
 
-# URL table engine
+# `URL` table engine
 
 Queries data to/from a remote HTTP/HTTPS server. This engine is similar to the [File](../../../engines/table-engines/special/file.md) engine.
 
