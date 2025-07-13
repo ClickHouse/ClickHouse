@@ -442,6 +442,7 @@ struct BackupsWorker::BackupStarter
             backup_settings.cluster_host_ids = cluster->getHostIDs();
         }
         backup_coordination = backups_worker.makeBackupCoordination(on_cluster, backup_settings, backup_context);
+        backup_coordination->startup();
 
         chassert(!backup);
         backup = backups_worker.openBackupForWriting(backup_info, backup_settings, backup_coordination, backup_context);
@@ -449,12 +450,17 @@ struct BackupsWorker::BackupStarter
         backups_worker.doBackup(backup, backup_query, backup_id, backup_settings, backup_coordination, backup_context, query_context,
                                 on_cluster, cluster);
 
-        backup_coordination->finish(/* throw_if_error = */ true);
-        backup.reset();
-
-        /// The backup coordination is not needed anymore.
         if (!is_internal_backup)
+            backup_coordination->waitOtherHostsFinish(/* throw_if_error = */ true);
+
+        /// Let other hosts know that the current host has finished its work.
+        backup_coordination->finish(/* throw_if_error = */ true);
+
+        /// If the current host is the last host working on this backup then we can remove the coordination info.
+        if (backup_coordination && backup_coordination->allHostsFinished())
             backup_coordination->cleanup(/* throw_if_error = */ true);
+
+        backup.reset();
         backup_coordination.reset();
 
         /// NOTE: setStatus is called after setNumFilesAndSize in order to have actual information in a backup log record
@@ -469,31 +475,37 @@ struct BackupsWorker::BackupStarter
                                (is_internal_backup ? "internal backup" : "backup"),
                                backup_name_for_logging));
 
-        bool should_remove_files_in_backup = backup && !is_internal_backup && backups_worker.remove_backup_files_after_failure;
+        bool backup_is_corrupted = (backup && backup->setIsCorrupted());
 
-        if (backup && !backup->setIsCorrupted())
-            should_remove_files_in_backup = false;
+        /// Let other hosts know we got an error.
+        if (backup_coordination)
+            backup_coordination->setError(std::current_exception(), /* throw_if_error = */ false);
 
-        bool all_hosts_finished = false;
-
-        if (backup_coordination && backup_coordination->setError(std::current_exception(), /* throw_if_error = */ false))
+        /// Let other hosts know that the current host has finished its work.
+        /// We do that only if the error is set to prevent other hosts from thinking that the current host has finished successfully.
+        if (backup_coordination && backup_coordination->isErrorSet())
         {
-            bool other_hosts_finished = !is_internal_backup
-                && (!backup_coordination->isBackupQuerySentToOtherHosts() || backup_coordination->waitOtherHostsFinish(/* throw_if_error = */ false));
-
-            all_hosts_finished = backup_coordination->finish(/* throw_if_error = */ false) && other_hosts_finished;
+            if (!is_internal_backup && backup_coordination->isBackupQuerySentToOtherHosts())
+                backup_coordination->waitOtherHostsFinish(/* throw_if_error = */ false);
+            backup_coordination->finish(/* throw_if_error = */ false);
         }
 
-        if (!all_hosts_finished)
-            should_remove_files_in_backup = false;
-
-        if (backup && should_remove_files_in_backup)
+        /// Remove files of the corrupted backup.
+        if (backup && backup_is_corrupted && backups_worker.remove_backup_files_after_failure && backup_coordination
+            && backup_coordination->isErrorSet() && backup_coordination->finished()
+            && (!backup_coordination->isBackupQuerySentToOtherHosts() || backup_coordination->allHostsFinished()))
+        {
             backup->tryRemoveAllFiles();
+        }
 
         backup.reset();
 
-        if (backup_coordination && all_hosts_finished)
+        /// If the current host is the last host working on this restore then we can remove the coordination info.
+        if (backup_coordination && backup_coordination->finished() &&
+            (!backup_coordination->isBackupQuerySentToOtherHosts() || backup_coordination->allHostsFinished()))
+        {
             backup_coordination->cleanup(/* throw_if_error = */ false);
+        }
 
         backup_coordination.reset();
 
@@ -820,14 +832,21 @@ struct BackupsWorker::RestoreStarter
             restore_settings.cluster_host_ids = cluster->getHostIDs();
         }
         restore_coordination = backups_worker.makeRestoreCoordination(on_cluster, restore_settings, restore_context);
+        restore_coordination->startup();
 
         backups_worker.doRestore(restore_query, restore_id, backup_info, restore_settings, restore_coordination, restore_context, query_context,
                                  on_cluster, cluster);
 
-        /// The restore coordination is not needed anymore.
-        restore_coordination->finish(/* throw_if_error = */ true);
         if (!is_internal_restore)
+            restore_coordination->waitOtherHostsFinish(/* throw_if_error = */ true);
+
+        /// Let other hosts know that the current host has finished its work.
+        restore_coordination->finish(/* throw_if_error = */ true);
+
+        /// If the current host is the last host working on this restore then we can remove the coordination info.
+        if (restore_coordination && restore_coordination->allHostsFinished())
             restore_coordination->cleanup(/* throw_if_error = */ true);
+
         restore_coordination.reset();
 
         LOG_INFO(log, "Restored from {} {} successfully", (is_internal_restore ? "internal backup" : "backup"), backup_name_for_logging);
@@ -839,12 +858,24 @@ struct BackupsWorker::RestoreStarter
         /// Something bad happened, some data were not restored.
         tryLogCurrentException(backups_worker.log, fmt::format("Failed to restore from {} {}", (is_internal_restore ? "internal backup" : "backup"), backup_name_for_logging));
 
-        if (restore_coordination && restore_coordination->setError(std::current_exception(), /* throw_if_error = */ false))
+        /// Let other hosts know we got an error.
+        if (restore_coordination)
+            restore_coordination->setError(std::current_exception(), /* throw_if_error = */ false);
+
+        /// Let other hosts know that the current host has finished its work.
+        /// We do that only if the error is set to prevent other hosts from thinking that the current host has finished successfully.
+        if (restore_coordination && restore_coordination->isErrorSet())
         {
-            bool other_hosts_finished = !is_internal_restore
-                && (!restore_coordination->isRestoreQuerySentToOtherHosts() || restore_coordination->waitOtherHostsFinish(/* throw_if_error = */ false));
-            if (restore_coordination->finish(/* throw_if_error = */ false) && other_hosts_finished)
-                restore_coordination->cleanup(/* throw_if_error = */ false);
+            if (!is_internal_restore && restore_coordination->isRestoreQuerySentToOtherHosts())
+                restore_coordination->waitOtherHostsFinish(/* throw_if_error = */ false);
+            restore_coordination->finish(/* throw_if_error = */ false);
+        }
+
+        /// If the current host is the last host working on this restore then we can remove the coordination info.
+        if (restore_coordination && restore_coordination->finished() &&
+            (!restore_coordination->isRestoreQuerySentToOtherHosts() || restore_coordination->allHostsFinished()))
+        {
+            restore_coordination->cleanup(/* throw_if_error = */ false);
         }
 
         restore_coordination.reset();
