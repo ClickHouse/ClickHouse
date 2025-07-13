@@ -229,6 +229,8 @@ if (SPLIT_DEBUG_SYMBOLS)
     set(SPLIT_DEBUG_SYMBOLS_DIR "stripped" CACHE STRING "A separate directory for stripped information")
 endif()
 
+option(BUILD_STRIPPED_BINARY "Build stripped binary (clickhouse-stripped)" OFF)
+
 cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd
 
 
