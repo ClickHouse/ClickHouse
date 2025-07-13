@@ -186,7 +186,7 @@ def main():
         results.append(
             Result.from_commands_run(
                 name="Build ClickHouse",
-                command="ninja clickhouse-bundle clickhouse-stripped",
+                command="ninja clickhouse-bundle clickhouse-stripped lexer_test",
                 workdir=build_dir,
             )
         )

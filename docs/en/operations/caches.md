@@ -3,10 +3,10 @@ description: 'When performing queries, ClickHouse uses different caches.'
 sidebar_label: 'Caches'
 sidebar_position: 65
 slug: /operations/caches
-title: 'Cache Types'
+title: 'Cache types'
 ---
 
-# Cache Types
+# Cache types
 
 When performing queries, ClickHouse uses different caches.
 
