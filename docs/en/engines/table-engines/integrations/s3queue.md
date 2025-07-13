@@ -97,7 +97,7 @@ Possible values:
 
 Default value: `ordered` in versions before 24.6. Starting with 24.6 there is no default value, the setting becomes required to be specified manually. For tables created on earlier versions the default value will remain `Ordered` for compatibility.
 
-### After_processing {#after_processing}
+### `after_processing` {#after_processing}
 
 Delete or keep file after successful processing.
 Possible values:
@@ -107,7 +107,7 @@ Possible values:
 
 Default value: `keep`.
 
-### Keeper_path {#keeper_path}
+### `keeper_path` {#keeper_path}
 
 The path in ZooKeeper can be specified as a table engine setting or default path can be formed from the global configuration-provided path and table UUID.
 Possible values:
@@ -116,7 +116,7 @@ Possible values:
 
 Default value: `/`.
 
-### S3queue_loading_retries {#loading_retries}
+### `s3queue_loading_retries` {#loading_retries}
 
 Retry file loading up to specified number of times. By default, there are no retries.
 Possible values:
@@ -125,13 +125,13 @@ Possible values:
 
 Default value: `0`.
 
-### S3queue_processing_threads_num {#processing_threads_num}
+### `s3queue_processing_threads_num` {#processing_threads_num}
 
 Number of threads to perform processing. Applies only for `Unordered` mode.
 
 Default value: Number of CPUs or 16.
 
-### S3queue_parallel_inserts {#parallel_inserts}
+### `s3queue_parallel_inserts` {#parallel_inserts}
 
 By default `processing_threads_num` will produce one `INSERT`, so it will only download files and parse in multiple threads.
 But this limits the parallelism, so for better throughput use `parallel_inserts=true`, this will allow to insert data in parallel (but keep in mind that it will result in higher number of generated data parts for MergeTree family).
@@ -142,13 +142,13 @@ But this limits the parallelism, so for better throughput use `parallel_inserts=
 
 Default value: `false`.
 
-### S3queue_enable_logging_to_s3queue_log {#enable_logging_to_s3queue_log}
+### `s3queue_enable_logging_to_s3queue_log` {#enable_logging_to_s3queue_log}
 
 Enable logging to `system.s3queue_log`.
 
 Default value: `0`.
 
-### S3queue_polling_min_timeout_ms {#polling_min_timeout_ms}
+### `s3queue_polling_min_timeout_ms` {#polling_min_timeout_ms}
 
 Specifies the minimum time, in milliseconds, that ClickHouse waits before making the next polling attempt.
 
@@ -158,7 +158,7 @@ Possible values:
 
 Default value: `1000`.
 
-### S3queue_polling_max_timeout_ms {#polling_max_timeout_ms}
+### `s3queue_polling_max_timeout_ms` {#polling_max_timeout_ms}
 
 Defines the maximum time, in milliseconds, that ClickHouse waits before initiating the next polling attempt.
 
@@ -168,7 +168,7 @@ Possible values:
 
 Default value: `10000`.
 
-### S3queue_polling_backoff_ms {#polling_backoff_ms}
+### `s3queue_polling_backoff_ms` {#polling_backoff_ms}
 
 Determines the additional wait time added to the previous polling interval when no new files are found. The next poll occurs after the sum of the previous interval and this backoff value, or the maximum interval, whichever is lower.
 
@@ -178,7 +178,7 @@ Possible values:
 
 Default value: `0`.
 
-### S3queue_tracked_files_limit {#tracked_files_limit}
+### `s3queue_tracked_files_limit` {#tracked_files_limit}
 
 Allows to limit the number of Zookeeper nodes if the 'unordered' mode is used, does nothing for 'ordered' mode.
 If limit reached the oldest processed files will be deleted from ZooKeeper node and processed again.
@@ -189,7 +189,7 @@ Possible values:
 
 Default value: `1000`.
 
-### S3queue_tracked_file_ttl_sec {#tracked_file_ttl_sec}
+### `s3queue_tracked_file_ttl_sec` {#tracked_file_ttl_sec}
 
 Maximum number of seconds to store processed files in ZooKeeper node (store forever by default) for 'unordered' mode, does nothing for 'ordered' mode.
 After the specified number of seconds, the file will be re-imported.
@@ -200,19 +200,19 @@ Possible values:
 
 Default value: `0`.
 
-### S3queue_cleanup_interval_min_ms {#cleanup_interval_min_ms}
+### `s3queue_cleanup_interval_min_ms` {#cleanup_interval_min_ms}
 
 For 'Ordered' mode. Defines a minimum boundary for reschedule interval for a background task, which is responsible for maintaining tracked file TTL and maximum tracked files set.
 
 Default value: `10000`.
 
-### S3queue_cleanup_interval_max_ms {#cleanup_interval_max_ms}
+### `s3queue_cleanup_interval_max_ms` {#cleanup_interval_max_ms}
 
 For 'Ordered' mode. Defines a maximum boundary for reschedule interval for a background task, which is responsible for maintaining tracked file TTL and maximum tracked files set.
 
 Default value: `30000`.
 
-### S3queue_buckets {#buckets}
+### `s3queue_buckets` {#buckets}
 
 For 'Ordered' mode. Available since `24.6`. If there are several replicas of S3Queue table, each working with the same metadata directory in keeper, the value of `s3queue_buckets` needs to be equal to at least the number of replicas. If `s3queue_processing_threads` setting is used as well, it makes sense to increase the value of `s3queue_buckets` setting even further, as it defines the actual parallelism of `S3Queue` processing.
 

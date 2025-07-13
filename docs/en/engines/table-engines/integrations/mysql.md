@@ -131,7 +131,7 @@ SELECT * FROM mysql_table
 
 Default settings are not very efficient, since they do not even reuse connections. These settings allow you to increase the number of queries run by the server per second.
 
-### Connection_auto_close {#connection-auto-close}
+### `connection_auto_close` {#connection-auto-close}
 
 Allows to automatically close the connection after query execution, i.e. disable connection reuse.
 
@@ -142,7 +142,7 @@ Possible values:
 
 Default value: `1`.
 
-### Connection_max_tries {#connection-max-tries}
+### `connection_max_tries` {#connection-max-tries}
 
 Sets the number of retries for pool with failover.
 
@@ -153,7 +153,7 @@ Possible values:
 
 Default value: `3`.
 
-### Connection_pool_size {#connection-pool-size}
+### `connection_pool_size` {#connection-pool-size}
 
 Size of connection pool (if all connections are in use, the query will wait until some connection will be freed).
 
@@ -163,7 +163,7 @@ Possible values:
 
 Default value: `16`.
 
-### Connection_wait_timeout {#connection-wait-timeout}
+### `connection_wait_timeout` {#connection-wait-timeout}
 
 Timeout (in seconds) for waiting for free connection (in case of there is already connection_pool_size active connections), 0 - do not wait.
 
@@ -173,7 +173,7 @@ Possible values:
 
 Default value: `5`.
 
-### Connect_timeout {#connect-timeout}
+### `connect_timeout` {#connect-timeout}
 
 Connect timeout (in seconds).
 
@@ -183,7 +183,7 @@ Possible values:
 
 Default value: `10`.
 
-### Read_write_timeout {#read-write-timeout}
+### `read_write_timeout` {#read-write-timeout}
 
 Read/write timeout (in seconds).
 
