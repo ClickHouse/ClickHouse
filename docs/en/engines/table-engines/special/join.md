@@ -6,7 +6,7 @@ slug: /engines/table-engines/special/join
 title: 'Join Table Engine'
 ---
 
-# Join table engine
+# `Join` table engine
 
 Optional prepared data structure for usage in [JOIN](/sql-reference/statements/select/join) operations.
 
