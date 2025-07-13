@@ -65,7 +65,7 @@ sudo rm -f /etc/yum.repos.d/clickhouse.repo
 
 After that follow the [install guide](../getting-started/install.md#from-rpm-packages)
 
-### You can't run Docker container {#you-cant-run-docker-container}
+### You can't run the Docker container {#you-cant-run-docker-container}
 
 You are running a simple `docker run clickhouse/clickhouse-server` and it crashes with a stack trace similar to following:
 
