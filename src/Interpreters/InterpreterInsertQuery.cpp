@@ -711,15 +711,15 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 }
 
 
-std::optional<QueryPipeline> distributedWriteFromClusterStorage(const ASTInsertQuery & query, ContextPtr local_context)
+std::optional<QueryPipeline>
+InterpreterInsertQuery::distributedWriteFromClusterStorage(const ASTInsertQuery & query, ContextPtr local_context)
 {
-    /// Do not enable parallel distributed INSERT SELECT in case when query probably comes from another server
-    if (local_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+    if (query.table_id.empty())
         return {};
 
-    const Settings & settings = local_context->getSettingsRef();
-    if (settings[Setting::max_distributed_depth] && local_context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
-        throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
+    StoragePtr dst_storage = DatabaseCatalog::instance().getTable(query.table_id, local_context);
+    if (!dst_storage->isMergeTree() || !dst_storage->supportsReplication())
+        return {};
 
     auto & select = query.select->as<ASTSelectWithUnionQuery &>();
 
@@ -744,6 +744,14 @@ std::optional<QueryPipeline> distributedWriteFromClusterStorage(const ASTInsertQ
     auto src_storage_cluster = std::dynamic_pointer_cast<IStorageCluster>(src_storage);
     if (!src_storage_cluster)
         return {};
+
+    /// Do not enable parallel distributed INSERT SELECT in case when query probably comes from another server
+    if (local_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+        return {};
+
+    const Settings & settings = local_context->getSettingsRef();
+    if (settings[Setting::max_distributed_depth] && local_context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
+        throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
 
     /// Here we won't check that the cluster formed from table replicas is a subset of a cluster specified in s3Cluster/hdfsCluster table function
     auto src_cluster = src_storage_cluster->getCluster(local_context);
