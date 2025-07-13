@@ -65,18 +65,24 @@ node1 = cluster.add_instance(
     main_configs=["configs/cluster.xml"],
     user_configs=["configs/users.xml"],
     with_minio=True,
+    with_zookeeper=True,
+    macros={"replica": "node1"},
 )
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/cluster.xml"],
     user_configs=["configs/users.xml"],
     stay_alive=True,
+    with_zookeeper=True,
+    macros={"replica": "node2"},
 )
 node3 = cluster.add_instance(
     "node3",
     main_configs=["configs/cluster.xml"],
     user_configs=["configs/users.xml"],
     stay_alive=True,
+    with_zookeeper=True,
+    macros={"replica": "node3"},
 )
 
 @pytest.fixture(scope="module")
@@ -192,3 +198,47 @@ def test_reconnect_after_nodes_restart_no_wait(started_cluster):
 
     # avoid leaving the test w/o started node, so next test will start with fully runnning cluster
     node2.wait_for_start(30)
+
+
+def test_insert_select(started_cluster):
+
+    node1.query(
+        """DROP TABLE IF EXISTS t_rmt_target ON CLUSTER 'cluster_simple' SYNC;"""
+    )
+
+    node1.query(
+        """
+    CREATE TABLE t_rmt_target ON CLUSTER 'cluster_simple' (a String, b UInt64)
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/f15b1936-ae89-416b-8626-7c88d9fbe6a3/t_rmt_target', '{replica}')
+    ORDER BY (a, b);
+        """
+    )
+
+    node2.stop()
+    node2.start()
+
+    node1.query(
+        f"""
+    INSERT INTO t_rmt_target SELECT * FROM s3Cluster(
+        'cluster_simple',
+        'http://minio1:9001/root/data/generated/*.csv', 'minio', '{minio_secret_key}', 'CSV','a String, b UInt64'
+    ) SETTINGS parallel_distributed_insert_select=1;
+        """
+    )
+
+    # Check whether we inserted at least something
+    assert (
+        int(
+            node1.query(
+                """SELECT count(*) FROM t_rmt_target;"""
+            ).strip()
+        )
+        != 0
+    )
+
+    # avoid leaving the test w/o started node, so next test will start with fully runnning cluster
+    node2.wait_for_start(30)
+
+    node1.query(
+        """DROP TABLE IF EXISTS t_rmt_target ON CLUSTER 'cluster_simple' SYNC;"""
+    )

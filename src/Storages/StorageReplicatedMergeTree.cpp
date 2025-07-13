@@ -6178,39 +6178,8 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
     return pipeline;
 }
 
-std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
+std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWrite(const ASTInsertQuery &, ContextPtr)
 {
-    /// Do not enable parallel distributed INSERT SELECT in case when query probably comes from another server
-    if (local_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
-        return {};
-
-    const Settings & settings = local_context->getSettingsRef();
-    if (settings[Setting::max_distributed_depth] && local_context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
-        throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
-
-    auto & select = query.select->as<ASTSelectWithUnionQuery &>();
-
-    StoragePtr src_storage;
-
-    if (select.list_of_selects->children.size() == 1)
-    {
-        if (auto * select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
-        {
-            JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
-
-            if (joined_tables.tablesCount() == 1)
-            {
-                src_storage = joined_tables.getLeftTableStorage();
-            }
-        }
-    }
-
-    if (!src_storage)
-        return {};
-
-    if (auto src_distributed = std::dynamic_pointer_cast<IStorageCluster>(src_storage))
-        return distributedWriteFromClusterStorage(src_distributed, query, local_context);
-
     // pipeline will be built outside
     return {};
 }
