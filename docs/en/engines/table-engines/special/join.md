@@ -32,11 +32,11 @@ See the detailed description of the [CREATE TABLE](/sql-reference/statements/cre
 
 ## Engine parameters {#engine-parameters}
 
-### Join_strictness {#join_strictness}
+### `join_strictness` {#join_strictness}
 
 `join_strictness` – [JOIN strictness](/sql-reference/statements/select/join#supported-types-of-join).
 
-### Join_type {#join_type}
+### `join_type` {#join_type}
 
 `join_type` – [JOIN type](/sql-reference/statements/select/join#supported-types-of-join).
 
@@ -71,26 +71,26 @@ Main use-cases for `Join`-engine tables are following:
 
 When creating a table, the following settings are applied:
 
-#### Join_use_nulls {#join_use_nulls}
+#### `join_use_nulls` {#join_use_nulls}
 
 [join_use_nulls](/operations/settings/settings.md/#join_use_nulls)
 
-#### Max_rows_in_join {#max_rows_in_join}
+#### `max_rows_in_join` {#max_rows_in_join}
 
 [max_rows_in_join](/operations/settings/settings#max_rows_in_join)
 
-#### Max_bytes_in_join {#max_bytes_in_join}
+#### `max_bytes_in_join` {#max_bytes_in_join}
 
 [max_bytes_in_join](/operations/settings/settings#max_bytes_in_join)
 
-#### Join_overflow_mode {#join_overflow_mode}
+#### `join_overflow_mode` {#join_overflow_mode}
 
 [join_overflow_mode](/operations/settings/settings#join_overflow_mode)
 
-#### Join_any_take_last_row {#join_any_take_last_row}
+#### `join_any_take_last_row` {#join_any_take_last_row}
 
 [join_any_take_last_row](/operations/settings/settings.md/#join_any_take_last_row)
-#### Join_use_nulls {#join_use_nulls-1}
+#### `join_use_nulls` {#join_use_nulls-1}
 
 #### Persistent {#persistent}
 
