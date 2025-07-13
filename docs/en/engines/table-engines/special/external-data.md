@@ -8,7 +8,7 @@ slug: /engines/table-engines/special/external-data
 title: 'External Data for Query Processing'
 ---
 
-# External Data for Query Processing
+# External data for query processing
 
 ClickHouse allows sending a server the data that is needed for processing a query, together with a `SELECT` query. This data is put in a temporary table (see the section "Temporary tables") and can be used in the query (for example, in `IN` operators).
 
