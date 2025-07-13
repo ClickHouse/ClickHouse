@@ -1,7 +1,7 @@
 {
   "format-version" : 2,
   "table-uuid" : "a5920f9f-12d0-4773-87fc-569c00676258",
-  "location" : "s3a://test/est",
+  "location" : "s3a://test/field_ids_table_test",
   "last-sequence-number" : 1,
   "last-updated-ms" : 1740666694866,
   "last-column-id" : 2,
@@ -28,7 +28,7 @@
     "fields" : [ ]
   } ],
   "properties" : {
-    "owner" : "divanik",
+    "owner" : "scanhex12",
     "option.format-version" : "2",
     "write.parquet.compression-codec" : "zstd"
   },
@@ -57,7 +57,7 @@
       "total-position-deletes" : "0",
       "total-equality-deletes" : "0"
     },
-    "manifest-list" : "s3a://test/est/metadata/snap-3858160944799047644-1-83521e92-07a7-450d-ba44-3a179b730c85.avro",
+    "manifest-list" : "s3a://test/field_ids_table_test/metadata/snap-3858160944799047644-1-83521e92-07a7-450d-ba44-3a179b730c85.avro",
     "schema-id" : 0
   } ],
   "statistics" : [ ],
@@ -68,6 +68,6 @@
   } ],
   "metadata-log" : [ {
     "timestamp-ms" : 1740666685851,
-    "metadata-file" : "s3a://test/est/metadata/v1.metadata.json"
+    "metadata-file" : "s3a://test/field_ids_table_test/metadata/v1.metadata.json"
   } ]
 }
