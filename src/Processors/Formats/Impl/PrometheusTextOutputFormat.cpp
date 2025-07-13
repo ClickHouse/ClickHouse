@@ -12,7 +12,7 @@
 #include <Columns/IColumn.h>
 
 #include <Common/assert_cast.h>
-#include "DataTypes/DataTypeLowCardinality.h"
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Core/Field.h>
 
