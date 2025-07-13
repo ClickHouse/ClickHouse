@@ -1,10 +1,10 @@
 {
   "format-version" : 2,
-  "table-uuid" : "a5920f9f-12d0-4773-87fc-569c00676258",
-  "location" : "s3a://test/field_ids_table_test",
+  "table-uuid" : "d1effb24-3d84-4d18-ae2c-b6d3cacc574a",
+  "location" : "s3a://test/field_ids_table_test/metadata/field_ids_table_test",
   "last-sequence-number" : 1,
-  "last-updated-ms" : 1740666694866,
-  "last-column-id" : 2,
+  "last-updated-ms" : 1752404537038,
+  "last-column-id" : 1,
   "current-schema-id" : 0,
   "schemas" : [ {
     "type" : "struct",
@@ -14,7 +14,7 @@
       "name" : "test",
       "required" : false,
       "type" : "int"
-    }]
+    } ]
   } ],
   "default-spec-id" : 0,
   "partition-specs" : [ {
@@ -29,45 +29,41 @@
   } ],
   "properties" : {
     "owner" : "scanhex12",
-    "option.format-version" : "2",
     "write.parquet.compression-codec" : "zstd"
   },
-  "current-snapshot-id" : 3858160944799047644,
+  "current-snapshot-id" : 5900882796245881570,
   "refs" : {
     "main" : {
-      "snapshot-id" : 3858160944799047644,
+      "snapshot-id" : 5900882796245881570,
       "type" : "branch"
     }
   },
   "snapshots" : [ {
     "sequence-number" : 1,
-    "snapshot-id" : 3858160944799047644,
-    "timestamp-ms" : 1740666694866,
+    "snapshot-id" : 5900882796245881570,
+    "timestamp-ms" : 1752404537038,
     "summary" : {
       "operation" : "append",
-      "spark.app.id" : "local-1740666666602",
+      "spark.app.id" : "local-1752404456109",
       "added-data-files" : "1",
       "added-records" : "1",
-      "added-files-size" : "701",
+      "added-files-size" : "412",
       "changed-partition-count" : "1",
       "total-records" : "1",
-      "total-files-size" : "701",
+      "total-files-size" : "412",
       "total-data-files" : "1",
       "total-delete-files" : "0",
       "total-position-deletes" : "0",
       "total-equality-deletes" : "0"
     },
-    "manifest-list" : "s3a://test/field_ids_table_test/metadata/snap-3858160944799047644-1-83521e92-07a7-450d-ba44-3a179b730c85.avro",
+    "manifest-list" : "s3a://test/field_ids_table_test/metadata/field_ids_table_test/metadata/snap-5900882796245881570-1-9e3ed120-027d-4835-b8d2-026ddd73d827.avro",
     "schema-id" : 0
   } ],
   "statistics" : [ ],
   "partition-statistics" : [ ],
   "snapshot-log" : [ {
-    "timestamp-ms" : 1740666694866,
-    "snapshot-id" : 3858160944799047644
+    "timestamp-ms" : 1752404537038,
+    "snapshot-id" : 5900882796245881570
   } ],
-  "metadata-log" : [ {
-    "timestamp-ms" : 1740666685851,
-    "metadata-file" : "s3a://test/field_ids_table_test/metadata/v1.metadata.json"
-  } ]
+  "metadata-log" : [ ]
 }

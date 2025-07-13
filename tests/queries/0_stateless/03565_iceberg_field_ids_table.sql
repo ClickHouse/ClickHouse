@@ -1,4 +1,4 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: Depends on AWS
 
-SELECT * FROM icebergS3(s3_conn, filename='field_ids_table_test', SETTINGS iceberg_metadata_table_uuid = 'a5920f9f-12d0-4773-87fc-569c00676258') ORDER BY ALL;
+SELECT * FROM icebergS3(s3_conn, filename='field_ids_table_test', SETTINGS iceberg_metadata_table_uuid = 'd1effb24-3d84-4d18-ae2c-b6d3cacc574a') ORDER BY ALL;
