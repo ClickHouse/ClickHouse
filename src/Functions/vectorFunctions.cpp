@@ -1764,7 +1764,7 @@ Calculates the square root of the sum of the squares of the vector values.
     FunctionDocumentation::Arguments arguments_l2_norm = {
         {"vector", "Vector or tuple of numeric values.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l2_norm = "Returns the L2-norm or [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance).", {"UInt*", "Float*"}};
+    FunctionDocumentation::ReturnedValue returned_value_l2_norm = {"Returns the L2-norm or [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance).", {"UInt*", "Float*"}};
     FunctionDocumentation::Examples examples_l2_norm = {
         {
             "Basic usage",
@@ -1851,7 +1851,7 @@ Special cases:
         {"vector", "Vector or tuple of numeric values.", {"Tuple(T)", "Array(T)"}},
         {"p", "The power. Possible values are real numbers in the range `[1; inf)`.", {"UInt*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_lp_norm = "Returns the [Lp-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm). [`Float64`](/sql-reference/data-types/float).";
+    FunctionDocumentation::ReturnedValue returned_value_lp_norm = {"Returns the [Lp-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm).",{"Float64"}};
     FunctionDocumentation::Examples examples_lp_norm = {
         {
             "Basic usage",
@@ -2167,4 +2167,5 @@ SELECT LpNormalize((3, 4), 5)
         factory.registerFunction<FunctionLpNormalize>(documentation_lp_normalize);
     }
     factory.registerAlias("normalizeLp", FunctionLpNormalize::name, FunctionFactory::Case::Insensitive);
+}
 }
