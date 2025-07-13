@@ -46,12 +46,9 @@
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
-<<<<<<< HEAD
-=======
 #include <Disks/IDiskTransaction.h>
 #include <Disks/DiskEncryptedTransaction.h>
 #include <IO/Expect404ResponseScope.h>
->>>>>>> b18029d0e71 (fix encrypred disk)
 #include <IO/Operators.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>

@@ -56,12 +56,8 @@ public:
     /// If something fails rollback and throw exception.
     void commit() override // NOLINT
     {
-<<<<<<< HEAD
-        delegate_transaction->commit();
-=======
         LOG_DEBUG(getLogger("DiskEncryptedTransaction"), "Committing encrypted transaction with disk path '{}', tx {}", disk_path, size_t(this));
-        delegate_transaction->commit(options);
->>>>>>> b18029d0e71 (fix encrypred disk)
+        delegate_transaction->commit();
     }
 
     void undo() override
@@ -69,15 +65,6 @@ public:
         delegate_transaction->undo();
     }
 
-<<<<<<< HEAD
-=======
-    TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override
-    {
-        LOG_DEBUG(getLogger("DiskEncryptedTransaction"), "try Committing encrypted transaction with disk path '{}', tx {}", disk_path, size_t(this));
-        return delegate_transaction->tryCommit(options);
-    }
-
->>>>>>> b18029d0e71 (fix encrypred disk)
     ~DiskEncryptedTransaction() override = default;
 
     /// Create directory.

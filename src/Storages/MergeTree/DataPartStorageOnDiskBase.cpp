@@ -657,11 +657,8 @@ void DataPartStorageOnDiskBase::rename(
 
     String from = getRelativePath();
 
-<<<<<<< HEAD
-=======
     LOG_DEBUG(getLogger("DataPartStorageOnDiskBase"), "DataPartStorageOnDiskBase: Renaming part {} to {}", from, to);
 
->>>>>>> b18029d0e71 (fix encrypred disk)
     /// Why?
     executeWriteOperation([&](auto & disk)
     {

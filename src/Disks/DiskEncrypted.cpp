@@ -10,12 +10,7 @@
 #include <boost/algorithm/hex.hpp>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-<<<<<<< HEAD
-
-=======
 #include <Common/logger_useful.h>
-#include <Core/KMS.h>
->>>>>>> b18029d0e71 (fix encrypred disk)
 
 namespace DB
 {
