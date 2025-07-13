@@ -675,7 +675,7 @@ The conversion consists of three stages:
 
 Gamma is used at the first stage, when computing linear sRGB. For that we normalize sRGB values and take them in power of gamma. Observe, that this lacks some precision due to float point rounding. This design choice was made in order to be able to quickly compute values for different gammas, and since the difference does not changed the perception of the color significantly.
 
-Two stages involve matrix multiplication and trigonometry conversions respectively. For more details on maths please see see Björn Ottosson’s article on OkLab color space: https://bottosson.github.io/posts/oklab/
+Two stages involve matrix multiplication and trigonometry conversions respectively. For more details on maths please see an article on OkLab color space: https://bottosson.github.io/posts/oklab/
 
 In order to have some references for colors in OkLCH space, and how they correspond to sRGB colors please see https://oklch.com/
 
@@ -699,8 +699,8 @@ Converts a colour from the **OkLCH** perceptual colour space to the familiar **s
 If **L** is outside `[0...1]`, **C** is negative, or **H** is outside `[0...360]`, the result is implementation-defined.
 
 :::note
-**OkLCH** is a cylindrical version of the Oklab colour space. Its three coordinates are **L** (lightness in range `[0...1]`), **C** (chroma `>= 0`) and **H** (hue in degrees `[0...360]`)**.  
-Oklab/OkLCH is designed to be perceptually uniform while remaining cheap to compute.
+**OkLCH** is a cylindrical version of the OkLab colour space. Its three coordinates are **L** (lightness in range `[0...1]`), **C** (chroma `>= 0`) and **H** (hue in degrees `[0...360]`)**.  
+OkLab/OkLCH is designed to be perceptually uniform while remaining cheap to compute.
 :::
 
 **Syntax**
