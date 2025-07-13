@@ -799,7 +799,6 @@ OpenTelemetry
 OrDefault
 OrNull
 OrZero
-Ottosson’s
 OvercommitTracker
 OverflowMode
 OverflowModeGroupBy
