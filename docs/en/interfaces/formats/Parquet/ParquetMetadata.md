@@ -44,7 +44,7 @@ Special format for reading Parquet file metadata (https://parquet.apache.org/doc
             - `min` - the minimum value of the column chunk
             - `max` - the maximum column of the column chunk
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
 Example:
 

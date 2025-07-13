@@ -215,7 +215,7 @@ It is also possible to set parameters from within an interactive session:
 $ clickhouse-client --query "SET param_parName='[1, 2]'; SELECT {parName:Array(UInt16)}"
 ```
 
-### Query Syntax {#cli-queries-with-parameters-syntax}
+### Query syntax {#cli-queries-with-parameters-syntax}
 
 In the query, place the values that you want to fill using command-line parameters in braces in the following format:
 
@@ -237,7 +237,7 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
 ```
 
 
-## AI-powered SQL Generation {#ai-sql-generation}
+## AI-powered SQL generation {#ai-sql-generation}
 
 ClickHouse Client includes built-in AI assistance for generating SQL queries from natural language descriptions. This feature helps users write complex queries without deep SQL knowledge.
 
@@ -291,7 +291,7 @@ ORDER BY order_count DESC
 
 AI SQL generation is configured through a configuration file. An API key must be provided in the configuration.
 
-#### Configuration File {#ai-sql-generation-configuration-file}
+#### Configuration file {#ai-sql-generation-configuration-file}
 
 Configure AI settings in your ClickHouse Client configuration file:
 
@@ -341,7 +341,7 @@ ai:
 - `max_steps` - Maximum tool-calling steps for schema exploration (default: `10`)
 - `system_prompt` - Custom instructions for the AI (optional)
 
-### How It Works {#ai-sql-generation-how-it-works}
+### How it works {#ai-sql-generation-how-it-works}
 
 The AI SQL generator uses a multi-step process:
 
@@ -539,7 +539,7 @@ speedscope:http://speedscope-host/#profileURL=qp%3Fid%3Dc8ecc783-e753-4b38-97f1-
 ```
 
 
-## Configuration Files {#configuration_files}
+## Configuration files {#configuration_files}
 
 ClickHouse Client uses the first existing file of the following:
 
@@ -577,11 +577,11 @@ openSSL:
 ```
 
 
-## Command-Line Options {#command-line-options}
+## Command-line options {#command-line-options}
 
 All command-line options can be specified directly on the command line or as defaults in the [configuration file](#configuration_files).
 
-### General Options {#command-line-options-general}
+### General options {#command-line-options-general}
 
 **`-c [ -C, --config, --config-file ] <path-to-file>`**
 
@@ -615,7 +615,7 @@ Increase output verbosity.
 
 Print version and exit.
 
-### Connection Options {#command-line-options-connection}
+### Connection options {#command-line-options-connection}
 
 **`--connection <name>`**
 
@@ -679,7 +679,7 @@ Default value: default
 
 Instead of the `--host`, `--port`, `--user` and `--password` options, the client also supports [connection strings](#connection_string).
 
-### Query Options {#command-line-options-query}
+### Query options {#command-line-options-query}
 
 **`--param_<name>=<value>`**
 
@@ -707,7 +707,7 @@ Cannot be used together with `--query`.
 
 If specified, allow multiline queries (do not send the query on Enter). Queries will be sent only when they are ended with a semicolon.
 
-### Query Settings {#command-line-options-query-settings}
+### Query settings {#command-line-options-query-settings}
 
 Query settings can be specified as command-line options in the client, for example:
 ```bash
@@ -716,7 +716,7 @@ $ clickhouse-client --max_threads 1
 
 See [Settings](../operations/settings/settings.md) for a list of settings.
 
-### Formatting Options {#command-line-options-formatting}
+### Formatting options {#command-line-options-formatting}
 
 **`-f [ --format ] <format>`**
 
@@ -734,7 +734,7 @@ Pipe all output into this command. Typically `less` (e.g., `less -S` to display 
 
 Use the [Vertical format](../interfaces/formats.md#vertical) to output the result. This is the same as `–-format Vertical`. In this format, each value is printed on a separate line, which is helpful when displaying wide tables.
 
-### Execution Details {#command-line-options-execution-details}
+### Execution details {#command-line-options-execution-details}
 
 **`--enable-progress-table-toggle`**
 
