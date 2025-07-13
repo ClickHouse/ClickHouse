@@ -22,8 +22,8 @@ You can see an example of how to use the AggregatingMergeTree and Aggregate func
 
 The engine processes all columns with the following types:
 
-## AggregateFunction {#aggregatefunction}
-## SimpleAggregateFunction {#simpleaggregatefunction}
+- [`AggregateFunction`](../../../sql-reference/data-types/aggregatefunction.md)
+- [`SimpleAggregateFunction`](../../../sql-reference/data-types/simpleaggregatefunction.md)
 
 It is appropriate to use `AggregatingMergeTree` if it reduces the number of rows by orders.
 
