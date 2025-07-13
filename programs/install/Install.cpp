@@ -434,6 +434,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             "clickhouse-keeper",
             "clickhouse-keeper-converter",
             "clickhouse-disks",
+#if USE_CHDIG
+            "clickhouse-chdig",
+            "chdig",
+#endif
             "ch",
             "chl",
             "chc",

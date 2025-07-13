@@ -12,7 +12,7 @@
 #include <Common/getMaxFileDescriptorCount.h>
 #include <Common/StringUtils.h>
 #include <Common/config_version.h>
-#include "Common/ZooKeeper/KeeperFeatureFlags.h"
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>

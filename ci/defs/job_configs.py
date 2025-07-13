@@ -14,6 +14,7 @@ build_digest_config = Job.CacheDigestConfig(
         "./rust",
         "./ci/jobs/build_clickhouse.py",
         "./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+        "./utils/list-licenses",
     ],
     with_git_submodules=True,
 )
@@ -80,44 +81,15 @@ class JobConfigs:
         command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
         run_in_docker="clickhouse/binary-builder+--network=host",
         timeout=3600 * 4,
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./src",
-                "./contrib/",
-                "./CMakeLists.txt",
-                "./PreLoad.cmake",
-                "./cmake",
-                "./base",
-                "./programs",
-                "./rust",
-                "./ci/jobs/build_clickhouse.py",
-            ],
-            with_git_submodules=True,
-        ),
-    ).parametrize(
-        parameter=[
-            BuildTypes.AMD_TIDY,
-        ],
-        provides=[[]],  # [ArtifactNames.CH_TIDY_BIN],
-        runs_on=[
-            RunnerLabels.BUILDER_AMD,
-        ],
-    )
-    tidy_arm_build_jobs = Job.Config(
-        name=JobNames.BUILD,
-        runs_on=[],  # from parametrize()
-        requires=["Build (amd_tidy)"],
-        command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
-        # --network=host required for ec2 metadata http endpoint to work
-        run_in_docker="clickhouse/binary-builder+--network=host",
-        timeout=3600 * 4,
-        allow_merge_on_failure=True,
         digest_config=build_digest_config,
     ).parametrize(
         parameter=[
+            BuildTypes.AMD_TIDY,
             BuildTypes.ARM_TIDY,
         ],
+        provides=[[], []],
         runs_on=[
+            RunnerLabels.BUILDER_AMD,
             RunnerLabels.BUILDER_ARM,
         ],
     )
@@ -152,7 +124,6 @@ class JobConfigs:
             [
                 ArtifactNames.CH_AMD_DEBUG,
                 ArtifactNames.DEB_AMD_DEBUG,
-                ArtifactNames.LEXER_AMD_DEBUG,
             ],
             [
                 ArtifactNames.CH_AMD_RELEASE,
@@ -164,29 +135,24 @@ class JobConfigs:
                 ArtifactNames.CH_AMD_ASAN,
                 ArtifactNames.DEB_AMD_ASAN,
                 ArtifactNames.UNITTEST_AMD_ASAN,
-                ArtifactNames.LEXER_AMD_ASAN,
             ],
             [
                 ArtifactNames.CH_AMD_TSAN,
                 ArtifactNames.DEB_AMD_TSAN,
                 ArtifactNames.UNITTEST_AMD_TSAN,
-                ArtifactNames.LEXER_AMD_TSAN,
             ],
             [
                 ArtifactNames.CH_AMD_MSAN,
                 ArtifactNames.DEB_AMD_MSAM,
                 ArtifactNames.UNITTEST_AMD_MSAN,
-                ArtifactNames.LEXER_AMD_MSAN,
             ],
             [
                 ArtifactNames.CH_AMD_UBSAN,
                 ArtifactNames.DEB_AMD_UBSAN,
                 ArtifactNames.UNITTEST_AMD_UBSAN,
-                ArtifactNames.LEXER_AMD_UBSAN,
             ],
             [
                 ArtifactNames.CH_AMD_BINARY,
-                ArtifactNames.LEXER_AMD_BINARY,
             ],
             [
                 ArtifactNames.CH_ARM_RELEASE,
@@ -197,14 +163,9 @@ class JobConfigs:
             [
                 ArtifactNames.CH_ARM_ASAN,
                 ArtifactNames.DEB_ARM_ASAN,
-                ArtifactNames.LEXER_ARM_ASAN,
             ],
-            [
-                ArtifactNames.DEB_COV,
-                ArtifactNames.CH_COV_BIN,
-                ArtifactNames.LEXER_COV_BIN,
-            ],
-            [ArtifactNames.CH_ARM_BIN, ArtifactNames.LEXER_ARM_BIN],
+            [ArtifactNames.DEB_COV, ArtifactNames.CH_COV_BIN],
+            [ArtifactNames.CH_ARM_BIN],
         ],
         runs_on=[
             RunnerLabels.BUILDER_AMD,
@@ -305,7 +266,7 @@ class JobConfigs:
             RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
-            [ArtifactNames.CH_AMD_ASAN, ArtifactNames.LEXER_AMD_ASAN],
+            [ArtifactNames.CH_AMD_ASAN],
         ],
     )
     bugfix_validation_ft_pr_job = Job.Config(
@@ -345,13 +306,13 @@ class JobConfigs:
             RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
-            [ArtifactNames.CH_AMD_ASAN, ArtifactNames.LEXER_AMD_ASAN],
-            [ArtifactNames.CH_AMD_ASAN, ArtifactNames.LEXER_AMD_ASAN],
-            [ArtifactNames.CH_AMD_BINARY, ArtifactNames.LEXER_AMD_BINARY],
-            [ArtifactNames.CH_AMD_BINARY, ArtifactNames.LEXER_AMD_BINARY],
-            [ArtifactNames.CH_AMD_BINARY, ArtifactNames.LEXER_AMD_BINARY],
-            [ArtifactNames.CH_AMD_BINARY, ArtifactNames.LEXER_AMD_BINARY],
-            [ArtifactNames.CH_AMD_DEBUG, ArtifactNames.LEXER_AMD_DEBUG],
+            [ArtifactNames.CH_AMD_ASAN],
+            [ArtifactNames.CH_AMD_ASAN],
+            [ArtifactNames.CH_AMD_BINARY],
+            [ArtifactNames.CH_AMD_BINARY],
+            [ArtifactNames.CH_AMD_BINARY],
+            [ArtifactNames.CH_AMD_BINARY],
+            [ArtifactNames.CH_AMD_DEBUG],
         ],
     )
     functional_tests_jobs_coverage = common_ft_job_config.set_allow_merge_on_failure(
@@ -359,9 +320,7 @@ class JobConfigs:
     ).parametrize(
         parameter=[f"amd_coverage,{i}/6" for i in range(1, 7)],
         runs_on=[RunnerLabels.FUNC_TESTER_ARM for _ in range(6)],
-        requires=[
-            [ArtifactNames.CH_COV_BIN, ArtifactNames.LEXER_COV_BIN] for _ in range(6)
-        ],
+        requires=[[ArtifactNames.CH_COV_BIN] for _ in range(6)],
     )
     functional_tests_jobs_non_required = (
         common_ft_job_config.set_allow_merge_on_failure(True).parametrize(
@@ -398,20 +357,20 @@ class JobConfigs:
                 RunnerLabels.FUNC_TESTER_ARM,
             ],
             requires=[
-                [ArtifactNames.CH_AMD_DEBUG, ArtifactNames.LEXER_AMD_DEBUG],
-                [ArtifactNames.CH_AMD_TSAN, ArtifactNames.LEXER_AMD_TSAN],
-                [ArtifactNames.CH_AMD_TSAN, ArtifactNames.LEXER_AMD_TSAN],
-                [ArtifactNames.CH_AMD_TSAN, ArtifactNames.LEXER_AMD_TSAN],
-                [ArtifactNames.CH_AMD_MSAN, ArtifactNames.LEXER_AMD_MSAN],
-                [ArtifactNames.CH_AMD_MSAN, ArtifactNames.LEXER_AMD_MSAN],
-                [ArtifactNames.CH_AMD_MSAN, ArtifactNames.LEXER_AMD_MSAN],
-                [ArtifactNames.CH_AMD_MSAN, ArtifactNames.LEXER_AMD_MSAN],
-                [ArtifactNames.CH_AMD_UBSAN, ArtifactNames.LEXER_AMD_UBSAN],
-                [ArtifactNames.CH_AMD_DEBUG, ArtifactNames.LEXER_AMD_DEBUG],
-                [ArtifactNames.CH_AMD_TSAN, ArtifactNames.LEXER_AMD_TSAN],
-                [ArtifactNames.CH_AMD_TSAN, ArtifactNames.LEXER_AMD_TSAN],
-                [ArtifactNames.CH_AMD_TSAN, ArtifactNames.LEXER_AMD_TSAN],
-                [ArtifactNames.CH_ARM_BIN, ArtifactNames.LEXER_ARM_BIN],
+                [ArtifactNames.CH_AMD_DEBUG],
+                [ArtifactNames.CH_AMD_TSAN],
+                [ArtifactNames.CH_AMD_TSAN],
+                [ArtifactNames.CH_AMD_TSAN],
+                [ArtifactNames.CH_AMD_MSAN],
+                [ArtifactNames.CH_AMD_MSAN],
+                [ArtifactNames.CH_AMD_MSAN],
+                [ArtifactNames.CH_AMD_MSAN],
+                [ArtifactNames.CH_AMD_UBSAN],
+                [ArtifactNames.CH_AMD_DEBUG],
+                [ArtifactNames.CH_AMD_TSAN],
+                [ArtifactNames.CH_AMD_TSAN],
+                [ArtifactNames.CH_AMD_TSAN],
+                [ArtifactNames.CH_ARM_BIN],
             ],
         )
     )
@@ -428,18 +387,9 @@ class JobConfigs:
                 "arm_asan, azure, 3/3",
             ],
             requires=[
-                [
-                    ArtifactNames.CH_ARM_ASAN,
-                    ArtifactNames.LEXER_ARM_ASAN,
-                ],  # azure asan 1
-                [
-                    ArtifactNames.CH_ARM_ASAN,
-                    ArtifactNames.LEXER_ARM_ASAN,
-                ],  # azure asan 2
-                [
-                    ArtifactNames.CH_ARM_ASAN,
-                    ArtifactNames.LEXER_ARM_ASAN,
-                ],  # azure asan 3
+                [ArtifactNames.CH_ARM_ASAN],  # azure asan 1
+                [ArtifactNames.CH_ARM_ASAN],  # azure asan 2
+                [ArtifactNames.CH_ARM_ASAN],  # azure asan 3
             ],
         )
     )
@@ -703,6 +653,8 @@ class JobConfigs:
             include_paths=[
                 "./ci/docker/fuzzer",
                 "./tests/ci/ci_fuzzer_check.py",
+                "./tests/ci/ci_fuzzer_check.py",
+                "./ci/jobs/scripts/fuzzer/",
                 "./ci/docker/fuzzer",
             ],
         ),
@@ -723,11 +675,11 @@ class JobConfigs:
             RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
-            ["Build (amd_debug)"],
-            ["Build (arm_asan)"],
-            ["Build (amd_tsan)"],
-            ["Build (amd_msan)"],
-            ["Build (amd_ubsan)"],
+            [ArtifactNames.CH_AMD_DEBUG],
+            [ArtifactNames.CH_ARM_ASAN],
+            [ArtifactNames.CH_AMD_TSAN],
+            [ArtifactNames.CH_AMD_MSAN],
+            [ArtifactNames.CH_AMD_UBSAN],
         ],
     )
     buzz_fuzzer_jobs = Job.Config(
@@ -758,11 +710,11 @@ class JobConfigs:
             RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
-            ["Build (amd_debug)"],
-            ["Build (arm_asan)"],
-            ["Build (amd_tsan)"],
-            ["Build (amd_msan)"],
-            ["Build (amd_ubsan)"],
+            [ArtifactNames.CH_AMD_DEBUG],
+            [ArtifactNames.CH_ARM_ASAN],
+            [ArtifactNames.CH_AMD_TSAN],
+            [ArtifactNames.CH_AMD_MSAN],
+            [ArtifactNames.CH_AMD_UBSAN],
         ],
     )
     performance_comparison_with_prev_release_jobs = Job.Config(
