@@ -281,7 +281,6 @@ namespace ErrorCodes
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_INITIALIZED;
-    extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int TABLE_IS_DROPPED;
     extern const int FAULT_INJECTED;
     extern const int CANNOT_FORGET_PARTITION;
