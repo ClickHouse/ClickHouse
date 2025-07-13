@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for Type Conversion Functions'
-sidebar_label: 'Type Conversion'
-sidebar_position: 185
+sidebar_label: 'Type conversion'
 slug: /sql-reference/functions/type-conversion-functions
 title: 'Type Conversion Functions'
 ---
