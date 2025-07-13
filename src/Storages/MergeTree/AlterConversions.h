@@ -2,7 +2,7 @@
 
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
-
+#include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 
 namespace DB
 {
@@ -14,6 +14,7 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 /// Alter conversions which should be applied on-fly for part.
 /// Built from of the most recent mutation commands for part.
 /// Now ALTER RENAME COLUMN, ALTER UPDATE and ALTER DELETE are applied.
+/// Contains patch parts which should be applied for regular part.
 class AlterConversions : private boost::noncopyable
 {
 public:
@@ -21,6 +22,7 @@ public:
 
     AlterConversions(
         const MutationCommands & mutation_commands_,
+        const PatchPartsForReader & patch_parts_,
         const ContextPtr & context);
 
     struct RenamePair
@@ -45,7 +47,11 @@ public:
     static bool isSupportedMetadataMutation(MutationCommand::Type type);
 
     const NameSet & getAllUpdatedColumns() const { return all_updated_columns; }
+    const NameSet & getColumnsUpdatedInPatches() const { return columns_updated_in_patches; }
+
+    bool hasPatches() const { return !patch_parts.empty(); }
     bool hasMutations() const { return !mutation_commands.empty(); }
+    bool hasLightweightDelete() const;
 
     /// Returns prewhere expression steps to apply
     /// mutations that affect columns from @read_columns.
@@ -55,8 +61,12 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const ContextPtr & context) const;
 
+    PatchPartsForReader getAllPatches() const { return patch_parts; }
+    PatchPartsForReader getPatchesForColumns(const NamesAndTypesList & read_columns, bool apply_deleted_mask) const;
+
 private:
     void addMutationCommand(const MutationCommand & command, const ContextPtr & context);
+    void addPatchPart(PatchPartInfoForReader patch_part);
 
     /// Returns a chain of actions that can be
     /// applied to block to execute mutation commands
@@ -83,8 +93,8 @@ private:
     /// All mutations commands that should be applied.
     MutationCommands mutation_commands;
 
-    /// The position of first ALTER MODIFY COLUMN command.
-    std::optional<size_t> position_of_alter_conversion;
+    /// The version of first ALTER MODIFY COLUMN command.
+    std::optional<UInt64> version_of_alter_mutation;
 
     /// The number of ALTER MODIFY COLUMN commands.
     /// Applying on-fly mutations is not supported
@@ -93,6 +103,12 @@ private:
 
     /// Names of columns which are updated by mutation commands.
     NameSet all_updated_columns;
+
+    /// Patches required to be applied for a part.
+    PatchPartsForReader patch_parts;
+
+    /// Non virtual columns stored in patches.
+    NameSet columns_updated_in_patches;
 };
 
 using AlterConversionsPtr = std::shared_ptr<const AlterConversions>;

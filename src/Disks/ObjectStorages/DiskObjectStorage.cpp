@@ -724,7 +724,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         && read_settings.enable_filesystem_cache;
 
     size_t buffer_size = prefer_bigger_buffer_size
-        ? std::max<size_t>(settings.remote_fs_buffer_size, DBMS_DEFAULT_BUFFER_SIZE)
+        ? std::max<size_t>(settings.remote_fs_buffer_size, settings.prefetch_buffer_size)
         : settings.remote_fs_buffer_size;
 
     size_t total_objects_size = file_size ? *file_size : getTotalSize(storage_objects);
