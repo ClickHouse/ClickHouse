@@ -1,11 +1,17 @@
 #pragma once
 
+#include <algorithm>
 #include <Columns/ColumnVector.h>
 #include <Common/StringSearcher.h>
+#include "Storages/MergeTree/MergeTreeIndices.h"
 #include "base/defines.h"
+
 #include <Core/ColumnNumbers.h>
+#include <Core/Settings.h>
 
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
+
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 
@@ -17,6 +23,9 @@
 #include <Interpreters/Context.h>
 
 #include <Storages/MergeTree/MergeTreeIndexGin.h>
+#include <Storages/MergeTree/MergeTreeIndexReader.h>
+#include <Storages/SelectQueryInfo.h>
+#include <__ostream/print.h>
 
 namespace DB
 {
@@ -44,6 +53,55 @@ concept FunctionIndexConcept = requires(T t)
 template <FunctionIndexConcept Impl>
 class FunctionIndex : public IFunction
 {
+    /// Helper function to extract the index and conditions safety.
+    /// This performs all the checks and searches locally, so external code shouldn't check for them.
+    static std::pair<const MergeTreeIndexPtr, const MergeTreeIndexConditionGin *> extractIndexAndCondition(
+        const std::shared_ptr<const UsefulSkipIndexes> skip_indexes, String index_name)
+    {
+        auto it = std::ranges::find_if(
+            skip_indexes->useful_indices,
+            [index_name](const UsefulSkipIndexes::DataSkippingIndexAndCondition & index_and_condition)
+            {
+                return (index_and_condition.index->index.name == index_name);
+            }
+        );
+
+        if (it == skip_indexes->useful_indices.end()) [[unlikely]]
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Index named: {} does not exist.", index_name);
+
+        const MergeTreeIndexPtr index_helper = it->index;
+        if (index_helper == nullptr) [[unlikely]]
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Index named: {} is registered as null.", index_name);
+
+        if (it->index->index.type != "text") [[unlikely]]
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Index named: {} is not a text index.", index_name);
+
+        const MergeTreeIndexConditionGin * gin_filter_condition = dynamic_cast<const MergeTreeIndexConditionGin *>(it->condition.get());
+        if (gin_filter_condition == nullptr) [[unlikely]]
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Condition for text index {} is incorrect.", index_name);
+
+        return {index_helper, gin_filter_condition};
+    }
+
+    template <typename T>
+    const ColumnVector<T> * extractColumnAndCheck(const ColumnsWithTypeAndName & arguments, size_t pos) const
+    {
+        const ColumnVector<T> * col_index_vector = checkAndGetColumn<ColumnVector<T>>(arguments[pos].column.get());
+
+        if (!col_index_vector) [[unlikely]]
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be {}.",
+                arguments[pos].type->getName(),
+                pos + 1,
+                getName(),
+                col_index_vector->getFamilyName());
+
+        return col_index_vector;
+    }
+
+
+
 public:
     static constexpr auto name = Impl::name;
     using ResultType = typename Impl::ResultType;
@@ -82,19 +140,8 @@ public:
         chassert(part_index_argument.column->size() == input_rows_count);
         chassert(part_offset_argument.column->size() == input_rows_count);
 
-        printf("input_rows_count = %zu index->size() = %zu token->size() = %zu context = %p, index_argument %s, token_argument %s\n",
-            input_rows_count,
-            index_argument.column->size(),
-            token_argument.column->size(),
-            static_cast<const void *>(context.get()),
-            index_argument.type->getName().c_str(),
-            token_argument.type->getName().c_str()
-        );
-
-        auto col_res = ColumnVector<ResultType>::create();
-        PaddedPODArray<ResultType> &vec_res = col_res->getData();
-        vec_res.resize(index_argument.column->size());
-        std::ranges::fill(vec_res, 0);
+        auto col_res = ColumnVector<ResultType>::create(input_rows_count, ResultType());
+        //PaddedPODArray<ResultType> &vec_res = col_res->getData();
 
         /// This is a not totally save method to ensure that this works.
         /// Apparently when input_rows_count == 0 the indexes are not constructed yet.
@@ -102,40 +149,145 @@ public:
         if (input_rows_count == 0)
             return col_res;
 
-        auto const [skip_indexes, skip_indexes_mutex] = context->getStorageSnapshot();
-        if (skip_indexes == nullptr)
-            throw Exception(ErrorCodes::NOT_INITIALIZED, "Index function: {} cannot access skip_indexes.", getName());
+        /// Remember that the skip_indexes_mutex is a hold mutex.
+        auto const [skip_indexes, ranges_in_parts, skip_indexes_mutex] = context->getSkippingIndices();
+        chassert(skip_indexes != nullptr);
+        chassert(ranges_in_parts != nullptr);
+
+        const String index_name = checkAndGetColumnConstStringOrFixedString(index_argument.column.get())->getValue<String>();
+        const String token = checkAndGetColumnConstStringOrFixedString(token_argument.column.get())->getValue<String>();
+
+        const ColumnUInt64 * col_part_index_vector = extractColumnAndCheck<UInt64>(arguments, 2);
+        const ColumnUInt64 * col_part_offset_vector = extractColumnAndCheck<UInt64>(arguments, 3);
+
+        // Find index and condition iterator
+        const auto [index_helper, gin_filter_condition] = extractIndexAndCondition(skip_indexes, index_name);
+
+        const size_t index_granularity = index_helper->index.granularity;
+
+        // Now search the part
+        size_t part_idx = col_part_index_vector->getElement(0);
+
+        const auto & part_ranges = ranges_in_parts->at(part_idx);
+        const DataPartPtr part = part_ranges.data_part;
+
+        const UInt64 first_row = col_part_offset_vector->getElement(0);
+        const UInt64 last_row = col_part_offset_vector->getElement(input_rows_count - 1);
+
+        const size_t first_mark = part->index_granularity->getMarkRangeForRowOffset(first_row).begin;
+        const size_t last_mark = part->index_granularity->getMarkRangeForRowOffset(last_row).begin;
+
+        std::println("Called HasTokenIndex({}, {}, [{}], [{} -> {}]) diff: {} input_rows: {}",
+            index_name, token, part_idx, first_row, last_row, last_row - first_row, input_rows_count);
+
+        chassert(first_row == part->index_granularity->getMarkStartingRow(first_mark));
+        chassert(last_row + 1 == part->index_granularity->getMarkStartingRow(last_mark) + part->index_granularity->getMarkRows(last_mark));
+
+        MarkRanges index_ranges;
+        for (const auto & range : part_ranges.ranges)
+        {
+            MarkRange index_range(
+                range.begin / index_granularity,
+                (range.end + index_granularity - 1) / index_granularity);
+            index_ranges.push_back(index_range);
+        }
+
+        PostingsCacheForStore cache_in_store(index_helper->getFileName(), part->getDataPartStoragePtr());
+
+        const size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
+
+        const size_t index_marks_count = (marks_count + index_granularity - 1) / index_granularity;
+
+        MergeTreeIndexReader reader(
+            index_helper, part,
+            index_marks_count,
+            index_ranges,
+            context->getIndexMarkCache().get(),
+            context->getIndexUncompressedCache().get(),
+            context->getVectorSimilarityIndexCache().get(),
+            MergeTreeReaderSettings::Create(context, SelectQueryInfo()));
+
+        MergeTreeIndexGranulePtr granule = nullptr;
+        size_t last_index_mark = 0;
+
+        size_t counter = 0;
+        auto & vec_res = col_res->getData();
+
+        size_t next_idx = 0;
+        size_t next_offset = first_row;
+
+        for (size_t i = 0; i < index_ranges.size(); ++i)
+        {
+            const MarkRange& irange = index_ranges[i];
+            //std::println("     range: {} [{} - {}]", i, irange.begin, irange.end);
+
+            for (size_t index_mark = irange.begin; index_mark < irange.end; ++index_mark)
+            {
+                if (index_mark < first_mark)
+                    continue;
+
+                if (index_mark > last_mark)
+                    break;
+
+                auto granule_start = part->index_granularity->getMarkStartingRow(index_mark);
+                auto granule_size = part->index_granularity->getMarkRows(index_mark);
+
+                if (granule_start != next_offset)
+                    continue;
+
+                if (index_mark != irange.begin || !granule || last_index_mark != irange.begin)
+                    reader.read(index_mark, granule);
+
+                MergeTreeIndexGranuleGinPtr granule_gin = std::dynamic_pointer_cast<MergeTreeIndexGranuleGin>(granule);
+                if (!granule_gin)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "GinFilter index condition got a granule with the wrong type.");
+
+                const std::vector<uint32_t> indices = gin_filter_condition->getVectorInGranule(granule_gin, cache_in_store);
+
+                for (uint32_t global_idx : indices)
+                {
+                    const uint32_t local_idx = global_idx - granule_start + next_idx - 1;
+                    chassert(local_idx < input_rows_count);
+                    vec_res[local_idx] = 1;
+                }
 
 
-        const ColumnUInt64 * col_part_index_vector = checkAndGetColumn<ColumnUInt64>(&*part_index_argument.column);
-        if (!col_part_index_vector)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal type {} of argument {} of function {}. Must be UInt64.",
-                part_index_argument.type->getName(),
-                3,
-                getName());
+                next_idx += granule_size;
+                next_offset = col_part_offset_vector->getElement(next_idx);
 
-        const ColumnUInt64 * col_part_offset_vector = checkAndGetColumn<ColumnUInt64>(&*part_offset_argument.column);
-        if (!col_part_offset_vector)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal type {} of argument {} of function {}. Must be UInt64.",
-                part_offset_argument.type->getName(),
-                4,
-                getName());
+                // if (indices.size() > 0)
+                // {
+                //     std::println(" Mark: {}:  [{} : {}] diff: {} tokens: {}",
+                //         index_mark,
+                //         granule_start,
+                //         granule_start + granule_size,
+                //         granule_size,
+                //         indices.size()
+                //     );
 
-        printf(" skip_indexes->useful_indices %zu\n", skip_indexes->useful_indices.size());
+                //     counter += indices.size();
+                // }
+            }
+
+            last_index_mark = irange.end - 1;
+        }
+
+
+        std::println(" counter = {}", counter);
 
         // RangesInDataParts parts_with_ranges = indexInfo.parts;
-        // UsefulSkipIndexes & skip_indexes = indexInfo.indexes->skip_indexes
 
+        // skip_indexes = indexes->skip_indexes
         // const auto & index_and_condition = skip_indexes.useful_indices[idx];
+
+        // MergeTreeIndexPtr index = index_and_condition.index;
+        // MergeTreeIndexConditionPtr condition = index_and_condition.condition;
+
         // auto & ranges = parts_with_ranges[part_index];
 
         // index_helper = index_and_condition.index;
         // part = ranges.data_part
-        // skip_indexes = indexes->skip_indexes
+        // ranges = ranges.ranges
 
         // for idx in skip_indexes
 
@@ -153,7 +305,5 @@ struct HasTokenIndexImpl
 
 
 using FunctionHasTokenIndex = FunctionIndex<HasTokenIndexImpl>;
-
-
 
 }

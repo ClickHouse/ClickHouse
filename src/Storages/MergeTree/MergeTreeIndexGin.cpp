@@ -335,7 +335,7 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
         else if (element.function == RPNElement::FUNCTION_EQUALS_INDEX)
         {
             // TODO: JAM This is totally arbitrary at the moment. needs polishing
-            rpn_stack.emplace_back(true, true);
+			rpn_stack.emplace_back(granule->gin_filter.contains(*element.gin_filter, cache_store), true);
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in GinFilterCondition::RPNElement");
@@ -345,6 +345,17 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in GinFilterCondition::mayBeTrueOnGranule");
 
     return rpn_stack[0].can_be_true;
+}
+
+std::vector<uint32_t> MergeTreeIndexConditionGin::getVectorInGranule(
+	MergeTreeIndexGranuleGinPtr granule_gin,
+	PostingsCacheForStore & cache_store
+) const {
+
+	chassert(rpn.size() == 1);
+	const RPNElement &element = rpn.front();
+
+	return granule_gin->gin_filter.getIndices(element.gin_filter.get(), cache_store);
 }
 
 bool MergeTreeIndexConditionGin::traverseAtomAST(const RPNBuilderTreeNode & node, RPNElement & out)
@@ -643,6 +654,9 @@ bool MergeTreeIndexConditionGin::traverseASTEqualsIndex(const RPNBuilderFunction
     /// TODO: JAM Implement this properly with all the needed checks and filtering
     // This forces the index to be inserted in the useful_indexes set.
     out.function = RPNElement::FUNCTION_EQUALS_INDEX;
+    out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
+    const String & token = token_value.safeGet<String>();
+    token_extractor->stringToGinFilter(token.data(), token.size(), *out.gin_filter);
     return true;
 
     // size_t key_column_num = 0;

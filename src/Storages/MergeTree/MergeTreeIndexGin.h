@@ -71,6 +71,8 @@ public:
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
     bool mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule, PostingsCacheForStore & cache_store) const;
 
+	std::vector<uint32_t> getVectorInGranule(MergeTreeIndexGranuleGinPtr granule_gin, PostingsCacheForStore & cache_store) const;
+
 private:
     struct KeyTuplePositionMapping
     {
