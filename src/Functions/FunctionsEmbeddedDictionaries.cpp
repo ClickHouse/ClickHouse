@@ -43,7 +43,7 @@ Accepts a region ID from the geobase. If this region is a city or part of a city
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::EmbeddedDictionary;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-        
+
         factory.registerFunction<FunctionRegionToCity>(documentation);
     }
     {
@@ -88,7 +88,7 @@ LIMIT 15
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::EmbeddedDictionary;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-        
+
         factory.registerFunction<FunctionRegionToArea>(documentation);
     }
     {
@@ -128,7 +128,7 @@ Converts a region to a federal district (type 4 in the geobase).
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::EmbeddedDictionary;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-        
+
         factory.registerFunction<FunctionRegionToDistrict>(documentation);
     }
     {
@@ -167,7 +167,7 @@ Converts a region to a country (type 3 in the geobase).
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::EmbeddedDictionary;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-        
+
         factory.registerFunction<FunctionRegionToCountry>(documentation);
     }
     {
@@ -206,7 +206,7 @@ Converts a region to a continent (type 1 in the geobase).
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::EmbeddedDictionary;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-        
+
         factory.registerFunction<FunctionRegionToContinent>(documentation);
     }
     {
@@ -245,7 +245,7 @@ Finds the highest continent in the hierarchy for the region.
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::EmbeddedDictionary;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-        
+
         factory.registerFunction<FunctionRegionToTopContinent>(documentation);
     }
     {
@@ -285,7 +285,7 @@ If the population is not recorded for the region, it returns `0`. In the geobase
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::EmbeddedDictionary;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-        
+
         factory.registerFunction<FunctionRegionToPopulation>(documentation);
     }
     {
@@ -320,7 +320,7 @@ USA is not in Boulder
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::EmbeddedDictionary;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-        
+
         factory.registerFunction<FunctionRegionIn>(documentation);
     }
     {
@@ -351,7 +351,7 @@ Given a region ID from the geobase, returns an array of region IDs consisting of
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::EmbeddedDictionary;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-        
+
         factory.registerFunction<FunctionRegionHierarchy>(documentation);
     }
     {
@@ -382,7 +382,7 @@ Given a region ID from the geobase, returns the name of the region in the specif
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::EmbeddedDictionary;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-        
+
         factory.registerFunction<FunctionRegionToName>(documentation);
     }
 }
