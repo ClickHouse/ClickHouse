@@ -23,10 +23,13 @@ public:
     void setRestoreQueryIsSentToOtherHosts() override {}
     bool isRestoreQuerySentToOtherHosts() const override { return false; }
     Strings setStage(const String &, const String &, bool) override { return {}; }
-    bool setError(std::exception_ptr, bool) override { return true; }
-    bool waitOtherHostsFinish(bool) const override { return true; }
-    bool finish(bool) override { return true; }
-    bool cleanup(bool) override { return true; }
+    void setError(std::exception_ptr, bool) override { is_error_set = true; }
+    bool isErrorSet() const override { return is_error_set; }
+    void waitOtherHostsFinish(bool) const override {}
+    void finish(bool) override { is_finished = true; }
+    bool finished() const override { return is_finished; }
+    bool allHostsFinished() const override { return finished(); }
+    void cleanup(bool) override {}
 
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) override;
@@ -63,6 +66,9 @@ private:
     std::unordered_set<String /* root_zk_path */> acquired_data_in_keeper_map_tables TSA_GUARDED_BY(mutex);
 
     mutable std::mutex mutex;
+
+    std::atomic<bool> is_finished = false;
+    std::atomic<bool> is_error_set = false;
 };
 
 }
