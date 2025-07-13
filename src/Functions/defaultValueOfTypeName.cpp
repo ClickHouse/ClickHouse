@@ -4,7 +4,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Core/Field.h>
 #include <Columns/ColumnConst.h>
-#include "DataTypes/DataTypeLowCardinality.h"
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
