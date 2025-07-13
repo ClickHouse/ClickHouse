@@ -643,10 +643,10 @@ Result:
 
 Converts a colour encoded in the **sRGB** colour space to the perceptually uniform **OkLCH** colour space.
 
-If any input channel is outside **[0...255]** or the gamma value is non-positive, the behaviour is implementation-defined.
+If any input channel is outside `[0...255]` or the gamma value is non-positive, the behaviour is implementation-defined.
 
 :::note
-**OkLCH** is a cylindrical version of the Oklab colour space. Its three coordinates are **L (lightness 0-1)**, **C (chroma >= 0)** and **H (hue in degrees 0-360)**.  
+**OkLCH** is a cylindrical version of the Oklab colour space. Its three coordinates are **L** (lightness in range `[0...1]`), **C** (chroma `>= 0`) and **H** (hue in degrees `[0...360]`)**.  
 Oklab/OkLCH is designed to be perceptually uniform while remaining cheap to compute.
 :::
 
@@ -658,12 +658,12 @@ colorSRGBToOkLCH(tuple [, gamma])
 
 **Arguments**
 
-- tuple - Three numeric values R, G, B in the range [0...255]. [Tuple](../data-types/tuple.md).
-- gamma - Optional numeric value. Exponent that is used to linearize sRGB (x / 255)^gamma. Defaults to 2.2.
+- `tuple` - Three numeric values R, G, B in the range `[0...255]`. [Tuple](../data-types/tuple.md).
+- `gamma` - Optional numeric value. Exponent that is used to linearize sRGB by applying `(x / 255)^gamma` to each channel `x`. Defaults to `2.2`.
 
 **Returned values**
 
-- A tuple (L, C, H) of type Tuple(Float64, Float64, Float64). 
+- A `tuple` (L, C, H) of type `Tuple(Float64, Float64, Float64)`. 
 
 **Implementation details**
 
@@ -673,7 +673,7 @@ The conversion consists of three stages:
 2) Linear sRGB to OkLab
 3) OkLab to OkLCH.
 
-Second argument gamma is used in the first stage, when computing linear sRGB. For that we normalize sRGB values and take the power of gamma. Observe, that this lacks some presicion due to float point rounding. This design choise was made in order to be able to quickly compute values for different gammas, and since the difference does not changed the perseption of the color significantly.
+Gamma is used at the first stage, when computing linear sRGB. For that we normalize sRGB values and take them in power of gamma. Observe, that this lacks some presicion due to float point rounding. This design choise was made in order to be able to quickly compute values for different gammas, and since the difference does not changed the perseption of the color significantly.
 
 Two stages involve matrix multiplication and trigonometry conversions respectively. For more details on maths please see see Björn Ottosson’s article on OkLab color space: https://bottosson.github.io/posts/oklab/
 
@@ -696,10 +696,10 @@ Result:
 
 Converts a colour from the **OkLCH** perceptual colour space to the familiar **sRGB** colour space.
 
-If **L** is outside **[0...1]**, **C** is negative, or **H** is outside **[0...360]**, the result is implementation-defined.
+If **L** is outside `[0...1]`, **C** is negative, or **H** is outside `[0...360]`, the result is implementation-defined.
 
 :::note
-**OkLCH** is a cylindrical version of the Oklab colour space. Its three coordinates are **L (lightness 0-1)**, **C (chroma >= 0)** and **H (hue in degrees 0-360)**.  
+**OkLCH** is a cylindrical version of the Oklab colour space. Its three coordinates are **L** (lightness in range `[0...1]`), **C** (chroma `>= 0`) and **H** (hue in degrees `[0...360]`)**.  
 Oklab/OkLCH is designed to be perceptually uniform while remaining cheap to compute.
 :::
 
@@ -711,15 +711,12 @@ colorOkLCHToSRGB(tuple [, gamma])
 
 **Arguments**
 
-- tuple - Three numeric values L, C, H, presented as tuple where:
-    - L is in range [0...1],
-    - C >= 0 and
-    - H is in range [0...360]. [Tuple](../data-types/tuple.md).
-- gamma - Optional numeric value. Exponent that is used to linearize sRGB (x / 255)^gamma. Defaults to 2.2.
+- `tuple` - Three numeric values **L**, **C**, **H**, presented as tuple where **L** is in range `[0...1]`, **C** `>= 0` and **H** is in range `[0...360]`. [Tuple](../data-types/tuple.md).
+- `gamma` - Optional numeric value. Exponent that is used to transform linar sRGB back to sRGB by applying `(x ^ (1 / gamma)) * 255` for each channel `x`. Defaults to `2.2`.
 
 **Returned values**
 
-- A tuple (R, G, B) of type Tuple(Float64, Float64, Float64).
+- A `tuple` (R, G, B) of type `Tuple(Float64, Float64, Float64)`.
 
 **Implementation details**
 
