@@ -22,7 +22,7 @@
 
 #include <Common/Concepts.h>
 #include <Common/DateLUTImpl.h>
-#include "DataTypes/DataTypeLowCardinality.h"
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <base/find_symbols.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
