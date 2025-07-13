@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for Natural Language Processing (NLP) Functions'
 sidebar_label: 'NLP'
-sidebar_position: 130
 slug: /sql-reference/functions/nlp-functions
 title: 'Natural Language Processing (NLP) Functions'
 ---
@@ -309,7 +308,7 @@ stem('language', word)
 Query:
 
 ```sql
-SELECT arrayMap(x -> stem('en', x), ['I', 'think', 'it', 'is', 'a', 'blessing', 'in', 'disguise']) as res;
+SELECT arrayMap(x -> stem('en', x), ['I', 'think', 'it', 'is', 'a', 'blessing', 'in', 'disguise']) AS res;
 ```
 
 Result:

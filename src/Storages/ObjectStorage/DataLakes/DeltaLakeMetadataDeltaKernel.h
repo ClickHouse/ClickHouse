@@ -35,9 +35,9 @@ public:
 
     NamesAndTypesList getTableSchema() const override;
 
-    DB::ReadFromFormatInfo prepareReadingFromFormat(
+    ReadFromFormatInfo prepareReadingFromFormat(
         const Strings & requested_columns,
-        const DB::StorageSnapshotPtr & storage_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context,
         bool supports_subset_of_columns) override;
 
@@ -57,7 +57,8 @@ public:
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,
-        size_t list_batch_size) const override;
+        size_t list_batch_size,
+        ContextPtr context) const override;
 
 private:
     const LoggerPtr log;

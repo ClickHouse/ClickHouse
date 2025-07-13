@@ -43,6 +43,7 @@
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
 #include <Common/ProfileEvents.h>
+#include <Common/quoteString.h>
 
 #include <memory>
 
@@ -604,6 +605,10 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     if (settings[Setting::parallel_distributed_insert_select] != 2)
         return {};
 
+    // NOTE: should we limit it more here?
+    if (auto storage = getTable(query); storage->isMergeTree() && !storage->supportsReplication())
+        return {};
+
     const auto & select_query = query.select->as<ASTSelectWithUnionQuery &>();
     const auto & selects = select_query.list_of_selects->children;
     if (selects.size() > 1)
@@ -779,8 +784,8 @@ void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, Cont
     const auto & insert_table = context_->getInsertionTable();
     if (!insert_table.empty())
     {
-        elem.query_databases.insert(insert_table.getDatabaseName());
-        elem.query_tables.insert(insert_table.getFullNameNotQuoted());
+        elem.query_databases.insert(backQuoteIfNeed(insert_table.getDatabaseName()));
+        elem.query_tables.insert(insert_table.getFullTableName());
     }
 }
 

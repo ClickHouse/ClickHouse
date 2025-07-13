@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for Functions for Working with URLs'
 sidebar_label: 'URLs'
-sidebar_position: 200
 slug: /sql-reference/functions/url-functions
 title: 'Functions for Working with URLs'
 ---
@@ -1052,8 +1051,8 @@ Query:
 
 ```sql
 SELECT
-    cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', 'a') as url_without_a,
-    cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', ['c', 'e']) as url_without_c_and_e;
+    cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', 'a') AS url_without_a,
+    cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', ['c', 'e']) AS url_without_c_and_e;
 ```
 
 Result:

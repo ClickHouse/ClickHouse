@@ -27,18 +27,24 @@ namespace ErrorCodes
 
 RemoteInserter::RemoteInserter(
     Connection & connection_,
-    const ConnectionTimeouts & timeouts,
+    const ConnectionTimeouts & timeouts_,
     const String & query_,
     const Settings & settings_,
     const ClientInfo & client_info_)
-    : connection(connection_)
+    : insert_settings(settings_)
+    , client_info(client_info_)
+    , timeouts(timeouts_)
+    , connection(connection_)
     , query(query_)
     , server_revision(connection.getServerRevision(timeouts))
+{}
+
+void RemoteInserter::initialize()
 {
-    ClientInfo modified_client_info = client_info_;
+    ClientInfo modified_client_info = client_info;
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    Settings settings = settings_;
+    Settings settings = insert_settings;
     /// With current protocol it is impossible to avoid deadlock in case of send_logs_level!=none.
     ///
     /// RemoteInserter send Data blocks/packets to the remote shard,

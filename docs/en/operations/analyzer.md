@@ -86,8 +86,8 @@ A new setting, `analyzer_compatibility_join_using_top_level_identifier`, when en
 
 ```sql
 SELECT a + 1 AS b, t2.s
-FROM Values('a UInt64, b UInt64', (1, 1)) AS t1
-JOIN Values('b UInt64, s String', (1, 'one'), (2, 'two')) t2
+FROM VALUES('a UInt64, b UInt64', (1, 1)) AS t1
+JOIN VALUES('b UInt64, s String', (1, 'one'), (2, 'two')) t2
 USING (b);
 ```
 
@@ -127,8 +127,8 @@ In the new version of the analyzer, the rules for determining the common superty
 **Example:**
 
 ```sql
-SELECT id, toTypeName(id) FROM Values('id LowCardinality(String)', ('a')) AS t1
-FULL OUTER JOIN Values('id String', ('b')) AS t2
+SELECT id, toTypeName(id) FROM VALUES('id LowCardinality(String)', ('a')) AS t1
+FULL OUTER JOIN VALUES('id String', ('b')) AS t2
 USING (id);
 ```
 

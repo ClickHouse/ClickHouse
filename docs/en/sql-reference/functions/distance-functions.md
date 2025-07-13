@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for Distance Functions'
 sidebar_label: 'Distance'
-sidebar_position: 55
 slug: /sql-reference/functions/distance-functions
 title: 'Distance Functions'
 ---

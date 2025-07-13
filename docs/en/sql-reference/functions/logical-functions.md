@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for Logical Functions'
 sidebar_label: 'Logical'
-sidebar_position: 110
 slug: /sql-reference/functions/logical-functions
 title: 'Logical Functions'
 ---

@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for Functions for Working with UUIDs'
 sidebar_label: 'UUIDs'
-sidebar_position: 205
 slug: /sql-reference/functions/uuid-functions
 title: 'Functions for Working with UUIDs'
 ---
@@ -260,7 +259,7 @@ The UUID type value.
 This first example returns the first argument converted to a UUID type as it can be converted:
 
 ```sql
-SELECT toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', cast('59f0c404-5cb3-11e7-907b-a6006ad3dba0' as UUID));
+SELECT toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', cast('59f0c404-5cb3-11e7-907b-a6006ad3dba0' AS UUID));
 ```
 
 Result:
@@ -274,7 +273,7 @@ Result:
 This second example returns the second argument (the provided default UUID) as the first argument cannot be converted to a UUID type:
 
 ```sql
-SELECT toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', cast('59f0c404-5cb3-11e7-907b-a6006ad3dba0' as UUID));
+SELECT toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', cast('59f0c404-5cb3-11e7-907b-a6006ad3dba0' AS UUID));
 ```
 
 Result:

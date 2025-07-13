@@ -289,6 +289,8 @@ public:
 
     ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const override;
 
+    void updateAt(const IColumn & src, size_t dst_pos, size_t src_pos) override;
+
     ColumnPtr compress(bool force_compression) const override;
 
     /// Replace elements that match the filter with zeroes. If inverted replaces not matched elements.

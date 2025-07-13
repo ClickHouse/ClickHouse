@@ -96,7 +96,7 @@ public:
         /// If result of this not is deterministic. Checks only this node, not a subtree.
         bool isDeterministic() const;
         void toTree(JSONBuilder::JSONMap & map) const;
-        size_t getHash() const;
+        UInt64 getHash() const;
         void updateHash(SipHash & hash_state) const;
     };
 
@@ -117,7 +117,7 @@ public:
     ActionsDAG & operator=(ActionsDAG &&) = default;
     ActionsDAG & operator=(const ActionsDAG &) = delete;
     explicit ActionsDAG(const NamesAndTypesList & inputs_);
-    explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_);
+    explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_, bool duplicate_const_columns = true);
 
     const Nodes & getNodes() const { return nodes; }
     static Nodes detachNodes(ActionsDAG && dag) { return std::move(dag.nodes); }
