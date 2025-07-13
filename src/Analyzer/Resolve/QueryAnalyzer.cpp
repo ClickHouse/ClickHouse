@@ -821,7 +821,12 @@ void QueryAnalyzer::convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, Ide
 
     auto * function = source_expression->as<FunctionNode>();
 
-    if (!function || function->getFunctionName() == "_CAST" || function->getFunctionName() == "array")
+    std::string get_scalar_function_name = "__getScalar";
+
+    if (!function || function->getFunctionName() == get_scalar_function_name)
+        return;
+
+    if (function->getFunctionName() == "_CAST" || function->getFunctionName() == "array")
         return;
 
     auto & context = scope.context;
@@ -849,8 +854,6 @@ void QueryAnalyzer::convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, Ide
 
         mutable_context->addScalar(scalar_query_hash_string, scalar_block);
     }
-
-    std::string get_scalar_function_name = "__getScalar";
 
     auto scalar_query_hash_constant_node = std::make_shared<ConstantNode>(std::move(scalar_query_hash_string), std::make_shared<DataTypeString>());
 
