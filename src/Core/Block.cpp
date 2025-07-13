@@ -443,7 +443,8 @@ size_t Block::bytes() const
 {
     size_t res = 0;
     for (const auto & elem : data)
-        res += elem.column->byteSize();
+        if (elem.column)
+            res += elem.column->byteSize();
 
     return res;
 }
@@ -452,7 +453,8 @@ size_t Block::allocatedBytes() const
 {
     size_t res = 0;
     for (const auto & elem : data)
-        res += elem.column->allocatedBytes();
+        if (elem.column)
+            res += elem.column->allocatedBytes();
 
     return res;
 }

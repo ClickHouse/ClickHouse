@@ -773,7 +773,7 @@ void sanityChecks(Server & server)
                 Context::WarningType::DELAY_ACCOUNTING_DISABLED,
                 PreformattedMessage::create(
                     "Delay accounting is not enabled, OSIOWaitMicroseconds will not be gathered. You can enable it "
-                    "using `echo 1 > {}` or by using sysctl.",
+                    "using `sudo sh -c 'echo 1 > {}'` or by using sysctl.",
                     String(filename)));
     }
     catch (...) // NOLINT(bugprone-empty-catch)
@@ -2000,7 +2000,7 @@ try
             global_context->setMaxPendingMutationsExecutionTimeToWarn(new_server_settings[ServerSetting::max_pending_mutations_execution_time_to_warn]);
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
 
-            global_context->setServerSetting("s3queue_disable_streaming", new_server_settings[ServerSetting::s3queue_disable_streaming].value);
+            global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
 
             global_context->setOSCPUOverloadSettings(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection], new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]);
 

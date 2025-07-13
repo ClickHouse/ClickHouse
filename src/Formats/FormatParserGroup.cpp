@@ -93,4 +93,23 @@ void FormatParserGroup::initKeyCondition(const Block & keys)
     columns_used_by_key_condition = key_condition->getUsedColumns();
 }
 
+void FormatParserGroup::initOnce(std::function<void()> f)
+{
+    std::call_once(init_flag, [&]
+        {
+            if (init_exception)
+                std::rethrow_exception(init_exception);
+
+            try
+            {
+                f();
+            }
+            catch (...)
+            {
+                init_exception = std::current_exception();
+                throw;
+            }
+        });
+}
+
 }

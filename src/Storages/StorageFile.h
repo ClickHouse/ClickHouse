@@ -267,7 +267,6 @@ private:
         bool need_only_count_,
         FormatParserGroupPtr);
 
-
     /**
       * If specified option --rename_files_after_processing and files created by TableFunctionFile
       * Last reader will rename files according to specified pattern if desctuctor of reader was called without uncaught exceptions
