@@ -728,7 +728,7 @@ The conversion is inverse of `colorSRGBToOkLCH`:
 
 Second argument gamma is used at the last stage. Note, that all three channels are clipped in range `[0...1]` right before computing linear sRGB, and then set in power `1 / gamma`. In case `gamma` is `0`, `1 / gamma` is changed for `1'000'000`. Thus, regardless of the input we normally will have returned floats in range `[0...255]`.
 
-As in case of `colorSRGBToOkLCH`, two other stages involve trigonometry conversions and matrix multiplication respectively. For more details on maths please see see Björn Ottosson’s article on OkLab color space: https://bottosson.github.io/posts/oklab/
+As in case of `colorSRGBToOkLCH`, two other stages involve trigonometry conversions and matrix multiplication respectively. For more details on maths please see see B. Ottosson’s article on OkLab color space: https://bottosson.github.io/posts/oklab/
 
 In order to have some references for colors in OkLCH space, and how they correspond to sRGB colors please see https://oklch.com/
 
