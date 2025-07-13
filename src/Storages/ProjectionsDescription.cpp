@@ -450,7 +450,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context, 
 
         select_row_exists->setExpression(
             ASTSelectQuery::Expression::WHERE,
-            makeASTFunction("equals", std::make_shared<ASTIdentifier>(RowExistsColumn::name), std::make_shared<ASTLiteral>(1)));
+            makeASTOperator("equals", std::make_shared<ASTIdentifier>(RowExistsColumn::name), std::make_shared<ASTLiteral>(1)));
     }
 
     /// Create "_part_offset" column when needed for projection with parent part offsets

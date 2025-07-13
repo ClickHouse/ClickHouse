@@ -51,7 +51,7 @@ DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String &
         return std::make_shared<ASTIdentifier>(column_name);
 
     if (transform_name == "void")
-        return makeASTFunction("tuple");
+        return makeASTOperator("tuple");
 
     if (transform_name.starts_with("truncate") || transform_name.starts_with("bucket"))
     {

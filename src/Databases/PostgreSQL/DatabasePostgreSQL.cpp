@@ -489,7 +489,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     /// Check for named collection.
     if (typeid_cast<ASTIdentifier *>(storage_engine_arguments->children[0].get()))
     {
-        storage_engine_arguments->children.push_back(makeASTFunction("equals", std::make_shared<ASTIdentifier>("table"), std::make_shared<ASTLiteral>(table_id.table_name)));
+        storage_engine_arguments->children.push_back(makeASTOperator("equals", std::make_shared<ASTIdentifier>("table"), std::make_shared<ASTLiteral>(table_id.table_name)));
     }
     else
     {

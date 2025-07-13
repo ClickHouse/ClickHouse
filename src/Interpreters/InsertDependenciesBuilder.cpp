@@ -531,7 +531,7 @@ DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, Storage
 
         auto valid_values_ast = std::make_unique<ASTLiteral>(std::move(valid_values_array));
         auto sign_column_ast = std::make_unique<ASTIdentifier>(storage_merge_tree->merging_params.sign_column);
-        sign_column_check_constraint->set(sign_column_check_constraint->expr, makeASTFunction("in", std::move(sign_column_ast), std::move(valid_values_ast)));
+        sign_column_check_constraint->set(sign_column_check_constraint->expr, makeASTOperator("in", std::move(sign_column_ast), std::move(valid_values_ast)));
 
         auto constraints_ast = constraints.getConstraints();
         constraints_ast.push_back(std::move(sign_column_check_constraint));

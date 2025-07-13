@@ -92,9 +92,7 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
     auto select = std::make_shared<ASTSelectQuery>();
 
     select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
-    auto count_func = std::make_shared<ASTFunction>();
-    count_func->name = "count";
-    count_func->arguments = std::make_shared<ASTExpressionList>();
+    auto count_func = makeASTFunction("count");
     select->select()->children.push_back(count_func);
 
     ASTs conditions;
@@ -106,7 +104,7 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
 
     if (conditions.size() > 1)
     {
-        auto coalesced_predicates = makeASTFunction("or");
+        auto coalesced_predicates = makeASTOperator("or");
         coalesced_predicates->arguments->children = std::move(conditions);
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(coalesced_predicates));
     }
@@ -270,14 +268,14 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER UPDATE/DELETE ... IN PARTITION is not supported for non-MergeTree tables");
 
-        partition_predicate_as_ast_func = makeASTFunction("equals",
+        partition_predicate_as_ast_func = makeASTOperator("equals",
                     std::make_shared<ASTIdentifier>("_partition_id"),
                     std::make_shared<ASTLiteral>(partition_id)
         );
     }
 
     if (command.predicate && command.partition)
-        return makeASTFunction("and", command.predicate->clone(), std::move(partition_predicate_as_ast_func));
+        return makeASTOperator("and", command.predicate->clone(), std::move(partition_predicate_as_ast_func));
     return command.predicate ? command.predicate->clone() : partition_predicate_as_ast_func;
 }
 
@@ -763,18 +761,14 @@ void MutationsInterpreter::prepare(bool dry_run)
                             condition,
                             update_expr->clone(),
                             std::make_shared<ASTIdentifier>(column_name));
-                        condition = makeASTFunction("and", condition, function);
+                        condition = makeASTOperator("and", condition, function);
                     }
                     else if (nested_update_exprs->size() > 1)
                     {
-                        function = std::make_shared<ASTFunction>();
-                        function->name = "validateNestedArraySizes";
-                        function->arguments = std::make_shared<ASTExpressionList>();
-                        function->children.push_back(function->arguments);
-                        function->arguments->children.push_back(condition);
+                        function = makeASTFunction("validateNestedArraySizes", condition);
                         for (const auto & it : *nested_update_exprs)
                             function->arguments->children.push_back(it->clone());
-                        condition = makeASTFunction("and", condition, function);
+                        condition = makeASTOperator("and", condition, function);
                     }
                 }
 

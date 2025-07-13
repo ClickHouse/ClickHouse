@@ -820,7 +820,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         {
             /// Filter block in WHERE instead to get better performance
             query.setExpression(
-                ASTSelectQuery::Expression::WHERE, makeASTFunction("and", query.prewhere()->clone(), query.where()->clone()));
+                ASTSelectQuery::Expression::WHERE, makeASTOperator("and", query.prewhere()->clone(), query.where()->clone()));
         }
 
         query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(

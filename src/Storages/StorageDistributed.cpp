@@ -1807,7 +1807,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
             return nullptr;
 
         if (select_without_join.prewhere() && select_without_join.where())
-            condition_ast = makeASTFunction("and", select_without_join.prewhere()->clone(), select_without_join.where()->clone());
+            condition_ast = makeASTOperator("and", select_without_join.prewhere()->clone(), select_without_join.where()->clone());
         else
             condition_ast = select_without_join.prewhere() ? select_without_join.prewhere()->clone() : select_without_join.where()->clone();
     }

@@ -96,11 +96,20 @@ std::shared_ptr<ASTFunction> makeASTFunction(const String & name, Args &&... arg
     auto function = std::make_shared<ASTFunction>();
 
     function->name = name;
+
     function->arguments = std::make_shared<ASTExpressionList>();
     function->children.push_back(function->arguments);
 
     function->arguments->children = { std::forward<Args>(args)... };
 
+    return function;
+}
+
+template <typename... Args>
+std::shared_ptr<ASTFunction> makeASTOperator(const String & name, Args &&... args)
+{
+    auto function = makeASTFunction(name, std::forward<Args>(args)...);
+    function->is_operator = true;
     return function;
 }
 

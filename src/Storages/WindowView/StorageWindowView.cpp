@@ -425,7 +425,7 @@ UInt32 StorageWindowView::getCleanupBound()
 ASTPtr StorageWindowView::getCleanupQuery()
 {
     ASTPtr function_less;
-    function_less= makeASTFunction(
+    function_less= makeASTOperator(
         "less",
         std::make_shared<ASTIdentifier>(window_id_name),
         std::make_shared<ASTLiteral>(getCleanupBound()));
@@ -558,11 +558,11 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     {
         /// SELECT * FROM inner_table WHERE window_id_name == w_end
         /// (because we fire at the end of windows)
-        filter_function = makeASTFunction("equals", std::make_shared<ASTIdentifier>(window_id_name), std::make_shared<ASTLiteral>(watermark));
+        filter_function = makeASTOperator("equals", std::make_shared<ASTIdentifier>(window_id_name), std::make_shared<ASTLiteral>(watermark));
     }
     else
     {
-        auto func_array = makeASTFunction("array");
+        auto func_array = makeASTOperator("array");
         auto w_end = watermark;
         while (w_start < w_end)
         {
@@ -1519,7 +1519,7 @@ void StorageWindowView::writeIntoWindowView(
 
     if (lateness_bound > 0) /// Add filter, which leaves rows with timestamp >= lateness_bound
     {
-        auto filter_function = makeASTFunction(
+        auto filter_function = makeASTOperator(
             "greaterOrEquals",
             std::make_shared<ASTIdentifier>(window_view.timestamp_column_name),
             std::make_shared<ASTLiteral>(lateness_bound));

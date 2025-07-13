@@ -219,9 +219,9 @@ static std::tuple<NamesAndTypesList, NamesAndTypesList, NamesAndTypesList, NameS
     ASTExpressionList * columns_definition, ASTExpressionList * indices_define, ContextPtr context, NamesAndTypesList & columns)
 {
     NameSet increment_columns;
-    auto keys = makeASTFunction("tuple");
-    auto unique_keys = makeASTFunction("tuple");
-    auto primary_keys = makeASTFunction("tuple");
+    auto keys = makeASTOperator("tuple");
+    auto unique_keys = makeASTOperator("tuple");
+    auto primary_keys = makeASTOperator("tuple");
 
     if (indices_define && !indices_define->children.empty())
     {

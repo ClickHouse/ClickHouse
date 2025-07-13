@@ -655,7 +655,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             if (local_settings[Setting::create_table_empty_primary_key_by_default])
             {
-                args.storage_def->set(args.storage_def->order_by, makeASTFunction("tuple"));
+                args.storage_def->set(args.storage_def->order_by, makeASTOperator("tuple"));
             }
             else
             {
