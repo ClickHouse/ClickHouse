@@ -646,8 +646,8 @@ Converts a colour encoded in the **sRGB** colour space to the perceptually unifo
 If any input channel is outside `[0...255]` or the gamma value is non-positive, the behaviour is implementation-defined.
 
 :::note
-**OkLCH** is a cylindrical version of the Oklab colour space. Its three coordinates are **L** (lightness in range `[0...1]`), **C** (chroma `>= 0`) and **H** (hue in degrees `[0...360]`)**.  
-Oklab/OkLCH is designed to be perceptually uniform while remaining cheap to compute.
+**OkLCH** is a cylindrical version of the OkLab colour space. Its three coordinates are **L** (lightness in range `[0...1]`), **C** (chroma `>= 0`) and **H** (hue in degrees `[0...360]`)**.  
+OkLab/OkLCH is designed to be perceptually uniform while remaining cheap to compute.
 :::
 
 **Syntax**
@@ -673,7 +673,7 @@ The conversion consists of three stages:
 2) Linear sRGB to OkLab
 3) OkLab to OkLCH.
 
-Gamma is used at the first stage, when computing linear sRGB. For that we normalize sRGB values and take them in power of gamma. Observe, that this lacks some presicion due to float point rounding. This design choise was made in order to be able to quickly compute values for different gammas, and since the difference does not changed the perseption of the color significantly.
+Gamma is used at the first stage, when computing linear sRGB. For that we normalize sRGB values and take them in power of gamma. Observe, that this lacks some precision due to float point rounding. This design choice was made in order to be able to quickly compute values for different gammas, and since the difference does not changed the perception of the color significantly.
 
 Two stages involve matrix multiplication and trigonometry conversions respectively. For more details on maths please see see Björn Ottosson’s article on OkLab color space: https://bottosson.github.io/posts/oklab/
 
@@ -712,7 +712,7 @@ colorOkLCHToSRGB(tuple [, gamma])
 **Arguments**
 
 - `tuple` - Three numeric values **L**, **C**, **H**, presented as tuple where **L** is in range `[0...1]`, **C** `>= 0` and **H** is in range `[0...360]`. [Tuple](../data-types/tuple.md).
-- `gamma` - Optional numeric value. Exponent that is used to transform linar sRGB back to sRGB by applying `(x ^ (1 / gamma)) * 255` for each channel `x`. Defaults to `2.2`.
+- `gamma` - Optional numeric value. Exponent that is used to transform linear sRGB back to sRGB by applying `(x ^ (1 / gamma)) * 255` for each channel `x`. Defaults to `2.2`.
 
 **Returned values**
 
@@ -726,7 +726,7 @@ The conversion is inverse of `colorSRGBToOkLCH`:
 2) OkLab to Linear sRGB
 3) Linear sRGB to sRGB
 
-Second argument gamma is used at the last stage. Note, that all three vhannels are clipped in range `[0...1]` right before computing linear sRGB, and then set in power `1 / gamma`. In case `gamma` is `0`, `1 / gamma` is changed for `1'000'000`. Thus, irrespectively of the input we noramlly will have returned floats in range `[0...255]`.
+Second argument gamma is used at the last stage. Note, that all three channels are clipped in range `[0...1]` right before computing linear sRGB, and then set in power `1 / gamma`. In case `gamma` is `0`, `1 / gamma` is changed for `1'000'000`. Thus, regardless of the input we normally will have returned floats in range `[0...255]`.
 
 As in case of `colorSRGBToOkLCH`, two other stages involve trigonometry conversions and matrix multiplication respectively. For more details on maths please see see Björn Ottosson’s article on OkLab color space: https://bottosson.github.io/posts/oklab/
 

@@ -92,6 +92,7 @@ BestEffortUSOrNull
 BestEffortUSOrZero
 BetaBadge
 Bitwise
+Björn
 Blazingly
 BlockActiveTime
 BlockDiscardBytes
@@ -784,6 +785,8 @@ Oblakov
 Observability
 Octonica
 Ok
+OkLab
+OkLCH
 OnTime
 OpenCelliD
 OpenFileForRead
@@ -797,6 +800,7 @@ OpenTelemetry
 OrDefault
 OrNull
 OrZero
+Ottosson’s
 OvercommitTracker
 OverflowMode
 OverflowModeGroupBy
@@ -1532,6 +1536,7 @@ checksumming
 checksums
 childern
 chproxy
+chroma
 chunksize
 cickhouse
 cipherList
@@ -1560,6 +1565,8 @@ codepoint
 codepoints
 codespell
 collapsingmergetree
+colorOkLCHToSRGB
+colorSRGBToOkLCH
 combinator
 combinators
 compareSubstrings
@@ -2208,6 +2215,7 @@ libuv
 libvirt
 linearizability
 linearizable
+linearize
 linearized
 lineasstring
 linefeeds
@@ -2795,6 +2803,7 @@ russian
 rustc
 rustup
 rw
+sRGB
 sasl
 satisfiable
 scala

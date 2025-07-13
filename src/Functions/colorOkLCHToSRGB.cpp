@@ -208,6 +208,7 @@ C (chroma >= 0), and H (hue in degrees [0...360]))"},
             {"gamma", "Optional gamma exponent for sRGB transfer function. Defaults to 2.2 if omitted."},
         },
         .returned_value{"Returns a 3-element tuple of sRGB values", {"Tuple(Float64, Float64, Float64)"}},
+        .introduced_in = {25, 7},
         .category = FunctionDocumentation::Category::Other
     };
     factory.registerFunction<FunctionOkLCHToSRGB>(description);

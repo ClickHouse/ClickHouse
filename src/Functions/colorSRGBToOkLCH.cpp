@@ -213,7 +213,8 @@ Takes an optional parameter gamma, that is defaulted at 2.2 in case it is not pr
             {"gamma", "Optional gamma exponent to linearize sRGB before conversion. Defaults to 2.2."},
         },
         .returned_value{"Returns a 3-element tuple of OkLCH values", {"Tuple(Float64, Float64, Float64)"}},
-        .category = FunctionDocumentation::Category::Other
+        .introduced_in = {25, 7},
+        .category = FunctionDocumentation::Category::Other,
     };
     factory.registerFunction<FunctionColorSRGBToOkLCH>(description);
 }
