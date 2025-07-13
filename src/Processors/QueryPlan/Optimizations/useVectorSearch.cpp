@@ -231,13 +231,11 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
             read_from_mergetree_step->replaceVectorColumnWithDistanceColumn(search_column);
 
             /// Now replace the "cosineDistance(vec, [1.0, 2.0...])" node in the DAG by the "_distance" node
-            std::cerr << expression.dumpDAG() << std::endl;
             expression.removeUnusedResult(sort_column); /// Removes the OUTPUT cosineDistance(...) FUNCTION Node
             expression.removeUnusedActions(); /// Removes the vector column INPUT node (it is no longer needed)
             const auto * distance_node = &expression.addInput("_distance",std::make_shared<DataTypeFloat32>());
             const auto * new_output = &expression.addAlias(*distance_node, sort_column);
             expression.getOutputs().push_back(new_output);
-            std::cerr << expression.dumpDAG() << std::endl;
 
             updated_layers = 2;
             /// Need to do same removal of the vector column from the Filter step

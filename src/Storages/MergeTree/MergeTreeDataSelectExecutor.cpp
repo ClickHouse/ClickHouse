@@ -744,6 +744,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         num_threads = std::min<size_t>(num_streams, settings[Setting::max_threads_for_indexes]);
     }
 
+    /// Some skip indexes are at 'part' level (e.g vector index) and can be used for
+    /// range pruning only if the full part is the candidate at the time of calling filterMarksUsingIndex()
     bool any_skip_index_needs_full_part =
         (!skip_indexes.useful_indices.empty() && skip_indexes.useful_indices[0].index->isVectorSimilarityIndex() && !settings[Setting::vector_search_with_rescoring]);
 
@@ -761,6 +763,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 query_status->checkTimeLimit();
 
             auto & ranges = parts_with_ranges[part_index];
+            /// We may revert any partial pruning done by PK if the skip index needs the full part
             bool is_pk_range_pruning_revert = false;
             if (metadata_snapshot->hasPrimaryKey() || part_offset_condition || total_offset_condition)
             {
