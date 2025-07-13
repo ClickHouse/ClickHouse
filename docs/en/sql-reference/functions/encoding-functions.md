@@ -1,12 +1,11 @@
 ---
 description: 'Documentation for Encoding Functions'
 sidebar_label: 'Encoding'
-sidebar_position: 65
 slug: /sql-reference/functions/encoding-functions
 title: 'Encoding Functions'
 ---
 
-# Encoding Functions
+# Encoding functions
 
 ## char {#char}
 
