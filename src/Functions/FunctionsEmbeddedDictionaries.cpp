@@ -17,10 +17,11 @@ Accepts a region ID from the geobase. If this region is a city or part of a city
             {"geobase", "Optional. The dictionary key.", {"String"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns the region ID for the appropriate city, if it exists, otherwise returns `0`", {"UInt32"}};
-        FunctionDocumentation::Example example1 = {
-            "Usage example", 
-            "SELECT regionToName(number::UInt32, 'en'), regionToCity(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);",
-            R"(
+        FunctionDocumentation::Examples examples = {
+            {
+                "Usage example",
+                "SELECT regionToName(number::UInt32, 'en'), regionToCity(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);",
+                R"(
 ┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─id─┬─regionToName(regionToCity(CAST(number, 'UInt32')), 'en')─┐
 │                                            │  0 │                                                          │
 │ World                                      │  0 │                                                          │
@@ -37,23 +38,15 @@ Accepts a region ID from the geobase. If this region is a city or part of a city
 │ Asia                                       │  0 │                                                          │
 └────────────────────────────────────────────┴────┴──────────────────────────────────────────────────────────┘
             )"
+            }
         };
-        FunctionDocumentation::Examples examples = {example1};
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::EmbeddedDictionary;
-        FunctionDocumentation documentation = {
-            description, 
-            syntax, 
-            arguments, 
-            returned_value, 
-            examples, 
-            introduced_in, 
-            category
-        };
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
         
         factory.registerFunction<FunctionRegionToCity>(documentation);
     }
-        {
+    {
         FunctionDocumentation::Description description = R"(
 Converts a region to an area (type 5 in the geobase).
         )";
