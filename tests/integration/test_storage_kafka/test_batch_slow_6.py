@@ -201,7 +201,7 @@ def test_block_based_formats_2(kafka_cluster, create_query_generator):
     ],
 )
 def test_kafka_rebalance(kafka_cluster, create_query_generator, log_line):
-    NUMBER_OF_CONSURRENT_CONSUMERS = 5
+    NUMBER_OF_CONCURRENT_CONSUMERS = 5
 
     instance.query(
         """
@@ -237,17 +237,19 @@ def test_kafka_rebalance(kafka_cluster, create_query_generator, log_line):
         def produce():
             while not cancel.is_set():
                 messages = []
-                for _ in range(59):
+                for _ in range(3 * NUMBER_OF_CONCURRENT_CONSUMERS):
                     messages.append(
                         json.dumps({"key": msg_index[0], "value": msg_index[0]})
                     )
                     msg_index[0] += 1
                 k.kafka_produce(kafka_cluster, topic_name, messages)
 
+                time.sleep(0.5)
+
         kafka_thread = threading.Thread(target=produce)
         kafka_thread.start()
 
-        for consumer_index in range(NUMBER_OF_CONSURRENT_CONSUMERS):
+        for consumer_index in range(NUMBER_OF_CONCURRENT_CONSUMERS):
             table_name = f"{table_name_prefix}{consumer_index}"
             replica_name = f"r{consumer_index}"
             logging.debug(f"Setting up {consumer_index}")
@@ -285,10 +287,12 @@ def test_kafka_rebalance(kafka_cluster, create_query_generator, log_line):
             # Waiting for test.kafka_consumerX to start consume ...
             instance.wait_for_log_line(log_line.format(table_name))
 
+            logging.debug(instance.query("SELECT count(), uniqExact(key), max(key) + 1 FROM test.destination"))
+
         cancel.set()
 
         # I leave last one working by intent (to finish consuming after all rebalances)
-        for consumer_index in range(NUMBER_OF_CONSURRENT_CONSUMERS - 1):
+        for consumer_index in range(NUMBER_OF_CONCURRENT_CONSUMERS - 1):
             logging.debug(("Dropping test.kafka_consumer{}".format(consumer_index)))
             instance.query(
                 "DROP TABLE IF EXISTS test.kafka_consumer{} SYNC".format(consumer_index)
@@ -297,28 +301,14 @@ def test_kafka_rebalance(kafka_cluster, create_query_generator, log_line):
         # logging.debug(instance.query('SELECT count(), uniqExact(key), max(key) + 1 FROM test.destination'))
         # kafka_cluster.open_bash_shell('instance')
 
-        while 1:
-            messages_consumed = int(
-                instance.query("SELECT uniqExact(key) FROM test.destination")
-            )
-            if messages_consumed >= msg_index[0]:
-                break
-            time.sleep(1)
-            logging.debug(
-                (
-                    "Waiting for finishing consuming (have {}, should be {})".format(
-                        messages_consumed, msg_index[0]
-                    )
-                )
-            )
+        def check_callback(res):
+            logging.debug(f"Waiting for finishing consuming (have {res}, should be {msg_index[0]})")
+            return int(res) >= msg_index[0]
 
-        logging.debug(
-            (
-                instance.query(
-                    "SELECT count(), uniqExact(key), max(key) + 1 FROM test.destination"
-                )
-            )
-        )
+        instance.query_with_retry("SELECT uniqExact(key) FROM test.destination",
+                                  check_callback=check_callback)
+
+        logging.debug(instance.query("SELECT count(), uniqExact(key), max(key) + 1 FROM test.destination"))
 
         # Some queries to debug...
         # SELECT * FROM test.destination where key in (SELECT key FROM test.destination group by key having count() <> 1)
@@ -344,7 +334,7 @@ def test_kafka_rebalance(kafka_cluster, create_query_generator, log_line):
             instance.query("SELECT count() == uniqExact(key) FROM test.destination")
         )
 
-        for consumer_index in range(NUMBER_OF_CONSURRENT_CONSUMERS):
+        for consumer_index in range(NUMBER_OF_CONCURRENT_CONSUMERS):
             logging.debug(("kafka_consumer{}".format(consumer_index)))
             table_name = "kafka_consumer{}".format(consumer_index)
             instance.query(

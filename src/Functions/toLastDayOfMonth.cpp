@@ -21,10 +21,10 @@ The return type can be configured by setting [`enable_extended_results_for_datet
 toLastDayOfMonth(value)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"value", "The date or date with time to round up to the last day of the month. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."}
+        {"value", "The date or date with time to round up to the last day of the month.", {"Date", "Date32", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value =
-"Returns the date of the last day of the month for the given date or date with time. [`Date`](../data-types/date.md).";
+    {"Returns the date of the last day of the month for the given date or date with time.", {"Date"}};
     FunctionDocumentation::Examples examples = {
         {"Round up to the last day of the month", R"(
 SELECT toLastDayOfMonth(toDateTime('2023-04-21 10:20:30'))

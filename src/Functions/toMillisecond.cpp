@@ -14,10 +14,11 @@ REGISTER_FUNCTION(ToMillisecond)
 Returns the millisecond component (0-999) of a `DateTime` or `DateTime64` value.
     )";
     FunctionDocumentation::Syntax syntax = "toMillisecond(datetime)";
-    FunctionDocumentation::Arguments arguments = {
-        {"datetime", "A `DateTime` or `DateTime64` value to get the millisecond from. [`DateTime`](/sql-reference/data-types/datetime)/[`DateTime64`](/sql-reference/data-types/datetime64)."}
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"datetime", "Date with time to get the millisecond from.", {"DateTime", "DateTime64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the millisecond in the minute (0 - 59) of the given `Date` or `DateTime`. [`UInt16`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the millisecond in the minute (0 - 59) of the given `Date` or `DateTime`", {"UInt16"}};
     FunctionDocumentation::Examples examples = {
         {"Usage example", R"(
 SELECT toMillisecond(toDateTime64('2023-04-21 10:20:30.456', 3));

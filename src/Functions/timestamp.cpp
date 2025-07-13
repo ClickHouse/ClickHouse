@@ -178,11 +178,12 @@ If a second argument `expr_time` is provided, it adds the specified time to the 
     FunctionDocumentation::Syntax syntax = R"(
     timestamp(expr[, expr_time])
     )";
-    FunctionDocumentation::Arguments arguments = {
-        {"expr", "Date or date with time. [`String`](/sql-reference/data-types/string)."},
-        {"expr_time", "Optional. Time to add to the converted value. [`String`](/sql-reference/data-types/string)."}
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"expr", "Date or date with time.", {"String"}},
+        {"expr_time", "Optional. Time to add to the converted value.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the converted value of `expr`, or `expr` with added time. [`DateTime64(6)`](../data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the converted value of `expr`, or `expr` with added time", {"DateTime64(6)"}};
     FunctionDocumentation::Examples examples = {
         {"Convert date string to DateTime64(6)", R"(
 SELECT timestamp('2023-12-31') AS ts;

@@ -24,7 +24,7 @@ REGISTER_FUNCTION(LessOrEquals)
         {"a", "First value.<sup>[*](#comparison-rules)</sup>"},
         {"b", "Second value.<sup>[*](#comparison-rules)</sup>"}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns `1` if `a` is less than or equal to `b`, otherwise `0`. [`UInt8`](/sql-reference/data-types/int-uint/)";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `a` is less than or equal to `b`, otherwise `0`", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT 1 <= 2, 2 <= 2, 3 <= 2;", R"(
 ┌─lessOrEquals(1, 2)─┬─lessOrEquals(2, 2)─┬─lessOrEquals(3, 2)─┐

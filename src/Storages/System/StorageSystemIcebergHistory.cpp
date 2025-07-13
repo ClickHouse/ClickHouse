@@ -62,7 +62,7 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
         {
             if (IcebergMetadata * iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage->getExternalMetadata(context)); iceberg_metadata)
             {
-                IcebergMetadata::IcebergHistory iceberg_history_items = iceberg_metadata->getHistory();
+                IcebergMetadata::IcebergHistory iceberg_history_items = iceberg_metadata->getHistory(context);
 
                 for (auto & iceberg_history_item : iceberg_history_items)
                 {

@@ -16,10 +16,10 @@ Adds a specified number of nanoseconds to a date with time or a string-encoded d
 addNanoseconds(datetime, num)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"datetime", "Date with time to add specified number of nanoseconds to. [`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
-        {"num", "Number of nanoseconds to add. [`(U)Int*`](../data-types/int-uint.md)/[`Float*`](../data-types/float.md)."}
+        {"datetime", "Date with time to add specified number of nanoseconds to.", {"DateTime", "DateTime64", "String"}},
+        {"num", "Number of nanoseconds to add.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns `datetime` plus `num` nanoseconds. [`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` nanoseconds", {"DateTime64"}};
     FunctionDocumentation::Examples examples = {
         {"Add nanoseconds to different date time types", R"(
 WITH

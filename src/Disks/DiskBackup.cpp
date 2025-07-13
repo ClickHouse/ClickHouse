@@ -269,10 +269,6 @@ DataSourceDescription DiskBackup::getDataSourceDescription() const
     return description;
 }
 
-void DiskBackup::startupImpl(ContextPtr)
-{
-}
-
 void DiskBackup::shutdown()
 {
 }

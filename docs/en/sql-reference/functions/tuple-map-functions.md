@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for Tuple Map Functions'
 sidebar_label: 'Maps'
-sidebar_position: 120
 slug: /sql-reference/functions/tuple-map-functions
 title: 'Map Functions'
 ---
@@ -76,7 +75,7 @@ Alias: `MAP_FROM_ARRAYS(keys, values)`
 Query:
 
 ```sql
-select mapFromArrays(['a', 'b', 'c'], [1, 2, 3])
+SELECT mapFromArrays(['a', 'b', 'c'], [1, 2, 3])
 ```
 
 Result:
@@ -148,7 +147,7 @@ Alias:
 Query
 
 ```sql
-SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
+SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') AS kv
 ```
 
 Result:
@@ -162,7 +161,7 @@ Result:
 With a single quote `'` as quoting character:
 
 ```sql
-SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
+SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') AS kv
 ```
 
 Result:
@@ -178,7 +177,7 @@ unexpected_quoting_character_strategy examples:
 unexpected_quoting_character_strategy=invalid
 
 ```sql
-SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'INVALID') as kv;
+SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'INVALID') AS kv;
 ```
 
 ```text
@@ -188,7 +187,7 @@ SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'INVALID') as kv;
 ```
 
 ```sql
-SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'INVALID') as kv;
+SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'INVALID') AS kv;
 ```
 
 ```text
@@ -200,7 +199,7 @@ SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'INVALID') as kv;
 unexpected_quoting_character_strategy=accept
 
 ```sql
-SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'ACCEPT') as kv;
+SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'ACCEPT') AS kv;
 ```
 
 ```text
@@ -210,7 +209,7 @@ SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'ACCEPT') as kv;
 ```
 
 ```sql
-SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'ACCEPT') as kv;
+SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'ACCEPT') AS kv;
 ```
 
 ```text
@@ -222,7 +221,7 @@ SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'ACCEPT') as kv;
 unexpected_quoting_character_strategy=promote
 
 ```sql
-SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'PROMOTE') as kv;
+SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'PROMOTE') AS kv;
 ```
 
 ```text
@@ -232,7 +231,7 @@ SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'PROMOTE') as kv;
 ```
 
 ```sql
-SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') as kv;
+SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') AS kv;
 ```
 
 ```text
@@ -260,7 +259,7 @@ To restore a map string key-value pairs serialized with `toString`:
 ```sql
 SELECT
     map('John', '33', 'Paula', '31') AS m,
-    toString(m) as map_serialized,
+    toString(m) AS map_serialized,
     extractKeyValuePairs(map_serialized, ':', ',', '\'') AS map_restored
 FORMAT Vertical;
 ```
@@ -343,7 +342,7 @@ Result:
 Query with a tuple:
 
 ```sql
-SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1])) as res, toTypeName(res) as type;
+SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1])) AS res, toTypeName(res) AS type;
 ```
 
 Result:
@@ -391,7 +390,7 @@ Result:
 Query with a tuple map:
 
 ```sql
-SELECT mapSubtract(([toUInt8(1), 2], [toInt32(1), 1]), ([toUInt8(1), 2], [toInt32(2), 1])) as res, toTypeName(res) as type;
+SELECT mapSubtract(([toUInt8(1), 2], [toInt32(1), 1]), ([toUInt8(1), 2], [toInt32(2), 1])) AS res, toTypeName(res) AS type;
 ```
 
 Result:

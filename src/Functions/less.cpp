@@ -22,7 +22,7 @@ REGISTER_FUNCTION(Less)
         {"a", "First value.<sup>[*](#comparison-rules)</sup>"},
         {"b", "Second value.<sup>[*](#comparison-rules)</sup>"}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns `1` if `a` is less than `b`, otherwise `0`. [`UInt8`](/sql-reference/data-types/int-uint/)";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `a` is less than `b`, otherwise `0`", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT 1 < 2, 2 < 1;", R"(
 ┌─less(1, 2)─┬─less(2, 1)─┐

@@ -82,9 +82,10 @@ Returns the timezone name of a [`DateTime`](/sql-reference/data-types/datetime) 
     )";
     FunctionDocumentation::Syntax syntax = "timeZoneOf(datetime)";
     FunctionDocumentation::Arguments arguments = {
-        {"datetime", "A value of type [`DateTime`](/sql-reference/data-types/datetime) or [`DateTime64`](/sql-reference/data-types/datetime64)."}
+        {"datetime", "A value of type.", {"DateTime", "DateTime64"}},
+        {"timezone", "Optional. Timezone name to convert the `datetime` value's timezone to.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the timezone name for `datetime`. [`String`](/sql-reference/data-types/string).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the timezone name for `datetime`", {"String"}};
     FunctionDocumentation::Examples examples = {
         {"Usage example", R"(
 SELECT timezoneOf(now());

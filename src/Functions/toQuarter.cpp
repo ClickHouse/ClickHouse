@@ -15,10 +15,11 @@ REGISTER_FUNCTION(ToQuarter)
 Returns the quarter of the year (1-4) for a given `Date` or `DateTime` value.
     )";
     FunctionDocumentation::Syntax syntax = "toQuarter(datetime)";
-    FunctionDocumentation::Arguments arguments = {
-        {"datetime", "A `Date` or `DateTime` value to get the quarter of the year from. [`Date`](/sql-reference/data-types/date)/[`Date32`](/sql-reference/data-types/date32)/[`DateTime`](/sql-reference/data-types/datetime)/[`DateTime64`](/sql-reference/data-types/datetime64)."}
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"datetime", "Date or date with time to get the quarter of the year from.", {"Date", "Date32", "DateTime", "DateTime64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "The quarter of the year for the given date/time. [`UInt8`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the quarter of the year for the given date/time", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
         {"Usage example", R"(
 SELECT toQuarter(toDateTime('2023-04-21 10:20:30'))

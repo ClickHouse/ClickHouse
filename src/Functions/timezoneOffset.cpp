@@ -17,9 +17,9 @@ The function takes daylight saving time and historical timezone changes at the s
     )";
     FunctionDocumentation::Syntax syntax = "timeZoneOffset(datetime)";
     FunctionDocumentation::Arguments arguments = {
-        {"datetime", "`DateTime` value to get the timezone offset for. [`DateTime`](/sql-reference/data-types/datetime)/[`DateTime64`](/sql-reference/data-types/datetime64)."}
+        {"datetime", "`DateTime` value to get the timezone offset for.", {"DateTime", "DateTime64"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the offset from UTC in seconds. [`Int32`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the offset from UTC in seconds", {"Int32"}};
     FunctionDocumentation::Examples examples = {
         {"Usage example", R"(
 SELECT toDateTime('2021-04-21 10:20:30', 'America/New_York') AS Time,

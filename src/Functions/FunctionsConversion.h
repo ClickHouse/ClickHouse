@@ -4692,7 +4692,7 @@ private:
         /// For named tuples allow conversions for tuples with
         /// different sets of elements. If element exists in @to_type
         /// and doesn't exist in @to_type it will be filled by default values.
-        if (from_type->haveExplicitNames() && to_type->haveExplicitNames())
+        if (from_type->hasExplicitNames() && to_type->hasExplicitNames())
         {
             const auto & from_names = from_type->getElementNames();
             std::unordered_map<String, size_t> from_positions;
@@ -4891,7 +4891,7 @@ private:
 
     WrapperType createTupleToObjectDeprecatedWrapper(const DataTypeTuple & from_tuple, bool has_nullable_subcolumns) const
     {
-        if (!from_tuple.haveExplicitNames())
+        if (!from_tuple.hasExplicitNames())
             throw Exception(ErrorCodes::TYPE_MISMATCH,
             "Cast to Object can be performed only from flatten Named Tuple. Got: {}", from_tuple.getName());
 
@@ -5076,8 +5076,8 @@ private:
             new_elements.reserve(elements.size());
             for (const auto & element : elements)
                 new_elements.push_back(convertNestedObjectType(element, new_object_type));
-            return type_tuple->haveExplicitNames() ? std::make_shared<DataTypeTuple>(new_elements, type_tuple->getElementNames())
-                                                   : std::make_shared<DataTypeTuple>(new_elements);
+            return type_tuple->hasExplicitNames() ? std::make_shared<DataTypeTuple>(new_elements, type_tuple->getElementNames())
+                                                  : std::make_shared<DataTypeTuple>(new_elements);
         }
 
         return type;

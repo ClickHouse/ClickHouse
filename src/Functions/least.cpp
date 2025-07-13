@@ -75,7 +75,7 @@ Returns the smallest value among the arguments.
     FunctionDocumentation::Arguments arguments = {
         {"x1[, x2, ..., xN]", "One or multiple values to compare. All arguments must be of comparable types."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "The least value among the arguments, promoted to the largest compatible type.";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the least value among the arguments, promoted to the largest compatible type."};
     FunctionDocumentation::Examples examples = {
         {"Numeric types", R"(
 SELECT least(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;

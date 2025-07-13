@@ -1,4 +1,4 @@
-#include "Client.h"
+#include <Client.h>
 #include <Client/ConnectionString.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
@@ -325,29 +325,26 @@ void Client::initialize(Poco::Util::Application & self)
         config().setString("password", env_password);
 
     /// settings and limits could be specified in config file, but passed settings has higher priority
-    for (const auto & setting : global_context->getSettingsRef().getUnchangedNames())
+    for (const auto & setting : client_context->getSettingsRef().getUnchangedNames())
     {
         String name{setting};
         if (config().has(name))
-            global_context->setSetting(name, config().getString(name));
+            client_context->setSetting(name, config().getString(name));
     }
 
     /// Set path for format schema files
     if (config().has("format_schema_path"))
-        global_context->setFormatSchemaPath(fs::weakly_canonical(config().getString("format_schema_path")));
+        client_context->setFormatSchemaPath(fs::weakly_canonical(config().getString("format_schema_path")));
 
     /// Set the path for google proto files
     if (config().has("google_protos_path"))
-        global_context->setGoogleProtosPath(fs::weakly_canonical(config().getString("google_protos_path")));
+        client_context->setGoogleProtosPath(fs::weakly_canonical(config().getString("google_protos_path")));
 }
 
 
 int Client::main(const std::vector<std::string> & /*args*/)
 try
 {
-    /// For memory tracking
-    MainThreadStatus::getInstance();
-
     setupSignalHandler();
 
     output_stream << std::fixed << std::setprecision(3);
@@ -358,7 +355,8 @@ try
     registerAggregateFunctions();
 
     processConfig();
-    adjustSettings();
+    adjustSettings(client_context);
+
     initTTYBuffer(
         toProgressOption(config().getString("progress", "default")), toProgressOption(config().getString("progress-table", "default")));
     initKeystrokeInterceptor();
@@ -886,10 +884,10 @@ void Client::processOptions(
     if (options.count("opentelemetry-tracestate"))
         global_context->getClientTraceContext().tracestate = options["opentelemetry-tracestate"].as<std::string>();
 
-    /// In case of clickhouse-client the `client_context` can be just an alias for the `global_context`.
-    /// (There is no need to copy the context because clickhouse-client has no background tasks so it won't use that context in parallel.)
-    client_context = global_context;
-    initClientContext();
+    initClientContext(Context::createCopy(global_context));
+    /// Initialize query context for the current thread to avoid sharing global context (i.e. for obtaining session_timezone)
+    query_scope.emplace(client_context);
+
 
     /// Allow to pass-through unknown settings to the server.
     client_context->getAccessControl().allowAllSettings();
@@ -921,7 +919,7 @@ void Client::processConfig()
 
         query_id = config().getString("query_id", "");
         if (!query_id.empty())
-            global_context->setCurrentQueryId(query_id);
+            client_context->setCurrentQueryId(query_id);
     }
 
     if (is_interactive || delayed_interactive)
@@ -1131,6 +1129,8 @@ void Client::readArguments(
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {
+    DB::MainThreadStatus::getInstance();
+
     try
     {
         DB::Client client;

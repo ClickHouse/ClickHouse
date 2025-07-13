@@ -36,7 +36,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsMaxThreads max_threads;
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsBool use_hive_partitioning;
 }
@@ -257,7 +256,7 @@ std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) 
         /* if_not_updated_before */false,
         /* check_consistent_with_previous_metadata */true);
 
-    return configuration->totalRows();
+    return configuration->totalRows(query_context);
 }
 
 std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context) const
@@ -268,7 +267,7 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
         /* if_not_updated_before */false,
         /* check_consistent_with_previous_metadata */true);
 
-    return configuration->totalBytes();
+    return configuration->totalBytes(query_context);
 }
 
 ReadFromFormatInfo StorageObjectStorage::Configuration::prepareReadingFromFormat(

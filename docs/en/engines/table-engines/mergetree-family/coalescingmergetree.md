@@ -13,7 +13,7 @@ The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/ver
 
 We recommend using the engine together with `MergeTree`. Store complete data in `MergeTree` table, and use `CoalescingMergeTree` for aggregated data storing, for example, when preparing reports. Such an approach will prevent you from losing valuable data due to an incorrectly composed primary key.
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -32,7 +32,7 @@ For a description of request parameters, see [request description](../../../sql-
 
 ### Parameters of CoalescingMergeTree {#parameters-of-coalescingmergetree}
 
-#### columns {#columns}
+#### Columns {#columns}
 
 `columns` - a tuple with the names of columns where values will be united. Optional parameter.
     The columns must be of a numeric type and must not be in the partition or sorting key.
@@ -66,7 +66,7 @@ All of the parameters excepting `columns` have the same meaning as in `MergeTree
 
 </details>
 
-## Usage Example {#usage-example}
+## Usage example {#usage-example}
 
 Consider the following table:
 
@@ -83,7 +83,7 @@ ORDER BY key
 Insert data to it:
 
 ```sql
-INSERT INTO test_table Values(1,NULL),(1,2),(2,1)
+INSERT INTO test_table VALUES(1,NULL),(1,2),(2,1)
 ```
 
 The result will looks like this:
@@ -99,25 +99,27 @@ SELECT * FROM test_table;
 └─────┴───────┘
 ```
 
-ClickHouse may unite all the rows not completely ([see below](#data-processing)), so we use an aggregate function `last_value` and `GROUP BY` clause in the query.
+Recommended query for correct and deterministic result:
 
 ```sql
-SELECT key, last_value(value) FROM test_table GROUP BY key
+SELECT * FROM test_table FINAL;
 ```
 
 ```text
-┌─key─┬─last_value(value)─┐
-│   2 │                 1 │
-│   1 │                 2 │
-└─────┴───────────────────┘
+┌─key─┬─value─┐
+│   2 │     1 │
+│   1 │     2 │
+└─────┴───────┘
 ```
 
-## Data Processing {#data-processing}
+Using the `FINAL` modifier forces ClickHouse to apply merge logic at query time, ensuring you get the correct, coalesced "latest" value for each column. This is the safest and most accurate method when querying from a CoalescingMergeTree table.
 
-When data are inserted into a table, they are saved as-is. ClickHouse merges the inserted parts of data periodically and this is when rows with the same primary key are summed and replaced with one for each resulting part of data.
+:::note
 
-ClickHouse can merge the data parts so that different resulting parts of data can consist rows with the same primary key, i.e. the union will be incomplete. Therefore (`SELECT`) an aggregate function [last_value()](/sql-reference/aggregate-functions/reference/last_value) and `GROUP BY` clause should be used in a query as described in the example above.
+An approach with `GROUP BY` may return incorrect results if the underlying parts have not been fully merged.
 
-## Related Content {#related-content}
+```sql
+SELECT key, last_value(value) FROM test_table GROUP BY key; -- Not recommended.
+```
 
-- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
+:::
