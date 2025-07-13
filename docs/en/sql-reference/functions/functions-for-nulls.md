@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for Functions for Working with Nullable Values'
 sidebar_label: 'Nullable'
-sidebar_position: 135
 slug: /sql-reference/functions/functions-for-nulls
 title: 'Functions for Working with Nullable Values'
 ---
