@@ -5,7 +5,7 @@ slug: /sql-reference/functions/introspection
 title: 'Introspection Functions'
 ---
 
-# Introspection Functions
+# Introspection functions
 
 You can use functions described in this chapter to introspect [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) and [DWARF](https://en.wikipedia.org/wiki/DWARF) for query profiling.
 

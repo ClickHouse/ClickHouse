@@ -5,7 +5,7 @@ slug: /sql-reference/functions/machine-learning-functions
 title: 'Machine Learning Functions'
 ---
 
-# Machine Learning Functions
+# Machine learning functions
 
 ## evalMLMethod {#evalmlmethod}
 
