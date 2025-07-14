@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/ExpressionActions.h>
@@ -1056,6 +1055,7 @@ bool StorageRabbitMQ::hasDependencies(const StorageID & table_id)
     return true;
 }
 
+
 void StorageRabbitMQ::streamingToViewsFunc()
 {
     try
@@ -1344,7 +1344,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         creator_fn,
         StorageFactory::StorageFeatures{
             .supports_settings = true,
-            .source_access_type = AccessTypeObjects::Source::RABBITMQ,
+            .source_access_type = AccessType::RABBITMQ,
             .has_builtin_setting_fn = RabbitMQSettings::hasBuiltin,
         });
 }

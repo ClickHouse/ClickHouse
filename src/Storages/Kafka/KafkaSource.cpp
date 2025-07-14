@@ -140,7 +140,7 @@ Chunk KafkaSource::generateImpl()
             consumer->currentTopic(),
             consumer->currentPartition(),
             consumer->currentOffset());
-        consumer->setExceptionInfo(e.message(), /* with_stacktrace = */ true);
+        consumer->setExceptionInfo(e.message());
         throw std::move(e);
     };
 

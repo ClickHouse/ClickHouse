@@ -20,7 +20,7 @@ This engine supports the [Nullable](../../../sql-reference/data-types/nullable.m
 
 ## Creating a Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1],
@@ -44,8 +44,6 @@ The table structure can differ from the source table structure:
 - `external_database` — Name of a database in an external DBMS.
 - `external_table` — Name of a table in the `external_database`.
 
-These parameters can also be passed using [named collections](operations/named-collections.md).
-
 ## Usage Example {#usage-example}
 
 **Retrieving data from the local MySQL installation via ODBC**
@@ -56,18 +54,18 @@ Ensure that unixODBC and MySQL Connector are installed.
 
 By default (if installed from packages), ClickHouse starts as user `clickhouse`. Thus, you need to create and configure this user in the MySQL server.
 
-```bash
+``` bash
 $ sudo mysql
 ```
 
-```sql
+``` sql
 mysql> CREATE USER 'clickhouse'@'localhost' IDENTIFIED BY 'clickhouse';
 mysql> GRANT ALL PRIVILEGES ON *.* TO 'clickhouse'@'localhost' WITH GRANT OPTION;
 ```
 
 Then configure the connection in `/etc/odbc.ini`.
 
-```bash
+``` bash
 $ cat /etc/odbc.ini
 [mysqlconn]
 DRIVER = /usr/local/lib/libmyodbc5w.so
@@ -80,7 +78,7 @@ PASSWORD = clickhouse
 
 You can check the connection using the `isql` utility from the unixODBC installation.
 
-```bash
+``` bash
 $ isql -v mysqlconn
 +-------------------------+
 | Connected!                            |
@@ -90,7 +88,7 @@ $ isql -v mysqlconn
 
 Table in MySQL:
 
-```text
+``` text
 mysql> CREATE DATABASE test;
 Query OK, 1 row affected (0,01 sec)
 
@@ -116,7 +114,7 @@ mysql> select * from test.test;
 
 Table in ClickHouse, retrieving data from the MySQL table:
 
-```sql
+``` sql
 CREATE TABLE odbc_t
 (
     `int_id` Int32,
@@ -125,11 +123,11 @@ CREATE TABLE odbc_t
 ENGINE = ODBC('DSN=mysqlconn', 'test', 'test')
 ```
 
-```sql
+``` sql
 SELECT * FROM odbc_t
 ```
 
-```text
+``` text
 ┌─int_id─┬─float_nullable─┐
 │      1 │           ᴺᵁᴸᴸ │
 └────────┴────────────────┘

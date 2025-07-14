@@ -24,7 +24,7 @@ public:
         Patterns extenders;
         Patterns delimiters;
         std::span<char> word_break_characters;
-        replxx::Replxx::highlighter_callback_with_pos_t highlighter;
+        replxx::Replxx::highlighter_callback_t highlighter;
         std::istream & input_stream = std::cin;
         std::ostream & output_stream = std::cout;
         int in_fd = STDIN_FILENO;
@@ -45,10 +45,10 @@ private:
     InputStatus readOneLine(const String & prompt) override;
     void addToHistory(const String & line) override;
     int executeEditor(const std::string & path);
-    void openEditor(bool format_query);
+    void openEditor();
 
     replxx::Replxx rx;
-    replxx::Replxx::highlighter_callback_with_pos_t highlighter;
+    replxx::Replxx::highlighter_callback_t highlighter;
 
     const char * word_break_characters;
 

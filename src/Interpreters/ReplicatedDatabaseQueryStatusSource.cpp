@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/ReplicatedDatabaseQueryStatusSource.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {

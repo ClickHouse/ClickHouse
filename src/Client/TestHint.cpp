@@ -18,7 +18,8 @@ namespace DB::ErrorCodes
 namespace DB
 {
 
-TestHint::TestHint(const std::string_view & query)
+TestHint::TestHint(const String & query_)
+    : query(query_)
 {
     // Don't parse error hints in leading comments, because it feels weird.
     // Leading 'echo' hint is OK.

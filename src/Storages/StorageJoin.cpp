@@ -4,7 +4,6 @@
 #include <Storages/TableLockHolder.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Core/ColumnNumbers.h>
@@ -338,16 +337,14 @@ size_t StorageJoin::getSize(ContextPtr context) const
     return join->getTotalRowCount();
 }
 
-std::optional<UInt64> StorageJoin::totalRows(ContextPtr query_context) const
+std::optional<UInt64> StorageJoin::totalRows(const Settings &settings) const
 {
-    const auto & settings = query_context->getSettingsRef();
     TableLockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, RWLockImpl::NO_QUERY, settings[Setting::lock_acquire_timeout]);
     return join->getTotalRowCount();
 }
 
-std::optional<UInt64> StorageJoin::totalBytes(ContextPtr query_context) const
+std::optional<UInt64> StorageJoin::totalBytes(const Settings &settings) const
 {
-    const auto & settings = query_context->getSettingsRef();
     TableLockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, RWLockImpl::NO_QUERY, settings[Setting::lock_acquire_timeout]);
     return join->getTotalByteCount();
 }
@@ -588,7 +585,7 @@ public:
 protected:
     Chunk generate() override
     {
-        if (join->data->columns.empty())
+        if (join->data->blocks.empty())
             return {};
 
         Chunk chunk;
@@ -727,7 +724,7 @@ private:
             if (j == key_pos)
                 columns[j]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
             else
-                columns[j]->insertFrom(*(*it->getMapped().columns)[column_indices[j]], it->getMapped().row_num);
+                columns[j]->insertFrom(*it->getMapped().block->getByPosition(column_indices[j]).column.get(), it->getMapped().row_num);
         ++rows_added;
     }
 
@@ -741,7 +738,7 @@ private:
                 if (j == key_pos)
                     columns[j]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
                 else
-                    columns[j]->insertFrom(*(*ref_it->columns)[column_indices[j]], ref_it->row_num);
+                    columns[j]->insertFrom(*ref_it->block->getByPosition(column_indices[j]).column.get(), ref_it->row_num);
             ++rows_added;
         }
     }

@@ -4,7 +4,6 @@
 #include <Common/ThreadStatus.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
-#include <Common/memory.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <base/getPageSize.h>
 #include <base/errnoToString.h>
@@ -20,23 +19,9 @@ namespace DB
 {
 thread_local ThreadStatus constinit * current_thread = nullptr;
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_ALLOCATE_MEMORY;
-}
-
 #if !defined(SANITIZER)
 namespace
 {
-
-constexpr bool guardPagesEnabled()
-{
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    return true;
-#else
-    return false;
-#endif
-}
 
 /// For aarch64 16K is not enough (likely due to tons of registers)
 constexpr size_t UNWIND_MINSIGSTKSZ = 32 << 10;
@@ -56,48 +41,24 @@ constexpr size_t UNWIND_MINSIGSTKSZ = 32 << 10;
 struct ThreadStack
 {
     ThreadStack()
+        : data(aligned_alloc(getPageSize(), getSize()))
     {
-        auto page_size = getPageSize();
-        data = aligned_alloc(page_size, getSize());
-        if (!data)
-            throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate ThreadStack");
-
-        if constexpr (guardPagesEnabled())
-        {
-            try
-            {
-                /// Since the stack grows downward, we need to protect the first page
-                memoryGuardInstall(data, page_size);
-            }
-            catch (...)
-            {
-                free(data);
-                throw;
-            }
-        }
+        /// Add a guard page
+        /// (and since the stack grows downward, we need to protect the first page).
+        mprotect(data, getPageSize(), PROT_NONE);
     }
     ~ThreadStack()
     {
-        if constexpr (guardPagesEnabled())
-            memoryGuardRemove(data, getPageSize());
-
+        mprotect(data, getPageSize(), PROT_WRITE|PROT_READ);
         free(data);
     }
 
-    static size_t getSize()
-    {
-        auto size = std::max<size_t>(UNWIND_MINSIGSTKSZ, MINSIGSTKSZ);
-
-        if constexpr (guardPagesEnabled())
-            size += getPageSize();
-
-        return size;
-    }
+    static size_t getSize() { return std::max<size_t>(UNWIND_MINSIGSTKSZ, MINSIGSTKSZ); }
     void * getData() const { return data; }
 
 private:
     /// 16 KiB - not too big but enough to handle error.
-    void * data = nullptr;
+    void * data;
 };
 
 }
@@ -108,11 +69,11 @@ static thread_local bool has_alt_stack = false;
 
 ThreadGroup::ThreadGroup()
     : master_thread_id(CurrentThread::get().thread_id)
-    , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>(false))
+    , memory_spill_scheduler(false)
 {}
 
-ThreadStatus::ThreadStatus()
-    : thread_id(getThreadId())
+ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
+    : thread_id{getThreadId()}, check_current_thread_on_destruction(check_current_thread_on_destruction_)
 {
     chassert(!current_thread);
 
@@ -173,20 +134,9 @@ ThreadGroupPtr ThreadStatus::getThreadGroup() const
     return thread_group;
 }
 
-void ThreadStatus::setQueryId(std::string && new_query_id) noexcept
-{
-    chassert(query_id.empty());
-    query_id = std::move(new_query_id);
-}
-
-void ThreadStatus::clearQueryId() noexcept
-{
-    query_id.clear();
-}
-
 const String & ThreadStatus::getQueryId() const
 {
-    return query_id;
+    return query_id_from_query_context;
 }
 
 ContextPtr ThreadStatus::getQueryContext() const
@@ -276,7 +226,7 @@ ThreadStatus::~ThreadStatus()
     if (deleter)
         deleter();
 
-    chassert(current_thread == this);
+    chassert(!check_current_thread_on_destruction || current_thread == this);
 
     /// Flush untracked_memory **right before** switching the current_thread to avoid losing untracked_memory in deleter (detachFromGroup)
     flushUntrackedMemory();
@@ -285,8 +235,8 @@ ThreadStatus::~ThreadStatus()
     /// For example, PushingToViews chain creates and deletes ThreadStatus instances while running in the main query thread
     if (current_thread == this)
         current_thread = nullptr;
-    else
-        LOG_FATAL(log, "current_thread contains invalid address");
+    else if (check_current_thread_on_destruction)
+        LOG_ERROR(log, "current_thread contains invalid address");
 }
 
 void ThreadStatus::updatePerformanceCounters()
@@ -338,14 +288,6 @@ MainThreadStatus::MainThreadStatus()
 
 MainThreadStatus::~MainThreadStatus()
 {
-    /// Stop gathering task stats. We do this to avoid issues due to static object destruction order
-    /// `MainThreadStatus thread_status` inside MainThreadStatus::getInstance might call detachFromGroup which calls taskstats->updateCounters
-    /// `thread_local auto metrics_provider` inside TasksStatsCounters::TasksStatsCounters holds the file descriptors open
-    /// If the `metrics_provider` static object is destroyed first then by the time when the destructor of `thread_status` is called
-    /// the file descriptors are closed, which will throw errors.
-    /// As we don't really care about stats of the main thread (they won't be used) it's simpler to just disable them before the
-    /// implicit ~ThreadStatus is called here
-    getInstance().taskstats.reset();
     main_thread = nullptr;
 }
 

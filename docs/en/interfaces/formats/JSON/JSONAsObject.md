@@ -63,3 +63,4 @@ SELECT time, json FROM json_as_object FORMAT JSONEachRow
 ```
 
 ## Format Settings {#format-settings}
+

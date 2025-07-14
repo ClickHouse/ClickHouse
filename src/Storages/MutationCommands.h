@@ -42,8 +42,7 @@ struct MutationCommand
         RENAME_COLUMN,
         MATERIALIZE_COLUMN,
         APPLY_DELETED_MASK,
-        APPLY_PATCHES,
-        ALTER_WITHOUT_MUTATION, /// pure metadata command
+        ALTER_WITHOUT_MUTATION, /// pure metadata command, currently unusned
     };
 
     Type type = EMPTY;
@@ -73,19 +72,11 @@ struct MutationCommand
     /// Column rename_to
     String rename_to = {};
 
-    /// A version of mutation to which command corresponds.
-    std::optional<UInt64> mutation_version = {};
-
-    /// True if column is read by mutation command to apply patch.
-    /// Required to distinguish read command used for MODIFY COLUMN.
-    bool read_for_patch = false;
-
     /// If parse_alter_commands, than consider more Alter commands as mutation commands
     static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool parse_alter_commands = false);
 
     /// This command shouldn't stick with other commands
     bool isBarrierCommand() const;
-    bool affectsAllColumns() const;
 };
 
 /// Multiple mutation commands, possible from different ALTER queries
@@ -98,9 +89,6 @@ public:
     void readText(ReadBuffer & in);
     std::string toString() const;
     bool hasNonEmptyMutationCommands() const;
-
-    bool hasAnyUpdateCommand() const;
-    bool hasOnlyUpdateCommands() const;
 
     /// These set of commands contain barrier command and shouldn't
     /// stick with other commands. Commands from one set have already been validated
@@ -118,7 +106,6 @@ struct MutationActions
     ActionsDAG dag;
     String filter_column_name;
     bool project_input;
-    std::optional<UInt64> mutation_version;
 };
 
 }

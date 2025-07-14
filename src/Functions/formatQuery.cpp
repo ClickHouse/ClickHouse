@@ -190,7 +190,7 @@ REGISTER_FUNCTION(formatQuery)
             .description = "Returns a formatted, possibly multi-line, version of the given SQL query. Throws in case of a parsing error.\n[example:multiline]",
             .syntax = "formatQuery(query)",
             .arguments = {{"query", "The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)"}},
-            .returned_value = {"The formatted query", {"String"}},
+            .returned_value = "The formatted query. [String](../../sql-reference/data-types/string.md).",
             .examples{
                 {"multiline",
                  "SELECT formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3');",
@@ -199,7 +199,7 @@ REGISTER_FUNCTION(formatQuery)
                  "    b\n"
                  "FROM tab\n"
                  "WHERE (a > 3) AND (b < 3)"}},
-            .category = FunctionDocumentation::Category::Other});
+            .category{"Other"}});
 }
 
 REGISTER_FUNCTION(formatQueryOrNull)
@@ -211,7 +211,7 @@ REGISTER_FUNCTION(formatQueryOrNull)
             .description = "Returns a formatted, possibly multi-line, version of the given SQL query. Returns NULL in case of a parsing error.\n[example:multiline]",
             .syntax = "formatQueryOrNull(query)",
             .arguments = {{"query", "The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)"}},
-            .returned_value = {"The formatted query", {"String"}},
+            .returned_value = "The formatted query. [String](../../sql-reference/data-types/string.md).",
             .examples{
                 {"multiline",
                  "SELECT formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3');",
@@ -220,7 +220,7 @@ REGISTER_FUNCTION(formatQueryOrNull)
                  "    b\n"
                  "FROM tab\n"
                  "WHERE (a > 3) AND (b < 3)"}},
-            .category = FunctionDocumentation::Category::Other});
+            .category{"Other"}});
 }
 
 REGISTER_FUNCTION(formatQuerySingleLine)
@@ -232,12 +232,12 @@ REGISTER_FUNCTION(formatQuerySingleLine)
             .description = "Like formatQuery() but the returned formatted string contains no line breaks. Throws in case of a parsing error.\n[example:multiline]",
             .syntax = "formatQuerySingleLine(query)",
             .arguments = {{"query", "The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)"}},
-            .returned_value = {"The formatted query", {"String"}},
+            .returned_value = "The formatted query. [String](../../sql-reference/data-types/string.md).",
             .examples{
                 {"multiline",
                  "SELECT formatQuerySingleLine('select a,    b FRom tab WHERE a > 3 and  b < 3');",
                  "SELECT a, b FROM tab WHERE (a > 3) AND (b < 3)"}},
-            .category = FunctionDocumentation::Category::Other});
+            .category{"Other"}});
 }
 
 REGISTER_FUNCTION(formatQuerySingleLineOrNull)
@@ -248,13 +248,13 @@ REGISTER_FUNCTION(formatQuerySingleLineOrNull)
         FunctionDocumentation{
             .description = "Like formatQuery() but the returned formatted string contains no line breaks. Returns NULL in case of a parsing error.\n[example:multiline]",
             .syntax = "formatQuerySingleLineOrNull(query)",
-            .arguments = {{"query", "The SQL query to be formatted.", {"String"}}},
-            .returned_value = {"The formatted query", {"String"}},
+            .arguments = {{"query", "The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)"}},
+            .returned_value = "The formatted query. [String](../../sql-reference/data-types/string.md).",
             .examples{
                 {"multiline",
                  "SELECT formatQuerySingleLine('select a,    b FRom tab WHERE a > 3 and  b < 3');",
                  "SELECT a, b FROM tab WHERE (a > 3) AND (b < 3)"}},
-            .category = FunctionDocumentation::Category::Other});
+            .category{"Other"}});
 }
 
 }

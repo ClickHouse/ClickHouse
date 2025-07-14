@@ -1,5 +1,5 @@
 ---
-description: 'The Kafka Table Engine can be used to publish works with Apache Kafka and lets you publish or subscribe
+description: 'The Kafka engine works with Apache Kafka and lets you publish or subscribe
   to data flows, organize fault-tolerant storage, and process streams as they become
   available.'
 sidebar_label: 'Kafka'
@@ -13,9 +13,15 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # Kafka
 
+<CloudNotSupportedBadge/>
+
 :::note
-If you're on ClickHouse Cloud, we recommend using [ClickPipes](/integrations/clickpipes) instead. ClickPipes natively supports private network connections, scaling ingestion and cluster resources independently, and comprehensive monitoring for streaming Kafka data into ClickHouse.
+ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes) for streaming Kafka data into ClickHouse. This natively supports high-performance insertion while ensuring the separation of concerns with the ability to scale ingestion and cluster resources independently.
 :::
+
+This engine works with [Apache Kafka](http://kafka.apache.org/).
+
+Kafka lets you:
 
 - Publish or subscribe to data flows.
 - Organize fault-tolerant storage.
@@ -23,7 +29,7 @@ If you're on ClickHouse Cloud, we recommend using [ClickPipes](/integrations/cli
 
 ## Creating a Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [ALIAS expr1],
@@ -35,10 +41,6 @@ SETTINGS
     kafka_topic_list = 'topic1,topic2,...',
     kafka_group_name = 'group_name',
     kafka_format = 'data_format'[,]
-    [kafka_security_protocol = '',]
-    [kafka_sasl_mechanism = '',]
-    [kafka_sasl_username = '',]
-    [kafka_sasl_password = '',]
     [kafka_schema = '',]
     [kafka_num_consumers = N,]
     [kafka_max_block_size = 0,]
@@ -63,10 +65,6 @@ Required parameters:
 
 Optional parameters:
 
-- `kafka_security_protocol` - Protocol used to communicate with brokers. Possible values: `plaintext`, `ssl`, `sasl_plaintext`, `sasl_ssl`.
-- `kafka_sasl_mechanism` - SASL mechanism to use for authentication. Possible values: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`.
-- `kafka_sasl_username` - SASL username for use with the `PLAIN` and `SASL-SCRAM-..` mechanisms.
-- `kafka_sasl_password` - SASL password for use with the `PLAIN` and `SASL-SCRAM-..` mechanisms.
 - `kafka_schema` — Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 - `kafka_num_consumers` — The number of consumers per table. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition, and must not be greater than the number of physical cores on the server where ClickHouse is deployed. Default: `1`.
 - `kafka_max_block_size` — The maximum batch size (in messages) for poll. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
@@ -83,7 +81,7 @@ Optional parameters:
 
 Examples:
 
-```sql
+``` sql
   CREATE TABLE queue (
     timestamp UInt64,
     level String,
@@ -119,7 +117,7 @@ Examples:
 Do not use this method in new projects. If possible, switch old projects to the method described above.
 :::
 
-```sql
+``` sql
 Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
       [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_max_block_size,  kafka_skip_broken_messages, kafka_commit_every_batch, kafka_client_id, kafka_poll_timeout_ms, kafka_poll_max_batch_size, kafka_flush_interval_ms, kafka_thread_per_consumer, kafka_handle_error_mode, kafka_commit_on_select, kafka_max_rows_per_message]);
 ```
@@ -147,7 +145,7 @@ One kafka table can have as many materialized views as you like, they do not rea
 
 Example:
 
-```sql
+``` sql
   CREATE TABLE queue (
     timestamp UInt64,
     level String,
@@ -161,7 +159,7 @@ Example:
   ) ENGINE = SummingMergeTree(day, (day, level), 8192);
 
   CREATE MATERIALIZED VIEW consumer TO daily
-    AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() AS total
+    AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() as total
     FROM queue GROUP BY day, level;
 
   SELECT level, sum(total) FROM daily GROUP BY level;
@@ -170,7 +168,7 @@ To improve performance, received messages are grouped into blocks the size of [m
 
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
 
-```sql
+``` sql
   DETACH TABLE consumer;
   ATTACH TABLE consumer;
 ```
@@ -181,7 +179,7 @@ If you want to change the target table by using `ALTER`, we recommend disabling 
 
 Similar to GraphiteMergeTree, the Kafka engine supports extended configuration using the ClickHouse config file. There are two configuration keys that you can use: global (below `<kafka>`) and topic-level (below `<kafka><kafka_topic>`). The global configuration is applied first, and then the topic-level configuration is applied (if it exists).
 
-```xml
+``` xml
   <kafka>
     <!-- Global configuration options for all tables of Kafka engine type -->
     <debug>cgrp</debug>
@@ -231,7 +229,7 @@ ClickHouse is able to maintain Kerberos credentials using a keytab file. Conside
 
 Example:
 
-```xml
+``` xml
 <!-- Kerberos-aware Kafka -->
 <kafka>
   <security_protocol>SASL_PLAINTEXT</security_protocol>
@@ -278,7 +276,7 @@ Either both of the settings must be specified or neither of them. When both of t
 
 Example:
 
-```sql
+``` sql
 CREATE TABLE experimental_kafka (key UInt64, value UInt64)
 ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
 SETTINGS
@@ -289,7 +287,7 @@ SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
 
 Or to utilize the `uuid` and `replica` macros similarly to ReplicatedMergeTree:
 
-```sql
+``` sql
 CREATE TABLE experimental_kafka (key UInt64, value UInt64)
 ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
 SETTINGS
