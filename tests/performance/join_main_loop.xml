@@ -40,6 +40,29 @@
   <query>
     SELECT count()
     FROM numbers_mt(1e7) AS lhs
+    RIGHT JOIN numbers_mt(1e5) AS rhs ON (lhs.number % 100000) = rhs.number
+    FORMAT Null
+    SETTINGS max_threads = 1, join_algorithm = 'hash'
+  </query>
+
+  <query>
+    SELECT count()
+    FROM numbers_mt(5e7) AS lhs
+    RIGHT JOIN numbers_mt(1e5) AS rhs ON (lhs.number % 100000) = rhs.number
+    FORMAT Null
+    SETTINGS max_threads = 1, join_algorithm = 'hash'
+  </query>
+
+  <query>
+    SELECT count()
+    FROM numbers_mt(5e6) AS lhs
+    RIGHT JOIN numbers_mt(1e5) AS rhs ON (lhs.number = (rhs.number + 1000000000)) OR ((lhs.number % 100000) = rhs.number)
+    FORMAT `Null`
+  </query>
+  
+  <query>
+    SELECT count()
+    FROM numbers_mt(1e7) AS lhs
     INNER JOIN numbers_mt(1e5) AS rhs ON (lhs.number % 100000) = rhs.number
     FORMAT Null
     SETTINGS max_threads = 1, join_algorithm = 'hash'
@@ -59,13 +82,5 @@
     INNER JOIN numbers_mt(1e5) AS rhs ON (lhs.number % 100000) = rhs.number
     FORMAT Null
     SETTINGS max_threads = 8, join_algorithm = 'hash'
-  </query>
-
-  <query>
-    SELECT count()
-    FROM numbers_mt(1e7) AS lhs
-    RIGHT JOIN numbers_mt(1e5) AS rhs ON (lhs.number % 100000) = rhs.number
-    FORMAT Null
-    SETTINGS max_threads = 1, join_algorithm = 'hash'
   </query>
 </test>

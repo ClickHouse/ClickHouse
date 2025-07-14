@@ -18,7 +18,8 @@ private:
     PerformanceResult res1, res2;
 
     PeerQuery peer_query = PeerQuery::AllPeers;
-    bool first_success = true, other_steps_sucess = true, can_test_oracle_result, measure_performance;
+    int first_errcode = 0;
+    bool other_steps_sucess = true, can_test_oracle_result, measure_performance;
 
     std::unordered_set<uint32_t> found_tables;
     DB::Strings nsettings;
@@ -43,8 +44,8 @@ public:
 
     void resetOracleValues();
     void setIntermediateStepSuccess(bool success);
-    void processFirstOracleQueryResult(bool success, ExternalIntegrations & ei);
-    void processSecondOracleQueryResult(bool success, ExternalIntegrations & ei, const String & oracle_name);
+    void processFirstOracleQueryResult(int errcode, ExternalIntegrations & ei);
+    void processSecondOracleQueryResult(int errcode, ExternalIntegrations & ei, const String & oracle_name);
 
     /// Correctness query oracle
     void generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);
