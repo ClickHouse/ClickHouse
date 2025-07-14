@@ -81,7 +81,7 @@ void JSONEachRowWithProgressRowOutputFormat::writeProgress(const Progress & valu
     if (value.empty())
         return;
     writeCString("{\"progress\":", *ostr);
-    value.writeJSON(*ostr);
+    value.writeJSON(*ostr, Progress::DisplayMode::Minimal);
     writeCString("}\n", *ostr);
 }
 

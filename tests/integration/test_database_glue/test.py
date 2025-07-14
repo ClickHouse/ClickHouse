@@ -297,3 +297,19 @@ def test_hide_sensitive_info(started_cluster):
     )
     assert "SECRET_1" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
     assert "SECRET_2" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
+
+
+def test_empty_table(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_list_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    table = create_table(catalog, root_namespace, table_name)
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    assert len(node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`")) == 0
