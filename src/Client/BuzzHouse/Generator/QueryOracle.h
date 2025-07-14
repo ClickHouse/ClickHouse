@@ -11,19 +11,19 @@ class QueryOracle
 {
 private:
     const FuzzConfig & fc;
-    const std::filesystem::path qcfile, qsfile, qfile_peer;
+    const std::filesystem::path qfile, qfile_peer;
 
     MD5Impl md5_hash1, md5_hash2;
     Poco::DigestEngine::Digest first_digest, second_digest;
     PerformanceResult res1, res2;
 
     PeerQuery peer_query = PeerQuery::AllPeers;
-    bool first_success = true, other_steps_sucess = true, can_test_oracle_result, measure_performance;
+    bool first_success = true, other_steps_sucess = true, can_test_query_success, measure_performance;
 
     std::unordered_set<uint32_t> found_tables;
     DB::Strings nsettings;
 
-    bool findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, bool replace);
+    void findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, bool replace);
     void addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, uint32_t ncols, SelectStatementCore * ssc) const;
     void
     insertOnTableOrCluster(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, bool remote, TableOrFunction * tof) const;
@@ -31,12 +31,11 @@ private:
 public:
     explicit QueryOracle(const FuzzConfig & ffc)
         : fc(ffc)
-        , qcfile(ffc.client_file_path / "query.data")
-        , qsfile(ffc.server_file_path / "query.data")
+        , qfile(ffc.db_file_path / "query.data")
         , qfile_peer(
               ffc.clickhouse_server.has_value() ? (ffc.clickhouse_server.value().user_files_dir / "peer.data")
                                                 : std::filesystem::temp_directory_path())
-        , can_test_oracle_result(fc.compare_success_results)
+        , can_test_query_success(fc.compare_success_results)
         , measure_performance(fc.measure_performance)
     {
     }

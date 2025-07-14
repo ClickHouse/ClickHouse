@@ -7,11 +7,10 @@
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Poco/Logger.h>
 #include <Databases/LoadingStrictnessLevel.h>
-#include <Interpreters/Context.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 
 namespace DB
 {
@@ -35,7 +34,12 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
     const auto context = args.getLocalContext();
-    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, context, false);
+    auto storage_settings = std::make_shared<StorageObjectStorageSettings>();
+
+    if (args.storage_def->settings)
+        storage_settings->loadFromQuery(*args.storage_def->settings);
+
+    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, context, false, storage_settings);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
@@ -90,7 +94,7 @@ void registerStorageAzure(StorageFactory & factory)
         .supports_settings = true,
         .supports_sort_order = true, // for partition by
         .supports_schema_inference = true,
-        .source_access_type = AccessTypeObjects::Source::AZURE,
+        .source_access_type = AccessType::AZURE,
         .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
     });
 }
@@ -108,7 +112,7 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
         .supports_settings = true,
         .supports_sort_order = true, // for partition by
         .supports_schema_inference = true,
-        .source_access_type = AccessTypeObjects::Source::S3,
+        .source_access_type = AccessType::S3,
         .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
     });
 }
@@ -142,7 +146,7 @@ void registerStorageHDFS(StorageFactory & factory)
         .supports_settings = true,
         .supports_sort_order = true, // for partition by
         .supports_schema_inference = true,
-        .source_access_type = AccessTypeObjects::Source::HDFS,
+        .source_access_type = AccessType::HDFS,
         .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
     });
 }
@@ -166,14 +170,6 @@ void registerStorageObjectStorage(StorageFactory & factory)
 
 #if USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
 
-static DataLakeStorageSettingsPtr getDataLakeStorageSettings(const ASTStorage & storage_def)
-{
-    auto storage_settings = std::make_shared<DataLakeStorageSettings>();
-    if (storage_def.settings)
-        storage_settings->loadFromQuery(*storage_def.settings);
-    return storage_settings;
-}
-
 void registerStorageIceberg(StorageFactory & factory)
 {
 #if USE_AWS_S3
@@ -181,30 +177,28 @@ void registerStorageIceberg(StorageFactory & factory)
         "Iceberg",
         [&](const StorageFactory::Arguments & args)
         {
-            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            auto configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
+            auto configuration = std::make_shared<StorageS3IcebergConfiguration>();
             return createStorageObjectStorage(args, configuration);
         },
         {
             .supports_settings = true,
             .supports_schema_inference = true,
-            .source_access_type = AccessTypeObjects::Source::S3,
-            .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .source_access_type = AccessType::S3,
+            .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
         });
 
     factory.registerStorage(
         "IcebergS3",
         [&](const StorageFactory::Arguments & args)
         {
-            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            auto configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
+            auto configuration = std::make_shared<StorageS3IcebergConfiguration>();
             return createStorageObjectStorage(args, configuration);
         },
         {
             .supports_settings = true,
             .supports_schema_inference = true,
-            .source_access_type = AccessTypeObjects::Source::S3,
-            .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .source_access_type = AccessType::S3,
+            .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
         });
 #    endif
 #    if USE_AZURE_BLOB_STORAGE
@@ -212,15 +206,14 @@ void registerStorageIceberg(StorageFactory & factory)
         "IcebergAzure",
         [&](const StorageFactory::Arguments & args)
         {
-            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            auto configuration = std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
+            auto configuration = std::make_shared<StorageAzureIcebergConfiguration>();
             return createStorageObjectStorage(args, configuration);
         },
         {
             .supports_settings = true,
             .supports_schema_inference = true,
-            .source_access_type = AccessTypeObjects::Source::AZURE,
-            .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .source_access_type = AccessType::AZURE,
+            .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
         });
 #    endif
 #    if USE_HDFS
@@ -228,30 +221,28 @@ void registerStorageIceberg(StorageFactory & factory)
         "IcebergHDFS",
         [&](const StorageFactory::Arguments & args)
         {
-            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            auto configuration = std::make_shared<StorageHDFSIcebergConfiguration>(storage_settings);
+            auto configuration = std::make_shared<StorageHDFSIcebergConfiguration>();
             return createStorageObjectStorage(args, configuration);
         },
         {
             .supports_settings = true,
             .supports_schema_inference = true,
-            .source_access_type = AccessTypeObjects::Source::HDFS,
-            .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .source_access_type = AccessType::HDFS,
+            .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
         });
 #    endif
     factory.registerStorage(
         "IcebergLocal",
         [&](const StorageFactory::Arguments & args)
         {
-            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            auto configuration = std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
+            auto configuration = std::make_shared<StorageLocalIcebergConfiguration>();
             return createStorageObjectStorage(args, configuration);
         },
         {
             .supports_settings = true,
             .supports_schema_inference = true,
-            .source_access_type = AccessTypeObjects::Source::FILE,
-            .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .source_access_type = AccessType::FILE,
+            .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
         });
 }
 
@@ -266,29 +257,27 @@ void registerStorageDeltaLake(StorageFactory & factory)
         "DeltaLake",
         [&](const StorageFactory::Arguments & args)
         {
-            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            auto configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
+            auto configuration = std::make_shared<StorageS3DeltaLakeConfiguration>();
             return createStorageObjectStorage(args, configuration);
         },
         {
             .supports_settings = true,
             .supports_schema_inference = true,
-            .source_access_type = AccessTypeObjects::Source::S3,
-            .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .source_access_type = AccessType::S3,
+            .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
         });
     factory.registerStorage(
         "DeltaLakeS3",
         [&](const StorageFactory::Arguments & args)
         {
-            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            auto configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
+            auto configuration = std::make_shared<StorageS3DeltaLakeConfiguration>();
             return createStorageObjectStorage(args, configuration);
         },
         {
             .supports_settings = true,
             .supports_schema_inference = true,
-            .source_access_type = AccessTypeObjects::Source::S3,
-            .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .source_access_type = AccessType::S3,
+            .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
         });
 #    endif
 #    if USE_AZURE_BLOB_STORAGE
@@ -296,31 +285,17 @@ void registerStorageDeltaLake(StorageFactory & factory)
         "DeltaLakeAzure",
         [&](const StorageFactory::Arguments & args)
         {
-            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            auto configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(storage_settings);
+            auto configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>();
             return createStorageObjectStorage(args, configuration);
         },
         {
             .supports_settings = true,
             .supports_schema_inference = true,
-            .source_access_type = AccessTypeObjects::Source::AZURE,
-            .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
-        });
-#    endif
-    factory.registerStorage(
-        "DeltaLakeLocal",
-        [&](const StorageFactory::Arguments & args)
-        {
-            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            auto configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
-            return createStorageObjectStorage(args, configuration);
-        },
-        {
-            .supports_settings = true,
-            .supports_schema_inference = true,
-            .source_access_type = AccessTypeObjects::Source::FILE,
+            .source_access_type = AccessType::AZURE,
             .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
         });
+#    endif
+    UNUSED(factory);
 }
 #endif
 
@@ -331,15 +306,14 @@ void registerStorageHudi(StorageFactory & factory)
         "Hudi",
         [&](const StorageFactory::Arguments & args)
         {
-            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
-            auto configuration = std::make_shared<StorageS3HudiConfiguration>(storage_settings);
+            auto configuration = std::make_shared<StorageS3HudiConfiguration>();
             return createStorageObjectStorage(args, configuration);
         },
         {
             .supports_settings = false,
             .supports_schema_inference = true,
-            .source_access_type = AccessTypeObjects::Source::S3,
-            .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .source_access_type = AccessType::S3,
+            .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
         });
 #endif
     UNUSED(factory);

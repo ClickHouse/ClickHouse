@@ -150,27 +150,19 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
 
     if (buffered_ranges.empty())
     {
-        std::optional<ParallelReadResponse> response = extension.sendReadRequest(
+        auto result = extension.sendReadRequest(
             coordination_mode,
             min_marks_per_task * pool_settings.threads,
             /// For Default coordination mode we don't need to pass part names.
             RangesInDataPartsDescription{});
 
-        if (response)
+        if (!result || result->finish)
         {
-            LOG_DEBUG(log, "Got response: {}", response->describe());
-            if (response->description.empty() || response->finish)
-                no_more_tasks_available = true;
-        }
-        else
-        {
-            LOG_DEBUG(log, "Got no response");
             no_more_tasks_available = true;
-        }
-        if (no_more_tasks_available)
             return nullptr;
+        }
 
-        buffered_ranges = std::move(response->description);
+        buffered_ranges = std::move(result->description);
     }
 
     if (buffered_ranges.empty())

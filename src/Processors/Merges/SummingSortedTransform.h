@@ -33,8 +33,7 @@ public:
             partition_and_sorting_required_columns,
             partition_key_columns,
             max_block_size_rows,
-            max_block_size_bytes,
-            "sumWithOverflow")
+            max_block_size_bytes)
     {
     }
 

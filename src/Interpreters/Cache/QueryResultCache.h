@@ -129,7 +129,7 @@ private:
         size_t operator()(const Key & key) const;
     };
 
-    struct EntryWeight
+    struct QueryResultCacheEntryWeight
     {
         size_t operator()(const Entry & entry) const;
     };
@@ -141,7 +141,7 @@ private:
 
 public:
     /// query --> query result
-    using Cache = CacheBase<Key, Entry, KeyHasher, EntryWeight>;
+    using Cache = CacheBase<Key, Entry, KeyHasher, QueryResultCacheEntryWeight>;
 
     QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
 

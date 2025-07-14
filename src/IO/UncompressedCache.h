@@ -61,11 +61,9 @@ public:
     }
 
 private:
-    /// Called for each individual entry being evicted from cache
-    void onEntryRemoval(const size_t weight_loss, const MappedPtr & mapped_ptr) override
+    void onRemoveOverflowWeightLoss(size_t weight_loss) override
     {
         ProfileEvents::increment(ProfileEvents::UncompressedCacheWeightLost, weight_loss);
-        UNUSED(mapped_ptr);
     }
 };
 

@@ -41,20 +41,13 @@ class Result(MetaClasses.Serializable):
 
     class Status:
         SKIPPED = "skipped"
-        DROPPED = "dropped"
         SUCCESS = "success"
         FAILED = "failure"
         PENDING = "pending"
         RUNNING = "running"
         ERROR = "error"
 
-    class StatusExtended:
-        OK = "OK"
-        FAIL = "FAIL"
-        SKIPPED = "SKIPPED"
-
     class Label:
-        REQUIRED = "required"
         NOT_REQUIRED = "not required"
         FLAKY = "flaky"
         BROKEN = "broken"
@@ -113,19 +106,12 @@ class Result(MetaClasses.Serializable):
                 infos += info
         if results and not status:
             for result in results:
-                if result.status in (
-                    Result.Status.SUCCESS,
-                    Result.Status.SKIPPED,
-                    Result.StatusExtended.OK,
-                ):
+                if result.status in (Result.Status.SUCCESS, Result.Status.SKIPPED):
                     continue
                 elif result.status == Result.Status.ERROR:
                     result_status = Result.Status.ERROR
                     break
-                elif result.status in (
-                    Result.Status.FAILED,
-                    Result.StatusExtended.FAIL,
-                ):
+                elif result.status == Result.Status.FAILED:
                     result_status = Result.Status.FAILED
                 else:
                     Utils.raise_with_error(
@@ -165,12 +151,7 @@ class Result(MetaClasses.Serializable):
         return self.status in (Result.Status.RUNNING,)
 
     def is_ok(self):
-        return self.status in (
-            Result.Status.SKIPPED,
-            Result.Status.SUCCESS,
-            Result.StatusExtended.OK,
-            Result.StatusExtended.SKIPPED,
-        )
+        return self.status in (Result.Status.SKIPPED, Result.Status.SUCCESS)
 
     def is_error(self):
         return self.status in (Result.Status.ERROR,)
@@ -223,18 +204,37 @@ class Result(MetaClasses.Serializable):
         return self
 
     def _add_job_summary_to_info(self):
+        subresult_with_tests = self
+        with_test_in_run_command = False
+
+        # Use a specific sub-result if configured
+        job_config = _Environment.get().JOB_CONFIG or {}
+        result_name_for_cidb = job_config.get("result_name_for_cidb", "")
+        if result_name_for_cidb:
+            for r in self.results:
+                if r.name == result_name_for_cidb:
+                    subresult_with_tests = r
+                    with_test_in_run_command = True
+                    if subresult_with_tests.info:
+                        self.set_info(subresult_with_tests.info)
+                    break
+
         # If no failures, nothing more to do
         if self.is_ok():
             return self
 
-        if not self.info:
-            for r in self.results:
-                if not r.is_ok():
-                    self.set_info(f"{r.status}: {r.name}")
-                    break
+        # Collect failed test case names
+        failed = [r.name for r in subresult_with_tests.results if not r.is_ok()]
+
+        if failed:
+            if len(failed) < 10:
+                failed_tcs = ", ".join(failed)
+                self.set_info(f"Failed: {failed_tcs}")
+
         # Suggest local command to rerun
         command_info = f'To run locally: python -m ci.praktika run "{self.name}"'
-        command_info += f" [ --test TEST_NAME (if supported by the job)]"
+        if with_test_in_run_command and failed:
+            command_info += f" --test {failed[0]}"
         self.set_info(command_info)
 
         return self
@@ -288,66 +288,23 @@ class Result(MetaClasses.Serializable):
         return self
 
     def set_label(self, label):
-        if not self.ext.get("labels", None):
+        if not self.ext["labels"]:
             self.ext["labels"] = []
         self.ext["labels"].append(label)
 
-    def set_required_label(self):
-        self.set_label(self.Label.REQUIRED)
-
-    @classmethod
-    def _filter_out_ok_results(cls, result_obj):
-        if not result_obj.results:
-            return result_obj
-
-        filtered = []
-        for r in result_obj.results:
-            if not r.is_ok():
-                filtered.append(cls.filter_out_ok_results(r))
-
-        if len(filtered) == len(result_obj.results):
-            return result_obj  # No filtering needed
-
-        result_copy = copy.deepcopy(result_obj)
-        result_copy.results = filtered
-        return result_copy
-
-    @classmethod
-    def _flat_failed_leaves(cls, result_obj):
-        """
-        Recursively flattens the result tree, returning a list of all failed leaf Result objects.
-        A leaf is a Result with no sub-results or with only ok sub-results.
-        """
-        # If this result is OK, skip it
-        if result_obj.is_ok():
-            return []
-        # Otherwise, collect failed leaves from children
-        leaves = []
-        for r in result_obj.results:
-            if r.is_ok():
-                continue
-            elif not r.results:
-                leaves.append(r)
-            else:
-                leaves.extend(cls._flat_failed_leaves(r))
-        return leaves
+    def set_not_required_label(self):
+        self.set_label(self.Label.NOT_REQUIRED)
 
     def update_sub_result(self, result: "Result", drop_nested_results=False):
         assert self.results, "BUG?"
         for i, result_ in enumerate(self.results):
             if result_.name == result.name:
                 if drop_nested_results:
-                    # self.results[i] = self._filter_out_ok_results(result)
-                    self.results[i] = copy.deepcopy(result)
-                    self.results[i].results = self._flat_failed_leaves(result)
+                    res_ = copy.deepcopy(result)
+                    res_.results = []
+                    self.results[i] = res_
                 else:
                     self.results[i] = result
-        self._update_status()
-        return self
-
-    def extend_sub_results(self, results: List["Result"]):
-        assert isinstance(results, list) and len(results) > 0, "BUG?"
-        self.results += results
         self._update_status()
         return self
 
@@ -365,11 +322,7 @@ class Result(MetaClasses.Serializable):
                 has_running = True
             if result_.status in (self.Status.PENDING,):
                 has_pending = True
-            if result_.status in (
-                self.Status.ERROR,
-                self.Status.FAILED,
-                self.StatusExtended.FAIL,
-            ):
+            if result_.status in (self.Status.ERROR, self.Status.FAILED):
                 has_failed = True
         if has_running:
             self.status = self.Status.RUNNING
@@ -473,7 +426,7 @@ class Result(MetaClasses.Serializable):
             fail_fast = False
             command = [command]
 
-        print(f"> Start execution for [{name}]")
+        print(f"> Starting execution for [{name}]")
         res = True  # Track success/failure status
         error_infos = []
         with ContextManager.cd(workdir):
@@ -485,7 +438,7 @@ class Result(MetaClasses.Serializable):
                     # If command is a Python function, call it with provided arguments
                     if with_info or with_info_on_failure:
                         buffer = io.StringIO()
-                        with Utils.Tee(stdout=buffer):
+                        with redirect_stdout(buffer):
                             result = command_(*command_args, **command_kwargs)
                     else:
                         result = command_(*command_args, **command_kwargs)
@@ -521,9 +474,7 @@ class Result(MetaClasses.Serializable):
             info=(
                 error_infos
                 if len(error_infos) < MAX_LINES_IN_INFO
-                else [
-                    f"~~~~~ truncated {len(error_infos)-MAX_LINES_IN_INFO} lines ~~~~~"
-                ]
+                else [f" ~~~ truncated {len(error_infos)-MAX_LINES_IN_INFO} lines ~~~"]
                 + error_infos[-MAX_LINES_IN_INFO:]
             ),
             files=[log_file] if with_log else None,
@@ -533,38 +484,31 @@ class Result(MetaClasses.Serializable):
         if with_job_summary_in_info:
             self._add_job_summary_to_info()
         self.dump()
-        print(self.to_stdout_formatted())
         if not self.is_ok():
+            print("ERROR: Job Failed")
+            print(self.to_stdout_formatted())
             sys.exit(1)
         else:
-            sys.exit(0)
+            print("ok")
 
     def to_stdout_formatted(self, indent="", res=""):
-        add_frame = not res
+        if self.is_ok():
+            return res
+
+        res += f"{indent}Task [{self.name}] failed.\n"
+        fail_info = ""
         sub_indent = indent + "  "
 
-        if add_frame:
-            res = "+" * 80 + "\n"
-        if add_frame or not self.is_ok():
-            res += f"{indent}{self.status} [{self.name}]\n"
-            info_lines = self.info.splitlines()
-            if len(info_lines) > 30:
-                info_lines = (
-                    info_lines[:10]
-                    + [
-                        f"~~~~~ truncated {len(info_lines) - 20} lines ~~~~~",
-                    ]
-                    + info_lines[-10:]
-                )
-            for line in info_lines:
-                res += f"{sub_indent}| {line}\n"
+        if not self.results:
+            if not self.is_ok():
+                fail_info += f"{sub_indent}{self.name}:\n"
+                for line in self.info.splitlines():
+                    fail_info += f"{sub_indent}{sub_indent}{line}\n"
+            return res + fail_info
 
-        if not self.is_ok():
-            for sub_result in self.results:
-                res = sub_result.to_stdout_formatted(sub_indent, res)
+        for sub_result in self.results:
+            res = sub_result.to_stdout_formatted(sub_indent, res)
 
-        if add_frame:
-            res += "+" * 80 + "\n"
         return res
 
 
@@ -579,7 +523,7 @@ class ResultInfo:
     NOT_FOUND_IMPOSSIBLE = (
         "No Result file (bug, or job misbehaviour, must not ever happen)"
     )
-    DROPPED_DUE_TO_PREVIOUS_FAILURE = "Dropped due to previous failure"
+    SKIPPED_DUE_TO_PREVIOUS_FAILURE = "Skipped due to previous failure"
     TIMEOUT = "Timeout"
 
     GH_STATUS_ERROR = "Failed to set GH commit status"
@@ -602,7 +546,7 @@ class _ResultS3:
         if clean:
             S3.delete(s3_path)
         # gzip is supported by most browsers
-        archive_file = Utils.compress_gz(result_file_path)
+        archive_file = Utils.compress_file_gz(result_file_path)
         if archive_file:
             assert archive_file.endswith(".gz")
             content_encoding = "gzip"
@@ -663,15 +607,11 @@ class _ResultS3:
             local_path=result.file_name(),
             if_none_matched=True,
             no_strict=no_strict,
-            text=True,
         ):
             print("Failed to put versioned Result")
             return False
         if not S3.put(
-            s3_path=s3_path,
-            local_path=result.file_name(),
-            no_strict=no_strict,
-            text=True,
+            s3_path=s3_path, local_path=result.file_name(), no_strict=no_strict
         ):
             print("Failed to put non-versioned Result")
         return True

@@ -1,7 +1,6 @@
 #include <iomanip>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTShowTablesQuery.h>
-#include <Parsers/ASTLiteral.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -29,18 +28,12 @@ String ASTShowTablesQuery::getFrom() const
 void ASTShowTablesQuery::formatLike(WriteBuffer & ostr, const FormatSettings & settings) const
 {
     if (!like.empty())
-    {
         ostr
             << (settings.hilite ? hilite_keyword : "")
             << (not_like ? " NOT" : "")
             << (case_insensitive_like ? " ILIKE " : " LIKE ")
-            << (settings.hilite ? hilite_none : "");
-
-        if (settings.hilite)
-            highlightStringWithMetacharacters(quoteString(like), ostr, "%_");
-        else
-            ostr << quoteString(like);
-    }
+            << (settings.hilite ? hilite_none : "")
+            << DB::quote << like;
 }
 
 void ASTShowTablesQuery::formatLimit(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

@@ -137,6 +137,9 @@
 [submodule "contrib/fmtlib"]
 	path = contrib/fmtlib
 	url = https://github.com/fmtlib/fmt
+[submodule "contrib/sentry-native"]
+	path = contrib/sentry-native
+	url = https://github.com/ClickHouse/sentry-native
 [submodule "contrib/krb5"]
 	path = contrib/krb5
 	url = https://github.com/ClickHouse/krb5
@@ -296,6 +299,9 @@
 [submodule "contrib/aws-c-compression"]
 	path = contrib/aws-c-compression
 	url = https://github.com/awslabs/aws-c-compression
+[submodule "contrib/aws-s2n-tls"]
+	path = contrib/aws-s2n-tls
+	url = https://github.com/ClickHouse/s2n-tls
 [submodule "contrib/crc32-vpmsum"]
 	path = contrib/crc32-vpmsum
 	url = https://github.com/antonblanchard/crc32-vpmsum.git
@@ -357,9 +363,6 @@
 [submodule "contrib/mongo-c-driver"]
 	path = contrib/mongo-c-driver
 	url = https://github.com/ClickHouse/mongo-c-driver.git
-[submodule "contrib/sz3"]
-	path = contrib/sz3
-	url = https://github.com/ClickHouse/SZ3.git
 [submodule "contrib/numactl"]
 	path = contrib/numactl
 	url = https://github.com/ClickHouse/numactl.git
@@ -372,6 +375,3 @@
 [submodule "contrib/SHA3IUF"]
 	path = contrib/SHA3IUF
 	url = https://github.com/brainhub/SHA3IUF.git
-[submodule "contrib/chdig"]
-	path = contrib/chdig
-	url = https://github.com/azat/chdig.git
