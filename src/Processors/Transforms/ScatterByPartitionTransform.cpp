@@ -118,7 +118,7 @@ void ScatterByPartitionTransform::generateOutputChunks()
 
     for (size_t row = 0; row < num_rows; ++row)
     {
-        const size_t output_bucket = hash_data[row] % output_size;
+        const size_t output_bucket = hash_data[row] % output_size;  /// TODO: use libdivide to speedup modulus calculation?
         selector[row] = output_bucket;
         ++rows_in_output_bucket[output_bucket];
     }
