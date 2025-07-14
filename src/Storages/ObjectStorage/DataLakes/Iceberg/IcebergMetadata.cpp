@@ -565,8 +565,10 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
                     total_bytes = summary_object->getValue<Int64>(f_total_files_size);
             }
 
+#if USE_PARQUET
             if (configuration_ptr->format == "Parquet")
                 opaque = std::make_shared<ParquetOpaque>();
+#endif
 
             if (opaque)
             {
