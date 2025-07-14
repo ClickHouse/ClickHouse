@@ -793,6 +793,7 @@ InterpreterInsertQuery::distributedWriteFromClusterStorage(const ASTInsertQuery 
             QueryProcessingStage::Complete,
             RemoteQueryExecutor::Extension{.task_iterator = extension.task_iterator, .replica_info = std::move(replica_info)});
         remote_query_executor->setLogger(logger);
+        remote_query_executor->setMainTable(dst_storage->getStorageID());
 
         Pipe pipe{std::make_shared<RemoteSource>(
             remote_query_executor, false, settings[Setting::async_socket_for_remote], settings[Setting::async_query_sending_for_remote])};
