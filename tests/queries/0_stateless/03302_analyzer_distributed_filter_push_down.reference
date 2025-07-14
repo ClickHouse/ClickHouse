@@ -533,7 +533,7 @@ Union
         PrimaryKey
           Keys: 
             n
-          Condition: (materialize(n) in [100, 100])
+          Condition: (n in [100, 100])
           Parts: 1/1
           Granules: 1/62
   Expression ((Project names + Projection))
@@ -570,6 +570,6 @@ Union
               PrimaryKey
                 Keys: 
                   n
-                Condition: (materialize(n) in [100, 100])
+                Condition: (n in [100, 100])
                 Parts: 1/1
                 Granules: 1/62
