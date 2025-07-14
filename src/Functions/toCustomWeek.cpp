@@ -51,11 +51,11 @@ The first argument can also be specified as [`String`](../data-types/string.md) 
 toWeek(datetime[, mode[, time_zone]])
     )";
     FunctionDocumentation::Arguments arguments_toWeek = {
-        {"datetime", "Date or date with time to get the week number from. [`Date`](/sql-reference/data-types/date)/[`DateTime`](/sql-reference/data-types/datetime)."},
-        {"mode", "Optional. A mode 0 to 9 determines the first day of the week and the range of the week number. Default `0`."},
-        {"time_zone", "Optional. Time zone. [`String`](/sql-reference/data-types/string)."}
+        {"datetime", "Date or date with time to get the week number from.", {"Date", "DateTime"}},
+        {"mode", "Optional. A mode `0` to `9` determines the first day of the week and the range of the week number. Default `0`."},
+        {"time_zone", "Optional. Time zone.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toWeek = "Returns the week number according to the specified mode. [`UInt32`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::ReturnedValue returned_value_toWeek = {"Returns the week number according to the specified mode.", {"UInt32"}};
     FunctionDocumentation::Examples examples_toWeek = {
         {"Get week numbers with different modes", R"(
 SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS week1, toWeek(date,9) AS week9
@@ -85,11 +85,11 @@ The first argument can also be specified as [`String`](../data-types/string.md) 
 toYearWeek(datetime[, mode[, timezone]])
     )";
     FunctionDocumentation::Arguments arguments_toYearWeek = {
-        {"datetime", "Date or date with time to get the year and week of. [`Date`](/sql-reference/data-types/date) or [`DateTime`](/sql-reference/data-types/datetime)."},
-        {"mode", "Optional. A mode 0 to 9 determines the first day of the week and the range of the week number. Default `0`."},
-        {"timezone", "Optional. Time zone. [`String`](/sql-reference/data-types/string)."}
+        {"datetime", "Date or date with time to get the year and week of.", {"Date", "DateTime"}},
+        {"mode", "Optional. A mode `0` to `9` determines the first day of the week and the range of the week number. Default `0`."},
+        {"timezone", "Optional. Time zone.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toYearWeek = "Returns year and week number as a combined integer value. [`UInt32`](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::ReturnedValue returned_value_toYearWeek = {"Returns year and week number as a combined integer value.", {"UInt32"}};
     FunctionDocumentation::Examples examples_toYearWeek = {
         {"Get year-week combinations with different modes", R"(
 SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(date,1) AS yearWeek1, toYearWeek(date,9) AS yearWeek9, toYearWeek(toDate('2022-01-01')) AS prev_yearWeek

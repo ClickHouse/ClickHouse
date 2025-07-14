@@ -18,9 +18,9 @@ Converts a date or date with time to the ISO year number.
 toISOYear(datetime)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"datetime", "The value with date or date with time. [`Date`](../data-types/date.md) or [`Date32`](../data-types/date32.md) or [`DateTime`](../data-types/datetime.md) or [`DateTime64`](../data-types/datetime64.md)"}
+        {"datetime", "The value with date or date with time.", {"Date", "Date32", "DateTime", "DateTime64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the input value converted to an ISO year number. [`UInt16`](../data-types/int-uint.md).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the input value converted to an ISO year number.", {"UInt16"}};
     FunctionDocumentation::Examples examples = {
         {"Get ISO year from date values", R"(
 SELECT

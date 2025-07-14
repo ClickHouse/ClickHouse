@@ -120,9 +120,9 @@ fromDaysSinceYearZero(days)
     )";
     FunctionDocumentation::Arguments arguments_fromDaysSinceYearZero =
     {
-        {"days", "The number of days passed since year zero. [`UInt32`](../data-types/int-uint.md)."}
+        {"days", "The number of days passed since year zero.", {"UInt32"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_fromDaysSinceYearZero = "Returns the date corresponding to the number of days passed since year zero. [`Date`](../data-types/date.md).";
+    FunctionDocumentation::ReturnedValue returned_value_fromDaysSinceYearZero = {"Returns the date corresponding to the number of days passed since year zero.", {"Date"}};
     FunctionDocumentation::Examples examples_fromDaysSinceYearZero =
     {
         {"Convert days since year zero to dates", R"(
@@ -150,9 +150,9 @@ fromDaysSinceYearZero32(days)
     )";
     FunctionDocumentation::Arguments arguments_fromDaysSinceYearZero32 =
     {
-        {"days", "The number of days passed since year zero. [`UInt32`](../data-types/int-uint.md)."}
+        {"days", "The number of days passed since year zero.", {"UInt32"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_fromDaysSinceYearZero32 = "Returns the date corresponding to the number of days passed since year zero. [`Date32`](../data-types/date32.md).";
+    FunctionDocumentation::ReturnedValue returned_value_fromDaysSinceYearZero32 = {"Returns the date corresponding to the number of days passed since year zero.", {"Date32"}};
     FunctionDocumentation::Examples examples_fromDaysSinceYearZero32 =
     {
         {"Convert days since year zero to dates", R"(

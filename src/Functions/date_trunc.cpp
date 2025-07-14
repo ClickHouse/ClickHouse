@@ -202,7 +202,7 @@ Truncates a date and time value to the specified part of the date.
 dateTrunc(unit, datetime[, timezone])
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"unit", R"(The type of interval to truncate the result. `unit` argument is case-insensitive. [`String`](/sql-reference/syntax#string).
+        {"unit", R"(The type of interval to truncate the result. `unit` argument is case-insensitive.", {"String"}} 
 
 | Unit         | Compatibility                   |
 |--------------|---------------------------------|
@@ -218,19 +218,19 @@ dateTrunc(unit, datetime[, timezone])
 | `quarter`    |                                 |
 | `year`       |                                 |
 )"},
-        {"datetime", "Date and time. [`Date`](../data-types/date.md) or [`Date32`](../data-types/date32.md) or [`DateTime`](../data-types/datetime.md) or [`DateTime64`](../data-types/datetime64.md)."},
-        {"timezone", "Optional. Timezone name for the returned datetime. If not specified, the function uses the timezone of the `datetime` parameter. [`String`](../data-types/string.md)."}
+        {"datetime", "Date and time.", {"Date", "Date32", "DateTime", "DateTime64"}},
+        {"timezone", "Optional. Timezone name for the returned datetime. If not specified, the function uses the timezone of the `datetime` parameter.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = R"(
+    FunctionDocumentation::ReturnedValue returned_value = {R"(
 Returns the truncated date and time value.
 
 | Unit Argument               | `datetime` Argument                   | Return Type                                                                            |
 |-----------------------------|---------------------------------------|----------------------------------------------------------------------------------------|
-| Year, Quarter, Month, Week  | Date32, DateTime64, Date, or DateTime | [`Date32`](../data-types/date32.md) or [`Date`](../data-types/date.md)                 |
-| Day, Hour, Minute, Second   | Date32, DateTime64, Date, or DateTime | [`DateTime64`](../data-types/datetime64.md) or [`DateTime`](../data-types/datetime.md) |
+| Year, Quarter, Month, Week  | `Date32` or `DateTime64` or `Date` or `DateTime` | [`Date32`](../data-types/date32.md) or [`Date`](../data-types/date.md)                 |
+| Day, Hour, Minute, Second   | `Date32`, `DateTime64`, `Date`, or `DateTime` | [`DateTime64`](../data-types/datetime64.md) or [`DateTime`](../data-types/datetime.md) |
 | Millisecond, Microsecond,   | Any                                   | [`DateTime64`](../data-types/datetime64.md)                                            |
 | Nanosecond                  |                                       | with scale 3, 6, or 9                                                                  |
-)";
+)", {}};
     FunctionDocumentation::Examples examples = {
         {"Truncate without timezone", R"(
 SELECT now(), dateTrunc('hour', now());

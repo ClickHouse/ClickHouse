@@ -21,10 +21,10 @@ The calculation is the same as in MySQL's [`TO_DAYS`](https://dev.mysql.com/doc/
 toDaysSinceYearZero(date[, time_zone])
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"date", "The date or date with time for which to calculate the number of days since year zero from. [`Date`](../data-types/date.md) or [`Date32`](../data-types/date32.md) or [`DateTime`](../data-types/datetime.md) or [`DateTime64`](../data-types/datetime64.md)."},
-        {"time_zone", "Time zone. [`String`](../data-types/string.md)"}
+        {"date", "The date or date with time for which to calculate the number of days since year zero from.", {"Date", "Date32", "DateTime", "DateTime64"}},
+        {"time_zone", "Time zone.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the number of days passed since date `0000-01-01`. [`UInt32`](../data-types/int-uint.md).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of days passed since date `0000-01-01`.", {"UInt32"}};
     FunctionDocumentation::Examples examples = {
         {"Calculate days since year zero", R"(
 SELECT toDaysSinceYearZero(toDate('2023-09-08'))
