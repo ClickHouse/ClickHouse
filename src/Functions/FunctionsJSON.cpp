@@ -603,6 +603,9 @@ struct NameJSONExtractStringCaseInsensitive { static constexpr auto name{"JSONEx
 struct NameJSONExtractCaseInsensitive { static constexpr auto name{"JSONExtractCaseInsensitive"}; };
 struct NameJSONExtractKeysAndValuesCaseInsensitive { static constexpr auto name{"JSONExtractKeysAndValuesCaseInsensitive"}; };
 struct NameJSONExtractRawCaseInsensitive { static constexpr auto name{"JSONExtractRawCaseInsensitive"}; };
+struct NameJSONExtractArrayRawCaseInsensitive { static constexpr auto name{"JSONExtractArrayRawCaseInsensitive"}; };
+struct NameJSONExtractKeysAndValuesRawCaseInsensitive { static constexpr auto name{"JSONExtractKeysAndValuesRawCaseInsensitive"}; };
+struct NameJSONExtractKeysCaseInsensitive { static constexpr auto name{"JSONExtractKeysCaseInsensitive"}; };
 
 
 template <typename JSONParser>
@@ -1141,6 +1144,9 @@ REGISTER_FUNCTION(JSON)
     factory.registerFunction<JSONOverloadResolver<NameJSONExtractCaseInsensitive, JSONExtractImpl, true>>();
     factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysAndValuesCaseInsensitive, JSONExtractKeysAndValuesImpl, true>>();
     factory.registerFunction<JSONOverloadResolver<NameJSONExtractRawCaseInsensitive, JSONExtractRawImpl, true>>();
+    factory.registerFunction<JSONOverloadResolver<NameJSONExtractArrayRawCaseInsensitive, JSONExtractArrayRawImpl, true>>();
+    factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysAndValuesRawCaseInsensitive, JSONExtractKeysAndValuesRawImpl, true>>();
+    factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysCaseInsensitive, JSONExtractKeysImpl, true>>();
 }
 
 }

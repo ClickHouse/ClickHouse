@@ -50,6 +50,11 @@ SELECT JSONExtractStringCaseInsensitive('{"key": "first", "KEY": "second", "Key"
 -- Complex nested example
 SELECT JSONExtractIntCaseInsensitive('{"LEVEL1": {"Level2": {"level3": 999}}}', 'level1', 'LEVEL2', 'LEVEL3') = 999;
 
+-- Additional functions: ArrayRaw, KeysAndValuesRaw, Keys
+SELECT JSONExtractArrayRawCaseInsensitive('{"Items": [1, 2, 3]}', 'ITEMS') = ['1','2','3'];
+SELECT JSONExtractKeysAndValuesRawCaseInsensitive('{"Name": "Alice", "AGE": 30}')[1] = ('Name', '"Alice"');
+SELECT JSONExtractKeysCaseInsensitive('{"Name": "Alice", "AGE": 30}') = ['Name', 'AGE'];
+
 -- Testing with both allow_simdjson settings
 SELECT '--allow_simdjson=0--';
 SET allow_simdjson=0;

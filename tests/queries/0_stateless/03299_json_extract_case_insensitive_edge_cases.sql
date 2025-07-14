@@ -61,3 +61,8 @@ SELECT JSONExtractStringCaseInsensitive(
     '{"LEVEL1": {"level2": {"LEVEL3": {"level4": "deep"}}}}', 
     'level1', 'LEVEL2', 'level3', 'LEVEL4'
 ) = 'deep';
+
+-- Test additional functions with case-insensitive keys
+SELECT JSONExtractArrayRawCaseInsensitive('{"ARRAY": ["test", 123, true]}', 'array') = ['"test"', '123', 'true'];
+SELECT length(JSONExtractKeysAndValuesRawCaseInsensitive('{"KEY1": "value1", "key2": 100}')) = 2;
+SELECT JSONExtractKeysCaseInsensitive('{"ABC": 1, "def": 2, "GHI": 3}')[1] = 'ABC';
