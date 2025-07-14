@@ -646,7 +646,8 @@ Converts a colour encoded in the **sRGB** colour space to the perceptually unifo
 If any input channel is outside `[0...255]` or the gamma value is non-positive, the behaviour is implementation-defined.
 
 :::note
-**OKLCH** is a cylindrical version of the OKLab colour space. Its three coordinates are **L** (lightness in range `[0...1]`), **C** (chroma `>= 0`) and **H** (hue in degrees `[0...360]`)**.  
+**OKLCH** is a cylindrical version of the OKLab colour space.
+Its three coordinates are **L** (lightness in range `[0...1]`), **C** (chroma `>= 0`) and **H** (hue in degrees `[0...360]`)**.  
 OKLab/OKLCH is designed to be perceptually uniform while remaining cheap to compute.
 :::
 
@@ -673,9 +674,13 @@ The conversion consists of three stages:
 2) Linear sRGB to OKLab
 3) OKLab to OKLCH.
 
-Gamma is used at the first stage, when computing linear sRGB. For that we normalize sRGB values and take them in power of gamma. Observe, that this lacks some precision due to floating-point rounding. This design choice was made in order to be able to quickly compute values for different gammas, and since the difference does not changed the perception of the color significantly.
+Gamma is used at the first stage, when computing linear sRGB.
+For that we normalize sRGB values and take them in power of gamma.
+Observe, that this lacks some precision due to floating-point rounding.
+This design choice was made in order to be able to quickly compute values for different gammas, and since the difference does not changed the perception of the color significantly.
 
-Two stages involve matrix multiplication and trigonometry conversions respectively. For more details on maths please see an article on OKLab color space: https://bottosson.github.io/posts/OKLab/
+Two stages involve matrix multiplication and trigonometry conversions respectively.
+For more details on maths please see an article on OKLab color space: https://bottosson.github.io/posts/OKLab/
 
 In order to have some references for colors in OKLCH space, and how they correspond to sRGB colors please see https://OKLCH.com/
 
@@ -699,7 +704,8 @@ Converts a colour from the **OKLCH** perceptual colour space to the familiar **s
 If **L** is outside `[0...1]`, **C** is negative, or **H** is outside `[0...360]`, the result is implementation-defined.
 
 :::note
-**OKLCH** is a cylindrical version of the OKLab colour space. Its three coordinates are **L** (lightness in range `[0...1]`), **C** (chroma `>= 0`) and **H** (hue in degrees `[0...360]`)**.  
+**OKLCH** is a cylindrical version of the OKLab colour space.
+Its three coordinates are **L** (lightness in range `[0...1]`), **C** (chroma `>= 0`) and **H** (hue in degrees `[0...360]`)**.
 OKLab/OKLCH is designed to be perceptually uniform while remaining cheap to compute.
 :::
 
@@ -730,9 +736,12 @@ The conversion is inverse of `colorSRGBToOKLCH`:
 2) OKLab to Linear sRGB
 3) Linear sRGB to sRGB
 
-Second argument gamma is used at the last stage. Note, that all three channels are clipped in range `[0...1]` right before computing linear sRGB, and then set in power `1 / gamma`. In case `gamma` is `0`, `1 / gamma` is changed for `1'000'000`. Thus, regardless of the input we normally will have returned floats in range `[0...255]`.
+Second argument gamma is used at the last stage.
+Note, that all three channels are clipped in range `[0...1]` right before computing linear sRGB, and then set in power `1 / gamma`. In case `gamma` is `0`, `1 / gamma` is changed for `1'000'000`.
+Thus, regardless of the input we normally will have returned floats in range `[0...255]`.
 
-As in case of `colorSRGBToOKLCH`, two other stages involve trigonometry conversions and matrix multiplication respectively. For more details on maths please see see an article on OKLab color space: https://bottosson.github.io/posts/oklab/
+As in case of `colorSRGBToOKLCH`, two other stages involve trigonometry conversions and matrix multiplication respectively.
+For more details on maths please see see an article on OKLab color space: https://bottosson.github.io/posts/oklab/
 
 In order to have some references for colors in OKLCH space, and how they correspond to sRGB colors please see https://oklch.com/
 
