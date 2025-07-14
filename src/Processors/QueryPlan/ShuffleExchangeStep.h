@@ -10,7 +10,7 @@ namespace DB
 class ShuffleExchangeStep final : public LogicalExchangeStep
 {
 public:
-    ShuffleExchangeStep(const Block & input_header_, Names key_names_, size_t result_bucket_count_)
+    ShuffleExchangeStep(SharedHeader input_header_, Names key_names_, size_t result_bucket_count_)
         : LogicalExchangeStep(input_header_)
         , key_names(std::move(key_names_))
         , result_bucket_count(result_bucket_count_)   /// TODO: implement

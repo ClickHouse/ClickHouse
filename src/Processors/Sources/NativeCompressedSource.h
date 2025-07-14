@@ -10,8 +10,9 @@ namespace DB
 class NativeCompressedSource final : public ISource
 {
 public:
-    NativeCompressedSource(Block header_, std::unique_ptr<ReadBuffer> in_)
+    NativeCompressedSource(SharedHeader header_, std::unique_ptr<ReadBuffer> in_, const String & stream_name_)
         : ISource(std::move(header_))
+        , stream_name(stream_name_)
         , in(std::move(in_))
     {
     }
@@ -21,9 +22,12 @@ public:
 private:
     Chunk generate() override;
 
+    const String stream_name;
+
     std::unique_ptr<ReadBuffer> in;
     std::unique_ptr<CompressedReadBuffer> compressed_buf;
     std::unique_ptr<NativeReader> reader;
+    LoggerPtr log = getLogger("NativeCompressedSource");
 };
 
 }

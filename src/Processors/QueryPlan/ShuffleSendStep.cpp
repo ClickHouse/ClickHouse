@@ -25,11 +25,11 @@ QueryPipelineBuilderPtr ShuffleSendStep::updatePipeline(QueryPipelineBuilders pi
     /// Add calculation of hash of key columns and bucket id based on the hash
     /// Add fork processor to send data to num_buckets outputs
     auto & pipeline = *pipelines.front();
-    Block stream_header = pipeline.getHeader();
+    auto stream_header = pipeline.getSharedHeader();
     {
         ColumnNumbers key_columns;
         for (const auto & key_name : key_names)
-            key_columns.push_back(stream_header.getPositionByName(key_name));
+            key_columns.push_back(stream_header->getPositionByName(key_name));
 
         pipeline.resize(1);
         auto scatter = std::make_shared<ScatterByPartitionTransform>(stream_header, num_buckets, key_columns);
@@ -40,7 +40,7 @@ QueryPipelineBuilderPtr ShuffleSendStep::updatePipeline(QueryPipelineBuilders pi
 
     /// Add sink for each bucket
     size_t bucket = 0;
-    pipeline.setSinks([&](const Block & header, Pipe::StreamType stream_type)
+    pipeline.setSinks([&](const SharedHeader & header, Pipe::StreamType stream_type)
     {
         chassert(stream_type == Pipe::StreamType::Main);
         String destination_bucket_id = toString(bucket);

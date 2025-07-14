@@ -9,7 +9,7 @@ namespace DB
 class GatherReceiveStep : public ISourceStep
 {
 public:
-    GatherReceiveStep(Header header_, const String & exchange_id_, size_t num_buckets_,
+    GatherReceiveStep(SharedHeader header_, const String & exchange_id_, size_t num_buckets_,
                       std::optional<SortDescription> maintain_sort_description_ = std::nullopt)
         : ISourceStep(std::move(header_))
         , exchange_id(exchange_id_)

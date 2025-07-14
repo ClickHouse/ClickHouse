@@ -84,14 +84,14 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
         if (actions.left_pre_join_actions)
         {
             source_a = makeExpressionNodeOnTopOf(source_a, std::move(*actions.left_pre_join_actions), {}, nodes);
-            replace_with_pass_through_actions(*actions.left_pre_join_actions, source_a->step->getOutputHeader());
+            replace_with_pass_through_actions(*actions.left_pre_join_actions, *source_a->step->getOutputHeader());
             join_step->updateInputHeader(source_a->step->getOutputHeader(), 0);
         }
 
         if (actions.right_pre_join_actions)
         {
             source_b = makeExpressionNodeOnTopOf(source_b, std::move(*actions.right_pre_join_actions), {}, nodes);
-            replace_with_pass_through_actions(*actions.right_pre_join_actions, source_b->step->getOutputHeader());
+            replace_with_pass_through_actions(*actions.right_pre_join_actions, *source_b->step->getOutputHeader());
             join_step->updateInputHeader(source_b->step->getOutputHeader(), 1);
         }
     }
@@ -430,7 +430,7 @@ void optimizeExchanges(QueryPlan::Node & root)
                 auto * gather_step = typeid_cast<GatherExchangeStep *>(child_node.step.get());
                 if (gather_step)
                 {
-                    Header expression_header = frame.node->step->getOutputHeader();
+                    SharedHeader expression_header = frame.node->step->getOutputHeader();
 
                     /// If Gather step has maintain_sort_description then we need to check that all those columns are present in Expression step results.
                     bool can_move_gather_up = true;
@@ -439,7 +439,7 @@ void optimizeExchanges(QueryPlan::Node & root)
                         const auto & sort_description = gather_step->getMaintainSortDescription().value();
                         for (const auto & column : sort_description)
                         {
-                            if (!expression_header.has(column.column_name))
+                            if (!expression_header->has(column.column_name))
                             {
                                 can_move_gather_up = false;
                                 break;

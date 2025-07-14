@@ -12,7 +12,7 @@ namespace DB
 class GatherExchangeStep final : public LogicalExchangeStep
 {
 public:
-    explicit GatherExchangeStep(const Block & input_header_, std::optional<SortDescription> maintain_sort_description_ = std::nullopt)
+    explicit GatherExchangeStep(SharedHeader input_header_, std::optional<SortDescription> maintain_sort_description_ = std::nullopt)
         : LogicalExchangeStep(input_header_, std::move(maintain_sort_description_))
     {
     }

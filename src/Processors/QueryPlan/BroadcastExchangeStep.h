@@ -9,7 +9,7 @@ namespace DB
 class BroadcastExchangeStep final : public LogicalExchangeStep
 {
 public:
-BroadcastExchangeStep(const Block & input_header_, size_t result_bucket_count_)
+BroadcastExchangeStep(SharedHeader input_header_, size_t result_bucket_count_)
         : LogicalExchangeStep(input_header_)
         , result_bucket_count(result_bucket_count_)
     {

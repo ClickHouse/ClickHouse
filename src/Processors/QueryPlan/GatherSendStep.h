@@ -10,7 +10,7 @@ namespace DB
 class GatherSendStep final : public IQueryPlanStep
 {
 public:
-    GatherSendStep(Header input_header_, const String & exchange_id_)
+    GatherSendStep(SharedHeader input_header_, const String & exchange_id_)
         : exchange_id(exchange_id_)
     {
         updateInputHeaders({std::move(input_header_)});

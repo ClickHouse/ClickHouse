@@ -26,10 +26,26 @@ void GatherReceiveStep::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// Read from all buckets
     for (size_t i = 0; i < num_buckets; ++i)
     {
-        pipes.push_back(Pipe(settings.exchange_lookup->createSource(output_header.value(), ExchangeStreamId(exchange_id, i, 0))));
+        pipes.push_back(Pipe(settings.exchange_lookup->createSource(output_header, ExchangeStreamId(exchange_id, i, 0))));
     }
 
     pipeline.init(Pipe::unitePipes(std::move(pipes)));
+
+    if (maintain_sort_description && pipeline.getNumStreams() > 1)
+    {
+        pipeline.addTransform(
+            std::make_shared<MergingSortedTransform>(
+                output_header,
+                num_buckets,
+                *maintain_sort_description,
+                /* merge_block_size_rows */ DEFAULT_BLOCK_SIZE,
+                /* merge_block_size_bytes */ 0,
+                SortingQueueStrategy::Batch,
+                /* limit */ 0,
+                /* always_read_till_end */ false,
+                /* rows_sources_write_buf */ nullptr,
+                /* blocks_are_granules_size */ false));
+    }
 }
 
 void GatherReceiveStep::serialize(Serialization & ctx) const
@@ -58,7 +74,7 @@ std::unique_ptr<IQueryPlanStep> GatherReceiveStep::deserialize(Deserialization &
         deserializeSortDescription(*maintain_sort_description, ctx.in);
     }
 
-    return std::make_unique<GatherReceiveStep>(*ctx.output_header, exchange_id, num_buckets, std::move(maintain_sort_description));
+    return std::make_unique<GatherReceiveStep>(ctx.output_header, exchange_id, num_buckets, std::move(maintain_sort_description));
 }
 
 void registerGatherReceiveStep(QueryPlanStepRegistry & registry)

@@ -9,7 +9,7 @@ std::pair<QueryPlanStepPtr, QueryPlanStepPtr> GatherExchangeStep::createSinkAndS
 {
     auto sink = std::make_unique<GatherSendStep>(input_headers.front(), exchange_id);
 
-    auto source = std::make_unique<GatherReceiveStep>(output_header.value(), exchange_id, source_shards.size(), maintain_sort_description);
+    auto source = std::make_unique<GatherReceiveStep>(output_header, exchange_id, source_shards.size(), maintain_sort_description);
 
     return {std::move(sink), std::move(source)};
 }

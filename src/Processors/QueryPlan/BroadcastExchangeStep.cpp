@@ -18,7 +18,7 @@ std::pair<QueryPlanStepPtr, QueryPlanStepPtr> BroadcastExchangeStep::createSinkA
     size_t num_buckets = getResultBucketCount();
     auto sink = std::make_unique<BroadcastSendStep>(input_headers.front(), exchange_id, num_buckets);
 
-    auto source = std::make_unique<BroadcastReceiveStep>(output_header.value(), exchange_id, source_shards);
+    auto source = std::make_unique<BroadcastReceiveStep>(output_header, exchange_id, source_shards);
 
     return {std::move(sink), std::move(source)};
 }

@@ -10,7 +10,7 @@ namespace DB
 class ShuffleSendStep final : public IQueryPlanStep
 {
 public:
-    ShuffleSendStep(Header input_header_, const String & exchange_id_, Names key_names_, size_t num_buckets_)
+    ShuffleSendStep(SharedHeader input_header_, const String & exchange_id_, Names key_names_, size_t num_buckets_)
         : exchange_id(exchange_id_)
         , key_names(std::move(key_names_))
         , num_buckets(num_buckets_)

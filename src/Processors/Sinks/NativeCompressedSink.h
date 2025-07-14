@@ -11,8 +11,9 @@ namespace DB
 class NativeCompressedSink final : public ISink
 {
 public:
-    NativeCompressedSink(Block header_, WriteBuffer & out_)
+    NativeCompressedSink(SharedHeader header_, WriteBuffer & out_, const String & stream_name_)
         : ISink(std::move(header_))
+        , stream_name(stream_name_)
         , out(out_)
         , rows_written(0)
     {
@@ -29,10 +30,13 @@ private:
 
     void onFinish() override;
 
+    const String stream_name;
+
     WriteBuffer & out;
     std::unique_ptr<CompressedWriteBuffer> compressed_buf;
     std::unique_ptr<NativeWriter> writer;
     size_t rows_written;
+    LoggerPtr log = getLogger("NativeCompressedSink");
 };
 
 }

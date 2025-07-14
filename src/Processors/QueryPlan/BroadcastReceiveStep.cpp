@@ -24,7 +24,7 @@ void BroadcastReceiveStep::initializePipeline(QueryPipelineBuilder & pipeline, c
     for (const String & shard_id : source_shards)
     {
         std::unique_ptr<QueryPipelineBuilder> pipeline_ptr = std::make_unique<QueryPipelineBuilder>();
-        pipeline_ptr->init(Pipe(settings.exchange_lookup->createSource(output_header.value(), ExchangeStreamId(exchange_id, shard_id, bucket_id))));
+        pipeline_ptr->init(Pipe(settings.exchange_lookup->createSource(output_header, ExchangeStreamId(exchange_id, shard_id, bucket_id))));
         pipelines.emplace_back(std::move(pipeline_ptr));
     }
 
@@ -53,7 +53,7 @@ std::unique_ptr<IQueryPlanStep> BroadcastReceiveStep::deserialize(Deserializatio
         readStringBinary(shard_id, ctx.in);
         list_of_shard_ids.push_back(std::move(shard_id));
     }
-    return std::make_unique<BroadcastReceiveStep>(*ctx.output_header, exchange_id, list_of_shard_ids);
+    return std::make_unique<BroadcastReceiveStep>(ctx.output_header, exchange_id, list_of_shard_ids);
 }
 
 void registerBroadcastReceiveStep(QueryPlanStepRegistry & registry)

@@ -25,7 +25,7 @@ QueryPipelineBuilderPtr BroadcastSendStep::updatePipeline(QueryPipelineBuilders 
     /// Add calculation of hash of key columns and bucket id based on the hash
     /// Add fork processor to send data to num_buckets outputs
     auto & pipeline = *pipelines.front();
-    Block stream_header = pipeline.getHeader();
+    auto stream_header = pipeline.getSharedHeader();
     {
         pipeline.resize(1);
         if (num_buckets > 1)
@@ -40,7 +40,7 @@ QueryPipelineBuilderPtr BroadcastSendStep::updatePipeline(QueryPipelineBuilders 
 
     /// Add sink for each bucket
     size_t bucket = 0;
-    pipeline.setSinks([&](const Block & header, Pipe::StreamType stream_type)
+    pipeline.setSinks([&](const SharedHeader & header, Pipe::StreamType stream_type)
     {
         chassert(stream_type == Pipe::StreamType::Main);
         String destination_bucket_id = toString(bucket);

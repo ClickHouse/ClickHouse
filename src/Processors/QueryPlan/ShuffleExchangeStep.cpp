@@ -10,7 +10,7 @@ std::pair<QueryPlanStepPtr, QueryPlanStepPtr> ShuffleExchangeStep::createSinkAnd
     size_t num_buckets = getResultBucketCount();
     auto sink = std::make_unique<ShuffleSendStep>(input_headers.front(), exchange_id, key_names, num_buckets);
 
-    auto source = std::make_unique<ShuffleReceiveStep>(output_header.value(), exchange_id, source_shards);
+    auto source = std::make_unique<ShuffleReceiveStep>(output_header, exchange_id, source_shards);
 
     return {std::move(sink), std::move(source)};
 }

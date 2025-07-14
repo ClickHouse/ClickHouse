@@ -12,7 +12,7 @@ namespace DB
 class ReadFromDistributedPlanSource final : public ISource
 {
 public:
-    ReadFromDistributedPlanSource(Block header_, const UUID & unique_query_id_, DistributedQueryPlan distributed_query_plan_)
+    ReadFromDistributedPlanSource(SharedHeader header_, const UUID & unique_query_id_, DistributedQueryPlan distributed_query_plan_)
         : ISource(std::move(header_))
         , unique_query_id(unique_query_id_)
         , distributed_query_plan(std::move(distributed_query_plan_))

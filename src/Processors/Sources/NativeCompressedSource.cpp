@@ -8,7 +8,7 @@ namespace DB
 
 Chunk NativeCompressedSource::generate()
 {
-    if (!output.getHeader())    /// No output columns? (case of `SELECT count()`)
+    if (output.getHeader().empty())    /// No output columns? (case of `SELECT count()`)
     {
         if (!in)
             return {};

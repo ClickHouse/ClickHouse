@@ -14,7 +14,7 @@ namespace DB
 class StreamingExchangeSink final : public ISink
 {
 public:
-    StreamingExchangeSink(Block header_, String query_id_, String stream_name_, String host_, UInt16 port_)
+    StreamingExchangeSink(SharedHeader header_, String query_id_, String stream_name_, String host_, UInt16 port_)
         : ISink(std::move(header_))
         , host(std::move(host_))
         , port(port_)

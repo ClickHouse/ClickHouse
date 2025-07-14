@@ -27,14 +27,14 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(const Header & input_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
     {
         auto stream_name = exchange_stream_id.toString();
         String host = exchange_stream_destinations.stream_hosts.at(stream_name);
         return std::make_shared<StreamingExchangeSink>(input_header, query_id, stream_name, host, streaming_exchange_port);
     }
 
-    std::shared_ptr<ISource> createSource(const Header & output_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id) override
     {
         auto stream_name = exchange_stream_id.toString();
         auto socket = connections->getConnection(query_id, stream_name);

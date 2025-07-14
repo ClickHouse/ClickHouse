@@ -9,7 +9,7 @@ namespace DB
 class ScatterExchangeStep final : public LogicalExchangeStep
 {
 public:
-    ScatterExchangeStep(const Block & input_header_, Names key_names_, size_t result_bucket_count_)
+    ScatterExchangeStep(SharedHeader input_header_, Names key_names_, size_t result_bucket_count_)
         : LogicalExchangeStep(input_header_)
         , key_names(std::move(key_names_))
         , result_bucket_count(result_bucket_count_)

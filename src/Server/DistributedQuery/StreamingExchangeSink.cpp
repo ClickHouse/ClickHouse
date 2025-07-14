@@ -246,7 +246,7 @@ void StreamingExchangeSink::consume(Chunk chunk)
     if (chunk.getNumColumns() > 0)
     {
         auto compressed_buf = std::make_unique<CompressedWriteBuffer>(*out);
-        auto writer = std::make_unique<NativeWriter>(*compressed_buf, DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS, input.getHeader());
+        auto writer = std::make_unique<NativeWriter>(*compressed_buf, DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS, input.getSharedHeader());
 
         Block block = input.getHeader().cloneWithColumns(chunk.getColumns());
         writer->write(block);

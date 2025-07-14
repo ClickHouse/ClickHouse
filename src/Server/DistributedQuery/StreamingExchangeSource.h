@@ -13,7 +13,7 @@ namespace DB
 class StreamingExchangeSource final : public ISource
 {
 public:
-    explicit StreamingExchangeSource(Block header_, Poco::Net::StreamSocket socket_, const String & stream_name_)
+    explicit StreamingExchangeSource(SharedHeader header_, Poco::Net::StreamSocket socket_, const String & stream_name_)
         : ISource(std::move(header_))
         , socket(socket_)
         , out(socket)

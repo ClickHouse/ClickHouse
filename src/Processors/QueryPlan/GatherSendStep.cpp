@@ -24,14 +24,13 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
         throw Exception(ErrorCodes::LOGICAL_ERROR, "GatherSendStep expects single input step");
 
     auto & pipeline = *pipelines.front();
-    Block stream_header = pipeline.getHeader();
 
     const String bucket = settings.parameter_lookup->getParameter("bucket_id").safeGet<String>();
 
     /// Cannot have multiple sinks writing to the same file concurrently.
     pipeline.resize(1);
 
-    pipeline.setSinks([&](const Block & header, Pipe::StreamType stream_type) -> ProcessorPtr
+    pipeline.setSinks([&](const SharedHeader & header, Pipe::StreamType stream_type) -> ProcessorPtr
     {
         chassert(stream_type == Pipe::StreamType::Main);
         return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, bucket, "0"));

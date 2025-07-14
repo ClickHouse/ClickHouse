@@ -139,13 +139,13 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(const Header & input_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
     {
         auto file_name = exchange_stream_id.toString();
         return std::make_shared<NativeCompressedSink>(input_header, temporary_files->getTemporaryFileForWriting(file_name), file_name);
     }
 
-    std::shared_ptr<ISource> createSource(const Header & output_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id) override
     {
         auto file_name = exchange_stream_id.toString();
         std::unique_ptr<QueryPipelineBuilder> pipeline_ptr = std::make_unique<QueryPipelineBuilder>();
@@ -235,14 +235,14 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(const Header & input_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
     {
         auto file_name = exchange_stream_id.toString();
         auto exchange = InMemoryExchanges::instance()->getExchange(query_id, file_name);
         return std::make_shared<SinkFromInMemoryExchange>(input_header, exchange);
     }
 
-    std::shared_ptr<ISource> createSource(const Header & output_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id) override
     {
         auto file_name = exchange_stream_id.toString();
         auto exchange = InMemoryExchanges::instance()->getExchange(query_id, file_name);
@@ -253,7 +253,7 @@ private:
     class SinkFromInMemoryExchange final : public ISink
     {
     public:
-        SinkFromInMemoryExchange(const Header & header_, InMemoryExchangePtr exchange_)
+        SinkFromInMemoryExchange(SharedHeader header_, InMemoryExchangePtr exchange_)
             : ISink(header_)
             , exchange(std::move(exchange_))
         {
@@ -278,7 +278,7 @@ private:
     class SourceFromInMemoryExchange final : public ISource
     {
     public:
-        SourceFromInMemoryExchange(const Header & header_, InMemoryExchangePtr exchange_)
+        SourceFromInMemoryExchange(SharedHeader header_, InMemoryExchangePtr exchange_)
             : ISource(header_)
             , exchange(std::move(exchange_))
         {
@@ -312,7 +312,7 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(const Header & input_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
     {
         auto it = exchanges.find(exchange_stream_id.exchange_id);
         if (it == exchanges.end())
@@ -326,7 +326,7 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange kind '{}'", static_cast<int>(it->second.kind));
     }
 
-    std::shared_ptr<ISource> createSource(const Header & output_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id) override
     {
         auto it = exchanges.find(exchange_stream_id.exchange_id);
         if (it == exchanges.end())

@@ -9,7 +9,7 @@ namespace DB
 class BroadcastReceiveStep : public ISourceStep
 {
 public:
-    BroadcastReceiveStep(Header header_, const String & exchange_id_, const Strings & source_shards_)
+    BroadcastReceiveStep(SharedHeader header_, const String & exchange_id_, const Strings & source_shards_)
         : ISourceStep(std::move(header_))
         , exchange_id(exchange_id_)
         , source_shards(source_shards_)

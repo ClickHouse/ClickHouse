@@ -17,7 +17,7 @@ namespace DB
 class LogicalExchangeStep : public ITransformingStep
 {
 protected:
-    explicit LogicalExchangeStep(const Block & input_header_, std::optional<SortDescription> maintain_sort_description_ = std::nullopt)
+    explicit LogicalExchangeStep(SharedHeader input_header_, std::optional<SortDescription> maintain_sort_description_ = std::nullopt)
         : ITransformingStep(input_header_, input_header_, {})
         , maintain_sort_description(std::move(maintain_sort_description_))
     {
