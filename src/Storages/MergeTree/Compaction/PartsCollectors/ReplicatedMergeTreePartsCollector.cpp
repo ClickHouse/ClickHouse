@@ -10,7 +10,9 @@ namespace
 
 MergeTreeDataPartsVector collectInitial(const MergeTreeData & data)
 {
-    return data.getDataPartsVectorForInternalUsage();
+    using Kind = MergeTreeData::DataPartKind;
+    MergeTreeData::DataPartsKinds affordable_kinds{Kind::Regular, Kind::Patch};
+    return data.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, affordable_kinds);
 }
 
 auto constructPreconditionsPredicate(const StoragePolicyPtr & storage_policy, const ReplicatedMergeTreeMergePredicatePtr & merge_pred)

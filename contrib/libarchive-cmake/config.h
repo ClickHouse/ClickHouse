@@ -729,6 +729,9 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if you have the `gcc' library (-lgcc). */
 /* #undef HAVE_LIBGCC */
 
+/* Define to 1 if you have the `iconv' library (-liconv). */
+/* #undef HAVE_LIBICONV */
+
 /* Define to 1 if you have the `lz4' library (-llz4). */
 /* #undef HAVE_LIBLZ4 */
 
@@ -776,6 +779,9 @@ typedef uint64_t uintmax_t;
 
 /* Define to 1 if you have the ZSTD_compressStream function. */
 /* #undef HAVE_ZSTD_compressStream */
+
+/* Define to 1 if you have the ZSTD_minCLevel function. */
+/* #undef HAVE_ZSTD_minCLevel */
 
 /* Define to 1 if you have the <limits.h> header file. */
 #define HAVE_LIMITS_H 1
@@ -871,6 +877,9 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if you have the <mbedtls/pkcs5.h> header file. */
 /* #undef HAVE_MBEDTLS_PKCS5_H */
 
+/* Define to 1 if you have the <mbedtls/pkcs5.h> header file. */
+/* #undef HAVE_MBEDTLS_VERSION_H */
+
 /* Define to 1 if you have the `mbrtowc' function. */
 /* #undef HAVE_MBRTOWC */
 
@@ -916,6 +925,9 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if you have the <nettle/sha.h> header file. */
 /* #undef HAVE_NETTLE_SHA_H */
 
+/* Define to 1 if you have the <nettle/version.h> header file. */
+/* #undef HAVE_NETTLE_VERSION_H */
+
 /* Define to 1 if you have the `nl_langinfo' function. */
 /* #undef HAVE_NL_LANGINFO */
 
@@ -924,6 +936,9 @@ typedef uint64_t uintmax_t;
 
 /* Define to 1 if you have the <openssl/evp.h> header file. */
 /* #undef HAVE_OPENSSL_EVP_H */
+
+/* Define to 1 if you have the <openssl/opensslv.h> header file. */
+/* undef HAVE_OPENSSL_OPENSSLV_H */
 
 /* Define to 1 if you have the <paths.h> header file. */
 #define HAVE_PATHS_H 1
@@ -1175,6 +1190,12 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if you have the <sys/xattr.h> header file. */
 /* #undef HAVE_SYS_XATTR_H */
 
+/* Define to 1 if you have the `tcgetattr' function. */
+/* #undef HAVE_TCGETATTR */
+
+/* Define to 1 if you have the `tcsetattr' function. */
+/* #undef HAVE_TCSETATTR */
+
 /* Define to 1 if you have the `timegm' function. */
 #define HAVE_TIMEGM 1
 
@@ -1268,6 +1289,9 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if you have a working FS_IOC_GETFLAGS */
 #define HAVE_WORKING_FS_IOC_GETFLAGS 1
 
+/* Define to 1 if you have the Windows `xmllite' library (-lxmllite). */
+/* #undef HAVE_XMLLITE_H */
+
 /* Define to 1 if you have the <zlib.h> header file. */
 /* #undef HAVE_ZLIB_H */
 
@@ -1324,6 +1348,15 @@ typedef uint64_t uintmax_t;
 
 /* Define to 1 if you can safely include both <sys/time.h> and <time.h>. */
 /* #undef TIME_WITH_SYS_TIME */
+
+/* Version number of package */
+/* #undef LIBATTR_PKGCONFIG_VERSION */
+
+/* Version number of package */
+/* #undef LIBACL_PKGCONFIG_VERSION */
+
+/* Version number of package */
+/* #undef LIBRICHACL_PKGCONFIG_VERSION */
 
 /*
  * Some platform requires a macro to use extension functions.

@@ -126,17 +126,6 @@ class RabbitMQMonitor:
             self.connection = None
 
 
-def suspend_rabbitmq(rabbitmq_cluster, rabbitmq_monitor):
-    rabbitmq_monitor.stop()
-    rabbitmq_cluster.stop_rabbitmq_app()
-
-
-def resume_rabbitmq(rabbitmq_cluster, rabbitmq_monitor):
-    rabbitmq_cluster.start_rabbitmq_app()
-    rabbitmq_cluster.wait_rabbitmq_to_start()
-    rabbitmq_monitor.start(rabbitmq_cluster)
-
-
 # Fixtures
 
 @pytest.fixture(scope="module")
@@ -234,14 +223,11 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, r
     else:
         pytest.fail(f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The count is still 0.")
 
-    suspend_rabbitmq(rabbitmq_cluster, rabbitmq_monitor)
-
-    number = int(instance.query("SELECT count() FROM test.view"))
-    logging.debug(f"{number}/{messages_num} after suspending RabbitMQ")
-    if number == messages_num:
-        pytest.fail("All RabbitMQ messages have been consumed before resuming the RabbitMQ server")
-
-    resume_rabbitmq(rabbitmq_cluster, rabbitmq_monitor)
+    with rabbitmq_cluster.pause_rabbitmq(rabbitmq_monitor):
+        number = int(instance.query("SELECT count() FROM test.view"))
+        logging.debug(f"{number}/{messages_num} after suspending RabbitMQ")
+        if number == messages_num:
+            pytest.fail("All RabbitMQ messages have been consumed before resuming the RabbitMQ server")
 
     deadline = time.monotonic() + CLICKHOUSE_VIEW_TIMEOUT_SEC
     while time.monotonic() < deadline:
@@ -325,14 +311,11 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster, r
     else:
         pytest.fail(f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The count is still 0.")
 
-    suspend_rabbitmq(rabbitmq_cluster, rabbitmq_monitor)
-
-    number = int(instance.query("SELECT count() FROM test.view"))
-    logging.debug(f"{number}/{messages_num} after suspending RabbitMQ")
-    if number == messages_num:
-        pytest.fail("All RabbitMQ messages have been consumed before resuming the RabbitMQ server")
-
-    resume_rabbitmq(rabbitmq_cluster, rabbitmq_monitor)
+    with rabbitmq_cluster.pause_rabbitmq(rabbitmq_monitor):
+        number = int(instance.query("SELECT count() FROM test.view"))
+        logging.debug(f"{number}/{messages_num} after suspending RabbitMQ")
+        if number == messages_num:
+            pytest.fail("All RabbitMQ messages have been consumed before resuming the RabbitMQ server")
 
     # while int(instance.query('SELECT count() FROM test.view')) == 0:
     #    time.sleep(0.1)

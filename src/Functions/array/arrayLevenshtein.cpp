@@ -555,10 +555,10 @@ ColumnPtr FunctionArrayLevenshtein<Similarity>::execute(std::vector<const Column
     res_values.resize(distance->size());
     if (!(
         similarity<UInt8>(columns, distance, res_values) || similarity<UInt16>(columns, distance, res_values)
-        || similarity<UInt16>(columns, distance, res_values) || similarity<UInt64>(columns, distance, res_values)
+        || similarity<UInt32>(columns, distance, res_values) || similarity<UInt64>(columns, distance, res_values)
         || similarity<UInt128>(columns, distance, res_values) || similarity<UInt256>(columns, distance, res_values)
         || similarity<Int8>(columns, distance, res_values) || similarity<Int16>(columns, distance, res_values)
-        || similarity<Int16>(columns, distance, res_values) || similarity<Int64>(columns, distance, res_values)
+        || similarity<Int32>(columns, distance, res_values) || similarity<Int64>(columns, distance, res_values)
         || similarity<Int128>(columns, distance, res_values) || similarity<Int256>(columns, distance, res_values)
         || similarity<Float32>(columns, distance, res_values) || similarity<Float64>(columns, distance, res_values)))
         throw Exception(
@@ -572,69 +572,98 @@ ColumnPtr FunctionArrayLevenshtein<Similarity>::execute(std::vector<const Column
 
 REGISTER_FUNCTION(ArrayLevenshtein)
 {
-    factory.registerFunction<FunctionArrayLevenshtein<SimpleLevenshtein>>(
-        {.description = R"(
-Calculates Levenshtein distance for two arrays.
-)",
-         .syntax{"arrayLevenshteinDistance(from, to)"},
-         .arguments{{"from", "first array"}, {"to", "second array"}},
-         .returned_value{"Levenshtein distance between the first and the second arrays"},
-         .examples{{{
-             "Query",
-             "SELECT arrayLevenshteinDistance([1, 2, 4], [1, 2, 3])",
-             R"(
-┌─arrayLevenshteinDistance([1, 2, 4], [1, 2, 3])─┐
-│                                              1 │
-└────────────────────────────────────────────────┘
-)",
-         }}},
-         .category = FunctionDocumentation::Category::Array});
+    FunctionDocumentation::Description description_arrayLevDis = "Calculates the Levenshtein distance for two arrays.";
+    FunctionDocumentation::Syntax syntax_arrayLevDis = "arrayLevenshteinDistance(from, to)";
+    FunctionDocumentation::Arguments arguments_arrayLevDis = {
+        {"from", "The first array. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"to", "The second array. [`Array(T)`](/sql-reference/data-types/array)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_arrayLevDis = {"Levenshtein distance between the first and the second arrays.", {"Float64"}};
+    FunctionDocumentation::Examples example_arrayLevDis = {
+        {
+            "Usage example",
+            "SELECT arrayLevenshteinDistance([1, 2, 4], [1, 2, 3])",
+            "1"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_arrayLevDis = {25, 4};
+    FunctionDocumentation::Category category_arrayLevDis = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_arrayLevDis = {
+        description_arrayLevDis,
+        syntax_arrayLevDis,
+        arguments_arrayLevDis,
+        returned_value_arrayLevDis,
+        example_arrayLevDis,
+        introduced_in_arrayLevDis,
+        category_arrayLevDis
+    };
 
-    factory.registerFunction<FunctionArrayLevenshtein<Weighted>>(
-        {.description = R"(
-Calculates Levenshtein distance for two arrays with custom weights for each element. Number of elements for array and its weights should match
-)",
-         .syntax{"arrayLevenshteinDistanceWeighted(from, to, from_weights, to_weights)"},
-         .arguments{
-             {"from", "first array"},
-             {"to", "second array"},
-             {"from_weights", "weights for the first array"},
-             {"to_weights", "weights for the second array"},
-         },
-         .returned_value{"Levenshtein distance between the first and the second arrays with custom weights for each element"},
-         .examples{{{
-            "Query",
+    factory.registerFunction<FunctionArrayLevenshtein<SimpleLevenshtein>>(documentation_arrayLevDis);
+
+    FunctionDocumentation::Description description_arrayLevDisW = R"(
+Calculates Levenshtein distance for two arrays with custom weights for each element.
+The number of elements for the array and its weights should match.
+    )";
+    FunctionDocumentation::Syntax syntax_arrayLevDisW = "arrayLevenshteinDistanceWeighted(from, to, from_weights, to_weights)";
+    FunctionDocumentation::Arguments arguments_arrayLevDisW = {
+        {"from", "first array. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"to", "second array. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"from_weights", "weights for the first array.", {"Array((U)Int*|Float*)"}},
+        {"to_weights", "weights for the second array.", {"Array((U)Int*|Float*)"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value_arrayLevDisW = {"Levenshtein distance between the first and the second arrays with custom weights for each element", {"Float64"}};
+    FunctionDocumentation::IntroducedIn introduced_in_arrayLevDisW = {25, 4};
+    FunctionDocumentation::Examples examples_arrayLevDisW = {
+        {
+            "Usage example",
             "SELECT arrayLevenshteinDistanceWeighted(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])",
-            R"(
-┌─arrayLevenshteinDistanceWeighted(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])─┐
-│                                                                                           14 │
-└──────────────────────────────────────────────────────────────────────────────────────────────┘
-)",
-         }}},
-         .category = FunctionDocumentation::Category::Array});
+            "14"
+        }
+    };
+    FunctionDocumentation::Category category_arrayLevDisW = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_arrayLevDisW = {
+        description_arrayLevDisW,
+        syntax_arrayLevDisW,
+        arguments_arrayLevDisW,
+        returned_value_arrayLevDisW,
+        examples_arrayLevDisW,
+        introduced_in_arrayLevDisW,
+        category_arrayLevDisW
+    };
 
-    factory.registerFunction<FunctionArrayLevenshtein<Similarity>>(
-        {.description = R"(
-Calculates arrays' similarity from 0 to 1 based on weighed Levenshtein distance. Accepts the same arguments as `arrayLevenshteinDistanceWeighted` function.
-)",
-         .syntax{"arraySimilarity(from, to, from_weights, to_weights)"},
-         .arguments{
-             {"from", "first array"},
-             {"to", "second array"},
-             {"from_weights", "weights for the first array"},
-             {"to_weights", "weights for the second array"},
-         },
-         .returned_value{"Similarity of two arrays based on the weighted Levenshtein distance"},
-         .examples{{{
-            "Query",
-            "SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])",
-            R"(
-┌─arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])─┐
-│                                                          0.2222222222222222 │
-└─────────────────────────────────────────────────────────────────────────────┘
-)",
-         }}},
-         .category = FunctionDocumentation::Category::Array});
+    factory.registerFunction<FunctionArrayLevenshtein<Weighted>>(documentation_arrayLevDisW);
 
+    FunctionDocumentation::Description description_arraySim = R"(
+Calculates the similarity of two arrays from `0` to `1` based on weighted Levenshtein distance.
+)";
+    FunctionDocumentation::Syntax syntax_arraySim = "arraySimilarity(from, to, from_weights, to_weights)";
+    FunctionDocumentation::Arguments arguments_arraySim = {
+        {"from", "first array", {"Array(T)"}},
+        {"to", "second array", {"Array(T)"}},
+        {"from_weights", "weights for the first array.", {"Array((U)Int*|Float*)"}},
+        {"to_weights", "weights for the second array.", {"Array((U)Int*|Float*)"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value_arraySim = {"Returns the similarity between `0` and `1` of the two arrays based on the weighted Levenshtein distance", {"Float64"}};
+    FunctionDocumentation::Examples examples_arraySim =
+    {
+            {
+            "Usage example",
+            "SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5]);",
+            "0.2222222222222222"
+            }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_arraySim = {25, 4};
+    FunctionDocumentation::Category category_arraySim = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_arraySim = {
+        description_arraySim,
+        syntax_arraySim,
+        arguments_arraySim,
+        returned_value_arraySim,
+        examples_arraySim,
+        introduced_in_arraySim,
+        category_arraySim
+    };
+
+    factory.registerFunction<FunctionArrayLevenshtein<Similarity>>(documentation_arraySim);
 }
 }
