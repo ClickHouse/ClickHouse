@@ -7,7 +7,7 @@ slug: /interfaces/third-party/client-libraries
 title: 'Client Libraries from Third-party Developers'
 ---
 
-# Client Libraries from Third-party Developers
+# Client libraries from third-party developers
 
 :::note
 ClickHouse Inc does **not** maintain the libraries listed below and hasn't done any extensive testing to ensure their quality.

@@ -33,7 +33,8 @@ public:
         ContextPtr context_,
         std::optional<FormatSettings> format_settings_,
         ASTStorage * engine_args,
-        LoadingStrictnessLevel mode);
+        LoadingStrictnessLevel mode,
+        bool keep_data_in_keeper_);
 
     String getName() const override { return engine_name; }
 
@@ -56,6 +57,8 @@ public:
         ContextPtr local_context,
         AlterLockHolder & table_lock_holder) override;
 
+    void renameInMemory(const StorageID & new_table_id) override;
+
     const auto & getFormatName() const { return configuration->format; }
 
     const fs::path & getZooKeeperPath() const { return zk_path; }
@@ -66,6 +69,21 @@ public:
 
     /// Can setting be changed via ALTER TABLE MODIFY SETTING query.
     static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode);
+
+    /// Generate id for the S3(Azure/etc)Queue commit.
+    /// Used for system.s3(azure/etc)_queue_log.
+    static UInt64 generateCommitID();
+
+    static String chooseZooKeeperPath(
+        const ContextPtr & context_,
+        const StorageID & table_id,
+        const Settings & settings,
+        const ObjectStorageQueueSettings & queue_settings,
+        UUID database_uuid = UUIDHelpers::Nil);
+
+    static constexpr auto engine_names = {"S3Queue", "AzureQueue"};
+
+    void checkTableCanBeRenamed(const StorageID & new_name) const override;
 
 private:
     friend class ReadFromObjectStorageQueue;
@@ -121,6 +139,7 @@ private:
     std::shared_ptr<ObjectStorageQueueSource> createSource(
         size_t processor_id,
         const ReadFromFormatInfo & info,
+        FormatParserGroupPtr parser_group,
         ProcessingProgressPtr progress_,
         std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
         size_t max_block_size,
@@ -140,8 +159,12 @@ private:
         bool insert_succeeded,
         size_t inserted_rows,
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
+        time_t transaction_start_time,
         const std::string & exception_message = {},
         int error_code = 0) const;
+
+    const bool can_be_moved_between_databases;
+    const bool keep_data_in_keeper;
 };
 
 }

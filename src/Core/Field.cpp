@@ -316,9 +316,37 @@ Field getBinaryValue(UInt8 type, ReadBuffer & buf)
             return bool(value);
         }
         case Field::Types::Decimal32:
+        {
+            Decimal<Int32> value;
+            readBinary(value, buf);
+            UInt32 scale = 0 ;
+            readBinary(scale, buf);
+            return DecimalField<Decimal32>(value, scale);
+        }
         case Field::Types::Decimal64:
+        {
+            Decimal<Int64> value;
+            readBinary(value, buf);
+            UInt32 scale = 0;
+            readBinary(scale, buf);
+            return DecimalField<Decimal64>(value, scale);
+        }
         case Field::Types::Decimal128:
+        {
+            Decimal<Int128> value;
+            readBinary(value, buf);
+            UInt32 scale = 0;
+            readBinary(scale, buf);
+            return DecimalField<Decimal128>(value, scale);
+        }
         case Field::Types::Decimal256:
+        {
+            Decimal<Int256> value;
+            readBinary(value, buf);
+            UInt32 scale = 0;
+            readBinary(scale, buf);
+            return DecimalField<Decimal256>(value, scale);
+        }
         case Field::Types::CustomType:
             return Field();
     }

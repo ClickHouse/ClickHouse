@@ -1,5 +1,5 @@
 #pragma once
-#include "StorageObjectStorage.h"
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 namespace DB
 {
@@ -21,5 +21,9 @@ void resolveSchemaAndFormat(
     std::optional<FormatSettings> format_settings,
     std::string & sample_path,
     const ContextPtr & context);
+
+void validateSupportedColumns(
+    ColumnsDescription & columns,
+    const StorageObjectStorage::Configuration & configuration);
 
 }

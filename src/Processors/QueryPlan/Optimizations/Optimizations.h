@@ -15,7 +15,7 @@ namespace QueryPlanOptimizations
 /// First pass (ideally) apply local idempotent operations on top of Plan.
 void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 /// Second pass is used to apply read-in-order and attach a predicate to PK.
-void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
+void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan);
 /// Third pass is used to apply filters such as key conditions and skip indexes to the storages that support them.
 /// After that it add CreateSetsStep for the subqueries that has not be used in the filters.
 void addStepsToBuildSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
@@ -31,8 +31,12 @@ struct Optimization
 {
     struct ExtraSettings
     {
+        /// Vector-search-related settings
         size_t max_limit_for_vector_search_queries;
+        bool vector_search_with_rescoring;
         VectorSearchFilterStrategy vector_search_filter_strategy;
+
+        /// Other settings
         size_t use_index_for_in_with_subqueries_max_values;
         SizeLimits network_transfer_limits;
     };
