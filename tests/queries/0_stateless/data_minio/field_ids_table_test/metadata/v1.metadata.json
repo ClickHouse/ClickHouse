@@ -11,7 +11,7 @@
     "schema-id" : 0,
     "fields" : [ {
       "id" : 1,
-      "name" : "col_x2D1",
+      "name" : "test",
       "required" : false,
       "type" : "int"
     } ]
