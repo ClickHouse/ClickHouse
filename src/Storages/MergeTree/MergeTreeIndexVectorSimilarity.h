@@ -161,6 +161,7 @@ private:
     const size_t expansion_search;
     const float postfilter_multiplier;
     const size_t max_limit;
+    static constexpr float MAX_POSTFILTER_MULTIPLIER = 1000;
 };
 
 

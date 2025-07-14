@@ -31,6 +31,9 @@ CREATE FUNCTION constF32 AS () -> [toFloat32(0.0), toFloat32(2.0)];
 DROP FUNCTION IF EXISTS constBF16;
 CREATE FUNCTION constBF16 AS () -> [toBFloat16(0.0), toBFloat16(2.0)];
 
+DROP FUNCTION IF exists nonconstF32;
+CREATE FUNCTION nonconstF32 AS (arg1) -> (SELECT [toFloat32((arg1 % 10)/10), toFloat32((arg1 % 10)/10)]);
+
 SELECT 'Run all combinations of vector search queries: column type x reference vector type';
 
 SELECT id
@@ -161,9 +164,19 @@ LIMIT 1
 )
 WHERE explain LIKE '%vector_similarity%';
 
+SELECT trimLeft(explain) AS explain FROM (
+EXPLAIN indexes = 1
+SELECT id
+FROM tab_f32
+ORDER BY L2Distance(vec, nonconstF32(rand()))
+LIMIT 1
+)
+WHERE explain LIKE '%vector_similarity%';
+
 DROP FUNCTION constF64;
 DROP FUNCTION constF32;
 DROP FUNCTION constBF16;
+DROP FUNCTION nonconstF32;
 
 DROP TABLE tab_f64;
 DROP TABLE tab_f32;

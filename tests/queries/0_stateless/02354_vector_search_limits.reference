@@ -1,0 +1,13 @@
+Verify vector column & index with dimension=32KB
+Search should use vector index
+Skip
+Name: idx
+Description: vector_similarity GRANULARITY 100000000
+9
+8
+7
+vector_search_postfilter_multiplier greater than 1000 should error
+9
+8
+7
+Next query should not use index as limit for ANN is low
