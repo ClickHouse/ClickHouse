@@ -272,7 +272,7 @@ def test_insert_select(started_cluster, wait_restart, missing_table):
 
     if (missing_table):
         node1.query("SYSTEM FLUSH LOGS query_log");
-        assert ( node1.query(f"select ProfileEvents['DistributedConnectionMissingTable'] as missing_table from system.query_log where initial_query_id = '{uuid}' and type = 'QueryFinish' and missing_table > 0") == "1\n")
+        assert ( node1.query(f"select ProfileEvents['DistributedConnectionMissingTable'] as missing_table from system.query_log where query_id = '{uuid}' and type = 'QueryFinish'") == "1\n")
 
 
     if (wait_restart):
