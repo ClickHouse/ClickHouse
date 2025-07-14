@@ -67,7 +67,7 @@ and
 </clickhouse>
 ```
 
-The trsulting merged configuration file will be:
+The resulting merged configuration file will be:
 
 ```xml
 <clickhouse>
