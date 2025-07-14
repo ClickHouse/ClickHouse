@@ -89,6 +89,7 @@ private:
     std::optional<QueryPipeline> buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table);
     std::pair<QueryPipeline, ParallelReplicasReadingCoordinatorPtr>
     buildLocalInsertSelectPipelineForParallelReplicas(ASTInsertQuery & query, const StoragePtr & table);
+    std::optional<QueryPipeline> distributedWriteFromClusterStorage(const ASTInsertQuery & query, ContextPtr local_context);
 };
 
 }
