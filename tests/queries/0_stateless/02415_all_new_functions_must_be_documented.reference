@@ -618,6 +618,12 @@ toNullable
 toStartOfMillisecond
 toString
 toStringCutToZero
+toTime
+toTime64
+toTime64OrNull
+toTime64OrZero
+toTimeOrNull
+toTimeOrZero
 toTypeName
 toUInt128
 toUInt128OrNull
