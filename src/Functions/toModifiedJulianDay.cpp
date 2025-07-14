@@ -226,9 +226,9 @@ toModifiedJulianDay(date)
     )";
         FunctionDocumentation::Arguments arguments_toModifiedJulianDay =
         {
-            {"date", "The date in String form. [`String`](../data-types/string.md)/[`FixedString`](../data-types/fixedstring.md)."}
+            {"date", "The date in String form.", {"String", "FixedString"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value_toModifiedJulianDay = "Returns Modified Julian Day number. [`Int32`](../data-types/int-uint.md).";
+        FunctionDocumentation::ReturnedValue returned_value_toModifiedJulianDay = {"Returns Modified Julian Day number.", {"Int32"}};
         FunctionDocumentation::Examples examples_toModifiedJulianDay =
         {
             {"Convert date to Modified Julian Day", R"(
@@ -242,16 +242,7 @@ SELECT toModifiedJulianDay('2020-01-01')
         };
         FunctionDocumentation::IntroducedIn introduced_in_toModifiedJulianDay = {21, 1};
         FunctionDocumentation::Category category_toModifiedJulianDay = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation documentation_toModifiedJulianDay =
-        {
-            description_toModifiedJulianDay,
-            syntax_toModifiedJulianDay,
-            arguments_toModifiedJulianDay,
-            returned_value_toModifiedJulianDay,
-            examples_toModifiedJulianDay,
-            introduced_in_toModifiedJulianDay,
-            category_toModifiedJulianDay
-        };
+        FunctionDocumentation documentation_toModifiedJulianDay = {description_toModifiedJulianDay, syntax_toModifiedJulianDay, arguments_toModifiedJulianDay, returned_value_toModifiedJulianDay, examples_toModifiedJulianDay, introduced_in_toModifiedJulianDay, category_toModifiedJulianDay};
 
         factory.registerFunction<ToModifiedJulianDayOverloadResolver<NameToModifiedJulianDay, DataTypeInt32, false>>(documentation_toModifiedJulianDay);
 
@@ -263,9 +254,9 @@ toModifiedJulianDayOrNull(date)
     )";
         FunctionDocumentation::Arguments arguments_toModifiedJulianDayOrNull =
         {
-            {"date", "Date in text form. [`String`](../data-types/string.md)/[`FixedString`](../data-types/fixedstring.md)."}
+            {"date", "Date in text form.", {"String", "FixedString"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value_toModifiedJulianDayOrNull = "Returns the modified Julian day number for valid `date`, otherwise `null`. [`Nullable(Int32)`](../data-types/int-uint.md).";
+        FunctionDocumentation::ReturnedValue returned_value_toModifiedJulianDayOrNull = {"Returns the modified Julian day number for valid `date`, otherwise `null`.", {"Nullable(Int32)"}};
         FunctionDocumentation::Examples examples_toModifiedJulianDayOrNull =
         {
             {"Convert date to Modified Julian Day with null handling", R"(
@@ -284,15 +275,7 @@ SELECT toModifiedJulianDayOrNull('0000-00-00'); -- invalid date, returns NULL
         FunctionDocumentation::IntroducedIn introduced_in_toModifiedJulianDayOrNull = {21, 1};
         FunctionDocumentation::Category category_toModifiedJulianDayOrNull = FunctionDocumentation::Category::DateAndTime;
         FunctionDocumentation documentation_toModifiedJulianDayOrNull =
-        {
-            description_toModifiedJulianDayOrNull,
-            syntax_toModifiedJulianDayOrNull,
-            arguments_toModifiedJulianDayOrNull,
-            returned_value_toModifiedJulianDayOrNull,
-            examples_toModifiedJulianDayOrNull,
-            introduced_in_toModifiedJulianDayOrNull,
-            category_toModifiedJulianDayOrNull
-        };
+        {description_toModifiedJulianDayOrNull, syntax_toModifiedJulianDayOrNull, arguments_toModifiedJulianDayOrNull, returned_value_toModifiedJulianDayOrNull, examples_toModifiedJulianDayOrNull, introduced_in_toModifiedJulianDayOrNull, category_toModifiedJulianDayOrNull};
 
         factory.registerFunction<ToModifiedJulianDayOverloadResolver<NameToModifiedJulianDayOrNull, DataTypeInt32, true>>(documentation_toModifiedJulianDayOrNull);
     }

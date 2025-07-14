@@ -80,15 +80,15 @@ public:
 
 REGISTER_FUNCTION(Yesterday)
 {
-    FunctionDocumentation::Description description_yesterday = R"(
+    FunctionDocumentation::Description description = R"(
 Accepts zero arguments and returns yesterday's date at one of the moments of query analysis.
     )";
-    FunctionDocumentation::Syntax syntax_yesterday = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 yesterday()
     )";
-    FunctionDocumentation::Arguments arguments_yesterday = {};
-    FunctionDocumentation::ReturnedValue returned_value_yesterday = "Returns yesterday's date. [`Date`](../data-types/date.md).";
-    FunctionDocumentation::Examples examples_yesterday = {
+    FunctionDocumentation::Arguments arguments = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns yesterday's date.", {"Date"}};
+    FunctionDocumentation::Examples examples = {
         {"Get yesterday's date", R"(
 SELECT yesterday();
 SELECT today() - 1;
@@ -102,19 +102,11 @@ SELECT today() - 1;
 └───────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_yesterday = {1, 1};
-    FunctionDocumentation::Category category_yesterday = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_yesterday = {
-        description_yesterday,
-        syntax_yesterday,
-        arguments_yesterday,
-        returned_value_yesterday,
-        examples_yesterday,
-        introduced_in_yesterday,
-        category_yesterday
-    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<YesterdayOverloadResolver>(documentation_yesterday);
+    factory.registerFunction<YesterdayOverloadResolver>(documentation);
 }
 
 }

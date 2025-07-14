@@ -149,17 +149,17 @@ private:
 
 REGISTER_FUNCTION(Now)
 {
-    FunctionDocumentation::Description description_now = R"(
+    FunctionDocumentation::Description description = R"(
 Returns the current date and time at the moment of query analysis. The function is a constant expression.
     )";
-    FunctionDocumentation::Syntax syntax_now = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 now([timezone])
     )";
-    FunctionDocumentation::Arguments arguments_now = {
-        {"timezone", "Optional. Timezone name for the returned value. [`String`](../data-types/string.md)."}
+    FunctionDocumentation::Arguments arguments = {
+        {"timezone", "Optional. Timezone name for the returned value.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_now = "Returns the current date and time. [`DateTime`](../data-types/datetime.md).";
-    FunctionDocumentation::Examples examples_now = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the current date and time.", {"DateTime"}};
+    FunctionDocumentation::Examples examples = {
         {"Query without timezone", R"(
 SELECT now()
         )",
@@ -177,19 +177,11 @@ SELECT now('Asia/Istanbul')
 └──────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_now = {1, 1};
-    FunctionDocumentation::Category category_now = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_now = {
-        description_now,
-        syntax_now,
-        arguments_now,
-        returned_value_now,
-        examples_now,
-        introduced_in_now,
-        category_now
-    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<NowOverloadResolver>(documentation_now, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<NowOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_timestamp", NowOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }
 

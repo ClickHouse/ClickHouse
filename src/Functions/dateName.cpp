@@ -359,7 +359,7 @@ private:
 
 REGISTER_FUNCTION(DateName)
 {
-    FunctionDocumentation::Description description_dateName = R"(
+    FunctionDocumentation::Description description = R"(
 Returns the specified part of the date.
 
 Possible values:
@@ -374,16 +374,16 @@ Possible values:
 - 'minute'
 - 'second'
     )";
-    FunctionDocumentation::Syntax syntax_dateName = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 dateName(date_part, date[, timezone])
     )";
-    FunctionDocumentation::Arguments arguments_dateName = {
-        {"date_part", "The part of the date that you want to extract. [`String`](../data-types/string.md)."},
-        {"datetime", "A date or date with time value. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
-        {"timezone", "Optional. Timezone. [`String`](../data-types/string.md)."}
+    FunctionDocumentation::Arguments arguments = {
+        {"date_part", "The part of the date that you want to extract.", {"String"}},
+        {"datetime", "A date or date with time value.", {"Date", "Date32", "DateTime", "DateTime64"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_dateName = "Returns the specified part of date. [`String`](../data-types/string.md).";
-    FunctionDocumentation::Examples examples_dateName = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the specified part of date.", {"String"}};
+    FunctionDocumentation::Examples examples = {
         {"Extract different date parts", R"(
 WITH toDateTime('2021-04-14 11:22:33') AS date_value
 SELECT
@@ -397,19 +397,11 @@ SELECT
 └──────────────────────────────┴───────────────────────────────┴─────────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_dateName = {21, 7};
-    FunctionDocumentation::Category category_dateName = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_dateName = {
-        description_dateName,
-        syntax_dateName,
-        arguments_dateName,
-        returned_value_dateName,
-        examples_dateName,
-        introduced_in_dateName,
-        category_dateName
-    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 7};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionDateNameImpl>(documentation_dateName, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionDateNameImpl>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

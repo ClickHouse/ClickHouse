@@ -79,17 +79,17 @@ private:
 
 REGISTER_FUNCTION(MonthName)
 {
-    FunctionDocumentation::Description description_monthName = R"(
+    FunctionDocumentation::Description description = R"(
 Returns the name of the month as a string from a date or date with time value.
     )";
-    FunctionDocumentation::Syntax syntax_monthName = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 monthName(datetime)
     )";
-    FunctionDocumentation::Arguments arguments_monthName = {
-        {"datetime", "Date or date with time. [`Date`](../data-types/date.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."}
+    FunctionDocumentation::Arguments arguments = {
+        {"datetime", "Date or date with time.", {"Date", "Date32", "DateTime", "DateTime64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_monthName = "Returns the name of the month. [`String`](../data-types/string.md).";
-    FunctionDocumentation::Examples examples_monthName = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the name of the month.", {"String"}};
+    FunctionDocumentation::Examples examples = {
         {"Get month name from date", R"(
 WITH toDateTime('2021-04-14 11:22:33') AS date_value
 SELECT monthName(date_value)
@@ -100,19 +100,11 @@ SELECT monthName(date_value)
 └───────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_monthName = {22, 1};
-    FunctionDocumentation::Category category_monthName = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_monthName = {
-        description_monthName,
-        syntax_monthName,
-        arguments_monthName,
-        returned_value_monthName,
-        examples_monthName,
-        introduced_in_monthName,
-        category_monthName
-    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionMonthName>(documentation_monthName, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionMonthName>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

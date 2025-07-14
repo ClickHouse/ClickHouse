@@ -228,9 +228,9 @@ fromModifiedJulianDay(day)
     )";
         FunctionDocumentation::Arguments arguments_fromModifiedJulianDay =
         {
-            {"day", "Modified Julian Day number. [Any integral types](../data-types/int-uint.md)."}
+            {"day", "Modified Julian Day number.", {"(U)Int*"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value_fromModifiedJulianDay = "Returns date in text form. [`String`](../data-types/string.md).";
+        FunctionDocumentation::ReturnedValue returned_value_fromModifiedJulianDay = {"Returns date in text form.", {"String"}};
         FunctionDocumentation::Examples examples_fromModifiedJulianDay =
         {
             {"Convert Modified Julian Day to date", R"(
@@ -244,16 +244,7 @@ SELECT fromModifiedJulianDay(58849)
         };
         FunctionDocumentation::IntroducedIn introduced_in_fromModifiedJulianDay = {21, 1};
         FunctionDocumentation::Category category_fromModifiedJulianDay = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation documentation_fromModifiedJulianDay =
-        {
-            description_fromModifiedJulianDay,
-            syntax_fromModifiedJulianDay,
-            arguments_fromModifiedJulianDay,
-            returned_value_fromModifiedJulianDay,
-            examples_fromModifiedJulianDay,
-            introduced_in_fromModifiedJulianDay,
-            category_fromModifiedJulianDay
-        };
+        FunctionDocumentation documentation_fromModifiedJulianDay = {description_fromModifiedJulianDay, syntax_fromModifiedJulianDay, arguments_fromModifiedJulianDay, returned_value_fromModifiedJulianDay, examples_fromModifiedJulianDay, introduced_in_fromModifiedJulianDay, category_fromModifiedJulianDay};
 
         factory.registerFunction<FromModifiedJulianDayOverloadResolver<NameFromModifiedJulianDay, false>>(documentation_fromModifiedJulianDay);
 
@@ -264,9 +255,9 @@ Similar to [`fromModifiedJulianDay()`](#frommodifiedjulianday), but instead of r
 fromModifiedJulianDayOrNull(day)
     )";
         FunctionDocumentation::Arguments arguments_fromModifiedJulianDayOrNull = {
-            {"day", "Modified Julian Day number. [Any integral types](../data-types/int-uint.md)."}
+            {"day", "Modified Julian Day number.", {"(U)Int*"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value_fromModifiedJulianDayOrNull = "Returns date in text form for valid `day` argument, otherwise `null`. [`Nullable(String)`](../data-types/string.md).";
+        FunctionDocumentation::ReturnedValue returned_value_fromModifiedJulianDayOrNull = {"Returns date in text form for valid `day` argument, otherwise `null`.", {"Nullable(String)"}};
         FunctionDocumentation::Examples examples_fromModifiedJulianDayOrNull =
         {
             {"Convert Modified Julian Day to date with null handling", R"(
@@ -284,16 +275,7 @@ SELECT fromModifiedJulianDayOrNull(60000000); -- invalid argument, returns NULL
         };
         FunctionDocumentation::IntroducedIn introduced_in_fromModifiedJulianDayOrNull = {21, 1};
         FunctionDocumentation::Category category_fromModifiedJulianDayOrNull = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation documentation_fromModifiedJulianDayOrNull =
-        {
-            description_fromModifiedJulianDayOrNull,
-            syntax_fromModifiedJulianDayOrNull,
-            arguments_fromModifiedJulianDayOrNull,
-            returned_value_fromModifiedJulianDayOrNull,
-            examples_fromModifiedJulianDayOrNull,
-            introduced_in_fromModifiedJulianDayOrNull,
-            category_fromModifiedJulianDayOrNull
-        };
+        FunctionDocumentation documentation_fromModifiedJulianDayOrNull = {description_fromModifiedJulianDayOrNull, syntax_fromModifiedJulianDayOrNull, arguments_fromModifiedJulianDayOrNull, returned_value_fromModifiedJulianDayOrNull, examples_fromModifiedJulianDayOrNull, introduced_in_fromModifiedJulianDayOrNull, category_fromModifiedJulianDayOrNull};
 
         factory.registerFunction<FromModifiedJulianDayOverloadResolver<NameFromModifiedJulianDayOrNull, true>>(documentation_fromModifiedJulianDayOrNull);
     }

@@ -176,18 +176,18 @@ private:
 
 REGISTER_FUNCTION(Now64)
 {
-    FunctionDocumentation::Description description_now64 = R"(
+    FunctionDocumentation::Description description = R"(
 Returns the current date and time with sub-second precision at the moment of query analysis. The function is a constant expression.
     )";
-    FunctionDocumentation::Syntax syntax_now64 = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 now64([scale], [timezone])
     )";
-    FunctionDocumentation::Arguments arguments_now64 = {
-        {"scale", "Optional. Tick size (precision): 10^-precision seconds. Valid range: [0 : 9]. Typically, are used - 3 (default) (milliseconds), 6 (microseconds), 9 (nanoseconds)."},
-        {"timezone", "Optional. Timezone name for the returned value. [`String`](../data-types/string.md)."}
+    FunctionDocumentation::Arguments arguments = {
+        {"scale", "Optional. Tick size (precision): 10^-precision seconds. Valid range: [0 : 9]. Typically, are used - 3 (default) (milliseconds), 6 (microseconds), 9 (nanoseconds).", {"UInt8"}},
+        {"timezone", "Optional. Timezone name for the returned value.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_now64 = "Returns current date and time with sub-second precision. [`DateTime64`](../data-types/datetime64.md).";
-    FunctionDocumentation::Examples examples_now64 = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns current date and time with sub-second precision.", {"DateTime64"}};
+    FunctionDocumentation::Examples examples = {
         {"Query with default and custom precision", R"(
 SELECT now64(), now64(9, 'Asia/Istanbul')
         )",
@@ -197,19 +197,11 @@ SELECT now64(), now64(9, 'Asia/Istanbul')
 └─────────────────────────┴───────────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_now64 = {20, 1};
-    FunctionDocumentation::Category category_now64 = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_now64 = {
-        description_now64,
-        syntax_now64,
-        arguments_now64,
-        returned_value_now64,
-        examples_now64,
-        introduced_in_now64,
-        category_now64
-    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<Now64OverloadResolver>(documentation_now64, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<Now64OverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

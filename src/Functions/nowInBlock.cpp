@@ -94,19 +94,19 @@ private:
 
 REGISTER_FUNCTION(NowInBlock)
 {
-    FunctionDocumentation::Description description_nowInBlock = R"(
+    FunctionDocumentation::Description description = R"(
 Returns the current date and time at the moment of processing of each block of data. In contrast to the function [`now`](#now), it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
 
 It makes sense to use this function to generate the current time in long-running `INSERT SELECT` queries.
     )";
-    FunctionDocumentation::Syntax syntax_nowInBlock = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 nowInBlock([timezone])
     )";
-    FunctionDocumentation::Arguments arguments_nowInBlock = {
-        {"timezone", "Optional. Timezone name for the returned value. [`String`](../data-types/string.md)."}
+    FunctionDocumentation::Arguments arguments = {
+        {"timezone", "Optional. Timezone name for the returned value.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_nowInBlock = "Returns the current date and time at the moment of processing of each block of data. [`DateTime`](../data-types/datetime.md).";
-    FunctionDocumentation::Examples examples_nowInBlock = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the current date and time at the moment of processing of each block of data.", {"DateTime"}};
+    FunctionDocumentation::Examples examples = {
         {"Difference with the now() function", R"(
 SELECT
     now(),
@@ -124,19 +124,11 @@ FORMAT PrettyCompactMonoBlock
 └─────────────────────┴─────────────────────┴──────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_nowInBlock = {22, 8};
-    FunctionDocumentation::Category category_nowInBlock = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_nowInBlock = {
-        description_nowInBlock,
-        syntax_nowInBlock,
-        arguments_nowInBlock,
-        returned_value_nowInBlock,
-        examples_nowInBlock,
-        introduced_in_nowInBlock,
-        category_nowInBlock
-    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 8};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionNowInBlock>(documentation_nowInBlock);
+    factory.registerFunction<FunctionNowInBlock>(documentation);
 }
 
 }
