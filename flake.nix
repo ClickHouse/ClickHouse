@@ -215,8 +215,8 @@
     contrib-isa-l = { url = "github:ClickHouse/isa-l/9f2b68f05752097f0f16632fc4a9a86950831efd"; flake = false; };
     contrib-c-ares = { url = "github:c-ares/c-ares/d3a507e920e7af18a5efb7f9f1d8044ed4750013"; flake = false; };
     contrib-incbin = { url = "github:graphitemaster/incbin/6e576cae5ab5810f25e2631f2e0b80cbe7dc8cbf"; flake = false; };
-    contrib-usearch = { url = "github:ClickHouse/usearch/257e2121ff324d3775298d0b2ed0edc7eff4770a"; flake = false; };
-    contrib-SimSIMD = { url = "github:ClickHouse/SimSIMD/401d14fab9edc02e27366bab8443540ba36796b2"; flake = false; };
+    contrib-usearch = { url = "github:ClickHouse/usearch/311f87125db432552bc1c833d813a48fc7e60666"; flake = false; };
+    contrib-SimSIMD = { url = "github:ClickHouse/SimSIMD/e61306118ef7ffb1fba2da1cee1534cd9d5e831f"; flake = false; };
     contrib-FP16 = { url = "github:Maratyszcza/FP16/0a92994d729ff76a58f692d3028ca1b64b145d91"; flake = false; };
     contrib-aklomp-base64 = { url = "github:aklomp/base64/e77bd70bdd860c52c561568cffb251d88bba064c"; flake = false; };
     contrib-pocketfft = { url = "github:mreineck/pocketfft/f4c1aa8aa9ce79ad39e80f2c9c41b92ead90fda3"; flake = false; };
