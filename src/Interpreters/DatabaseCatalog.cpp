@@ -1467,7 +1467,19 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
             continue;
 
         LOG_INFO(log, "Removing data directory {} of dropped table {} from disk {}", data_path, table.table_id.getNameForLogs(), disk_name);
-        disk->removeRecursive(data_path);
+        try
+        {
+            disk->removeRecursive(data_path);
+        }
+        catch (const fs::filesystem_error & e)
+        {
+            if (e.code() != std::errc::permission_denied)
+                throw;
+
+            /// Try to recover in case of race with cleanup thread
+            disk->chmod(data_path, S_IRWXU);
+            disk->removeRecursive(data_path);
+        }
     }
 
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
