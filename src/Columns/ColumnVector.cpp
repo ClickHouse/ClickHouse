@@ -27,6 +27,7 @@
 
 #include <bit>
 #include <cstring>
+#include <limits>
 #include <utility>
 
 #if defined(__SSE2__)
@@ -541,7 +542,7 @@ uint8_t prefixToCopy(UInt64 mask)
 {
     if (mask == 0)
         return 0;
-    if (std::cmp_equal(mask, -1))
+    if (std::cmp_equal(mask, std::numeric_limits<UInt64>::max()))
         return 64;
     /// Row with index 0 correspond to the least significant bit.
     /// So the length of the prefix to copy is 64 - #(leading zeroes).

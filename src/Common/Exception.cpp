@@ -21,6 +21,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <cxxabi.h>
 
 #include <Poco/String.h>
@@ -152,7 +153,7 @@ Exception::Exception(CreateFromSTDTag, const std::exception & exc)
 void Exception::addMessage(const MessageMasked & msg_masked)
 {
     extendedMessage(msg_masked.msg);
-    if (std::cmp_not_equal(error_index, -1))
+    if (std::cmp_not_equal(error_index, std::numeric_limits<size_t>::max()))
         ErrorCodes::extendedMessage(code(), remote, error_index, message());
 }
 

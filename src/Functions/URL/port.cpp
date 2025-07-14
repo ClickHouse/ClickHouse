@@ -7,6 +7,7 @@
 #include <Columns/ColumnConst.h>
 #include <Functions/URL/domain.h>
 
+#include <limits>
 #include <utility>
 
 
@@ -113,7 +114,7 @@ private:
                 return default_port;
 
             port = (port * 10) + (*p - '0');
-            if (port < 0 || std::cmp_greater(port, -1))
+            if (port < 0 || std::cmp_greater(port, std::numeric_limits<UInt16>::max()))
                 return default_port;
             ++p;
         }
