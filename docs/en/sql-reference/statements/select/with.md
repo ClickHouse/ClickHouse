@@ -54,7 +54,7 @@ Common scalar expressions can be referenced in any place in the query.
 :::note
 If a common scalar expression references something other than a constant literal, the expression may lead to the presence of [free variables](https://en.wikipedia.org/wiki/Free_variables_and_bound_variables).
 ClickHouse resolves any identifier in the closest scope possible, meaning that free variables can reference unexpected entities in case of name clashes or may lead to a correlated subquery.
-It is recommended to define CSE as a [lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda) (possible only with enabled [analyzer](/operations/analyzer)) binding all the used identifiers to achieve a more predictable behavior of expression identifiers resolution.
+It is recommended to define CSE as a [lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda) (possible only with the [analyzer](/operations/analyzer) enabled) binding all the used identifiers to achieve a more predictable behavior of expression identifiers resolution.
 :::
 
 ### Syntax {#common-scalar-expressions-syntax}
