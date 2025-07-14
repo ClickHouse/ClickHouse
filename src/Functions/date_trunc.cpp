@@ -202,7 +202,7 @@ Truncates a date and time value to the specified part of the date.
 dateTrunc(unit, datetime[, timezone])
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"unit", R"(The type of interval to truncate the result. `unit` argument is case-insensitive.", {"String"}} 
+      {"unit", R"(The type of interval to truncate the result. `unit` argument is case-insensitive. 
 
 | Unit         | Compatibility                   |
 |--------------|---------------------------------|
@@ -217,7 +217,7 @@ dateTrunc(unit, datetime[, timezone])
 | `month`      |                                 |
 | `quarter`    |                                 |
 | `year`       |                                 |
-)"},
+)", {"String"}},
         {"datetime", "Date and time.", {"Date", "Date32", "DateTime", "DateTime64"}},
         {"timezone", "Optional. Timezone name for the returned datetime. If not specified, the function uses the timezone of the `datetime` parameter.", {"String"}}
     };
