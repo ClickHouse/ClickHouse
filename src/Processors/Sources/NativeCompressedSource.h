@@ -27,6 +27,7 @@ private:
     std::unique_ptr<ReadBuffer> in;
     std::unique_ptr<CompressedReadBuffer> compressed_buf;
     std::unique_ptr<NativeReader> reader;
+    UInt64 stream_flags = 0;    /// Flags are read from the input stream once at start
     LoggerPtr log = getLogger("NativeCompressedSource");
 };
 

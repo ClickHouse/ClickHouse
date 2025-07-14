@@ -24,7 +24,7 @@ public:
     String getName() const override { return "NativeCompressedSink"; }
 
 private:
-    void onStart() override;
+    void initWriterOnce(const Chunk & chunk);
 
     void consume(Chunk chunk) override;
 

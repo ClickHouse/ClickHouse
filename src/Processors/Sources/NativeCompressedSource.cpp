@@ -23,15 +23,18 @@ Chunk NativeCompressedSource::generate()
     {
         if (!reader)
         {
+            readVarUInt(stream_flags, *in);
             compressed_buf = std::make_unique<CompressedReadBuffer>(*in);
             reader = std::make_unique<NativeReader>(*compressed_buf, output.getHeader(), DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS);
         }
+
         Block block = reader->read();
 
         LOG_TEST(log, "Read chunk with {} rows from stream {}", block.rows(), stream_name);
 
         Chunk result(block.getColumns(), block.rows());
-        /// TODO: is this enough for passing chunk infos?
+        const bool has_aggregated_chunk_info = (stream_flags & 1);
+        if (has_aggregated_chunk_info)
         {
             auto info = std::make_shared<AggregatedChunkInfo>();
             info->bucket_num = block.info.bucket_num;
