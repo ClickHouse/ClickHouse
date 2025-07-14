@@ -658,10 +658,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     for (const auto & [clickhouse_header_index, parquet_indexes] : index_mapping)
     {
         for (auto parquet_index : parquet_indexes)
-        {
-            std::cerr << "clickhouse_header_index " << clickhouse_header_index << ' '  << parquet_index << '\n';
             column_indices.push_back(parquet_index);
-        }
     }
 
     int num_row_groups = metadata->num_row_groups();
