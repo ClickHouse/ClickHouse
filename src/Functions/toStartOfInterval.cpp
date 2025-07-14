@@ -466,13 +466,13 @@ toStartOfInterval(value, INTERVAL x unit[, time_zone])
 toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
         )";
         FunctionDocumentation::Arguments arguments = {
-            {"value", "Date or date with time value to round down. [`Date`](../data-types/date.md) or [`DateTime`](../data-types/datetime.md) or [`DateTime64`](../data-types/datetime64.md)."},
+            {"value", "Date or date with time value to round down.", {"Date", "DateTime", "DateTime64"}},
             {"x", "Interval length number."},
             {"unit", "Interval unit: YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND."},
             {"time_zone", "Optional. Time zone name as a string."},
             {"origin", "Optional. Origin point for calculation (second overload only)."}
         };
-        FunctionDocumentation::ReturnedValue returned_value = "Returns the start of the interval containing the input value. [`Date`](../data-types/date.md).";
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns the start of the interval containing the input value.", {"DateTime"}};
         FunctionDocumentation::Examples examples = {
             {"Basic interval rounding", R"(
 SELECT toStartOfInterval(toDateTime('2023-01-15 14:30:00'), INTERVAL 1 MONTH)

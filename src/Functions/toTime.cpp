@@ -22,10 +22,10 @@ The main purpose of the function is to calculate the time difference between two
 toTime(date[, timezone])
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"date", "Date to convert to a time. [`Date`](../data-types/date.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
-        {"timezone", "Optional. Timezone for the returned value. [`String`](../data-types/string.md)."}
+        {"date", "Date to convert to a time.", {"Date", "DateTime", "DateTime64"}},
+        {"timezone", "Optional. Timezone for the returned value.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the time component of a date or date with time in the form of an offset to a fixed point in time (selected as 1970-01-02, currently). [`DateTime`](../data-types/datetime.md).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the time component of a date or date with time in the form of an offset to a fixed point in time (selected as 1970-01-02, currently).", {"DateTime"}};
     FunctionDocumentation::Examples examples = {
         {"Calculate the time difference between two dates", R"(
 SELECT toTime('2025-06-15 12:00:00'::DateTime) - toTime('2024-05-10 11:00:00'::DateTime) AS result, toTypeName(result)
