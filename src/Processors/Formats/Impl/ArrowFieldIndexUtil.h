@@ -80,7 +80,8 @@ public:
     std::vector<ClickHouseIndexToParquetIndex> findRequiredIndices(
         const Block & header,
         const arrow::Schema & schema,
-        const parquet::FileMetaData & file)
+        const parquet::FileMetaData & file,
+        std::optional<std::unordered_map<String, String>> & clickhouse_to_parquet_names)
     {
         std::vector<ClickHouseIndexToParquetIndex> required_indices;
         std::unordered_set<int> added_indices;
@@ -90,6 +91,8 @@ public:
         {
             const auto & named_col = header.getByPosition(i);
             std::string col_name = named_col.name;
+            if (clickhouse_to_parquet_names)
+                col_name = clickhouse_to_parquet_names->at(col_name);
             if (ignore_case)
                 boost::to_lower(col_name);
             findRequiredIndices(col_name, i, named_col.type, fields_indices, added_indices, required_indices, file);

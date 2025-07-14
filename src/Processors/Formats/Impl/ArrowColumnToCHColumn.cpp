@@ -1516,7 +1516,7 @@ Chunk ArrowColumnToCHColumn::arrowTableToCHChunk(
     }
     else
     {
-        for (int i = 0; i < table->num_columns(); ++i)
+        for (Int32 i : *column_indices)
         {
             auto column_name = header.getNames()[i];
             auto arrow_column = table->column(i);

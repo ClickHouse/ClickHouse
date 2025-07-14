@@ -633,36 +633,33 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         format_settings.parquet.case_insensitive_column_matching,
         format_settings.parquet.allow_missing_columns);
 
-    std::vector<ArrowFieldIndexUtil::ClickHouseIndexToParquetIndex> index_mapping;
+    std::optional<std::unordered_map<String, String>> clickhouse_to_parquet_names;
     if (parser_group->opaque)
     {
         auto parquet_opaque = std::static_pointer_cast<ParquetOpaque>(parser_group->opaque);
         auto header = getPort().getHeader();
         const auto & group_node = metadata->schema()->group_node();
 
-        std::unordered_map<Int32, Int32> parquet_field_ids;
+        std::unordered_map<Int64, String> parquet_field_ids;
         for (int i = 0; i < group_node->field_count(); ++i)
-            parquet_field_ids[group_node->field(i)->field_id()] = i;
+            parquet_field_ids[group_node->field(i)->field_id()] = group_node->field(i)->name();
 
+        auto result = std::unordered_map<String, String>{};
         for (size_t i = 0; i < header.columns(); ++i)
         {
             auto column_name = header.getNames()[i];
-            ArrowFieldIndexUtil::ClickHouseIndexToParquetIndex mapping{
-                .clickhouse_index = i,
-                .parquet_indexes = {parquet_field_ids[parquet_opaque->column_name_to_parquet_field_id[column_name]]}
-            };
-            index_mapping.push_back(mapping);
+            auto field_id = parquet_opaque->column_name_to_parquet_field_id[column_name];
+            result[column_name] = parquet_field_ids[field_id];
         }
+        clickhouse_to_parquet_names = std::move(result);
     }
-    else
-    {
-        index_mapping = field_util.findRequiredIndices(getPort().getHeader(), *schema, *metadata);
-    }
+    auto index_mapping = field_util.findRequiredIndices(getPort().getHeader(), *schema, *metadata, clickhouse_to_parquet_names);
 
     for (const auto & [clickhouse_header_index, parquet_indexes] : index_mapping)
     {
         for (auto parquet_index : parquet_indexes)
         {
+            std::cerr << "clickhouse_header_index " << clickhouse_header_index << ' '  << parquet_index << '\n';
             column_indices.push_back(parquet_index);
         }
     }
@@ -901,7 +898,7 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
             getPort().getHeader(),
             "Parquet",
             format_settings,
-            column_indices,
+            parser_group->opaque ? std::optional(column_indices) : std::nullopt,
             format_settings.parquet.allow_missing_columns,
             format_settings.null_as_default,
             format_settings.date_time_overflow_behavior,
