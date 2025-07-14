@@ -286,7 +286,7 @@ See [JSONCompactStringsEachRowWithNamesAndTypes](/interfaces/formats/JSONCompact
 
 See [JSONObjectEachRow](/interfaces/formats/JSONObjectEachRow)
 
-### JSON Formats Settings {#json-formats-settings}
+### JSON format settings {#json-formats-settings}
 
 See [JSON Format Settings](/operations/settings/formats)
 
@@ -469,7 +469,7 @@ See [Dwarf](/interfaces/formats/DWARF)
 
 See [Form](/interfaces/formats/Form)
 
-## Format Schema {#formatschema}
+## Format schema {#formatschema}
 
 The file name containing the format schema is set by the setting `format_schema`.
 It's required to set this setting when it is used one of the formats `Cap'n Proto` and `Protobuf`.
@@ -486,7 +486,7 @@ If you input or output data via the [HTTP interface](/interfaces/http.md) the fi
 should be located in the directory specified in [format_schema_path](/operations/server-configuration-parameters/settings.md/#format_schema_path)
 in the server configuration.
 
-## Skipping Errors {#skippingerrors}
+## Skipping errors {#skippingerrors}
 
 Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` and `Protobuf` can skip broken row if parsing error occurred and continue parsing from the beginning of next row. See [input_format_allow_errors_num](/operations/settings/settings-formats.md/#input_format_allow_errors_num) and
 [input_format_allow_errors_ratio](/operations/settings/settings-formats.md/#input_format_allow_errors_ratio) settings.
