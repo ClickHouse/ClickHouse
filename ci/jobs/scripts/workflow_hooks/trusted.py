@@ -19,11 +19,11 @@ CAN_BE_TESTED = "can be tested"
 
 def user_in_trusted_org(user_name: str) -> bool:
     """Check if the user is in a trusted organization."""
-    orgs = Shell.get_output(
-        "gh api orgs/ClickHouse/members?per_page=100 --paginate --cache=1h --jq='.[].login'",
+    lines = Shell.get_output(
+        "gh api orgs/ClickHouse/members --paginate --cache=1h --jq='.[].login'",
         verbose=True,
     )
-    return user_name in [line.strip() for line in orgs.splitlines() if line.strip()]
+    return user_name in [line.strip() for line in lines.splitlines() if line.strip()]
 
 
 def can_be_trusted():
