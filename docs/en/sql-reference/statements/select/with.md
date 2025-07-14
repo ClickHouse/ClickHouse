@@ -48,7 +48,7 @@ However, due to the fact that we are referring `cte_numbers` twice, random numbe
 
 ## Common Scalar Expressions {#common-scalar-expressions}
 
-ClickHouse allows to declare aliases to arbitrary scalar expression in the WITH clause.
+ClickHouse allows you to declare aliases to arbitrary scalar expressions in the `WITH` clause.
 Common scalar expressions can be referenced in any place in the query.
 
 :::note
