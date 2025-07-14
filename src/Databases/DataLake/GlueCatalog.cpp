@@ -441,7 +441,7 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
         auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
         storage_settings->loadFromSettingsChanges(settings.allChanged());
         auto configuration = std::make_shared<DB::StorageS3IcebergConfiguration>(storage_settings);
-        DB::StorageObjectStorage::Configuration::initialize(*configuration, args, getContext(), false);
+        DB::StorageObjectStorageConfiguration::initialize(*configuration, args, getContext(), false);
 
         auto object_storage = configuration->createObjectStorage(getContext(), true);
         const auto & read_settings = getContext()->getReadSettings();
