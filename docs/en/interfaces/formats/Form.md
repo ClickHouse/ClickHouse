@@ -18,7 +18,7 @@ title: 'Form'
 The `Form` format can be used to read a single record in the application/x-www-form-urlencoded format 
 in which data is formatted as `key1=value1&key2=value2`.
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
 Given a file `data.tmp` placed in the `user_files` path with some URL encoded data:
 
@@ -40,4 +40,4 @@ rt.start: navigation
 rt.bmr:   390,11,10
 ```
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}

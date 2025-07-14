@@ -1,14 +1,13 @@
 ---
 description: 'Documentation for Type Conversion Functions'
-sidebar_label: 'Type Conversion'
-sidebar_position: 185
+sidebar_label: 'Type conversion'
 slug: /sql-reference/functions/type-conversion-functions
 title: 'Type Conversion Functions'
 ---
 
-# Type Conversion Functions
+# Type conversion functions
 
-## Common Issues with Data Conversion {#common-issues-with-data-conversion}
+## Common issues with data conversion {#common-issues-with-data-conversion}
 
 ClickHouse generally uses the [same behavior as C++ programs](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 

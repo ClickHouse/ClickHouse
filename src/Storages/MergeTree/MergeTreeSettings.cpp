@@ -990,8 +990,7 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(Seconds, remote_fs_execute_merges_on_single_replica_time_threshold, 3 * 60 * 60, R"(
     When this setting has a value greater than zero only a single replica starts
-    the merge immediately if merged part on shared storage and
-    `allow_remote_fs_zero_copy_replication` is enabled.
+    the merge immediately if merged part on shared storage.
 
     :::note
     Zero-copy replication is not ready for production
