@@ -543,7 +543,7 @@ public:
         ProfileEvents::increment(ProfileEvents::AIOWrite);
         ProfileEvents::increment(ProfileEvents::AIOWriteBytes, bytes_written);
 
-        if (std::cmp_not_equal(bytes_written ,block_size * buffer_size_in_blocks)))
+        if (std::cmp_not_equal(bytes_written, block_size * buffer_size_in_blocks)))
             throw Exception(ErrorCodes::AIO_WRITE_ERROR,
                 "Not all data was written for asynchronous IO on file {}. returned: {}",
                 file_path,
@@ -611,7 +611,7 @@ public:
 
         auto read_bytes = eventResult(event);
 
-        if (std::cmp_not_equal(read_bytes ,buffer_size_in_bytes)))
+        if (std::cmp_not_equal(read_bytes, buffer_size_in_bytes)))
             throw Exception(ErrorCodes::AIO_READ_ERROR,
                 "GC: AIO failed to read file {}. Expected bytes {}. Actual bytes {}",
                 file_path,
@@ -704,7 +704,7 @@ public:
 
                 const ssize_t read_bytes = eventResult(events[i]);
 
-                if (std::cmp_not_equal(read_bytes ,block_size)))
+                if (std::cmp_not_equal(read_bytes, block_size)))
                     throw Exception(ErrorCodes::AIO_READ_ERROR,
                         "GC: AIO failed to read file ({}). Expected bytes ({}). Actual bytes ({})", file_path, block_size, read_bytes);
 

@@ -422,7 +422,7 @@ private:
                     chassert(event_idx > 0);
 
                     /// Ensure the unique_id hasn't been used in the path already
-                    for (size_t j = 0; std::cmp_less(j ,event_idx)); ++j)
+                    for (size_t j = 0; std::cmp_less(j, event_idx)); ++j)
                     {
                         if (!time_matched)
                             break;

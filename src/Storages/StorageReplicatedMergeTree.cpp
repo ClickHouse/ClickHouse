@@ -7679,7 +7679,7 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
       * Calculated only if the absolute delay is large enough.
       */
 
-    if (std::cmp_less(out_absolute_delay ,(*storage_settings_ptr)[MergeTreeSetting::min_relative_delay_to_measure])))
+    if (std::cmp_less(out_absolute_delay,(*storage_settings_ptr)[MergeTreeSetting::min_relative_delay_to_measure])))
         return;
 
     auto zookeeper = getZooKeeper();

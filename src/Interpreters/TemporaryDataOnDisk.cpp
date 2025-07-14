@@ -320,8 +320,8 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
         parent->deltaAllocAndCheck(compressed_delta, uncompressed_delta);
 
     /// check that we don't go negative
-    if ((compressed_delta < 0 && std::cmp_less(stat.compressed_size ,-compressed_delta))) ||
-        (uncompressed_delta < 0 && std::cmp_less(stat.uncompressed_size ,-uncompressed_delta))))
+    if ((compressed_delta < 0 && std::cmp_less(stat.compressed_size,-compressed_delta))) ||
+        (uncompressed_delta < 0 && std::cmp_less(stat.uncompressed_size,-uncompressed_delta))))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Negative temporary data size");
     }

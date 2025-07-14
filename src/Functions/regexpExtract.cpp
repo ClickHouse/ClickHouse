@@ -141,7 +141,7 @@ private:
     {
         const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(pattern);
         unsigned capture = regexp.getNumberOfSubpatterns();
-        if (index < 0 || std::cmp_greater_equal(index , capture + 1))
+        if (index < 0 || std::cmp_greater_equal(index, capture + 1))
             throw Exception(
                 ErrorCodes::INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE,
                 "Index value {} for regexp pattern `{}` in function {} is out-of-range, should be in [0, {})",
@@ -193,7 +193,7 @@ private:
             size_t cur_offset = offsets[i];
 
             ssize_t index = column_index->getInt(i);
-            if (index < 0 || std::cmp_greater_equal(index , capture + 1))
+            if (index < 0 || std::cmp_greater_equal(index, capture + 1))
                 throw Exception(
                     ErrorCodes::INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE,
                     "Index value {} for regexp pattern `{}` in function {} is out-of-range, should be in [0, {})",
@@ -238,7 +238,7 @@ private:
         for (size_t i = 0; i < rows; ++i)
         {
             ssize_t index = column_index->getInt(i);
-            if (index < 0 || std::cmp_greater_equal(index , capture + 1))
+            if (index < 0 || std::cmp_greater_equal(index, capture + 1))
                 throw Exception(
                     ErrorCodes::INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE,
                     "Index value {} for regexp pattern `{}` in function {} is out-of-range, should be in [0, {})",

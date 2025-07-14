@@ -126,7 +126,7 @@ void ORCInputStream::read(void * buf, UInt64 length, UInt64 offset)
     }
     else
     {
-        if (std::cmp_not_equal(offset ,in.getPosition())))
+        if (std::cmp_not_equal(offset, in.getPosition())))
             in.seek(offset, SEEK_SET);
         in.readStrict(reinterpret_cast<char *>(buf), length);
     }

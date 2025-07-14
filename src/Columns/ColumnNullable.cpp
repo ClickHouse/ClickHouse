@@ -644,11 +644,11 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
             }
 
             /// We have a range [write_idx+1, last) of non-NULL values
-            if (std::cmp_not_equal(write_idx ,last)))
+            if (std::cmp_not_equal(write_idx, last)))
                 new_ranges.emplace_back(write_idx + 1, last);
 
             /// We have a range [first, write_idx+1) of NULL values
-            if (std::cmp_not_equal(first, write_idx))
+            if (std::cmp_not_equal(first,  write_idx))
                 null_ranges.emplace_back(first, write_idx + 1);
         }
     }

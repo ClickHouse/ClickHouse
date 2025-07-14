@@ -2541,7 +2541,7 @@ namespace
                     while (reader->readFieldNumber(field_tag))
                     {
                         size_t field_index = findFieldIndexByFieldTag(field_tag);
-                        if (std::cmp_equal(field_index ,-1)))
+                        if (std::cmp_equal(field_index,-1)))
                             continue;
                         auto * field_serializer = field_infos[field_index].field_serializer.get();
                         field_serializer->readRow(row_num);

@@ -189,7 +189,7 @@ bool DefaultTokenExtractor::nextInStringPadded(const char * data, size_t length,
         *token_length += token_bytes_in_current_haystack;
 
         *pos += token_start_pos_in_current_haystack + token_bytes_in_current_haystack;
-        if (std::cmp_equal(token_start_pos_in_current_haystack + token_bytes_in_current_haystack , haystack_length))
+        if (std::cmp_equal(token_start_pos_in_current_haystack + token_bytes_in_current_haystack, haystack_length))
             // check if there are leftovers in next `haystack`
             continue;
 

@@ -230,7 +230,7 @@ void MergeSortingTransform::consume(Chunk chunk)
     if (max_bytes_in_block_before_external_sort && sum_bytes_in_blocks > max_bytes_in_block_before_external_sort)
     {
         Int64 query_memory = getCurrentQueryMemoryUsage();
-        if (!max_bytes_in_query_before_external_sort || std::cmp_greater(query_memory ,max_bytes_in_query_before_external_sort)))
+        if (!max_bytes_in_query_before_external_sort || std::cmp_greater(query_memory, max_bytes_in_query_before_external_sort)))
         {
             if (!tmp_data)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryDataOnDisk is not set for MergeSortingTransform");

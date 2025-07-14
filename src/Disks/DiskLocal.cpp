@@ -612,7 +612,7 @@ try
     if (FS::canRead(fs::path(disk_path) / disk_checker_path))
     {
         auto magic_number = readDiskCheckerMagicNumber();
-        if (magic_number && std::cmp_equal(*magic_number , disk_checker_magic_number))
+        if (magic_number && std::cmp_equal(*magic_number, disk_checker_magic_number))
             return true;
     }
     return false;

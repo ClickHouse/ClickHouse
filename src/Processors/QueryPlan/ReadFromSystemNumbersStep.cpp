@@ -332,7 +332,7 @@ protected:
             }
         }
 
-        chassert(std::cmp_equal(block_size ,pos - vec.begin()));
+        chassert(std::cmp_equal(block_size, pos - vec.begin()));
         progress(column->size(), column->byteSize());
 
         return {Columns{std::move(column)}, block_size};

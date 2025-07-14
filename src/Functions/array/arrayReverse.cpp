@@ -114,7 +114,7 @@ bool FunctionArrayReverse::executeGeneric(const IColumn & src_data, const Column
     {
         ssize_t src_index = src_array_offsets[i] - 1;
 
-        while (std::cmp_greater_equal(src_index ,src_prev_offset)))
+        while (std::cmp_greater_equal(src_index,src_prev_offset)))
         {
             res_data.insertFrom(src_data, src_index);
             --src_index;

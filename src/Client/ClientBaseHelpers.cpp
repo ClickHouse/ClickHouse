@@ -104,9 +104,9 @@ bool isChineseNewYearMode(const String & local_tz)
     for (auto d : chineseNewYearIndicators)
     {
         /// Let's celebrate until Lantern Festival
-        if (std::cmp_less_equal(d , days) && d + 25 >= days)
+        if (std::cmp_less_equal(d, days) && d + 25 >= days)
             return true;
-        if (std::cmp_greater(d , days))
+        if (std::cmp_greater(d, days))
             return false;
     }
     return false;
