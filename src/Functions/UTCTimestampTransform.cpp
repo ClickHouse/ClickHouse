@@ -149,10 +149,10 @@ Converts a date or date with time value from one time zone to UTC timezone times
 toUTCTimestamp(datetime, time_zone)
     )";
     FunctionDocumentation::Arguments arguments_toUTCTimestamp = {
-        {"datetime", "A date or date with time type const value or an expression. [`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
-        {"time_zone", "A String type const value or an expression representing the time zone. [`String`](../data-types/string.md)."}
+        {"datetime", "A date or date with time type const value or an expression.", {"DateTime", "DateTIme64"}},
+        {"time_zone", "A String type const value or an expression representing the time zone.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toUTCTimestamp = "Returns a date or date with time in UTC timezone. [`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value_toUTCTimestamp = {"Returns a date or date with time in UTC timezone.", {"DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples_toUTCTimestamp = {
         {"Convert timezone to UTC", R"(
 SELECT toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')
@@ -165,15 +165,7 @@ SELECT toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')
     };
     FunctionDocumentation::IntroducedIn introduced_in_toUTCTimestamp = {23, 8};
     FunctionDocumentation::Category category_toUTCTimestamp = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_toUTCTimestamp = {
-        description_toUTCTimestamp,
-        syntax_toUTCTimestamp,
-        arguments_toUTCTimestamp,
-        returned_value_toUTCTimestamp,
-        examples_toUTCTimestamp,
-        introduced_in_toUTCTimestamp,
-        category_toUTCTimestamp
-    };
+    FunctionDocumentation documentation_toUTCTimestamp = {description_toUTCTimestamp, syntax_toUTCTimestamp, arguments_toUTCTimestamp, returned_value_toUTCTimestamp, examples_toUTCTimestamp, introduced_in_toUTCTimestamp, category_toUTCTimestamp};
 
     factory.registerFunction<ToUTCTimestampFunction>(documentation_toUTCTimestamp);
     factory.registerAlias("to_utc_timestamp", NameToUTCTimestamp::name, FunctionFactory::Case::Insensitive);
@@ -185,10 +177,10 @@ Converts a date or date with time value from UTC timezone to a date or date with
 fromUTCTimestamp(datetime, time_zone)
     )";
     FunctionDocumentation::Arguments arguments_fromUTCTimestamp = {
-        {"datetime", "A date or date with time const value or an expression. [`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
-        {"time_zone", "A String type const value or an expression representing the time zone. [`String`](../data-types/string.md)."}
+        {"datetime", "A date or date with time const value or an expression.", {"DateTime", "DateTime64"}},
+        {"time_zone", "A String type const value or an expression representing the time zone.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_fromUTCTimestamp = "Returns DateTime/DateTime64 in the specified timezone. [`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value_fromUTCTimestamp = {"Returns DateTime/DateTime64 in the specified timezone.", {"DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples_fromUTCTimestamp = {
         {"Convert UTC timezone to specified timezone", R"(
 SELECT fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')
@@ -201,15 +193,7 @@ SELECT fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')
     };
     FunctionDocumentation::IntroducedIn introduced_in_fromUTCTimestamp = {22, 1};
     FunctionDocumentation::Category category_fromUTCTimestamp = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_fromUTCTimestamp = {
-        description_fromUTCTimestamp,
-        syntax_fromUTCTimestamp,
-        arguments_fromUTCTimestamp,
-        returned_value_fromUTCTimestamp,
-        examples_fromUTCTimestamp,
-        introduced_in_fromUTCTimestamp,
-        category_fromUTCTimestamp
-    };
+    FunctionDocumentation documentation_fromUTCTimestamp = {description_fromUTCTimestamp,syntax_fromUTCTimestamp,arguments_fromUTCTimestamp,returned_value_fromUTCTimestamp,examples_fromUTCTimestamp,introduced_in_fromUTCTimestamp,category_fromUTCTimestamp};
 
     factory.registerFunction<FromUTCTimestampFunction>(documentation_fromUTCTimestamp);
     factory.registerAlias("from_utc_timestamp", NameFromUTCTimestamp::name, FunctionFactory::Case::Insensitive);

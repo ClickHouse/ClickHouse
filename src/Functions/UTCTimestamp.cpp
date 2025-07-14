@@ -116,7 +116,7 @@ This function gives the same result that `now('UTC')` would. It was added only f
 UTCTimestamp()
     )";
     FunctionDocumentation::Arguments arguments_UTCTimestamp = {};
-    FunctionDocumentation::ReturnedValue returned_value_UTCTimestamp = "Returns the current date and time at the moment of query analysis. [`DateTime`](../data-types/datetime.md).";
+    FunctionDocumentation::ReturnedValue returned_value_UTCTimestamp = {"Returns the current date and time at the moment of query analysis.", {"DateTime"}};
     FunctionDocumentation::Examples examples_UTCTimestamp = {
         {"Get current UTC timestamp", R"(
 SELECT UTCTimestamp()
@@ -129,15 +129,7 @@ SELECT UTCTimestamp()
     };
     FunctionDocumentation::IntroducedIn introduced_in_UTCTimestamp = {22, 11};
     FunctionDocumentation::Category category_UTCTimestamp = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_UTCTimestamp = {
-        description_UTCTimestamp,
-        syntax_UTCTimestamp,
-        arguments_UTCTimestamp,
-        returned_value_UTCTimestamp,
-        examples_UTCTimestamp,
-        introduced_in_UTCTimestamp,
-        category_UTCTimestamp
-    };
+    FunctionDocumentation documentation_UTCTimestamp = {description_UTCTimestamp, syntax_UTCTimestamp, arguments_UTCTimestamp, returned_value_UTCTimestamp, examples_UTCTimestamp, introduced_in_UTCTimestamp,category_UTCTimestamp};
 
     factory.registerFunction<UTCTimestampOverloadResolver>(documentation_UTCTimestamp, FunctionFactory::Case::Insensitive);
     factory.registerAlias("UTC_timestamp", UTCTimestampOverloadResolver::name, FunctionFactory::Case::Insensitive);

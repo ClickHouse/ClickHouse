@@ -351,10 +351,10 @@ Changes the year component of a date or date time.
 changeYear(datetime, value)
     )";
         FunctionDocumentation::Arguments arguments_changeYear = {
-            {"datetime", "A date or date with time to modify. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
-            {"value", "A new value of the year. [`Integer`](../data-types/int-uint.md)."}
+            {"datetime", "A date or date with time to modify.", {"Date", "Date32", "DateTime", "DateTime64"}},
+            {"value", "A new value of the year.", {"(U)Int*"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value_changeYear = "Returns the same type as `datetime` with modified year component.[`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md).";
+        FunctionDocumentation::ReturnedValue returned_value_changeYear = {"Returns the same type as `datetime` with modified year component.", {"Date", "Date32", "DateTime", "DateTime64"};
         FunctionDocumentation::Examples examples_changeYear = {
             {"Change year for different date types", R"(
 SELECT changeYear(toDate('1999-01-01'), 2000), changeYear(toDateTime64('1999-01-01 00:00:00.000', 3), 2000)
@@ -367,15 +367,7 @@ SELECT changeYear(toDate('1999-01-01'), 2000), changeYear(toDateTime64('1999-01-
         };
         FunctionDocumentation::IntroducedIn introduced_in_changeYear = {24, 8};
         FunctionDocumentation::Category category_changeYear = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation documentation_changeYear = {
-            description_changeYear,
-            syntax_changeYear,
-            arguments_changeYear,
-            returned_value_changeYear,
-            examples_changeYear,
-            introduced_in_changeYear,
-            category_changeYear
-        };
+        FunctionDocumentation documentation_changeYear = {description_changeYear, syntax_changeYear, arguments_changeYear, returned_value_changeYear, examples_changeYear, introduced_in_changeYear, category_changeYear};
 
         factory.registerFunction<FunctionChangeDate<ChangeYearTraits>>(documentation_changeYear);
     }

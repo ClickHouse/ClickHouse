@@ -107,10 +107,10 @@ If the addition results in a value outside the bounds of the data type, the resu
 addDate(datetime, interval)
     )";
     FunctionDocumentation::Arguments arguments_addDate = {
-        {"datetime", "The date or date with time to which `interval` is added. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
-        {"interval", "Interval to add. [`Interval`](../data-types/special-data-types/interval.md)."}
+        {"datetime", "The date or date with time to which `interval` is added.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
+        {"interval", "Interval to add.", {"Interval"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_addDate = "Returns date or date with time obtained by adding `interval` to `datetime`. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value_addDate = {"Returns date or date with time obtained by adding `interval` to `datetime`.", {"Date", "Date32", "DateTime", "DateTime64"}} ;
     FunctionDocumentation::Examples examples_addDate = {
         {"Add interval to date", R"(
 SELECT addDate(toDate('2018-01-01'), INTERVAL 3 YEAR)
@@ -123,14 +123,7 @@ SELECT addDate(toDate('2018-01-01'), INTERVAL 3 YEAR)
     };
     FunctionDocumentation::IntroducedIn introduced_in_addDate = {23, 9};
     FunctionDocumentation::Category category_addDate = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_addDate = {
-        description_addDate,
-        syntax_addDate,
-        arguments_addDate,
-        returned_value_addDate,
-        examples_addDate,
-        introduced_in_addDate,
-        category_addDate
+    FunctionDocumentation documentation_addDate = {description_addDate, syntax_addDate, arguments_addDate, returned_value_addDate, examples_addDate, introduced_in_addDate, category_addDate
     };
     factory.registerFunction<FunctionAddDate>(documentation_addDate, FunctionFactory::Case::Insensitive);
 
@@ -142,10 +135,10 @@ If the subtraction results in a value outside the bounds of the data type, the r
 subDate(datetime, interval)
     )";
     FunctionDocumentation::Arguments arguments_subDate = {
-        {"datetime", "The date or date with time from which `interval` is subtracted. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
-        {"interval", "Interval to subtract. [`Interval`](../data-types/special-data-types/interval.md)."}
+        {"datetime", "The date or date with time from which `interval` is subtracted.", {"Date", "Date32", "DateTime", "DateTime64"}},
+        {"interval", "Interval to subtract.", {"Interval"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_subDate = "Returns date or date with time obtained by subtracting `interval` from `datetime`. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md).";
+    FunctionDocumentation::ReturnedValue returned_value_subDate = {"Returns date or date with time obtained by subtracting `interval` from `datetime`.", {"Date", "Date32", "DateTime", "DateTime64"};
     FunctionDocumentation::Examples examples_subDate = {
         {"Subtract interval from date", R"(
 SELECT subDate(toDate('2018-01-01'), INTERVAL 3 YEAR)
@@ -158,15 +151,7 @@ SELECT subDate(toDate('2018-01-01'), INTERVAL 3 YEAR)
     };
     FunctionDocumentation::IntroducedIn introduced_in_subDate = {23, 9};
     FunctionDocumentation::Category category_subDate = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_subDate = {
-        description_subDate,
-        syntax_subDate,
-        arguments_subDate,
-        returned_value_subDate,
-        examples_subDate,
-        introduced_in_subDate,
-        category_subDate
-    };
+    FunctionDocumentation documentation_subDate = {description_subDate, syntax_subDate, arguments_subDate, returned_value_subDate, examples_subDate, introduced_in_subDate, category_subDate};
 
     factory.registerFunction<FunctionSubDate>(documentation_subDate, FunctionFactory::Case::Insensitive);
 }
