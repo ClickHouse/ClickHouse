@@ -213,7 +213,7 @@ Coordinates are geometric in the Cartesian coordinate system.
         "Returns `1` if the point is inside at least one of the ellipses, `0` otherwise",
         {"UInt8"}
     };
-    
+ 
     FunctionDocumentation::Examples examples = {
         {
             "Basic usage",
@@ -225,11 +225,11 @@ Coordinates are geometric in the Cartesian coordinate system.
             )"
         }
     };
-    
+ 
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-    
+ 
     factory.registerFunction<FunctionPointInEllipses>(documentation);
 }
 

@@ -131,7 +131,7 @@ For the `precision` parameter, any value less than `1` or greater than `12` is s
         "Returns an alphanumeric string of the encoded coordinate (modified version of the base32-encoding alphabet is used)",
         {"String"}
     };
-    
+ 
     FunctionDocumentation::Examples examples = {
         {
             "Basic usage with default precision",
@@ -146,7 +146,7 @@ For the `precision` parameter, any value less than `1` or greater than `12` is s
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-    
+ 
     factory.registerFunction<FunctionGeohashEncode>(documentation);
 }
 

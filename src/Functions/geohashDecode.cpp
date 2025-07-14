@@ -106,7 +106,7 @@ Decodes any [geohash](https://en.wikipedia.org/wiki/Geohash)-encoded string into
         "Returns a tuple of `(longitude, latitude)` with `Float64` precision.",
         {"Tuple(Float64, Float64)"}
     };
-    
+ 
     FunctionDocumentation::Examples examples = {
         {
             "Basic usage",
@@ -118,11 +118,11 @@ Decodes any [geohash](https://en.wikipedia.org/wiki/Geohash)-encoded string into
             )"
         }
     };
-    
+ 
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-    
+ 
     factory.registerFunction<FunctionGeohashDecode>(documentation);
 }
 
