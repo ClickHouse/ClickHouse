@@ -47,52 +47,21 @@ The table below compares supported ORC data types and their corresponding ClickH
 
 ## Example Usage {#example-usage}
 
-### Inserting Data {#inserting-data}
+### Inserting Data {#inserting-data-orc}
 
-Using an ORC file with the following data, named as `football.orc`:
+You can insert ORC data from a file into ClickHouse table using the following command:
 
-```text
-    ┌───────date─┬─season─┬─home_team─────────────┬─away_team───────────┬─home_team_goals─┬─away_team_goals─┐
- 1. │ 2022-04-30 │   2021 │ Sutton United         │ Bradford City       │               1 │               4 │
- 2. │ 2022-04-30 │   2021 │ Swindon Town          │ Barrow              │               2 │               1 │
- 3. │ 2022-04-30 │   2021 │ Tranmere Rovers       │ Oldham Athletic     │               2 │               0 │
- 4. │ 2022-05-02 │   2021 │ Port Vale             │ Newport County      │               1 │               2 │
- 5. │ 2022-05-02 │   2021 │ Salford City          │ Mansfield Town      │               2 │               2 │
- 6. │ 2022-05-07 │   2021 │ Barrow                │ Northampton Town    │               1 │               3 │
- 7. │ 2022-05-07 │   2021 │ Bradford City         │ Carlisle United     │               2 │               0 │
- 8. │ 2022-05-07 │   2021 │ Bristol Rovers        │ Scunthorpe United   │               7 │               0 │
- 9. │ 2022-05-07 │   2021 │ Exeter City           │ Port Vale           │               0 │               1 │
-10. │ 2022-05-07 │   2021 │ Harrogate Town A.F.C. │ Sutton United       │               0 │               2 │
-11. │ 2022-05-07 │   2021 │ Hartlepool United     │ Colchester United   │               0 │               2 │
-12. │ 2022-05-07 │   2021 │ Leyton Orient         │ Tranmere Rovers     │               0 │               1 │
-13. │ 2022-05-07 │   2021 │ Mansfield Town        │ Forest Green Rovers │               2 │               2 │
-14. │ 2022-05-07 │   2021 │ Newport County        │ Rochdale            │               0 │               2 │
-15. │ 2022-05-07 │   2021 │ Oldham Athletic       │ Crawley Town        │               3 │               3 │
-16. │ 2022-05-07 │   2021 │ Stevenage Borough     │ Salford City        │               4 │               2 │
-17. │ 2022-05-07 │   2021 │ Walsall               │ Swindon Town        │               0 │               3 │
-    └────────────┴────────┴───────────────────────┴─────────────────────┴─────────────────┴─────────────────┘
+```bash
+$ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
 
-Insert the data:
+### Selecting Data {#selecting-data-orc}
 
-```sql
-INSERT INTO football FROM INFILE 'football.orc' FORMAT ORC;
+You can select data from a ClickHouse table and save them into some file in the ORC format using the following command:
+
+```bash
+$ clickhouse-client --query="SELECT * FROM {some_table} FORMAT ORC" > {filename.orc}
 ```
-
-### Reading Data {#reading-data}
-
-Read data using the `ORC` format:
-
-```sql
-SELECT *
-FROM football
-INTO OUTFILE 'football.orc'
-FORMAT ORC
-```
-
-:::tip
-ORC is a binary format that does not display in a human-readable form on the terminal. Use the `INTO OUTFILE` to output ORC files.
-:::
 
 ## Format Settings {#format-settings}
 

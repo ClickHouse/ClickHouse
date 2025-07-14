@@ -908,7 +908,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
 
     SelectQueryInfo modified_query_info = query_info;
 
-    modified_query_info.initial_storage_snapshot = merge_storage_snapshot;
+    modified_query_info.merge_storage_snapshot = merge_storage_snapshot;
 
     if (modified_query_info.planner_context)
         modified_query_info.planner_context = std::make_shared<PlannerContext>(modified_context, modified_query_info.planner_context);

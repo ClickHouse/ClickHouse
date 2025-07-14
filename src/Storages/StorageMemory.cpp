@@ -2,11 +2,9 @@
 #include <Core/Settings.h>
 
 #include <boost/noncopyable.hpp>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
-#include <Interpreters/Context.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
@@ -499,9 +497,6 @@ namespace
 
 void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-    if (totalBytes(backup_entries_collector.getContext()) == 0)
-        return;
-
     auto temp_disk = backup_entries_collector.getContext()->getGlobalTemporaryVolume()->getDisk(0);
     const auto & read_settings = backup_entries_collector.getReadSettings();
     auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];

@@ -31,7 +31,6 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
-#include <Common/randomSeed.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <QueryPipeline/Pipe.h>
@@ -55,7 +54,6 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 max_materialized_views_count_for_table;
-    extern const ServerSettingsUInt64 startup_mv_delay_ms;
 }
 
 namespace RefreshSetting
@@ -76,6 +74,13 @@ namespace ErrorCodes
 namespace ActionLocks
 {
     extern const StorageActionBlockType ViewRefresh;
+}
+
+static inline String generateInnerTableName(const StorageID & view_id)
+{
+    if (view_id.hasUUID())
+        return ".inner_id." + toString(view_id.uuid);
+    return ".inner." + view_id.getTableName();
 }
 
 /// Remove columns from target_header that does not exist in src_header
@@ -364,9 +369,7 @@ void StorageMaterializedView::read(
     if (!has_inner_table && !storage_id.empty() && getInMemoryMetadataPtr()->sql_security_type)
         context->checkAccess(AccessType::SELECT, storage_id, column_names);
 
-    auto src_table_query_info = query_info;
-    src_table_query_info.initial_storage_snapshot = storage_snapshot;
-    storage->read(query_plan, column_names, target_storage_snapshot, src_table_query_info, context, processed_stage, max_block_size, num_streams);
+    storage->read(query_plan, column_names, target_storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
 
     if (query_plan.isInitialized())
     {
@@ -650,6 +653,10 @@ void StorageMaterializedView::alter(
     params.apply(new_metadata, local_context);
 
     const auto & new_select = new_metadata.select;
+    const auto & old_select = old_metadata.getSelectQuery();
+
+    DatabaseCatalog::instance().updateViewDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
+
     new_metadata.setSelectQuery(new_select);
 
     /// Check the materialized view's inner table structure.
@@ -756,6 +763,9 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
         assert(inner_table_id.database_name == old_table_id.database_name);
         updateTargetTableId(new_table_id.database_name, std::nullopt);
     }
+    const auto & select_query = metadata_snapshot->getSelectQuery();
+    /// TODO: Actually, we don't need to update dependency if MV has UUID, but then db and table name will be outdated
+    DatabaseCatalog::instance().updateViewDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
 
     if (refresher)
         refresher->rename(new_table_id, getTargetTableId());
@@ -763,13 +773,10 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
 
 void StorageMaterializedView::startup()
 {
-    if (const auto configured_delay_ms = getContext()->getServerSettings()[ServerSetting::startup_mv_delay_ms]; configured_delay_ms)
-    {
-        pcg64_fast gen{randomSeed()};
-        const auto delay_ms = std::uniform_int_distribution<>(0, 1)(gen) ? configured_delay_ms : 0UL;
-        if (delay_ms)
-            std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-    }
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    const auto & select_query = metadata_snapshot->getSelectQuery();
+    if (!select_query.select_table_id.empty())
+        DatabaseCatalog::instance().addViewDependency(select_query.select_table_id, getStorageID());
 
     if (refresher)
         refresher->startup();
@@ -926,32 +933,6 @@ void StorageMaterializedView::updateTargetTableId(std::optional<String> database
         target_table_id.database_name = *std::move(database_name);
     if (table_name)
         target_table_id.table_name = *std::move(table_name);
-}
-
-String StorageMaterializedView::generateInnerTableName(const StorageID & view_id)
-{
-    if (view_id.hasUUID())
-        return ".inner_id." + toString(view_id.uuid);
-    return ".inner." + view_id.getTableName();
-}
-
-std::optional<NameSet> StorageMaterializedView::supportedPrewhereColumns() const
-{
-    auto table = tryGetTargetTable();
-    if (!table)
-        return std::nullopt;
-
-    auto view_columns = getInMemoryMetadata().getColumns().getAll();
-    auto target_table_columns = table->getInMemoryMetadata().getColumns();
-    NameSet supported_columns;
-    for (const auto & [name, type] : view_columns)
-    {
-        auto target_column = target_table_columns.tryGetColumn(GetColumnsOptions::All, name);
-        if (target_column && target_column->type->equals(*type))
-            supported_columns.insert(name);
-    }
-
-    return supported_columns;
 }
 
 void registerStorageMaterializedView(StorageFactory & factory)

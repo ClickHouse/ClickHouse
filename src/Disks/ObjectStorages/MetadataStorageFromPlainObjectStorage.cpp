@@ -1,4 +1,4 @@
-#include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
+#include "MetadataStorageFromPlainObjectStorage.h"
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
@@ -10,7 +10,6 @@
 #include <Common/logger_useful.h>
 
 #include <Common/filesystemHelpers.h>
-#include <IO/Expect404ResponseScope.h>
 
 #include <filesystem>
 
@@ -21,7 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -41,7 +39,7 @@ MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(
     , storage_path_full(fs::path(object_storage->getRootPrefix()) / storage_path_prefix)
 {
     if (object_metadata_cache_size)
-        object_metadata_cache.emplace(CurrentMetrics::end(), CurrentMetrics::end(), object_metadata_cache_size);
+        object_metadata_cache.emplace(object_metadata_cache_size);
 }
 
 MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction()
@@ -93,7 +91,6 @@ uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path)
 
 std::optional<uint64_t> MetadataStorageFromPlainObjectStorage::getFileSizeIfExists(const String & path) const
 {
-    Expect404ResponseScope scope;  // 404 is not an error
     if (auto res = getObjectMetadataEntryWithCache(path))
         return res->file_size;
     return std::nullopt;
@@ -241,33 +238,10 @@ void MetadataStorageFromPlainObjectStorageTransaction::moveFile(const std::strin
         throwNotImplemented();
 
     if (metadata_storage.existsDirectory(path_from))
-    {
         moveDirectory(path_from, path_to);
-        return;
-    }
-
-    addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
-        false, path_from, path_to, *metadata_storage.getPathMap(), object_storage));
-}
-
-void MetadataStorageFromPlainObjectStorageTransaction::replaceFile(const std::string & path_from, const std::string & path_to)
-{
-    if (metadata_storage.object_storage->isWriteOnce())
+    else
         throwNotImplemented();
-
-    if (metadata_storage.object_metadata_cache)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Replacing file is not supported with object metadata cache");
-
-    if (metadata_storage.existsDirectory(path_from))
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Replacing from directory is not supported {}", path_from);
-
-    if (metadata_storage.existsDirectory(path_to))
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Replacing to directory is not supported {}", path_to);
-
-    addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
-        true, path_from, path_to, *metadata_storage.getPathMap(), object_storage));
 }
-
 
 void MetadataStorageFromPlainObjectStorageTransaction::createEmptyMetadataFile(const std::string & path)
 {

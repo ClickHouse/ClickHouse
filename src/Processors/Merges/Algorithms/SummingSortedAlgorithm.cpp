@@ -119,25 +119,18 @@ using Row = std::vector<Field>;
 
 /// Returns true if merge result is not empty
 static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
-                     Row & row, std::vector<ColumnPtr> & row_columns, const ColumnRawPtrs & raw_columns, size_t row_number)
+                     Row & row, const ColumnRawPtrs & raw_columns, size_t row_number)
 {
     /// Strongly non-optimal.
+
     Row & left = row;
     Row right(left.size());
 
     for (size_t col_num : desc.key_col_nums)
-    {
-        if (row_columns[col_num])
-            left[col_num] = (*row_columns[col_num])[0];
         right[col_num] = (*raw_columns[col_num])[row_number].template safeGet<Array>();
-    }
 
     for (size_t col_num : desc.val_col_nums)
-    {
-        if (row_columns[col_num])
-            left[col_num] = (*row_columns[col_num])[0];
         right[col_num] = (*raw_columns[col_num])[row_number].template safeGet<Array>();
-    }
 
     auto at_ith_column_jth_row = [&](const Row & matrix, size_t i, size_t j) -> const Field &
     {
@@ -205,25 +198,6 @@ static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
         ++row_num;
     }
 
-    /// Update values for key and value columns that should be stored as IColumn instead of Field.
-    /// We are using IColumn instead of Field to keep values of non-aggregated columns correct
-    /// for types that doesn't work well with getting/inserting Fields (like Variant/Dynamic/JSON).
-    auto update_column_value_in_row = [&](size_t col_num, Field value)
-    {
-        if (row_columns[col_num])
-        {
-            auto new_column = row_columns[col_num]->cloneEmpty();
-            new_column->reserve(1);
-            new_column->insert(value);
-            row_columns[col_num] = std::move(new_column);
-        }
-    };
-
-    for (size_t col_num : desc.key_col_nums)
-        update_column_value_in_row(col_num, left[col_num]);
-    for (size_t col_num : desc.val_col_nums)
-        update_column_value_in_row(col_num, left[col_num]);
-
     return row_num != 0;
 }
 
@@ -231,8 +205,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     const Block & header,
     const SortDescription & description,
     const Names & column_names_to_sum,
-    const Names & partition_and_sorting_required_columns,
-    const String & sum_function_name)
+    const Names & partition_and_sorting_required_columns)
 {
     size_t num_columns = header.columns();
     SummingSortedAlgorithm::ColumnsDefinition def;
@@ -309,7 +282,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 }
                 else if (!is_agg_func)
                 {
-                    desc.init(sum_function_name.c_str(), {column.type});
+                    desc.init("sumWithOverflow", {column.type});
                 }
 
                 def.columns_to_aggregate.emplace_back(std::move(desc));
@@ -468,26 +441,14 @@ static void postprocessChunk(
     chunk.setColumns(std::move(res_columns), num_rows);
 }
 
-static void setRow(Row & row, std::vector<ColumnPtr> & row_columns, const ColumnRawPtrs & raw_columns, size_t row_num, const Names & column_names)
+static void setRow(Row & row, const ColumnRawPtrs & raw_columns, size_t row_num, const Names & column_names)
 {
     size_t num_columns = row.size();
     for (size_t i = 0; i < num_columns; ++i)
     {
         try
         {
-            /// For some types like Dynamic/JSON doesn't work with Field well.
-            /// For them we store values inside the IColumn.
-            if (raw_columns[i]->hasDynamicStructure())
-            {
-                auto column = raw_columns[i]->cloneEmpty();
-                column->reserve(1);
-                column->insertFrom(*raw_columns[i], row_num);
-                row_columns[i] = std::move(column);
-            }
-            else
-            {
-                raw_columns[i]->get(row_num, row[i]);
-            }
+            raw_columns[i]->get(row_num, row[i]);
         }
         catch (...)
         {
@@ -508,7 +469,7 @@ static void setRow(Row & row, std::vector<ColumnPtr> & row_columns, const Column
 
 SummingSortedAlgorithm::SummingMergedData::SummingMergedData(UInt64 max_block_size_rows_, UInt64 max_block_size_bytes_, ColumnsDefinition & def_)
     : MergedData(false, max_block_size_rows_, max_block_size_bytes_)
-    , def(def_), current_row(def.column_names.size()), current_row_columns(def.column_names.size())
+    , def(def_)
 {
 }
 
@@ -544,13 +505,14 @@ void SummingSortedAlgorithm::SummingMergedData::initialize(const DB::Block & hea
 
     columns = std::move(new_columns);
 
+    current_row.resize(def.column_names.size());
     initAggregateDescription();
 
     /// Just to make startGroup() simpler.
     if (def.allocates_memory_in_arena)
     {
-        def.arena = std::make_unique<Arena>();
-        def.arena_size = def.arena->allocatedBytes();
+        arena = std::make_unique<Arena>();
+        arena_size = arena->allocatedBytes();
     }
 }
 
@@ -558,16 +520,16 @@ void SummingSortedAlgorithm::SummingMergedData::startGroup(ColumnRawPtrs & raw_c
 {
     is_group_started = true;
 
-    setRow(current_row, current_row_columns, raw_columns, row, def.column_names);
+    setRow(current_row, raw_columns, row, def.column_names);
 
     /// Reset aggregation states for next row
     for (auto & desc : def.columns_to_aggregate)
         desc.createState();
 
-    if (def.allocates_memory_in_arena && def.arena->allocatedBytes() > def.arena_size)
+    if (def.allocates_memory_in_arena && arena->allocatedBytes() > arena_size)
     {
-        def.arena = std::make_unique<Arena>();
-        def.arena_size = def.arena->allocatedBytes();
+        arena = std::make_unique<Arena>();
+        arena_size = arena->allocatedBytes();
     }
 
     if (def.maps_to_sum.empty())
@@ -608,7 +570,7 @@ void SummingSortedAlgorithm::SummingMergedData::finishGroup()
             {
                 try
                 {
-                    desc.function->insertResultInto(desc.state.data(), *desc.merged_column, def.arena.get());
+                    desc.function->insertResultInto(desc.state.data(), *desc.merged_column, arena.get());
 
                     /// Update zero status of current row
                     if (!desc.is_simple_agg_func_type && desc.column_numbers.size() == 1)
@@ -650,10 +612,7 @@ void SummingSortedAlgorithm::SummingMergedData::finishGroup()
     size_t next_column = columns.size() - def.column_numbers_not_to_aggregate.size();
     for (auto column_number : def.column_numbers_not_to_aggregate)
     {
-        if (current_row_columns[column_number])
-            columns[next_column]->insertFrom(*current_row_columns[column_number], 0);
-        else
-            columns[next_column]->insert(current_row[column_number]);
+        columns[next_column]->insert(current_row[column_number]);
         ++next_column;
     }
 
@@ -666,7 +625,7 @@ void SummingSortedAlgorithm::SummingMergedData::addRow(ColumnRawPtrs & raw_colum
 {
     // Merge maps only for same rows
     for (const auto & desc : def.maps_to_sum)
-        if (mergeMap(desc, current_row, current_row_columns, raw_columns, row))
+        if (mergeMap(desc, current_row, raw_columns, row))
             current_row_is_zero = false;
 
     addRowImpl(raw_columns, row);
@@ -691,7 +650,7 @@ void SummingSortedAlgorithm::SummingMergedData::addRowImpl(ColumnRawPtrs & raw_c
             if (desc.column_numbers.size() == 1)
             {
                 auto & col = raw_columns[desc.column_numbers[0]];
-                desc.add_function(desc.function.get(), desc.state.data(), &col, row, def.arena.get());
+                desc.add_function(desc.function.get(), desc.state.data(), &col, row, arena.get());
             }
             else
             {
@@ -700,7 +659,7 @@ void SummingSortedAlgorithm::SummingMergedData::addRowImpl(ColumnRawPtrs & raw_c
                 for (size_t i = 0; i < desc.column_numbers.size(); ++i)
                     column_ptrs[i] = raw_columns[desc.column_numbers[i]];
 
-                desc.add_function(desc.function.get(), desc.state.data(), column_ptrs.data(), row, def.arena.get());
+                desc.add_function(desc.function.get(), desc.state.data(), column_ptrs.data(), row, arena.get());
             }
         }
     }
@@ -732,11 +691,10 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
     const Names & column_names_to_sum,
     const Names & partition_and_sorting_required_columns,
     size_t max_block_size_rows,
-    size_t max_block_size_bytes,
-    const String & sum_function_name)
+    size_t max_block_size_bytes)
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, std::move(description_))
     , columns_definition(
-          defineColumns(header_, description, column_names_to_sum, partition_and_sorting_required_columns, sum_function_name))
+          defineColumns(header_, description, column_names_to_sum, partition_and_sorting_required_columns))
     , merged_data(max_block_size_rows, max_block_size_bytes, columns_definition)
 {
 }

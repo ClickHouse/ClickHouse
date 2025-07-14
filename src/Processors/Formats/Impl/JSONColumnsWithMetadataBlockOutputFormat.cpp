@@ -112,7 +112,6 @@ void registerOutputFormatJSONColumnsWithMetadata(FormatFactory & factory)
     });
 
     factory.markFormatHasNoAppendSupport("JSONColumnsWithMetadata");
-    factory.setContentType("JSONColumnsWithMetadata", "application/json; charset=UTF-8");
 }
 
 }

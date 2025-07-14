@@ -1,4 +1,4 @@
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include "IDataLakeMetadata.h"
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
 namespace DB
