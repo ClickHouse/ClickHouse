@@ -116,9 +116,17 @@ public:
 
     static void setName(Database * db, const uint32_t name) { db->set_database("d" + std::to_string(name)); }
 
+    bool isAtomicDatabase() const { return deng == DatabaseEngineValues::DAtomic; }
+
+    bool isMemoryDatabase() const { return deng == DatabaseEngineValues::DMemory; }
+
     bool isReplicatedDatabase() const { return deng == DatabaseEngineValues::DReplicated; }
 
     bool isSharedDatabase() const { return deng == DatabaseEngineValues::DShared; }
+
+    bool isLazyDatabase() const { return deng == DatabaseEngineValues::DLazy; }
+
+    bool isOrdinaryDatabase() const { return deng == DatabaseEngineValues::DOrdinary; }
 
     bool isReplicatedOrSharedDatabase() const { return isReplicatedDatabase() || isSharedDatabase(); }
 
@@ -254,7 +262,11 @@ public:
             || isExternalDistributedEngine();
     }
 
-    bool hasDatabasePeer() const { return peer_table != PeerTableDatabase::None; }
+    bool hasDatabasePeer() const
+    {
+        chassert(is_deterministic || peer_table == PeerTableDatabase::None);
+        return peer_table != PeerTableDatabase::None;
+    }
 
     bool hasMySQLPeer() const { return peer_table == PeerTableDatabase::MySQL; }
 
@@ -436,6 +448,22 @@ public:
     const String & getBottomName() const { return path[path.size() - 1].cname; }
 
     SQLType * getBottomType() const { return path[path.size() - 1].tp; }
+
+    String columnPathRef() const
+    {
+        String res = "`";
+
+        for (size_t i = 0; i < path.size(); i++)
+        {
+            if (i != 0)
+            {
+                res += ".";
+            }
+            res += path[i].cname;
+        }
+        res += "`";
+        return res;
+    }
 };
 
 }

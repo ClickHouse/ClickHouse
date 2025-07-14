@@ -14,9 +14,8 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/FieldVisitors.h>
-#include "Columns/ColumnsDateTime.h"
-#include "Columns/ColumnsNumber.h"
+#include <Columns/ColumnsDateTime.h>
+#include <Columns/ColumnsNumber.h>
 
 #include <base/range.h>
 #include <base/unaligned.h>
@@ -740,6 +739,7 @@ extern template class ColumnUnique<ColumnFloat64>;
 extern template class ColumnUnique<ColumnString>;
 extern template class ColumnUnique<ColumnFixedString>;
 extern template class ColumnUnique<ColumnDateTime64>;
+extern template class ColumnUnique<ColumnTime64>;
 extern template class ColumnUnique<ColumnIPv4>;
 extern template class ColumnUnique<ColumnIPv6>;
 extern template class ColumnUnique<ColumnUUID>;

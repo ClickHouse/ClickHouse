@@ -6,9 +6,9 @@
 namespace DB
 {
 
-using FunctionToTime = FunctionDateOrDateTimeToSomething<DataTypeDateTime, ToTimeImpl>;
+using FunctionToTimeWithFixedDate = FunctionDateOrDateTimeToSomething<DataTypeDateTime, ToTimeWithFixedDateImpl>;
 
-REGISTER_FUNCTION(ToTime)
+REGISTER_FUNCTION(ToTimeWithFixedDate)
 {
     FunctionDocumentation::Description description = R"(
 Extracts the time component of a date or date with time.
@@ -40,7 +40,7 @@ SELECT toTime('2025-06-15 12:00:00'::DateTime) - toTime('2024-05-10 11:00:00'::D
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionToTime>(documentation);
+    factory.registerFunction<FunctionToTimeWithFixedDate>(documentation);
 }
 
 }

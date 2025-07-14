@@ -239,7 +239,7 @@ void DatabaseCatalog::startupBackgroundTasks()
         (*drop_task)->schedule();
 }
 
-void DatabaseCatalog::shutdownImpl()
+void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
 {
     is_shutting_down = true;
     wait_table_finally_dropped.notify_all();
@@ -278,6 +278,9 @@ void DatabaseCatalog::shutdownImpl()
         LOG_TRACE(log, "Shutting down database {}", database.first);
         database.second->shutdown();
     }
+
+    LOG_TRACE(log, "Shutting down system logs");
+    shutdown_system_logs();
 
     LOG_TRACE(log, "Shutting down system databases");
     for (auto & database : databases_with_delayed_shutdown)
@@ -670,7 +673,7 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
             assert(tables_from.size() == 1);
             const auto & the_table_from = *tables_from.begin();
 
-            view_dependencies.removeDependency(the_table_from, StorageID{old_name, table_name});
+            view_dependencies.removeDependency(the_table_from, StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
             view_dependencies.addDependency(the_table_from, StorageID{new_name, table_name});
         }
     }
@@ -932,13 +935,13 @@ DatabaseCatalog & DatabaseCatalog::instance()
     return *database_catalog;
 }
 
-void DatabaseCatalog::shutdown()
+void DatabaseCatalog::shutdown(std::function<void()> shutdown_system_logs)
 {
     // The catalog might not be initialized yet by init(global_context). It can
     // happen if some exception was thrown on first steps of startup.
     if (database_catalog)
     {
-        database_catalog->shutdownImpl();
+        database_catalog->shutdownImpl(std::move(shutdown_system_logs));
     }
 }
 
@@ -1598,7 +1601,7 @@ std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID
             assert(tables_from.size() == 1);
             const auto & the_table_from = *tables_from.begin();
 
-            view_dependencies.removeDependency(the_table_from, table_id);
+            view_dependencies.removeDependency(the_table_from, table_id, /* remove_isolated_tables= */ true);
             old_view_dependencies.push_back(the_table_from);
         }
     }
@@ -1630,7 +1633,7 @@ void DatabaseCatalog::updateDependencies(
             assert(tables_from.size() == 1);
             const auto & the_table_from = *tables_from.begin();
 
-            view_dependencies.removeDependency(the_table_from, table_id);
+            view_dependencies.removeDependency(the_table_from, table_id, /* remove_isolated_tables= */ true);
             view_dependencies.addDependency(StorageID{*new_view_dependencies.begin()}, table_id);
         }
     }
@@ -1682,6 +1685,9 @@ void DatabaseCatalog::checkTableCanBeAddedWithNoCyclicDependencies(
     const TableNamesSet & new_referential_dependencies,
     const TableNamesSet & new_loading_dependencies)
 {
+    if (new_referential_dependencies.empty() && new_loading_dependencies.empty())
+        return;
+
     std::lock_guard lock{databases_mutex};
 
     StorageID table_id = StorageID{table_name};

@@ -19,13 +19,12 @@ workflow = Workflow.Config(
         JobConfigs.docs_job,
         JobConfigs.fast_test,
         *JobConfigs.tidy_build_jobs,
-        *JobConfigs.tidy_arm_build_jobs,
         *[
             job.set_dependency(
                 [
                     JobNames.STYLE_CHECK,
                     JobNames.FAST_TEST,
-                    JobConfigs.tidy_build_jobs[0].name,
+                    *[j.name for j in JobConfigs.tidy_build_jobs],
                 ]
             )
             for job in JobConfigs.build_jobs
@@ -88,11 +87,12 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/pr_description.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/quick_sync.py",
-        "python3 ./ci/jobs/scripts/workflow_hooks/new_tests_check.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/team_notifications.py",
     ],
     workflow_filter_hooks=[should_skip_job],
     post_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/feature_docs.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/new_tests_check.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/can_be_merged.py",
     ],
 )

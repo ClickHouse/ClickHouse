@@ -20,6 +20,7 @@ class Cache:
         sha: str
         pr_number: int
         branch: str
+        workflow: str = ""
 
         def dump(self, path):
             with open(path, "w", encoding="utf8") as f:
@@ -39,13 +40,16 @@ class Cache:
         self.success = {}  # type Dict[str, Any]
 
     @classmethod
-    def push_success_record(cls, job_name, job_digest, sha, if_not_exist):
+    def push_success_record(
+        cls, job_name, job_digest, sha, workflow_name, if_not_exist
+    ):
         type_ = Cache.CacheRecord.Type.SUCCESS
         record = Cache.CacheRecord(
             type=type_,
             sha=sha,
             pr_number=_Environment.get().PR_NUMBER,
             branch=_Environment.get().BRANCH,
+            workflow=workflow_name,
         )
         assert (
             Settings.CACHE_S3_PATH
