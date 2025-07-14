@@ -967,7 +967,7 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
             if (!reader)
                 reader = tmp_stream->getReadStream();
 
-            while (auto block_right = reader.value()->read())
+            for (auto block_right = reader.value()->read(); !block_right.empty(); block_right = reader.value()->read())
             {
                 ++block_number;
                 process_right_block(block_right.getColumns());

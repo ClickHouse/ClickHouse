@@ -209,7 +209,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
     else
         block = query_executor->readBlock();
 
-    if (!block)
+    if (block.empty())
     {
         if (manually_add_rows_before_limit_counter)
             rows_before_limit->add(rows);
@@ -263,7 +263,7 @@ RemoteTotalsSource::~RemoteTotalsSource() = default;
 
 Chunk RemoteTotalsSource::generate()
 {
-    if (auto block = query_executor->getTotals())
+    if (auto block = query_executor->getTotals(); !block.empty())
     {
         UInt64 num_rows = block.rows();
         return Chunk(block.getColumns(), num_rows);
@@ -283,7 +283,7 @@ RemoteExtremesSource::~RemoteExtremesSource() = default;
 
 Chunk RemoteExtremesSource::generate()
 {
-    if (auto block = query_executor->getExtremes())
+    if (auto block = query_executor->getExtremes(); !block.empty())
     {
         UInt64 num_rows = block.rows();
         return Chunk(block.getColumns(), num_rows);

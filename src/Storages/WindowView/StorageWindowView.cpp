@@ -1776,7 +1776,7 @@ SharedHeader StorageWindowView::getOutputHeader() const
 {
     throwIfWindowViewIsDisabled();
     std::lock_guard lock(sample_block_lock);
-    if (!output_header)
+    if (output_header.empty())
     {
         output_header = *InterpreterSelectQuery(select_query->clone(), getContext(), SelectQueryOptions(QueryProcessingStage::Complete))
                            .getSampleBlock();

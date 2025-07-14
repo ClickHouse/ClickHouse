@@ -81,7 +81,7 @@ void TTLCalcTransform::consume(Chunk chunk)
     for (const auto & algorithm : algorithms)
         algorithm->execute(block);
 
-    if (!block)
+    if (block.empty())
         return;
 
     Chunk res;
@@ -97,7 +97,7 @@ Chunk TTLCalcTransform::generate()
     for (const auto & algorithm : algorithms)
         algorithm->execute(block);
 
-    if (!block)
+    if (block.empty())
         return {};
 
     Chunk res;

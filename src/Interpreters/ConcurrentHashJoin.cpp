@@ -349,14 +349,14 @@ void ConcurrentHashJoin::joinBlock(Block & block, ExtraScatteredBlocks & extra_b
         }
         auto & hash_join = hash_joins[i];
         auto & current_block = dispatched_blocks[i];
-        if (current_block && (i == 0 || current_block.rows()))
+        if (!current_block.empty() && (i == 0 || current_block.rows()))
             hash_join->data->joinBlock(current_block, remaining_blocks[i]);
         remaining_rows_before_limit -= std::min(current_block.rows(), remaining_rows_before_limit);
     }
     for (size_t i = 0; i < dispatched_blocks.size(); ++i)
     {
         auto & dispatched_block = dispatched_blocks[i];
-        if (dispatched_block && (i == 0 || dispatched_block.rows()))
+        if (!dispatched_block.empty() && (i == 0 || dispatched_block.rows()))
             res.emplace_back(std::move(dispatched_block).getSourceBlock());
     }
 }
@@ -368,7 +368,7 @@ void ConcurrentHashJoin::checkTypesOfKeys(const Block & block) const
 
 void ConcurrentHashJoin::setTotals(const Block & block)
 {
-    if (block)
+    if (!block.empty())
     {
         std::lock_guard lock(totals_mutex);
         totals = block;

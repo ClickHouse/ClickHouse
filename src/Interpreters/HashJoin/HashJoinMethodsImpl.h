@@ -186,7 +186,7 @@ ScatteredBlock HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     {
         IColumn::Offsets & offsets = added_columns.offsets_to_replicate;
 
-        chassert(block);
+        chassert(!block.empty());
         chassert(offsets.size() == block.rows());
 
         auto && columns = block.getSourceBlock().getColumns();

@@ -51,7 +51,7 @@ protected:
         Block block;
         UInt32 watermark;
         std::tie(block, watermark) = generateImpl();
-        if (!block)
+        if (block.empty())
             return Chunk();
         if (is_events)
         {

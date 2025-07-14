@@ -202,7 +202,7 @@ protected:
             return {};
 
         auto block = reader->read();
-        if (!block)
+        if (block.empty())
         {
             done = true;
             reader.reset();
@@ -321,7 +321,7 @@ Block SortedBlocksBuffer::exchange(Block && block)
     {
         std::lock_guard lock(mutex);
 
-        if (block)
+        if (!block.empty())
         {
             current_bytes += block.bytes();
             buffer.emplace_back(std::move(block));

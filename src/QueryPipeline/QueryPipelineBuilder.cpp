@@ -751,7 +751,7 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
 void QueryPipelineBuilder::addPipelineBefore(QueryPipelineBuilder pipeline)
 {
     checkInitializedAndNotCompleted();
-    if (pipeline.getHeader())
+    if (!pipeline.getHeader().empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for CreatingSets should have empty header. Got: {}",
                         pipeline.getHeader().dumpStructure());
 

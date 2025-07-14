@@ -61,7 +61,7 @@ namespace
             {
                 Block block = reader->read();
                 rows_read += block.rows();
-                if (!block)
+                if (block.empty())
                 {
                     eof = true;
                     return concatenateBlocks(blocks);
@@ -556,7 +556,7 @@ public:
             // One DelayedBlocks is shared among multiple DelayedJoinedBlocksWorkerTransform.
             // There is a lock inside left_reader.read() .
             block = left_reader.read();
-            if (!block)
+            if (block.empty())
             {
                 shared.unlock();
                 bool there_are_still_might_be_rows_to_process = false;
@@ -652,7 +652,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
         hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_idx), prev_keys_num);
         auto right_reader = current_bucket->startJoining();
         size_t num_rows = 0; /// count rows that were written and rehashed
-        while (Block block = right_reader.read())
+        for (Block block = right_reader.read(); !block.empty(); block = right_reader.read())
         {
             num_rows += block.rows();
             addBlockToJoinImpl(std::move(block));

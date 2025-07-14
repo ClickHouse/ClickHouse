@@ -548,7 +548,7 @@ static void appendBlock(LoggerPtr log, const Block & from, Block & to)
     size_t old_rows = to.rows();
     size_t old_bytes = to.bytes();
 
-    if (!to)
+    if (to.empty())
         to = from.cloneEmpty();
 
     assertBlocksHaveEqualStructure(from, to, "Buffer");
@@ -1015,7 +1015,7 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
 void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table)
 {
-    if (!destination_id || !block)
+    if (!destination_id || block.empty())
         return;
 
     if (!table)
@@ -1125,7 +1125,7 @@ void StorageBuffer::reschedule()
         std::unique_lock lock(buffer.tryLock());
         if (lock.owns_lock())
         {
-            if (buffer.data)
+            if (!buffer.data.empty())
             {
                 min_first_write_time = std::min(min_first_write_time, buffer.first_write_time);
                 rows += buffer.data.rows();

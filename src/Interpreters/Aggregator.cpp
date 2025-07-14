@@ -3770,7 +3770,7 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
 
 std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block) const
 {
-    if (!block)
+    if (block.empty())
         return {};
 
     AggregatedDataVariants data;

@@ -120,7 +120,7 @@ public:
         }
 
         Block block = tmp_read_stream.value()->read();
-        if (!block)
+        if (block.empty())
             return {};
 
         UInt64 num_rows = block.rows();

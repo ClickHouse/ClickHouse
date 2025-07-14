@@ -573,7 +573,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
         CompressedReadBufferFromFile compressed_in{std::move(in_from_file)};
         NativeReader block_in{compressed_in, 0, index.blocks.begin(), index.blocks.end()};
 
-        while (auto block = block_in.read())
+        for (auto block = block_in.read(); !block.empty(); block = block_in.read())
         {
             if ((*memory_settings)[MemorySetting::compress])
             {

@@ -959,7 +959,7 @@ static size_t readAllTemporaryData(NativeReader & stream)
     {
         block = stream.read();
         read_rows += block.rows();
-    } while (block);
+    } while (!block.empty());
     return read_rows;
 }
 

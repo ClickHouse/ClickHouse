@@ -147,7 +147,7 @@ public:
         if (finished)
             return {};
 
-        if (Block res = nextImpl())
+        if (Block res = nextImpl(); !res.empty())
             return res;
 
         finished = true;

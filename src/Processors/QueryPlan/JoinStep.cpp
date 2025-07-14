@@ -248,7 +248,7 @@ void JoinStep::setJoin(JoinPtr join_, bool swap_streams_)
 
 void JoinStep::updateOutputHeader()
 {
-    if (join_algorithm_header && *join_algorithm_header)
+    if (join_algorithm_header && !join_algorithm_header->empty())
         return;
 
     const auto & header = swap_streams ? input_headers[1] : input_headers[0];
@@ -300,7 +300,7 @@ FilledJoinStep::FilledJoinStep(const SharedHeader & input_header_, JoinPtr join_
 void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     bool default_totals = false;
-    if (!pipeline.hasTotals() && join->getTotals())
+    if (!pipeline.hasTotals() && !join->getTotals().empty())
     {
         pipeline.addDefaultTotals();
         default_totals = true;

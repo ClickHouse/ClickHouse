@@ -151,7 +151,7 @@ namespace
         Block block_from_executor;
         while (executor.pull(block_from_executor))
         {
-            if (block_from_executor)
+            if (!block_from_executor.empty())
             {
                 MutableColumnPtr id_column_part = block_from_executor.getByName(id_name).column->assumeMutable();
                 if (id_column)
@@ -526,7 +526,7 @@ namespace
 
         for (auto & [table_kind, block] : blocks.blocks)
         {
-            if (block)
+            if (!block.empty())
             {
                 const auto & target_table_id = time_series_storage.getTargetTableId(table_kind);
 

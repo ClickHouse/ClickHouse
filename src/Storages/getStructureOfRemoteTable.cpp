@@ -99,7 +99,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
 
     ParserExpression expr_parser;
 
-    while (Block current = executor.readBlock())
+    for (Block current = executor.readBlock(); !current.empty(); current = executor.readBlock())
     {
         current = convertBLOBColumns(current);
 
@@ -209,7 +209,7 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
         executor.setMainTable(remote_table_id);
 
         ColumnsDescription res;
-        while (auto block = executor.readBlock())
+        for (auto block = executor.readBlock(); !block.empty(); block = executor.readBlock())
         {
             block = convertBLOBColumns(block);
 

@@ -44,7 +44,7 @@ public:
         auto block = reader->read();
         approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(*in) - block_start;
 
-        if (!block)
+        if (block.empty())
             return {};
 
         assertBlocksHaveEqualStructure(getPort().getHeader(), block, getName());

@@ -297,7 +297,7 @@ void GroupingAggregatedTransform::work()
 
         for (auto & cur_block : blocks)
         {
-            if (!cur_block)
+            if (cur_block.empty())
                 continue;
 
             Int32 bucket = cur_block.info.bucket_num;

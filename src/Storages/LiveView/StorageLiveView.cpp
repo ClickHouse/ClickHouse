@@ -500,7 +500,7 @@ Block StorageLiveView::getHeader() const
 {
     std::lock_guard lock(sample_block_lock);
 
-    if (!sample_block)
+    if (sample_block.empty())
     {
         if (live_view_context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {

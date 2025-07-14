@@ -178,7 +178,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     if (should_evaluate_missing_defaults)
     {
         Block additional_columns;
-        if (previous_header)
+        if (!previous_header.empty())
             additional_columns = previous_header.cloneWithColumns(result.columns);
 
         for (const auto & col : result.additional_columns)

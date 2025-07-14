@@ -67,7 +67,7 @@ namespace
                 return {};
 
             auto block = tmp_stream->read();
-            if (!block)
+            if (block.empty())
             {
                 tmp_stream.reset();
                 return {};

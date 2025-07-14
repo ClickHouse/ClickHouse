@@ -328,7 +328,7 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
 static Block adaptBlockStructure(const Block & block, const Block & header)
 {
     /// Special case when reader doesn't care about result structure. Deprecated and used only in Benchmark, PerformanceTest.
-    if (!header)
+    if (header.empty())
         return block;
 
     Block res;
@@ -671,7 +671,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             /// Note: `packet.block.rows() > 0` means it's a header block.
             /// We can actually return it, and the first call to RemoteQueryExecutor::read
             /// will return earlier. We should consider doing it.
-            if (packet.block && (packet.block.rows() > 0))
+            if (!packet.block.empty() && (packet.block.rows() > 0))
                 return ReadResult(adaptBlockStructure(packet.block, *header));
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
@@ -708,13 +708,13 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
 
         case Protocol::Server::Totals:
             totals = packet.block;
-            if (totals)
+            if (!totals.empty())
                 totals = adaptBlockStructure(totals, *header);
             break;
 
         case Protocol::Server::Extremes:
             extremes = packet.block;
-            if (extremes)
+            if (!extremes.empty())
                 extremes = adaptBlockStructure(packet.block, *header);
             break;
 

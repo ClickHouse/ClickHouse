@@ -400,7 +400,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
             // minmax_count_projection cannot be used when there is no data to process, because
             // it will produce incorrect result during constant aggregation.
             // See https://github.com/ClickHouse/ClickHouse/issues/36728
-            if (block)
+            if (!block.empty())
             {
                 MinMaxProjectionCandidate minmax;
                 minmax.candidate = std::move(candidate);

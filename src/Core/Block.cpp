@@ -920,7 +920,7 @@ void convertToFullIfSparse(Block & block)
 
 Block materializeBlock(const Block & block)
 {
-    if (!block)
+    if (block.empty())
         return block;
 
     Block res = block;

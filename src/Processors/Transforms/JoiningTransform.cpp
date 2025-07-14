@@ -158,7 +158,7 @@ void JoiningTransform::work()
         }
 
         Block block = non_joined_blocks->next();
-        if (!block)
+        if (block.empty())
         {
             process_non_joined = false;
             return;
@@ -195,7 +195,7 @@ void JoiningTransform::transform(Chunk & chunk)
 
         /// Drop totals if both out stream and joined stream doesn't have ones.
         /// See comment in ExpressionTransform.h
-        if (default_totals && !right_totals)
+        if (default_totals && right_totals.empty())
             return;
 
         res.emplace_back();
@@ -245,7 +245,7 @@ Blocks JoiningTransform::readExecute(Chunk & chunk)
         if (chunk.hasColumns())
             block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
 
-        if (block)
+        if (!block.empty())
             join_block();
     }
     else if (not_processed->empty()) /// There's not processed data inside expression.
@@ -476,14 +476,14 @@ void DelayedJoinedBlocksWorkerTransform::work()
     if (!task->delayed_blocks->isFinished())
     {
         block = task->delayed_blocks->next();
-        if (!block)
+        if (block.empty())
             block = nextNonJoinedBlock();
     }
     else
     {
         block = nextNonJoinedBlock();
     }
-    if (!block)
+    if (block.empty())
     {
         resetTask();
         return;

@@ -129,7 +129,7 @@ protected:
             res = block_in->read();
 
             /// Freeing memory before destroying the object.
-            if (!res)
+            if (res.empty())
             {
                 block_in.reset();
                 data_in.reset();

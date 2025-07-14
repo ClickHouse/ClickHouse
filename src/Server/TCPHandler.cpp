@@ -267,7 +267,7 @@ struct TurnOffBoolSettingTemporary
 
 Block convertColumnsToBLOBs(const Block & block, CompressionCodecPtr codec, UInt64 client_revision, const FormatSettings & format_settings)
 {
-    if (!block || !codec || client_revision < DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING)
+    if (block.empty() || !codec || client_revision < DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING)
         return block;
 
     /// Until parallel marshalling is supported for aggregation w/o key states, this safeguard should be there.
@@ -1176,7 +1176,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
             /// client receive exception before sending data.
             executor.start();
 
-            if (processed_data)
+            if (!processed_data.empty())
                 executor.push(std::move(processed_data));
             else
                 startInsertQuery(state);
@@ -1284,7 +1284,7 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
     {
         const auto & header = pipeline.getHeader();
 
-        if (header)
+        if (!header.empty())
         {
             sendData(state, header);
         }
@@ -1324,7 +1324,7 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
                     sendLogs(state);
 
                     // Block might be empty in case of timeout, i.e. there is no data to process
-                    if (block && !state.io.null_format)
+                    if (!block.empty() && !state.io.null_format)
                         sendData(state, block);
                 }
             }
@@ -1486,7 +1486,7 @@ void TCPHandler::sendProfileInfo(QueryState &, const ProfileInfo & info)
 
 void TCPHandler::sendTotals(QueryState & state, const Block & totals)
 {
-    if (!totals)
+    if (totals.empty())
         return;
 
     initBlockOutput(state, totals);
@@ -1504,7 +1504,7 @@ void TCPHandler::sendTotals(QueryState & state, const Block & totals)
 
 void TCPHandler::sendExtremes(QueryState & state, const Block & extremes)
 {
-    if (!extremes)
+    if (extremes.empty())
         return;
 
     initBlockOutput(state, extremes);
@@ -2326,7 +2326,7 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
     /// Read one block from the network and write it down
     Block block = state.block_in->read();
 
-    if (!block)
+    if (block.empty())
         return false;
 
     if (scalar)
@@ -2387,7 +2387,7 @@ bool TCPHandler::processUnexpectedData()
         maybe_compressed_in = in;
 
     auto skip_block_in = std::make_shared<NativeReader>(*maybe_compressed_in, client_tcp_protocol_version);
-    bool empty_block = !skip_block_in->read();
+    bool empty_block = skip_block_in->read().empty();
     return !empty_block;
 }
 

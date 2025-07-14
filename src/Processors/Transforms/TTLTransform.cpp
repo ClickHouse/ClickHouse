@@ -134,7 +134,7 @@ void TTLTransform::consume(Chunk chunk)
     for (const auto & algorithm : algorithms)
         algorithm->execute(block);
 
-    if (!block)
+    if (block.empty())
         return;
 
     size_t num_rows = block.rows();
@@ -147,7 +147,7 @@ Chunk TTLTransform::generate()
     for (const auto & algorithm : algorithms)
         algorithm->execute(block);
 
-    if (!block)
+    if (block.empty())
         return {};
 
     size_t num_rows = block.rows();

@@ -337,7 +337,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, AsyncInsertInfoPtr async_insert_info)
 {
     BlocksWithPartition result;
-    if (!block || !block.rows())
+    if (block.empty() || !block.rows())
         return result;
 
     metadata_snapshot->check(block, true);

@@ -73,7 +73,7 @@ static void doDescribeHeader(const Block & header, size_t count, IQueryPlanStep:
 
     settings.out << prefix;
 
-    if (!header)
+    if (header.empty())
     {
         settings.out << " empty\n";
         return;

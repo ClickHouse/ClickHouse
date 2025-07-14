@@ -211,7 +211,7 @@ void JoinStepLogical::updateOutputHeader()
             header.insert(ColumnWithTypeAndName(column_type->createColumn(), column_type, column_name));
     }
 
-    if (!header)
+    if (header.empty())
     {
         for (const auto * node : getAnyColumn(expression_actions.post_join_actions->getInputs()))
         {

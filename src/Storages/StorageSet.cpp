@@ -306,7 +306,7 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
     NativeReader backup_stream(compressed_backup_buf, 0);
 
     ProfileInfo info;
-    while (Block block = backup_stream.read())
+    for (Block block = backup_stream.read(); !block.empty(); block = backup_stream.read())
     {
         info.update(block);
         insertBlock(block, ctx);

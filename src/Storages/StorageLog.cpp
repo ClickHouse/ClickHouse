@@ -212,10 +212,10 @@ Chunk LogSource::generate()
             res.insert(ColumnWithTypeAndName(column, name_type_on_disk.type, name_type_on_disk.name));
     }
 
-    if (res)
+    if (!res.empty())
         rows_read += res.rows();
 
-    if (!res)
+    if (res.empty())
         is_finished = true;
 
     if (isFinished())

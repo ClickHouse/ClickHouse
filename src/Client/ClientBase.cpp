@@ -235,7 +235,7 @@ std::istream& operator>> (std::istream & in, ProgressOption & progress)
 
 static void incrementProfileEventsBlock(Block & dst, const Block & src)
 {
-    if (!dst)
+    if (dst.empty())
     {
         dst = src.cloneEmpty();
     }
@@ -503,7 +503,7 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
 
 void ClientBase::onData(Block & block, ASTPtr parsed_query)
 {
-    if (!block)
+    if (block.empty())
         return;
 
     processed_rows += block.rows();
@@ -2031,7 +2031,7 @@ void ClientBase::sendDataFromPipe(Pipe && pipe, ASTPtr parsed_query, bool have_m
             return;
         }
 
-        if (block)
+        if (!block.empty())
         {
             connection->sendData(block, /* name */"", /* scalar */false);
             processed_rows += block.rows();
@@ -2309,7 +2309,7 @@ void ClientBase::processParsedSingleQuery(
     }
 
     /// Always print last block (if it was not printed already)
-    if (profile_events.last_block)
+    if (!profile_events.last_block.empty())
     {
         initLogsOutputStream();
         if (need_render_progress && tty_buf)

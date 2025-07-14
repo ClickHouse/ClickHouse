@@ -260,7 +260,7 @@ static Block getCommonHeader(const Pipes & pipes)
 
     for (const auto & pipe : pipes)
     {
-        if (const auto & header = pipe.getHeader())
+        if (const auto & header = pipe.getHeader(); !header.empty())
         {
             res = header;
             break;
@@ -316,7 +316,7 @@ Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors, bool allow
 
     for (auto & pipe : pipes)
     {
-        if (!allow_empty_header || *pipe.header)
+        if (!allow_empty_header || !pipe.header->empty())
             if (pipe.header != res.header)
                 assertCompatibleHeader(*pipe.header, *res.header, "Pipe::unitePipes");
 

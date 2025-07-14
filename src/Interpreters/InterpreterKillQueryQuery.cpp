@@ -220,7 +220,7 @@ BlockIO InterpreterKillQueryQuery::execute()
     case ASTKillQueryQuery::Type::Query:
     {
         Block processes_block = getSelectResult("query_id, user, query", "system.processes");
-        if (!processes_block)
+        if (processes_block.empty())
             return res_io;
 
         ProcessList & process_list = getContext()->getProcessList();
@@ -253,7 +253,7 @@ BlockIO InterpreterKillQueryQuery::execute()
     case ASTKillQueryQuery::Type::Mutation:
     {
         Block mutations_block = getSelectResult("database, table, mutation_id, command", "system.mutations");
-        if (!mutations_block)
+        if (mutations_block.empty())
             return res_io;
 
         const ColumnString & database_col = typeid_cast<const ColumnString &>(*mutations_block.getByName("database").column);
@@ -323,7 +323,7 @@ BlockIO InterpreterKillQueryQuery::execute()
             "database, table, task_name, task_uuid, part_name, to_shard, state",
             "system.part_moves_between_shards");
 
-        if (!moves_block)
+        if (moves_block.empty())
             return res_io;
 
         const ColumnString & database_col = typeid_cast<const ColumnString &>(*moves_block.getByName("database").column);
@@ -384,7 +384,7 @@ BlockIO InterpreterKillQueryQuery::execute()
 
         Block transactions_block = getSelectResult("tid, tid_hash, elapsed, is_readonly, state", "system.transactions");
 
-        if (!transactions_block)
+        if (transactions_block.empty())
             return res_io;
 
         const ColumnUInt64 & tid_hash_col = typeid_cast<const ColumnUInt64 &>(*transactions_block.getByName("tid_hash").column);
@@ -436,12 +436,12 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     auto io = executeQuery(select_query, getContext(), QueryFlags{ .internal = true }).second;
     PullingPipelineExecutor executor(io.pipeline);
     Block res;
-    while (!res && executor.pull(res));
+    while (res.empty() && executor.pull(res));
 
     Block tmp_block;
     while (executor.pull(tmp_block));
 
-    if (tmp_block)
+    if (!tmp_block.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected one block from input stream");
 
     return res;
