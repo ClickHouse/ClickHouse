@@ -3930,8 +3930,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         if (merging_params.mode != MergingParams::Mode::Ordinary
             && (*settings_from_storage)[MergeTreeSetting::deduplicate_merge_projection_mode] == DeduplicateMergeProjectionMode::THROW)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Projection is fully supported in {} with deduplicate_merge_projection_mode = throw. "
-                "Use 'drop' or 'rebuild' option of deduplicate_merge_projection_mode.",
+                "ADD PROJECTION is not supported in {} with deduplicate_merge_projection_mode = throw. "
+                "Please set setting 'deduplicate_merge_projection_mode' to 'drop' or 'rebuild'.",
                 getName());
     }
 
