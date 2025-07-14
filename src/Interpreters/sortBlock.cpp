@@ -26,7 +26,7 @@ namespace ErrorCodes
 /// Column with description for sort
 struct ColumnWithSortDescription
 {
-    const IColumn * column = nullptr;
+    ColumnPtr column = nullptr;
     SortColumnDescription description;
 
     /// It means, that this column is ColumnConst
@@ -107,16 +107,16 @@ ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, c
     {
         const auto & sort_column_description = description[i];
 
-        const IColumn * column = block.getColumnOrSubcolumnByName(sort_column_description.column_name).column.get();
+        auto column = block.getColumnOrSubcolumnByName(sort_column_description.column_name);
 
         if (isCollationRequired(sort_column_description))
         {
-            if (!column->isCollationSupported())
+            if (!column.column->isCollationSupported())
                 throw Exception(ErrorCodes::BAD_COLLATION, "Collations could be specified only for String, LowCardinality(String), "
                                 "Nullable(String) or for Array or Tuple, containing them.");
         }
 
-        result.emplace_back(ColumnWithSortDescription{column, sort_column_description, isColumnConst(*column)});
+        result.emplace_back(ColumnWithSortDescription{column.column, sort_column_description, isColumnConst(*column.column)});
     }
 
     return result;

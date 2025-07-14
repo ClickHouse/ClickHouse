@@ -158,6 +158,7 @@ void registerOutputFormatJSON(FormatFactory & factory)
 
     factory.markOutputFormatSupportsParallelFormatting("JSON");
     factory.markFormatHasNoAppendSupport("JSON");
+    factory.setContentType("JSON", "application/json; charset=UTF-8");
 
     factory.registerOutputFormat("JSONStrings", [](
         WriteBuffer & buf,
@@ -169,6 +170,7 @@ void registerOutputFormatJSON(FormatFactory & factory)
 
     factory.markOutputFormatSupportsParallelFormatting("JSONStrings");
     factory.markFormatHasNoAppendSupport("JSONStrings");
+    factory.setContentType("JSONStrings", "application/json; charset=UTF-8");
 }
 
 }

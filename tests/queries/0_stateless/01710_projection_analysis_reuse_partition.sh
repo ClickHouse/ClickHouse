@@ -11,6 +11,6 @@ ${CLICKHOUSE_CLIENT} -q "insert into t select 'AAPL', toDateTime('2023-07-01') +
 
 CLICKHOUSE_CLIENT_DEBUG_LOG=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=debug/g')
 
-${CLICKHOUSE_CLIENT_DEBUG_LOG} -q "select count() from t where e >= '2023-11-08 00:00:00.000' and e < '2023-11-09 00:00:00.000' and s in ('AAPL') format Null" 2>&1 | grep -oh "Selected .* parts by partition key, *. parts by primary key, .* marks by primary key, .* marks to read from .* ranges.*$"
+${CLICKHOUSE_CLIENT_DEBUG_LOG} -q "select count() from t where e >= '2023-11-08 00:00:00.000' and e < '2023-11-09 00:00:00.000' and s in ('AAPL') settings optimize_use_projection_filtering = 1 format Null" 2>&1 | grep -oh "Selected .* parts by partition key, *. parts by primary key, .* marks by primary key, .* marks to read from .* ranges.*$"
 
 ${CLICKHOUSE_CLIENT} -q "drop table t"

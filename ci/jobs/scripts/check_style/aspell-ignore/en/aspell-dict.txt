@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3238
+personal_ws-1.1 en 3285 
 AArch
 ACLs
 ALTERs
@@ -28,6 +28,7 @@ Akka
 AlertManager
 Alexey
 AnyEvent
+Anthropic
 AppleClang
 Approximative
 ArrayJoin
@@ -82,6 +83,7 @@ BackupsIOThreads
 BackupsIOThreadsActive
 BackupsThreads
 BackupsThreadsActive
+Bech
 BestEffort
 BestEffortOrNull
 BestEffortOrZero
@@ -182,6 +184,7 @@ CloudAvailableBadge
 CloudDetails
 CloudNotSupportedBadge
 CloudStorage
+CoalescingMergeTree
 CodeBlock
 CodeLLDB
 Codecs
@@ -231,6 +234,7 @@ DESC
 DIEs
 DOGEFI
 Damerau
+Databricks
 DataGrip
 DataLens
 DataPacket
@@ -244,6 +248,7 @@ DatabaseOnDiskThreads
 DatabaseOnDiskThreadsActive
 DatabaseOrdinaryThreads
 DatabaseOrdinaryThreadsActive
+DataLakeCatalog
 DateTime
 DateTimeInputFormat
 DateTimeOutputFormat
@@ -263,6 +268,8 @@ DeprecatedBadge
 DestroyAggregatesThreads
 DestroyAggregatesThreadsActive
 DictCacheRequests
+DictionaryMaxUpdateDelay
+DictionaryTotalFailedUpdates
 DiskAvailable
 DiskObjectStorage
 DiskObjectStorageAsyncThreads
@@ -302,6 +309,7 @@ Ethereum
 ExactEdgeLengthKm
 ExactEdgeLengthM
 ExactEdgeLengthRads
+Excel's
 ExecutablePool
 ExperimentalBadge
 ExtType
@@ -334,8 +342,10 @@ FilesystemMainPathTotalINodes
 FilesystemMainPathUsedBytes
 FilesystemMainPathUsedINodes
 FixedString
+FixedStrings
 FlameGraph
 Flink
+FlyQL
 ForEach
 FreeBSD
 Fuzzer
@@ -576,6 +586,7 @@ LogsLevel
 Logstash
 LookML
 LoongArch
+Lossy
 LowCardinality
 LpDistance
 LpNorm
@@ -597,6 +608,7 @@ MSan
 MVCC
 MacBook
 MacOS
+Mainnet
 MapState
 MarkCacheBytes
 MarkCacheFiles
@@ -613,6 +625,7 @@ MaxThreads
 Mbps
 McNeal
 Memcheck
+memcheck
 MemoryCode
 MemoryDataAndStack
 MemoryResident
@@ -710,6 +723,9 @@ NumberOfDatabases
 NumberOfDetachedByUserParts
 NumberOfDetachedParts
 NumberOfTables
+NumericIndexedVector
+NumericIndexedVectors
+OAuth
 ODBCDriver
 OFNS
 OLAP
@@ -776,6 +792,7 @@ OpenSSL
 OpenSUSE
 OpenSky
 OpenStack
+OpenAI
 OpenTelemetry
 OrDefault
 OrNull
@@ -794,8 +811,6 @@ PagerDuty
 ParallelFormattingOutputFormatThreads
 ParallelFormattingOutputFormatThreadsActive
 ParallelParsingInputFormat
-ParallelParsingInputFormatThreads
-ParallelParsingInputFormatThreadsActive
 ParallelReplicasMode
 ParquetCompression
 ParquetMetadata
@@ -895,7 +910,9 @@ RWLockWaitingWriters
 RabbitMQ
 Rabl
 RangeHashed
+Raphson
 RawBLOB
+RawSum
 RawWithNames
 RawWithNamesAndTypes
 ReDoS
@@ -984,6 +1001,7 @@ Schemas
 Schwartzian
 SeasClick
 SeekTable
+SegWit
 SelfManaged
 Sematext
 SendExternalTables
@@ -1088,6 +1106,7 @@ TemporaryFilesForJoin
 TemporaryFilesForSort
 TemporaryFilesUnknown
 Testflows
+Testnet
 Tgz
 Theil's
 Theils
@@ -1196,6 +1215,8 @@ WriteBuffer
 WriteBuffers
 XCode
 XHTML
+XIRR
+XNPV
 XORs
 Xeon
 YAML
@@ -1387,6 +1408,7 @@ backupview
 balancer
 basename
 bcrypt
+bech
 benchmarked
 benchmarking
 bfloat
@@ -1431,6 +1453,7 @@ bitmaskToArray
 bitmaskToList
 bitov
 blake
+blobpath
 blockNumber
 blockSerializedSize
 blockSize
@@ -1469,6 +1492,8 @@ cardinalities
 cardinality
 cartesian
 caseWithExpression
+cashflow
+cashflows
 cassandra
 catboost
 catboostEvaluate
@@ -1818,6 +1843,10 @@ filesystemFree
 filesystemUnreserved
 filesystems
 finalizeAggregation
+financialInternalRateOfReturn
+financialInternalRateOfReturnExtended
+financialNetPresentValue
+financialNetPresentValueExtended
 fips
 firstLine
 firstSignficantSubdomain
@@ -1880,12 +1909,14 @@ geoToS
 geobase
 geobases
 geocode
+geocoding
 geohash
 geohashDecode
 geohashEncode
 geohashes
 geohashesInBox
 geoip
+geolocation
 geospatial
 getClientHTTPHeader
 getMacro
@@ -1937,6 +1968,7 @@ groupBitmapAnd
 groupBitmapOr
 groupBitmapXor
 groupConcat
+groupNumericIndexedVector
 groupUniqArray
 grouparray
 grouparrayinsertat
@@ -1954,13 +1986,14 @@ groupbitmapxor
 groupbitor
 groupbitxor
 groupconcat
+groupnumericindexedvector
 groupuniqarray
 grpc
 grpcio
 gtest
 gtid
-gzip
 gunzip
+gzip
 gzipped
 hadoop
 halfMD
@@ -2017,6 +2050,7 @@ iTerm
 icebergCluster
 icosahedron
 icudata
+idelta
 idempotency
 idnaDecode
 idnaEncode
@@ -2054,12 +2088,14 @@ intervalLengthSum
 invalidCertificateHandler
 invariants
 invertedindexes
+irate
 isConstant
 isDecimalOverflow
 isFinite
 isIPAddressInRange
 isIPv
 isInfinite
+isMergeTreePartCoveredBy
 isNaN
 isNotDistinctFrom
 isNotNull
@@ -2190,6 +2226,7 @@ loghouse
 london
 lookups
 loongarch
+lossy
 lowCardinalityIndices
 lowCardinalityKeys
 lowcardinality
@@ -2245,6 +2282,7 @@ mebibytes
 memtable
 memtables
 mergeTreeIndex
+mergeTreePartInfo
 mergeTreeProjection
 mergeable
 mergetree
@@ -2346,9 +2384,9 @@ namespaces
 natively
 nats
 ncat
-netcat
 ness
 nestjs
+netcat
 netloc
 newjson
 ngram
@@ -2400,6 +2438,23 @@ nullable
 nullables
 nullptr
 num
+numericIndexedVector
+numericIndexedVectorAllValueSum
+numericIndexedVectorBuild
+numericIndexedVectorCardinality
+numericIndexedVectorGetValue
+numericIndexedVectorPointwiseAdd
+numericIndexedVectorPointwiseDivide
+numericIndexedVectorPointwiseEqual
+numericIndexedVectorPointwiseGreater
+numericIndexedVectorPointwiseGreaterEqual
+numericIndexedVectorPointwiseLess
+numericIndexedVectorPointwiseLessEqual
+numericIndexedVectorPointwiseMultiply
+numericIndexedVectorPointwiseNotEqual
+numericIndexedVectorPointwiseSubtract
+numericIndexedVectorShortDebugString
+numericIndexedVectorToMap
 numerics
 nypd
 obfuscator
@@ -2467,6 +2522,7 @@ plantuml
 poco
 pointInEllipses
 pointInPolygon
+pointwise
 polygonAreaCartesian
 polygonAreaSpherical
 polygonConvexHullCartesian
@@ -2477,6 +2533,8 @@ polygonsDistanceSpherical
 polygonsEqualsCartesian
 polygonsIntersectionCartesian
 polygonsIntersectionSpherical
+polygonsIntersectCartesian
+polygonsIntersectSpherical
 polygonsSymDifferenceCartesian
 polygonsSymDifferenceSpherical
 polygonsUnionCartesian
@@ -2622,6 +2680,11 @@ randomStringUTF
 rankCorr
 rapidjson
 rawblob
+readWKBLineString
+readWKBMultiLineString
+readWKBMultiPolygon
+readWKBPoint
+readWKBPolygon
 readWKTLineString
 readWKTMultiLineString
 readWKTMultiPolygon
@@ -2737,6 +2800,8 @@ satisfiable
 scala
 sccache
 schemas
+searchAny
+searchAll
 seekable
 seektable
 sequenceCount
@@ -2968,7 +3033,13 @@ throwIf
 throwif
 timeDiff
 timeSeriesData
+timeSeriesDeltaToGrid
 timeSeriesMetrics
+timeSeriesInstantDeltaToGrid
+timeSeriesInstantRateToGrid
+timeSeriesLastTwoSamples
+timeSeriesRateToGrid
+timeSeriesResampleToGridWithStaleness
 timeSeriesTags
 timeSlot
 timeSlots
@@ -3075,6 +3146,7 @@ toYear
 toYearWeek
 tokenbf
 tokenization
+tokenize
 tokenized
 tokenizer
 toml

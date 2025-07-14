@@ -66,6 +66,13 @@ public:
       */
     MergeTreeTemporaryPartPtr writeTempPart(BlockWithPartition & block, StorageMetadataPtr metadata_snapshot, ContextPtr context);
 
+    MergeTreeTemporaryPartPtr writeTempPatchPart(
+        BlockWithPartition & block,
+        StorageMetadataPtr metadata_snapshot,
+        String partition_id,
+        SourcePartsSetForPatch source_parts_set,
+        ContextPtr context);
+
     MergeTreeData::MergingParams::Mode getMergingMode() const
     {
         return data.merging_params.mode;
@@ -101,6 +108,7 @@ private:
         BlockWithPartition & block_with_partition,
         StorageMetadataPtr metadata_snapshot,
         String partition_id,
+        SourcePartsSetForPatch source_parts_set,
         ContextPtr context,
         UInt64 block_number);
 

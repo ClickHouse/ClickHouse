@@ -1,7 +1,7 @@
 # See https://doc.rust-lang.org/nightly/rustc/platform-support.html
 
-function(set_rust_target)
-    if(DEFINED CMAKE_TOOLCHAIN_FILE)
+macro(set_rust_target)
+    if(DEFINED CMAKE_TOOLCHAIN_FILE AND NOT DEFINED Rust_CARGO_TARGET)
         if(CMAKE_TOOLCHAIN_FILE MATCHES "ppc64le")
             set(Rust_CARGO_TARGET "powerpc64le-unknown-linux-gnu" CACHE INTERNAL "Rust config")
         elseif((CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-x86_64") AND (CMAKE_TOOLCHAIN_FILE MATCHES "musl"))
@@ -25,28 +25,50 @@ function(set_rust_target)
         endif()
         message(STATUS "Set Rust target to ${Rust_CARGO_TARGET}")
     endif ()
-endfunction()
+
+    # FindRust.cmake
+    set(RUST_MODULE_PATH "${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake")
+    if (NOT "${RUST_MODULE_PATH}" IN_LIST "${CMAKE_MODULE_PATH}")
+        list (APPEND CMAKE_MODULE_PATH "${RUST_MODULE_PATH}")
+    endif()
+endmacro()
+
+# Keep in sync with toolchain in docker images
+# (must be called before find_package(Rust) and inclusion of Corrosion.cmake)
+set(Rust_TOOLCHAIN "nightly-2025-07-07")
+
+macro(find_rust)
+    set_rust_target()
+    if (NOT DEFINED Rust_FOUND)
+        find_package(Rust)
+    endif()
+    if (NOT Rust_FOUND)
+        message(${RECONFIGURE_MESSAGE_LEVEL} "Cannot find ${Rust_TOOLCHAIN} Rust toolchain. You can install it with 'rustup toolchain install ${Rust_TOOLCHAIN}'")
+    endif()
+endmacro()
 
 if (NOT ENABLE_LIBRARIES)
-  set(DEFAULT_ENABLE_RUST FALSE)
+    set(DEFAULT_ENABLE_RUST FALSE)
 elseif (NOT DEFINED ENABLE_RUST)
-  set_rust_target()
-  list (APPEND CMAKE_MODULE_PATH "${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake")
-  find_package(Rust)
-  set(DEFAULT_ENABLE_RUST ${Rust_FOUND})
+    find_rust()
+    set(DEFAULT_ENABLE_RUST ${Rust_FOUND})
 else()
-  set(DEFAULT_ENABLE_RUST TRUE)
+    if (ENABLE_RUST)
+        # Give a sensible warning if Rust is not available
+        find_rust()
+        set(DEFAULT_ENABLE_RUST TRUE)
+    else()
+        set(DEFAULT_ENABLE_RUST FALSE)
+    endif()
 endif()
 
 option(ENABLE_RUST "Enable rust" ${DEFAULT_ENABLE_RUST})
 if(NOT ENABLE_RUST)
-  message(STATUS "Not using rust")
-  return()
+    message(STATUS "Not using Rust")
+    return()
 endif()
 
-# FindRust.cmake
 set_rust_target()
-list(APPEND CMAKE_MODULE_PATH "${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake")
 # Define function corrosion_import_crate()
 include ("${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake/Corrosion.cmake")
 
@@ -86,13 +108,22 @@ endif()
 
 # Note that RUSTFLAGS_CPU is defined in cpu_features.cmake
 set(RUSTFLAGS ${RUSTFLAGS_CPU})
-if (CMAKE_OSX_DEPLOYMENT_TARGET)
-    list(APPEND RUSTFLAGS "-C" "link-arg=-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
-endif()
 
 # Otherwise /usr/bin/ld will not be able to link our openssl build (built with lld) to openssl rust wrapper (built ld)
 if (LINKER_NAME MATCHES "lld")
     list(APPEND RUSTFLAGS "-C" "link-arg=-fuse-ld=lld")
+endif()
+
+if (CMAKE_OSX_SYSROOT)
+    list(APPEND RUSTFLAGS "-C" "link-arg=-isysroot")
+    list(APPEND RUSTFLAGS "-C" "link-arg=${CMAKE_OSX_SYSROOT}")
+elseif(CMAKE_SYSROOT)
+    list(APPEND RUSTFLAGS "-C" "link-arg=--sysroot")
+    list(APPEND RUSTFLAGS "-C" "link-arg=${CMAKE_SYSROOT}")
+endif()
+
+if (TOOLCHAIN_PATH)
+    list(APPEND RUSTFLAGS "-C" "link-arg=--gcc-toolchain=${TOOLCHAIN_PATH}")
 endif()
 
 set(RUST_CARGO_BUILD_STD "")
@@ -105,6 +136,13 @@ elseif (SANITIZE STREQUAL "thread")
     list(APPEND RUSTFLAGS "-Zsanitizer=thread")
 endif()
 
+list(APPEND RUSTFLAGS
+    # Suppress warnings in delta-kernel-rs
+    "-Adead_code"
+    # Suppress warnings in skim
+    "-Amismatched_lifetime_syntaxes"
+)
+
 list(JOIN RUSTFLAGS " " RUSTFLAGS)
 
 message(STATUS "RUST_CFLAGS: ${RUST_CFLAGS}")
@@ -116,7 +154,7 @@ set(RUST_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../rust_vendor")
 
 # We now prepare a custom config.toml with all the flags and add it to cargo via flags
 configure_file("config.toml.in" "config.toml" @ONLY)
-set (RUST_CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/config.toml" CACHE INTERNAL "Rust config")
+set(RUST_CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/config.toml" CACHE INTERNAL "Rust config")
 set(RUST_CFLAGS ${RUST_CFLAGS} CACHE INTERNAL "Rust config")
 set(RUST_CXXFLAGS ${RUST_CXXFLAGS} CACHE INTERNAL "Rust config")
 set(RUSTFLAGS "${RUSTFLAGS}" CACHE INTERNAL "Rust config")
@@ -156,6 +194,9 @@ function(clickhouse_config_crate_flags target_name)
     corrosion_set_env_vars(${target_name} "CXXFLAGS=${RUST_CXXFLAGS}")
     corrosion_set_env_vars(${target_name} "RUSTFLAGS=${RUSTFLAGS}")
     corrosion_set_env_vars(${target_name} "RUSTDOCFLAGS=${RUSTFLAGS}")
+    if (CMAKE_OSX_SYSROOT)
+        corrosion_set_env_vars(${target_name} "SDKROOT=${CMAKE_OSX_SYSROOT}")
+    endif()
 
     # sccache seems to be broken and mixes up builds
     if (NOT "${RUSTCWRAPPER}" STREQUAL "")
@@ -165,4 +206,12 @@ function(clickhouse_config_crate_flags target_name)
     if (NOT "${RUST_CARGO_BUILD_STD}" STREQUAL "")
         corrosion_set_cargo_flags(${target_name} "${RUST_CARGO_BUILD_STD}")
     endif()
+
+    # See [1] for more details, but basically:
+    # - we need to explicitly set CXXSTDLIB to avoid using of libstdc++
+    # - link with the library explicitly to add search path (-L)
+    #
+    #   [1]: https://github.com/rust-lang/cc-rs/blob/7666d4f4f36d3bcacce9ab72fc6538fcc0ea1716/src/lib.rs#L762-L775
+    corrosion_set_env_vars(${target_name} "CXXSTDLIB=cxx")
+    corrosion_link_libraries(${target_name} cxx)
 endfunction()

@@ -306,10 +306,24 @@ IMPLEMENT_SETTING_ENUM(
      {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE}})
 
 IMPLEMENT_SETTING_ENUM(
+    FileCachePolicy,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"lru", FileCachePolicy::LRU},
+     {"LRU", FileCachePolicy::LRU},
+     {"slru", FileCachePolicy::SLRU},
+     {"SLRU", FileCachePolicy::SLRU}})
+
+IMPLEMENT_SETTING_ENUM(
     VectorSearchFilterStrategy,
     ErrorCodes::BAD_ARGUMENTS,
     {{"auto", VectorSearchFilterStrategy::AUTO},
      {"prefilter", VectorSearchFilterStrategy::PREFILTER},
      {"postfilter", VectorSearchFilterStrategy::POSTFILTER}})
+
+IMPLEMENT_SETTING_ENUM(
+    GeoToH3ArgumentOrder,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"lat_lon", GeoToH3ArgumentOrder::LAT_LON},
+     {"lon_lat", GeoToH3ArgumentOrder::LON_LAT}})
 
 }

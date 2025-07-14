@@ -1,9 +1,10 @@
-#include <Processors/Formats/Impl/TemplateBlockOutputFormat.h>
-#include <Formats/FormatFactory.h>
-#include <Formats/EscapingRuleUtils.h>
 #include <Columns/IColumn.h>
-#include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Formats/EscapingRuleUtils.h>
+#include <Formats/FormatFactory.h>
+#include <Formats/FormatSettings.h>
+#include <IO/WriteHelpers.h>
+#include <Processors/Formats/Impl/TemplateBlockOutputFormat.h>
 #include <Processors/Port.h>
 
 
@@ -228,9 +229,15 @@ void registerOutputFormatTemplate(FormatFactory & factory)
         {
             /// Read format string from file
             resultset_format = ParsedTemplateFormatString(
-                    FormatSchemaInfo(settings.template_settings.resultset_format, "Template", false,
-                            settings.schema.is_server, settings.schema.format_schema_path),
-                    idx_resultset_by_name);
+                FormatSchemaInfo(
+                    /*format_schema_source=*/FormatSettings::FORMAT_SCHEMA_SOURCE_FILE,
+                    /*format_schema=*/settings.template_settings.resultset_format,
+                    /*format_schema_message_name=*/"",
+                    /*format=*/"Template",
+                    /*require_message=*/false,
+                    /*is_server=*/settings.schema.is_server,
+                    /*format_schema_path=*/settings.schema.format_schema_path),
+                idx_resultset_by_name);
             if (!settings.template_settings.resultset_format_template.empty())
             {
                 throw Exception(DB::ErrorCodes::INVALID_TEMPLATE_FORMAT, "Expected either format_template_resultset or format_template_resultset_format, but not both");
@@ -250,8 +257,14 @@ void registerOutputFormatTemplate(FormatFactory & factory)
         else
         {
             row_format = ParsedTemplateFormatString(
-                FormatSchemaInfo(settings.template_settings.row_format, "Template", false,
-                        settings.schema.is_server, settings.schema.format_schema_path),
+                FormatSchemaInfo(
+                    /*format_schema_source=*/FormatSettings::FORMAT_SCHEMA_SOURCE_FILE,
+                    /*format_schema=*/settings.template_settings.row_format,
+                    /*format_schema_message_name=*/"",
+                    /*format=*/"Template",
+                    /*require_message=*/false,
+                    /*is_server=*/settings.schema.is_server,
+                    /*format_schema_path=*/settings.schema.format_schema_path),
                 idx_row_by_name);
             if (!settings.template_settings.row_format_template.empty())
             {
@@ -266,12 +279,15 @@ void registerOutputFormatTemplate(FormatFactory & factory)
         if (settings.template_settings.resultset_format.empty())
             return true;
         auto resultset_format = ParsedTemplateFormatString(
-            FormatSchemaInfo(settings.template_settings.resultset_format, "Template", false,
-                             settings.schema.is_server, settings.schema.format_schema_path),
-            [&](const String & partName)
-            {
-                return static_cast<size_t>(TemplateBlockOutputFormat::stringToResultsetPart(partName));
-            });
+            FormatSchemaInfo(
+                /*format_schema_source=*/FormatSettings::FORMAT_SCHEMA_SOURCE_FILE,
+                /*format_schema=*/settings.template_settings.resultset_format,
+                /*format_schema_message_name=*/"",
+                /*format=*/"Template",
+                /*require_message=*/false,
+                /*is_server=*/settings.schema.is_server,
+                /*format_schema_path=*/settings.schema.format_schema_path),
+            [&](const String & partName) { return static_cast<size_t>(TemplateBlockOutputFormat::stringToResultsetPart(partName)); });
         return resultset_format.delimiters.empty() || resultset_format.delimiters.back().empty();
     });
 }

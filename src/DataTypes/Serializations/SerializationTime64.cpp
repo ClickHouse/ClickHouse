@@ -13,6 +13,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_PARSE_DATETIME;
+    extern const int CANNOT_PARSE_NUMBER;
+}
+
+
 SerializationTime64::SerializationTime64(
     UInt32 scale_, const TimezoneMixin & time_zone_)
     : SerializationDecimalBase<Time64>(DecimalUtils::max_precision<Time64>, scale_)
@@ -139,12 +146,34 @@ void SerializationTime64::deserializeTextQuoted(IColumn & column, ReadBuffer & i
     Time64 x = 0;
     if (checkChar('\'', istr)) /// Cases: '18:36:48' or '1504193808'
     {
-        readText(x, scale, istr, settings, time_zone, utc_time_zone);
-        assertChar('\'', istr);
+        try
+        {
+            readText(x, scale, istr, settings, time_zone, utc_time_zone);
+            assertChar('\'', istr);
+        }
+        catch (const Exception &)
+        {
+            throw;
+        }
+        catch (...)
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse Time64 value");
+        }
     }
     else
     {
-        readIntText(x, istr);
+        try
+        {
+            readIntText(x, istr);
+        }
+        catch (const Exception &)
+        {
+            throw;
+        }
+        catch (...)
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse Time64 value as number");
+        }
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }

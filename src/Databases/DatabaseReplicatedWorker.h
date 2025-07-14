@@ -39,6 +39,8 @@ public:
 
     UInt64 getCurrentInitializationDurationMs() const;
 
+    bool isUnsyncedAfterRecovery() const { return unsynced_after_recovery; }
+
 private:
     bool initializeMainThread() override;
     void initializeReplication() override;
@@ -59,7 +61,7 @@ private:
 
     String current_task;
     std::atomic<UInt32> logs_to_keep = std::numeric_limits<UInt32>::max();
-
+    std::atomic_bool unsynced_after_recovery = false;
 
     /// EphemeralNodeHolder has reference to ZooKeeper, it may become dangling
     ZooKeeperPtr active_node_holder_zookeeper;

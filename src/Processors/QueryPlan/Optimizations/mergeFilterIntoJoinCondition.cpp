@@ -9,6 +9,8 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinInfo.h>
 
+#include <Planner/Utils.h>
+
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -48,40 +50,6 @@ auto getInputNodes(const ActionsDAG & filter_dag, const Names & allowed_inputs_n
     }
 
     return allowed_nodes;
-}
-
-ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate)
-{
-    /// Parts of predicate in case predicate is conjunction (or just predicate itself).
-    ActionsDAG::NodeRawConstPtrs conjuncts;
-    {
-        std::vector<const ActionsDAG::Node *> stack;
-        std::unordered_set<const ActionsDAG::Node *> visited_nodes;
-        stack.push_back(predicate);
-        visited_nodes.insert(predicate);
-        while (!stack.empty())
-        {
-            const auto * node = stack.back();
-            stack.pop_back();
-            bool is_conjunction = node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and";
-            if (is_conjunction)
-            {
-                for (const auto & child : node->children)
-                {
-                    if (!visited_nodes.contains(child))
-                    {
-                        visited_nodes.insert(child);
-                        stack.push_back(child);
-                    }
-                }
-            }
-            else if (node->type == ActionsDAG::ActionType::ALIAS)
-                stack.push_back(node->children.front());
-            else
-                conjuncts.push_back(node);
-        }
-    }
-    return conjuncts;
 }
 
 enum class ExpressionSide : uint8_t

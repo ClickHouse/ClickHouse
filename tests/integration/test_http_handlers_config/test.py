@@ -648,3 +648,31 @@ def test_replicas_status_handler():
                 "test_replicas_status", method="GET", headers={"XXX": "xxx"}
             ).content
         )
+
+
+def test_headers_in_response():
+    with contextlib.closing(
+            SimpleCluster(
+                ClickHouseCluster(__file__), "headers_in_response", "test_headers_in_response"
+            )
+    ) as cluster:
+        for endpoint in ("static", "ping", "replicas_status", "play", "dashboard", "binary", "merges", "metrics",
+                         "js/lz-string.js", "js/uplot.js", "?query=SELECT%201"):
+            response = cluster.instance.http_request(endpoint, method="GET")
+
+            assert "X-My-Answer" in response.headers
+            assert "X-My-Common-Header" in response.headers
+
+            assert response.headers["X-My-Common-Header"] == "Common header present"
+
+            if endpoint == "?query=SELECT%201":
+                assert response.headers["X-My-Answer"] == "Iam dynamic"
+            else:
+                assert response.headers["X-My-Answer"] == f"Iam {endpoint}"
+
+
+        # Handle predefined_query_handler separately because we need to pass headers there
+        response_predefined = cluster.instance.http_request(
+            "query_param_with_url", method="GET", headers={"PARAMS_XXX": "test_param"})
+        assert response_predefined.headers["X-My-Answer"] == f"Iam predefined"
+        assert response_predefined.headers["X-My-Common-Header"] == "Common header present"
