@@ -582,7 +582,7 @@ void Pipe::addSimpleTransform(const ProcessorGetterSharedHeaderWithStreamKind & 
     if (output_ports.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add simple transform to empty Pipe.");
 
-    Block new_header;
+    SharedHeader new_header;
 
     auto add_transform = [&](OutputPort *& port, StreamType stream_type)
     {
@@ -608,11 +608,10 @@ void Pipe::addSimpleTransform(const ProcessorGetterSharedHeaderWithStreamKind & 
                     transform->getOutputs().size());
         }
 
-        const auto & out_header = transform ? transform->getOutputs().front().getHeader()
-                                            : port->getHeader();
+        const auto & out_header = transform ? transform->getOutputs().front().getSharedHeader() : port->getSharedHeader();
 
         if (new_header)
-            assertBlocksHaveEqualStructure(new_header, out_header, "QueryPipeline");
+            assertBlocksHaveEqualStructure(*new_header, *out_header, "QueryPipeline");
         else
             new_header = out_header;
 
@@ -634,7 +633,7 @@ void Pipe::addSimpleTransform(const ProcessorGetterSharedHeaderWithStreamKind & 
     add_transform(totals_port, StreamType::Totals);
     add_transform(extremes_port, StreamType::Extremes);
 
-    header = std::make_shared<const Block>(std::move(new_header));
+    header = new_header;
 }
 
 void Pipe::addSimpleTransform(const ProcessorGetterSharedHeader & getter)
