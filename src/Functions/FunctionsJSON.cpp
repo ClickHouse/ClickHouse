@@ -86,7 +86,7 @@ concept Preparable = requires (T t)
 class FunctionJSONHelpers
 {
 public:
-    template <typename Name, template<typename> typename Impl, class JSONParser>
+    template <typename Name, template<typename> typename Impl, class JSONParser, bool case_insensitive = false>
     class Executor
     {
     public:
@@ -158,7 +158,7 @@ public:
                     /// Perform moves.
                     Element element;
                     std::string_view last_key;
-                    bool moves_ok = performMoves<JSONParser>(arguments, i, document, moves, element, last_key);
+                    bool moves_ok = performMoves<JSONParser, case_insensitive>(arguments, i, document, moves, element, last_key);
 
                     if (moves_ok)
                         added_to_column = impl.insertResultToColumn(*to, element, last_key, format_settings, error);
@@ -232,7 +232,7 @@ private:
 
 
     /// Performs moves of types MoveType::Index and MoveType::ConstIndex.
-    template <typename JSONParser>
+    template <typename JSONParser, bool case_insensitive = false>
     static bool performMoves(const ColumnsWithTypeAndName & arguments, size_t row,
                              const typename JSONParser::Element & document, const std::vector<Move> & moves,
                              typename JSONParser::Element & element, std::string_view & last_key)
@@ -253,8 +253,16 @@ private:
                 case MoveType::ConstKey:
                 {
                     key = moves[j].key;
-                    if (!moveToElementByKey<JSONParser>(res_element, key))
-                        return false;
+                    if constexpr (case_insensitive)
+                    {
+                        if (!moveToElementByKeyCaseInsensitive<JSONParser>(res_element, key))
+                            return false;
+                    }
+                    else
+                    {
+                        if (!moveToElementByKey<JSONParser>(res_element, key))
+                            return false;
+                    }
                     break;
                 }
                 case MoveType::Index:
@@ -267,8 +275,16 @@ private:
                 case MoveType::Key:
                 {
                     key = arguments[j + 1].column->getDataAt(row).toView();
-                    if (!moveToElementByKey<JSONParser>(res_element, key))
-                        return false;
+                    if constexpr (case_insensitive)
+                    {
+                        if (!moveToElementByKeyCaseInsensitive<JSONParser>(res_element, key))
+                            return false;
+                    }
+                    else
+                    {
+                        if (!moveToElementByKey<JSONParser>(res_element, key))
+                            return false;
+                    }
                     break;
                 }
             }
@@ -327,6 +343,16 @@ private:
         return object.find(key, element);
     }
 
+    /// Performs case-insensitive moves of types MoveType::Key and MoveType::ConstKey.
+    template <typename JSONParser>
+    static bool moveToElementByKeyCaseInsensitive(typename JSONParser::Element & element, std::string_view key)
+    {
+        if (!element.isObject())
+            return false;
+        auto object = element.getObject();
+        return object.findCaseInsensitive(key, element);
+    }
+
     static size_t calculateMaxSize(const ColumnString::Offsets & offsets)
     {
         size_t max_size = 0;
@@ -363,7 +389,7 @@ constexpr bool functionForcesTheReturnType()
     return std::is_same_v<Impl<void>, JSONExtractImpl<void>> || std::is_same_v<Impl<void>, JSONExtractKeysAndValuesImpl<void>>;
 }
 
-template <typename Name, template<typename> typename Impl>
+template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
 class ExecutableFunctionJSON : public IExecutableFunction
 {
 
@@ -434,13 +460,13 @@ private:
     {
 #if USE_SIMDJSON
         if (allow_simdjson)
-            return FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count, format_settings);
+            return FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser, case_insensitive>::run(arguments, result_type, input_rows_count, format_settings);
 #endif
 
 #if USE_RAPIDJSON
-        return FunctionJSONHelpers::Executor<Name, Impl, RapidJSONParser>::run(arguments, result_type, input_rows_count, format_settings);
+        return FunctionJSONHelpers::Executor<Name, Impl, RapidJSONParser, case_insensitive>::run(arguments, result_type, input_rows_count, format_settings);
 #else
-        return FunctionJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count, format_settings);
+        return FunctionJSONHelpers::Executor<Name, Impl, DummyJSONParser, case_insensitive>::run(arguments, result_type, input_rows_count, format_settings);
 #endif
     }
 
@@ -451,7 +477,7 @@ private:
 };
 
 
-template <typename Name, template<typename> typename Impl>
+template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
 class FunctionBaseFunctionJSON : public IFunctionBase
 {
 public:
@@ -487,7 +513,7 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<ExecutableFunctionJSON<Name, Impl>>(null_presence, allow_simdjson, json_return_type, format_settings);
+        return std::make_unique<ExecutableFunctionJSON<Name, Impl, case_insensitive>>(null_presence, allow_simdjson, json_return_type, format_settings);
     }
 
 private:
@@ -501,7 +527,7 @@ private:
 
 /// We use IFunctionOverloadResolver instead of IFunction to handle non-default NULL processing.
 /// Both NULL and JSON NULL should generate NULL value. If any argument is NULL, return NULL.
-template <typename Name, template<typename> typename Impl>
+template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
 class JSONOverloadResolver : public IFunctionOverloadResolver, WithContext
 {
 public:
@@ -546,7 +572,7 @@ public:
         argument_types.reserve(arguments.size());
         for (const auto & argument : arguments)
             argument_types.emplace_back(argument.type);
-        return std::make_unique<FunctionBaseFunctionJSON<Name, Impl>>(
+        return std::make_unique<FunctionBaseFunctionJSON<Name, Impl, case_insensitive>>(
             null_presence, getContext()->getSettingsRef()[Setting::allow_simdjson], argument_types, return_type, json_return_type, getFormatSettings(getContext()));
     }
 };
@@ -567,6 +593,16 @@ struct NameJSONExtractRaw { static constexpr auto name{"JSONExtractRaw"}; };
 struct NameJSONExtractArrayRaw { static constexpr auto name{"JSONExtractArrayRaw"}; };
 struct NameJSONExtractKeysAndValuesRaw { static constexpr auto name{"JSONExtractKeysAndValuesRaw"}; };
 struct NameJSONExtractKeys { static constexpr auto name{"JSONExtractKeys"}; };
+
+// Case-insensitive variants
+struct NameJSONExtractIntCaseInsensitive { static constexpr auto name{"JSONExtractIntCaseInsensitive"}; };
+struct NameJSONExtractUIntCaseInsensitive { static constexpr auto name{"JSONExtractUIntCaseInsensitive"}; };
+struct NameJSONExtractFloatCaseInsensitive { static constexpr auto name{"JSONExtractFloatCaseInsensitive"}; };
+struct NameJSONExtractBoolCaseInsensitive { static constexpr auto name{"JSONExtractBoolCaseInsensitive"}; };
+struct NameJSONExtractStringCaseInsensitive { static constexpr auto name{"JSONExtractStringCaseInsensitive"}; };
+struct NameJSONExtractCaseInsensitive { static constexpr auto name{"JSONExtractCaseInsensitive"}; };
+struct NameJSONExtractKeysAndValuesCaseInsensitive { static constexpr auto name{"JSONExtractKeysAndValuesCaseInsensitive"}; };
+struct NameJSONExtractRawCaseInsensitive { static constexpr auto name{"JSONExtractRawCaseInsensitive"}; };
 
 
 template <typename JSONParser>
@@ -1095,6 +1131,16 @@ REGISTER_FUNCTION(JSON)
     factory.registerFunction<JSONOverloadResolver<NameJSONExtractArrayRaw, JSONExtractArrayRawImpl>>();
     factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysAndValuesRaw, JSONExtractKeysAndValuesRawImpl>>();
     factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeys, JSONExtractKeysImpl>>();
+
+    // Register case-insensitive variants
+    factory.registerFunction<JSONOverloadResolver<NameJSONExtractIntCaseInsensitive, JSONExtractInt64Impl, true>>();
+    factory.registerFunction<JSONOverloadResolver<NameJSONExtractUIntCaseInsensitive, JSONExtractUInt64Impl, true>>();
+    factory.registerFunction<JSONOverloadResolver<NameJSONExtractFloatCaseInsensitive, JSONExtractFloat64Impl, true>>();
+    factory.registerFunction<JSONOverloadResolver<NameJSONExtractBoolCaseInsensitive, JSONExtractBoolImpl, true>>();
+    factory.registerFunction<JSONOverloadResolver<NameJSONExtractStringCaseInsensitive, JSONExtractStringImpl, true>>();
+    factory.registerFunction<JSONOverloadResolver<NameJSONExtractCaseInsensitive, JSONExtractImpl, true>>();
+    factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysAndValuesCaseInsensitive, JSONExtractKeysAndValuesImpl, true>>();
+    factory.registerFunction<JSONOverloadResolver<NameJSONExtractRawCaseInsensitive, JSONExtractRawImpl, true>>();
 }
 
 }
