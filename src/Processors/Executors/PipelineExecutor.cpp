@@ -337,7 +337,8 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
             try
             {
                 /// Upscale if possible.
-                spawnThreads();
+                if (pool)
+                    spawnThreads();
             }
             catch (...)
             {
