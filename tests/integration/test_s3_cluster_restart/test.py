@@ -252,7 +252,7 @@ def test_insert_select(started_cluster, wait_restart, missing_table):
     uuid = str(uuid4())
     node1.query(
         f"""
-        INSERT INTO t_rmt_target SELECT * FROM s3Cluster(
+        INSERT INTO {table} SELECT * FROM s3Cluster(
             'cluster_simple',
             'http://minio1:9001/root/data/generated/*.csv', 'minio', '{minio_secret_key}', 'CSV','a String, b UInt64'
         ) SETTINGS parallel_distributed_insert_select=1;
@@ -264,7 +264,7 @@ def test_insert_select(started_cluster, wait_restart, missing_table):
     assert (
         int(
             node1.query(
-                """SELECT count(*) FROM t_rmt_target;"""
+                f"""SELECT count(*) FROM {table};"""
             ).strip()
         )
         != 0
@@ -279,5 +279,5 @@ def test_insert_select(started_cluster, wait_restart, missing_table):
         node2.wait_for_start(30)
 
     node1.query(
-        """DROP TABLE IF EXISTS t_rmt_target ON CLUSTER 'cluster_simple' SYNC;"""
+        f"""DROP TABLE IF EXISTS {table} ON CLUSTER 'cluster_simple' SYNC;"""
     )
