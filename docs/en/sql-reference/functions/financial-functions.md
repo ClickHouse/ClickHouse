@@ -1,12 +1,11 @@
 ---
 description: 'Documentation for Financial Functions'
 sidebar_label: 'Financial'
-sidebar_position: 125
 slug: /sql-reference/functions/financial-functions
 title: 'Financial Functions'
 ---
 
-# Financial Functions
+# Financial functions
 
 ## financialInternalRateOfReturn {#financialInternalRateOfReturn}
 

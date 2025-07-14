@@ -605,6 +605,10 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     if (settings[Setting::parallel_distributed_insert_select] != 2)
         return {};
 
+    // NOTE: should we limit it more here?
+    if (auto storage = getTable(query); storage->isMergeTree() && !storage->supportsReplication())
+        return {};
+
     const auto & select_query = query.select->as<ASTSelectWithUnionQuery &>();
     const auto & selects = select_query.list_of_selects->children;
     if (selects.size() > 1)

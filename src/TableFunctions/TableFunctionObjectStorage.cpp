@@ -52,7 +52,7 @@ ObjectStoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_l
 }
 
 template <typename Definition, typename Configuration, bool is_data_lake>
-StorageObjectStorage::ConfigurationPtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::getConfiguration() const
+StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::getConfiguration() const
 {
     if (!configuration)
     {
