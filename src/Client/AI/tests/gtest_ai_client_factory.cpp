@@ -68,8 +68,9 @@ TEST(AIClientFactory, EmptyAPIKey)
     {
         // If env var is set, it should use that and not throw
         EXPECT_NO_THROW({
-            auto client = AIClientFactory::createClient(config);
-            EXPECT_TRUE(client.provider_name() == "openai");
+            auto result = AIClientFactory::createClient(config);
+            EXPECT_TRUE(result.client.provider_name() == "openai");
+            EXPECT_TRUE(result.inferred_from_env);
         });
     }
 }
@@ -142,16 +143,18 @@ TEST(AIClientFactory, SpecialCharactersInAPIKey)
     
     // Should not throw - API keys can contain special characters
     EXPECT_NO_THROW({
-        auto client = AIClientFactory::createClient(config);
-        EXPECT_TRUE(client.is_valid());
+        auto result = AIClientFactory::createClient(config);
+        EXPECT_TRUE(result.client.is_valid());
+        EXPECT_FALSE(result.inferred_from_env);
     });
     
     // Test API key with unicode characters
     config.api_key = "sk-测试-κλειδί-ключ";
     
     EXPECT_NO_THROW({
-        auto client = AIClientFactory::createClient(config);
-        EXPECT_TRUE(client.is_valid());
+        auto result = AIClientFactory::createClient(config);
+        EXPECT_TRUE(result.client.is_valid());
+        EXPECT_FALSE(result.inferred_from_env);
     });
 }
 
@@ -179,9 +182,10 @@ TEST(AIClientFactory, CreateRealClient)
     
     // Should not throw
     EXPECT_NO_THROW({
-        auto client = AIClientFactory::createClient(config);
-        EXPECT_TRUE(client.is_valid());
-        EXPECT_EQ(config.provider, client.provider_name());
+        auto result = AIClientFactory::createClient(config);
+        EXPECT_TRUE(result.client.is_valid());
+        EXPECT_EQ(config.provider, result.client.provider_name());
+        EXPECT_FALSE(result.inferred_from_env);
     });
 }
 

@@ -2860,6 +2860,12 @@ bool ClientBase::processQueryText(const String & text)
             return true;
         }
 
+        // Check if AI provider usage needs acknowledgment from user
+        if (!checkAIProviderAcknowledgment())
+        {
+            return true;
+        }
+
         try
         {
             std::string generated_sql = ai_generator->generateSQL(free_text);
@@ -3003,13 +3009,20 @@ void ClientBase::initAIProvider()
     try {
         AIConfiguration ai_config = AIClientFactory::loadConfiguration(getClientConfiguration());
 
+        // Create the AI client and get metadata about how it was created
+        AIClientResult ai_result = AIClientFactory::createClient(ai_config);
+
+        // Store metadata for later use
+        ai_inferred_from_env = ai_result.inferred_from_env;
+        ai_provider_name = ai_result.provider;
+
         // Create a query executor that uses the connection
         auto query_executor = [this](const std::string & query) -> std::string
         {
             return executeQueryForSingleString(query);
         };
 
-        ai_generator = std::make_unique<AISQLGenerator>(ai_config, query_executor, error_stream);
+        ai_generator = std::make_unique<AISQLGenerator>(ai_config, std::move(ai_result.client), query_executor, error_stream);
     }
     catch (const std::exception & e)
     {
@@ -3087,6 +3100,38 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
     {
         return "";
     }
+}
+
+bool ClientBase::checkAIProviderAcknowledgment()
+{
+    // If API key came from environment and user hasn't acknowledged yet, ask for confirmation
+    if (ai_inferred_from_env && !ai_provider_acknowledged && is_interactive)
+    {
+        // Clear any progress display
+        if (need_render_progress && tty_buf)
+        {
+            std::unique_lock lock(tty_mutex);
+            progress_indication.clearProgressOutput(*tty_buf, lock);
+        }
+
+        const auto question = fmt::format(
+            "AI SQL generation will use {} API key from environment variable.\n"
+            "Do you want to continue? [y/N] ",
+            ai_provider_name);
+
+        if (!ask(question, *std_in, *std_out))
+        {
+            // User declined
+            error_stream << "AI query cancelled.\n";
+            return false;
+        }
+
+        // User accepted, remember for this session
+        ai_provider_acknowledged = true;
+        *std_out << '\n';
+    }
+
+    return true;
 }
 #endif
 

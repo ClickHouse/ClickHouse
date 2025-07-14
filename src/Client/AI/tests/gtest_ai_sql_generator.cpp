@@ -229,9 +229,10 @@ TEST(AISQLGenerator, ConfigurationValidation)
     
     std::ostringstream output;
     
-    // This should throw during construction when trying to create the AI client
+    // This should throw when trying to create the AI client
     EXPECT_THROW({
-        AISQLGenerator generator(config, createMockQueryExecutor(), output);
+        auto ai_result = AIClientFactory::createClient(config);
+        AISQLGenerator generator(config, std::move(ai_result.client), createMockQueryExecutor(), output);
     }, Exception);
 }
 
@@ -239,7 +240,8 @@ TEST(AISQLGenerator, ConfigurationValidation)
 TEST_F(AITestFixture, SQLInjectionProtection)
 {
     auto config = createStandardConfig();
-    AISQLGenerator generator(config, createSQLInjectionTestExecutor(), output);
+    auto ai_result = AIClientFactory::createClient(config);
+    AISQLGenerator generator(config, std::move(ai_result.client), createSQLInjectionTestExecutor(), output);
     
     // Test various SQL injection attempts in natural language
     std::vector<std::string> injection_attempts = {
@@ -282,7 +284,8 @@ TEST_F(AITestFixture, SQLInjectionProtection)
 TEST_F(AITestFixture, AmbiguousQueryHandling)
 {
     auto config = createStandardConfig();
-    AISQLGenerator generator(config, createRealQueryExecutor(), output);
+    auto ai_result = AIClientFactory::createClient(config);
+    AISQLGenerator generator(config, std::move(ai_result.client), createRealQueryExecutor(), output);
     
     // Test with less ambiguous queries that should generate SQL
     std::vector<std::pair<std::string, std::string>> queries = {
@@ -309,7 +312,8 @@ TEST_F(AITestFixture, AmbiguousQueryHandling)
 TEST_F(AITestFixture, RealAIGeneration)
 {
     auto config = createConfig(500);  // max_tokens = 500
-    AISQLGenerator generator(config, createRealQueryExecutor(), output);
+    auto ai_result = AIClientFactory::createClient(config);
+    AISQLGenerator generator(config, std::move(ai_result.client), createRealQueryExecutor(), output);
     
     ASSERT_TRUE(generator.isAvailable());
     EXPECT_EQ(provider, generator.getProviderName());
@@ -341,7 +345,8 @@ TEST_F(AITestFixture, RealAIGeneration)
 TEST_F(AITestFixture, ComplexQueryGeneration)
 {
     auto config = createConfig(500);
-    AISQLGenerator generator(config, createRealQueryExecutor(), output);
+    auto ai_result = AIClientFactory::createClient(config);
+    AISQLGenerator generator(config, std::move(ai_result.client), createRealQueryExecutor(), output);
     
     // Test complex query that requires understanding multiple tables
     std::string result = generator.generateSQL(
@@ -377,7 +382,8 @@ TEST_F(AITestFixture, ComplexQueryGeneration)
 TEST_F(AITestFixture, SchemaExploration)
 {
     auto config = createStandardConfig();
-    AISQLGenerator generator(config, createRealQueryExecutor(), output);
+    auto ai_result = AIClientFactory::createClient(config);
+    AISQLGenerator generator(config, std::move(ai_result.client), createRealQueryExecutor(), output);
     
     // Test query that requires schema discovery
     std::string result = generator.generateSQL("what tables are available in the test_db database?");
@@ -412,7 +418,8 @@ TEST_F(AITestFixture, SchemaExploration)
 TEST_F(AITestFixture, SQLCleaningWithRealAI)
 {
     auto config = createStandardConfig();
-    AISQLGenerator generator(config, createRealQueryExecutor(), output);
+    auto ai_result = AIClientFactory::createClient(config);
+    AISQLGenerator generator(config, std::move(ai_result.client), createRealQueryExecutor(), output);
     
     // Generate SQL that might contain markdown
     std::string result = generator.generateSQL("create a simple select statement for customers table");
@@ -451,7 +458,8 @@ TEST(AISQLGenerator, NetworkTimeoutRecovery)
     // Should handle timeout gracefully
     try
     {
-        AISQLGenerator generator(config, slow_executor, output);
+        auto ai_result = AIClientFactory::createClient(config);
+        AISQLGenerator generator(config, std::move(ai_result.client), slow_executor, output);
         // If it doesn't throw during construction, it's also fine
     }
     catch (const Exception & e)
@@ -466,7 +474,8 @@ TEST(AISQLGenerator, NetworkTimeoutRecovery)
 TEST_F(AITestFixture, SpecialCharacterHandling)
 {
     auto config = createStandardConfig();
-    AISQLGenerator generator(config, createSQLInjectionTestExecutor(), output);
+    auto ai_result = AIClientFactory::createClient(config);
+    AISQLGenerator generator(config, std::move(ai_result.client), createSQLInjectionTestExecutor(), output);
     
     // Test with special character table names
     std::string result = generator.generateSQL("select all from user-accounts table");

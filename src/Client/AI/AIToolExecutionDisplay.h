@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <string>
 #include <thread>
@@ -17,27 +18,66 @@ class AIToolExecutionDisplay
 {
 public:
     explicit AIToolExecutionDisplay(std::ostream & output_stream_, bool enable_colors = true)
-        : output_stream(output_stream_), use_colors(enable_colors)
+        : output_stream(output_stream_), use_colors(enable_colors), thinking_active(false)
     {
     }
 
-    void showThinking() const
+    ~AIToolExecutionDisplay()
     {
-        if (use_colors)
-            output_stream << "\033[36m"; // Cyan
-        output_stream << "🧠 thinking";
-        // Animated dots
-        for (int i = 0; i < 3; ++i)
+        // Ensure thinking animation is stopped on destruction
+        stopThinking();
+    }
+
+    void startThinking(const std::string & message = "thinking") const
+    {
+        // Stop any existing thinking animation
+        stopThinking();
+
+        thinking_active = true;
+        thinking_thread = std::thread([this, message]() {
+            int dot_count = 0;
+            while (thinking_active)
+            {
+                // Clear the line and show the message with dots
+                output_stream << "\r\033[K"; // Clear line
+                
+                if (use_colors)
+                    output_stream << "\033[36m"; // Cyan
+                output_stream << "🧠 " << message;
+
+                // Show dots based on current count (cycles through 0, 1, 2, 3 dots)
+                for (int i = 0; i < dot_count; ++i)
+                {
+                    output_stream << ".";
+                }
+                
+                if (use_colors)
+                    output_stream << resetColor();
+                
+                output_stream << std::flush;
+                
+                // Sleep before next update
+                std::this_thread::sleep_for(std::chrono::milliseconds(400));
+                
+                // Cycle through 0-3 dots
+                dot_count = (dot_count + 1) % 4;
+            }
+            
+            // Clear the line when done
+            output_stream << "\r\033[K" << std::flush;
+        });
+    }
+
+    void stopThinking() const
+    {
+        if (thinking_active)
         {
-            output_stream << "." << std::flush;
-            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            thinking_active = false;
+            if (thinking_thread.joinable())
+            {
+                thinking_thread.join();
+            }
         }
-
-        // Clear the line
-        output_stream << "\r\033[K";
-
-        if (use_colors)
-            output_stream << resetColor();
     }
 
     void showToolCall(const std::string & tool_call_id, const std::string & function_name, const std::string & arguments = "") const
@@ -117,37 +157,6 @@ public:
         output_stream << std::endl;
     }
 
-    void showGeneratedQuery(const std::string & query, const std::string & description = "") const
-    {
-        // Clear any previous line
-        output_stream << "\r\033[K";
-
-        if (use_colors)
-            output_stream << "\033[90m"; // Dark gray
-        if (!description.empty())
-        {
-            output_stream << description << ":";
-        }
-        else
-        {
-            output_stream << "query:";
-        }
-        if (use_colors)
-            output_stream << resetColor();
-        output_stream << std::endl;
-
-        if (!query.empty())
-        {
-            if (use_colors)
-                output_stream << "\033[37m"; // Light gray
-
-            output_stream << query << std::endl;
-
-            if (use_colors)
-                output_stream << resetColor();
-        }
-    }
-
     void showSeparator() const
     {
         if (use_colors)
@@ -161,6 +170,8 @@ public:
 private:
     std::ostream & output_stream;
     bool use_colors;
+    mutable std::atomic<bool> thinking_active;
+    mutable std::thread thinking_thread;
 };
 
 }
