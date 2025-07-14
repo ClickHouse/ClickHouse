@@ -103,8 +103,6 @@ public:
 
     double getPrecommitSleepProbabilityForTesting() const;
 
-    bool shouldInjectAuth() const;
-
     bool shouldBlockACL() const;
     void setBlockACL(bool block_acl_);
 
@@ -171,8 +169,6 @@ private:
     double precommit_sleep_probability_for_testing = 0.0;
 
     CoordinationSettingsPtr coordination_settings;
-
-    bool inject_auth = false;
 
     bool block_acl = false;
 };

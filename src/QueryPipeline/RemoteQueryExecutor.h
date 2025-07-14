@@ -15,8 +15,8 @@ namespace DB
 
 class Context;
 
-class Throttler;
-using ThrottlerPtr = std::shared_ptr<Throttler>;
+class IThrottler;
+using ThrottlerPtr = std::shared_ptr<IThrottler>;
 
 struct Progress;
 using ProgressCallback = std::function<void(const Progress & progress)>;

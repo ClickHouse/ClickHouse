@@ -729,13 +729,12 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
             ColumnUInt8::MutablePtr not_joined_map = nullptr;
             if (!flag_per_row && isRightOrFull(kind) && join_mask_col.hasData())
             {
-                const auto & join_mask = join_mask_col.getData();
                 /// Save rows that do not hold conditions
                 not_joined_map = ColumnUInt8::create(rows, 0);
-                for (size_t i = 0, sz = join_mask->size(); i < sz; ++i)
+                for (size_t i = 0, sz = join_mask_col.getSize(); i < sz; ++i)
                 {
                     /// Condition hold, do not save row
-                    if ((*join_mask)[i])
+                    if (!join_mask_col.isRowFiltered(i))
                         continue;
 
                     /// NULL key will be saved anyway because, do not save twice
@@ -765,7 +764,7 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
                             &stored_columns->columns,
                             stored_columns->selector,
                             null_map,
-                            join_mask_col.getData(),
+                            join_mask_col,
                             data->pool,
                             is_inserted);
 
@@ -1629,6 +1628,10 @@ bool HashJoin::isUsed(const Columns * columns_ptr, size_t row_idx) const
 
 bool HashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const
 {
+    // It would be better to check the cross join first, as it has an empty disjunct list.
+    if (table_join_->kind() == JoinKind::Cross)
+        return false;
+
     if (!table_join_->oneDisjunct())
         return true;
     /// If it'a a all right join with inequal conditions, we need to mark each row

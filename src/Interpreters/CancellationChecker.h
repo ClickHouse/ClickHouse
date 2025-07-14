@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/ProcessList.h>
-#include "QueryPipeline/SizeLimits.h"
+#include <QueryPipeline/SizeLimits.h>
 #include <atomic>
 #include <set>
 

@@ -1,4 +1,4 @@
-#include "NativeORCBlockInputFormat.h"
+#include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
 
 #if USE_ORC
 #include <Columns/ColumnDecimal.h>
@@ -45,7 +45,7 @@
 #include <Common/quoteString.h>
 #include <Common/memory.h>
 
-#include "ArrowBufferedStreams.h"
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 
 #include <boost/algorithm/string.hpp>
 
@@ -976,7 +976,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
     if (is_stopped)
         return;
 
-    std::call_once(parser_group->init_flag, [&]
+    parser_group->initOnce([&]
         {
             parser_group->initKeyCondition(getPort().getHeader());
         });

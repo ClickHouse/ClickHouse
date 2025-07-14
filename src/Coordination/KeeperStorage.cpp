@@ -105,7 +105,9 @@ bool fixupACL(
         }
         else if (request_acl.scheme == "world" && request_acl.id == "anyone")
         {
-            /// We don't need to save default ACLs
+            /// Save world:anyone ACLs to support specific permissions
+            if (request_acl.permissions != Coordination::ACL::All)
+                result_acls.push_back(request_acl);
             valid_found = true;
         }
         else if (request_acl.scheme == "digest")
@@ -701,20 +703,10 @@ void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta,
     }
     else
     {
-        if (auto storage_node = tryGetNodeFromStorage(delta.path))
-        {
-            auto [emplaced_it, _] = nodes.emplace(delta.path, UncommittedNode{.node = std::move(storage_node)});
-            node_it = emplaced_it;
-            zxid_to_nodes[0].insert(emplaced_it);
-            uncommitted_node = &emplaced_it->second;
-        }
-        else
-        {
-            auto [emplaced_it, _] = nodes.emplace(delta.path, UncommittedNode{.node = nullptr});
-            node_it = emplaced_it;
-            zxid_to_nodes[0].insert(emplaced_it);
-            uncommitted_node = &emplaced_it->second;
-        }
+        auto storage_node = tryGetNodeFromStorage(delta.path);
+        auto [emplaced_it, _] = nodes.emplace(delta.path, UncommittedNode{.node = std::move(storage_node)});
+        node_it = emplaced_it;
+        uncommitted_node = &emplaced_it->second;
     }
 
     /// if it's the first time we see that node in the transaction
@@ -792,29 +784,29 @@ bool KeeperStorage<Container>::UncommittedState::hasACL(int64_t session_id, bool
         return false;
     };
 
+    const auto check_session = [&](const auto & session_and_auth_map)
+    {
+        if (auto auth_it = session_and_auth_map.find(session_id); auth_it != session_and_auth_map.end())
+            return check_auth(auth_it->second);
+        return false;
+    };
+
     if (is_local)
     {
         std::shared_lock lock(storage.auth_mutex);
-        return check_auth(storage.committed_session_and_auth[session_id]);
+        return check_session(storage.committed_session_and_auth);
     }
 
     /// we want to close the session and with that we will remove all the auth related to the session
-    if (closed_sessions.contains(session_id))
+    if (closed_sessions_to_zxids.contains(session_id))
         return false;
-
-    std::shared_lock lock(storage.auth_mutex);
-    if (check_auth(storage.committed_session_and_auth[session_id]))
-        return true;
 
     // check if there are uncommitted
-    const auto auth_it = session_and_auth.find(session_id);
-    if (auth_it == session_and_auth.end())
-        return false;
-
-    if (check_auth(auth_it->second))
+    if (check_session(session_and_auth))
         return true;
 
-    return check_auth(storage.committed_session_and_auth[session_id]);
+    std::shared_lock lock(storage.auth_mutex);
+    return check_session(storage.committed_session_and_auth);
 }
 
 template<typename Container>
@@ -856,9 +848,6 @@ void KeeperStorage<Container>::UncommittedState::rollbackDelta(const Delta & del
             {
                 acls = operation.old_acls;
             }
-
-            applied_zxids.erase(delta.zxid);
-            zxid_to_nodes.erase(delta.zxid);
         },
         delta.operation);
 }
@@ -902,7 +891,7 @@ void KeeperStorage<Container>::UncommittedState::applyDeltas(const std::list<Del
         }
         else if (const auto * close_session_delta = std::get_if<CloseSessionDelta>(&delta.operation))
         {
-            closed_sessions.insert(close_session_delta->session_id);
+            closed_sessions_to_zxids[close_session_delta->session_id].insert(delta.zxid);
         }
     }
 }
@@ -944,6 +933,16 @@ void KeeperStorage<Container>::UncommittedState::cleanup(int64_t commit_zxid)
         else
             ++it;
     }
+
+    for (auto it = closed_sessions_to_zxids.begin(); it != closed_sessions_to_zxids.end();)
+    {
+        auto & zxids = it->second;
+        std::erase_if(zxids, [commit_zxid](auto close_zxid) { return close_zxid <= commit_zxid; });
+        if (zxids.empty())
+            it = closed_sessions_to_zxids.erase(it);
+        else
+            ++it;
+    }
 }
 
 template<typename Container>
@@ -982,9 +981,11 @@ void KeeperStorage<Container>::UncommittedState::rollback(std::list<Delta> rollb
     // we need to undo ephemeral mapping modifications
     // CreateNodeDelta added ephemeral for session id -> we need to remove it
     // RemoveNodeDelta removed ephemeral for session id -> we need to add it back
+    std::unordered_set<uint64_t> rollbacked_zxids;
     for (auto delta_it = rollback_deltas.rbegin(); delta_it != rollback_deltas.rend(); ++delta_it)
     {
         const auto & delta = *delta_it;
+        rollbacked_zxids.insert(delta.zxid);
         if (!delta.path.empty())
         {
             std::visit(
@@ -1017,9 +1018,39 @@ void KeeperStorage<Container>::UncommittedState::rollback(std::list<Delta> rollb
         }
         else if (const auto * close_session = std::get_if<CloseSessionDelta>(&delta.operation))
         {
-           closed_sessions.erase(close_session->session_id);
+            auto & close_zxids = closed_sessions_to_zxids[close_session->session_id];
+            [[maybe_unused]] auto erased = close_zxids.erase(delta.zxid);
+            chassert(erased == 1);
+            if (close_zxids.empty())
+                closed_sessions_to_zxids.erase(close_session->session_id);
         }
     }
+
+    /// once we have rollbacked all operations, we can cleanup nodes that were
+    /// created just for these transactions
+    const auto cleanup_uncommitted_nodes = [&](const auto zxid)
+    {
+        auto it = zxid_to_nodes.find(zxid);
+
+        if (it == zxid_to_nodes.end())
+            return;
+
+        const auto & [transaction_zxid, transaction_nodes] = *it;
+
+        for (const auto node_it : transaction_nodes)
+        {
+            node_it->second.applied_zxids.erase(transaction_zxid);
+            if (node_it->second.applied_zxids.empty())
+                nodes.erase(node_it);
+        }
+
+        zxid_to_nodes.erase(it);
+    };
+
+    /// first cleanup nodes that were not modified by those transactions
+    cleanup_uncommitted_nodes(0);
+    std::ranges::for_each(rollbacked_zxids, cleanup_uncommitted_nodes);
+
 }
 
 template<typename Container>
@@ -1051,29 +1082,28 @@ const typename Container::Node * KeeperStorage<Container>::UncommittedState::get
 template<typename Container>
 Coordination::ACLs KeeperStorage<Container>::UncommittedState::getACLs(StringRef path) const
 {
-    if (auto node_it = nodes.find(path.toView()); node_it != nodes.end())
+    auto node_it = nodes.find(path.toView());
+    if (node_it == nodes.end())
     {
-        node_it->second.materializeACL(storage.acl_map);
-        return *node_it->second.acls;
+        std::shared_ptr<KeeperStorage::Node> node = tryGetNodeFromStorage(path);
+
+        if (!node)
+            return {};
+
+        std::tie(node_it, std::ignore) = nodes.emplace(std::string{path}, UncommittedNode{.node = node});
+        zxid_to_nodes[0].insert(node_it);
     }
 
-    std::shared_ptr<KeeperStorage::Node> node = tryGetNodeFromStorage(path);
-
-    if (node)
-    {
-        auto [it, inserted] = nodes.emplace(std::string{path}, UncommittedNode{.node = node});
-        zxid_to_nodes[0].insert(it);
-        it->second.acls = storage.acl_map.convertNumber(node->acl_id);
-        return *it->second.acls;
-    }
-
-    return {};
+    node_it->second.materializeACL(storage.acl_map);
+    return *node_it->second.acls;
 }
 
 template<typename Container>
 void KeeperStorage<Container>::UncommittedState::forEachAuthInSession(int64_t session_id, std::function<void(const AuthID &)> func) const
 {
-    const auto call_for_each_auth = [&func](const auto & auth_ids)
+    /// we can have some duplicate auths between uncommitted and committed
+    std::vector<const AuthID *> processed_auths;
+    const auto call_for_each_auth = [&](const auto & auth_ids)
     {
         for (const auto & auth : auth_ids)
         {
@@ -1085,19 +1115,23 @@ void KeeperStorage<Container>::UncommittedState::forEachAuthInSession(int64_t se
             else
                 auth_ptr = auth.second.get();
 
+            if (std::ranges::find_if(processed_auths, [&](const auto * processed_auth) { return *processed_auth == *auth_ptr; })
+                != processed_auths.end())
+                continue;
+
+            processed_auths.push_back(auth_ptr);
             if (!auth_ptr->scheme.empty())
                 func(*auth_ptr);
         }
     };
 
-    /// both committed and uncommitted need to be under the lock to avoid fetching the same AuthID from both committed and uncommitted state
+    // for uncommitted
+    if (auto auth_it = session_and_auth.find(session_id); auth_it != session_and_auth.end())
+        call_for_each_auth(auth_it->second);
+
     std::shared_lock lock(storage.auth_mutex);
     // for committed
     if (auto auth_it = storage.committed_session_and_auth.find(session_id); auth_it != storage.committed_session_and_auth.end())
-        call_for_each_auth(auth_it->second);
-
-    // for uncommitted
-    if (auto auth_it = session_and_auth.find(session_id); auth_it != session_and_auth.end())
         call_for_each_auth(auth_it->second);
 }
 
@@ -1568,17 +1602,6 @@ std::list<KeeperStorageBase::Delta> preprocess(
 {
     ProfileEvents::increment(ProfileEvents::KeeperCreateRequest);
 
-    static const Coordination::ACLs injected_acls = {{.permissions = Coordination::ACL::All, .scheme = "auth", .id = ""}};
-    const Coordination::ACLs * request_acls;
-    if (keeper_context.shouldInjectAuth())
-    {
-        request_acls = &injected_acls;
-    }
-    else
-    {
-        request_acls = &zk_request.acls;
-    }
-
     std::list<KeeperStorageBase::Delta> new_deltas;
 
     auto parent_path = parentNodePath(zk_request.path);
@@ -1624,7 +1647,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
 
     Coordination::ACLs node_acls;
-    if (!fixupACL(*request_acls, session_id, storage.uncommitted_state, keeper_context.shouldBlockACL(), node_acls))
+    if (!fixupACL(zk_request.acls, session_id, storage.uncommitted_state, keeper_context.shouldBlockACL(), node_acls))
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZINVALIDACL}};
 
     if (zk_request.is_ephemeral)
@@ -2708,13 +2731,11 @@ KeeperStorageBase::DeltaRange extractSubdeltas(KeeperStorageBase::DeltaRange & d
     for (; it != deltas.end(); ++it)
     {
         if (std::holds_alternative<SubDeltaEnd>(it->operation))
-        {
-            ++it;
             break;
-        }
     }
 
     KeeperStorageBase::DeltaRange result{.begin_it = deltas.begin(), .end_it = it};
+    ++it;
     deltas.begin_it = it;
     return result;
 }
@@ -3494,12 +3515,6 @@ int64_t KeeperStorageBase::getSessionID(int64_t session_timeout_ms)
     auto result = session_id_counter++;
     session_and_timeout.emplace(result, session_timeout_ms);
     session_expiry_queue.addNewSessionOrUpdate(result, session_timeout_ms);
-
-    if (keeper_context->shouldInjectAuth())
-    {
-        committed_session_and_auth.emplace(
-            result, AuthIDs{{.scheme = "digest", .id = KeeperStorageBase::generateDigest("clickhouse:injected")}});
-    }
     return result;
 }
 
