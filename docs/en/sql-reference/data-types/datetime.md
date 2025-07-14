@@ -144,7 +144,7 @@ Similar issue exists for Casey Antarctic station in year 2010. They changed time
 
 Time shifts for multiple days. Some pacific islands changed their timezone offset from UTC+14 to UTC-12. That's alright but some inaccuracies may present if you do calculations with their timezone for historical time points at the days of conversion.
 
-## Handling Daylight Saving Time (DST) {#handling-daylight-saving-time-dst}
+## Handling daylight saving time (DST) {#handling-daylight-saving-time-dst}
 
 ClickHouse's DateTime type with time zones can exhibit unexpected behavior during Daylight Saving Time (DST) transitions, particularly when:
 

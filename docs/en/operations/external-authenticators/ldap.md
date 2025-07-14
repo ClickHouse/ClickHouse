@@ -15,7 +15,7 @@ LDAP server can be used to authenticate ClickHouse users. There are two differen
 
 For both of these approaches, an internally named LDAP server must be defined in the ClickHouse config so that other parts of the config can refer to it.
 
-## LDAP Server Definition {#ldap-server-definition}
+## LDAP server definition {#ldap-server-definition}
 
 To define LDAP server you must add `ldap_servers` section to the `config.xml`.
 
@@ -89,7 +89,7 @@ Note, that you can define multiple LDAP servers inside the `ldap_servers` sectio
 - `tls_ca_cert_dir` — Path to the directory containing CA certificates.
 - `tls_cipher_suite` — Allowed cipher suite (in OpenSSL notation).
 
-## LDAP External Authenticator {#ldap-external-authenticator}
+## LDAP external authenticator {#ldap-external-authenticator}
 
 A remote LDAP server can be used as a method for verifying passwords for locally defined users (users defined in `users.xml` or in local access control paths). To achieve this, specify previously defined LDAP server name instead of `password` or similar sections in the user definition.
 
@@ -122,7 +122,7 @@ Query:
 CREATE USER my_user IDENTIFIED WITH ldap SERVER 'my_ldap_server';
 ```
 
-## LDAP External User Directory {#ldap-external-user-directory}
+## LDAP external user directory {#ldap-external-user-directory}
 
 In addition to the locally defined users, a remote LDAP server can be used as a source of user definitions. To achieve this, specify previously defined LDAP server name (see [LDAP Server Definition](#ldap-server-definition)) in the `ldap` section inside the `users_directories` section of the `config.xml` file.
 
