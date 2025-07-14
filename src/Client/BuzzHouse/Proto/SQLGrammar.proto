@@ -1860,8 +1860,9 @@ enum UnaryOperator {
 }
 
 message UnaryExpr {
-    required UnaryOperator unary_op = 1;
-    required Expr expr = 2;
+    optional bool paren = 1;
+    required UnaryOperator unary_op = 2;
+    required Expr expr = 3;
 }
 
 enum BinaryOperator {
@@ -1894,15 +1895,17 @@ message BinaryExpr {
 }
 
 message CastExpr {
-    required Expr expr = 1;
-    required TypeName type_name = 2;
+    optional bool simple = 1;
+    required Expr expr = 2;
+    required TypeName type_name = 3;
 }
 
 message ExprBetween {
-    required bool not = 1;
-    required Expr expr1 = 2;
-    required Expr expr2 = 3;
-    required Expr expr3 = 4;
+    optional bool paren = 1;
+    required bool not = 2;
+    required Expr expr1 = 3;
+    required Expr expr2 = 4;
+    required Expr expr3 = 5;
 }
 
 message ExprList {
@@ -1963,9 +1966,10 @@ message ExprLike {
 }
 
 message CondExpr {
-    required Expr expr1 = 1;
-    required Expr expr2 = 2;
-    required Expr expr3 = 3;
+    optional bool paren = 1;
+    required Expr expr1 = 2;
+    required Expr expr2 = 3;
+    required Expr expr3 = 4;
 }
 
 message LambdaExpr {
@@ -2765,10 +2769,12 @@ message SetQuery {
         EXCEPT = 2;
         INTERSECT = 3;
     }
-    required ExplainQuery sel1 = 1;
-    required SetOp set_op = 2;
-    optional AllOrDistinct s_or_d = 3;
-    required ExplainQuery sel2 = 4;
+    optional bool paren1 = 1;
+    required ExplainQuery sel1 = 2;
+    required SetOp set_op = 3;
+    optional AllOrDistinct s_or_d = 4;
+    optional bool paren2 = 5;
+    required ExplainQuery sel2 = 6;
 }
 
 message CTEquery {
@@ -3255,7 +3261,8 @@ message CreateTableAs {
 
 message CreateTableSelect {
     optional bool empty = 1;
-    required Select sel = 2;
+    optional bool paren = 2;
+    required Select select = 3;
 }
 
 enum CreateReplaceOption {
@@ -3314,13 +3321,18 @@ message InsertFromFile {
     required InFormat format = 3;
 }
 
+message SelectParen {
+    optional bool paren = 1;
+    required Select select = 2;
+}
+
 message Insert {
     optional CTEs ctes = 1;
     required TableOrFunction tof = 2;
     repeated ColumnPath cols = 3;
     oneof insert_oneof {
         ValuesStatement values = 4;
-        Select select = 5;
+        SelectParen select = 5;
         InsertFromFile insert_file = 6;
         string query = 7;
     }
@@ -3563,7 +3575,7 @@ message CreateView {
     optional TableEngine engine = 8;
     optional bool populate = 9;
     optional bool empty = 10;
-    required Select select = 11;
+    required SelectParen select = 11;
     optional string comment = 12;
 }
 
@@ -3684,59 +3696,60 @@ message MovePartition {
 }
 
 message AlterItem {
+    optional bool paren = 1;
     oneof alter_oneof {
         /// For tables
-        Delete del = 1;
-        Update update = 2;
-        TableKey order = 3;
-        ColInPartition materialize_column = 4;
-        AddColumn add_column = 5;
-        ColumnPath drop_column = 6;
-        RenameCol rename_column = 7;
-        ColInPartition clear_column = 8;
-        AddColumn modify_column = 9;
-        CommentColumn comment_column = 10;
-        ApplyDeleteMask delete_mask = 11;
-        AddStatistics add_stats = 12;
-        AddStatistics mod_stats = 13;
-        ColumnPathList drop_stats = 14;
-        ColumnPathList clear_stats = 15;
-        ColumnPathList mat_stats = 16;
-        AddIndex add_index = 17;
-        IdxInPartition materialize_index = 18;
-        Index drop_index = 19;
-        IdxInPartition clear_index = 20;
-        RemoveColumnProperty column_remove_property = 21;
-        ModifyColumnSetting column_modify_setting = 22;
-        RemoveColumnSetting column_remove_setting = 23;
-        SettingValues table_modify_setting = 24;
-        SettingList table_remove_setting = 25;
-        ProjectionDef add_projection = 26;
-        Projection remove_projection = 27;
-        ProjectionInPartition materialize_projection = 28;
-        ProjectionInPartition clear_projection = 29;
-        ConstraintDef add_constraint = 30;
-        Constraint remove_constraint = 31;
-        SinglePartitionExpr detach_partition = 32;
-        SinglePartitionExpr drop_partition = 33;
-        SinglePartitionExpr drop_detached_partition = 34;
-        SinglePartitionExpr forget_partition = 35;
-        SinglePartitionExpr attach_partition = 36;
-        AttachPartitionFrom attach_partition_from = 37;
-        AttachPartitionFrom replace_partition_from = 38;
-        AttachPartitionFrom move_partition_to = 39;
-        ClearColumnInPartition clear_column_partition = 40;
-        FreezePartition freeze_partition = 41;
-        FreezePartition unfreeze_partition = 42;
-        ClearIndexInPartition clear_index_partition = 43;
-        MovePartition move_partition = 44;
-        TTLExpr modify_ttl  = 45;
-        bool remove_ttl = 46;
+        Delete del = 2;
+        Update update = 3;
+        TableKey order = 4;
+        ColInPartition materialize_column = 5;
+        AddColumn add_column = 6;
+        ColumnPath drop_column = 7;
+        RenameCol rename_column = 8;
+        ColInPartition clear_column = 9;
+        AddColumn modify_column = 10;
+        CommentColumn comment_column = 11;
+        ApplyDeleteMask delete_mask = 12;
+        AddStatistics add_stats = 13;
+        AddStatistics mod_stats = 14;
+        ColumnPathList drop_stats = 15;
+        ColumnPathList clear_stats = 16;
+        ColumnPathList mat_stats = 17;
+        AddIndex add_index = 18;
+        IdxInPartition materialize_index = 19;
+        Index drop_index = 20;
+        IdxInPartition clear_index = 21;
+        RemoveColumnProperty column_remove_property = 22;
+        ModifyColumnSetting column_modify_setting = 23;
+        RemoveColumnSetting column_remove_setting = 24;
+        SettingValues table_modify_setting = 25;
+        SettingList table_remove_setting = 26;
+        ProjectionDef add_projection = 27;
+        Projection remove_projection = 28;
+        ProjectionInPartition materialize_projection = 29;
+        ProjectionInPartition clear_projection = 30;
+        ConstraintDef add_constraint = 31;
+        Constraint remove_constraint = 32;
+        SinglePartitionExpr detach_partition = 33;
+        SinglePartitionExpr drop_partition = 34;
+        SinglePartitionExpr drop_detached_partition = 35;
+        SinglePartitionExpr forget_partition = 36;
+        SinglePartitionExpr attach_partition = 37;
+        AttachPartitionFrom attach_partition_from = 38;
+        AttachPartitionFrom replace_partition_from = 39;
+        AttachPartitionFrom move_partition_to = 40;
+        ClearColumnInPartition clear_column_partition = 41;
+        FreezePartition freeze_partition = 42;
+        FreezePartition unfreeze_partition = 43;
+        ClearIndexInPartition clear_index_partition = 44;
+        MovePartition move_partition = 45;
+        TTLExpr modify_ttl  = 46;
+        bool remove_ttl = 47;
         /// For views
-        Select modify_query = 47;
-        RefreshableView refresh = 48;
+        SelectParen modify_query = 48;
+        RefreshableView refresh = 49;
         // For tables, views and databases
-        string comment = 49;
+        string comment = 50;
     }
 }
 
