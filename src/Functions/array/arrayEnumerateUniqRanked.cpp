@@ -1,5 +1,5 @@
-#include "Functions/FunctionFactory.h"
-#include "arrayEnumerateRanked.h"
+#include <Functions/FunctionFactory.h>
+#include <Functions/array/arrayEnumerateRanked.h>
 
 
 namespace DB
@@ -23,11 +23,11 @@ It allows for enumeration of a multi-dimensional array with the ability to speci
 )";
     FunctionDocumentation::Syntax syntax = "arrayEnumerateUniqRanked(clear_depth, arr, max_array_depth)";
     FunctionDocumentation::Arguments arguments = {
-        {"clear_depth", "Enumerate elements at the specified level separately. Positive [Integer](../data-types/int-uint.md) less than or equal to `max_arr_depth`."},
-        {"arr", "N-dimensional array to enumerate. [Array](/sql-reference/data-types/array)."},
-        {"max_array_depth", "The maximum effective depth. Positive [Integer](../data-types/int-uint.md) less than or equal to the depth of `arr`."}
+        {"clear_depth", "Enumerate elements at the specified level separately. Positive integer less than or equal to `max_arr_depth`.", {"UInt*"}},
+        {"arr", "N-dimensional array to enumerate.", {"Array(T)"}},
+        {"max_array_depth", "The maximum effective depth. Positive integer less than or equal to the depth of `arr`.", {"UInt*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns an N-dimensional array the same size as `arr` with each element showing the position of that element in relation to other elements of the same value.";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an N-dimensional array the same size as `arr` with each element showing the position of that element in relation to other elements of the same value.", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {
         {"Example 1", R"(
 -- With clear_depth=1 and max_array_depth=1, the result of arrayEnumerateUniqRanked

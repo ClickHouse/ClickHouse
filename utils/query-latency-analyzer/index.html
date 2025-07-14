@@ -348,7 +348,7 @@ document.getElementById('btnDoLoad').addEventListener('click', function () {
 
     const fr = new FileReader();
     fr.onload = function (e) {
-        document.getElementById('errmsg').style.display = 'none';
+        document.getElementById('query-error').style.display = 'none';
         const filterByDuration = document.getElementById('filterByDurationCheckbox').checked;
         renderTable(handleData(parseClickHouseData(JSON.parse(e.target.result).data), filterByDuration));
     };

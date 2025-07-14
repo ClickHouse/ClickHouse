@@ -49,6 +49,7 @@
 
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
+#include <Loggers/OwnSplitChannel.h>
 
 #include <Common/config_version.h>
 
@@ -418,14 +419,14 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
         && CrashWriter::initialized())
     {
         LOG_DEBUG(&logger(), "Sending logical errors is enabled");
-        Exception::callback = [](const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
+        Exception::callback = [](std::string_view format_string, int code, bool remote, const Exception::FramePointers & trace)
         {
             if (!remote && code == ErrorCodes::LOGICAL_ERROR)
             {
                 CrashWriter::FramePointers frame_pointers;
                 for (size_t i = 0; i < trace.size(); ++i)
                     frame_pointers[i] = trace[i];
-                CrashWriter::onException(code, msg, frame_pointers, /* offset= */ 0, trace.size());
+                CrashWriter::onException(code, format_string, frame_pointers, /* offset= */ 0, trace.size());
             }
         };
     }

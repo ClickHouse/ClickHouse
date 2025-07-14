@@ -6,7 +6,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include "IO/VarInt.h"
+#include <IO/VarInt.h>
 
 template <>
 struct fmt::formatter<DB::RangesInDataPartDescription>
@@ -39,7 +39,7 @@ void RangesInDataPartDescription::serialize(WriteBuffer & out) const
 String RangesInDataPartDescription::describe() const
 {
     String result;
-    result += fmt::format("part {} with ranges [{}]", info.getPartNameV1(), fmt::join(ranges, ","));
+    result += fmt::format("{}[{}]", info.getPartNameV1(), fmt::join(ranges, ","));
     return result;
 }
 

@@ -1,4 +1,4 @@
-#include "PolygonDictionaryUtils.h"
+#include <Dictionaries/PolygonDictionaryUtils.h>
 
 #include <Common/ThreadPool.h>
 

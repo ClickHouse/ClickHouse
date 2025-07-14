@@ -3,7 +3,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include "Common/NamedCollections/NamedCollections.h"
+#include <Common/NamedCollections/NamedCollections.h>
 
 
 namespace DB

@@ -6,11 +6,11 @@
 namespace DB
 {
 
-using FunctionToTime = FunctionDateOrDateTimeToSomething<DataTypeDateTime, ToTimeImpl>;
+using FunctionToTimeWithFixedDate = FunctionDateOrDateTimeToSomething<DataTypeDateTime, ToTimeWithFixedDateImpl>;
 
-REGISTER_FUNCTION(ToTime)
+REGISTER_FUNCTION(ToTimeWithFixedDate)
 {
-    factory.registerFunction<FunctionToTime>();
+    factory.registerFunction<FunctionToTimeWithFixedDate>();
 }
 
 }

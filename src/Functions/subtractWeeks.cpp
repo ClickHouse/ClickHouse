@@ -10,18 +10,19 @@ using FunctionSubtractWeeks = FunctionDateOrDateTimeAddInterval<SubtractWeeksImp
 
 REGISTER_FUNCTION(SubtractWeeks)
 {
-    FunctionDocumentation::Description description_subtractWeeks = R"(
+    FunctionDocumentation::Description description = R"(
 Subtracts a specified number of weeks from a date, a date with time or a string-encoded date or date with time.
     )";
-    FunctionDocumentation::Syntax syntax_subtractWeeks = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 subtractWeeks(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments_subtractWeeks = {
-        {"datetime", "Date or date with time to subtract specified number of weeks from. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
-        {"num", "Number of weeks to subtract. [`(U)Int*`](../data-types/int-uint.md)/[`Float*`](../data-types/float.md)."}
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"datetime", "Date or date with time to subtract specified number of weeks from.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
+        {"num", "Number of weeks to subtract.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_subtractWeeks = "Returns `datetime` minus `num` weeks. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md).";
-    FunctionDocumentation::Examples examples_subtractWeeks = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` minus `num` weeks", {"Date", "Date32", "DateTime", "DateTime64"}};
+    FunctionDocumentation::Examples examples = {
         {"Subtract weeks from different date types", R"(
 WITH
     toDate('2024-01-01') AS date,
@@ -46,19 +47,11 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 week)
 └──────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_subtractWeeks = {1, 1};
-    FunctionDocumentation::Category category_subtractWeeks = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_subtractWeeks = {
-        description_subtractWeeks,
-        syntax_subtractWeeks,
-        arguments_subtractWeeks,
-        returned_value_subtractWeeks,
-        examples_subtractWeeks,
-        introduced_in_subtractWeeks,
-        category_subtractWeeks
-    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionSubtractWeeks>(documentation_subtractWeeks);
+    factory.registerFunction<FunctionSubtractWeeks>(documentation);
 }
 
 }

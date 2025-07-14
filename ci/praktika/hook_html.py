@@ -201,6 +201,7 @@ class HtmlRunnerHooks:
                         branch=cache_record.branch,
                         sha=cache_record.sha,
                         job_name=skipped_job,
+                        workflow_name=cache_record.workflow,
                     )
                     result = Result.create_new(
                         skipped_job,

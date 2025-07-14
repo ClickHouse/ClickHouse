@@ -9,18 +9,18 @@ using FunctionAddMonths = FunctionDateOrDateTimeAddInterval<AddMonthsImpl>;
 
 REGISTER_FUNCTION(AddMonths)
 {
-    FunctionDocumentation::Description description_addMonths = R"(
+    FunctionDocumentation::Description description = R"(
 Adds a specified number of months to a date, a date with time or a string-encoded date or date with time.
     )";
-    FunctionDocumentation::Syntax syntax_addMonths = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 addMonths(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments_addMonths = {
-        {"datetime", "Date or date with time to add specified number of months to. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
-        {"num", "Number of months to add. [`(U)Int*`](../data-types/int-uint.md)/[`Float*`](../data-types/float.md)."}
+    FunctionDocumentation::Arguments arguments = {
+        {"datetime", "Date or date with time to add specified number of months to.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
+        {"num", "Number of months to add.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_addMonths = "Returns `datetime` plus `num` months. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md).";
-    FunctionDocumentation::Examples examples_addMonths = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` months", {"Date", "Date32", "DateTime", "DateTime64"}};
+    FunctionDocumentation::Examples examples = {
         {"Add months to different date types", R"(
 WITH
     toDate('2024-01-01') AS date,
@@ -45,19 +45,11 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 month)
 └──────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_addMonths = {1, 1};
-    FunctionDocumentation::Category category_addMonths = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_addMonths = {
-        description_addMonths,
-        syntax_addMonths,
-        arguments_addMonths,
-        returned_value_addMonths,
-        examples_addMonths,
-        introduced_in_addMonths,
-        category_addMonths
-    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionAddMonths>(documentation_addMonths);
+    factory.registerFunction<FunctionAddMonths>(documentation);
 }
 
 }

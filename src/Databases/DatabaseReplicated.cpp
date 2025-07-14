@@ -31,6 +31,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
+#include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -80,6 +81,7 @@ namespace DatabaseReplicatedSetting
 {
     extern const DatabaseReplicatedSettingsString collection_name;
     extern const DatabaseReplicatedSettingsFloat max_broken_tables_ratio;
+    extern const DatabaseReplicatedSettingsUInt64 max_replication_lag_to_enqueue;
 }
 
 namespace ErrorCodes
@@ -335,9 +337,8 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
 
     assert(!hosts.empty());
     assert(hosts.size() == host_ids.size());
-    String current_shard = parseFullReplicaName(hosts.front()).first;
+    String current_shard;
     std::vector<std::vector<DatabaseReplicaInfo>> shards;
-    shards.emplace_back();
     for (size_t i = 0; i < hosts.size(); ++i)
     {
         const auto & id = host_ids[i];
@@ -349,8 +350,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
         if (shard != current_shard)
         {
             current_shard = shard;
-            if (!shards.back().empty())
-                shards.emplace_back();
+            shards.emplace_back();
         }
         String hostname = unescapeForFileName(host_port);
         shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica)});
@@ -436,6 +436,7 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
 
                 replicas_info[global_replica_index] = ReplicaInfo{
                     .is_active = replica_active.error == Coordination::Error::ZOK,
+                    .unsynced_after_recovery = ddl_worker && ddl_worker->isUnsyncedAfterRecovery(),
                     .replication_lag = replica_log_ptr.error != Coordination::Error::ZNONODE ? std::optional(max_log_ptr - parse<UInt32>(replica_log_ptr.data)) : std::nullopt,
                     .recovery_time = recovery_time,
                 };
@@ -643,14 +644,35 @@ void DatabaseReplicated::createEmptyLogEntry(const ZooKeeperPtr & current_zookee
     DatabaseReplicatedDDLWorker::enqueueQueryImpl(current_zookeeper, entry, this, true);
 }
 
-bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
+bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms, SyncReplicaMode mode)
 {
+    chassert(mode == SyncReplicaMode::DEFAULT || mode == SyncReplicaMode::STRICT);
     {
         std::lock_guard lock{ddl_worker_mutex};
         if (!ddl_worker || is_probably_dropped)
             return false;
     }
-    return ddl_worker->waitForReplicaToProcessAllEntries(timeout_ms);
+    if (mode == SyncReplicaMode::DEFAULT)
+        return ddl_worker->waitForReplicaToProcessAllEntries(timeout_ms);
+
+    Stopwatch elapsed;
+    while (true)
+    {
+        UInt64 elapsed_ms = elapsed.elapsedMilliseconds();
+        if (elapsed_ms > timeout_ms)
+            return false;
+
+        if (ddl_worker->waitForReplicaToProcessAllEntries(timeout_ms - elapsed_ms))
+            return true;
+
+        UInt32 our_log_ptr = ddl_worker->getLogPointer();
+        UInt32 max_log_ptr = parse<UInt32>(getZooKeeper()->get(fs::path(zookeeper_path) / "max_log_ptr"));
+        bool became_synced = our_log_ptr + db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] >= max_log_ptr;
+        if (became_synced)
+            return true;
+
+        /// max_log_ptr might be increased while we were waiting - retry until replication lag is below the threshold
+    }
 }
 
 void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper)
@@ -2121,7 +2143,7 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
         return false;
     }
 
-    if (query_ptr->as<const ASTDeleteQuery>() != nullptr)
+    if (query_ptr->as<const ASTDeleteQuery>() || query_ptr->as<const ASTUpdateQuery>())
     {
         if (is_keeper_map_table(query_ptr))
             return false;

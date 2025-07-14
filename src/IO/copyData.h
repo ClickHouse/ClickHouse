@@ -9,10 +9,9 @@ namespace DB
 
 class ReadBuffer;
 class WriteBuffer;
-class Throttler;
 
-using ThrottlerPtr = std::shared_ptr<Throttler>;
-
+class IThrottler;
+using ThrottlerPtr = std::shared_ptr<IThrottler>;
 
 /// Copies data from ReadBuffer to WriteBuffer, all that is.
 void copyData(ReadBuffer & from, WriteBuffer & to);
