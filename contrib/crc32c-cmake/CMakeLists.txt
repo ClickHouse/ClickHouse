@@ -1,4 +1,5 @@
 set(CRC32C_DIR ${ClickHouse_SOURCE_DIR}/contrib/crc32c)
+set(CRC32C_CMAKE_DIR ${ClickHouse_SOURCE_DIR}/contrib/crc32c-cmake)
 
 configure_file(
   "${CRC32C_DIR}/src/crc32c_config.h.in"
@@ -18,14 +19,16 @@ set(CRC32C_SOURCES
 
 set(CRC32C_FLAGS)
 
-if (ARCH_AARCH64)
-  set(CRC32C_FLAGS -DHAVE_ARM64_CRC32C)
+if(ARCH_AARCH64)
+  include_directories(${CRC32C_CMAKE_DIR}/aarch64)
   list(APPEND CRC32C_SOURCES "${CRC32C_DIR}/src/crc32c_arm64.cc")
-endif()
-
-if (ENABLE_SSE42)
-  set(CRC32C_FLAGS -DHAVE_SSE42)
-  list(APPEND CRC32C_SOURCES "${CRC32C_DIR}/src/crc32c_sse42.cc")
+else()
+  if(ENABLE_SSE42)
+    include_directories(${CRC32C_CMAKE_DIR}/x86_64/sse42)
+    list(APPEND CRC32C_SOURCES "${CRC32C_DIR}/src/crc32c_sse42.cc")
+  else()
+    include_directories(${CRC32C_CMAKE_DIR}/x86_64/no_sse42)
+  endif()
 endif()
 
 add_library(_crc32c ${CRC32C_SOURCES})
