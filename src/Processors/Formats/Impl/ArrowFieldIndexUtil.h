@@ -32,6 +32,7 @@ class Block;
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int THERE_IS_NO_COLUMN;
 }
 
@@ -81,7 +82,7 @@ public:
         const Block & header,
         const arrow::Schema & schema,
         const parquet::FileMetaData & file,
-        std::optional<std::unordered_map<String, String>> & clickhouse_to_parquet_names)
+        const std::optional<std::unordered_map<String, String>> & clickhouse_to_parquet_names)
     {
         std::vector<ClickHouseIndexToParquetIndex> required_indices;
         std::unordered_set<int> added_indices;
@@ -92,7 +93,16 @@ public:
             const auto & named_col = header.getByPosition(i);
             std::string col_name = named_col.name;
             if (clickhouse_to_parquet_names)
-                col_name = clickhouse_to_parquet_names->at(col_name);
+            {
+                try
+                {
+                    col_name = clickhouse_to_parquet_names->at(col_name);
+                }
+                catch (...)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can't find column {} in header", col_name);
+                }
+            }
             if (ignore_case)
                 boost::to_lower(col_name);
             findRequiredIndices(col_name, i, named_col.type, fields_indices, added_indices, required_indices, file);
