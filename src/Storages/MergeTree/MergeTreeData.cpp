@@ -25,8 +25,10 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
+#include <base/scope_guard.h>
 #include <Disks/IDisk.h>
 #include <Disks/IDiskTransaction.h>
+#include <Disks/DiskEncryptedTransaction.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
@@ -46,8 +48,6 @@
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
-#include <Disks/IDiskTransaction.h>
-#include <Disks/DiskEncryptedTransaction.h>
 #include <IO/Expect404ResponseScope.h>
 #include <IO/Operators.h>
 #include <IO/S3Common.h>
@@ -4914,7 +4914,7 @@ void MergeTreeData::removePartsFromWorkingSetImmediatelyAndSetTemporaryState(con
 
         modifyPartState(part, MergeTreeDataPartState::Temporary);
         /// Erase immediately
-        LOG_TEST(log, "removePartsFromWorkingSetImmediatelyAndSetTemporaryState: removing {} from data_parts_indexes", part->getNameWithState());
+        LOG_DEBUG(log, "removePartsFromWorkingSetImmediatelyAndSetTemporaryState: removing {} from data_parts_indexes", part->getNameWithState());
         data_parts_indexes.erase(it_part);
     }
 }
@@ -5035,12 +5035,24 @@ void MergeTreeData::checkChecksumsFileIsConsistentWithFileSystem(MutableDataPart
         files_in_checksums.end());
     std::sort(files_in_checksums.begin(), files_in_checksums.end());
 
+    /// make sure we do not hold part by shared ptr inside the lambda
+    auto shared_counter = part.use_count();
+    SCOPE_EXIT({ chassert(shared_counter == part.use_count()); });
+
     part->getDataPartStorage().validateDiskTransaction(
-    [current_part_dir = fs::path(part->getDataPartStorage().getRelativePath()), part, files_in_checksums, projections_in_checksums] (IDiskTransaction & tx)
+    [
+        current_part_dir = fs::path(part->getDataPartStorage().getRelativePath()),
+        part_name = part->name,
+        part_storage_prt = part->getDataPartStoragePtr(),
+        part_type = part->getDataPartStorage().getType(),
+        is_storage_transactional = part->getDataPartStorage().isTransactional(),
+        files_in_checksums,
+        projections_in_checksums
+    ] (IDiskTransaction & tx)
     {
         LOG_DEBUG(getLogger("checkChecksumsFileIsConsistentWithFileSystem"),
-            "Checking checksums.txt file is consistent with the files on file system for part {}, relative path: {} tx {}",
-            current_part_dir, part->getDataPartStorage().getRelativePath(), size_t(&tx));
+            "Checking checksums.txt file is consistent with the files on file system for part {} tx {}",
+            current_part_dir, size_t(&tx));
 
         // This is a pedantic check that the checksums file contains exactly the records with actual files
         // There are some suspicion that some time it could contain excess files
@@ -5086,7 +5098,7 @@ void MergeTreeData::checkChecksumsFileIsConsistentWithFileSystem(MutableDataPart
                 "files in checksums: {}, files in part: {} "
                 "Missed files in part: {}, Extra files in part: {}",
                 files_in_checksums.size(),
-                part->name,
+                part_name,
                 files_in_part.size(),
                 fmt::join(files_in_checksums, ", "),
                 fmt::join(files_in_part, ", "),
@@ -5109,7 +5121,7 @@ void MergeTreeData::checkChecksumsFileIsConsistentWithFileSystem(MutableDataPart
                 "projections in checksums: {}, projections in part: {} "
                 "Missed projections in part: {}",
                 projections_in_checksums.size(),
-                part->name,
+                part_name,
                 projections_in_part.size(),
                 fmt::join(projections_in_checksums, ", "),
                 fmt::join(projections_in_part, ", "),
@@ -5129,7 +5141,7 @@ void MergeTreeData::checkChecksumsFileIsConsistentWithFileSystem(MutableDataPart
                 "projections in checksums: {}, projections in part: {} "
                 "Extra projections in part: {}",
                 projections_in_checksums.size(),
-                part->name,
+                part_name,
                 projections_in_part.size(),
                 fmt::join(projections_in_checksums, ", "),
                 fmt::join(projections_in_part, ", "),
@@ -7734,6 +7746,7 @@ void MergeTreeData::Transaction::rollbackPartsToTemporaryState()
             DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()));
     }
 
+    LOG_DEBUG(getLogger("rollbackPartsToTemporaryState"), "Clearing precommitted parts in transaction {}.", getTID());
     clear();
 }
 

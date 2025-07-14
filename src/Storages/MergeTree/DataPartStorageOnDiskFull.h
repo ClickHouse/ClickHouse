@@ -13,6 +13,8 @@ public:
     DataPartStorageOnDiskFull(VolumePtr volume_, std::string root_path_, std::string part_dir_);
     MergeTreeDataPartStorageType getType() const override { return MergeTreeDataPartStorageType::Full; }
 
+    ~DataPartStorageOnDiskFull() override;
+
     MutableDataPartStoragePtr getProjection(const std::string & name, bool use_parent_transaction = true) override; // NOLINT
     DataPartStoragePtr getProjection(const std::string & name) const override;
 

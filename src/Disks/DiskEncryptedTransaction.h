@@ -31,7 +31,7 @@ struct DiskEncryptedSettings
 };
 
 
-class DiskEncryptedTransaction : public IDiskTransaction
+class DiskEncryptedTransaction : public IDiskTransaction, std::enable_shared_from_this<DiskEncryptedTransaction>
 {
 public:
     static String wrappedPath(const String disk_path, const String & path)
@@ -284,9 +284,9 @@ public:
     void validateTransaction(std::function<void (IDiskTransaction&)> check_function) override
     {
         LOG_DEBUG(getLogger("DiskEncryptedTransaction"), "Validating transaction with check function tx: {}", size_t(this));
-        auto wrapped = [&, moved_func = std::move(check_function)] (IDiskTransaction&)
+        auto wrapped = [tx = shared_from_this(), moved_func = std::move(check_function)] (IDiskTransaction&)
         {
-            moved_func(*this);
+            moved_func(*tx);
         };
         delegate_transaction->validateTransaction(std::move(wrapped));
     }

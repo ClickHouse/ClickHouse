@@ -558,6 +558,9 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
     for (auto & store: gin_index_stores)
         store.second->finalize();
 
+    for (size_t i = 0; i < skip_indices.size(); ++i)
+        LOG_DEBUG(log, "Spent {} ms calculating index {} for the part {}", execution_stats.skip_indices_build_us[i] / 1000, skip_indices[i]->index.name, data_part_name);
+
     gin_index_stores.clear();
     skip_indices_streams.clear();
     skip_indices_aggregators.clear();

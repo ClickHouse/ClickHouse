@@ -23,12 +23,22 @@ namespace ErrorCodes
 DataPartStorageOnDiskFull::DataPartStorageOnDiskFull(VolumePtr volume_, std::string root_path_, std::string part_dir_)
     : DataPartStorageOnDiskBase(std::move(volume_), std::move(root_path_), std::move(part_dir_))
 {
+    LOG_DEBUG(getLogger("DataPartStorageOnDiskFull"),
+        "Create full storage for part {}", part_dir);
 }
 
 DataPartStorageOnDiskFull::DataPartStorageOnDiskFull(
     VolumePtr volume_, std::string root_path_, std::string part_dir_, DiskTransactionPtr transaction_)
     : DataPartStorageOnDiskBase(std::move(volume_), std::move(root_path_), std::move(part_dir_), std::move(transaction_))
 {
+    LOG_DEBUG(getLogger("DataPartStorageOnDiskFull"),
+        "Create full storage for part {}", part_dir);
+}
+
+DataPartStorageOnDiskFull::~DataPartStorageOnDiskFull()
+{
+    LOG_DEBUG(getLogger("DataPartStorageOnDiskFull"),
+        "Destroy full storage for part {}", part_dir);
 }
 
 MutableDataPartStoragePtr DataPartStorageOnDiskFull::create(
