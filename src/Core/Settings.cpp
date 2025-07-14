@@ -6748,12 +6748,6 @@ SELECT queries with LIMIT bigger than this setting cannot use vector similarity 
     DECLARE(UInt64, hnsw_candidate_list_size_for_search, 256, R"(
 The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'.
 )", BETA) \
-    DECLARE(Bool, vector_search_with_rescoring, true, R"(
-If ClickHouse performs rescoring for queries that use the vector similarity index.
-Without rescoring, the vector similarity index returns the rows containing the best matches directly.
-With rescoring, the rows are extrapolated to granule level and all rows in the granule are checked again.
-In most situations, rescoring helps only marginally with accuracy but it deteriorates performance of vector search queries significantly.
-)", BETA) \
     DECLARE(VectorSearchFilterStrategy, vector_search_filter_strategy, VectorSearchFilterStrategy::AUTO, R"(
 If a vector search query has a WHERE clause, this setting determines if it is evaluated first (pre-filtering) OR if the vector similarity index is checked first (post-filtering). Possible values:
 - 'auto' - Postfiltering (the exact semantics may change in future).

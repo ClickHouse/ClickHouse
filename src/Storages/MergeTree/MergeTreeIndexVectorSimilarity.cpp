@@ -420,11 +420,15 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
     , postfilter_multiplier(context->getSettingsRef()[Setting::vector_search_postfilter_multiplier])
     , max_limit(context->getSettingsRef()[Setting::max_limit_for_vector_search_queries])
 {
+    static constexpr auto MAX_POSTFILTER_MULTIPLIER = 1000.0;
+
     if (expansion_search == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'hnsw_candidate_list_size_for_search' must not be 0");
-    if (!std::isfinite(postfilter_multiplier) || postfilter_multiplier < 0.0 ||
-        (parameters && !std::isfinite(postfilter_multiplier * parameters->limit)))
-            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_postfilter_multiplier' must be bigger than 0.0");
+
+    if (!std::isfinite(postfilter_multiplier)
+        || postfilter_multiplier <= 0.0 || postfilter_multiplier > MAX_POSTFILTER_MULTIPLIER
+        || (parameters && !std::isfinite(postfilter_multiplier * parameters->limit)))
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_postfilter_multiplier' must be greater than 0.0 and less than {}", MAX_POSTFILTER_MULTIPLIER);
 }
 
 bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexGranulePtr) const
@@ -451,7 +455,7 @@ bool MergeTreeIndexConditionVectorSimilarity::alwaysUnknownOrTrue() const
     return false;
 }
 
-NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule_) const
+std::vector<UInt64> MergeTreeIndexConditionVectorSimilarity::calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule_) const
 {
     if (!parameters)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected vector_search_parameters to be set");
@@ -479,23 +483,25 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
     if (!search_result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index. Error: {}", search_result.error.release());
 
-    NearestNeighbours result;
-    result.rows.resize(search_result.size());
-    if (parameters->return_distances)
-    {
-        result.distances = std::vector<float>(search_result.size());
-        search_result.dump_to(result.rows.data(), result.distances.value().data());
-    }
-    else
-    {
-        search_result.dump_to(result.rows.data());
-    }
+    std::vector<USearchIndex::vector_key_t> neighbors(search_result.size()); /// indexes of vectors which were closest to the reference vector
+    search_result.dump_to(neighbors.data());
+
+    std::sort(neighbors.begin(), neighbors.end());
+
+    /// Duplicates should in theory not be possible but who knows ...
+    const bool has_duplicates = std::adjacent_find(neighbors.begin(), neighbors.end()) != neighbors.end();
+    if (has_duplicates)
+#ifndef NDEBUG
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Usearch returned duplicate row numbers");
+#else
+        neighbors.erase(std::unique(neighbors.begin(), neighbors.end()), neighbors.end());
+#endif
 
     ProfileEvents::increment(ProfileEvents::USearchSearchCount);
     ProfileEvents::increment(ProfileEvents::USearchSearchVisitedMembers, search_result.visited_members);
     ProfileEvents::increment(ProfileEvents::USearchSearchComputedDistances, search_result.computed_distances);
 
-    return result;
+    return neighbors;
 }
 
 MergeTreeIndexVectorSimilarity::MergeTreeIndexVectorSimilarity(
