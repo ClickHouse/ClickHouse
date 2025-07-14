@@ -173,7 +173,8 @@ void writeColumnSingleGranule(
     serialize_settings.object_serialization_version = settings.object_serialization_version;
     serialize_settings.object_shared_data_serialization_version = settings.object_shared_data_serialization_version;
     serialize_settings.object_shared_data_buckets = settings.object_shared_data_buckets;
-    /// Write statistics only in first granule, it is used only during merges and we always get it from the first granule.
+    /// Write object and dynamic statistics only in first granule, it is used
+    /// only during merges and we always get it from the first granule.
     if (is_first_granule)
         serialize_settings.object_and_dynamic_write_statistics = ISerialization::SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::PREFIX;
     else

@@ -66,13 +66,12 @@ try
 
             auto * cache_for_subcolumns = columns_for_offsets[pos] ? nullptr : &columns_cache_for_subcolumns;
             auto & deserialize_states_cache = deserialize_states_caches[columns_to_read[pos].getNameInStorage()];
-//            LOG_DEBUG(getLogger("MergeTreeReaderCompact"), "Read data of column {}", columns_to_read[pos].name);
             readPrefix(pos, from_mark, *stream, &deserialize_states_cache);
-            readData(pos, res_columns[pos], rows_to_read, rows_offset, from_mark, *stream, columns_cache, cache_for_subcolumns, nullptr);
+            readData(pos, res_columns[pos], rows_to_read, rows_offset, from_mark, res_columns[pos]->size(), *stream, columns_cache, cache_for_subcolumns, nullptr);
         }
 
         /// If we have subcolumns and substreams marks, we read subcolumns separately, because we want to
-        /// use deserialization prefixes cache and substreams cache during deserialization.
+        /// use deserialization prefixes cache and substreams cache during deserialization of subcolumns of the same column.
         if (has_substream_marks && has_subcolumns)
         {
             readSubcolumnsPrefixes(from_mark, current_task_last_mark);
@@ -80,14 +79,12 @@ try
             /// Deserialize all subcolumns according to subcolumns_deserialization_order.
             for (const auto & [column, subcolumns_order] : subcolumns_deserialization_order)
             {
-//                LOG_DEBUG(getLogger("MergeTreeReaderCompact"), "Read subcolumns of column {}", column);
-
                 ISerialization::SubstreamsCache substreams_cache;
+                size_t subcolumns_size_before_reading = res_columns[subcolumns_order[0]]->size();
                 for (size_t pos : subcolumns_order)
                 {
-//                    LOG_DEBUG(getLogger("MergeTreeReaderCompact"), "Read data of subcolumn {}", columns_to_read[pos].name);
-//                    stream->adjustRightMark(current_task_last_mark);
-                    readData(pos, res_columns[pos], rows_to_read, rows_offset, from_mark, *stream, columns_cache, &columns_cache_for_subcolumns, &substreams_cache);
+                    stream->adjustRightMark(current_task_last_mark);
+                    readData(pos, res_columns[pos], rows_to_read, rows_offset, from_mark, subcolumns_size_before_reading, *stream, columns_cache, &columns_cache_for_subcolumns, &substreams_cache);
                 }
             }
         }

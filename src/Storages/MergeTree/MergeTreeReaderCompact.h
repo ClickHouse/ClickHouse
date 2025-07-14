@@ -45,6 +45,7 @@ protected:
         size_t rows_to_read,
         size_t rows_offset,
         size_t from_mark,
+        size_t column_size_before_reading,
         MergeTreeReaderStream & stream,
         std::unordered_map<String, ColumnPtr> & columns_cache,
         std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns,
@@ -54,7 +55,7 @@ protected:
 
     void readPrefix(size_t column_idx, size_t from_mark, MergeTreeReaderStream & stream, ISerialization::SubstreamsDeserializeStatesCache * cache);
 
-    void readSubcolumnsPrefixes(size_t from_mark, size_t current_task_last_mark, bool use_prefixes_deserialization_cache = false);
+    void readSubcolumnsPrefixes(size_t from_mark, size_t current_task_last_mark);
     void initSubcolumnsDeserializationOrder();
 
     void createColumnsForReading(Columns & res_columns) const;

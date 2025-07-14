@@ -499,6 +499,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     }
     else if (auto * discriminators_stream = settings.getter(settings.path))
     {
+
         variant_state = checkAndGetState<DeserializeBinaryBulkStateVariant>(state);
         auto * discriminators_state = checkAndGetState<DeserializeBinaryBulkStateVariantDiscriminators>(variant_state->discriminators_state);
         size_t prev_size = col.getLocalDiscriminatorsPtr()->size();

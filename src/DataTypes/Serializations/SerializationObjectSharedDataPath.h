@@ -11,7 +11,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-
+/// Serialization of dynamic Object paths from shared data.
 class SerializationObjectSharedDataPath final : public SerializationWrapper
 {
 public:

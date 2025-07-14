@@ -4,7 +4,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnObject.h>
 #include <Common/assert_cast.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -190,7 +189,6 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkStatePrefix(
                 else
                     ++it;
             }
-//            LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "Update structure state oin bucket {} by adding sub object prefix {}: {}", bucket, paths_prefix, structure_state_concrete->str());
             settings.path.pop_back();
         }
     }
@@ -214,18 +212,13 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
     if (!state)
         return;
 
-//    LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "Deserialize sub object shared data with prefix {} with rows_offset {} and limit {}", paths_prefix, rows_offset, limit);
-
     auto * sub_object_shared_data_state = checkAndGetState<DeserializeBinaryBulkStateSubObjectSharedData>(state);
 
     if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP)
     {
         /// Initialize map column if needed.
         if (column->empty() || !sub_object_shared_data_state->map_column)
-        {
-//            LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "Init map column in state");
             sub_object_shared_data_state->map_column = DataTypeObject::getTypeOfSharedData()->createColumn();
-        }
 
         /// Read shared data map column.
         size_t num_read_rows = 0;
@@ -235,7 +228,6 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             const auto * map_element = assert_cast<const SerializationObjectSharedData::SubstreamsCacheMapColumnWithNumReadRowsElement *>(cache_element);
             sub_object_shared_data_state->map_column = map_element->map_column;
             num_read_rows = map_element->num_read_rows;
-//            LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "Get map column from cache: size: {}, num_read_rows: {}", map_element->map_column->size(), num_read_rows);
         }
         /// If we don't have it in cache, deserialize and put deserialized map in cache.
         else
@@ -244,7 +236,6 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             serialization_map->deserializeBinaryBulkWithMultipleStreams(sub_object_shared_data_state->map_column, rows_offset, limit, settings, sub_object_shared_data_state->map_state, cache);
             num_read_rows = sub_object_shared_data_state->map_column->size() - prev_size;
             addElementToSubstreamsCache(cache, settings.path, std::make_unique<SerializationObjectSharedData::SubstreamsCacheMapColumnWithNumReadRowsElement>(sub_object_shared_data_state->map_column, num_read_rows));
-//            LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "Deserialize map column: size: {}, num_read_rows: {}", sub_object_shared_data_state->map_column->size(), num_read_rows);
         }
 
         size_t map_column_offset = sub_object_shared_data_state->map_column->size() - num_read_rows;
@@ -295,8 +286,6 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             {
                 const auto * map_element = assert_cast<const SerializationObjectSharedData::SubstreamsCacheMapColumnWithNumReadRowsElement *>(cache_element);
                 bucket_map_columns[bucket] = map_element->map_column;
-//                LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "Get {} bucket map column from cache: size: {}", bucket, map_element->map_column->size());
-
             }
             /// If we don't have it in cache, deserialize and put deserialized map in cache.
             else
@@ -304,7 +293,6 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 bucket_map_columns[bucket] = DataTypeObject::getTypeOfSharedData()->createColumn();
                 serialization_map->deserializeBinaryBulkWithMultipleStreams(bucket_map_columns[bucket], rows_offset, limit, settings, sub_object_shared_data_state->bucket_map_states[bucket], cache);
                 addElementToSubstreamsCache(cache, settings.path, std::make_unique<SerializationObjectSharedData::SubstreamsCacheMapColumnWithNumReadRowsElement>(bucket_map_columns[bucket], bucket_map_columns[bucket]->size()));
-//                LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "Deserialize {} bucket map column: size: {}", bucket, bucket_map_columns[bucket]->size());
             }
 
             settings.path.pop_back();
@@ -322,7 +310,6 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         {
             settings.path.push_back(Substream::ObjectSharedDataBucket);
             settings.path.back().object_shared_data_bucket = bucket;
-//            LOG_DEBUG(getLogger("SerializationSubObjectSharedData"), "Deserialize data from bucket {}", bucket);
 
             auto * shared_data_structure_state = checkAndGetState<SerializationObjectSharedData::DeserializeBinaryBulkStateObjectSharedDataStructure>(sub_object_shared_data_state->bucket_structure_states[bucket]);
             auto structure_granules = SerializationObjectSharedData::deserializeStructure(rows_offset, limit, settings, *shared_data_structure_state, cache);
@@ -342,8 +329,6 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         auto [shared_data_paths, shared_data_values, shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(*column->assumeMutable());
         for (size_t granule = 0; granule != bucket_paths_data_granules[0]->size(); ++granule)
         {
-//            LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "Collect sub object shared data from granule {}", granule);
-
             /// Collect list of all paths that match prefix from all buckets in this granule.
             std::vector<std::pair<std::string_view, const ColumnDynamic *>> all_paths;
             for (auto paths_data_granules : bucket_paths_data_granules)
@@ -352,10 +337,7 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 for (const auto & [path, path_column] : paths_data)
                 {
                     if (path.starts_with(paths_prefix))
-                    {
-//                        LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "Add path {}", path);
                         all_paths.emplace_back(path, assert_cast<const ColumnDynamic *>(path_column.get()));
-                    }
                 }
             }
 

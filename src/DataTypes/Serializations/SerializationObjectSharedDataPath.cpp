@@ -1,12 +1,10 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/Serializations/SerializationObjectSharedDataPath.h>
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
-#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnObject.h>
 #include <Common/logger_useful.h>
 #include <Core/NamesAndTypes.h>
-#include <boost/algorithm/string/join.hpp>
 
 namespace DB
 {
@@ -174,7 +172,6 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkStatePrefix(
     }
     else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
     {
-//        LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "Deserialize structure state for path {} with subcolumn {} in bucket {}", path, path_subcolumn, bucket);
         settings.path.push_back(Substream::ObjectSharedDataBucket);
         settings.path.back().object_shared_data_bucket = bucket;
 
@@ -184,21 +181,18 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkStatePrefix(
         {
             /// We already requested the whole path, even if here we read only subcolumn,
             /// we will just extract it in memory from whole path column.
-//            LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "Don't update structure state, it already contains path {}: {}", path, structure_state_concrete->str());
         }
         /// If no subcolumn requested or path matches any requested prefixes, request the whole path.
         else if (path_subcolumn.empty() || structure_state_concrete->checkIfPathMatchesAnyRequestedPrefix(path))
         {
             structure_state_concrete->requested_paths.insert(path);
-            /// Remove all subcolumns of this path if any. We will read the whole path and extract all subcolumns in memory.q
+            /// Remove all subcolumns of this path if any. We will read the whole path and extract all subcolumns in memory.
             structure_state_concrete->requested_paths_subcolumns.erase(path);
-//            LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "Update structure state by adding path {} (subcolumn {} will be extracted in memory): {}", path, path_subcolumn, structure_state_concrete->str());
         }
         /// Otherwise request only subcolumn of this path.
         else
         {
             structure_state_concrete->requested_paths_subcolumns[path].emplace_back(path_subcolumn, subcolumn_type, nested_serialization);
-//            LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "Update structure state by adding subcolumn {} of path {}: {}", path_subcolumn, path, structure_state_concrete->str());
         }
 
         settings.path.pop_back();
@@ -223,8 +217,6 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
     if (!state)
         return;
 
-//    LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "Deserialize shared data path {} with subcolumn {} from bucket {} with rows_offset {} and limit {}", path, path_subcolumn, bucket, rows_offset, limit);
-
     auto * shared_data_path_state = checkAndGetState<DeserializeBinaryBulkStateObjectSharedDataPath>(state);
 
     if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP || serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP_WITH_BUCKETS)
@@ -235,17 +227,13 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
         {
             /// Initialize map column if needed.
             if (column->empty() || !shared_data_path_state->map_column)
-            {
-//                LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "Init map column in state");
                 shared_data_path_state->map_column = DataTypeObject::getTypeOfSharedData()->createColumn();
-            }
 
             if (const auto * cache_element = getElementFromSubstreamsCache(cache, settings.path))
             {
                 const auto * map_element = assert_cast<const SerializationObjectSharedData::SubstreamsCacheMapColumnWithNumReadRowsElement *>(cache_element);
                 shared_data_path_state->map_column = map_element->map_column;
                 num_read_rows = map_element->num_read_rows;
-//                LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "Get map column from cache: size: {}, num_read_rows: {}", map_element->map_column->size(), num_read_rows);
             }
             /// If we don't have it in cache, deserialize and put deserialized map in cache.
             else
@@ -254,7 +242,6 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
                 serialization_map->deserializeBinaryBulkWithMultipleStreams(shared_data_path_state->map_column, rows_offset, limit, settings, shared_data_path_state->map_state, cache);
                 num_read_rows = shared_data_path_state->map_column->size() - prev_size;
                 addElementToSubstreamsCache(cache, settings.path, std::make_unique<SerializationObjectSharedData::SubstreamsCacheMapColumnWithNumReadRowsElement>(shared_data_path_state->map_column, num_read_rows));
-//                LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "Deserialize map column: size: {}, num_read_rows: {}", shared_data_path_state->map_column->size(), num_read_rows);
             }
 
             map_column = shared_data_path_state->map_column;
@@ -268,7 +255,6 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
             {
                 const auto * map_element = assert_cast<const SerializationObjectSharedData::SubstreamsCacheMapColumnWithNumReadRowsElement *>(cache_element);
                 map_column = map_element->map_column;
-//                LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "Get {} bucket map column from cache: size: {}", bucket, map_element->map_column->size());
             }
             /// If we don't have it in cache, deserialize and put deserialized map in cache.
             else
@@ -279,7 +265,6 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
                 map_column = DataTypeObject::getTypeOfSharedData()->createColumn();
                 serialization_map->deserializeBinaryBulkWithMultipleStreams(map_column, rows_offset, limit, settings, shared_data_path_state->map_state, cache);
                 addElementToSubstreamsCache(cache, settings.path, std::make_unique<SerializationObjectSharedData::SubstreamsCacheMapColumnWithNumReadRowsElement>(map_column, map_column->size()));
-//                LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "Deserialize bucket map column: size: {}", map_column->size());
             }
 
             num_read_rows = map_column->size();
@@ -320,18 +305,13 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
             const auto & paths_info_granule = (*paths_infos_granules)[granule];
             const auto & paths_data_granule = (*paths_data_granules)[granule];
 
-//            LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "Get data of path {} and subcolumn {} from granule {}", path, path_subcolumn, granule);
             /// Skip granule if there is nothing to read from it.
             if (!structure_granule.limit)
-            {
-//                LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "No data in this granule");
                 continue;
-            }
 
             /// Skip granule if it doesn't have requested path.
             if (!paths_info_granule.path_to_info.contains(path))
             {
-//                LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "This granule doesn't contain requested path");
                 column->assumeMutable()->insertManyDefaults(structure_granule.limit);
                 continue;
             }
@@ -340,8 +320,6 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
             /// Check if we have data of the whole path.
             if (path_data_it != paths_data_granule.paths_data.end())
             {
-//                LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "Got data of the whole path");
-
                 /// If no subcolumn is requested, just insert path data into destination column.
                 if (path_subcolumn.empty())
                 {
@@ -350,7 +328,6 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
                 /// If subcolumn is requested, extract it from the path data.
                 else
                 {
-//                    LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "Extract subcolumn from path column");
                     auto subcolumn = dynamic_type->getSubcolumn(path_subcolumn, path_data_it->second);
                     column->assumeMutable()->insertRangeFrom(*subcolumn, structure_granule.offset, structure_granule.limit);
                 }
@@ -371,7 +348,6 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
                 if (subcolumn_data_it == path_subcolumns_data_it->second.end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Data of subcolumn {} of path {} is not deserialized", path_subcolumn, path);
 
-//                LOG_DEBUG(getLogger("SerializationObjectSharedDataPath"), "Got data of the subcolumn");
                 column->assumeMutable()->insertRangeFrom(*subcolumn_data_it->second, structure_granule.offset, structure_granule.limit);
             }
         }

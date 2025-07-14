@@ -173,6 +173,7 @@ void MergeTreeReaderCompact::readData(
     size_t rows_to_read,
     size_t rows_offset,
     size_t from_mark,
+    size_t column_size_before_reading,
     MergeTreeReaderStream & stream,
     std::unordered_map<String, ColumnPtr> & columns_cache,
     std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns,
@@ -199,8 +200,6 @@ void MergeTreeReaderCompact::readData(
 
     try
     {
-        size_t column_size_before_reading = column->size();
-
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
         deserialize_settings.getter = buffer_getter;
         deserialize_settings.avg_value_size_hint = avg_value_size_hints[name];
@@ -282,25 +281,29 @@ void MergeTreeReaderCompact::readData(
     }
 }
 
-void MergeTreeReaderCompact::readSubcolumnsPrefixes(size_t from_mark, size_t current_task_last_mark, bool use_prefixes_deserialization_cache)
+void MergeTreeReaderCompact::readSubcolumnsPrefixes(size_t from_mark, size_t current_task_last_mark)
 {
     if (!has_subcolumns || !has_substream_marks)
         return;
 
+    /// First, call adjustRightMark for each stream before deserialization.
+    /// We don't call it during prefixes deserialization because we can get prefixes from cache and
+    /// don't call it at all.
+    for (const auto & [column, subcolumns_indexes] : column_to_subcolumns_indexes)
+    {
+        for (auto index : subcolumns_indexes)
+            getStream(columns_to_read[index]).adjustRightMark(current_task_last_mark);
+    }
 
-//    LOG_DEBUG(getLogger("MergeTreeReaderCompact"), "Read subcolumns prefixes");
-
+    /// Second, deserialize prefixes of get the from cache.
     auto deserialize = [&]() -> DeserializeBinaryBulkStateMap
     {
         for (const auto & [column, subcolumns_indexes] : column_to_subcolumns_indexes)
         {
-//            LOG_DEBUG(getLogger("MergeTreeReaderCompact"), "Read subcolumns prefixes of column {}", column);
             ISerialization::SubstreamsDeserializeStatesCache deserialize_states_cache;
             for (auto index : subcolumns_indexes)
             {
-//                LOG_DEBUG(getLogger("MergeTreeReaderCompact"), "Read prefix of subcolumn {}", columns_to_read[index].name);
                 auto & stream = getStream(columns_to_read[index]);
-                stream.adjustRightMark(current_task_last_mark);
                 readPrefix(index, from_mark, stream, &deserialize_states_cache);
             }
         }
@@ -308,7 +311,8 @@ void MergeTreeReaderCompact::readSubcolumnsPrefixes(size_t from_mark, size_t cur
         return deserialize_binary_bulk_state_map_for_subcolumns;
     };
 
-    if (deserialization_prefixes_cache && use_prefixes_deserialization_cache)
+    /// Use deserialization prefixes cache only for remote disks, for local disks it might be inefficient.
+    if (deserialization_prefixes_cache && settings.use_deserialization_prefixes_cache && data_part_info_for_read->getDataPartStorage()->isStoredOnRemoteDisk())
         deserialize_binary_bulk_state_map_for_subcolumns = deserialization_prefixes_cache->getOrSet(deserialize);
     else
         deserialize();
@@ -319,7 +323,9 @@ void MergeTreeReaderCompact::initSubcolumnsDeserializationOrder()
     if (!has_subcolumns || !has_substream_marks || !subcolumns_deserialization_order.empty())
         return;
 
-//    LOG_DEBUG(getLogger("MergeTreeReaderCompact"), "Initialize subcolumns deserialization order");
+    /// When we read multiple subcolumns of the same column it's better to read them in order of their
+    /// serialization to avoid multiple seeks back to the file (especially if we read from remote filesystem).
+    /// Here we determine this order.
     ISerialization::EnumerateStreamsSettings enumerate_settings;
     enumerate_settings.data_part_type = MergeTreeDataPartType::Compact;
     enumerate_settings.use_specialized_prefixes_and_suffixes_substreams = true;
@@ -327,24 +333,17 @@ void MergeTreeReaderCompact::initSubcolumnsDeserializationOrder()
     {
         std::vector<ISerialization::SubstreamData> subcolumns_data;
         subcolumns_data.reserve(subcolumns_indexes.size());
-//        std::vector<String> subcolumns_names;
         for (size_t index : subcolumns_indexes)
         {
             subcolumns_data.push_back(ISerialization::SubstreamData(serializations[index])
                                           .withType(columns_to_read[index].type)
                                           .withDeserializeState(deserialize_binary_bulk_state_map_for_subcolumns[columns_to_read[index].name]));
-//            subcolumns_names.push_back(columns_to_read[index].name);
         }
 
         auto order = getSubcolumnsDeserializationOrder(column, subcolumns_data, columns_substreams.getAllColumnSubstreams(column), enumerate_settings);
         subcolumns_deserialization_order[column].reserve(subcolumns_indexes.size());
-//        std::vector<String> sucolumn_names;
         for (size_t i : order)
-        {
-//            sucolumn_names.push_back(columns_to_read[subcolumns_indexes[i]].name);
             subcolumns_deserialization_order[column].push_back(subcolumns_indexes[i]);
-        }
-//        LOG_DEBUG(getLogger("MergeTreeReaderCompact"), "Subcolumns order for column {}: {}", column, boost::join(sucolumn_names, ", "));
     }
 }
 

@@ -12,7 +12,6 @@
 
 #include <Formats/FormatSettings.h>
 #include <Formats/JSONUtils.h>
-#include <Common/logger_useful.h>
 
 #include <algorithm>
 
@@ -390,7 +389,8 @@ void SerializationArray::deserializeOffsetsBinaryBulk(
         }
 
         /// The length of the offset column added to the stream cache is limit + rows_offset.
-        addColumnToSubstreamsCache(cache, settings.path, arrayOffsetsToSizes(*offsets_column));
+        if (cache)
+            addColumnToSubstreamsCache(cache, settings.path, arrayOffsetsToSizes(*offsets_column));
     }
 }
 

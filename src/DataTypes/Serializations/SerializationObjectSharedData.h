@@ -221,34 +221,6 @@ private:
             }
             return false;
         }
-
-        String str() const
-        {
-            String result = "Requested paths: " + boost::join(requested_paths, ", ") + ". Requested subcolumns: ";
-            bool first = true;
-            for (const auto & [path, subcolumns_info] : requested_paths_subcolumns)
-            {
-                if (first)
-                    first = false;
-                else
-                    result += "; ";
-
-                result += path + ": ";
-                bool nested_first = true;
-                for (const auto & info : subcolumns_info)
-                {
-                    if (nested_first)
-                        nested_first = false;
-                    else
-                        result += ", ";
-
-                    result += info.name;
-                }
-            }
-
-            result += ". Requested prefixes: " + boost::join(requested_paths_prefixes, ", ") + ". " + "need_all_paths: " + std::to_string(need_all_paths) + ".";
-            return result;
-        }
     };
 
     static DeserializeBinaryBulkStatePtr deserializeStructureStatePrefix(DeserializeBinaryBulkSettings & settings, SubstreamsDeserializeStatesCache * cache);
