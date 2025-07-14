@@ -1750,7 +1750,7 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
             *output_info.idx_in_output_block < row_subgroup.block_missing_values.getNumColumns() &&
             subchunk.null_map)
         {
-            auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map.get()).getData();
+            const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map.get()).getData();
             row_subgroup.block_missing_values.setBitsFromNullMap(*output_info.idx_in_output_block, null_map);
         }
         subchunk.null_map.reset();

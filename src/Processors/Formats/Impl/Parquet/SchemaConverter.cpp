@@ -594,7 +594,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
 void SchemaConverter::processPrimitiveColumn(
     const parq::SchemaElement & element, const IDataType * type_hint,
     PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,
-    DataTypePtr & out_inferred_type)
+    DataTypePtr & out_inferred_type) const
 {
     /// Inputs:
     ///  * Parquet Type ("physical type"),
