@@ -28,7 +28,7 @@ WITH <identifier> AS <subquery expression>
 
 ### Example {#common-table-expressions-example}
 
-An example when subquery is re-executed
+An example of when a subquery is re-executed:
 ```sql
 WITH cte_numbers AS
 (
