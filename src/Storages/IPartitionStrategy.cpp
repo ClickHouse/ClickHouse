@@ -38,7 +38,7 @@ namespace
         if (const auto * tuple_function = partition_by->as<ASTFunction>();
             tuple_function && tuple_function->name == "tuple")
         {
-            if (tuple_function->arguments->children.size() == partition_columns.size())
+            if (tuple_function->arguments->children.size() != partition_columns.size())
             {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
