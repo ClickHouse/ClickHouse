@@ -30,15 +30,13 @@ namespace DB
 class IcebergMetadata : public IDataLakeMetadata
 {
 public:
-    using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
     using IcebergHistory = std::vector<Iceberg::IcebergHistoryRecord>;
 
     static constexpr auto name = "Iceberg";
 
     IcebergMetadata(
         ObjectStoragePtr object_storage_,
-        ConfigurationObserverPtr configuration_,
+        StorageObjectStorageConfigurationWeakPtr configuration_,
         const ContextPtr & context_,
         Int32 metadata_version_,
         Int32 format_version_,
@@ -56,7 +54,7 @@ public:
 
     static DataLakeMetadataPtr create(
         const ObjectStoragePtr & object_storage,
-        const ConfigurationObserverPtr & configuration,
+        const StorageObjectStorageConfigurationWeakPtr & configuration,
         const ContextPtr & local_context);
 
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, const String & data_path) const override;
@@ -84,7 +82,7 @@ protected:
 
 private:
     const ObjectStoragePtr object_storage;
-    const ConfigurationObserverPtr configuration;
+    const StorageObjectStorageConfigurationWeakPtr configuration;
     mutable IcebergSchemaProcessor schema_processor;
     LoggerPtr log;
 

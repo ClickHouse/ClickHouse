@@ -162,7 +162,7 @@ namespace
 
 StorageObjectStorageQueue::StorageObjectStorageQueue(
     std::unique_ptr<ObjectStorageQueueSettings> queue_settings_,
-    const ConfigurationPtr configuration_,
+    const StorageObjectStorageConfigurationPtr configuration_,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
@@ -261,6 +261,7 @@ void StorageObjectStorageQueue::startup()
     files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(temp_metadata), getStorageID());
     try
     {
+        ObjectStorageQueueFactory::instance().registerTable(getStorageID());
         files_metadata->startup();
         for (auto & task : streaming_tasks)
             task->activateAndSchedule();
@@ -276,6 +277,12 @@ void StorageObjectStorageQueue::startup()
 
 void StorageObjectStorageQueue::shutdown(bool is_drop)
 {
+    if (shutdown_called)
+        return;
+
+    if (is_drop)
+        ObjectStorageQueueFactory::instance().unregisterTable(getStorageID());
+
     table_is_being_dropped = is_drop;
     shutdown_called = true;
 
@@ -300,6 +307,13 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
         files_metadata.reset();
     }
     LOG_TRACE(log, "Shut down storage");
+}
+
+void StorageObjectStorageQueue::renameInMemory(const StorageID & new_table_id)
+{
+    const auto prev_storage_id = getStorageID();
+    IStorage::renameInMemory(new_table_id);
+    ObjectStorageQueueFactory::instance().renameTable(prev_storage_id, getStorageID());
 }
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
@@ -531,7 +545,9 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
                 {
                     /// Increase the reschedule interval.
                     std::lock_guard lock(mutex);
-                    reschedule_processing_interval_ms = std::min<size_t>(polling_max_timeout_ms, reschedule_processing_interval_ms + polling_backoff_ms);
+                    reschedule_processing_interval_ms = std::min<size_t>(
+                        polling_max_timeout_ms,
+                        reschedule_processing_interval_ms + polling_backoff_ms);
                 }
 
                 LOG_DEBUG(log, "Stopped streaming to {} attached views", dependencies_count);

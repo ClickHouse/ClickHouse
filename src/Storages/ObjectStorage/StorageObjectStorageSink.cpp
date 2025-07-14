@@ -52,7 +52,7 @@ namespace
 StorageObjectStorageSink::StorageObjectStorageSink(
     const std::string & path_,
     ObjectStoragePtr object_storage,
-    ConfigurationPtr configuration,
+    StorageObjectStorageConfigurationPtr configuration,
     const std::optional<FormatSettings> & format_settings_,
     const Block & sample_block_,
     ContextPtr context)
@@ -129,7 +129,7 @@ void StorageObjectStorageSink::cancelBuffers()
 
 PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
+    StorageObjectStorageConfigurationPtr configuration_,
     std::optional<FormatSettings> format_settings_,
     const Block & sample_block_,
     ContextPtr context_)

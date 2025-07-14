@@ -10,11 +10,9 @@ namespace DB
 class StorageObjectStorageCluster : public IStorageCluster
 {
 public:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
-
     StorageObjectStorageCluster(
         const String & cluster_name_,
-        ConfigurationPtr configuration_,
+        StorageObjectStorageConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_in_table_or_function_definition,
@@ -42,7 +40,7 @@ private:
         const ContextPtr & context) override;
 
     const String engine_name;
-    const StorageObjectStorage::ConfigurationPtr configuration;
+    const StorageObjectStorageConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
     NamesAndTypesList virtual_columns;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;

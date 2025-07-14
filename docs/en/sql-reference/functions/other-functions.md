@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for Other Functions'
 sidebar_label: 'Other'
-sidebar_position: 140
 slug: /sql-reference/functions/other-functions
 title: 'Other Functions'
 ---
@@ -10,7 +9,7 @@ import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
 
-# Other Functions
+# Other functions
 
 ## hostName {#hostname}
 

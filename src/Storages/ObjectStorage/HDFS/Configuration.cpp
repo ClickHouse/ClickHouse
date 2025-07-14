@@ -43,9 +43,8 @@ namespace ErrorCodes
 
 void StorageHDFSConfiguration::check(ContextPtr context) const
 {
-    context->getRemoteHostFilter().checkURL(Poco::URI(url));
     checkHDFSURL(fs::path(url) / path.path.substr(1));
-    Configuration::check(context);
+    StorageObjectStorageConfiguration::check(context);
 }
 
 ObjectStoragePtr StorageHDFSConfiguration::createObjectStorage( /// NOLINT
@@ -59,10 +58,10 @@ ObjectStoragePtr StorageHDFSConfiguration::createObjectStorage( /// NOLINT
         url, std::move(hdfs_settings), context->getConfigRef(), /* lazy_initialize */true);
 }
 
-StorageObjectStorage::QuerySettings StorageHDFSConfiguration::getQuerySettings(const ContextPtr & context) const
+StorageObjectStorageQuerySettings StorageHDFSConfiguration::getQuerySettings(const ContextPtr & context) const
 {
     const auto & settings = context->getSettingsRef();
-    return StorageObjectStorage::QuerySettings{
+    return StorageObjectStorageQuerySettings{
         .truncate_on_insert = settings[Setting::hdfs_truncate_on_insert],
         .create_new_file_on_insert = settings[Setting::hdfs_create_new_file_on_insert],
         .schema_inference_use_cache = settings[Setting::schema_inference_use_cache_for_hdfs],
