@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-ordinary-database
+-- Tags: no-fasttest, no-ordinary-database, no-parallel-replicas
 
 -- Test for setting 'vector_search_with_rescoring'
 
