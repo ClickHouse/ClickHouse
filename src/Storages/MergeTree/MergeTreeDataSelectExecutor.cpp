@@ -1627,6 +1627,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     if (index_helper->isVectorSimilarityIndex() && !all_match)
         return ranges;
 
+    // TODO: JAM check this code.
+    // At the moment the code will only work for granularity = 1 because I am not playing with the paddings
     MarkRanges index_ranges;
     for (const auto & range : ranges)
     {
@@ -1707,12 +1709,19 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         size_t last_index_mark = 0;
 
         PostingsCacheForStore cache_in_store;
-        if (dynamic_cast<const MergeTreeIndexGin *>(index_helper.get()))
+        if (dynamic_cast<const MergeTreeIndexGin *>(index_helper.get())) {
             cache_in_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->getDataPartStoragePtr());
+            std::println("GinIndexStoreFactory(file_name: {}, part_storage: {})",
+                index_helper->getFileName(),
+                part->getDataPartStoragePtr()->getRelativePath()
+            );
+        }
 
         for (size_t i = 0; i < ranges_size; ++i)
         {
             const MarkRange & index_range = index_ranges[i];
+
+            std::println("Range: {} = [{} - {}]", i, index_range.begin, index_range.end);
 
             for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
             {
@@ -1744,8 +1753,10 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                 else
                 {
                     bool result = false;
-                    if (const auto * gin_filter_condition = dynamic_cast<const MergeTreeIndexConditionGin *>(&*condition))
-                        result = cache_in_store.store ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, cache_in_store) : true;
+                    if (const auto gin_filter_condition = std::dynamic_pointer_cast<const MergeTreeIndexConditionGin>(condition))
+                        result = cache_in_store.store
+                            ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, cache_in_store)
+                            : true;
                     else
                         result = condition->mayBeTrueOnGranule(granule);
 

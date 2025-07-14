@@ -25,7 +25,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGin.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/SelectQueryInfo.h>
-#include <__ostream/print.h>
+#include <print>
 
 namespace DB
 {
@@ -177,8 +177,8 @@ public:
         const size_t first_mark = part->index_granularity->getMarkRangeForRowOffset(first_row).begin;
         const size_t last_mark = part->index_granularity->getMarkRangeForRowOffset(last_row).begin;
 
-        std::println("Called HasTokenIndex({}, {}, [{}], [{} -> {}]) diff: {} input_rows: {}",
-            index_name, token, part_idx, first_row, last_row, last_row - first_row, input_rows_count);
+        // std::println("Called HasTokenIndex({}, {}, [{}], [{} -> {}]) diff: {} input_rows: {}",
+        //     index_name, token, part_idx, first_row, last_row, last_row - first_row, input_rows_count);
 
         chassert(first_row == part->index_granularity->getMarkStartingRow(first_mark));
         chassert(last_row + 1 == part->index_granularity->getMarkStartingRow(last_mark) + part->index_granularity->getMarkRows(last_mark));
@@ -210,7 +210,6 @@ public:
         MergeTreeIndexGranulePtr granule = nullptr;
         size_t last_index_mark = 0;
 
-        size_t counter = 0;
         auto & vec_res = col_res->getData();
 
         size_t next_idx = 0;
@@ -246,14 +245,16 @@ public:
 
                 for (uint32_t global_idx : indices)
                 {
-                    const uint32_t local_idx = global_idx - granule_start + next_idx - 1;
-                    chassert(local_idx < input_rows_count);
-                    vec_res[local_idx] = 1;
+                    const uint32_t granule_idx = global_idx - 1 - granule_start;
+                    chassert(granule_idx < granule_size);
+
+                    const uint32_t array_local_idx = granule_idx + next_idx;
+                    chassert(array_local_idx < input_rows_count);
+                    chassert(vec_res[array_local_idx] == 0);
+                    chassert(col_part_offset_vector->getElement(array_local_idx) == global_idx - 1);
+                    vec_res[array_local_idx] = 1;
+                    //++counter;
                 }
-
-
-                next_idx += granule_size;
-                next_offset = col_part_offset_vector->getElement(next_idx);
 
                 // if (indices.size() > 0)
                 // {
@@ -271,9 +272,6 @@ public:
 
             last_index_mark = irange.end - 1;
         }
-
-
-        std::println(" counter = {}", counter);
 
         // RangesInDataParts parts_with_ranges = indexInfo.parts;
 

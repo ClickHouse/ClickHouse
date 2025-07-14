@@ -39,7 +39,9 @@ const CompressionCodecPtr & GinIndexCompressionFactory::zstdCodec()
 GinIndexPostingsBuilder::GinIndexPostingsBuilder(UInt64 limit)
     : rowid_lst{}
     , size_limit(limit)
-{}
+{
+	chassert(size_limit > 0);
+}
 
 bool GinIndexPostingsBuilder::contains(UInt32 row_id) const
 {

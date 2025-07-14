@@ -229,8 +229,13 @@ std::vector<uint32_t> GinFilter::getIndices(const GinFilter *filter, PostingsCac
     const GinPostingsCachePtr postings_cache = cache_store.getPostings(*filter);
 
 	GinIndexPostingsList range_bitset;
+
+	// std::println(" Ranges: {}  entries: {}", rowid_ranges.size(), postings_cache->size());
 	for (const GinSegmentWithRowIdRange &range : rowid_ranges)
 	{
+
+        // std::println("  Range: {} - {}", range.range_start, range.range_end);
+
 		//std::println("  GinRange: {} [{}-{}]", range.segment_id, range.range_start, range.range_end);
 		range_bitset.addRange(range.range_start, range.range_end);
 
@@ -245,11 +250,11 @@ std::vector<uint32_t> GinFilter::getIndices(const GinFilter *filter, PostingsCac
 				break;
 			}
 
+			if (hasAlwaysMatchFlag(*container_it->second))
+			    throw Exception(ErrorCodes::LOGICAL_ERROR, "The gin range [{}:{}] has an all match flag.", range.range_start, range.range_end);
+
 			auto min_in_container = container_it->second->minimum();
 			auto max_in_container = container_it->second->maximum();
-
-			if (hasAlwaysMatchFlag(*container_it->second))
-				continue;
 
 			if (range.range_start > max_in_container || min_in_container > range.range_end)
 			{
