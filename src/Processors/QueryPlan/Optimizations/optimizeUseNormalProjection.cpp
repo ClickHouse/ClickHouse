@@ -1,12 +1,15 @@
 #include <Core/Settings.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/optimizePrewhere.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/Transforms/FilterTransform.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/SelectQueryInfo.h>
@@ -18,6 +21,7 @@ namespace Setting
 {
     extern const SettingsString preferred_optimize_projection_name;
     extern const SettingsBool force_optimize_projection;
+    extern const SettingsBool optimize_use_projection_filtering;
 }
 }
 
@@ -129,12 +133,14 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     bool need_parent_part_offset = false;
     if (with_parent_part_offset)
     {
+        /// required_columns contains unique column names
         for (auto & name : required_columns)
         {
             if (name == "_part_offset")
             {
                 name = "_parent_part_offset";
                 need_parent_part_offset = true;
+                break;
             }
         }
     }
@@ -162,25 +168,31 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
             query.dag->removeUnusedActions();
     }
 
+    bool force_optimize_projection = context->getSettingsRef()[Setting::force_optimize_projection];
+
+    if (!force_optimize_projection)
+    {
+        /// /// Skip normal projection analysis if the query has no filter condition
+        if (!query.dag || !query.filter_node)
+            return {};
+    }
+
     std::list<NormalProjectionCandidate> candidates;
     NormalProjectionCandidate * best_candidate = nullptr;
 
     const auto & query_info = reading->getQueryInfo();
     MergeTreeDataSelectExecutor reader(reading->getMergeTreeData());
 
-    auto ordinary_reading_select_result = reading->getAnalyzedResult();
-    if (!ordinary_reading_select_result)
-        ordinary_reading_select_result = reading->selectRangesToRead();
-    size_t ordinary_reading_marks = ordinary_reading_select_result->selected_marks;
+    auto parent_reading_select_result = reading->getAnalyzedResult();
+    if (!parent_reading_select_result)
+        parent_reading_select_result = reading->selectRangesToRead();
 
-    /// Nothing to read. Ignore projections.
-    if (ordinary_reading_marks == 0)
+    if (!force_optimize_projection)
     {
-        reading->setAnalyzedResult(std::move(ordinary_reading_select_result));
-        return {};
+        /// /// Nothing to read. Ignore projections.
+        if (parent_reading_select_result->parts_with_ranges.empty())
+            return {};
     }
-
-    const auto & parts_with_ranges = ordinary_reading_select_result->parts_with_ranges;
 
     PartitionIdToMaxBlockPtr max_added_blocks = getMaxAddedBlocks(reading);
 
@@ -198,80 +210,135 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         return true;
     };
 
+    bool optimize_use_projection_filtering = context->getSettingsRef()[Setting::optimize_use_projection_filtering];
+    auto projection_query_info = query_info;
+    projection_query_info.prewhere_info = nullptr;
+    if (query.dag)
+        projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(query.dag->clone());
+    auto empty_mutations_snapshot = reading->getMutationsSnapshot()->cloneEmpty();
     for (const auto * projection : normal_projections)
     {
         if (!has_all_required_columns(projection))
+        {
+            /// Check if projection can be used to filter parts
+            if (query.filter_node && optimize_use_projection_filtering)
+            {
+                filterPartsUsingProjection(
+                    *projection, reader, empty_mutations_snapshot, *parent_reading_select_result, projection_query_info, context);
+            }
+
             continue;
+        }
 
         auto & candidate = candidates.emplace_back();
         candidate.projection = projection;
 
         bool analyzed = analyzeProjectionCandidate(
             candidate,
-            *reading,
             reader,
+            empty_mutations_snapshot,
             required_columns,
-            parts_with_ranges,
-            query_info,
-            context,
-            max_added_blocks,
-            query.filter_node ? &*query.dag : nullptr);
+            *parent_reading_select_result,
+            projection_query_info,
+            context);
 
         if (!analyzed)
             continue;
 
-        /// Only consider projection with equal cost when force_optimize_projection is true.
-        if (candidate.sum_marks > ordinary_reading_marks
-            || (candidate.sum_marks == ordinary_reading_marks && !context->getSettingsRef()[Setting::force_optimize_projection]))
+        auto & stat = parent_reading_select_result->projection_stats.emplace_back();
+        stat.name = candidate.projection->name;
+        for (const auto & index_stat : candidate.merge_tree_projection_select_result_ptr->index_stats)
         {
-            LOG_DEBUG(
-                logger,
-                "Projection {} is usable but it needs to read {} marks, which is no better than reading {} marks from original table",
+            if (index_stat.type == ReadFromMergeTree::IndexType::PrimaryKey)
+            {
+                stat.condition = index_stat.condition;
+                stat.search_algorithm = index_stat.search_algorithm;
+            }
+        }
+        stat.selected_parts = candidate.selected_parts;
+        stat.selected_marks = candidate.selected_marks;
+        stat.selected_ranges = candidate.selected_ranges;
+        stat.selected_rows = candidate.selected_rows;
+        stat.filtered_parts = candidate.filtered_parts;
+        candidate.stat = &stat;
+
+        size_t parent_reading_marks = parent_reading_select_result->selected_marks;
+
+        /// Consider projections with equal read cost only if:
+        /// - `force_optimize_projection` is enabled, or
+        /// - the parent reading's `selected_marks` becomes zero
+        if (candidate.sum_marks > parent_reading_marks
+            || (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !force_optimize_projection))
+        {
+            stat.description = fmt::format(
+                "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
                 candidate.projection->name,
                 candidate.sum_marks,
-                ordinary_reading_marks);
+                parent_reading_marks);
+
+            LOG_DEBUG(logger, "{}", stat.description);
             continue;
         }
 
         if (best_candidate == nullptr || candidate.sum_marks < best_candidate->sum_marks)
+            best_candidate = &candidate;
+
+        /// All parts has been filtered out; no need to analyze further projections.
+        if (parent_reading_marks == 0)
+            break;
+    }
+
+    if (!best_candidate)
+        return {};
+
+    /// Identify projections selected as the best candidates and update their stat descriptions with appropriate logging
+    for (const auto & candidate : candidates)
+    {
+        if (&candidate == best_candidate)
         {
-            LOG_DEBUG(
-                logger,
-                "Projection {} is selected as current best candidate with {} marks to read, while original table needs to scan {} marks",
+            chassert(candidate.stat);
+            chassert(candidate.stat->description.empty());
+            candidate.stat->description = fmt::format(
+                "Projection {} is selected as the best with {} marks to read, while the original table requires scanning {} marks",
                 candidate.projection->name,
                 candidate.sum_marks,
-                ordinary_reading_marks);
-            best_candidate = &candidate;
+                parent_reading_select_result->selected_marks);
+            LOG_DEBUG(logger, "{}", candidate.stat->description);
         }
-        else
+        else if (candidate.stat && candidate.stat->description.empty())
         {
-            LOG_DEBUG(
-                logger,
-                "Projection {} with {} marks is less efficient than current best candidate {} with {} marks",
+            candidate.stat->description = fmt::format(
+                "Projection {} is usable but requires reading {} marks, which is less efficient than projection {} with {} marks",
                 candidate.projection->name,
                 candidate.sum_marks,
                 best_candidate->projection->name,
                 best_candidate->sum_marks);
+            LOG_DEBUG(logger, "{}", candidate.stat->description);
         }
-    }
-
-    if (!best_candidate)
-    {
-        reading->setAnalyzedResult(std::move(ordinary_reading_select_result));
-        return {};
     }
 
     auto storage_snapshot = reading->getStorageSnapshot();
     auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, best_candidate->projection->metadata);
-    auto query_info_copy = query_info;
-    query_info_copy.prewhere_info = nullptr;
+
+    /// Enables PREWHERE on projections to improve read efficiency and leverage query condition cache.
+    if (query.dag && query.filter_node)
+    {
+        projection_query_info.prewhere_info = std::make_shared<PrewhereInfo>();
+        query.dag = QueryPlanOptimizations::splitAndFillPrewhereInfo(
+            projection_query_info.prewhere_info,
+            true, /// Always remove since this filter node is generated for projection reading
+            std::move(*query.dag),
+            query.filter_node->result_name,
+            {query.filter_node},
+            {query.filter_node});
+    }
 
     auto projection_reading = reader.readFromParts(
         /*parts=*/{},
         reading->getMutationsSnapshot()->cloneEmpty(),
         required_columns,
         proj_snapshot,
-        query_info_copy,
+        projection_query_info,
         context,
         reading->getMaxBlockSize(),
         reading->getNumStreams(),
@@ -282,8 +349,24 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     if (!projection_reading)
     {
         Pipe pipe(std::make_shared<NullSource>(proj_snapshot->getSampleBlockForColumns(required_columns)));
+        if (projection_query_info.prewhere_info)
+        {
+            auto filter_actions = std::make_shared<ExpressionActions>(std::move(projection_query_info.prewhere_info->prewhere_actions));
+            pipe.addSimpleTransform(
+                [&](const Block & header)
+                {
+                    return std::make_shared<FilterTransform>(
+                        header,
+                        filter_actions,
+                        projection_query_info.prewhere_info->prewhere_column_name,
+                        projection_query_info.prewhere_info->remove_prewhere_column);
+                });
+        }
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
     }
+
+    /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
+    filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
 
     if (!query_info.is_internal && context->hasQueryContext())
     {
@@ -294,10 +377,6 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         });
     }
 
-    bool has_ordinary_parts = best_candidate->merge_tree_ordinary_select_result_ptr != nullptr;
-    if (has_ordinary_parts)
-        reading->setAnalyzedResult(std::move(best_candidate->merge_tree_ordinary_select_result_ptr));
-
     projection_reading->setStepDescription(best_candidate->projection->name);
 
     auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
@@ -306,21 +385,12 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     if (query.dag)
     {
         auto & expr_or_filter_node = nodes.emplace_back();
-
-        if (query.filter_node)
-        {
-            expr_or_filter_node.step = std::make_unique<FilterStep>(
-                projection_reading_node.step->getOutputHeader(), std::move(*query.dag), query.filter_node->result_name, true);
-        }
-        else
-            expr_or_filter_node.step
-                = std::make_unique<ExpressionStep>(projection_reading_node.step->getOutputHeader(), std::move(*query.dag));
-
+        expr_or_filter_node.step = std::make_unique<ExpressionStep>(projection_reading_node.step->getOutputHeader(), std::move(*query.dag));
         expr_or_filter_node.children.push_back(&projection_reading_node);
         next_node = &expr_or_filter_node;
     }
 
-    if (!has_ordinary_parts)
+    if (parent_reading_select_result->parts_with_ranges.empty())
     {
         /// All parts are taken from projection
         iter->node->children[iter->next_child - 1] = next_node;

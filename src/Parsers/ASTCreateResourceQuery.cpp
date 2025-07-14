@@ -48,24 +48,28 @@ void ASTCreateResourceQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSe
         else
             first = false;
 
-        if (operation.mode == AccessMode::MasterThread)
+        if (operation.mode == ResourceAccessMode::MasterThread)
         {
             ostr << (format.hilite ? hilite_keyword : "") << "MASTER THREAD" << (format.hilite ? hilite_none : "");
         }
-        else if (operation.mode == AccessMode::WorkerThread)
+        else if (operation.mode == ResourceAccessMode::WorkerThread)
         {
             ostr << (format.hilite ? hilite_keyword : "") << "WORKER THREAD" << (format.hilite ? hilite_none : "");
+        }
+        else if (operation.mode == ResourceAccessMode::Query)
+        {
+            ostr << (format.hilite ? hilite_keyword : "") << "QUERY" << (format.hilite ? hilite_none : "");
         }
         else
         {
             switch (operation.mode)
             {
-                case AccessMode::DiskRead:
+                case ResourceAccessMode::DiskRead:
                 {
                     ostr << (format.hilite ? hilite_keyword : "") << "READ ";
                     break;
                 }
-                case AccessMode::DiskWrite:
+                case ResourceAccessMode::DiskWrite:
                 {
                     ostr << (format.hilite ? hilite_keyword : "") << "WRITE ";
                     break;

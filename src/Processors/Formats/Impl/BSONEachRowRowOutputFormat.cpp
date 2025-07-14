@@ -460,7 +460,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
             const auto & tuple_column = assert_cast<const ColumnTuple &>(column);
             const auto & nested_columns = tuple_column.getColumns();
 
-            BSONType bson_type =  tuple_type->haveExplicitNames() ? BSONType::DOCUMENT : BSONType::ARRAY;
+            BSONType bson_type =  tuple_type->hasExplicitNames() ? BSONType::DOCUMENT : BSONType::ARRAY;
             writeBSONTypeAndKeyName(bson_type, name, out);
 
             String current_path = path + "." + name;
@@ -546,6 +546,7 @@ void registerOutputFormatBSONEachRow(FormatFactory & factory)
         { return std::make_shared<BSONEachRowRowOutputFormat>(buf, sample, _format_settings); });
     factory.markOutputFormatSupportsParallelFormatting("BSONEachRow");
     factory.markOutputFormatNotTTYFriendly("BSONEachRow");
+    factory.setContentType("BSONEachRow", "application/octet-stream");
 }
 
 }

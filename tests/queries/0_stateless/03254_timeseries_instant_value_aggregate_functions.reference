@@ -12,3 +12,27 @@
 142	(1734004860,100,-10,4.75,-25)
 delta	[15,25,35,0,66,86.66666666666666,100,93.33333333333334,93.33333333333334,93.33333333333334,93.33333333333334,93.33333333333334,93.33333333333334,93.33333333333334,93.33333333333334,93.33333333333334,93.33333333333334,93.33333333333334,93.33333333333334,93.33333333333334,93.33333333333334,93.33333333333334,93.33333333333334,93.33333333333334,93.33333333333334,93.33333333333334,11.11111111111111,11.11111111111111,11.11111111111111,11.11111111111111,0,-12]
 idelta	[10,10,10,-30,60,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,-70,-70,-70,-70,-70,-70]
+Row 1:
+──────
+metric_id: 142
+c1:        AggregateFunction(timeSeriesInstantRateToGrid('1734004810', '1734004860', '10', '60'), Array(DateTime64(3, 'UTC')), Array(Float64))
+c2:        AggregateFunction(timeSeriesInstantRateToGrid('1734004810', '1734004860', '10', '60'), Array(DateTime64(3, 'UTC')), Array(Float64))
+c3:        AggregateFunction(timeSeriesInstantRateToGrid('1734004810', '1734004860', '10', '60'), Array(DateTime64(3, 'UTC')), Array(Float64))
+c4:        AggregateFunction(timeSeriesInstantRateToGrid('1734004810.123', '1734004861', '10', '60'), Array(DateTime64(3, 'UTC')), Array(Float64))
+c5:        AggregateFunction(timeSeriesInstantRateToGrid('1734004810.123', '1734004860.123', '10', '60'), Array(DateTime64(3, 'UTC')), Array(Float64))
+c6:        AggregateFunction(timeSeriesInstantRateToGrid('1734004810.1', '1734004860.123', '10', '60'), Array(DateTime64(3, 'UTC')), Array(Float64))
+c7:        AggregateFunction(timeSeriesInstantRateToGrid('1734004810', '1734004860', '10', '60'), Array(DateTime64(3, 'UTC')), Array(Float64))
+c8:        AggregateFunction(timeSeriesInstantRateToGrid('1734004810', '1734004860', '10', '60'), Array(DateTime64(3, 'UTC')), Array(Float64))
+c9:        AggregateFunction(timeSeriesInstantRateToGrid('1734004810.12', '1734004861', '10', '60'), Array(DateTime64(3, 'UTC')), Array(Float64))
+Row 1:
+──────
+metric_id: 142
+c1:        [20,1,0,100,100,100]
+c2:        [20,1,0,100,100,100]
+c3:        [20,1,0,100,100,100]
+c4:        [20,1,0,100,100,100]
+c5:        [20,1,0,100,100,100]
+c6:        [20,1,0,100,100,100]
+c7:        [20,1,0,100,100,100]
+c8:        [20,1,0,100,100,100]
+c9:        [20,1,0,100,100,100]

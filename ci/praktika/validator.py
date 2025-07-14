@@ -39,7 +39,7 @@ class Validator:
         workflows = _get_workflows(_for_validation_check=True)
         for workflow in workflows:
             print(f"Validating workflow [{workflow.name}]")
-            if Settings.USE_CUSTOM_GH_AUTH:
+            if Settings.USE_CUSTOM_GH_AUTH and workflow.enable_report:
                 secret = workflow.get_secret(Settings.SECRET_GH_APP_ID)
                 cls.evaluate_check(
                     bool(secret),
@@ -57,6 +57,13 @@ class Validator:
                 cls.evaluate_check(
                     isinstance(job, Job.Config),
                     f"Invalid job type [{job}]: type [{type(job)}]",
+                    workflow.name,
+                )
+                cls.evaluate_check(
+                    job.runs_on
+                    and isinstance(job.runs_on, list)
+                    or isinstance(job.runs_on, tuple),
+                    f"Invalid Job.Config.runs_on [{job.runs_on}] for [{job.name}]",
                     workflow.name,
                 )
 
@@ -214,6 +221,18 @@ class Validator:
                     workflow,
                 )
 
+            if workflow.enable_gh_summary_comment:
+                cls.evaluate_check(
+                    workflow.event == Workflow.Event.PULL_REQUEST,
+                    ".enable_gh_summary_comment=True applicable for pull_request workflow only",
+                    workflow,
+                )
+                cls.evaluate_check(
+                    workflow.enable_report,
+                    ".enable_gh_summary_comment=True requires .enable_report==True",
+                    workflow,
+                )
+
     @classmethod
     def validate_file_paths_in_run_command(cls, workflow: Workflow.Config) -> None:
         if not Settings.VALIDATE_FILE_PATHS:
@@ -265,7 +284,7 @@ class Validator:
                         message += "\n  If requirements needs to be installed - add requirements file (Settings.INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS):"
                         message += "\n      echo jwt==1.3.1 > ./ci/requirements.txt"
                         message += (
-                            "\n      echo requests==2.32.3 >> ./ci/requirements.txt"
+                            "\n      echo requests==2.32.4 >> ./ci/requirements.txt"
                         )
                         message += "\n      echo https://clickhouse-builds.s3.amazonaws.com/packages/praktika-0.1-py3-none-any.whl >> ./ci/requirements.txt"
                     cls.evaluate_check(path.is_file(), message, job.name, workflow.name)

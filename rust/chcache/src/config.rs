@@ -28,7 +28,6 @@ impl Default for Config {
 impl Config {
     pub fn init() -> Self {
         let config_path = xdg::BaseDirectories::with_prefix("chcache")
-            .unwrap()
             .place_config_file("config.toml")
             .unwrap();
 

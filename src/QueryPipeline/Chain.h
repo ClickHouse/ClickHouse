@@ -3,7 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Processors/IProcessor.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
-#include "base/defines.h"
+
 #include <memory>
 
 namespace DB
