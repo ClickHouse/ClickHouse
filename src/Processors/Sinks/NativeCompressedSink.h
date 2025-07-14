@@ -23,12 +23,12 @@ public:
 
     String getName() const override { return "NativeCompressedSink"; }
 
-private:
-    void initWriterOnce(const Chunk & chunk);
-
     void consume(Chunk chunk) override;
 
     void onFinish() override;
+
+private:
+    void initWriterOnce(const Chunk & chunk);
 
     const String stream_name;
 

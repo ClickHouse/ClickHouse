@@ -179,7 +179,6 @@ void registerPrintTSVStep(QueryPlanStepRegistry & registry)
     registry.registerStep("PrintTSV", PrintTSVStep::deserialize);
 }
 
-
 Header prepareSourceFileInNativeFormat(const String & file_name, const String & data, size_t input_replicate_count)
 {
     ReadBufferFromString read_buffer(data);
@@ -196,8 +195,7 @@ Header prepareSourceFileInNativeFormat(const String & file_name, const String & 
 
     {
         auto file_buffer = std::make_unique<WriteBufferFromFile>(file_name);
-        auto compressed_buffer = std::make_unique<CompressedWriteBuffer>(*file_buffer);
-        auto writer = std::make_unique<NativeWriter>(*compressed_buffer, DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS, header);
+        NativeCompressedSink sink(header, *file_buffer, file_name);
 
         auto reader = std::make_shared<TabSeparatedRowInputFormat>(
             header, read_buffer, IRowInputFormat::Params{}, true, true, false, FormatSettings{});
@@ -208,12 +206,9 @@ Header prepareSourceFileInNativeFormat(const String & file_name, const String & 
 
             /// Repeat the same block multiple times to make the file bigger
             for (size_t i = 0; i < input_replicate_count; ++i)
-                writer->write(block);
+                sink.consume(Chunk(block.getColumns(), block.rows()));
         }
-
-        writer->flush();
-        compressed_buffer->finalize();
-        file_buffer->finalize();
+        sink.onFinish();
     }
 
     return header;
