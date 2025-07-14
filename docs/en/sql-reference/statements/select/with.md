@@ -15,7 +15,7 @@ Common Table Expressions represent named subqueries.
 They can be referenced by name anywhere in a `SELECT` query where a table expression is allowed.
 Named subqueries can be referenced by name in the scope of the current query or in the scopes of child subqueries.
 
-Every reference to Common Table Expression in `SELECT` queries is always replaced by subquery from it's definition.
+Every reference to a Common Table Expression in `SELECT` queries is always replaced by the subquery from it's definition.
 Recursion is prevented by hiding the current CTE from the identifier resolution process.
 
 Please note that CTEs do not guarantee the same results in all places they are called because the query will be re-executed for each use case.
