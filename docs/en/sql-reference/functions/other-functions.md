@@ -673,7 +673,7 @@ The conversion consists of three stages:
 2) Linear sRGB to OKLab
 3) OKLab to OKLCH.
 
-Gamma is used at the first stage, when computing linear sRGB. For that we normalize sRGB values and take them in power of gamma. Observe, that this lacks some precision due to float point rounding. This design choice was made in order to be able to quickly compute values for different gammas, and since the difference does not changed the perception of the color significantly.
+Gamma is used at the first stage, when computing linear sRGB. For that we normalize sRGB values and take them in power of gamma. Observe, that this lacks some precision due to floating-point rounding. This design choice was made in order to be able to quickly compute values for different gammas, and since the difference does not changed the perception of the color significantly.
 
 Two stages involve matrix multiplication and trigonometry conversions respectively. For more details on maths please see an article on OKLab color space: https://bottosson.github.io/posts/OKLab/
 
@@ -719,7 +719,7 @@ colorOKLCHToSRGB(tuple [, gamma])
 - A `tuple` (R, G, B) of type `Tuple(Float64, Float64, Float64)`.
 
 :::note
-This function returns floatin point number, instead of integer values, in order not to force rounding of the floating point. The user can perform the rounding themself. 
+This function returns floating-point numbers, rather than integer values, to avoid forcing rounding. Users can perform the rounding themselves.
 :::
 
 **Implementation details**

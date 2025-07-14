@@ -728,6 +728,8 @@ NumericIndexedVectors
 OAuth
 ODBCDriver
 OFNS
+OKLab
+OKLCH
 OLAP
 OLTP
 ORCCompression
@@ -784,8 +786,6 @@ Oblakov
 Observability
 Octonica
 Ok
-OkLab
-OKLCH
 OnTime
 OpenCelliD
 OpenFileForRead
