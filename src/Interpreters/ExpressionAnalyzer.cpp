@@ -330,7 +330,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAG & temp_actions)
             if (group_by_kind != GroupByKind::ORDINARY)
                 aggregated_columns.emplace_back("__grouping_set", std::make_shared<DataTypeUInt64>());
 
-            for (ssize_t i = 0; std::cmp_less(i, group_asts.size())); ++i)
+            for (ssize_t i = 0; std::cmp_less(i, group_asts.size()); ++i)
             {
                 ssize_t size = group_asts.size();
 
