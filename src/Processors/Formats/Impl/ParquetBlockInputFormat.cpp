@@ -641,6 +641,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         const auto & group_node = metadata->schema()->group_node();
 
         std::unordered_map<Int64, String> parquet_field_ids;
+        parquet_names_to_clickhouse = std::unordered_map<String, String>{};
         for (int i = 0; i < group_node->field_count(); ++i)
             parquet_field_ids[group_node->field(i)->field_id()] = group_node->field(i)->name();
 
@@ -650,6 +651,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
             auto column_name = header.getNames()[i];
             auto field_id = parquet_opaque->column_name_to_parquet_field_id[column_name];
             result[column_name] = parquet_field_ids[field_id];
+            parquet_names_to_clickhouse->emplace(parquet_field_ids[field_id], column_name);
         }
         clickhouse_to_parquet_names = std::move(result);
     }
@@ -658,7 +660,9 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     for (const auto & [clickhouse_header_index, parquet_indexes] : index_mapping)
     {
         for (auto parquet_index : parquet_indexes)
+        {
             column_indices.push_back(parquet_index);
+        }
     }
 
     int num_row_groups = metadata->num_row_groups();
@@ -895,7 +899,7 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
             getPort().getHeader(),
             "Parquet",
             format_settings,
-            parser_group->opaque ? std::optional(column_indices) : std::nullopt,
+            parquet_names_to_clickhouse,
             format_settings.parquet.allow_missing_columns,
             format_settings.null_as_default,
             format_settings.date_time_overflow_behavior,

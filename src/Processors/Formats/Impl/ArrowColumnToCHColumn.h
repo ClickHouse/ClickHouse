@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <unordered_map>
 
 #include "config.h"
 
@@ -25,7 +26,7 @@ public:
         const Block & header_,
         const std::string & format_name_,
         const FormatSettings & format_settings_,
-        const std::optional<std::vector<Int32>> & column_indices_,
+        const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse_,
         bool allow_missing_columns_,
         bool null_as_default_,
         FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
@@ -92,7 +93,7 @@ private:
     /// to LowCardinality every chunk we save it and reuse.
     std::unordered_map<std::string, DictionaryInfo> dictionary_infos;
 
-    std::optional<std::vector<Int32>> column_indices;
+    std::optional<std::unordered_map<String, String>> parquet_columns_to_clickhouse;
 };
 
 }

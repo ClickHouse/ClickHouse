@@ -340,6 +340,7 @@ private:
     std::exception_ptr background_exception = nullptr;
     std::atomic<int> is_stopped{0};
     bool is_initialized = false;
+    std::optional<std::unordered_map<String, String>> parquet_names_to_clickhouse;
 };
 
 class ParquetSchemaReader : public ISchemaReader
