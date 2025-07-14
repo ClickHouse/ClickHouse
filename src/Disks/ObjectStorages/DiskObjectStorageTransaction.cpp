@@ -1059,6 +1059,10 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorageTransaction::readUncomm
     if (!maybe_objects.has_value())
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Stored objects for path '{}' not found in transaction", path);
 
+    /// tryGetBlobsFromTransactionIfExists return empty vector if blobs are unknown inside transaction
+    if (maybe_objects->empty())
+        return nullptr;
+
     return disk.readFileFromStorageObjects(
         *maybe_objects, path, settings, read_hint, file_size);
 }

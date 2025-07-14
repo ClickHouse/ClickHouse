@@ -2045,22 +2045,6 @@ private:
 
         MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context, ctx->metadata_snapshot, ctx->need_sync);
 
-        // // If storage is transactional, it works correctly and it sees own changes
-        // if (!ctx->new_data_part->getDataPartStorage().isTransactional())
-        // {
-        //     /// It's because DiskTransaction (when false == isTransactional()) is
-        //     /// unable to see own write operations. When we merge part with column TTL
-        //     /// and column completely outdated we first write empty column and after
-        //     /// remove it. It's impossible because remove operation will not see just written files.
-        //     // That is why we finish one transaction and start new...
-        //     ///
-        //     if (!files_to_remove_after_finish.empty() && ctx->new_data_part->getDataPartStorage().hasActiveTransaction())
-        //     {
-        //         ctx->new_data_part->getDataPartStorage().commitTransaction();
-        //         ctx->new_data_part->getDataPartStorage().beginTransaction();
-        //     }
-        // }
-
         // We have to remove files after `ctx->out.finish()` called.
         // Otherwise new files are not visible because they have not been written yet as a result remove becomes no op
         for (const String & removed_file : files_to_remove_after_finish)

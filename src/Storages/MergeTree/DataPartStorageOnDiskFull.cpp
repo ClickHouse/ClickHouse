@@ -23,22 +23,16 @@ namespace ErrorCodes
 DataPartStorageOnDiskFull::DataPartStorageOnDiskFull(VolumePtr volume_, std::string root_path_, std::string part_dir_)
     : DataPartStorageOnDiskBase(std::move(volume_), std::move(root_path_), std::move(part_dir_))
 {
-    LOG_DEBUG(getLogger("DataPartStorageOnDiskFull"),
-        "Create full storage for part {}", part_dir);
 }
 
 DataPartStorageOnDiskFull::DataPartStorageOnDiskFull(
     VolumePtr volume_, std::string root_path_, std::string part_dir_, DiskTransactionPtr transaction_)
     : DataPartStorageOnDiskBase(std::move(volume_), std::move(root_path_), std::move(part_dir_), std::move(transaction_))
 {
-    LOG_DEBUG(getLogger("DataPartStorageOnDiskFull"),
-        "Create full storage for part {}", part_dir);
 }
 
 DataPartStorageOnDiskFull::~DataPartStorageOnDiskFull()
 {
-    LOG_DEBUG(getLogger("DataPartStorageOnDiskFull"),
-        "Destroy full storage for part {}", part_dir);
 }
 
 MutableDataPartStoragePtr DataPartStorageOnDiskFull::create(
@@ -255,8 +249,6 @@ void DataPartStorageOnDiskFull::commitTransaction()
     if (has_shared_transaction)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot commit shared transaction");
 
-    LOG_DEBUG(getLogger("DataPartStorageOnDiskPacked"), "commit transaction for part {}", getRelativePath());
-
     transaction->commit();
     transaction.reset();
 }
@@ -264,19 +256,13 @@ void DataPartStorageOnDiskFull::commitTransaction()
 void DataPartStorageOnDiskFull::validateDiskTransaction(std::function<void(IDiskTransaction&)> check_function)
  {
     auto active_transaction = transaction;
-
-    LOG_DEBUG(getLogger("DataPartStorageOnDiskFull"),
-    "add validate tx operation for relative path: {}, has active transaction {}",
-        getRelativePath(), bool(active_transaction));
-
     if (!active_transaction)
         active_transaction = std::make_shared<FakeDiskTransaction>(*volume->getDisk());
 
-    scope_guard commit_transaction = [&]()
-    {
+    SCOPE_EXIT({
         if (active_transaction != transaction)
             active_transaction->commit();
-    };
+    });
 
     active_transaction->validateTransaction(std::move(check_function));
 }

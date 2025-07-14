@@ -9,7 +9,6 @@
 #include <unordered_set>
 
 #include <base/sort.h>
-#include <base/scope_guard.h>
 #include <Poco/Timestamp.h>
 
 

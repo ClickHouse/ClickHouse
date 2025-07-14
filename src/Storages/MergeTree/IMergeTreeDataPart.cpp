@@ -406,8 +406,6 @@ IMergeTreeDataPart::IMergeTreeDataPart(
 
 IMergeTreeDataPart::~IMergeTreeDataPart()
 {
-    LOG_DEBUG(getLogger("IMergeTreeDataPart"), "Destoing part {} with type {} and state {}", name, part_type.toString(), stateString(state));
-
     decrementStateMetric(state);
     decrementTypeMetric(part_type);
 }
@@ -514,7 +512,6 @@ void IMergeTreeDataPart::setState(MergeTreeDataPartState new_state) const
 {
     chassert(!parent_part);
     decrementStateMetric(state);
-    LOG_DEBUG(getLogger("IMergeTreeDataPart"), "changing state part {}: {} -> {}", name, stateString(state), stateString(new_state));
     state.store(new_state);
     incrementStateMetric(state);
 }

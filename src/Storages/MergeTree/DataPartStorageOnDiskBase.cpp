@@ -657,7 +657,8 @@ void DataPartStorageOnDiskBase::rename(
 
     String from = getRelativePath();
 
-    LOG_DEBUG(getLogger("DataPartStorageOnDiskBase"), "DataPartStorageOnDiskBase: Renaming part {} to {}", from, to);
+    if (log)
+        LOG_TEST(log, "Renaming part {} to {}", from, to);
 
     /// Why?
     executeWriteOperation([&](auto & disk)

@@ -4914,7 +4914,7 @@ void MergeTreeData::removePartsFromWorkingSetImmediatelyAndSetTemporaryState(con
 
         modifyPartState(part, MergeTreeDataPartState::Temporary);
         /// Erase immediately
-        LOG_DEBUG(log, "removePartsFromWorkingSetImmediatelyAndSetTemporaryState: removing {} from data_parts_indexes", part->getNameWithState());
+        LOG_TEST(log, "removePartsFromWorkingSetImmediatelyAndSetTemporaryState: removing {} from data_parts_indexes", part->getNameWithState());
         data_parts_indexes.erase(it_part);
     }
 }
@@ -7755,7 +7755,6 @@ void MergeTreeData::Transaction::rollbackPartsToTemporaryState()
             DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()));
     }
 
-    LOG_DEBUG(getLogger("rollbackPartsToTemporaryState"), "Clearing precommitted parts in transaction {}.", getTID());
     clear();
 }
 
