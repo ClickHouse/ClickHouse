@@ -299,7 +299,7 @@ void checkSortedWithPermutationImpl(size_t rows, Comparator compare, UInt64 limi
 
 void checkSortedWithPermutation(const Block & block, const SortDescription & description, UInt64 limit, const IColumn::Permutation & permutation)
 {
-    if (!block)
+    if (block.empty())
         return;
 
     ColumnsWithSortDescriptions columns_with_sort_desc = getColumnsWithSortDescription(block, description);
