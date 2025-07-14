@@ -864,6 +864,7 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected)
     {
         for (const auto & arg : args->children)
             highlightRegexps(arg, expected);
+        return;
     }
 
     if (args->children.size() != 2)
