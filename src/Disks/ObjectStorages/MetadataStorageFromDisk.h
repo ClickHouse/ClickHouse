@@ -104,6 +104,8 @@ public:
 
     void createMetadataFile(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override;
 
+    bool supportAddingBlobToMetadata() override { return true; }
+
     void addBlobToMetadata(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override;
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
