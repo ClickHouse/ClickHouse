@@ -12,7 +12,7 @@ ClickHouse supports Common Table Expressions ([CTE](https://en.wikipedia.org/wik
 ## Common Table Expressions {#common-table-expressions}
 
 Common Table Expressions represent named subqueries.
-They can be referenced by name in any place of `SELECT` query where table expression is allowed.
+They can be referenced by name anywhere in a `SELECT` query where a table expression is allowed.
 Named subqueries can be referenced by name in the scope of the current query or in the scopes of child subqueries.
 
 Every reference to Common Table Expression in `SELECT` queries is always replaced by subquery from it's definition.
