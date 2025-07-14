@@ -59,8 +59,6 @@ protected:
             /// Note: std::variant can be used. But move constructor for it can't be inlined.
             Chunk chunk;
             std::exception_ptr exception;
-
-            bool isEmpty() const { return chunk.empty() && !exception; }
         };
 
     private:

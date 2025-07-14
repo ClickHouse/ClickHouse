@@ -64,8 +64,13 @@ static ActionsDAG makeReorderingActions(const Block & in_header, const GroupingS
 MergingAggregatedTransform::~MergingAggregatedTransform() = default;
 
 MergingAggregatedTransform::MergingAggregatedTransform(
-    Block header_, Aggregator::Params params, bool final, GroupingSetsParamsList grouping_sets_params)
+    Block header_,
+    Aggregator::Params params,
+    bool final,
+    GroupingSetsParamsList grouping_sets_params,
+    size_t max_threads_)
     : IAccumulatingTransform(header_, appendGroupingIfNeeded(header_, params.getHeader(header_, final)))
+    , max_threads(max_threads_)
 {
     if (!grouping_sets_params.empty())
     {
@@ -256,8 +261,8 @@ Chunk MergingAggregatedTransform::generate()
             AggregatedDataVariants data_variants;
 
             /// TODO: this operation can be made async. Add async for IAccumulatingTransform.
-            params->aggregator.mergeBlocks(std::move(bucket_to_blocks), data_variants, is_cancelled);
-            auto merged_blocks = params->aggregator.convertToBlocks(data_variants, params->final);
+            params->aggregator.mergeBlocks(std::move(bucket_to_blocks), data_variants, max_threads, is_cancelled);
+            auto merged_blocks = params->aggregator.convertToBlocks(data_variants, params->final, max_threads);
 
             if (grouping_set.creating_missing_keys_actions)
                 for (auto & block : merged_blocks)

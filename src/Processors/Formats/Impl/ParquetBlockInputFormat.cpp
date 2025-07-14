@@ -1,4 +1,4 @@
-#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
+#include "ParquetBlockInputFormat.h"
 
 #if USE_PARQUET
 
@@ -18,9 +18,9 @@
 #include <parquet/bloom_filter_reader.h>
 #include <parquet/file_reader.h>
 #include <parquet/statistics.h>
-#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
-#include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
-#include <Processors/Formats/Impl/ArrowFieldIndexUtil.h>
+#include "ArrowBufferedStreams.h"
+#include "ArrowColumnToCHColumn.h"
+#include "ArrowFieldIndexUtil.h"
 #include <base/scope_guard.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -28,7 +28,6 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Processors/Formats/Impl/Parquet/ParquetRecordReader.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
@@ -36,8 +35,6 @@
 namespace ProfileEvents
 {
     extern const Event ParquetFetchWaitTimeMicroseconds;
-    extern const Event ParquetReadRowGroups;
-    extern const Event ParquetPrunedRowGroups;
 }
 
 namespace CurrentMetrics
@@ -747,7 +744,6 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
         if (key_condition_with_bloom_filter_data && skip_row_group_based_on_filters(row_group))
         {
-            ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups);
             continue;
         }
 
@@ -755,7 +751,6 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         if (row_group_batches.empty() || (!prefetch_group && row_group_batches.back().total_bytes_compressed >= min_bytes_for_seek))
             row_group_batches.emplace_back();
 
-        ProfileEvents::increment(ProfileEvents::ParquetReadRowGroups);
         row_group_batches.back().row_groups_idxs.push_back(row_group);
         row_group_batches.back().total_rows += metadata->RowGroup(row_group)->num_rows();
         auto row_group_size = metadata->RowGroup(row_group)->total_compressed_size();
@@ -864,14 +859,10 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
         row_group_batch.arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
             getPort().getHeader(),
             "Parquet",
-            format_settings,
             format_settings.parquet.allow_missing_columns,
             format_settings.null_as_default,
             format_settings.date_time_overflow_behavior,
-            format_settings.parquet.allow_geoparquet_parser,
-            format_settings.parquet.case_insensitive_column_matching,
-            false, /* is_stream_ */
-            format_settings.parquet.enable_json_parsing);
+            format_settings.parquet.case_insensitive_column_matching);
     }
 }
 
@@ -1043,7 +1034,7 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
         /// Otherwise fill the missing columns with zero values of its type.
         BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &res.block_missing_values : nullptr;
         res.approx_original_chunk_size = get_approx_original_chunk_size((*tmp_table)->num_rows());
-        res.chunk = row_group_batch.arrow_column_to_ch_column->arrowTableToCHChunk(*tmp_table, (*tmp_table)->num_rows(), metadata->key_value_metadata(), block_missing_values_ptr);
+        res.chunk = row_group_batch.arrow_column_to_ch_column->arrowTableToCHChunk(*tmp_table, (*tmp_table)->num_rows(), block_missing_values_ptr);
     }
 
     lock.lock();
@@ -1183,40 +1174,12 @@ NamesAndTypesList ParquetSchemaReader::readSchema()
     std::shared_ptr<arrow::Schema> schema;
     THROW_ARROW_NOT_OK(parquet::arrow::FromParquetSchema(metadata->schema(), &schema));
 
-    /// When Parquet's schema is converted to Arrow's schema, logical types are lost (at least in
-    /// the currently used Arrow 11 version). Therefore, we manually add the logical types as metadata
-    /// to Arrow's schema. Logical types are useful for determining which ClickHouse column type to convert to.
-    std::vector<std::shared_ptr<arrow::Field>> new_fields;
-    new_fields.reserve(schema->num_fields());
-
-    for (int i = 0; i < schema->num_fields(); ++i)
-    {
-        auto field = schema->field(i);
-        const auto * parquet_node = metadata->schema()->Column(i);
-        const auto * lt = parquet_node->logical_type().get();
-
-        if (lt and !lt->is_invalid())
-        {
-            std::shared_ptr<arrow::KeyValueMetadata> kv = field->HasMetadata() ? field->metadata()->Copy() : arrow::key_value_metadata({}, {});
-            THROW_ARROW_NOT_OK(kv->Set("PARQUET:logical_type", lt->ToString()));
-
-            field = field->WithMetadata(std::move(kv));
-        }
-        new_fields.emplace_back(std::move(field));
-    }
-
-    schema = arrow::schema(std::move(new_fields));
-
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         *schema,
-        metadata->key_value_metadata(),
         "Parquet",
-        format_settings,
         format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference,
         format_settings.schema_inference_make_columns_nullable != 0,
-        format_settings.parquet.case_insensitive_column_matching,
-        format_settings.parquet.allow_geoparquet_parser,
-        format_settings.parquet.enable_json_parsing);
+        format_settings.parquet.case_insensitive_column_matching);
     if (format_settings.schema_inference_make_columns_nullable == 1)
         return getNamesAndRecursivelyNullableTypes(header, format_settings);
     return header.getNamesAndTypesList();
@@ -1262,15 +1225,10 @@ void registerParquetSchemaReader(FormatFactory & factory)
         }
         );
 
-    factory.registerAdditionalInfoForSchemaCacheGetter(
-        "Parquet",
-        [](const FormatSettings & settings)
-        {
-            return fmt::format(
-                "schema_inference_make_columns_nullable={};enable_json_parsing={}",
-                settings.schema_inference_make_columns_nullable,
-                settings.parquet.enable_json_parsing);
-        });
+    factory.registerAdditionalInfoForSchemaCacheGetter("Parquet", [](const FormatSettings & settings)
+    {
+        return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable);
+    });
 }
 
 }

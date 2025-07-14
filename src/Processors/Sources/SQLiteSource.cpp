@@ -1,4 +1,4 @@
-#include <Processors/Sources/SQLiteSource.h>
+#include "SQLiteSource.h"
 
 #if USE_SQLITE
 #include <base/range.h>

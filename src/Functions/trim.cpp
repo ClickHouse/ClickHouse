@@ -1,7 +1,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/IColumn.h>
-#include <Functions/IFunction.h>
+#include "Columns/IColumn.h"
+#include "Functions/IFunction.h"
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <base/find_symbols.h>

@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-shared-catalog, log-engine, memory-engine
-# no-shared-catalog: Regular MergeTree is not supported
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

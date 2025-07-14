@@ -21,7 +21,6 @@ public:
     struct Data
     {
         std::map<String, ASTPtr> subqueries;
-        std::map<String, ASTPtr> literals;
     };
 
     void visit(ASTPtr & ast) { visit(ast, {}); }

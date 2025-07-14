@@ -15,6 +15,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Databases/DatabaseOrdinary.h>
@@ -24,7 +25,6 @@
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/AlterCommands.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>

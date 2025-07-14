@@ -40,12 +40,6 @@ void consumerGracefulStop(
     const LoggerPtr & log,
     ErrorHandler error_handler = [](const cppkafka::Error & /*err*/) {});
 
-void consumerStopWithoutRebalance(
-    cppkafka::Consumer & consumer,
-    std::chrono::milliseconds drain_timeout,
-    const LoggerPtr & log,
-    ErrorHandler error_handler = [](const cppkafka::Error & /*err*/) {});
-
 void drainConsumer(
     cppkafka::Consumer & consumer,
     std::chrono::milliseconds drain_timeout,
