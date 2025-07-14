@@ -5,6 +5,8 @@ sidebar_label: 'CoalescingMergeTree'
 sidebar_position: 50
 slug: /engines/table-engines/mergetree-family/coalescingmergetree
 title: 'CoalescingMergeTree'
+keywords: ['CoalescingMergeTree']
+show_related_blogs: true
 ---
 
 # CoalescingMergeTree
