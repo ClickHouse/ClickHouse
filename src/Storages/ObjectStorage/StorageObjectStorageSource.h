@@ -39,7 +39,8 @@ public:
         UInt64 max_block_size_,
         std::shared_ptr<IObjectIterator> file_iterator_,
         size_t max_parsing_threads_,
-        bool need_only_count_);
+        bool need_only_count_,
+        size_t thread_order_number_);
 
     ~StorageObjectStorageSource() override;
 
@@ -47,7 +48,10 @@ public:
 
     void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_) override;
 
+    Chunk generateImpl();
+
     Chunk generate() override;
+
 
     static std::shared_ptr<IObjectIterator> createFileIterator(
         ConfigurationPtr configuration,
@@ -125,6 +129,8 @@ protected:
     ReaderHolder reader;
     ThreadPoolCallbackRunnerUnsafe<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
+
+    size_t thread_order_number;
 
     /// Recreate ReadBuffer and Pipeline for each file.
     static ReaderHolder createReader(

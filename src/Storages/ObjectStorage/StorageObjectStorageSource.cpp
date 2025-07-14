@@ -1,16 +1,19 @@
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <memory>
 #include <optional>
-#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
+#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/Archives/ArchiveUtils.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCacheKey.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
@@ -19,15 +22,14 @@
 #include <Processors/Transforms/ExtractColumnsTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/Cache/SchemaCache.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/VirtualColumnUtils.h>
+#include "Common/threadPoolCallbackRunner.h"
+#include <Common/SipHash.h>
 #include <Common/parseGlobs.h>
-#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheKey.h>
-#include <Interpreters/Context.h>
+#include "base/sleep.h"
 
 #include <fmt/ranges.h>
 
@@ -76,7 +78,8 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     UInt64 max_block_size_,
     std::shared_ptr<IObjectIterator> file_iterator_,
     size_t max_parsing_threads_,
-    bool need_only_count_)
+    bool need_only_count_,
+    size_t thread_order_number_)
     : SourceWithKeyCondition(info.source_header, false)
     , name(std::move(name_))
     , object_storage(object_storage_)
@@ -88,13 +91,14 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , max_parsing_threads(max_parsing_threads_)
     , read_from_format_info(info)
     , create_reader_pool(std::make_shared<ThreadPool>(
-        CurrentMetrics::StorageObjectStorageThreads,
-        CurrentMetrics::StorageObjectStorageThreadsActive,
-        CurrentMetrics::StorageObjectStorageThreadsScheduled,
-        1 /* max_threads */))
+          CurrentMetrics::StorageObjectStorageThreads,
+          CurrentMetrics::StorageObjectStorageThreadsActive,
+          CurrentMetrics::StorageObjectStorageThreadsScheduled,
+          1 /* max_threads */))
     , file_iterator(file_iterator_)
     , schema_cache(StorageObjectStorage::getSchemaCache(context_, configuration->getTypeName()))
     , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, "Reader"))
+    , thread_order_number(thread_order_number_)
 {
 }
 
@@ -238,10 +242,15 @@ void StorageObjectStorageSource::lazyInitialize()
     initialized = true;
 }
 
-Chunk StorageObjectStorageSource::generate()
+Chunk StorageObjectStorageSource::generateImpl()
 {
 
     lazyInitialize();
+
+    if (thread_order_number == 0)
+    {
+        sleepForSeconds(5);
+    }
 
     while (true)
     {
@@ -355,6 +364,22 @@ Chunk StorageObjectStorageSource::generate()
     }
 
     return {};
+}
+
+Chunk StorageObjectStorageSource::generate()
+{
+    auto chunk = generateImpl();
+
+
+    LOG_DEBUG(
+        &Poco::Logger::get("StorageObjectStorageSource, generate finish"),
+        "Generated chunk: {}, object storage source: {}, is empty: {}, thread_order_number: {}",
+        chunk.getNumRows(),
+        configuration->getTypeName(),
+        chunk.empty(),
+        thread_order_number);
+
+    return chunk;
 }
 
 void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
