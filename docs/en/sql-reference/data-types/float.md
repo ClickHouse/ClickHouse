@@ -51,7 +51,7 @@ Float types in ClickHouse have the following aliases:
 
 When creating tables, numeric parameters for floating point numbers can be set (e.g. `FLOAT(12)`, `FLOAT(15, 22)`, `DOUBLE(12)`, `DOUBLE(4, 18)`), but ClickHouse ignores them.
 
-## Using Floating-point Numbers {#using-floating-point-numbers}
+## Using floating-point numbers {#using-floating-point-numbers}
 
 - Computations with floating-point numbers might produce a rounding error.
 

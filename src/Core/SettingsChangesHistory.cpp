@@ -47,6 +47,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"cluster_function_process_archive_on_multiple_nodes", true, true, "New setting"},
             {"enable_vector_similarity_index", false, false, "Added an alias for setting `allow_experimental_vector_similarity_index`"},
             {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
+            {"parallel_distributed_insert_select", 0, 2, "Enable parallel distributed insert select by default"},
             {"write_through_distributed_cache_buffer_size", 0, 0, "New cloud setting"},
             {"min_joined_block_size_rows", 0, DEFAULT_BLOCK_SIZE, "New setting."},
             {"table_engine_read_through_distributed_cache", false, false, "New setting"},
