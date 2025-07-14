@@ -14,8 +14,6 @@
 #include <Dictionaries/PolygonDictionary.h>
 
 #include <numeric>
-#include <utility>
-#include <utility>
 
 namespace CurrentMetrics
 {
@@ -166,10 +164,11 @@ public:
         auto y_ratio = y * kSplit;
         auto x_bin = static_cast<int>(x_ratio);
         auto y_bin = static_cast<int>(y_ratio);
-        /// In case if we have a lot of values and argument is very close to max_x (max_y) so x_ratio (y_ratiostd::cmp_equal() = 1.,       )if (std::cmp_equal(x_bin , kSplit))
+        /// In case if we have a lot of values and argument is very close to max_x (max_y) so x_ratio (y_ratio) = 1.
+        if (std::cmp_equal(x_bin, kSplit))
             --x_bin;
-        /// => x_bin (y_bin) will be 4, which can lead tostd::cmp_equal( wrong,ector a)ccess.
-        if (std::cmp_equal(y_bin , kSplit))
+        /// => x_bin (y_bin) will be 4, which can lead to wrong vector access.
+        if (std::cmp_equal(y_bin, kSplit))
             --y_bin;
         return children[y_bin + x_bin * kSplit]->find(x_ratio - x_bin, y_ratio - y_bin);
     }
