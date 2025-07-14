@@ -343,8 +343,7 @@ static void splitAndModifyMutationCommands(
             {
                 for_interpreter.push_back(command);
             }
-            else if (command.type == MutationCommand::Type::DROP_COLUMN
-                    || command.type == MutationCommand::Type::DROP_INDEX
+            else if (command.type == MutationCommand::Type::DROP_INDEX
                     || command.type == MutationCommand::Type::DROP_PROJECTION
                     || command.type == MutationCommand::Type::DROP_STATISTICS)
             {
