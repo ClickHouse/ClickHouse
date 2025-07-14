@@ -202,8 +202,9 @@ Truncates a date and time value to the specified part of the date.
 dateTrunc(unit, datetime[, timezone])
     )";
     FunctionDocumentation::Arguments arguments = {
-      {"unit", R"(The type of interval to truncate the result. `unit` argument is case-insensitive. 
-
+{"unit",
+R"(
+The type of interval to truncate the result. `unit` argument is case-insensitive.
 | Unit         | Compatibility                   |
 |--------------|---------------------------------|
 | `nanosecond` | Compatible only with DateTime64 |
@@ -218,10 +219,11 @@ dateTrunc(unit, datetime[, timezone])
 | `quarter`    |                                 |
 | `year`       |                                 |
 )", {"String"}},
-        {"datetime", "Date and time.", {"Date", "Date32", "DateTime", "DateTime64"}},
-        {"timezone", "Optional. Timezone name for the returned datetime. If not specified, the function uses the timezone of the `datetime` parameter.", {"String"}}
+{"datetime", "Date and time.", {"Date", "Date32", "DateTime", "DateTime64"}},
+{"timezone", "Optional. Timezone name for the returned datetime. If not specified, the function uses the timezone of the `datetime` parameter.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {R"(
+    FunctionDocumentation::ReturnedValue returned_value = {
+      R"(
 Returns the truncated date and time value.
 
 | Unit Argument               | `datetime` Argument                   | Return Type                                                                            |
@@ -230,7 +232,7 @@ Returns the truncated date and time value.
 | Day, Hour, Minute, Second   | `Date32`, `DateTime64`, `Date`, or `DateTime` | [`DateTime64`](../data-types/datetime64.md) or [`DateTime`](../data-types/datetime.md) |
 | Millisecond, Microsecond,   | Any                                   | [`DateTime64`](../data-types/datetime64.md)                                            |
 | Nanosecond                  |                                       | with scale 3, 6, or 9                                                                  |
-)", {}};
+      )", {}};
     FunctionDocumentation::Examples examples = {
         {"Truncate without timezone", R"(
 SELECT now(), dateTrunc('hour', now());
