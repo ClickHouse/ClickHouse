@@ -1099,6 +1099,18 @@ static BlockIO executeQueryImpl(
 
                 chassert(ast2);
 
+                if (ast->getTreeHash(false) != ast2->getTreeHash(false))
+                {
+                    WriteBufferFromOwnString ast_tree1;
+                    WriteBufferFromOwnString ast_tree2;
+                    ast->dumpTree(ast_tree1);
+                    ast2->dumpTree(ast_tree2);
+
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Inconsistent AST formatting: the original AST:\n{}\n differs from the result of parsing back formatted AST:\n{}\n",
+                        ast_tree1.str(), ast_tree2.str());
+                }
+
                 String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(
                     /*max_length=*/0,
                     /*one_line=*/true,
@@ -1114,7 +1126,7 @@ static BlockIO executeQueryImpl(
             }
             catch (Exception & e)
             {
-                /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail inder debug build.
+                /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail under the debug build.
                 if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
                     throw;
             }
