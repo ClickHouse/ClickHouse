@@ -16,7 +16,7 @@ title: 'Parquet'
 
 [Apache Parquet](https://parquet.apache.org/) is a columnar storage format widespread in the Hadoop ecosystem. ClickHouse supports read and write operations for this format.
 
-## Data Types Matching {#data-types-matching-parquet}
+## Data types matching {#data-types-matching-parquet}
 
 The table below shows supported data types and how they match ClickHouse [data types](/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
 
@@ -56,9 +56,9 @@ Unsupported Parquet data types are:
 
 Data types of ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions#cast) the data to that data type which is set for the ClickHouse table column.
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
-### Inserting Data {#inserting-data}
+### Inserting data {#inserting-data}
 
 Using a Parquet file with the following data, named as `football.parquet`:
 
@@ -90,7 +90,7 @@ Insert the data:
 INSERT INTO football FROM INFILE 'football.parquet' FORMAT Parquet;
 ```
 
-### Reading Data {#reading-data}
+### Reading data {#reading-data}
 
 Read data using the `Parquet` format:
 
@@ -107,7 +107,7 @@ Parquet is a binary format that does not display in a human-readable form on the
 
 To exchange data with Hadoop, you can use the [`HDFS table engine`](/engines/table-engines/integrations/hdfs.md).
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}
 
 | Setting                                                                        | Description                                                                                                                                                                                                                       | Default     |
 |--------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------|
