@@ -24,7 +24,7 @@ public:
 
     /// Checks columns of a target table that a TimeSeries table is going to use.
     /// Throws an exception if some of the required columns don't exist or have illegal types.
-    void validateTargetColumns(ViewTarget::Kind target_kind, const StorageID & target_table_id, const ColumnsDescription & target_columns) const;
+    void validateTargetColumns(ASTViewTarget::Kind target_kind, const StorageID & target_table_id, const ColumnsDescription & target_columns) const;
 
     /// Each of the following functions validates a specific column type.
     void validateColumnForID(const ColumnDescription & column, bool check_default = true) const;
@@ -46,7 +46,7 @@ public:
 
 private:
     void validateColumnsImpl(const ColumnsDescription & columns) const;
-    void validateTargetColumnsImpl(ViewTarget::Kind target_kind, const ColumnsDescription & target_columns) const;
+    void validateTargetColumnsImpl(ASTViewTarget::Kind target_kind, const ColumnsDescription & target_columns) const;
 
     const StorageID time_series_storage_id;
     const TimeSeriesSettings & time_series_settings;

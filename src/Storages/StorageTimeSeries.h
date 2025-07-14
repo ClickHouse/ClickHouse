@@ -43,9 +43,9 @@ public:
 
     const TimeSeriesSettings & getStorageSettings() const;
 
-    StorageID getTargetTableId(ViewTarget::Kind target_kind) const;
-    StoragePtr getTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
-    StoragePtr tryGetTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
+    StorageID getTargetTableId(ASTViewTarget::Kind target_kind) const;
+    StoragePtr getTargetTable(ASTViewTarget::Kind target_kind, const ContextPtr & local_context) const;
+    StoragePtr tryGetTargetTable(ASTViewTarget::Kind target_kind, const ContextPtr & local_context) const;
 
     void startup() override;
     void shutdown(bool is_drop) override;
@@ -95,7 +95,7 @@ private:
 
     struct Target
     {
-        ViewTarget::Kind kind;
+        ASTViewTarget::Kind kind;
         StorageID table_id = StorageID::createEmpty();
         bool is_inner_table;
     };

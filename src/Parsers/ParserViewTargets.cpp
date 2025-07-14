@@ -12,7 +12,7 @@ namespace DB
 
 ParserViewTargets::ParserViewTargets()
 {
-    for (auto kind : magic_enum::enum_values<ViewTarget::Kind>())
+    for (auto kind : magic_enum::enum_values<ASTViewTarget::Kind>())
         accept_kinds.push_back(kind);
 }
 
@@ -68,7 +68,7 @@ bool ParserViewTargets::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 ASTPtr ast;
                 if (table_name_p.parse(pos, ast, expected))
                 {
-                    result().setTableID(kind, ast->as<ASTTableIdentifier>()->getTableId());
+                    result().setTableID(kind, ast);
                     break;
                 }
             }
@@ -78,7 +78,7 @@ bool ParserViewTargets::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             break;
     }
 
-    if (!res || res->targets.empty())
+    if (!res || res->children.empty())
         return false;
 
     node = res;

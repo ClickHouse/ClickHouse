@@ -103,14 +103,15 @@ namespace
         {
             if (create.targets)
             {
-                for (const auto & target : create.targets->targets)
+                for (const auto & child : create.targets->children)
                 {
-                    if (target.kind == ViewTarget::Kind::To)
+                    auto * target = child->as<ASTViewTarget>();
+                    if (target->kind == ASTViewTarget::Kind::To)
                     {
-                        const auto & table_id = target.table_id;
-                        if (!table_id.table_name.empty())
+                        const auto & target_id = target->getTableID();
+                        if (!target_id.empty())
                         {
-                            mv_to_dependency = table_id;
+                            mv_to_dependency = target_id;
                             if (mv_to_dependency->database_name.empty())
                                 mv_to_dependency->database_name = current_database;
                             dependencies.emplace(mv_to_dependency->getQualifiedName());
@@ -119,12 +120,12 @@ namespace
                         {
                             mv_to_dependency = StorageID{table_name.database, table_name.table, create.uuid};
                             mv_to_dependency->table_name = StorageMaterializedView::generateInnerTableName(mv_to_dependency.value());
-                            mv_to_dependency->uuid = target.inner_uuid;
+                            mv_to_dependency->uuid = target->inner_uuid;
                         }
                     }
-                    else if (target.kind == ViewTarget::Kind::Inner && !create.is_window_view)
+                    else if (target->kind == ASTViewTarget::Kind::Inner && !create.is_window_view)
                     {
-                        mv_to_dependency = StorageID{table_name.database, target.table_id.getQualifiedName().table, target.inner_uuid};
+                        mv_to_dependency = StorageID{table_name.database, target->getTableID().getQualifiedName().table, target->inner_uuid};
                         mv_to_dependency->table_name = StorageMaterializedView::generateInnerTableName(mv_to_dependency.value());
                     }
 

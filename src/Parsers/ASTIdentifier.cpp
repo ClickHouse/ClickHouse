@@ -212,12 +212,14 @@ ASTPtr ASTTableIdentifier::clone() const
 
 StorageID ASTTableIdentifier::getTableId() const
 {
+    chassert(!isParam());
     if (name_parts.size() == 2) return {name_parts[0], name_parts[1], uuid};
     return {{}, name_parts[0], uuid};
 }
 
 String ASTTableIdentifier::getDatabaseName() const
 {
+    chassert(!isParam());
     if (name_parts.size() == 2) return name_parts[0];
     return {};
 }

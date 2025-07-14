@@ -1,7 +1,9 @@
 #include <Parsers/ASTViewTargets.h>
 
 #include <Common/quoteString.h>
+#include <Common/SipHash.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/IAST_erase.h>
 #include <IO/WriteHelpers.h>
@@ -17,22 +19,22 @@ namespace ErrorCodes
 }
 
 
-std::string_view toString(ViewTarget::Kind kind)
+std::string_view toString(ASTViewTarget::Kind kind)
 {
     switch (kind)
     {
-        case ViewTarget::To:      return "to";
-        case ViewTarget::Inner:   return "inner";
-        case ViewTarget::Data:    return "data";
-        case ViewTarget::Tags:    return "tags";
-        case ViewTarget::Metrics: return "metrics";
+        case ASTViewTarget::Kind::To:      return "to";
+        case ASTViewTarget::Kind::Inner:   return "inner";
+        case ASTViewTarget::Kind::Data:    return "data";
+        case ASTViewTarget::Kind::Tags:    return "tags";
+        case ASTViewTarget::Kind::Metrics: return "metrics";
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "{} doesn't support kind {}", __FUNCTION__, kind);
 }
 
-void parseFromString(ViewTarget::Kind & out, std::string_view str)
+void parseFromString(ASTViewTarget::Kind & out, std::string_view str)
 {
-    for (auto kind : magic_enum::enum_values<ViewTarget::Kind>())
+    for (auto kind : magic_enum::enum_values<ASTViewTarget::Kind>())
     {
         if (toString(kind) == str)
         {
@@ -43,59 +45,129 @@ void parseFromString(ViewTarget::Kind & out, std::string_view str)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: Unexpected string {}", __FUNCTION__, str);
 }
 
-
-std::vector<ViewTarget::Kind> ASTViewTargets::getKinds() const
+StorageID ASTViewTarget::getTableID() const
 {
-    std::vector<ViewTarget::Kind> kinds;
-    kinds.reserve(targets.size());
-    for (const auto & target : targets)
-        kinds.push_back(target.kind);
-    return kinds;
-}
-
-
-void ASTViewTargets::setTableID(ViewTarget::Kind kind, const StorageID & table_id_)
-{
-    for (auto & target : targets)
-    {
-        if (target.kind == kind)
-        {
-            target.table_id = table_id_;
-            return;
-        }
-    }
-    if (table_id_)
-        targets.emplace_back(kind).table_id = table_id_;
-}
-
-StorageID ASTViewTargets::getTableID(ViewTarget::Kind kind) const
-{
-    if (const auto * target = tryGetTarget(kind))
-        return target->table_id;
+    if (table_identifier)
+        return table_identifier->getTableId();
+    if (inner_uuid != UUIDHelpers::Nil)
+        return StorageID("", "", inner_uuid);
     return StorageID::createEmpty();
 }
 
-bool ASTViewTargets::hasTableID(ViewTarget::Kind kind) const
+ASTPtr ASTViewTarget::clone() const
+{
+    auto res = std::make_shared<ASTViewTarget>(*this);
+    res->children.clear();
+
+    if (table_identifier)
+        res->set(res->table_identifier, table_identifier->clone());
+
+    if (inner_engine)
+        res->set(res->inner_engine, inner_engine->clone());
+
+    return res;
+}
+
+void ASTViewTarget::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    hash_state.update(static_cast<char>(kind));
+    hash_state.update(inner_uuid);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+}
+
+void ASTViewTarget::forEachPointerToChild(std::function<void(void**)> f)
+{
+    f(reinterpret_cast<void **>(&table_identifier));
+    f(reinterpret_cast<void **>(&inner_engine));
+}
+
+
+std::vector<ASTViewTarget::Kind> ASTViewTargets::getKinds() const
+{
+    std::vector<ASTViewTarget::Kind> kinds;
+    kinds.reserve(children.size());
+
+    for (const auto & child : children)
+            kinds.push_back(child->as<ASTViewTarget>()->kind);
+
+    return kinds;
+}
+
+void ASTViewTargets::setTableID(ASTViewTarget::Kind kind, ASTPtr table_identifier)
+{
+    for (auto & child : children)
+    {
+        auto * target = child->as<ASTViewTarget>();
+        if (target->kind == kind)
+        {
+            target->table_identifier = table_identifier->as<ASTTableIdentifier>();
+            target->setOrReplace(target->table_identifier, table_identifier);
+            return;
+        }
+    }
+
+    if (table_identifier)
+    {
+        auto target = std::make_shared<ASTViewTarget>(kind);
+        target->set(target->table_identifier, table_identifier);
+        children.push_back(target);
+    }
+}
+
+void ASTViewTargets::setTableID(ASTViewTarget::Kind kind, const StorageID & table_id_)
+{
+    if (table_id_)
+    {
+        ASTPtr table_identifier;
+        if (!table_id_.database_name.empty())
+            table_identifier = std::make_shared<ASTTableIdentifier>(table_id_.database_name, table_id_.table_name);
+        else
+            table_identifier = std::make_shared<ASTTableIdentifier>(table_id_.table_name);
+
+        setTableID(kind, table_identifier);
+    }
+}
+
+StorageID ASTViewTargets::getTableID(ASTViewTarget::Kind kind) const
+{
+    const auto * target = tryGetTarget(kind);
+    if (target)
+        return target->getTableID();
+    return StorageID::createEmpty();
+}
+
+bool ASTViewTargets::hasTableID(ASTViewTarget::Kind kind) const
 {
     if (const auto * target = tryGetTarget(kind))
-        return !target->table_id.empty();
+        return target->table_identifier;
     return false;
 }
 
 void ASTViewTargets::setCurrentDatabase(const String & current_database)
 {
-    for (auto & target : targets)
+    for (const auto & child : children)
     {
-        auto & table_id = target.table_id;
-        if (!table_id.table_name.empty() && table_id.database_name.empty())
-            table_id.database_name = current_database;
+        auto * target = child->as<ASTViewTarget>();
+        if (target->table_identifier && target->table_identifier->isShort())
+        {
+            auto storage_id = target->getTableID();
+            if (!storage_id.table_name.empty() && storage_id.database_name.empty())
+            {
+                // Create a new table identifier with the current database
+                ASTPtr new_identifier = std::make_shared<ASTTableIdentifier>(
+                    current_database, target->table_identifier->shortName());
+
+                target->setOrReplace(target->table_identifier, new_identifier);
+            }
+        }
     }
 }
 
-void ASTViewTargets::setInnerUUID(ViewTarget::Kind kind, const UUID & inner_uuid_)
+void ASTViewTargets::setInnerUUID(ASTViewTarget::Kind kind, const UUID & inner_uuid_)
 {
-    for (auto & target : targets)
+    for (auto & child : children)
     {
+        auto target = child->as<ASTViewTarget &>();
         if (target.kind == kind)
         {
             target.inner_uuid = inner_uuid_;
@@ -103,90 +175,92 @@ void ASTViewTargets::setInnerUUID(ViewTarget::Kind kind, const UUID & inner_uuid
         }
     }
     if (inner_uuid_ != UUIDHelpers::Nil)
-        targets.emplace_back(kind).inner_uuid = inner_uuid_;
+    {
+        auto target = std::make_shared<ASTViewTarget>(kind);
+        target->inner_uuid = inner_uuid_;
+        children.push_back(target);
+    }
 }
 
-UUID ASTViewTargets::getInnerUUID(ViewTarget::Kind kind) const
+UUID ASTViewTargets::getInnerUUID(ASTViewTarget::Kind kind) const
 {
     if (const auto * target = tryGetTarget(kind))
         return target->inner_uuid;
     return UUIDHelpers::Nil;
 }
 
-bool ASTViewTargets::hasInnerUUID(ViewTarget::Kind kind) const
+bool ASTViewTargets::hasInnerUUID(ASTViewTarget::Kind kind) const
 {
     return getInnerUUID(kind) != UUIDHelpers::Nil;
 }
 
 void ASTViewTargets::resetInnerUUIDs()
 {
-    for (auto & target : targets)
-        target.inner_uuid = UUIDHelpers::Nil;
+    for (auto & child : children)
+        child->as<ASTViewTarget &>().inner_uuid = UUIDHelpers::Nil;
 }
 
 bool ASTViewTargets::hasInnerUUIDs() const
 {
-    for (const auto & target : targets)
+    for (const auto & child : children)
     {
-        if (target.inner_uuid != UUIDHelpers::Nil)
+        if (child->as<ASTViewTarget &>().inner_uuid != UUIDHelpers::Nil)
             return true;
     }
     return false;
 }
 
-void ASTViewTargets::setInnerEngine(ViewTarget::Kind kind, ASTPtr storage_def)
+void ASTViewTargets::setInnerEngine(ASTViewTarget::Kind kind, ASTPtr storage_def)
 {
     auto new_inner_engine = typeid_cast<std::shared_ptr<ASTStorage>>(storage_def);
     if (!new_inner_engine && storage_def)
         throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Bad cast from type {} to ASTStorage", storage_def->getID());
 
-    for (auto & target : targets)
+    for (auto & child : children)
     {
+        auto target = child->as<ASTViewTarget &>();
         if (target.kind == kind)
         {
-            if (target.inner_engine == new_inner_engine)
-                return;
-            if (new_inner_engine)
-                children.push_back(new_inner_engine);
-            if (target.inner_engine)
-                std::erase(children, target.inner_engine);
-            target.inner_engine = new_inner_engine;
+            target.setOrReplace(target.inner_engine, new_inner_engine);
             return;
         }
     }
 
     if (new_inner_engine)
     {
-        targets.emplace_back(kind).inner_engine = new_inner_engine;
-        children.push_back(new_inner_engine);
+        auto new_target = std::make_shared<ASTViewTarget>(kind);
+        new_target->set(new_target->inner_engine, new_inner_engine);
+        children.push_back(new_target);
     }
 }
 
-std::shared_ptr<ASTStorage> ASTViewTargets::getInnerEngine(ViewTarget::Kind kind) const
+std::shared_ptr<ASTStorage> ASTViewTargets::getInnerEngine(ASTViewTarget::Kind kind) const
 {
     if (const auto * target = tryGetTarget(kind))
-        return target->inner_engine;
+        if (target->inner_engine)
+            return std::dynamic_pointer_cast<ASTStorage>(target->inner_engine->shared_from_this());
     return nullptr;
 }
 
 std::vector<std::shared_ptr<ASTStorage>> ASTViewTargets::getInnerEngines() const
 {
     std::vector<std::shared_ptr<ASTStorage>> res;
-    res.reserve(targets.size());
-    for (const auto & target : targets)
+    res.reserve(children.size());
+    for (const auto & child : children)
     {
-        if (target.inner_engine)
-            res.push_back(target.inner_engine);
+        auto * target = child->as<ASTViewTarget>();
+        if (target->inner_engine)
+            res.push_back(std::dynamic_pointer_cast<ASTStorage>(target->inner_engine->shared_from_this()));
     }
     return res;
 }
 
-const ViewTarget * ASTViewTargets::tryGetTarget(ViewTarget::Kind kind) const
+const ASTViewTarget * ASTViewTargets::tryGetTarget(ASTViewTarget::Kind kind) const
 {
-    for (const auto & target : targets)
+    for (const auto & child : children)
     {
-        if (target.kind == kind)
-            return &target;
+        if (child->as<ASTViewTarget>()->kind == kind)
+            return child->as<ASTViewTarget>();
     }
     return nullptr;
 }
@@ -195,43 +269,50 @@ ASTPtr ASTViewTargets::clone() const
 {
     auto res = std::make_shared<ASTViewTargets>(*this);
     res->children.clear();
-    for (auto & target : res->targets)
+
+    for (const auto & child : children)
     {
-        if (target.inner_engine)
-        {
-            target.inner_engine = typeid_cast<std::shared_ptr<ASTStorage>>(target.inner_engine->clone());
-            res->children.push_back(target.inner_engine);
-        }
+        chassert(child->as<ASTViewTarget>());
+        res->children.push_back(child->clone());
     }
+
     return res;
 }
 
 void ASTViewTargets::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
-    for (const auto & target : targets)
-        formatTarget(target, ostr, s, state, frame);
+    for (const auto & target : children)
+        formatTarget(target->as<const ASTViewTarget &>(), ostr, s, state, frame);
 }
 
-void ASTViewTargets::formatTarget(ViewTarget::Kind kind, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTViewTargets::formatTarget(ASTViewTarget::Kind kind, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
-    for (const auto & target : targets)
+    for (const auto & target : children)
     {
-        if (target.kind == kind)
-            formatTarget(target, ostr, s, state, frame);
+        if (target->as<const ASTViewTarget &>().kind == kind)
+            formatTarget(target->as<const ASTViewTarget &>(), ostr, s, state, frame);
     }
 }
 
-void ASTViewTargets::formatTarget(const ViewTarget & target, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame)
+void ASTViewTargets::formatTarget(const ASTViewTarget & target, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame)
 {
-    if (target.table_id)
+    if (target.kind == ASTViewTarget::To)
+    {
+        for (const auto & child : target.children)
+            child->format(ostr, s, state, frame);
+        return;
+    }
+    if (target.table_identifier)
     {
         auto keyword = getKeywordForTableID(target.kind);
         if (!keyword)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No keyword for table name of kind {}", toString(target.kind));
+
+        auto table_id = target.getTableID();
         ostr <<  " " << (s.hilite ? hilite_keyword : "") << toStringView(*keyword)
                << (s.hilite ? hilite_none : "") << " "
-               << (!target.table_id.database_name.empty() ? backQuoteIfNeed(target.table_id.database_name) + "." : "")
-               << backQuoteIfNeed(target.table_id.table_name);
+               << (!table_id.database_name.empty() ? backQuoteIfNeed(table_id.database_name) + "." : "")
+               << backQuoteIfNeed(table_id.table_name);
     }
 
     if (target.inner_uuid != UUIDHelpers::Nil)
@@ -253,62 +334,43 @@ void ASTViewTargets::formatTarget(const ViewTarget & target, WriteBuffer & ostr,
     }
 }
 
-std::optional<Keyword> ASTViewTargets::getKeywordForTableID(ViewTarget::Kind kind)
+std::optional<Keyword> ASTViewTargets::getKeywordForTableID(ASTViewTarget::Kind kind)
 {
     switch (kind)
     {
-        case ViewTarget::To:      return Keyword::TO;      /// TO mydb.mydata
-        case ViewTarget::Inner:   return std::nullopt;
-        case ViewTarget::Data:    return Keyword::DATA;    /// DATA mydb.mydata
-        case ViewTarget::Tags:    return Keyword::TAGS;    /// TAGS mydb.mytags
-        case ViewTarget::Metrics: return Keyword::METRICS; /// METRICS mydb.mymetrics
+        case ASTViewTarget::Kind::To:      return Keyword::TO;      /// TO mydb.mydata
+        case ASTViewTarget::Kind::Inner:   return std::nullopt;
+        case ASTViewTarget::Kind::Data:    return Keyword::DATA;    /// DATA mydb.mydata
+        case ASTViewTarget::Kind::Tags:    return Keyword::TAGS;    /// TAGS mydb.mytags
+        case ASTViewTarget::Kind::Metrics: return Keyword::METRICS; /// METRICS mydb.mymetrics
     }
     UNREACHABLE();
 }
 
-std::optional<Keyword> ASTViewTargets::getKeywordForInnerStorage(ViewTarget::Kind kind)
+std::optional<Keyword> ASTViewTargets::getKeywordForInnerStorage(ASTViewTarget::Kind kind)
 {
     switch (kind)
     {
-        case ViewTarget::To:      return std::nullopt;      /// ENGINE = MergeTree()
-        case ViewTarget::Inner:   return Keyword::INNER;    /// INNER ENGINE = MergeTree()
-        case ViewTarget::Data:    return Keyword::DATA;     /// DATA ENGINE = MergeTree()
-        case ViewTarget::Tags:    return Keyword::TAGS;     /// TAGS ENGINE = MergeTree()
-        case ViewTarget::Metrics: return Keyword::METRICS;  /// METRICS ENGINE = MergeTree()
+        case ASTViewTarget::Kind::To:      return std::nullopt;      /// ENGINE = MergeTree()
+        case ASTViewTarget::Kind::Inner:   return Keyword::INNER;    /// INNER ENGINE = MergeTree()
+        case ASTViewTarget::Kind::Data:    return Keyword::DATA;     /// DATA ENGINE = MergeTree()
+        case ASTViewTarget::Kind::Tags:    return Keyword::TAGS;     /// TAGS ENGINE = MergeTree()
+        case ASTViewTarget::Kind::Metrics: return Keyword::METRICS;  /// METRICS ENGINE = MergeTree()
     }
     UNREACHABLE();
 }
 
-std::optional<Keyword> ASTViewTargets::getKeywordForInnerUUID(ViewTarget::Kind kind)
+std::optional<Keyword> ASTViewTargets::getKeywordForInnerUUID(ASTViewTarget::Kind kind)
 {
     switch (kind)
     {
-        case ViewTarget::To:      return Keyword::TO_INNER_UUID;       /// TO INNER UUID 'XXX'
-        case ViewTarget::Inner:   return std::nullopt;
-        case ViewTarget::Data:    return Keyword::DATA_INNER_UUID;     /// DATA INNER UUID 'XXX'
-        case ViewTarget::Tags:    return Keyword::TAGS_INNER_UUID;     /// TAGS INNER UUID 'XXX'
-        case ViewTarget::Metrics: return Keyword::METRICS_INNER_UUID;  /// METRICS INNER UUID 'XXX'
+        case ASTViewTarget::Kind::To:      return Keyword::TO_INNER_UUID;       /// TO INNER UUID 'XXX'
+        case ASTViewTarget::Kind::Inner:   return std::nullopt;
+        case ASTViewTarget::Kind::Data:    return Keyword::DATA_INNER_UUID;     /// DATA INNER UUID 'XXX'
+        case ASTViewTarget::Kind::Tags:    return Keyword::TAGS_INNER_UUID;     /// TAGS INNER UUID 'XXX'
+        case ASTViewTarget::Kind::Metrics: return Keyword::METRICS_INNER_UUID;  /// METRICS INNER UUID 'XXX'
     }
     UNREACHABLE();
-}
-
-void ASTViewTargets::forEachPointerToChild(std::function<void(void**)> f)
-{
-    for (auto & target : targets)
-    {
-        if (target.inner_engine)
-        {
-            ASTStorage * new_inner_engine = target.inner_engine.get();
-            f(reinterpret_cast<void **>(&new_inner_engine));
-            if (new_inner_engine != target.inner_engine.get())
-            {
-                if (new_inner_engine)
-                    target.inner_engine = typeid_cast<std::shared_ptr<ASTStorage>>(new_inner_engine->ptr());
-                else
-                    target.inner_engine.reset();
-            }
-        }
-    }
 }
 
 }

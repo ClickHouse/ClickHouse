@@ -21,7 +21,7 @@ namespace ErrorCodes
 }
 
 
-template <ViewTarget::Kind target_kind>
+template <ASTViewTarget::Kind target_kind>
 void TableFunctionTimeSeriesTarget<target_kind>::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     const auto & args_func = ast_function->as<ASTFunction &>();
@@ -71,7 +71,7 @@ void TableFunctionTimeSeriesTarget<target_kind>::parseArguments(const ASTPtr & a
 }
 
 
-template <ViewTarget::Kind target_kind>
+template <ASTViewTarget::Kind target_kind>
 StoragePtr TableFunctionTimeSeriesTarget<target_kind>::getTargetTable(const ContextPtr & context) const
 {
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
@@ -79,7 +79,7 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::getTargetTable(const Cont
 }
 
 
-template <ViewTarget::Kind target_kind>
+template <ASTViewTarget::Kind target_kind>
 StoragePtr TableFunctionTimeSeriesTarget<target_kind>::executeImpl(
         const ASTPtr & /* ast_function */,
         ContextPtr context,
@@ -90,13 +90,13 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::executeImpl(
     return getTargetTable(context);
 }
 
-template <ViewTarget::Kind target_kind>
+template <ASTViewTarget::Kind target_kind>
 ColumnsDescription TableFunctionTimeSeriesTarget<target_kind>::getActualTableStructure(ContextPtr context, bool /* is_insert_query */) const
 {
     return getTargetTable(context)->getInMemoryMetadataPtr()->columns;
 }
 
-template <ViewTarget::Kind target_kind>
+template <ASTViewTarget::Kind target_kind>
 const char * TableFunctionTimeSeriesTarget<target_kind>::getStorageTypeName() const
 {
     return target_table_type_name.c_str();
@@ -105,19 +105,19 @@ const char * TableFunctionTimeSeriesTarget<target_kind>::getStorageTypeName() co
 
 void registerTableFunctionTimeSeries(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Data>>(
+    factory.registerFunction<TableFunctionTimeSeriesTarget<ASTViewTarget::Kind::Data>>(
         {.documentation = {
             .description=R"(Provides direct access to the 'data' target table for a specified TimeSeries table.)",
             .examples{{"timeSeriesData", "SELECT * from timeSeriesData('mydb', 'time_series_table');", ""}},
             .category = FunctionDocumentation::Category::TableFunction}
         });
-    factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Tags>>(
+    factory.registerFunction<TableFunctionTimeSeriesTarget<ASTViewTarget::Kind::Tags>>(
         {.documentation = {
             .description=R"(Provides direct access to the 'tags' target table for a specified TimeSeries table.)",
             .examples{{"timeSeriesTags", "SELECT * from timeSeriesTags('mydb', 'time_series_table');", ""}},
             .category = FunctionDocumentation::Category::TableFunction}
         });
-    factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Metrics>>(
+    factory.registerFunction<TableFunctionTimeSeriesTarget<ASTViewTarget::Kind::Metrics>>(
         {.documentation = {
             .description=R"(Provides direct access to the 'metrics' target table for a specified TimeSeries table.)",
             .examples{{"timeSeriesMetrics", "SELECT * from timeSeriesMetrics('mydb', 'time_series_table');", ""}},
