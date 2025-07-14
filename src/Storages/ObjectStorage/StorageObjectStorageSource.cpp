@@ -483,7 +483,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             initial_header = sample_header;
         }
 
-        parser_group->opaque = configuration->getOpaque();
+        if (parser_group)
+            parser_group->opaque = configuration->getOpaque();
+
         auto input_format = FormatFactory::instance().getInput(
             configuration->format,
             *read_buf,
