@@ -12,7 +12,7 @@ if {[info exists env(CLICKHOUSE_TMP)]} {
 exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
 set history_file $CLICKHOUSE_TMP/$basename.history
 
-log_user 1
+log_user 0
 set timeout 60
 match_max 100000
 
