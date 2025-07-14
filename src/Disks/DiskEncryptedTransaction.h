@@ -31,7 +31,7 @@ struct DiskEncryptedSettings
 };
 
 
-class DiskEncryptedTransaction : public IDiskTransaction, std::enable_shared_from_this<DiskEncryptedTransaction>
+class DiskEncryptedTransaction : public IDiskTransaction, public std::enable_shared_from_this<DiskEncryptedTransaction>
 {
 public:
     static String wrappedPath(const String disk_path, const String & path)
