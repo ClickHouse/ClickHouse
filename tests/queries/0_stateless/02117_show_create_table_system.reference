@@ -54,6 +54,7 @@ CREATE TABLE system.clusters
     `database_shard_name` String,
     `database_replica_name` String,
     `is_active` Nullable(UInt8),
+    `unsynced_after_recovery` Nullable(UInt8),
     `replication_lag` Nullable(UInt32),
     `recovery_time` Nullable(UInt64),
     `name` String ALIAS cluster
@@ -185,6 +186,7 @@ CREATE TABLE system.dictionaries
     `lifetime_max` UInt64,
     `loading_start_time` DateTime,
     `last_successful_update_time` DateTime,
+    `error_count` UInt64,
     `loading_duration` Float32,
     `last_exception` String,
     `comment` String
@@ -285,7 +287,14 @@ CREATE TABLE system.formats
     `is_output` UInt8,
     `supports_parallel_parsing` UInt8,
     `supports_parallel_formatting` UInt8,
-    `is_tty_friendly` UInt8
+    `is_tty_friendly` UInt8,
+    `content_type` String,
+    `supports_random_access` UInt8,
+    `has_schema_inference` UInt8,
+    `has_external_schema` UInt8,
+    `prefers_large_blocks` UInt8,
+    `supports_append` UInt8,
+    `supports_subsets_of_columns` UInt8
 )
 ENGINE = SystemFormats
 COMMENT 'Contains a list of all the formats along with flags whether a format is suitable for input/output or whether it supports parallelization.'

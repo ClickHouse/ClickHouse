@@ -1,4 +1,4 @@
-#include "XDBCDictionarySource.h"
+#include <Dictionaries/XDBCDictionarySource.h>
 
 #include <Columns/ColumnString.h>
 #include <Common/DateLUTImpl.h>
@@ -12,9 +12,9 @@
 #include <Common/LocalDateTime.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
-#include "DictionarySourceFactory.h"
-#include "DictionaryStructure.h"
-#include "readInvalidateQuery.h"
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/readInvalidateQuery.h>
 #include <Common/escapeForFileName.h>
 #include <Core/ServerSettings.h>
 #include <QueryPipeline/QueryPipeline.h>

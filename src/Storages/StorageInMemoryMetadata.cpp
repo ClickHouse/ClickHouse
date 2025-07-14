@@ -135,7 +135,7 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     new_context->makeQueryContext();
 
     const auto & database = context->getCurrentDatabase();
-    if (!database.empty())
+    if (!database.empty() && database != new_context->getCurrentDatabase())
         new_context->setCurrentDatabase(database);
 
     new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames());
@@ -159,6 +159,7 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     auto changed_settings = context->getSettingsRef().changes();
     new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
     new_context->applySettingsChanges(changed_settings);
+    new_context->setSetting("allow_ddl", 1);
 
     return new_context;
 }

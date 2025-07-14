@@ -20,7 +20,7 @@ namespace DB
     \
     DECLARE(UInt64, prefer_external_sort_block_bytes, DEFAULT_BLOCK_SIZE * 256, "Prefer maximum block bytes for external sort, reduce the memory usage during merging.", 0) \
     DECLARE(UInt64, max_bytes_before_external_sort, 0, "If memory usage during ORDER BY operation is exceeding this threshold in bytes, activate the 'external sorting' mode (spill data to disk). Recommended value is half of available system memory.", 0) \
-    DECLARE(UInt64, min_external_sort_block_bytes, "100Mi", "Minimal block size in bytes for external sort that will be dumped to disk, to avoid too many files.", 0) \
+    DECLARE(Double, max_bytes_ratio_before_external_sort, 0.5, "The ratio of available memory that is allowed for `ORDER BY`. Once reached, external sort is used.", 0) \
     DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, "In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.", 0) \
     DECLARE(Float, remerge_sort_lowered_memory_bytes_ratio, 2., "If memory usage after remerge does not reduced by this ratio, remerge will be disabled.", 0) \
     DECLARE(UInt64, min_free_disk_space_for_temporary_data, 0, "The minimum disk space to keep while writing temporary data used in external sorting and aggregation.", 0) \
@@ -53,7 +53,8 @@ namespace DB
     DECLARE(UInt64, max_bytes_in_join, 0, "Maximum size of the hash table for JOIN (in number of bytes in memory).", 0) \
     DECLARE(UInt64, default_max_bytes_in_join, 1000000000, "Maximum size of right-side table if limit is required but max_bytes_in_join is not set.", 0) \
     DECLARE(UInt64, max_joined_block_size_rows, DEFAULT_BLOCK_SIZE, "Maximum block size for JOIN result (if join algorithm supports it). 0 means unlimited.", 0) \
-    DECLARE(UInt64, min_joined_block_size_bytes, 524288, "Minimum block size for JOIN result (if join algorithm supports it). 0 means unlimited.", 0) \
+    DECLARE(UInt64, min_joined_block_size_rows, DEFAULT_BLOCK_SIZE, "Minimum block size in rows for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.", 0) \
+    DECLARE(UInt64, min_joined_block_size_bytes, 524288, "Minimum block size in bytes for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.)", 0) \
     \
     DECLARE(OverflowMode, join_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.", 0) \
     DECLARE(Bool, join_any_take_last_row, false, "Changes the behaviour of join operations with `ANY` strictness.", 0) \
