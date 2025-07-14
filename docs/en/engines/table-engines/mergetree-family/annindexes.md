@@ -308,50 +308,6 @@ ClickHouse will fetch 3.0 x 10 = 30 nearest neighbors from the vector index in e
 Only the ten closest neighbors will be returned.
 We note that setting `vector_search_postfilter_multiplier` can mitigate the problem but in extreme cases (very selective WHERE condition), it is still possible that less than N requested rows returned.
 
-**Rescoring**
-
-Skip indexes in ClickHouse generally filter at the granule level, i.e. a lookup in a skip index (internally) returns a list of potentially matching granules which reduces the number of read data in the subsequent scan.
-This works well for skip indexes in general but in the case of vector similarity indexes, it creates a "granularity mismatch".
-In more detail, the vector similarity index determines the row numbers of the N most similar vectors for a given reference vector, but it then needs to extrapolate these row numbers to granule numbers.
-ClickHouse will then load these granules from disk, and repeat the distance calculation for all vectors in these granules.
-This step is called rescoring and while it can theoretically improve accuracy - remember the vector similarity index returns only an _approximate_ result, it is obvious not optimal in terms of performance.
-
-ClickHouse therefore provides an optimization which disables rescoring and returns the most similar vectors and their distances directly from the index.
-The optimization is disabled by default, see setting [vector_search_with_rescoring](../../../operations/settings/settings#vector_search_with_rescoring).
-The way it works at a high level is that ClickHouse makes the most similar vectors and their distances available as a virtual column `_distances`.
-To see this, run a vector search query with `EXPLAIN header = 1`:
-
-```sql
-EXPLAIN header = 1
-WITH [0., 2.] AS reference_vec
-SELECT id
-FROM tab
-ORDER BY L2Distance(vec, reference_vec) ASC
-LIMIT 3
-SETTINGS vector_search_with_rescoring = 0
-```
-
-```result
-Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
-
-    ┌─explain─────────────────────────────────────────────────────────────────────────────────────────────────┐
- 1. │ Expression (Project names)                                                                              │
- 2. │ Header: id Int32                                                                                        │
- 3. │   Limit (preliminary LIMIT (without OFFSET))                                                            │
- 4. │   Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64     │
- 5. │           __table1.id Int32                                                                             │
- 6. │     Sorting (Sorting for ORDER BY)                                                                      │
- 7. │     Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64   │
- 8. │             __table1.id Int32                                                                           │
- 9. │       Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))         │
-10. │       Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64 │
-11. │               __table1.id Int32                                                                         │
-12. │         ReadFromMergeTree (default.tab)                                                                 │
-13. │         Header: id Int32                                                                                │
-14. │                 _distance Float32                                                                       │
-    └─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
 ### Performance tuning {#performance-tuning}
 
 **Tuning Compression**
