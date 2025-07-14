@@ -97,8 +97,8 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
                 }
                 writeString("), ", out);
 
-                auto inverted_capture_dag = KeyCondition::cloneASTWithInversionPushDown({capture_dag.getOutputs().at(0)}, context);
-                appendColumnNameWithoutAlias(*inverted_capture_dag.getOutputs().at(0), out, context, use_analyzer, legacy);
+                ActionsDAGWithInversionPushDown inverted_capture_dag(capture_dag.getOutputs().at(0), context);
+                appendColumnNameWithoutAlias(*inverted_capture_dag.predicate, out, context, use_analyzer, legacy);
                 writeChar(')', out);
                 break;
             }
