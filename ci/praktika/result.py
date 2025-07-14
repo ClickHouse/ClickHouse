@@ -536,6 +536,8 @@ class Result(MetaClasses.Serializable):
         print(self.to_stdout_formatted())
         if not self.is_ok():
             sys.exit(1)
+        else:
+            sys.exit(0)
 
     def to_stdout_formatted(self, indent="", res=""):
         add_frame = not res

@@ -37,7 +37,7 @@
 #   include <sys/sysctl.h>
 #endif
 
-#include "types.h"
+#include <types.h>
 
 /// decompress part
 int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_offset,

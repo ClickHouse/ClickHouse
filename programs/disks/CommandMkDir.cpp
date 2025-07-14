@@ -1,4 +1,4 @@
-#include "ICommand.h"
+#include <ICommand.h>
 
 #include <Interpreters/Context.h>
 #include <Common/TerminalSize.h>

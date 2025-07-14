@@ -960,4 +960,75 @@ TYPED_TEST(CoordinationTest, TestUncommittedStateBasicCrud)
     ASSERT_EQ(get_committed_data(), std::nullopt);
 }
 
+TYPED_TEST(CoordinationTest, TestBlockACL)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    Storage storage{500, "", this->keeper_context};
+
+    int64_t zxid = 1;
+
+    static constexpr std::string_view digest = "clickhouse:test";
+    static constexpr std::string_view new_digest = "antonio:test";
+
+    static constexpr int64_t session_id = 42;
+    storage.committed_session_and_auth[session_id].push_back(KeeperStorageBase::AuthID{.scheme = "digest", .id = std::string{digest}});
+    {
+        static constexpr StringRef path = "/test";
+
+        auto req_zxid = zxid++;
+        const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+        create_request->path = path.toString();
+        create_request->acls = {Coordination::ACL{.permissions = Coordination::ACL::All, .scheme = "digest", .id = std::string{digest}}};
+        storage.preprocessRequest(create_request, session_id, 0, req_zxid);
+        auto acls = storage.uncommitted_state.getACLs(path);
+        ASSERT_EQ(acls.size(), 1);
+        ASSERT_EQ(acls[0].id, digest);
+        storage.processRequest(create_request, session_id, req_zxid);
+        ASSERT_NE(storage.container.getValue(path).acl_id, 0);
+
+        req_zxid = zxid++;
+        const auto set_acl_request = std::make_shared<ZooKeeperSetACLRequest>();
+        set_acl_request->path = path.toString();
+        set_acl_request->acls = {Coordination::ACL{.permissions = Coordination::ACL::All, .scheme = "digest", .id = std::string{new_digest}}};
+        storage.preprocessRequest(set_acl_request, session_id, 0, req_zxid);
+        acls = storage.uncommitted_state.getACLs(path);
+        ASSERT_EQ(acls.size(), 1);
+        ASSERT_EQ(acls[0].id, new_digest);
+        storage.processRequest(set_acl_request, session_id, req_zxid);
+        ASSERT_NE(storage.container.getValue(path).acl_id, 0);
+    }
+
+    {
+        static constexpr StringRef path = "/test_blocked_acl";
+        this->keeper_context->setBlockACL(true);
+
+        auto req_zxid = zxid++;
+        const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+        create_request->path = path.toString();
+        create_request->acls = {Coordination::ACL{.permissions = Coordination::ACL::All, .scheme = "digest", .id = std::string{digest}}};
+        storage.preprocessRequest(create_request, session_id, 0, req_zxid);
+        auto acls = storage.uncommitted_state.getACLs(path);
+        ASSERT_EQ(acls.size(), 0);
+        storage.processRequest(create_request, session_id, req_zxid);
+        ASSERT_EQ(storage.container.getValue(path).acl_id, 0);
+
+        req_zxid = zxid++;
+        const auto set_acl_request = std::make_shared<ZooKeeperSetACLRequest>();
+        set_acl_request->path = path.toString();
+        set_acl_request->acls = {Coordination::ACL{.permissions = Coordination::ACL::All, .scheme = "digest", .id = std::string{new_digest}}};
+        storage.preprocessRequest(set_acl_request, session_id, 0, req_zxid);
+        acls = storage.uncommitted_state.getACLs(path);
+        ASSERT_EQ(acls.size(), 0);
+        storage.processRequest(set_acl_request, session_id, req_zxid);
+        ASSERT_EQ(storage.container.getValue(path).acl_id, 0);
+    }
+}
+
 #endif

@@ -38,32 +38,19 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
 
     headers_started_sending = true;
 
-    if (!response.getChunkedTransferEncoding() && response.getContentLength() == Poco::Net::HTTPMessage::UNKNOWN_CONTENT_LENGTH)
-    {
-        /// In case there is no Content-Length we cannot use keep-alive,
-        /// since there is no way to know when the server send all the
-        /// data, so "Connection: close" should be sent.
-        response.setKeepAlive(false);
-    }
-
-    if (add_cors_header)
-        response.set("Access-Control-Allow-Origin", "*");
-
-    setResponseDefaultHeaders(response);
-
     std::stringstream header; //STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    response.beginWrite(header);
+    response.writeStatus(header);
     auto header_str = header.str();
     socketSendBytes(header_str.data(), header_str.size());
 }
 
-void WriteBufferFromHTTPServerResponse::writeHeaderProgressImpl(const char * header_name)
+void WriteBufferFromHTTPServerResponse::writeHeaderProgressImpl(const char * header_name, Progress::DisplayMode mode)
 {
     if (is_http_method_head || headers_finished_sending || !headers_started_sending)
         return;
 
     WriteBufferFromOwnString progress_string_writer;
-    accumulated_progress.writeJSON(progress_string_writer);
+    accumulated_progress.writeJSON(progress_string_writer, mode);
     progress_string_writer.finalize();
 
     socketSendBytes(header_name, strlen(header_name));
@@ -74,12 +61,14 @@ void WriteBufferFromHTTPServerResponse::writeHeaderProgressImpl(const char * hea
 void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
 {
     accumulated_progress.incrementElapsedNs(progress_watch.elapsed());
-    writeHeaderProgressImpl("X-ClickHouse-Summary: ");
+    /// Write the verbose summary with all the zero values included, if any.
+    /// This is needed for compatibility with an old version of the third-party ClickHouse driver for Elixir.
+    writeHeaderProgressImpl("X-ClickHouse-Summary: ", Progress::DisplayMode::Verbose);
 }
 
 void WriteBufferFromHTTPServerResponse::writeHeaderProgress()
 {
-    writeHeaderProgressImpl("X-ClickHouse-Progress: ");
+    writeHeaderProgressImpl("X-ClickHouse-Progress: ", Progress::DisplayMode::Minimal);
 }
 
 void WriteBufferFromHTTPServerResponse::writeExceptionCode()
@@ -104,39 +93,33 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
 
     if (!headers_started_sending)
     {
-        if (compression_method != CompressionMethod::None)
-            response.set("Content-Encoding", toContentEncodingName(compression_method));
         startSendHeaders();
     }
+
+    setResponseDefaultHeaders(response);
+
+    if (count() && compression_method != CompressionMethod::None)
+        response.set("Content-Encoding", toContentEncodingName(compression_method));
+
+    if (add_cors_header)
+        response.set("Access-Control-Allow-Origin", "*");
 
     writeHeaderSummary();
     writeExceptionCode();
 
-    headers_finished_sending = true;
+    std::stringstream header; //STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    response.writeHeaders(header);
+    auto header_str = header.str();
+    socketSendBytes(header_str.data(), header_str.size());
 
-    /// Send end of headers delimiter.
-    socketSendBytes("\r\n", 2);
+    headers_finished_sending = true;
 }
 
 
 void WriteBufferFromHTTPServerResponse::nextImpl()
 {
-    if (!initialized)
     {
         std::lock_guard lock(mutex);
-        /// Initialize as early as possible since if the code throws,
-        /// next() should not be called anymore.
-        initialized = true;
-
-        if (compression_method != CompressionMethod::None)
-        {
-            /// If we've already sent headers, just send the `Content-Encoding` down the socket directly
-            if (headers_started_sending)
-                socketSendStr("Content-Encoding: " + toContentEncodingName(compression_method) + "\r\n");
-            else
-                response.set("Content-Encoding", toContentEncodingName(compression_method));
-        }
-
         startSendHeaders();
         finishSendHeaders();
     }
@@ -168,14 +151,22 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
         return;
 
     accumulated_progress.incrementPiecewiseAtomically(progress);
-    if (send_progress && progress_watch.elapsed() >= send_progress_interval_ms * 1000000)
+    if (send_progress && (progress_watch.elapsed() >= send_progress_interval_ms * 1000000))
     {
         accumulated_progress.incrementElapsedNs(progress_watch.elapsed());
         progress_watch.restart();
 
-        /// Send all common headers before our special progress headers.
-        startSendHeaders();
-        writeHeaderProgress();
+        try {
+            /// Do not send headers before our special progress headers
+            /// For example, header "Connection: close|keep-alive" is defined only right before sending response
+            startSendHeaders();
+            writeHeaderProgress();
+        }
+        catch (...)
+        {
+            cancel();
+            throw;
+        }
     }
 }
 
@@ -196,19 +187,9 @@ void WriteBufferFromHTTPServerResponse::setExceptionCode(int code)
 
 void WriteBufferFromHTTPServerResponse::finalizeImpl()
 {
-    if (!headers_finished_sending)
     {
         std::lock_guard lock(mutex);
-        /// If no body data just send header
         startSendHeaders();
-
-        /// `finalizeImpl` must be idempotent, so set `initialized` here to not send stuff twice
-        if (!initialized && offset() && compression_method != CompressionMethod::None)
-        {
-            initialized = true;
-            socketSendStr("Content-Encoding: " + toContentEncodingName(compression_method) + "\r\n");
-        }
-
         finishSendHeaders();
     }
 

@@ -8,7 +8,7 @@ title: 'Exact and Approximate Vector Search'
 
 import BetaBadge from '@theme/badges/BetaBadge';
 
-# Exact and Approximate Vector Search
+# Exact and approximate vector search
 
 The problem of finding the N closest points in a multi-dimensional (vector) space for a given point is known as [nearest neighbor search](https://en.wikipedia.org/wiki/Nearest_neighbor_search) or, shorter, vector search.
 Two general approaches exist for solving vector search:
@@ -32,7 +32,7 @@ The reference vector is a constant array and given as a common table expression.
 Any of the available [distance function](/sql-reference/functions/distance-functions) can be used for that.
 `<N>` specifies how many neighbors should be returned.
 
-## Exact Vector Search {#exact-nearest-neighbor-search}
+## Exact vector search {#exact-nearest-neighbor-search}
 
 An exact vector search can be performed using above SELECT query as is.
 The runtime of such queries is generally proportional to the number of stored vectors and their dimension, i.e. the number of array elements.
@@ -67,15 +67,15 @@ returns
    └────┴─────────┘
 ```
 
-## Approximate Vector Search {#approximate-nearest-neighbor-search}
+## Approximate vector search {#approximate-nearest-neighbor-search}
 
 <BetaBadge/>
 
 ClickHouse provides a special "vector similarity" index to perform approximate vector search.
 
 :::note
-Vector similarity indexes are currently experimental.
-To enable them, please first run `SET allow_experimental_vector_similarity_index = 1`.
+Vector similarity indexes are currently beta.
+To enable them, please first run `SET enable_vector_similarity_index = 1`.
 If you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
 :::
 
@@ -105,7 +105,7 @@ Accordingly, above `ALTER TABLE` statement only causes the index to be build for
 To build the index for existing data as well, you need to materialize it:
 
 ```sql
-ALTER TABLE table MATERIALIZE <index_name> SETTINGS mutations_sync = 2;
+ALTER TABLE table MATERIALIZE INDEX <index_name> SETTINGS mutations_sync = 2;
 ```
 
 Function `<distance_function>` must be
@@ -308,7 +308,7 @@ ClickHouse will fetch 3.0 x 10 = 30 nearest neighbors from the vector index in e
 Only the ten closest neighbors will be returned.
 We note that setting `vector_search_postfilter_multiplier` can mitigate the problem but in extreme cases (very selective WHERE condition), it is still possible that less than N requested rows returned.
 
-### Performance Tuning {#performance-tuning}
+### Performance tuning {#performance-tuning}
 
 **Tuning Compression**
 
@@ -372,7 +372,7 @@ ORDER BY event_time_microseconds;
 
 For production use-cases, we recommend that the cache is sized large enough so that all vector indexes remain in memory at all times.
 
-### Administration and Monitoring {#administration}
+### Administration and monitoring {#administration}
 
 The on-disk size of vector similarity indexes can be obtained from [system.data_skipping_indices](../../../operations/system-tables/data_skipping_indices):
 
@@ -390,7 +390,7 @@ Example output:
 └──────────┴───────┴──────┴──────────────────────────┘
 ```
 
-### Differences to Regular Skipping Indexes {#differences-to-regular-skipping-indexes}
+### Differences to regular skipping indexes {#differences-to-regular-skipping-indexes}
 
 As all regular [skipping indexes](/optimize/skipping-indexes), vector similarity indexes are constructed over granules and each indexed block consists of `GRANULARITY = [N]`-many granules (`[N]` = 1 by default for normal skipping indexes).
 For example, if the primary index granularity of the table is 8192 (setting `index_granularity = 8192`) and `GRANULARITY = 2`, then each indexed block will contain 16384 rows.

@@ -31,7 +31,7 @@ SET optimize_use_projection_filtering = 1;
 -- region projection is enough effective for filtering
 EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'europe' AND user_id = 101;
 Expression ((Project names + Projection))
-  Expression
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_simple_projection)
     Projections:
       Name: region_proj
@@ -46,7 +46,7 @@ Expression ((Project names + Projection))
 -- Only user_id projection is effective for filtering
 EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region != 'unknown' AND user_id = 106;
 Expression ((Project names + Projection))
-  Expression
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_simple_projection)
     Projections:
       Name: user_id_proj
@@ -61,7 +61,7 @@ Expression ((Project names + Projection))
 -- Both region and user_id projections are effective for filtering
 EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region = 'us_west' AND user_id = 107;
 Expression ((Project names + Projection))
-  Expression
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_simple_projection)
     Projections:
       Name: region_proj
@@ -85,6 +85,6 @@ Expression ((Project names + Projection))
 -- Neither projection is effective for filtering
 EXPLAIN projections = 1 SELECT * FROM test_simple_projection WHERE region != 'unknown' AND user_id != 999;
 Expression ((Project names + Projection))
-  Expression
+  Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_simple_projection)
 DROP TABLE test_simple_projection;

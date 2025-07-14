@@ -410,10 +410,7 @@ CONV_FN(IntLiteral, int_val)
 
 CONV_FN(SpecialVal, val)
 {
-    if (val.paren())
-    {
-        ret += "(";
-    }
+    ret += val.paren() ? "(" : "";
     switch (val.val())
     {
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL:
@@ -572,14 +569,14 @@ CONV_FN(SpecialVal, val)
             }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_TIME64:
-            ret += "'000:00:00'";
+            ret += "'-999:59:59.999999999'";
             if (val.paren())
             {
                 ret += "::Time64";
             }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_TIME64:
-            ret += "'999:59:59.99999999'";
+            ret += "'999:59:59.999999999'";
             if (val.paren())
             {
                 ret += "::Time64";
@@ -623,10 +620,7 @@ CONV_FN(SpecialVal, val)
             ret += "*";
             break;
     }
-    if (val.paren())
-    {
-        ret += ")";
-    }
+    ret += val.paren() ? ")" : "";
 }
 
 CONV_FN(LiteralValue, lit_val)
@@ -675,7 +669,7 @@ CONV_FN(LiteralValue, lit_val)
 
 CONV_FN(UnaryExpr, uexpr)
 {
-    ret += "(";
+    ret += uexpr.paren() ? "(" : "";
     switch (uexpr.unary_op())
     {
         case UNOP_MINUS:
@@ -689,7 +683,7 @@ CONV_FN(UnaryExpr, uexpr)
             break;
     }
     ExprToString(ret, uexpr.expr());
-    ret += ")";
+    ret += uexpr.paren() ? ")" : "";
 }
 
 CONV_FN(BinaryOperator, bop)
@@ -1122,11 +1116,21 @@ CONV_FN_QUOTE(TypeName, tp)
 
 CONV_FN(CastExpr, cexpr)
 {
-    ret += "CAST(";
-    ExprToString(ret, cexpr.expr());
-    ret += " AS ";
-    TypeNameToString(ret, 0, cexpr.type_name());
-    ret += ")";
+    if (cexpr.simple())
+    {
+        ExprToString(ret, cexpr.expr());
+        ret += "::`";
+        TypeNameToString(ret, 1, cexpr.type_name());
+        ret += "`";
+    }
+    else
+    {
+        ret += "CAST(";
+        ExprToString(ret, cexpr.expr());
+        ret += " AS ";
+        TypeNameToString(ret, 0, cexpr.type_name());
+        ret += ")";
+    }
 }
 
 CONV_FN(ExprLike, elike)
@@ -1142,13 +1146,13 @@ CONV_FN(ExprLike, elike)
 
 CONV_FN(CondExpr, econd)
 {
-    ret += "((";
+    ret += econd.paren() ? "(" : "";
     ExprToString(ret, econd.expr1());
-    ret += ") ? (";
+    ret += " ? ";
     ExprToString(ret, econd.expr2());
-    ret += ") : (";
+    ret += " : ";
     ExprToString(ret, econd.expr3());
-    ret += "))";
+    ret += econd.paren() ? ")" : "";
 }
 
 CONV_FN(ExprNullTests, ent)
@@ -1161,16 +1165,16 @@ CONV_FN(ExprNullTests, ent)
 
 CONV_FN(ExprBetween, ebetween)
 {
-    ret += "((";
+    ret += ebetween.paren() ? "(" : "";
     ExprToString(ret, ebetween.expr1());
-    ret += ") ";
+    ret += " ";
     if (ebetween.not_())
         ret += "NOT ";
-    ret += "BETWEEN (";
+    ret += "BETWEEN ";
     ExprToString(ret, ebetween.expr2());
-    ret += ") AND (";
+    ret += " AND ";
     ExprToString(ret, ebetween.expr3());
-    ret += "))";
+    ret += ebetween.paren() ? ")" : "";
 }
 
 CONV_FN(ExplainQuery, explain);
@@ -1665,6 +1669,10 @@ CONV_FN(ComplicatedExpr, expr)
             ExprListToString(ret, expr.tuple());
             ret += ")";
             break;
+        case ExprType::kTable:
+            TableToString(ret, expr.table());
+            ret += ".*";
+            break;
         default:
             ret += "1";
     }
@@ -1700,11 +1708,6 @@ CONV_FN(ResultColumn, rc)
     {
         ExprColAliasToString(ret, rc.eca());
     }
-    else if (rc.has_table_star())
-    {
-        TableToString(ret, rc.table_star());
-        ret += ".*";
-    }
     else
     {
         ret += "*";
@@ -1713,16 +1716,6 @@ CONV_FN(ResultColumn, rc)
 
 CONV_FN(JoinedQuery, tos);
 CONV_FN(TableOrSubquery, tos);
-
-CONV_FN(ExprColumnList, cl)
-{
-    ExprColumnToString(ret, cl.col());
-    for (int i = 0; i < cl.extra_cols_size(); i++)
-    {
-        ret += ", ";
-        ExprColumnToString(ret, cl.extra_cols(i));
-    }
-}
 
 CONV_FN(JoinConstraint, jc)
 {
@@ -1733,8 +1726,17 @@ CONV_FN(JoinConstraint, jc)
     }
     else if (jc.has_using_expr())
     {
+        const UsingExpr & uexpr = jc.using_expr();
+
         ret += " USING (";
-        ExprColumnListToString(ret, jc.using_expr().col_list());
+        for (int i = 0; i < uexpr.columns_size(); i++)
+        {
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            ExprColumnToString(ret, uexpr.columns(i));
+        }
         ret += ")";
     }
     else
@@ -2599,15 +2601,20 @@ CONV_FN(SelectStatementCore, ssc)
 
 CONV_FN(SetQuery, setq)
 {
-    ret += "(";
+    ret += setq.paren1() ? "(" : "";
     ExplainQueryToString(ret, setq.sel1());
-    ret += ") ";
-    ret += SetQuery_SetOp_Name(setq.set_op());
+    ret += setq.paren1() ? ")" : "";
     ret += " ";
-    ret += AllOrDistinct_Name(setq.s_or_d());
-    ret += " (";
+    ret += SetQuery_SetOp_Name(setq.set_op());
+    if (setq.has_s_or_d())
+    {
+        ret += " ";
+        ret += AllOrDistinct_Name(setq.s_or_d());
+    }
+    ret += " ";
+    ret += setq.paren2() ? "(" : "";
     ExplainQueryToString(ret, setq.sel2());
-    ret += ")";
+    ret += setq.paren2() ? ")" : "";
 }
 
 CONV_FN(CTEquery, cteq)
@@ -2706,6 +2713,30 @@ CONV_FN(ColumnStatistics, cst)
     }
 }
 
+CONV_FN(IndexParam, ip)
+{
+    using IndexParamType = IndexParam::IndexParamOneofCase;
+    switch (ip.index_param_oneof_case())
+    {
+        case IndexParamType::kIval:
+            ret += std::to_string(ip.ival());
+            break;
+        case IndexParamType::kDval:
+            ret += std::to_string(ip.dval());
+            break;
+        case IndexParamType::kSval:
+            ret += "'";
+            ret += ip.sval();
+            ret += "'";
+            break;
+        case IndexParamType::kUnescapedSval:
+            ret += ip.unescaped_sval();
+            break;
+        default:
+            ret += "0";
+    }
+}
+
 CONV_FN(CodecParam, cp)
 {
     ret += CompressionCodec_Name(cp.codec()).substr(5);
@@ -2718,7 +2749,7 @@ CONV_FN(CodecParam, cp)
             {
                 ret += ", ";
             }
-            ret += std::to_string(cp.params(i));
+            IndexParamToString(ret, cp.params(i));
         }
         ret += ")";
     }
@@ -2788,6 +2819,11 @@ CONV_FN(CreateDatabase, create_database)
         ret += " COMMENT ";
         ret += create_database.comment();
     }
+    if (create_database.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, create_database.setting_values());
+    }
 }
 
 CONV_FN(CreateFunction, create_function)
@@ -2826,9 +2862,8 @@ CONV_FN(CodecList, cl)
 
 CONV_FN(ColumnDef, cdf)
 {
-    ret += "`";
-    ColumnToString(ret, 1, cdf.col());
-    ret += "` ";
+    ColumnPathToString(ret, 0, cdf.col());
+    ret += " ";
     TypeNameToString(ret, 0, cdf.type());
     if (cdf.has_nullable())
     {
@@ -2870,30 +2905,6 @@ CONV_FN(ColumnDef, cdf)
         ret += " SETTINGS(";
         SettingValuesToString(ret, cdf.setting_values());
         ret += ")";
-    }
-}
-
-CONV_FN(IndexParam, ip)
-{
-    using IndexParamType = IndexParam::IndexParamOneofCase;
-    switch (ip.index_param_oneof_case())
-    {
-        case IndexParamType::kIval:
-            ret += std::to_string(ip.ival());
-            break;
-        case IndexParamType::kDval:
-            ret += std::to_string(ip.dval());
-            break;
-        case IndexParamType::kSval:
-            ret += "'";
-            ret += ip.sval();
-            ret += "'";
-            break;
-        case IndexParamType::kUnescapedSval:
-            ret += ip.unescaped_sval();
-            break;
-        default:
-            ret += "0";
     }
 }
 
@@ -3215,9 +3226,10 @@ CONV_FN(CreateTableSelect, create_table)
     {
         ret += " EMPTY";
     }
-    ret += " AS (";
-    SelectToString(ret, create_table.sel());
-    ret += ")";
+    ret += " AS ";
+    ret += create_table.paren() ? "(" : "";
+    SelectToString(ret, create_table.select());
+    ret += create_table.paren() ? ")" : "";
 }
 
 static void CreateOrReplaceToString(String & ret, const CreateReplaceOption & cro)
@@ -3341,6 +3353,13 @@ CONV_FN(Drop, dt)
     }
 }
 
+CONV_FN(SelectParen, sel)
+{
+    ret += sel.paren() ? "(" : "";
+    SelectToString(ret, sel.select());
+    ret += sel.paren() ? ")" : "";
+}
+
 CONV_FN(Insert, insert)
 {
     if (insert.has_ctes())
@@ -3379,7 +3398,7 @@ CONV_FN(Insert, insert)
     }
     else if (insert.has_select())
     {
-        SelectToString(ret, insert.select());
+        SelectParenToString(ret, insert.select());
     }
     else if (insert.has_insert_file())
     {
@@ -3458,11 +3477,10 @@ CONV_FN(Delete, del)
 {
     if (del.has_single_partition())
     {
-        ret += "IN ";
+        ret += " IN ";
         SinglePartitionExprToString(ret, del.single_partition());
-        ret += " ";
     }
-    ret += "WHERE ";
+    ret += " WHERE ";
     WhereStatementToString(ret, del.where());
 }
 
@@ -3574,30 +3592,30 @@ CONV_FN(CheckTable, ct)
     }
 }
 
-CONV_FN(DescTable, dt)
+CONV_FN(DescribeStatement, ds)
 {
     ret += "DESCRIBE ";
-    using DescType = DescTable::DescOneofCase;
-    switch (dt.desc_oneof_case())
+    using DescType = DescribeStatement::DescOneofCase;
+    switch (ds.desc_oneof_case())
     {
         case DescType::kEst:
-            ExprSchemaTableToString(ret, dt.est());
+            ExprSchemaTableToString(ret, ds.est());
             break;
         case DescType::kSel:
             ret += "(";
-            SelectToString(ret, dt.sel());
+            ExplainQueryToString(ret, ds.sel());
             ret += ")";
             break;
         case DescType::kStf:
-            SQLTableFuncCallToString(ret, dt.stf());
+            SQLTableFuncCallToString(ret, ds.stf());
             break;
         default:
             ret += "t0";
     }
-    if (dt.has_setting_values())
+    if (ds.has_setting_values())
     {
         ret += " SETTINGS ";
-        SettingValuesToString(ret, dt.setting_values());
+        SettingValuesToString(ret, ds.setting_values());
     }
 }
 
@@ -3789,9 +3807,8 @@ CONV_FN(CreateView, create_view)
             ret += " EMPTY";
         }
     }
-    ret += " AS (";
-    SelectToString(ret, create_view.select());
-    ret += ")";
+    ret += " AS ";
+    SelectParenToString(ret, create_view.select());
     if (create_view.has_comment())
     {
         ret += " COMMENT ";
@@ -3983,7 +4000,10 @@ CONV_FN(CreateDictionary, create_dictionary)
     }
     ret += ") PRIMARY KEY ";
     TableKeyToString(ret, create_dictionary.primary_key());
-    DictionarySourceToString(ret, create_dictionary.source());
+    if (create_dictionary.has_source())
+    {
+        DictionarySourceToString(ret, create_dictionary.source());
+    }
     DictionaryLayoutToString(ret, create_dictionary.layout());
     if (create_dictionary.has_range())
     {
@@ -4076,12 +4096,12 @@ CONV_FN(RemoveColumnSetting, rcp)
 
 CONV_FN(AlterItem, alter)
 {
-    ret += "(";
+    ret += alter.paren() ? "(" : "";
     using AlterType = AlterItem::AlterOneofCase;
     switch (alter.alter_oneof_case())
     {
         case AlterType::kDel:
-            ret += "DELETE ";
+            ret += "DELETE";
             DeleteToString(ret, alter.del());
             break;
         case AlterType::kUpdate:
@@ -4333,7 +4353,7 @@ CONV_FN(AlterItem, alter)
             break;
         case AlterType::kModifyQuery:
             ret += "MODIFY QUERY ";
-            SelectToString(ret, alter.modify_query());
+            SelectParenToString(ret, alter.modify_query());
             break;
         case AlterType::kRefresh:
             ret += "MODIFY ";
@@ -4342,7 +4362,7 @@ CONV_FN(AlterItem, alter)
         default:
             ret += "DELETE WHERE TRUE";
     }
-    ret += ")";
+    ret += alter.paren() ? ")" : "";
 }
 
 CONV_FN(Alter, alter)
@@ -4704,7 +4724,6 @@ CONV_FN(SystemCommand, cmd)
             break;
         case CmdType::kDropSchemaCache:
             ret += "DROP SCHEMA CACHE";
-            can_set_cluster = true;
             break;
         case CmdType::kDropS3ClientCache:
             ret += "DROP S3 CLIENT CACHE";
@@ -4737,6 +4756,14 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kDropQueryConditionCache:
             ret += "DROP QUERY CONDITION CACHE";
             can_set_cluster = true;
+            break;
+        case CmdType::kEnableFailpoint:
+            ret += "ENABLE FAILPOINT ";
+            ret += FailPoint_Name(cmd.enable_failpoint());
+            break;
+        case CmdType::kDisableFailpoint:
+            ret += "DISABLE FAILPOINT ";
+            ret += FailPoint_Name(cmd.disable_failpoint());
             break;
         default:
             ret += "FLUSH LOGS";
@@ -4841,6 +4868,16 @@ CONV_FN(BackupRestore, backup)
         }
         ret += ")";
     }
+    if (backup.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, backup.setting_values());
+    }
+    if (backup.has_sync())
+    {
+        ret += " ";
+        ret += BackupRestore_SyncOrAsync_Name(backup.sync());
+    }
     if (backup.has_informat())
     {
         ret += " FORMAT ";
@@ -4850,15 +4887,6 @@ CONV_FN(BackupRestore, backup)
     {
         ret += " FORMAT ";
         ret += OutFormat_Name(backup.outformat()).substr(4);
-    }
-    if (backup.has_setting_values())
-    {
-        ret += " SETTINGS ";
-        SettingValuesToString(ret, backup.setting_values());
-    }
-    if (backup.async())
-    {
-        ret += " ASYNC";
     }
 }
 
@@ -4878,6 +4906,38 @@ CONV_FN(Rename, ren)
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, ren.setting_values());
+    }
+}
+
+CONV_FN(Kill, kil)
+{
+    ret += "KILL ";
+    ret += Kill_KillEnum_Name(kil.command());
+    if (kil.has_cluster())
+    {
+        ClusterToString(ret, true, kil.cluster());
+    }
+    ret += " WHERE ";
+    WhereStatementToString(ret, kil.where());
+    if (kil.has_option())
+    {
+        ret += " ";
+        ret += Kill_KillOption_Name(kil.option());
+    }
+    if (kil.has_informat())
+    {
+        ret += " FORMAT ";
+        ret += InFormat_Name(kil.informat()).substr(3);
+    }
+    else if (kil.has_outformat())
+    {
+        ret += " FORMAT ";
+        ret += OutFormat_Name(kil.outformat()).substr(4);
+    }
+    if (kil.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, kil.setting_values());
     }
 }
 
@@ -4914,7 +4974,7 @@ CONV_FN(SQLQueryInner, query)
             CheckTableToString(ret, query.check());
             break;
         case QueryType::kDesc:
-            DescTableToString(ret, query.desc());
+            DescribeStatementToString(ret, query.desc());
             break;
         case QueryType::kExchange:
             ExchangeToString(ret, query.exchange());
@@ -4952,6 +5012,9 @@ CONV_FN(SQLQueryInner, query)
             break;
         case QueryType::kRename:
             RenameToString(ret, query.rename());
+            break;
+        case QueryType::kKill:
+            KillToString(ret, query.kill());
             break;
         default:
             ret += "SELECT 1";
