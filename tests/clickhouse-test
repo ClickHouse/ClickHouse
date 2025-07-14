@@ -2559,7 +2559,6 @@ class TestSuite:
         return (
             ("no-parallel" in self.all_tags[test_name])
             or ("sequential" in self.all_tags[test_name])
-            or ("stateful" in self.all_tags[test_name])
         )
 
     def get_selected_tests(self, filter_func):
