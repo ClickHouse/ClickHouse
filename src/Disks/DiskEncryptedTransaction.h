@@ -286,7 +286,7 @@ public:
         LOG_DEBUG(getLogger("DiskEncryptedTransaction"), "Validating transaction with check function tx: {}", size_t(this));
         auto wrapped = [&, moved_func = std::move(check_function)] (IDiskTransaction&)
         {
-            return moved_func(*this);
+            moved_func(*this);
         };
         delegate_transaction->validateTransaction(std::move(wrapped));
     }
