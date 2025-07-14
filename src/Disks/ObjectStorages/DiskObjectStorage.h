@@ -2,7 +2,6 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Common/re2.h>
 
@@ -28,7 +27,6 @@ class DiskObjectStorage : public IDisk
 {
 
 friend class DiskObjectStorageReservation;
-friend class DiskObjectStorageRemoteMetadataRestoreHelper;
 
 public:
     DiskObjectStorage(
@@ -70,8 +68,6 @@ public:
 
     void moveFile(const String & from_path, const String & to_path) override;
 
-    void moveFile(const String & from_path, const String & to_path, bool should_send_metadata);
-
     void replaceFile(const String & from_path, const String & to_path) override;
 
     void renameExchange(const std::string & old_path, const std::string & new_path) override;
@@ -112,7 +108,6 @@ public:
     bool checkUniqueId(const String & id) const override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
-    void createHardLink(const String & src_path, const String & dst_path, bool should_send_metadata);
 
     void listFiles(const String & path, std::vector<String> & file_names) const override;
 
@@ -144,7 +139,7 @@ public:
 
     void shutdown() override;
 
-    void startupImpl(ContextPtr context) override;
+    void startupImpl() override;
 
     void refresh(UInt64 not_sooner_than_milliseconds) override
     {
@@ -185,14 +180,6 @@ public:
         ) override;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &) override;
-
-    void restoreMetadataIfNeeded(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context);
-
-    void onFreeze(const String & path) override;
-
-    void syncRevision(UInt64 revision) override;
-
-    UInt64 getRevision() const override;
 
     ObjectStoragePtr getObjectStorage() override;
 
@@ -269,8 +256,6 @@ private:
     bool tryReserve(UInt64 bytes);
     void sendMoveMetadata(const String & from_path, const String & to_path);
 
-    const bool send_metadata;
-
     mutable std::mutex resource_mutex;
     String read_resource_name_from_config; // specified in disk config.xml read_resource element
     String write_resource_name_from_config; // specified in disk config.xml write_resource element
@@ -279,8 +264,6 @@ private:
     String read_resource_name_from_sql_any; // described by CREATE RESOURCE query with READ ANY DISK clause
     String write_resource_name_from_sql_any; // described by CREATE RESOURCE query with WRITE ANY DISK clause
     scope_guard resource_changes_subscription;
-
-    std::unique_ptr<DiskObjectStorageRemoteMetadataRestoreHelper> metadata_helper;
 
     UInt64 remove_shared_recursive_file_limit;
 };

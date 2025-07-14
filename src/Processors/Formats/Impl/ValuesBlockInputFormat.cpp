@@ -1,6 +1,7 @@
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/Context.h>
 #include <Parsers/TokenIterator.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Formats/FormatFactory.h>
@@ -669,6 +670,11 @@ void ValuesBlockInputFormat::resetReadBuffer()
 {
     buf.reset();
     IInputFormat::resetReadBuffer();
+}
+
+void ValuesBlockInputFormat::setContext(const ContextPtr & context_)
+{
+    context = Context::createCopy(context_);
 }
 
 void ValuesBlockInputFormat::setQueryParameters(const NameToNameMap & parameters)

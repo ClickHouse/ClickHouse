@@ -81,6 +81,10 @@ static ASTPtr tryMakeUsingColumnASTWithAlias(const QueryTreeNodePtr & node)
     if (!lhs_column_node || !rhs_column_node)
         return nullptr;
 
+    /// If USING column resolved from projection, keep its name
+    if (lhs_column_node->hasExpression())
+        return nullptr;
+
     if (lhs_column_node->getColumnName() == rhs_column_node->getColumnName())
         return nullptr;
 

@@ -11,24 +11,26 @@ title: 'hdfsCluster'
 
 Allows processing files from HDFS in parallel from many nodes in a specified cluster. On initiator it creates a connection to all nodes in the cluster, discloses asterisks in HDFS file path, and dispatches each file dynamically. On the worker node it asks the initiator about the next task to process and processes it. This is repeated until all tasks are finished.
 
-**Syntax**
+## Syntax {#syntax}
 
 ```sql
 hdfsCluster(cluster_name, URI, format, structure)
 ```
 
-**Arguments**
+## Arguments {#arguments}
 
-- `cluster_name` — Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
-- `URI` — URI to a file or a bunch of files. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{'abc','def'}` and `{N..M}` where `N`, `M` — numbers, `abc`, `def` — strings. For more information see [Wildcards In Path](../../engines/table-engines/integrations/s3.md#wildcards-in-path).
-- `format` — The [format](/sql-reference/formats) of the file.
-- `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
+| Argument       | Description                                                                                                                                                                                                                                                                                      |
+|----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `cluster_name` | Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.                                                                                                                                                                                |
+| `URI`          | URI to a file or a bunch of files. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{'abc','def'}` and `{N..M}` where `N`, `M` — numbers, `abc`, `def` — strings. For more information see [Wildcards In Path](../../engines/table-engines/integrations/s3.md#wildcards-in-path). |
+| `format`       | The [format](/sql-reference/formats) of the file.                                                                                                                                                                                                                                                |
+| `structure`    | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                    |
 
-**Returned value**
+## Returned value {#returned_value}
 
 A table with the specified structure for reading data in the specified file.
 
-**Examples**
+## Examples {#examples}
 
 1.  Suppose that we have a ClickHouse cluster named `cluster_simple`, and several files with following URIs on HDFS:
 
@@ -57,7 +59,7 @@ FROM hdfsCluster('cluster_simple', 'hdfs://hdfs1:9000/{some,another}_dir/*', 'TS
 If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 :::
 
-**See Also**
+## Related {#related}
 
 - [HDFS engine](../../engines/table-engines/integrations/hdfs.md)
 - [HDFS table function](../../sql-reference/table-functions/hdfs.md)

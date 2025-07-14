@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/Context.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <DataTypes/ObjectUtils.h>
 #include <Common/ProfileEventsScope.h>
@@ -64,7 +65,8 @@ void MergeTreeSink::onStart()
 
 void MergeTreeSink::onFinish()
 {
-    chassert(!isCancelled());
+    if (isCancelled())
+        return;
 
     finishDelayedChunk();
 }
@@ -227,7 +229,7 @@ bool MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr & part, const String 
     MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
     {
         auto lock = storage.lockParts();
-        storage.fillNewPartName(part, lock);
+        auto block_holder = storage.fillNewPartName(part, lock);
 
         auto * deduplication_log = storage.getDeduplicationLog();
 

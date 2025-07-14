@@ -1,9 +1,17 @@
-#include <cassert>
-#include <base/defines.h>
+#if !defined(LEXER_STANDALONE_BUILD)
+
 #include <Parsers/Lexer.h>
+#include <base/defines.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <base/find_symbols.h>
+
+#else /// This allows building Lexer without any dependencies or includes for WebAssembly or Emscripten.
+
+#include <Parsers/LexerStandalone.h>
+#include <Parsers/Lexer.h>
+
+#endif
 
 
 namespace DB
@@ -76,7 +84,7 @@ Token quotedHexOrBinString(const char *& pos, const char * const token_begin, co
 {
     constexpr char quote = '\'';
 
-    assert(pos[1] == quote);
+    chassert(pos[1] == quote);
 
     bool hex = (*pos == 'x' || *pos == 'X');
 
@@ -529,6 +537,7 @@ Token Lexer::nextTokenImpl()
     }
 }
 
+#if !defined(LEXER_STANDALONE_BUILD)
 
 const char * getTokenName(TokenType type)
 {
@@ -568,5 +577,44 @@ const char * getErrorTokenDescription(TokenType type)
             return "Not an error";
     }
 }
+
+#else
+
+extern "C"
+{
+
+size_t clickhouse_lexer_size = sizeof(Lexer);
+
+void clickhouse_lexer_create(void * ptr, const char * begin, const char * end, size_t max_query_size)
+{
+    new(ptr) Lexer(begin, end, max_query_size);
+}
+
+unsigned char clickhouse_lexer_next_token(void * ptr, const char ** out_token_begin, const char ** out_token_end)
+{
+    Token res = reinterpret_cast<Lexer *>(ptr)->nextToken();
+    *out_token_begin = res.begin;
+    *out_token_end = res.end;
+    return static_cast<unsigned char>(res.type);
+}
+
+int clickhouse_lexer_token_is_significant(unsigned char token)
+{
+    return token != static_cast<unsigned char>(TokenType::Whitespace) && token != static_cast<unsigned char>(TokenType::Comment);
+}
+
+int clickhouse_lexer_token_is_error(unsigned char token)
+{
+    return token > static_cast<unsigned char>(TokenType::EndOfStream);
+}
+
+int clickhouse_lexer_token_is_end(unsigned char token)
+{
+    return token == static_cast<unsigned char>(TokenType::EndOfStream);
+}
+
+}
+
+#endif
 
 }

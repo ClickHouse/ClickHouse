@@ -1,3 +1,5 @@
+SET use_legacy_to_time = 0;
+
 -- Time with three-digit hours
 SELECT toTime('000:00:01');
 SELECT toTime('001:01:01');

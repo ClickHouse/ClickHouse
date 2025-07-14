@@ -1,5 +1,5 @@
-#include "PolygonDictionaryImplementations.h"
-#include "DictionaryFactory.h"
+#include <Dictionaries/PolygonDictionaryImplementations.h>
+#include <Dictionaries/DictionaryFactory.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -7,10 +7,9 @@
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 
+#include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
-
-#include <numeric>
 
 namespace DB
 {

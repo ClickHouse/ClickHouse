@@ -1,14 +1,18 @@
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
-#include <Common/ZooKeeper/KeeperException.h>
+
+#include <IO/S3/Credentials.h>
+#include <Server/CloudPlacementInfo.h>
 #include <base/find_symbols.h>
 #include <base/getFQDNOrHostName.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Common/isLocalAddress.h>
-#include <Common/StringUtils.h>
-#include <Common/thread_local_rng.h>
-#include <Server/CloudPlacementInfo.h>
-#include <IO/S3/Credentials.h>
 #include <Poco/String.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Common/StringUtils.h>
+#include <Common/ZooKeeper/KeeperException.h>
+#include <Common/isLocalAddress.h>
+#include <Common/thread_local_rng.h>
+
+#include <boost/algorithm/string/case_conv.hpp>
+
 
 namespace DB
 {
@@ -263,6 +267,49 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
             password = config.getString(config_name + "." + key);
             if (password.size() > Coordination::PASSWORD_LENGTH)
                 throw KeeperException(Coordination::Error::ZBADARGUMENTS, "Password cannot be longer than {} characters, specified {}", Coordination::PASSWORD_LENGTH, password.size());
+        }
+        else if (key == "path_acls")
+        {
+            Poco::Util::AbstractConfiguration::Keys path_acls_keys;
+            config.keys(config_name + "." + key, path_acls_keys);
+            for (const auto & path_key : path_acls_keys)
+            {
+                String path = config.getString(config_name + "." + key + "." + path_key + ".path");
+                String scheme = config.getString(config_name + "." + key + "." + path_key + ".scheme");
+                String id = config.getString(config_name + "." + key + "." + path_key + ".id");
+                String permissions_str = config.getString(config_name + "." + key + "." + path_key + ".permissions");
+
+                int32_t permissions = 0;
+
+                // Parse comma-separated permission names (e.g., "read,write,create")
+                std::vector<String> permission_list;
+                splitInto<','>(permission_list, permissions_str);
+
+                for (auto & perm : permission_list)
+                {
+                    boost::algorithm::to_lower(perm);
+                    if (perm == "read" || perm == "r")
+                        permissions |= Coordination::ACL::Read;
+                    else if (perm == "write" || perm == "w")
+                        permissions |= Coordination::ACL::Write;
+                    else if (perm == "create" || perm == "c")
+                        permissions |= Coordination::ACL::Create;
+                    else if (perm == "delete" || perm == "d")
+                        permissions |= Coordination::ACL::Delete;
+                    else if (perm == "admin" || perm == "a")
+                        permissions |= Coordination::ACL::Admin;
+                    else if (perm == "all")
+                        permissions = Coordination::ACL::All;
+                    else if (!perm.empty())
+                        throw KeeperException(Coordination::Error::ZBADARGUMENTS, "Unknown permission '{}' in path_acls configuration", perm);
+                }
+                Coordination::ACL acl;
+                acl.scheme = scheme;
+                acl.id = id;
+                acl.permissions = permissions;
+
+                path_acls[path] = std::move(acl);
+            }
         }
         else
             throw KeeperException(Coordination::Error::ZBADARGUMENTS, "Unknown key {} in config file", key);
