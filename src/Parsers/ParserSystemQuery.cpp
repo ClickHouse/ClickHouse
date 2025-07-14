@@ -324,6 +324,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             if (!parseDatabaseAsAST(pos, expected, res->database))
                 return false;
+            if (ParserKeyword{Keyword::STRICT}.ignore(pos, expected))
+                res->sync_replica_mode = SyncReplicaMode::STRICT;
             break;
         }
         case Type::RESTART_DISK:
