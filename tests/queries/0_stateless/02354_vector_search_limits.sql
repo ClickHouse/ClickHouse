@@ -1,3 +1,5 @@
+-- Tags: no-fasttest, no-ordinary-database
+
 -- Tests for various limits in vector search
 
 SET enable_vector_similarity_index = 1;
