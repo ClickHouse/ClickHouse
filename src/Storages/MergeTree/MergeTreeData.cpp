@@ -5050,13 +5050,22 @@ void MergeTreeData::checkChecksumsFileIsConsistentWithFileSystem(MutableDataPart
         projections_in_checksums
     ] (IDiskTransaction & tx)
     {
-        LOG_DEBUG(getLogger("checkChecksumsFileIsConsistentWithFileSystem"),
-            "Checking checksums.txt file is consistent with the files on file system for part {} tx {}",
-            current_part_dir, size_t(&tx));
+        LOG_TEST(getLogger("checkChecksumsFileIsConsistentWithFileSystem"),
+            "Checking checksums.txt file is consistent with the files on file system for part {}",
+            current_part_dir);
 
         // This is a pedantic check that the checksums file contains exactly the records with actual files
         // There are some suspicion that some time it could contain excess files
         Strings files_in_part = tx.listUncommittedDirectoryInTransaction(current_part_dir);
+
+        if (files_in_part.empty() && is_storage_transactional)
+        {
+            /// We unable to list uncommitted files from a directory which was moved inside transaction.
+            LOG_TRACE(getLogger("checkChecksumsFileIsConsistentWithFileSystem"),
+                    "Unable to list uncommitted file {} in part {}. Probably directory was moved inside transaction. Directory content could not be listed from current transaction",
+                    current_part_dir, part_name);
+            return;
+        }
 
         Strings projections_in_part;
         std::copy_if(projections_in_part.begin(), projections_in_part.end(),
