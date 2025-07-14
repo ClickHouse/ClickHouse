@@ -554,8 +554,6 @@ private:
 
     std::unordered_map<String, ZeroCopyLockDescription> existing_zero_copy_locks;
 
-    static std::optional<QueryPipeline> distributedWriteFromClusterStorage(const std::shared_ptr<IStorageCluster> & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context);
-
     void readLocalImpl(
         QueryPlan & query_plan,
         const Names & column_names,

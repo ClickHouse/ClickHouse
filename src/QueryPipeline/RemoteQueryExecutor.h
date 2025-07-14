@@ -82,18 +82,6 @@ public:
 
         std::optional<Extension> extension_ = std::nullopt);
 
-    /// Takes already set connection.
-    RemoteQueryExecutor(
-        std::shared_ptr<Connection> connection,
-        const String & query_,
-        const Block & header_,
-        ContextPtr context_,
-        ThrottlerPtr throttler_ = nullptr,
-        const Scalars & scalars_ = Scalars(),
-        const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
-        std::optional<Extension> extension_ = std::nullopt);
-
     /// Accepts several connections already taken from pool.
     RemoteQueryExecutor(
         std::vector<IConnectionPool::Entry> && connections_,
