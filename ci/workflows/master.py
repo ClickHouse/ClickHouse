@@ -52,7 +52,6 @@ workflow = Workflow.Config(
         *ArtifactConfigs.clickhouse_tgzs,
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
-        *ArtifactConfigs.performance_reports,
     ],
     dockers=DOCKERS,
     enable_dockers_manifest_merge=True,
