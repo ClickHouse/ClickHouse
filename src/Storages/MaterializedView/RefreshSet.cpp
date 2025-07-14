@@ -1,8 +1,6 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 
-#include <Common/logger_useful.h>
-
 namespace CurrentMetrics
 {
     extern const Metric RefreshableViews;
@@ -10,6 +8,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 RefreshSet::Handle::Handle(Handle && other) noexcept
 {
@@ -23,10 +26,7 @@ RefreshSet::Handle & RefreshSet::Handle::operator=(Handle && other) noexcept
     reset();
     parent_set = std::exchange(other.parent_set, nullptr);
     id = std::move(other.id);
-    inner_table_id = std::move(other.inner_table_id);
     dependencies = std::move(other.dependencies);
-    iter = std::move(other.iter);
-    inner_table_iter = std::move(other.inner_table_iter);
     metric_increment = std::move(other.metric_increment);
     return *this;
 }
@@ -36,29 +36,24 @@ RefreshSet::Handle::~Handle()
     reset();
 }
 
-void RefreshSet::Handle::rename(StorageID new_id, std::optional<StorageID> new_inner_table_id)
+void RefreshSet::Handle::rename(StorageID new_id)
 {
     std::lock_guard lock(parent_set->mutex);
-    RefreshTaskPtr task = *iter;
-    parent_set->removeDependenciesLocked(task, dependencies);
-    parent_set->removeTaskLocked(id, iter);
-    if (inner_table_id)
-        parent_set->removeInnerTableLocked(*inner_table_id, inner_table_iter);
+    parent_set->removeDependenciesLocked(id, dependencies);
+    auto it = parent_set->tasks.find(id);
+    auto task = it->second;
+    parent_set->tasks.erase(it);
     id = new_id;
-    inner_table_id = new_inner_table_id;
-    iter = parent_set->addTaskLocked(id, task);
-    if (inner_table_id)
-        inner_table_iter = parent_set->addInnerTableLocked(*inner_table_id, task);
-    parent_set->addDependenciesLocked(task, dependencies);
+    parent_set->tasks.emplace(id, task);
+    parent_set->addDependenciesLocked(id, dependencies);
 }
 
 void RefreshSet::Handle::changeDependencies(std::vector<StorageID> deps)
 {
     std::lock_guard lock(parent_set->mutex);
-    RefreshTaskPtr task = *iter;
-    parent_set->removeDependenciesLocked(task, dependencies);
+    parent_set->removeDependenciesLocked(id, dependencies);
     dependencies = std::move(deps);
-    parent_set->addDependenciesLocked(task, dependencies);
+    parent_set->addDependenciesLocked(id, dependencies);
 }
 
 void RefreshSet::Handle::reset()
@@ -68,10 +63,8 @@ void RefreshSet::Handle::reset()
 
     {
         std::lock_guard lock(parent_set->mutex);
-        parent_set->removeDependenciesLocked(*iter, dependencies);
-        parent_set->removeTaskLocked(id, iter);
-        if (inner_table_id)
-            parent_set->removeInnerTableLocked(*inner_table_id, inner_table_iter);
+        parent_set->removeDependenciesLocked(id, dependencies);
+        parent_set->tasks.erase(id);
     }
 
     parent_set = nullptr;
@@ -80,165 +73,69 @@ void RefreshSet::Handle::reset()
 
 RefreshSet::RefreshSet() = default;
 
-void RefreshSet::emplace(StorageID id, std::optional<StorageID> inner_table_id, const std::vector<StorageID> & dependencies, RefreshTaskPtr task)
+void RefreshSet::emplace(StorageID id, const std::vector<StorageID> & dependencies, RefreshTaskHolder task)
 {
     std::lock_guard guard(mutex);
-    const auto iter = addTaskLocked(id, task);
-    RefreshTaskList::iterator inner_table_iter;
-    if (inner_table_id)
-        inner_table_iter = addInnerTableLocked(*inner_table_id, task);
-    addDependenciesLocked(task, dependencies);
+    auto [it, is_inserted] = tasks.emplace(id, task);
+    if (!is_inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Refresh set entry already exists for table {}", id.getFullTableName());
+    addDependenciesLocked(id, dependencies);
 
-    task->setRefreshSetHandleUnlock(Handle(this, id, inner_table_id, iter, inner_table_iter, dependencies));
+    task->setRefreshSetHandleUnlock(Handle(this, id, dependencies));
 }
 
-RefreshTaskList::iterator RefreshSet::addTaskLocked(StorageID id, RefreshTaskPtr task)
-{
-    RefreshTaskList & list = tasks[id];
-    list.push_back(task);
-    return std::prev(list.end());
-}
-
-void RefreshSet::removeTaskLocked(StorageID id, RefreshTaskList::iterator iter)
-{
-    const auto it = tasks.find(id);
-    it->second.erase(iter);
-    if (it->second.empty())
-        tasks.erase(it);
-}
-
-RefreshTaskList::iterator RefreshSet::addInnerTableLocked(StorageID inner_table_id, RefreshTaskPtr task)
-{
-    RefreshTaskList & list = inner_tables[inner_table_id];
-    list.push_back(task);
-    return std::prev(list.end());
-}
-
-void RefreshSet::removeInnerTableLocked(StorageID inner_table_id, RefreshTaskList::iterator inner_table_iter)
-{
-    const auto it = inner_tables.find(inner_table_id);
-    it->second.erase(inner_table_iter);
-    if (it->second.empty())
-        inner_tables.erase(it);
-}
-
-void RefreshSet::addDependenciesLocked(RefreshTaskPtr task, const std::vector<StorageID> & dependencies)
+void RefreshSet::addDependenciesLocked(const StorageID & id, const std::vector<StorageID> & dependencies)
 {
     for (const StorageID & dep : dependencies)
-        dependents[dep].insert(task);
+        dependents[dep].insert(id);
 }
 
-void RefreshSet::removeDependenciesLocked(RefreshTaskPtr task, const std::vector<StorageID> & dependencies)
+void RefreshSet::removeDependenciesLocked(const StorageID & id, const std::vector<StorageID> & dependencies)
 {
     for (const StorageID & dep : dependencies)
     {
         auto & set = dependents[dep];
-        set.erase(task);
+        set.erase(id);
         if (set.empty())
             dependents.erase(dep);
     }
 }
 
-RefreshTaskList RefreshSet::findTasks(const StorageID & id) const
+RefreshTaskHolder RefreshSet::getTask(const StorageID & id) const
 {
     std::lock_guard lock(mutex);
-    if (auto it = tasks.find(id); it != tasks.end())
-        return it->second;
-    return {};
+    if (auto task = tasks.find(id); task != tasks.end())
+        return task->second;
+    return nullptr;
 }
 
-std::vector<RefreshTaskPtr> RefreshSet::getTasks() const
+RefreshSet::InfoContainer RefreshSet::getInfo() const
 {
     std::unique_lock lock(mutex);
-    std::vector<RefreshTaskPtr> res;
-    for (const auto & [_, list] : tasks)
-        for (const auto & task : list)
-            res.push_back(task);
+    auto tasks_copy = tasks;
+    lock.unlock();
+
+    InfoContainer res;
+    for (const auto & [id, task] : tasks_copy)
+        res.push_back(task->getInfo());
     return res;
 }
 
-RefreshTaskPtr RefreshSet::tryGetTaskForInnerTable(const StorageID & inner_table_id) const
+std::vector<RefreshTaskHolder> RefreshSet::getDependents(const StorageID & id) const
 {
-    std::unique_lock lock(mutex);
-    auto it = inner_tables.find(inner_table_id);
-    if (it == inner_tables.end())
-        return nullptr;
-    return *it->second.begin();
+    std::lock_guard lock(mutex);
+    std::vector<RefreshTaskHolder> res;
+    auto it = dependents.find(id);
+    if (it == dependents.end())
+        return {};
+    for (const StorageID & dep_id : it->second)
+        if (auto task = tasks.find(dep_id); task != tasks.end())
+            res.push_back(task->second);
+    return res;
 }
 
-void RefreshSet::notifyDependents(const StorageID & id) const
-{
-    std::vector<RefreshTaskPtr> res;
-    {
-        std::lock_guard lock(mutex);
-        auto it = dependents.find(id);
-        if (it == dependents.end())
-            return;
-        for (const auto & task : it->second)
-            res.push_back(task);
-    }
-    for (const RefreshTaskPtr & t : res)
-        t->notify();
-}
-
-void RefreshSet::setRefreshesStopped(bool stopped)
-{
-
-    TaskMap tasks_copy;
-    {
-        std::lock_guard lock(mutex);
-        if (refreshes_stopped.exchange(stopped) == stopped)
-            return;
-        if (stopped)
-            refreshes_stopped_at = std::chrono::steady_clock::now();
-        tasks_copy = tasks;
-    }
-    for (const auto & kv : tasks_copy)
-        for (const RefreshTaskPtr & t : kv.second)
-            t->notify();
-}
-
-bool RefreshSet::refreshesStopped() const
-{
-    return refreshes_stopped.load();
-}
-
-void RefreshSet::joinBackgroundTasks(std::chrono::steady_clock::time_point deadline)
-{
-    std::vector<RefreshTaskPtr> remaining_tasks;
-    std::chrono::steady_clock::time_point stopped_at;
-    {
-        std::unique_lock lock(mutex);
-        stopped_at = refreshes_stopped_at;
-        for (const auto & [_, list] : tasks)
-            remaining_tasks.insert(remaining_tasks.end(), list.begin(), list.end());
-    }
-    std::erase_if(remaining_tasks, [&](const auto & t)
-        {
-            return t->tryJoinBackgroundTask(deadline);
-        });
-
-    if (!remaining_tasks.empty())
-    {
-        auto elapsed_seconds = std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - stopped_at).count();
-        String names;
-        for (size_t i = 0; i < remaining_tasks.size(); ++i)
-        {
-            if (i > 0)
-                names += ", ";
-            if (i >= 20)
-            {
-                names += "...";
-                break;
-            }
-            names += remaining_tasks[i]->getInfo().view_id.getNameForLogs();
-        }
-        LOG_ERROR(getLogger("RefreshSet"), "{} view refreshes failed to stop in {:.3}s: {}", remaining_tasks.size(), elapsed_seconds, names);
-    }
-}
-
-RefreshSet::Handle::Handle(RefreshSet * parent_set_, StorageID id_, std::optional<StorageID> inner_table_id_, RefreshTaskList::iterator iter_, RefreshTaskList::iterator inner_table_iter_, std::vector<StorageID> dependencies_)
-    : parent_set(parent_set_), id(std::move(id_)), inner_table_id(std::move(inner_table_id_)), dependencies(std::move(dependencies_))
-    , iter(iter_), inner_table_iter(inner_table_iter_), metric_increment(CurrentMetrics::Increment(CurrentMetrics::RefreshableViews)) {}
+RefreshSet::Handle::Handle(RefreshSet * parent_set_, StorageID id_, std::vector<StorageID> dependencies_)
+    : parent_set(parent_set_), id(std::move(id_)), dependencies(std::move(dependencies_))
+    , metric_increment(CurrentMetrics::Increment(CurrentMetrics::RefreshableViews)) {}
 
 }

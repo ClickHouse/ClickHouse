@@ -5,6 +5,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 
+#include <iterator>
 #include <algorithm>
 
 namespace DB

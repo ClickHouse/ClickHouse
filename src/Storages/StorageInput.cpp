@@ -64,7 +64,7 @@ public:
         Block sample_block,
         Pipe pipe_,
         StorageInput & storage_)
-        : ISourceStep(std::move(sample_block))
+        : ISourceStep(DataStream{.header = std::move(sample_block)})
         , pipe(std::move(pipe_))
         , storage(storage_)
     {
@@ -94,11 +94,7 @@ void StorageInput::read(
     if (query_context->getInputBlocksReaderCallback())
     {
         /// Send structure to the client.
-        if (!is_input_initialized)
-        {
-            query_context->initializeInput(shared_from_this());
-            is_input_initialized = true;
-        }
+        query_context->initializeInput(shared_from_this());
         input_source_pipe = Pipe(std::make_shared<StorageInputSource>(query_context, sample_block));
     }
 

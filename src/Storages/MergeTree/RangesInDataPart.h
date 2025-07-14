@@ -1,13 +1,12 @@
 #pragma once
 
-#include <unordered_map>
 #include <vector>
 
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
-#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MarkRange.h>
-#include <Storages/MergeTree/MergeTreePartInfo.h>
+#include "Storages/MergeTree/AlterConversions.h"
+#include "Storages/MergeTree/MergeTreePartInfo.h"
 
 
 namespace DB
@@ -37,30 +36,29 @@ struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescripti
     String describe() const;
     void deserialize(ReadBuffer & in);
 
-    void merge(const RangesInDataPartsDescription & other);
+    void merge(RangesInDataPartsDescription & other);
 };
 
 struct RangesInDataPart
 {
     DataPartPtr data_part;
-    DataPartPtr parent_part;
+    AlterConversionsPtr alter_conversions;
     size_t part_index_in_query;
-    size_t part_starting_offset_in_query;
     MarkRanges ranges;
     MarkRanges exact_ranges;
 
+    RangesInDataPart() = default;
+
     RangesInDataPart(
         const DataPartPtr & data_part_,
-        const DataPartPtr & parent_part_,
-        size_t part_index_in_query_,
-        size_t part_starting_offset_in_query_,
-        const MarkRanges & ranges_);
-
-    explicit RangesInDataPart(
-        const DataPartPtr & data_part_,
-        const DataPartPtr & parent_part_ = nullptr,
-        size_t part_index_in_query_ = 0,
-        size_t part_starting_offset_in_query_ = 0);
+        const AlterConversionsPtr & alter_conversions_,
+        const size_t part_index_in_query_,
+        const MarkRanges & ranges_ = MarkRanges{})
+        : data_part{data_part_}
+        , alter_conversions{alter_conversions_}
+        , part_index_in_query{part_index_in_query_}
+        , ranges{ranges_}
+    {}
 
     RangesInDataPartDescription getDescription() const;
 
@@ -68,15 +66,10 @@ struct RangesInDataPart
     size_t getRowsCount() const;
 };
 
-class IMergeTreeDataPart;
-using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
-using DataPartsVector = std::vector<DataPartPtr>;
-
-struct RangesInDataParts : public std::vector<RangesInDataPart>
+struct RangesInDataParts: public std::vector<RangesInDataPart>
 {
     using std::vector<RangesInDataPart>::vector; /// NOLINT(modernize-type-traits)
 
-    explicit RangesInDataParts(const DataPartsVector & parts);
     RangesInDataPartsDescription getDescriptions() const;
 
     size_t getMarksCountAllParts() const;

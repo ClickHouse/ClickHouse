@@ -66,7 +66,7 @@ ALTER TABLE sqllt.table DELETE WHERE i > 65535;
 -- SETTINGS PROFILE
 
 SELECT 'SYSTEM queries';
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 SYSTEM STOP MERGES sqllt.table;
 SYSTEM START MERGES sqllt.table;
 SYSTEM STOP TTL MERGES sqllt.table;
@@ -126,7 +126,7 @@ SET log_comment='';
 -- Now get all logs related to this test
 ---------------------------------------------------------------------------------------------------
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 SELECT 'ACTUAL LOG CONTENT:';
 
 -- Try to filter out all possible previous junk events by excluding old log entries,

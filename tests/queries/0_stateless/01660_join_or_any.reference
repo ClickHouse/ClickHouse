@@ -40,8 +40,10 @@ join on OR chain (any right)
 2	4
 6	5
 any_join_distinct_right_table_keys = 1
+0	0
 2	3
 6	4
 ==
-3
-4
+2	3
+5	4
+100	4

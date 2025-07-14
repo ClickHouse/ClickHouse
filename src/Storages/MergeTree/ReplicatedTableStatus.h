@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
-#include <Storages/TableZnodeInfo.h>
 #include <Core/Types.h>
 
 namespace DB
@@ -17,7 +16,9 @@ struct ReplicatedTableStatus
 
     ReplicatedMergeTreeQueue::Status queue;
     UInt32 parts_to_check;
-    TableZnodeInfo zookeeper_info;
+    String zookeeper_name;
+    String zookeeper_path;
+    String replica_name;
     String replica_path;
     Int32 columns_version;
     UInt64 log_max_index;

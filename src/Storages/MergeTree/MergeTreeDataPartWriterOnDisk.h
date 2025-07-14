@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileBase.h>
@@ -9,9 +8,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/Statistics/Statistics.h>
-#include <Storages/MarkCache.h>
-#include <Columns/IColumn_fwd.h>
-#include <Compression/ICompressionCodec.h>
 
 namespace DB
 {
@@ -73,12 +69,6 @@ public:
             size_t max_compress_block_size_,
             const WriteSettings & query_write_settings);
 
-        ~Stream()
-        {
-            plain_file.reset();
-            marks_file.reset();
-        }
-
         String escaped_column_name;
         std::string data_file_extension;
         std::string marks_file_extension;
@@ -101,7 +91,6 @@ public:
         void preFinalize();
 
         void finalize();
-        void cancel() noexcept;
 
         void sync() const;
 
@@ -126,18 +115,14 @@ public:
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
-        MergeTreeIndexGranularityPtr index_granularity_);
+        const MergeTreeIndexGranularity & index_granularity);
 
     void setWrittenOffsetColumns(WrittenOffsetColumns * written_offset_columns_)
     {
         written_offset_columns = written_offset_columns_;
     }
 
-
-    void cancel() noexcept override;
-
     const Block & getColumnsSample() const override { return block_sample; }
-    const ColumnsSubstreams & getColumnsSubstreams() const override { return columns_substreams; }
 
 protected:
      /// Count index_granularity for block and store in `index_granularity`
@@ -169,17 +154,6 @@ protected:
 
     /// Get unique non ordered skip indices column.
     Names getSkipIndicesColumns() const;
-
-    virtual void addStreams(const NameAndTypePair & name_and_type, const ColumnPtr & column, const ASTPtr & effective_codec_desc) = 0;
-
-    /// On first block create all required streams for columns with dynamic subcolumns and remember the block sample.
-    /// On each next block check if dynamic structure of the columns equals to the dynamic structure of the same
-    /// columns in the sample block. If for some column dynamic structure is different, adjust it so it matches
-    /// the structure from the sample.
-    void initOrAdjustDynamicStructureIfNeeded(Block & block);
-
-    /// This is useful only for vector codecs (like SZ3).
-    static void setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column);
 
     const MergeTreeIndices skip_indices;
 
@@ -216,13 +190,7 @@ protected:
 
     GinIndexStoreFactory::GinIndexStores gin_index_stores;
 
-    bool is_dynamic_streams_initialized = false;
     Block block_sample;
-
-    /// List of substreams for each column in order of serialization.
-    /// Right now used only in Compact parts.
-    ColumnsSubstreams columns_substreams;
-
 private:
     void initSkipIndices();
     void initPrimaryIndex();

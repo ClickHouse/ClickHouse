@@ -47,7 +47,7 @@ static ConfigProcessor::LoadedConfig loadConfigurationFromString(std::string & s
         {
             throw std::runtime_error("unable write to temp file");
         }
-        [[maybe_unused]] int error = close(fd);
+        int error = close(fd);
         chassert(!error);
 
         auto config_path = std::string(tmp_file) + ".xml";

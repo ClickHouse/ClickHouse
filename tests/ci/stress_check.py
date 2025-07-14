@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 from build_download_helper import download_all_deb_packages
-from ci_utils import Shell
+from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from get_robot_token import get_parameter_from_ssm
@@ -55,16 +55,11 @@ def get_run_command(
     repo_tests_path: Path,
     server_log_path: Path,
     additional_envs: List[str],
+    ci_logs_args: str,
     image: DockerImage,
-    upgrade_check: bool,
 ) -> str:
     envs = [f"-e {e}" for e in additional_envs]
     env_str = " ".join(envs)
-
-    if upgrade_check:
-        run_script = "/repo/tests/docker_scripts/upgrade_runner.sh"
-    else:
-        run_script = "/repo/tests/docker_scripts/stress_runner.sh"
 
     cmd = (
         "docker run --cap-add=SYS_PTRACE "
@@ -72,11 +67,11 @@ def get_run_command(
         "--privileged "
         # a static link, don't use S3_URL or S3_DOWNLOAD
         "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
-        "--tmpfs /tmp/clickhouse "
+        f"{ci_logs_args}"
         f"--volume={build_path}:/package_folder "
         f"--volume={result_path}:/test_output "
-        f"--volume={repo_tests_path}/..:/repo "
-        f"--volume={server_log_path}:/var/log/clickhouse-server {env_str} {image} {run_script}"
+        f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
+        f"--volume={server_log_path}:/var/log/clickhouse-server {env_str} {image} "
     )
 
     return cmd
@@ -133,7 +128,7 @@ def process_results(
     return state, description, test_results, additional_files
 
 
-def run_stress_test(upgrade_check: bool = False) -> None:
+def run_stress_test(docker_image_name: str) -> None:
     logging.basicConfig(level=logging.INFO)
     for handler in logging.root.handlers:
         # pylint: disable=protected-access
@@ -153,17 +148,12 @@ def run_stress_test(upgrade_check: bool = False) -> None:
 
     pr_info = PRInfo()
 
+    docker_image = pull_image(get_docker_image(docker_image_name))
+
     packages_path = temp_path / "packages"
     packages_path.mkdir(parents=True, exist_ok=True)
 
-    if check_name.startswith("amd_") or check_name.startswith("arm_"):
-        # this is praktika based CI
-        print("Copy input *.deb artifacts")
-        assert Shell.check(f"cp {REPO_COPY}/ci/tmp/*.deb {packages_path}", verbose=True)
-    else:
-        download_all_deb_packages(check_name, reports_path, packages_path)
-
-    docker_image = pull_image(get_docker_image("clickhouse/stress-test"))
+    download_all_deb_packages(check_name, reports_path, packages_path)
 
     server_log_path = temp_path / "server_log"
     server_log_path.mkdir(parents=True, exist_ok=True)
@@ -172,6 +162,10 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     result_path.mkdir(parents=True, exist_ok=True)
 
     run_log_path = temp_path / "run.log"
+    ci_logs_credentials = CiLogsCredentials(temp_path / "export-logs-config.sh")
+    ci_logs_args = ci_logs_credentials.get_docker_arguments(
+        pr_info, stopwatch.start_time_str, check_name
+    )
 
     additional_envs = get_additional_envs(check_name)
 
@@ -181,8 +175,8 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         repo_tests_path,
         server_log_path,
         additional_envs,
+        ci_logs_args,
         docker_image,
-        upgrade_check,
     )
     logging.info("Going to run stress test: %s", run_command)
 
@@ -194,12 +188,12 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             logging.info("Run failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
+    ci_logs_credentials.clean_ci_logs_from_credentials(run_log_path)
 
     state, description, test_results, additional_logs = process_results(
         result_path, server_log_path, run_log_path
     )
 
-    Shell.check("pwd", verbose=True)
     JobReport(
         description=description,
         test_results=test_results,
@@ -214,4 +208,4 @@ def run_stress_test(upgrade_check: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    run_stress_test()
+    run_stress_test("clickhouse/stress-test")

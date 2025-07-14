@@ -1,14 +1,29 @@
 #pragma once
 
 #include <Core/Field.h>
-
-#include <Common/ClickHouseVersion.h>
-
 #include <map>
 #include <vector>
 
+
 namespace DB
 {
+
+class ClickHouseVersion
+{
+public:
+    /// NOLINTBEGIN(google-explicit-constructor)
+    ClickHouseVersion(const String & version);
+    ClickHouseVersion(const char * version);
+    /// NOLINTEND(google-explicit-constructor)
+
+    String toString() const;
+
+    bool operator<(const ClickHouseVersion & other) const { return components < other.components; }
+    bool operator>=(const ClickHouseVersion & other) const { return components >= other.components; }
+
+private:
+    std::vector<size_t> components;
+};
 
 namespace SettingsChangesHistory
 {
@@ -23,9 +38,6 @@ namespace SettingsChangesHistory
     using SettingsChanges = std::vector<SettingChange>;
 }
 
-using VersionToSettingsChangesMap = std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges>;
-
-const VersionToSettingsChangesMap & getSettingsChangesHistory();
-const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory();
+const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> & getSettingsChangesHistory();
 
 }

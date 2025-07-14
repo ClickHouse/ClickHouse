@@ -13,13 +13,22 @@ namespace DB
 class HudiMetadata final : public IDataLakeMetadata, private WithContext
 {
 public:
-    using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
+    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
     static constexpr auto name = "Hudi";
 
-    HudiMetadata(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_);
+    HudiMetadata(
+        ObjectStoragePtr object_storage_,
+        ConfigurationPtr configuration_,
+        ContextPtr context_);
+
+    Strings getDataFiles() const override;
 
     NamesAndTypesList getTableSchema() const override { return {}; }
+
+    const DataLakePartitionColumns & getPartitionColumns() const override { return partition_columns; }
+
+    const std::unordered_map<String, String> & getColumnNameToPhysicalNameMapping() const override { return column_name_to_physical_name; }
 
     bool operator ==(const IDataLakeMetadata & other) const override
     {
@@ -31,26 +40,20 @@ public:
 
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
-        ConfigurationObserverPtr configuration,
+        ConfigurationPtr configuration,
         ContextPtr local_context)
     {
         return std::make_unique<HudiMetadata>(object_storage, configuration, local_context);
     }
 
-protected:
-    ObjectIterator iterate(
-        const ActionsDAG * filter_dag,
-        FileProgressCallback callback,
-        size_t list_batch_size,
-        ContextPtr context) const override;
-
 private:
     const ObjectStoragePtr object_storage;
-    const ConfigurationObserverPtr configuration;
+    const ConfigurationPtr configuration;
     mutable Strings data_files;
+    std::unordered_map<String, String> column_name_to_physical_name;
+    DataLakePartitionColumns partition_columns;
 
     Strings getDataFilesImpl() const;
-    Strings getDataFiles(const ActionsDAG * filter_dag) const;
 };
 
 }

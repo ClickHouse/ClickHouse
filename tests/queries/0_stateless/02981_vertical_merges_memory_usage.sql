@@ -20,7 +20,7 @@ INSERT INTO t_vertical_merge_memory SELECT number, arrayMap(x -> repeat('a', 50)
 
 OPTIMIZE TABLE t_vertical_merge_memory FINAL;
 
-SYSTEM FLUSH LOGS part_log;
+SYSTEM FLUSH LOGS;
 
 SELECT
     merge_algorithm,

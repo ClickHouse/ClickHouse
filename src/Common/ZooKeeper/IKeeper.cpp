@@ -1,10 +1,60 @@
+#include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <Common/ZooKeeper/KeeperException.h>
 #include <Common/thread_local_rng.h>
 #include <random>
 
+
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int KEEPER_EXCEPTION;
+    }
+}
+
+namespace ProfileEvents
+{
+    extern const Event ZooKeeperUserExceptions;
+    extern const Event ZooKeeperHardwareExceptions;
+    extern const Event ZooKeeperOtherExceptions;
+}
+
+
 namespace Coordination
 {
+
+void Exception::incrementErrorMetrics(Error code_)
+{
+    if (Coordination::isUserError(code_))
+        ProfileEvents::increment(ProfileEvents::ZooKeeperUserExceptions);
+    else if (Coordination::isHardwareError(code_))
+        ProfileEvents::increment(ProfileEvents::ZooKeeperHardwareExceptions);
+    else
+        ProfileEvents::increment(ProfileEvents::ZooKeeperOtherExceptions);
+}
+
+Exception::Exception(const std::string & msg, Error code_, int)
+    : DB::Exception(msg, DB::ErrorCodes::KEEPER_EXCEPTION)
+    , code(code_)
+{
+    incrementErrorMetrics(code);
+}
+
+Exception::Exception(PreformattedMessage && msg, Error code_)
+    : DB::Exception(std::move(msg), DB::ErrorCodes::KEEPER_EXCEPTION)
+    , code(code_)
+{
+    extendedMessage(errorMessage(code));
+    incrementErrorMetrics(code);
+}
+
+Exception::Exception(Error code_)
+    : Exception(code_, "Coordination error: {}", errorMessage(code_))
+{
+}
+
+Exception::Exception(const Exception & exc) = default;
+
 
 SimpleFaultInjection::SimpleFaultInjection(Float64 probability_before, Float64 probability_after_, const String & description_)
 {
@@ -80,7 +130,6 @@ const char * errorMessage(Error code)
         case Error::ZOPERATIONTIMEOUT:        return "Operation timeout";
         case Error::ZBADARGUMENTS:            return "Bad arguments";
         case Error::ZINVALIDSTATE:            return "Invalid zhandle state";
-        case Error::ZOUTOFMEMORY:             return "Out of Memory";
         case Error::ZAPIERROR:                return "API error";
         case Error::ZNONODE:                  return "No node";
         case Error::ZNOAUTH:                  return "Not authenticated";
@@ -107,8 +156,7 @@ bool isHardwareError(Error zk_return_code)
         || zk_return_code == Error::ZCONNECTIONLOSS
         || zk_return_code == Error::ZMARSHALLINGERROR
         || zk_return_code == Error::ZOPERATIONTIMEOUT
-        || zk_return_code == Error::ZNOTREADONLY
-        || zk_return_code == Error::ZNOAUTH;
+        || zk_return_code == Error::ZNOTREADONLY;
 }
 
 bool isUserError(Error zk_return_code)
@@ -123,7 +171,6 @@ bool isUserError(Error zk_return_code)
 
 void CreateRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void RemoveRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
-void RemoveRecursiveRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void ExistsRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void GetRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void SetRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
@@ -132,6 +179,12 @@ void CheckRequest::addRootPath(const String & root_path) { Coordination::addRoot
 void SetACLRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void GetACLRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void SyncRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
+
+void MultiRequest::addRootPath(const String & root_path)
+{
+    for (auto & request : requests)
+        request->addRootPath(root_path);
+}
 
 void CreateResponse::removeRootPath(const String & root_path) { Coordination::removeRootPath(path_created, root_path); }
 void WatchResponse::removeRootPath(const String & root_path) { Coordination::removeRootPath(path, root_path); }

@@ -7,13 +7,19 @@
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
-#include <IO/SharedThreadPools.h>
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Interpreters/Context.h>
 #include <Poco/Event.h>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric ParallelParsingInputFormatThreads;
+    extern const Metric ParallelParsingInputFormatThreadsActive;
+    extern const Metric ParallelParsingInputFormatThreadsScheduled;
+}
 
 namespace DB
 {
@@ -97,9 +103,8 @@ public:
         , format_settings(params.format_settings)
         , min_chunk_bytes(params.min_chunk_bytes)
         , max_block_size(params.max_block_size)
-        , last_block_missing_values(getPort().getHeader().columns())
         , is_server(params.is_server)
-        , runner(getFormatParsingThreadPool().get(), "ChunkParser")
+        , pool(CurrentMetrics::ParallelParsingInputFormatThreads, CurrentMetrics::ParallelParsingInputFormatThreadsActive, CurrentMetrics::ParallelParsingInputFormatThreadsScheduled, params.max_threads)
     {
         // One unit for each thread, including segmentator and reader, plus a
         // couple more units so that the segmentation thread doesn't spuriously
@@ -119,14 +124,9 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "resetParser() is not allowed for {}", getName());
     }
 
-    const BlockMissingValues * getMissingValues() const final
+    const BlockMissingValues & getMissingValues() const final
     {
-        return &last_block_missing_values;
-    }
-
-    void setSerializationHints(const SerializationInfoByName & hints) override
-    {
-        serialization_hints = hints;
+        return last_block_missing_values;
     }
 
     size_t getApproxBytesReadForChunk() const override { return last_approx_bytes_read_for_chunk; }
@@ -190,7 +190,7 @@ private:
             }
         }
 
-        const BlockMissingValues * getMissingValues() const { return input_format->getMissingValues(); }
+        const BlockMissingValues & getMissingValues() const { return input_format->getMissingValues(); }
 
     private:
         const InputFormatPtr & input_format;
@@ -207,7 +207,6 @@ private:
 
     BlockMissingValues last_block_missing_values;
     size_t last_approx_bytes_read_for_chunk = 0;
-    SerializationInfoByName serialization_hints;
 
     /// Non-atomic because it is used in one thread.
     std::optional<size_t> next_block_in_current_unit;
@@ -237,9 +236,9 @@ private:
 
     const bool is_server;
 
-    /// Parsing threads.
-    ThreadPoolCallbackRunnerLocal<void> runner;
-    /// Reading and segmentating the file.
+    /// There are multiple "parsers", that's why we use thread pool.
+    ThreadPool pool;
+    /// Reading and segmentating the file
     ThreadFromGlobalPool segmentator_thread;
 
     enum ProcessingUnitStatus
@@ -284,9 +283,9 @@ private:
 
     void scheduleParserThreadForUnitWithNumber(size_t ticket_number)
     {
-        runner([this, ticket_number]()
+        pool.scheduleOrThrowOnError([this, ticket_number, group = CurrentThread::getGroup()]()
         {
-            parserThreadFunction(ticket_number);
+            parserThreadFunction(group, ticket_number);
         });
         /// We have to wait here to possibly extract ColumnMappingPtr from the first parser.
         if (ticket_number == 0)
@@ -319,7 +318,7 @@ private:
 
         try
         {
-            runner.waitForAllToFinishAndRethrowFirstError();
+            pool.wait();
         }
         catch (...)
         {
@@ -328,7 +327,7 @@ private:
     }
 
     void segmentatorThreadFunction(ThreadGroupPtr thread_group);
-    void parserThreadFunction(size_t current_ticket_number);
+    void parserThreadFunction(ThreadGroupPtr thread_group, size_t current_ticket_number);
 
     /// Save/log a background exception, set termination flag, wake up all
     /// threads. This function is used by segmentator and parsed threads.

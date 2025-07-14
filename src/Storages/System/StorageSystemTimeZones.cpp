@@ -1,6 +1,7 @@
-#include <Columns/IColumn.h>
+#include "StorageSystemTimeZones.h"
+
+#include <algorithm>
 #include <DataTypes/DataTypeString.h>
-#include <Storages/System/StorageSystemTimeZones.h>
 
 
 extern const char * auto_time_zones[];

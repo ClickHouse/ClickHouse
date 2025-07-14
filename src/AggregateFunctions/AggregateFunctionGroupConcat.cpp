@@ -1,6 +1,26 @@
-#include <AggregateFunctions/AggregateFunctionGroupConcat.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/FactoryHelpers.h>
+
+#include <Columns/IColumn.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+
+#include <Core/ServerSettings.h>
+#include <Core/ColumnWithTypeAndName.h>
+
+#include <Common/ArenaAllocator.h>
+#include <Common/assert_cast.h>
 #include <Interpreters/castColumn.h>
+
+#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+
 
 namespace DB
 {
@@ -13,190 +33,200 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void GroupConcatDataBase::checkAndUpdateSize(UInt64 add, Arena * arena)
+namespace
 {
-    if (data_size + add >= allocated_size)
+
+struct GroupConcatDataBase
+{
+    UInt64 data_size = 0;
+    UInt64 allocated_size = 0;
+    char * data = nullptr;
+
+    void checkAndUpdateSize(UInt64 add, Arena * arena)
     {
-        auto old_size = allocated_size;
-        allocated_size = std::max(2 * allocated_size, data_size + add);
-        data = arena->realloc(data, old_size, allocated_size);
+        if (data_size + add >= allocated_size)
+        {
+            auto old_size = allocated_size;
+            allocated_size = std::max(2 * allocated_size, data_size + add);
+            data = arena->realloc(data, old_size, allocated_size);
+        }
     }
-}
 
-void GroupConcatDataBase::insertChar(const char * str, UInt64 str_size, Arena * arena)
-{
-    checkAndUpdateSize(str_size, arena);
-    memcpy(data + data_size, str, str_size);
-    data_size += str_size;
-}
+    void insertChar(const char * str, UInt64 str_size, Arena * arena)
+    {
+        checkAndUpdateSize(str_size, arena);
+        memcpy(data + data_size, str, str_size);
+        data_size += str_size;
+    }
 
-void GroupConcatDataBase::insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena)
-{
-    WriteBufferFromOwnString buff;
-    serialization->serializeText(*column, row_num, buff, FormatSettings{});
-    auto string = buff.stringView();
-    insertChar(string.data(), string.size(), arena);
-}
+    void insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena)
+    {
+        WriteBufferFromOwnString buff;
+        serialization->serializeText(*column, row_num, buff, FormatSettings{});
+        auto string = buff.stringView();
+        insertChar(string.data(), string.size(), arena);
+    }
 
-UInt64 GroupConcatData::getSize(size_t i) const
-{
-    return offsets[i * 2 + 1] - offsets[i * 2];
-}
-
-UInt64 GroupConcatData::getString(size_t i) const
-{
-    return offsets[i * 2];
-}
-
-void GroupConcatData::insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena)
-{
-    WriteBufferFromOwnString buff;
-    serialization->serializeText(*column, row_num, buff, {});
-    auto string = buff.stringView();
-
-    checkAndUpdateSize(string.size(), arena);
-    memcpy(data + data_size, string.data(), string.size());
-    offsets.push_back(data_size, arena);
-    data_size += string.size();
-    offsets.push_back(data_size, arena);
-    num_rows++;
-}
+};
 
 template <bool has_limit>
-GroupConcatImpl<has_limit>::GroupConcatImpl(
-    const DataTypePtr & data_type_, const Array & parameters_, UInt64 limit_, const String & delimiter_)
-    : IAggregateFunctionDataHelper<GroupConcatData, GroupConcatImpl<has_limit>>(
-        {data_type_}, parameters_, std::make_shared<DataTypeString>())
-    , limit(limit_)
-    , delimiter(delimiter_)
-    , type(data_type_)
+struct GroupConcatData;
+
+template<>
+struct GroupConcatData<false> final : public GroupConcatDataBase
 {
-    serialization = isFixedString(type) ? std::make_shared<DataTypeString>()->getDefaultSerialization() : this->argument_types[0]->getDefaultSerialization();
-}
+};
+
+template<>
+struct GroupConcatData<true> final : public GroupConcatDataBase
+{
+    using Offset = UInt64;
+    using Allocator = MixedAlignedArenaAllocator<alignof(Offset), 4096>;
+    using Offsets = PODArray<Offset, 32, Allocator>;
+
+    /// offset[i * 2] - beginning of the i-th row, offset[i * 2 + 1] - end of the i-th row
+    Offsets offsets;
+    UInt64 num_rows = 0;
+
+    UInt64 getSize(size_t i) const { return offsets[i * 2 + 1] - offsets[i * 2]; }
+
+    UInt64 getString(size_t i) const { return offsets[i * 2]; }
+
+    void insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena)
+    {
+        WriteBufferFromOwnString buff;
+        serialization->serializeText(*column, row_num, buff, {});
+        auto string = buff.stringView();
+
+        checkAndUpdateSize(string.size(), arena);
+        memcpy(data + data_size, string.data(), string.size());
+        offsets.push_back(data_size, arena);
+        data_size += string.size();
+        offsets.push_back(data_size, arena);
+        num_rows++;
+    }
+};
 
 template <bool has_limit>
-String GroupConcatImpl<has_limit>::getName() const
+class GroupConcatImpl final
+    : public IAggregateFunctionDataHelper<GroupConcatData<has_limit>, GroupConcatImpl<has_limit>>
 {
-    return name;
-}
+    static constexpr auto name = "groupConcat";
 
+    SerializationPtr serialization;
+    UInt64 limit;
+    const String delimiter;
 
-template <bool has_limit>
-void GroupConcatImpl<has_limit>::add(
-    AggregateDataPtr __restrict place,
-    const IColumn ** columns,
-    size_t row_num,
-    Arena * arena) const
-{
-    auto & cur_data = this->data(place);
+public:
+    GroupConcatImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 limit_, const String & delimiter_)
+        : IAggregateFunctionDataHelper<GroupConcatData<has_limit>, GroupConcatImpl<has_limit>>(
+            {data_type_}, parameters_, std::make_shared<DataTypeString>())
+        , serialization(this->argument_types[0]->getDefaultSerialization())
+        , limit(limit_)
+        , delimiter(delimiter_)
+    {
+    }
 
-    if constexpr (has_limit)
-        if (cur_data.num_rows >= limit)
+    String getName() const override { return name; }
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    {
+        auto & cur_data = this->data(place);
+
+        if constexpr (has_limit)
+            if (cur_data.num_rows >= limit)
+                return;
+
+        if (cur_data.data_size != 0)
+            cur_data.insertChar(delimiter.c_str(), delimiter.size(), arena);
+
+        cur_data.insert(columns[0], serialization, row_num, arena);
+    }
+
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    {
+        auto & cur_data = this->data(place);
+        auto & rhs_data = this->data(rhs);
+
+        if (rhs_data.data_size == 0)
             return;
 
-    if (cur_data.data_size != 0)
-        cur_data.insertChar(delimiter.c_str(), delimiter.size(), arena);
+        if constexpr (has_limit)
+        {
+            UInt64 new_elems_count = std::min(rhs_data.num_rows, limit - cur_data.num_rows);
+            for (UInt64 i = 0; i < new_elems_count; ++i)
+            {
+                if (cur_data.data_size != 0)
+                    cur_data.insertChar(delimiter.c_str(), delimiter.size(), arena);
 
-    if (isFixedString(type))
-    {
-        ColumnWithTypeAndName col = {columns[0]->getPtr(), type, "column"};
-        const auto & col_str = castColumn(col, std::make_shared<DataTypeString>());
-        cur_data.insert(col_str.get(), serialization, row_num, arena);
-    }
-    else
-        cur_data.insert(columns[0], serialization, row_num, arena);
-}
-
-template <bool has_limit>
-void GroupConcatImpl<has_limit>::merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const
-{
-    auto & cur_data = this->data(place);
-    auto & rhs_data = this->data(rhs);
-
-    if (rhs_data.data_size == 0)
-        return;
-
-    if constexpr (has_limit)
-    {
-        UInt64 new_elems_count = std::min(rhs_data.num_rows, limit - cur_data.num_rows);
-        for (UInt64 i = 0; i < new_elems_count; ++i)
+                cur_data.offsets.push_back(cur_data.data_size, arena);
+                cur_data.insertChar(rhs_data.data + rhs_data.getString(i), rhs_data.getSize(i), arena);
+                cur_data.num_rows++;
+                cur_data.offsets.push_back(cur_data.data_size, arena);
+            }
+        }
+        else
         {
             if (cur_data.data_size != 0)
                 cur_data.insertChar(delimiter.c_str(), delimiter.size(), arena);
 
-            cur_data.offsets.push_back(cur_data.data_size, arena);
-            cur_data.insertChar(rhs_data.data + rhs_data.getString(i), rhs_data.getSize(i), arena);
-            cur_data.num_rows++;
-            cur_data.offsets.push_back(cur_data.data_size, arena);
+            cur_data.insertChar(rhs_data.data, rhs_data.data_size, arena);
         }
     }
-    else
+
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        if (cur_data.data_size != 0)
-            cur_data.insertChar(delimiter.c_str(), delimiter.size(), arena);
+        auto & cur_data = this->data(place);
 
-        cur_data.insertChar(rhs_data.data, rhs_data.data_size, arena);
-    }
-}
+        writeVarUInt(cur_data.data_size, buf);
 
-template <bool has_limit>
-void GroupConcatImpl<has_limit>::serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const
-{
-    auto & cur_data = this->data(place);
+        buf.write(cur_data.data, cur_data.data_size);
 
-    writeVarUInt(cur_data.data_size, buf);
-
-    buf.write(cur_data.data, cur_data.data_size);
-
-    if constexpr (has_limit)
-    {
-        writeVarUInt(cur_data.num_rows, buf);
-        for (const auto & offset : cur_data.offsets)
-            writeVarUInt(offset, buf);
-    }
-}
-
-template <bool has_limit>
-void GroupConcatImpl<has_limit>::deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const
-{
-    auto & cur_data = this->data(place);
-
-    UInt64 temp_size = 0;
-    readVarUInt(temp_size, buf);
-
-    cur_data.checkAndUpdateSize(temp_size, arena);
-
-    buf.readStrict(cur_data.data + cur_data.data_size, temp_size);
-    cur_data.data_size = temp_size;
-
-    if constexpr (has_limit)
-    {
-        readVarUInt(cur_data.num_rows, buf);
-        cur_data.offsets.resize_exact(cur_data.num_rows * 2, arena);
-        for (auto & offset : cur_data.offsets)
-            readVarUInt(offset, buf);
-    }
-}
-
-template <bool has_limit>
-void GroupConcatImpl<has_limit>::insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const
-{
-    auto & cur_data = this->data(place);
-
-    if (cur_data.data_size == 0)
-    {
-        to.insertDefault();
-        return;
+        if constexpr (has_limit)
+        {
+            writeVarUInt(cur_data.num_rows, buf);
+            for (const auto & offset : cur_data.offsets)
+                writeVarUInt(offset, buf);
+        }
     }
 
-    auto & column_string = assert_cast<ColumnString &>(to);
-    column_string.insertData(cur_data.data, cur_data.data_size);
-}
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    {
+        auto & cur_data = this->data(place);
 
-template <bool has_limit>
-bool GroupConcatImpl<has_limit>::allocatesMemoryInArena() const { return true; }
+        UInt64 temp_size = 0;
+        readVarUInt(temp_size, buf);
 
-// Implementation of add, merge, serialize, deserialize, insertResultInto, etc. remains unchanged.
+        cur_data.checkAndUpdateSize(temp_size, arena);
+
+        buf.readStrict(cur_data.data + cur_data.data_size, temp_size);
+        cur_data.data_size = temp_size;
+
+        if constexpr (has_limit)
+        {
+            readVarUInt(cur_data.num_rows, buf);
+            cur_data.offsets.resize_exact(cur_data.num_rows * 2, arena);
+            for (auto & offset : cur_data.offsets)
+                readVarUInt(offset, buf);
+        }
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    {
+        auto & cur_data = this->data(place);
+
+        if (cur_data.data_size == 0)
+        {
+            to.insertDefault();
+            return;
+        }
+
+        auto & column_string = assert_cast<ColumnString &>(to);
+        column_string.insertData(cur_data.data, cur_data.data_size);
+    }
+
+    bool allocatesMemoryInArena() const override { return true; }
+};
 
 AggregateFunctionPtr createAggregateFunctionGroupConcat(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
@@ -236,7 +266,10 @@ AggregateFunctionPtr createAggregateFunctionGroupConcat(
 
     if (has_limit)
         return std::make_shared<GroupConcatImpl</* has_limit= */ true>>(argument_types[0], parameters, limit, delimiter);
-    return std::make_shared<GroupConcatImpl</* has_limit= */ false>>(argument_types[0], parameters, limit, delimiter);
+    else
+        return std::make_shared<GroupConcatImpl</* has_limit= */ false>>(argument_types[0], parameters, limit, delimiter);
+}
+
 }
 
 void registerAggregateFunctionGroupConcat(AggregateFunctionFactory & factory)
@@ -244,7 +277,7 @@ void registerAggregateFunctionGroupConcat(AggregateFunctionFactory & factory)
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
     factory.registerFunction("groupConcat", { createAggregateFunctionGroupConcat, properties });
-    factory.registerAlias(GroupConcatImpl<false>::getNameAndAliases().at(1), GroupConcatImpl<false>::getNameAndAliases().at(0), AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("group_concat", "groupConcat", AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

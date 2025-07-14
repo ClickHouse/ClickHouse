@@ -2,8 +2,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
-#include <fmt/ranges.h>
-
 namespace DB
 {
 
@@ -32,7 +30,6 @@ std::string VersionNumber::toString() const
 int VersionNumber::compare(const VersionNumber & rhs) const
 {
     size_t min = std::min(components.size(), rhs.components.size());
-
     for (size_t i = 0; i < min; ++i)
     {
         if (auto d = components[i] - rhs.components[i])
@@ -43,8 +40,7 @@ int VersionNumber::compare(const VersionNumber & rhs) const
     {
         return components[min] >= 0 ? 1 : -1;
     }
-
-    if (rhs.components.size() > min)
+    else if (rhs.components.size() > min)
     {
         return -rhs.components[min] > 0 ? 1 : -1;
     }

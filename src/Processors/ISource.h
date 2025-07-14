@@ -1,9 +1,6 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
-#include <Processors/Port.h>
 
 #include <atomic>
 #include <mutex>
@@ -31,7 +28,6 @@ protected:
 
     virtual Chunk generate();
     virtual std::optional<Chunk> tryGenerate();
-    virtual void onFinish() {}
 
     void progress(size_t read_rows, size_t read_bytes);
 

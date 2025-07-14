@@ -1,7 +1,7 @@
 #include <utility>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Interpreters/Squashing.h>
-#include <Processors/Chunk.h>
+#include "Processors/Chunk.h"
 
 namespace DB
 {
@@ -78,7 +78,7 @@ Chunk SimpleSquashingChunksTransform::generate()
 
 bool SimpleSquashingChunksTransform::canGenerate()
 {
-    return squashed_chunk.hasRows();
+    return !squashed_chunk.empty();
 }
 
 Chunk SimpleSquashingChunksTransform::getRemaining()

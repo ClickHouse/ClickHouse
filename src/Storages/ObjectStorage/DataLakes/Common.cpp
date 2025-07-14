@@ -1,9 +1,7 @@
-#include <Storages/ObjectStorage/DataLakes/Common.h>
+#include "Common.h"
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Common/logger_useful.h>
-
-#include <fmt/ranges.h>
 
 namespace DB
 {

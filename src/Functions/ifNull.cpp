@@ -57,7 +57,7 @@ public:
             return arguments[1].column;
 
         /// Could not contain nulls, so nullIf makes no sense.
-        if (!canContainNull(*arguments[0].type))
+        if (!arguments[0].type->isNullable())
             return arguments[0].column;
 
         /// ifNull(col1, col2) == if(isNotNull(col1), assumeNotNull(col1), col2)
@@ -66,11 +66,11 @@ public:
 
         auto is_not_null = FunctionFactory::instance().get("isNotNull", context)->build(columns);
         auto is_not_null_type = std::make_shared<DataTypeUInt8>();
-        auto is_not_null_res = is_not_null->execute(columns, is_not_null_type, input_rows_count, /* dry_run = */ false);
+        auto is_not_null_res = is_not_null->execute(columns, is_not_null_type, input_rows_count);
 
         auto assume_not_null = FunctionFactory::instance().get("assumeNotNull", context)->build(columns);
         auto assume_not_null_type = removeNullable(arguments[0].type);
-        auto assume_nut_null_res = assume_not_null->execute(columns, assume_not_null_type, input_rows_count, /* dry_run = */ false);
+        auto assume_nut_null_res = assume_not_null->execute(columns, assume_not_null_type, input_rows_count);
 
         ColumnsWithTypeAndName if_columns
         {
@@ -80,7 +80,7 @@ public:
         };
 
         auto func_if = FunctionFactory::instance().get("if", context)->build(if_columns);
-        return func_if->execute(if_columns, result_type, input_rows_count, /* dry_run = */ false);
+        return func_if->execute(if_columns, result_type, input_rows_count);
     }
 
 private:

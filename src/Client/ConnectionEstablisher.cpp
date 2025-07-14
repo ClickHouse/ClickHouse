@@ -1,8 +1,6 @@
 #include <Client/ConnectionEstablisher.h>
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
-#include <Common/FailPoint.h>
-#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 
 namespace ProfileEvents
@@ -16,10 +14,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
-}
 
 namespace ErrorCodes
 {
@@ -27,12 +21,6 @@ namespace ErrorCodes
     extern const int DNS_ERROR;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
-    extern const int CANNOT_READ_FROM_SOCKET;
-}
-
-namespace FailPoints
-{
-    extern const char replicated_merge_tree_all_replicas_stale[];
 }
 
 ConnectionEstablisher::ConnectionEstablisher(
@@ -59,9 +47,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
 
         if (!table_to_check || server_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
         {
-            if (!force_connected)
-                result.entry->forceConnected(*timeouts);
-
+            result.entry->forceConnected(*timeouts);
             ProfileEvents::increment(ProfileEvents::DistributedConnectionUsable);
             result.is_usable = true;
             result.is_up_to_date = true;
@@ -92,7 +78,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
             LOG_TRACE(log, "Table {}.{} is readonly on server {}", table_to_check->database, table_to_check->table, result.entry->getDescription());
         }
 
-        const UInt64 max_allowed_delay = settings[Setting::max_replica_delay_for_distributed_queries];
+        const UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
         if (!max_allowed_delay)
         {
             result.is_up_to_date = true;
@@ -101,15 +87,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
 
         const UInt32 delay = table_status_it->second.absolute_delay;
         if (delay < max_allowed_delay)
-        {
             result.is_up_to_date = true;
-
-            fiu_do_on(FailPoints::replicated_merge_tree_all_replicas_stale,
-            {
-                result.delay = 1;
-                result.is_up_to_date = false;
-            });
-        }
         else
         {
             result.is_up_to_date = false;
@@ -124,8 +102,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
         if (e.code() != ErrorCodes::NETWORK_ERROR && e.code() != ErrorCodes::SOCKET_TIMEOUT
-            && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF && e.code() != ErrorCodes::DNS_ERROR
-            && e.code() != ErrorCodes::CANNOT_READ_FROM_SOCKET)
+            && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF && e.code() != ErrorCodes::DNS_ERROR)
             throw;
 
         fail_message = getCurrentExceptionMessage(/* with_stacktrace = */ false);
@@ -156,8 +133,7 @@ void ConnectionEstablisherAsync::Task::run(AsyncCallback async_callback, Suspend
 {
     connection_establisher_async.reset();
     connection_establisher_async.connection_establisher.setAsyncCallback(async_callback);
-    connection_establisher_async.connection_establisher.run(connection_establisher_async.result,
-        connection_establisher_async.fail_message, connection_establisher_async.force_connected);
+    connection_establisher_async.connection_establisher.run(connection_establisher_async.result, connection_establisher_async.fail_message);
     connection_establisher_async.is_finished = true;
 }
 

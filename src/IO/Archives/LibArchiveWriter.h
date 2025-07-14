@@ -42,8 +42,6 @@ public:
     /// (Unless an error appeared and the archive is in fact no longer needed.)
     void finalize() override;
 
-    void cancel() noexcept override;
-
     /// Sets compression method and level.
     /// Changing them will affect next file in the archive.
     //void setCompression(const String & compression_method_, int compression_level_) override;

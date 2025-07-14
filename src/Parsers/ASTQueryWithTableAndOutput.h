@@ -50,20 +50,20 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Show; }
 
 protected:
-    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        ostr << (settings.hilite ? hilite_keyword : "")
+        settings.ostr << (settings.hilite ? hilite_keyword : "")
             << (temporary ? AstIDAndQueryNames::QueryTemporary : AstIDAndQueryNames::Query)
             << " " << (settings.hilite ? hilite_none : "");
 
         if (database)
         {
-            database->format(ostr, settings, state, frame);
-            ostr << '.';
+            database->formatImpl(settings, state, frame);
+            settings.ostr << '.';
         }
 
         chassert(table != nullptr, "Table is empty for the ASTQueryWithTableAndOutputImpl.");
-        table->format(ostr, settings, state, frame);
+        table->formatImpl(settings, state, frame);
     }
 };
 

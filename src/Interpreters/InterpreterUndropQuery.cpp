@@ -38,7 +38,8 @@ BlockIO InterpreterUndropQuery::execute()
 
     if (undrop.table)
         return executeToTable(undrop);
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Nothing to undrop, both names are empty");
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Nothing to undrop, both names are empty");
 }
 
 BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)

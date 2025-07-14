@@ -5,6 +5,7 @@ import socketserver
 import sys
 import urllib.parse
 
+
 UPSTREAM_HOST = "minio1:9001"
 random.seed("Unstable proxy/1.0")
 
@@ -32,7 +33,6 @@ def request(command, url, headers={}, data=None):
 
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):
-    # GetObject
     def do_GET(self):
         if self.path == "/":
             self.send_response(200)
@@ -42,16 +42,10 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         else:
             self.do_HEAD()
 
-    # PutObject
     def do_PUT(self):
         self.do_HEAD()
 
-    # DeleteObjects (/root?delete)
     def do_POST(self):
-        self.do_HEAD()
-
-    # DeleteObject
-    def do_DELETE(self):
         self.do_HEAD()
 
     def do_HEAD(self):
@@ -67,10 +61,10 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         for k, v in r.headers.items():
             self.send_header(k, v)
         self.end_headers()
-        if random.random() < 0.20 and len(r.content) > 1024 * 1024:
-            self.log_message("Breaking request %s", self.path)
+        if random.random() < 0.25 and len(r.content) > 1024 * 1024:
             r.content = r.content[: len(r.content) // 2]
         self.wfile.write(r.content)
+        self.wfile.close()
 
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):

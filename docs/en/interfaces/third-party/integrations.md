@@ -1,19 +1,16 @@
 ---
-description: 'Documentation on integrating ClickHouse with various third-party systems
-  and tools'
-sidebar_label: 'Integrations'
+slug: /en/interfaces/third-party/integrations
 sidebar_position: 27
-slug: /interfaces/third-party/integrations
-title: 'Integration Libraries from Third-party Developers'
+sidebar_label: Integrations
 ---
 
-# Integration libraries from third-party developers
+# Integration Libraries from Third-party Developers
 
 :::note Disclaimer
-ClickHouse, Inc. does **not** maintain the tools and libraries listed below and haven't done extensive testing to ensure their quality.
+ClickHouse, Inc. does **not** maintain the tools and libraries listed below and haven’t done extensive testing to ensure their quality.
 :::
 
-## Infrastructure products {#infrastructure-products}
+## Infrastructure Products {#infrastructure-products}
 
 - Relational database management systems
     - [MySQL](https://www.mysql.com)
@@ -53,7 +50,7 @@ ClickHouse, Inc. does **not** maintain the tools and libraries listed below and 
         - [graphouse](https://github.com/ClickHouse/graphouse)
         - [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse)
         - [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
-        - [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - optimizes staled partitions in [\*GraphiteMergeTree](/engines/table-engines/mergetree-family/graphitemergetree) if rules from [rollup configuration](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) could be applied
+        - [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - optimizes staled partitions in [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) if rules from [rollup configuration](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) could be applied
     - [Grafana](https://grafana.com/)
         - [clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana)
     - [Prometheus](https://prometheus.io/)
@@ -81,7 +78,7 @@ ClickHouse, Inc. does **not** maintain the tools and libraries listed below and 
     - [MindsDB](https://mindsdb.com/)
         - [MindsDB](https://github.com/mindsdb/mindsdb) - Integrates with ClickHouse, making data from ClickHouse accessible to a diverse range of AI/ML models.
 
-## Programming language ecosystems {#programming-language-ecosystems}
+## Programming Language Ecosystems {#programming-language-ecosystems}
 
 - Python
     - [SQLAlchemy](https://www.sqlalchemy.org)

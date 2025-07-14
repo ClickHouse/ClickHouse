@@ -219,12 +219,14 @@ ColumnPtr convertToIPv6(ColumnPtr column, const PaddedPODArray<UInt8> * null_map
     {
         return detail::convertToIPv6<exception_mode, ToColumn>(*column_input_string, null_map);
     }
-    if (const auto * column_input_fixed_string = checkAndGetColumn<ColumnFixedString>(column.get()))
+    else if (const auto * column_input_fixed_string = checkAndGetColumn<ColumnFixedString>(column.get()))
     {
         return detail::convertToIPv6<exception_mode, ToColumn>(*column_input_fixed_string, null_map);
     }
-
-    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column type {}. Expected String or FixedString", column->getName());
+    else
+    {
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column type {}. Expected String or FixedString", column->getName());
+    }
 }
 
 template <IPStringToNumExceptionMode exception_mode, typename ToColumn = ColumnIPv4>

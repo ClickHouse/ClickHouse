@@ -1,0 +1,103 @@
+### For the pure soul wishes to move it to another place
+# https://github.com/orgs/community/discussions/9050
+
+env:
+  # Force the stdout and stderr streams to be unbuffered
+  PYTHONUNBUFFERED: 1
+
+name: Build ClickHouse
+'on':
+  workflow_call:
+    inputs:
+      build_name:
+        description: the value of build type from tests/ci/ci_config.py
+        required: true
+        type: string
+      checkout_depth:
+        description: the value of the git shallow checkout
+        required: false
+        type: number
+        default: 1
+      runner_type:
+        description: the label of runner to use
+        default: builder
+        type: string
+      data:
+        description: json ci data
+        type: string
+        required: true
+      force:
+        description: disallow job skipping
+        type: boolean
+        default: false
+      additional_envs:
+        description: additional ENV variables to setup the job
+        type: string
+    secrets:
+      secret_envs:
+        description: if given, it's passed to the environments
+        required: false
+
+jobs:
+  Build:
+    name: Build-${{inputs.build_name}}
+    if: ${{ contains(fromJson(inputs.data).jobs_data.jobs_to_do, inputs.build_name) || inputs.force }}
+    env:
+      GITHUB_JOB_OVERRIDDEN: Build-${{inputs.build_name}}
+    runs-on: [self-hosted, '${{inputs.runner_type}}']
+    steps:
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
+          ref: ${{ fromJson(inputs.data).git_ref }}
+          submodules: true
+          fetch-depth: ${{inputs.checkout_depth}}
+          filter: tree:0
+      - name: Set build envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          ${{inputs.additional_envs}}
+          ${{secrets.secret_envs}}
+          DOCKER_TAG<<DOCKER_JSON
+          ${{ toJson(fromJson(inputs.data).docker_data.images) }}
+          DOCKER_JSON
+          EOF
+          python3 "$GITHUB_WORKSPACE"/tests/ci/ci_config.py --build-name "${{inputs.build_name}}" >> "$GITHUB_ENV"
+      - name: Apply sparse checkout for contrib # in order to check that it doesn't break build
+        # This step is done in GITHUB_WORKSPACE,
+        # because it's broken in REPO_COPY for some reason
+        # See also update-submodules.sh
+        if: ${{ env.BUILD_SPARSE_CHECKOUT == 'true' }}
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/contrib" && echo 'removed'
+          git -C "$GITHUB_WORKSPACE" checkout .  && echo 'restored'
+          "$GITHUB_WORKSPACE/contrib/update-submodules.sh" && echo 'OK'
+          du -hs "$GITHUB_WORKSPACE/contrib" ||:
+          find "$GITHUB_WORKSPACE/contrib" -type f | wc -l ||:
+      - name: Common setup
+        uses: ./.github/actions/common_setup
+        with:
+          job_type: build_check
+      - name: Pre
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --pre --job-name '${{inputs.build_name}}'
+      - name: Run
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" \
+            --infile ${{ toJson(inputs.data) }} \
+            --job-name "$BUILD_NAME" \
+            --run \
+            ${{ inputs.force && '--force' || '' }}
+      - name: Post
+        # it still be build report to upload for failed build job
+        if: ${{ !cancelled() }}
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --post --job-name '${{inputs.build_name}}'
+      - name: Mark as done
+        if: ${{ !cancelled() }}
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --mark-success --job-name '${{inputs.build_name}}'
+      - name: Clean
+        if: always()
+        uses: ./.github/actions/clean

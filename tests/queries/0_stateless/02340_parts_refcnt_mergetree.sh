@@ -9,7 +9,7 @@ function check_refcnt_for_table()
 {
     local table=$1 && shift
 
-    $CLICKHOUSE_CLIENT -m -q "
+    $CLICKHOUSE_CLIENT -nm -q "
         system stop merges $table;
         -- cleanup thread may hold the parts lock
         system stop cleanup $table;
@@ -28,7 +28,6 @@ function check_refcnt_for_table()
         --format Null
         --max_threads 1
         --max_block_size 1
-        --enable_shared_storage_snapshot_in_query 0
         --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability 0.0
         --query_id "$query_id"
         --send_logs_level "test"
@@ -39,7 +38,6 @@ function check_refcnt_for_table()
     # - query may sleep 0.1*(2000/4)=50 seconds maximum, it is enough to check system.parts
     # - "part = 1" condition should prune all parts except first
     # - max_block_size=1 with index_granularity=1 will allow to cancel the query earlier
-    # - enable_shared_storage_snapshot_in_query=0 will release unrelated parts earlier
     $CLICKHOUSE_CLIENT "${args[@]}" -q "select sleepEachRow(0.1) from $table where part = 1" &
     PID=$!
 
@@ -48,7 +46,7 @@ function check_refcnt_for_table()
     # and it should hold only parts that are required for SELECT
     #
     # So let's wait while the reading will be started.
-    while ! grep -F -q -e "Exception" -e "MergeTreeReadersChain" "$log_file"; do
+    while ! grep -F -q -e "Exception" -e "MergeTreeRangeReader" "$log_file"; do
         sleep 0.1
     done
 
@@ -62,20 +60,20 @@ function check_refcnt_for_table()
     # Kill the query gracefully.
     kill -INT $PID
     wait $PID
-    grep -F Exception "$log_file" | grep -v -F QUERY_WAS_CANCELLED_BY_CLIENT
+    grep -F Exception "$log_file" | grep -v -F QUERY_WAS_CANCELLED
     rm -f "${log_file:?}"
 }
 
 # NOTE: index_granularity=1 to cancel ASAP
 
-$CLICKHOUSE_CLIENT -mq "
+$CLICKHOUSE_CLIENT -nmq "
     drop table if exists data_02340;
     create table data_02340 (key Int, part Int) engine=MergeTree() partition by part order by key settings index_granularity=1;
 " || exit 1
 check_refcnt_for_table data_02340
 $CLICKHOUSE_CLIENT -q "drop table data_02340 sync"
 
-$CLICKHOUSE_CLIENT -mq "
+$CLICKHOUSE_CLIENT -nmq "
     drop table if exists data_02340_rep sync;
     create table data_02340_rep (key Int, part Int) engine=ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX', '1') partition by part order by key settings index_granularity=1;
 " || exit 1

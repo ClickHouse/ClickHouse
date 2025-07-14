@@ -70,7 +70,7 @@ private:
     LoggerPtr logger;
 };
 
-std::shared_ptr<AWSEC2MetadataClient> createEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration);
+std::shared_ptr<AWSEC2MetadataClient> InitEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration);
 
 class AWSEC2InstanceProfileConfigLoader : public Aws::Config::AWSProfileConfigLoader
 {
@@ -100,7 +100,6 @@ protected:
     void Reload() override;
 
 private:
-    Aws::Auth::AWSCredentials GetAWSCredentialsImpl();
     void refreshIfExpired();
 
     std::shared_ptr<AWSEC2InstanceProfileConfigLoader> ec2_metadata_config_loader;

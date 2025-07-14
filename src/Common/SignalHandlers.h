@@ -67,13 +67,16 @@ public:
     static constexpr int StopThread = -2;
     static constexpr int SanitizerTrap = -3;
 
-    explicit SignalListener(BaseDaemon * daemon_, LoggerPtr log_);
+    explicit SignalListener(BaseDaemon * daemon_, LoggerPtr log_)
+        : daemon(daemon_), log(log_)
+    {
+    }
+
     void run() override;
 
 private:
     BaseDaemon * daemon;
     LoggerPtr log;
-    std::function<String()> build_id;
 
     void onTerminate(std::string_view message, UInt32 thread_num) const;
 

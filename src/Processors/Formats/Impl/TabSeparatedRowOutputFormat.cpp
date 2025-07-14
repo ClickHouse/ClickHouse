@@ -1,10 +1,7 @@
 #include <Processors/Formats/Impl/TabSeparatedRowOutputFormat.h>
-
-#include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <IO/WriteHelpers.h>
-#include <Processors/Port.h>
 
 
 namespace DB
@@ -93,8 +90,6 @@ void registerOutputFormatTabSeparated(FormatFactory & factory)
             });
 
             factory.markOutputFormatSupportsParallelFormatting(format_name);
-            /// https://www.iana.org/assignments/media-types/text/tab-separated-values
-            factory.setContentType(format_name, "text/tab-separated-values; charset=UTF-8");
         };
 
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);

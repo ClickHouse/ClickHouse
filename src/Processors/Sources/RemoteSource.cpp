@@ -1,15 +1,11 @@
-#include <Columns/ColumnBLOB.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
-#include <Processors/IProcessor.h>
 #include <Processors/Sources/RemoteSource.h>
-#include <Processors/Transforms/AggregatingTransform.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
 #include <QueryPipeline/StreamLocalLimits.h>
+#include <Processors/Transforms/AggregatingTransform.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
-
-#include <Processors/Transforms/SortChunksBySequenceNumber.h>
 
 namespace DB
 {
@@ -21,8 +17,7 @@ namespace ErrorCodes
 
 RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_, bool async_read_, bool async_query_sending_)
     : ISource(executor->getHeader(), false)
-    , add_aggregation_info(add_aggregation_info_)
-    , query_executor(std::move(executor))
+    , add_aggregation_info(add_aggregation_info_), query_executor(std::move(executor))
     , async_read(async_read_)
     , async_query_sending(async_query_sending_)
 {
@@ -82,14 +77,6 @@ ISource::Status RemoteSource::prepare()
         return Status::Finished;
     }
 
-#if defined(OS_LINUX)
-    if (async_query_sending && !was_query_sent && fd < 0)
-    {
-        startup_event_fd.write();
-        return Status::Async;
-    }
-#endif
-
     if (is_async_state)
         return Status::Async;
 
@@ -107,15 +94,6 @@ ISource::Status RemoteSource::prepare()
     }
 
     return status;
-}
-
-int RemoteSource::schedule()
-{
-#if defined(OS_LINUX)
-    return (fd < 0 ? startup_event_fd.fd : fd);
-#else
-    return fd;
-#endif
 }
 
 void RemoteSource::work()
@@ -141,7 +119,7 @@ void RemoteSource::work()
 
 void RemoteSource::onAsyncJobReady()
 {
-    chassert(async_read || async_query_sending);
+    chassert(async_read);
 
     if (!was_query_sent)
         return;
@@ -292,41 +270,18 @@ Chunk RemoteExtremesSource::generate()
     return {};
 }
 
-void UnmarshallBlocksTransform::transform(Chunk & chunk)
-{
-    const auto rows = chunk.getNumRows();
-    auto columns = chunk.detachColumns();
-    for (auto & column : columns)
-    {
-        if (const auto * col = typeid_cast<const ColumnBLOB *>(column.get()))
-            column = col->convertFrom();
-    }
-    chunk.setColumns(std::move(columns), rows);
-}
 
 Pipe createRemoteSourcePipe(
     RemoteQueryExecutorPtr query_executor,
-    bool add_aggregation_info,
-    bool add_totals,
-    bool add_extremes,
-    bool async_read,
-    bool async_query_sending,
-    size_t parallel_marshalling_threads)
+    bool add_aggregation_info, bool add_totals, bool add_extremes, bool async_read, bool async_query_sending)
 {
-    chassert(parallel_marshalling_threads);
-
     Pipe pipe(std::make_shared<RemoteSource>(query_executor, add_aggregation_info, async_read, async_query_sending));
-    pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<AddSequenceNumber>(header); });
 
     if (add_totals)
         pipe.addTotalsSource(std::make_shared<RemoteTotalsSource>(query_executor));
 
     if (add_extremes)
         pipe.addExtremesSource(std::make_shared<RemoteExtremesSource>(query_executor));
-
-    pipe.resize(parallel_marshalling_threads);
-    pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
-    pipe.addTransform(std::make_shared<SortChunksBySequenceNumber>(pipe.getHeader(), parallel_marshalling_threads));
 
     return pipe;
 }

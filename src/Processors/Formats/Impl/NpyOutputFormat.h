@@ -1,10 +1,16 @@
 #pragma once
 
+#include <Core/Block.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteBufferFromVector.h>
 #include <Processors/Formats/IRowOutputFormat.h>
+#include <Formats/FormatSettings.h>
 #include <Formats/NumpyDataTypes.h>
-#include <Columns/IColumn_fwd.h>
+#include <Columns/IColumn.h>
+#include <Common/PODArray_fwd.h>
 
 #include <vector>
+#include <string>
 
 
 namespace DB
@@ -19,6 +25,8 @@ public:
     NpyOutputFormat(WriteBuffer & out_, const Block & header_);
 
     String getName() const override { return "NpyOutputFormat"; }
+
+    String getContentType() const override { return "application/octet-stream"; }
 
 private:
     String shapeStr() const;

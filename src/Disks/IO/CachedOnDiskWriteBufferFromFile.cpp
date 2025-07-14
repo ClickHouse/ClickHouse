@@ -1,12 +1,11 @@
-#include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
+#include "CachedOnDiskWriteBufferFromFile.h"
 
 #include <Common/logger_useful.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/FilesystemCacheLog.h>
-#include <Interpreters/Context.h>
 #include <IO/SwapHelper.h>
-#include <IO/NullWriteBuffer.h>
 
 
 namespace ProfileEvents
@@ -21,8 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
-    extern const int FILECACHE_CANNOT_WRITE_THROUGH_CACHE_WITH_CONCURRENT_READS;
 }
 
 FileSegmentRangeWriter::FileSegmentRangeWriter(
@@ -32,8 +29,7 @@ FileSegmentRangeWriter::FileSegmentRangeWriter(
     size_t reserve_space_lock_wait_timeout_milliseconds_,
     std::shared_ptr<FilesystemCacheLog> cache_log_,
     const String & query_id_,
-    const String & source_path_,
-    bool is_distributed_cache_)
+    const String & source_path_)
     : cache(cache_)
     , key(key_)
     , user(user_)
@@ -42,7 +38,6 @@ FileSegmentRangeWriter::FileSegmentRangeWriter(
     , cache_log(cache_log_)
     , query_id(query_id_)
     , source_path(source_path_)
-    , is_distributed_cache(is_distributed_cache_)
 {
 }
 
@@ -87,35 +82,16 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, File
             continue;
         }
 
-        if (!file_segment->isDownloader())
+        if (!file_segment->isDownloader()
+            && file_segment->getOrSetDownloader() != FileSegment::getCallerId())
         {
-            if (file_segment->getOrSetDownloader() != FileSegment::getCallerId())
-            {
-                /// As processing of write to distributed cache can be a bit delayed,
-                /// it is not guaranteed that concurrent SELECT is not able to set downloader before us.
-                throw Exception(
-                    is_distributed_cache
-                    ? ErrorCodes::FILECACHE_CANNOT_WRITE_THROUGH_CACHE_WITH_CONCURRENT_READS
-                    : ErrorCodes::LOGICAL_ERROR,
-                    "Failed to set a downloader. ({})", file_segment->getInfoForLog());
-            }
-
-            if (file_segment->getCurrentWriteOffset() > offset)
-            {
-                /// As processing of write to distributed cache can be a bit delayed,
-                /// it is not guaranteed that concurrent SELECT did not download the file segment ahead of us.
-                throw Exception(
-                    is_distributed_cache
-                    ? ErrorCodes::FILECACHE_CANNOT_WRITE_THROUGH_CACHE_WITH_CONCURRENT_READS
-                    : ErrorCodes::LOGICAL_ERROR,
-                    "Offset {} is outdated. ({})", offset, file_segment->getInfoForLog());
-            }
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Failed to set a downloader. ({})", file_segment->getInfoForLog());
         }
 
         size_t size_to_write = std::min(available_size, size);
 
-        std::string failure_reason;
-        bool reserved = file_segment->reserve(size_to_write, reserve_space_lock_wait_timeout_milliseconds, failure_reason);
+        bool reserved = file_segment->reserve(size_to_write, reserve_space_lock_wait_timeout_milliseconds);
         if (!reserved)
         {
             appendFilesystemCacheLog(*file_segment);
@@ -172,25 +148,11 @@ FileSegment & FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSeg
     * File segment capacity will equal `max_file_segment_size`, but actual size is 0.
     */
 
-    CreateFileSegmentSettings create_settings(segment_kind);
+    CreateFileSegmentSettings create_settings(segment_kind, false);
 
     /// We set max_file_segment_size to be downloaded,
     /// if we have less size to write, file segment will be resized in complete() method.
-    if (is_distributed_cache)
-    {
-        file_segments = cache->trySet(key, offset, cache->getMaxFileSegmentSize(), create_settings, user);
-        if (!file_segments)
-        {
-            throw Exception(
-                ErrorCodes::FILECACHE_CANNOT_WRITE_THROUGH_CACHE_WITH_CONCURRENT_READS,
-                "Cache already exists, read-through cache must have started");
-        }
-    }
-    else
-    {
-        file_segments = cache->set(key, offset, cache->getMaxFileSegmentSize(), create_settings, user);
-    }
-
+    file_segments = cache->set(key, offset, cache->getMaxFileSegmentSize(), create_settings, user);
     chassert(file_segments->size() == 1);
     return file_segments->front();
 }
@@ -231,24 +193,8 @@ void FileSegmentRangeWriter::completeFileSegment()
     if (file_segment.isDetached() || file_segment.isCompleted())
         return;
 
-    file_segment.complete(false);
+    file_segment.complete();
     appendFilesystemCacheLog(file_segment);
-}
-
-void FileSegmentRangeWriter::jumpToPosition(size_t position)
-{
-    if (!file_segments->empty())
-    {
-        auto & file_segment = file_segments->front();
-
-        const auto current_write_offset = file_segment.getCurrentWriteOffset();
-        if (position < current_write_offset)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot jump backwards: {} < {}", position, current_write_offset);
-
-        file_segment.complete(false);
-        file_segments.reset();
-    }
-    expected_write_offset = position;
 }
 
 CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
@@ -259,8 +205,7 @@ CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
     const String & query_id_,
     const WriteSettings & settings_,
     const FileCacheUserInfo & user_,
-    std::shared_ptr<FilesystemCacheLog> cache_log_,
-    FileSegmentKind file_segment_kind_)
+    std::shared_ptr<FilesystemCacheLog> cache_log_)
     : WriteBufferFromFileDecorator(std::move(impl_))
     , log(getLogger("CachedOnDiskWriteBufferFromFile"))
     , cache(cache_)
@@ -270,8 +215,6 @@ CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
     , user(user_)
     , reserve_space_lock_wait_timeout_milliseconds(settings_.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds)
     , throw_on_error_from_cache(settings_.throw_on_error_from_cache)
-    , is_distributed_cache(false)
-    , file_segment_kind(file_segment_kind_)
     , cache_log(!query_id_.empty() && settings_.enable_filesystem_cache_log ? cache_log_ : nullptr)
 {
 }
@@ -312,8 +255,7 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size, bool t
     if (!cache_writer)
     {
         cache_writer = std::make_unique<FileSegmentRangeWriter>(
-            cache.get(), key, user, reserve_space_lock_wait_timeout_milliseconds,
-            cache_log, query_id, source_path, is_distributed_cache);
+            cache.get(), key, user, reserve_space_lock_wait_timeout_milliseconds, cache_log, query_id, source_path);
     }
 
     Stopwatch watch(CLOCK_MONOTONIC);
@@ -322,7 +264,7 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size, bool t
 
     try
     {
-        if (!cache_writer->write(data, size, current_download_offset, file_segment_kind))
+        if (!cache_writer->write(data, size, current_download_offset, FileSegmentKind::Regular))
         {
             LOG_INFO(log, "Write-through cache is stopped as cache limit is reached and nothing can be evicted");
             return;
@@ -387,18 +329,6 @@ void CachedOnDiskWriteBufferFromFile::finalizeImpl()
         cache_writer->finalize();
         cache_writer.reset();
     }
-}
-
-void CachedOnDiskWriteBufferFromFile::jumpToPosition(size_t position)
-{
-    if (!dynamic_cast<const NullWriteBuffer *>(impl.get()))
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Jumping to position in CachedOnDiskWriteBufferFromFile "
-                        "is allowed only for NullWriteBuffer");
-    }
-
-    cache_writer->jumpToPosition(position);
 }
 
 }

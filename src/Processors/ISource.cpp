@@ -48,6 +48,7 @@ ISource::Status ISource::prepare()
 
     if (got_exception)
     {
+        finished = true;
         output.finish();
         return Status::Finished;
     }
@@ -102,9 +103,6 @@ void ISource::work()
 {
     try
     {
-        if (finished)
-            return;
-
         read_progress_was_set = false;
 
         if (auto chunk = tryGenerate())
@@ -122,17 +120,11 @@ void ISource::work()
 
         if (isCancelled())
             finished = true;
-
-        if (finished)
-            onFinish();
     }
     catch (...)
     {
+        finished = true;
         got_exception = true;
-
-        if (!std::exchange(finished, true))
-            onFinish();
-
         throw;
     }
 }

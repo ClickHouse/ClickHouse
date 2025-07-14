@@ -2,7 +2,6 @@
 #include <Poco/String.h>
 #include <IO/Operators.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/quoteString.h>
 
 
 namespace DB
@@ -17,23 +16,22 @@ ASTPtr ASTDictionaryRange::clone() const
 }
 
 
-void ASTDictionaryRange::formatImpl(WriteBuffer & ostr,
-                                    const FormatSettings & settings,
+void ASTDictionaryRange::formatImpl(const FormatSettings & settings,
                                     FormatState &,
                                     FormatStateStacked) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "")
+    settings.ostr << (settings.hilite ? hilite_keyword : "")
                   << "RANGE"
                   << (settings.hilite ? hilite_none : "")
                   << "("
                   << (settings.hilite ? hilite_keyword : "")
                   << "MIN "
                   << (settings.hilite ? hilite_none : "")
-                  << backQuoteIfNeed(min_attr_name) << " "
+                  << min_attr_name << " "
                   << (settings.hilite ? hilite_keyword : "")
                   << "MAX "
                   << (settings.hilite ? hilite_none : "")
-                  << backQuoteIfNeed(max_attr_name) << ")";
+                  << max_attr_name << ")";
 }
 
 
@@ -46,12 +44,11 @@ ASTPtr ASTDictionaryLifetime::clone() const
 }
 
 
-void ASTDictionaryLifetime::formatImpl(WriteBuffer & ostr,
-                                       const FormatSettings & settings,
+void ASTDictionaryLifetime::formatImpl(const FormatSettings & settings,
                                        FormatState &,
                                        FormatStateStacked) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "")
+    settings.ostr << (settings.hilite ? hilite_keyword : "")
                   << "LIFETIME"
                   << (settings.hilite ? hilite_none : "")
                   << "("
@@ -76,12 +73,11 @@ ASTPtr ASTDictionaryLayout::clone() const
 }
 
 
-void ASTDictionaryLayout::formatImpl(WriteBuffer & ostr,
-                                     const FormatSettings & settings,
+void ASTDictionaryLayout::formatImpl(const FormatSettings & settings,
                                      FormatState & state,
                                      FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "")
+    settings.ostr << (settings.hilite ? hilite_keyword : "")
                   << "LAYOUT"
                   << (settings.hilite ? hilite_none : "")
                   << "("
@@ -90,14 +86,14 @@ void ASTDictionaryLayout::formatImpl(WriteBuffer & ostr,
                   << (settings.hilite ? hilite_none : "");
 
     if (has_brackets)
-        ostr << "(";
+        settings.ostr << "(";
 
-    if (parameters) parameters->format(ostr, settings, state, frame);
+    if (parameters) parameters->formatImpl(settings, state, frame);
 
     if (has_brackets)
-        ostr << ")";
+        settings.ostr << ")";
 
-    ostr << ")";
+    settings.ostr << ")";
 }
 
 ASTPtr ASTDictionarySettings::clone() const
@@ -108,24 +104,23 @@ ASTPtr ASTDictionarySettings::clone() const
     return res;
 }
 
-void ASTDictionarySettings::formatImpl(WriteBuffer & ostr,
-                                       const FormatSettings & settings,
-                                       FormatState &,
-                                       FormatStateStacked) const
+void ASTDictionarySettings::formatImpl(const FormatSettings & settings,
+                                        FormatState &,
+                                        FormatStateStacked) const
 {
 
-    ostr << (settings.hilite ? hilite_keyword : "")
+    settings.ostr << (settings.hilite ? hilite_keyword : "")
                   << "SETTINGS"
                   << (settings.hilite ? hilite_none : "")
                   << "(";
     for (auto it = changes.begin(); it != changes.end(); ++it)
     {
         if (it != changes.begin())
-            ostr << ", ";
+            settings.ostr << ", ";
 
-        ostr << it->name << " = " << applyVisitor(FieldVisitorToString(), it->value);
+        settings.ostr << it->name << " = " << applyVisitor(FieldVisitorToString(), it->value);
     }
-    ostr << (settings.hilite ? hilite_none : "") << ")";
+    settings.ostr << (settings.hilite ? hilite_none : "") << ")";
 }
 
 
@@ -155,46 +150,46 @@ ASTPtr ASTDictionary::clone() const
 }
 
 
-void ASTDictionary::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTDictionary::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     if (primary_key)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "PRIMARY KEY "
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "PRIMARY KEY "
             << (settings.hilite ? hilite_none : "");
-        primary_key->format(ostr, settings, state, frame);
+        primary_key->formatImpl(settings, state, frame);
     }
 
     if (source)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SOURCE"
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SOURCE"
             << (settings.hilite ? hilite_none : "");
-        ostr << "(";
-        source->format(ostr, settings, state, frame);
-        ostr << ")";
+        settings.ostr << "(";
+        source->formatImpl(settings, state, frame);
+        settings.ostr << ")";
     }
 
     if (lifetime)
     {
-        ostr << settings.nl_or_ws;
-        lifetime->format(ostr, settings, state, frame);
+        settings.ostr << settings.nl_or_ws;
+        lifetime->formatImpl(settings, state, frame);
     }
 
     if (layout)
     {
-        ostr << settings.nl_or_ws;
-        layout->format(ostr, settings, state, frame);
+        settings.ostr << settings.nl_or_ws;
+        layout->formatImpl(settings, state, frame);
     }
 
     if (range)
     {
-        ostr << settings.nl_or_ws;
-        range->format(ostr, settings, state, frame);
+        settings.ostr << settings.nl_or_ws;
+        range->formatImpl(settings, state, frame);
     }
 
     if (dict_settings)
     {
-        ostr << settings.nl_or_ws;
-        dict_settings->format(ostr, settings, state, frame);
+        settings.ostr << settings.nl_or_ws;
+        dict_settings->formatImpl(settings, state, frame);
     }
 }
 

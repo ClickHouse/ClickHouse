@@ -27,7 +27,7 @@ public:
     void setNewDatabaseName(const String & old_database_name, const String & new_database_name);
 
     QualifiedTableName getNewTableName(const QualifiedTableName & old_table_name) const;
-    String getNewDatabaseName(const String & old_database_name) const;
+    const String & getNewDatabaseName(const String & old_database_name) const;
 
 private:
     std::unordered_map<QualifiedTableName, QualifiedTableName> old_to_new_table_names;

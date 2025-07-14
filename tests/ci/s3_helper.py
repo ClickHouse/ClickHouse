@@ -9,7 +9,6 @@ from typing import Any, List, Union
 
 import boto3  # type: ignore
 import botocore  # type: ignore
-
 from compress_files import compress_file_fast
 from env_helper import (
     IS_CI,
@@ -311,32 +310,24 @@ class S3Helper:
     def list_prefix(
         self, s3_prefix_path: str, bucket: str = S3_BUILDS_BUCKET
     ) -> List[str]:
-        paginator = self.client.get_paginator("list_objects_v2")
-        pages = paginator.paginate(Bucket=bucket, Prefix=s3_prefix_path)
+        objects = self.client.list_objects_v2(Bucket=bucket, Prefix=s3_prefix_path)
         result = []
-        for page in pages:
-            if "Contents" in page:
-                for obj in page["Contents"]:
-                    result.append(obj["Key"])
+        if "Contents" in objects:
+            for obj in objects["Contents"]:
+                result.append(obj["Key"])
 
         return result
 
     def list_prefix_non_recursive(
-        self,
-        s3_prefix_path: str,
-        bucket: str = S3_BUILDS_BUCKET,
-        only_dirs: bool = False,
+        self, s3_prefix_path: str, bucket: str = S3_BUILDS_BUCKET
     ) -> List[str]:
-        paginator = self.client.get_paginator("list_objects_v2")
-        pages = paginator.paginate(Bucket=bucket, Prefix=s3_prefix_path, Delimiter="/")
+        objects = self.client.list_objects_v2(Bucket=bucket, Prefix=s3_prefix_path)
         result = []
-        for page in pages:
-            if not only_dirs and "Contents" in page:
-                for obj in page["Contents"]:
+        if "Contents" in objects:
+            for obj in objects["Contents"]:
+                if "/" not in obj["Key"][len(s3_prefix_path) + 1 :]:
                     result.append(obj["Key"])
-            if "CommonPrefixes" in page:
-                for obj in page["CommonPrefixes"]:
-                    result.append(obj["Prefix"])
+
         return result
 
     def url_if_exists(self, key: str, bucket: str = S3_BUILDS_BUCKET) -> str:
