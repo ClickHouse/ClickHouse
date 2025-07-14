@@ -38,7 +38,7 @@ namespace
         PartitionedSink::validatePartitionKey(str, true);
     }
 
-    void validateNamespace(const String & str, PartitionedStorageObjectStorageSink::ConfigurationPtr configuration)
+    void validateNamespace(const String & str, StorageObjectStorageConfigurationPtr configuration)
     {
         configuration->validateNamespace(str);
 
