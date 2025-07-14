@@ -2021,7 +2021,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             find_exact_ranges,
             query_info_.isFinal());
 
-        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(result.parts_with_ranges, query_info_, vector_search_parameters, context_, log);
+        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(result.parts_with_ranges, query_info_, context_, log);
 
         if (indexes->use_skip_indexes && !indexes->skip_indexes.useful_indices.empty() && query_info_.isFinal()
             && settings[Setting::use_skip_indexes_if_final_exact_mode])
@@ -2176,22 +2176,6 @@ void ReadFromMergeTree::updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_re
     /// then update columns to read in analysis result
     if (analyzed_result_ptr)
         analyzed_result_ptr->column_names_to_read = all_column_names;
-}
-
-void ReadFromMergeTree::replaceVectorColumnWithDistanceColumn(const String & vector_column)
-{
-    if (isVectorColumnReplaced())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector column unexpectedly already replaced.");
-    std::erase(all_column_names, vector_column);
-    all_column_names.emplace_back("_distance");
-    output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
-                        storage_snapshot->getSampleBlockForColumns(all_column_names),
-                        lazily_read_info, query_info.prewhere_info));
-}
-
-bool ReadFromMergeTree::isVectorColumnReplaced() const
-{
-    return std::ranges::find(all_column_names, "_distance") != all_column_names.end();
 }
 
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()

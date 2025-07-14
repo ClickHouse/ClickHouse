@@ -324,6 +324,10 @@ void Client::initialize(Poco::Util::Application & self)
     if (env_password && !config().has("password"))
         config().setString("password", env_password);
 
+    const char * env_host = getenv("CLICKHOUSE_HOST"); // NOLINT(concurrency-mt-unsafe)
+    if (env_host && !config().has("host"))
+        config().setString("host", env_host);
+
     /// settings and limits could be specified in config file, but passed settings has higher priority
     for (const auto & setting : client_context->getSettingsRef().getUnchangedNames())
     {
