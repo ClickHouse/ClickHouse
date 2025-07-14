@@ -198,7 +198,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         IQueryPlanStep::Deserialization ctx{in, sets_registry, context, input_headers, output_header, settings};
         auto step = step_registry.createStep(step_name, ctx);
 
-        if (step->hasOutputHeader())
+        if (step->hasOutputHeader() && step->getOutputHeader() != output_header)
         {
             assertCompatibleHeader(*step->getOutputHeader(), *output_header,
                  fmt::format("deserialization of query plan {} step", step_name));
