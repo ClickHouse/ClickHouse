@@ -849,6 +849,25 @@ void expandOrderByAll(ASTSelectQuery * select_query, [[maybe_unused]] const Tabl
     select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, order_expression_list);
 }
 
+/** Expand LIMIT BY ALL by extracting all the SELECT-ed expressions that are not aggregate functions.
+  *
+  * For a special case that if there is a function having both aggregate functions and other fields as its arguments,
+  * the `LIMIT BY` keys will contain the maximum non-aggregate fields we can extract from it.
+  */
+void expandLimitByAll(ASTSelectQuery * select_query)
+{
+    if (!select_query->isLimitByAll())
+        return;
+
+    auto limit_by_expression_list = std::make_shared<ASTExpressionList>();
+
+    for (const auto & expr : select_query->select()->children)
+        recursivelyCollectMaxOrdinaryExpressions(expr, *limit_by_expression_list);
+
+    select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY, limit_by_expression_list);
+    select_query->setIsLimitByAll(false);
+}
+
 ASTs getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
 {
     /// There can not be aggregate functions inside the WHERE and PREWHERE.
@@ -1391,6 +1410,10 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     // expand ORDER BY ALL
     if (settings[Setting::enable_order_by_all] && select_query->order_by_all)
         expandOrderByAll(select_query, tables_with_columns);
+
+    // expand LIMIT BY ALL
+    if (select_query->limit_by_all)
+        expandLimitByAll(select_query);
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
