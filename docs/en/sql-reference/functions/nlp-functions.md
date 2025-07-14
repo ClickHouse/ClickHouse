@@ -8,7 +8,7 @@ title: 'Natural Language Processing (NLP) Functions'
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# Natural Language Processing (NLP) Functions
+# Natural language processing (NLP) functions
 
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>

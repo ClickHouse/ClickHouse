@@ -9,7 +9,7 @@ import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 
-# Time Window Functions
+# Time window functions
 
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>

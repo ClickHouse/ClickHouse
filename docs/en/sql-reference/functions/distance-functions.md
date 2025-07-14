@@ -5,7 +5,7 @@ slug: /sql-reference/functions/distance-functions
 title: 'Distance Functions'
 ---
 
-# Distance Functions
+# Distance functions
 
 ## L1Norm {#l1norm}
 

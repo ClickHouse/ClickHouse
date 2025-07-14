@@ -28,7 +28,7 @@ Mixing XML and YAML within a single configuration file is not supported.
 XML configuration files should use `<clickhouse>...</clickhouse>` as top-level tag.
 In YAML configuration files, `clickhouse:` is optional, if absent the parser inserts it automatically.
 
-## Merging Configuration {#merging}
+## Merging configuration {#merging}
 
 Two configuration files (usually the main configuration file and another configuration files from `config.d/`) are merged as follows:
 
@@ -85,7 +85,7 @@ generates merged configuration file:
 </clickhouse>
 ```
 
-### Substitution by Environment Variables and ZooKeeper Nodes {#from_env_zk}
+### Substitution by environment variables and ZooKeeper nodes {#from_env_zk}
 
 To specify that a value of an element should be replaced by the value of an environment variable, you can use attribute `from_env`.
 
@@ -138,7 +138,7 @@ which is equal to
 </clickhouse>
 ```
 
-#### Default Values {#default-values}
+#### Default values {#default-values}
 
 An element with `from_env` or `from_zk` attribute may additionally have attribute `replace="1"` (the latter must appear before `from_env`/`from_zk`).
 In this case, the element may define a default value.
@@ -168,7 +168,7 @@ Result:
 </clickhouse>
 ```
 
-## Substitution with File Content {#substitution-with-file-content}
+## Substitution with file content {#substitution-with-file-content}
 
 It is also possible to replace parts of the configuration by file contents. This can be done in two ways:
 
@@ -193,7 +193,7 @@ Example:
 
 If you want to merge the substituting content with the existing configuration instead of appending you can use attribute `merge="true"`, for example: `<include from_zk="/some_path" merge="true">`. In this case, the existing configuration will be merged with the content from the substitution and the existing configuration settings will be replaced with values from substitution.
 
-## Encrypting and Hiding Configuration {#encryption}
+## Encrypting and hiding configuration {#encryption}
 
 You can use symmetric encryption to encrypt a configuration element, for example, a plaintext password or private key.
 To do so, first configure the [encryption codec](../sql-reference/statements/create/table.md#encryption-codecs), then add attribute `encrypted_by` with the name of the encryption codec as value to the element to encrypt.
@@ -314,7 +314,7 @@ Example:
 </clickhouse>
 ```
 
-## User Settings {#user-settings}
+## User settings {#user-settings}
 
 The `config.xml` file can specify a separate config with user settings, profiles, and quotas. The relative path to this config is set in the `users_config` element. By default, it is `users.xml`. If `users_config` is omitted, the user settings, profiles, and quotas are specified directly in `config.xml`.
 
@@ -449,7 +449,7 @@ Corresponding XML:
 <map_key attr1="value1">value2</map>
 ```
 
-## Implementation Details {#implementation-details}
+## Implementation details {#implementation-details}
 
 For each config file, the server also generates `file-preprocessed.xml` files when starting. These files contain all the completed substitutions and overrides, and they are intended for informational use. If ZooKeeper substitutions were used in the config files but ZooKeeper is not available on the server start, the server loads the configuration from the preprocessed file.
 
