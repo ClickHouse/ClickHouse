@@ -634,7 +634,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         format_settings.parquet.allow_missing_columns);
 
     std::optional<std::unordered_map<String, String>> clickhouse_to_parquet_names;
-    if (parser_group->opaque)
+    if (parser_group && parser_group->opaque)
     {
         auto parquet_opaque = std::static_pointer_cast<ParquetOpaque>(parser_group->opaque);
         auto header = getPort().getHeader();
