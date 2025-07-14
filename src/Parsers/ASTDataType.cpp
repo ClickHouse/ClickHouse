@@ -34,11 +34,11 @@ void ASTDataType::updateTreeHashImpl(SipHash & hash_state, bool) const
 
 void ASTDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_function : "") << name;
+    ostr << name;
 
     if (arguments && !arguments->children.empty())
     {
-        ostr << '(' << (settings.hilite ? hilite_none : "");
+        ostr << '(';
 
         if (!settings.one_line && settings.print_pretty_type_names && name == "Tuple")
         {
@@ -58,10 +58,8 @@ void ASTDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & settings
             arguments->format(ostr, settings, state, frame);
         }
 
-        ostr << (settings.hilite ? hilite_function : "") << ')';
+        ostr << ')';
     }
-
-    ostr << (settings.hilite ? hilite_none : "");
 }
 
 }
