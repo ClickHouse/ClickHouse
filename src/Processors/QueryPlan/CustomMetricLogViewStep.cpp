@@ -132,7 +132,7 @@ public:
                 {
                     auto column = ColumnDateTime::create();
                     column->reserve(rows_count);
-                    for (size_t i = min_second_in_hour; std::cmp_less(i, max_second_in_hour + 1)); ++i)
+                    for (size_t i = min_second_in_hour; std::cmp_less(i, max_second_in_hour + 1); ++i)
                     {
                         if (filter[i])
                             column->insertValue(times[i]);
@@ -154,7 +154,7 @@ public:
                 {
                     auto column = ColumnDate::create();
                     column->reserve(rows_count);
-                    for (size_t i = min_second_in_hour; std::cmp_less(i, max_second_in_hour + 1)); ++i)
+                    for (size_t i = min_second_in_hour; std::cmp_less(i, max_second_in_hour + 1); ++i)
                         if (filter[i])
                             column->insertValue(dates[i]);
                     rows_count = column->size();
@@ -172,7 +172,7 @@ public:
                 auto string_column = ColumnString::create();
                 string_column->reserve(rows_count);
 
-                for (size_t i = min_second_in_hour; std::cmp_less(i, max_second_in_hour + 1)); ++i)
+                for (size_t i = min_second_in_hour; std::cmp_less(i, max_second_in_hour + 1); ++i)
                 {
                     if (filter[i])
                         string_column->insertData(hostnames[i].data(), hostnames[i].size());
@@ -184,7 +184,7 @@ public:
             {
                 auto date_time_64_column = ColumnDateTime64::create(0, 6);
                 date_time_64_column->reserve(rows_count);
-                for (size_t i = min_second_in_hour; std::cmp_less(i, max_second_in_hour + 1)); ++i)
+                for (size_t i = min_second_in_hour; std::cmp_less(i, max_second_in_hour + 1); ++i)
                     if (filter[i])
                         date_time_64_column->insertValue(DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(times[i], 0, DecimalUtils::scaleMultiplier<Decimal64>(6)));
                 rows_count = date_time_64_column->size();
@@ -204,7 +204,7 @@ public:
                         column_result = ColumnInt64::create();
 
                     column_result->reserve(rows_count);
-                    for (size_t i = min_second_in_hour; std::cmp_less(i, max_second_in_hour + 1)); ++i)
+                    for (size_t i = min_second_in_hour; std::cmp_less(i, max_second_in_hour + 1); ++i)
                     {
                         if (filter[i])
                         {

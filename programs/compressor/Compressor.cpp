@@ -105,7 +105,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         po::variables_map options;
         po::store(po::command_line_parser(argc, argv).options(desc).positional(positional_desc).run(), options);
 
-        if (options.count("help"))
+        if (options.contains("help"))
         {
             std::cout << "Usage: " << argv[0] << " [options] < INPUT > OUTPUT" << std::endl;
             std::cout << "Usage: " << argv[0] << " [options] INPUT OUTPUT" << std::endl;
@@ -114,17 +114,17 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             return 0;
         }
 
-        bool decompress = options.count("decompress");
-        bool use_lz4hc = options.count("hc");
-        bool use_zstd = options.count("zstd");
-        bool use_deflate_qpl = options.count("deflate_qpl");
-        bool stat_mode = options.count("stat");
-        bool use_none = options.count("none");
-        print_stacktrace = options.count("stacktrace");
+        bool decompress = options.contains("decompress");
+        bool use_lz4hc = options.contains("hc");
+        bool use_zstd = options.contains("zstd");
+        bool use_deflate_qpl = options.contains("deflate_qpl");
+        bool stat_mode = options.contains("stat");
+        bool use_none = options.contains("none");
+        print_stacktrace = options.contains("stacktrace");
         size_t block_size = options["block-size"].as<size_t>();
         size_t num_threads = options["threads"].as<size_t>();
         std::vector<std::string> codecs;
-        if (options.count("codec"))
+        if (options.contains("codec"))
             codecs = options["codec"].as<std::vector<std::string>>();
 
         if ((use_lz4hc || use_zstd || use_deflate_qpl || use_none) && !codecs.empty())
@@ -136,7 +136,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         if (num_threads > 1 && decompress)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parallel mode is only implemented for compression (not for decompression)");
 
-        if (!codecs.empty() && options.count("level"))
+        if (!codecs.empty() && options.contains("level"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong options, --level is not compatible with --codec list");
 
         std::string method_family = "LZ4";
@@ -151,7 +151,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             method_family = "NONE";
 
         std::optional<int> level = std::nullopt;
-        if (options.count("level"))
+        if (options.contains("level"))
             level = options["level"].as<int>();
 
         CompressionCodecPtr codec;
@@ -169,12 +169,12 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         std::unique_ptr<ReadBufferFromFileBase> rb;
         std::unique_ptr<WriteBufferFromFileBase> wb;
 
-        if (options.count("input"))
+        if (options.contains("input"))
             rb = std::make_unique<ReadBufferFromFile>(options["input"].as<std::string>());
         else
             rb = std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
 
-        if (options.count("output"))
+        if (options.contains("output"))
             wb = std::make_unique<WriteBufferFromFile>(options["output"].as<std::string>());
         else
             wb = std::make_unique<WriteBufferFromFileDescriptor>(STDOUT_FILENO);
@@ -194,7 +194,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             if (offset_in_compressed_file || offset_in_decompressed_block)
             {
                 CompressedReadBufferFromFile compressed_file(std::move(rb));
-                if (options.count("no-checksum-validation"))
+                if (options.contains("no-checksum-validation"))
                     compressed_file.disableChecksumming();
                 compressed_file.seek(offset_in_compressed_file, offset_in_decompressed_block);
                 copyData(compressed_file, *wb);
@@ -202,7 +202,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             else
             {
                 CompressedReadBuffer from(*rb);
-                if (options.count("no-checksum-validation"))
+                if (options.contains("no-checksum-validation"))
                     from.disableChecksumming();
                 copyData(from, *wb);
             }

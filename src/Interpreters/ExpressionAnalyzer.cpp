@@ -346,7 +346,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAG & temp_actions)
                     NamesAndTypesList grouping_set_list;
                     ColumnNumbers grouping_set_indexes_list;
 
-                    for (ssize_t j = 0; std::cmp_less(j, group_elements_ast.size())); ++j)
+                    for (ssize_t j = 0; std::cmp_less(j, group_elements_ast.size()); ++j)
                     {
                         getRootActionsNoMakeSet(group_elements_ast[j], temp_actions, false);
 

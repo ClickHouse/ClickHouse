@@ -122,7 +122,7 @@ private:
     {
         UInt8 iterations = used_bits / HILBERT_SHIFT;
         Int8 initial_shift = iterations * HILBERT_SHIFT;
-        if (std::cmp_less(initial_shift, used_bits))
+        if (initial_shift < used_bits)  /// NOLINT(modernize-use-integer-sign-comparison)
         {
             ++iterations;
         }

@@ -309,7 +309,7 @@ static ColumnWithTypeAndName readColumnWithBooleanData(const std::shared_ptr<arr
         if (chunk.length() == 0)
             continue;
 
-        for (size_t bool_i = 0; std::cmp_not_equal(bool_i, chunk.length())); ++bool_i)
+        for (size_t bool_i = 0; std::cmp_not_equal(bool_i, chunk.length()); ++bool_i)
             column_data.emplace_back(chunk.Value(bool_i));
     }
     return {std::move(internal_column), internal_type, column_name};
@@ -513,7 +513,7 @@ static ColumnPtr readByteMapFromArrowColumn(const std::shared_ptr<arrow::Chunked
     {
         std::shared_ptr<arrow::Array> chunk = arrow_column->chunk(chunk_i);
 
-        for (size_t value_i = 0; std::cmp_not_equal(value_i, chunk->length())); ++value_i)
+        for (size_t value_i = 0; std::cmp_not_equal(value_i, chunk->length()); ++value_i)
             bytemap_data.emplace_back(chunk->IsNull(value_i));
     }
     return nullmap_column;

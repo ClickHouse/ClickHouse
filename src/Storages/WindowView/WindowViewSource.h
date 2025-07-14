@@ -67,7 +67,7 @@ protected:
 
     std::pair<Block, UInt32> generateImpl()
     {
-        if (has_limit && std::cmp_equal(num_updates, limit)))
+        if (has_limit && std::cmp_equal(num_updates, limit))
             return {Block(), 0};
 
         if (isCancelled() || storage->shutdown_called)

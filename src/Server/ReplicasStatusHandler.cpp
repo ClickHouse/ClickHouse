@@ -87,8 +87,12 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 {
                     table_replicated->getReplicaDelays(absolute_delay, relative_delay);
 
-                    if ((settings[MergeTreeSetting::min_absolute_delay_to_close] && std::cmp_greater_equal(absolute_delay,settings[MergeTreeSetting::min_absolute_delay_to_close])))
-                        || (settings[MergeTreeSetting::min_relative_delay_to_close] && std::cmp_greater_equal(relative_delay,settings[MergeTreeSetting::min_relative_delay_to_close]))))
+
+                    UInt64 min_absolute_delay_to_close = settings[MergeTreeSetting::min_absolute_delay_to_close];
+                    UInt64 min_relative_delay_to_close = settings[MergeTreeSetting::min_relative_delay_to_close];
+
+                    if ((settings[MergeTreeSetting::min_absolute_delay_to_close] && std::cmp_greater_equal(absolute_delay, min_absolute_delay_to_close))
+                        || (settings[MergeTreeSetting::min_relative_delay_to_close] && std::cmp_greater_equal(relative_delay, min_relative_delay_to_close)))
                         ok = false;
 
                     message << backQuoteIfNeed(db.first) << "." << backQuoteIfNeed(iterator->name())

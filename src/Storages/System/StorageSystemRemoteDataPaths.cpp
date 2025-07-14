@@ -84,7 +84,7 @@ private:
     const auto & getCurrentSkipPredicate() const
     {
         chassert(!paths_stack.empty());
-        chassert(paths_stack.back().position < static_cast<ssize_t>(paths_stack.back().names.size()));
+        chassert(std::cmp_less(paths_stack.back().position, paths_stack.back().names.size()));
         return paths_stack.back().names[paths_stack.back().position].skip_predicate;
     }
 
@@ -209,12 +209,12 @@ void ReadFromSystemRemoteDataPaths::initializePipeline(QueryPipelineBuilder & pi
 
 bool SystemRemoteDataPathsSource::nextDisk()
 {
-    while (current_disk < static_cast<ssize_t>(disks.size()))
+    while (std::cmp_less(current_disk, disks.size()))
     {
         paths_stack.clear();
         ++current_disk;
 
-        if (current_disk >= static_cast<ssize_t>(disks.size()))
+        if (std::cmp_greater_equal(current_disk, disks.size()))
             break;
 
         auto & current = paths_stack.emplace_back();
@@ -256,7 +256,7 @@ bool SystemRemoteDataPathsSource::nextFile()
             auto & current = paths_stack.back();
             ++current.position;
             /// Move to the next child in the current directory
-            if (current.position < static_cast<ssize_t>(current.names.size()))
+            if (std::cmp_less(current.position, current.names.size()))
                 break;
             /// Move up to the parent directory if this was the last child
             paths_stack.pop_back();
@@ -321,7 +321,7 @@ bool SystemRemoteDataPathsSource::nextFile()
 Chunk SystemRemoteDataPathsSource::generate()
 {
     /// Finish if all disks are processed
-    if (current_disk >= static_cast<ssize_t>(disks.size()))
+    if (std::cmp_greater_equal(current_disk, disks.size()))
         return {};
 
     MutableColumnPtr col_disk_name = ColumnString::create();

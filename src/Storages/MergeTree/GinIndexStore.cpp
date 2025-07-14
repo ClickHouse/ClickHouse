@@ -149,7 +149,7 @@ GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer & buffer
     GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>();
     UInt32 row_ids[MIN_SIZE_FOR_ROARING_ENCODING];
 
-    for (auto i = 0; std::cmp_less(i, postings_list_size); ++i)
+    for (auto i = 0; i < postings_list_size; ++i) /// NOLINT(modernize-use-integer-sign-comparison)
         readVarUInt(row_ids[i], buffer);
     postings_list->addMany(postings_list_size, row_ids);
     return postings_list;

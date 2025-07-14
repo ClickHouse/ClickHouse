@@ -576,7 +576,7 @@ Chunk SystemZooKeeperSource::generate()
 {
     if (name.empty())
     {
-        chassert(0); // In fact, it must always have a default value.
+        chassert(false); // In fact, it must always have a default value.
         name = zkutil::DEFAULT_ZOOKEEPER_NAME;
     }
 
@@ -652,7 +652,7 @@ Chunk SystemZooKeeperSource::generate()
 
         list_tasks.clear();
         std::vector<String> paths_to_list;
-        while (!paths.empty() && static_cast<Int64>(list_tasks.size()) < max_inflight_requests)
+        while (!paths.empty() && std::cmp_less(list_tasks.size(), max_inflight_requests))
         {
             auto node = paths.extract(paths.begin());
             auto & path = node.key();

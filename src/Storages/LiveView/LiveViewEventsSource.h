@@ -121,7 +121,7 @@ protected:
      */
     NonBlockingResult tryReadImpl(bool blocking)
     {
-        if (has_limit && std::cmp_equal(num_updates, limit)))
+        if (has_limit && std::cmp_equal(num_updates, limit))
         {
             return { Block(), true };
         }

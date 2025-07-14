@@ -1433,9 +1433,9 @@ Chunk StorageFileSource::generate()
 
             size_t file_num = 0;
             if (storage->archive_info)
-                file_num = storage->archive_info->paths_to_archives.size();
+                file_num = storage->archive_info->paths_to_archives.size();  // NOLINT(clang-analyzer-deadcode.DeadStores)
             else
-                file_num = storage->paths.size();
+                file_num = storage->paths.size();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
 
             chassert(file_num > 0);
 

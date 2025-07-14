@@ -203,7 +203,7 @@ bool DisksApp::processQueryText(const String & text)
     {
         return true;
     }
-    if (exit_strings.find(text) != exit_strings.end())
+    if (exit_strings.contains(text))
         return false;
     CommandPtr command;
 
@@ -343,17 +343,17 @@ void DisksApp::registerCommands()
 
 void DisksApp::processOptions()
 {
-    if (options.count("config-file"))
+    if (options.contains("config-file"))
         config().setString("config-file", options["config-file"].as<String>());
-    if (options.count("disk"))
+    if (options.contains("disk"))
         config().setString("disk", options["disk"].as<String>());
-    if (options.count("save-logs"))
+    if (options.contains("save-logs"))
         config().setBool("save-logs", true);
-    if (options.count("log-level"))
+    if (options.contains("log-level"))
         config().setString("log-level", options["log-level"].as<String>());
-    if (options.count("test-mode"))
+    if (options.contains("test-mode"))
         config().setBool("test-mode", true);
-    if (options.count("query"))
+    if (options.contains("query"))
         query = std::optional{options["query"].as<String>()};
 }
 
@@ -450,7 +450,7 @@ void DisksApp::init(const std::vector<String> & common_arguments)
 
     po::notify(options);
 
-    if (options.count("help"))
+    if (options.contains("help"))
     {
         printEntryHelpMessage();
         printAvailableCommandsHelpMessage();

@@ -58,7 +58,7 @@ namespace
     void checkLabels(const ::google::protobuf::RepeatedPtrField<::prometheus::Label> & labels)
     {
         bool metric_name_found = false;
-        for (size_t i = 0; std::cmp_not_equal(i, labels.size())); ++i)
+        for (size_t i = 0; std::cmp_not_equal(i, labels.size()); ++i)
         {
             const auto & label = labels[static_cast<int>(i)];
             const auto & label_name = label.name();
@@ -329,7 +329,7 @@ namespace
 
         /// Prepare a block for inserting into the "tags" table.
         size_t current_row_in_tags = 0;
-        for (size_t i = 0; std::cmp_not_equal(i, time_series.size())); ++i)
+        for (size_t i = 0; std::cmp_not_equal(i, time_series.size()); ++i)
         {
             const auto & element = time_series[static_cast<int>(i)];
             if (!element.samples_size())
@@ -338,7 +338,7 @@ namespace
             const auto & labels = element.labels();
             checkLabels(labels);
 
-            for (size_t j = 0; std::cmp_not_equal(j, labels.size())); ++j)
+            for (size_t j = 0; std::cmp_not_equal(j, labels.size()); ++j)
             {
                 const auto & label = labels[static_cast<int>(j)];
                 const auto & tag_name = label.name();
@@ -397,7 +397,7 @@ namespace
 
         /// Prepare a block for inserting to the "data" table.
         current_row_in_tags = 0;
-        for (size_t i = 0; std::cmp_not_equal(i, time_series.size())); ++i)
+        for (size_t i = 0; std::cmp_not_equal(i, time_series.size()); ++i)
         {
             const auto & element = time_series[static_cast<int>(i)];
             if (!element.samples_size())

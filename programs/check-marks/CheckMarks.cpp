@@ -64,7 +64,7 @@ int mainEntryClickHouseCheckMarks(int argc, char ** argv)
     boost::program_options::variables_map options;
     boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
 
-    if (options.count("help") || argc != 3)
+    if (options.contains("help") || argc != 3)
     {
         std::cout << "Usage: " << argv[0] << " file.mrk[2] file.bin" << std::endl;
         std::cout << desc << std::endl;
