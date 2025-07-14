@@ -2,6 +2,7 @@ data after INSERT	1
 data after ATTACH	1
 Files before DETACH TABLE
 all_X_X_X
+table_metadata_version.txt
 
 /backups/ordinary_default/data/ordinary_default/data_read/all_X_X_X:
 checksums.txt
@@ -17,6 +18,7 @@ serialization.json
 
 Files after DETACH TABLE
 all_X_X_X
+table_metadata_version.txt
 
 /backups/ordinary_default/data/ordinary_default/data_read/all_X_X_X:
 checksums.txt
