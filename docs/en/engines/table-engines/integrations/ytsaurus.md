@@ -72,8 +72,8 @@ SELECT * FROM yt_saurus;
  └────┴────┘
 ```
 
-## Data types
-### Primitive data types
+## Data types {#data-types}
+### Primitive data types {#primitive-data-types}
 | YTsaurus data type | Clickhouse data type    |
 | ------------------ | ----------------------- |
 | `int8`             | `Int8`                  |
@@ -105,7 +105,7 @@ SELECT * FROM yt_saurus;
 | `void`             | `Nothing`               |
 | `T` with `required = False`| `Nullable(T)`   |
 
-### Composite types
+### Composite types {#composite-data-types}
 | YTsaurus data type | Clickhouse data type |
 | ------------------ | -------------------- |
 | `decimal`          | `Decimal`            |
