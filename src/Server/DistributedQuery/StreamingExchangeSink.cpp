@@ -2,6 +2,7 @@
 
 #include <Server/DistributedQuery/StreamingExchangeSink.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Formats/NativeWriter.h>
 #include <Core/ProtocolDefines.h>
@@ -231,6 +232,14 @@ void StreamingExchangeSink::consume(Chunk chunk)
     StreamingExchangeProtocol::DataPacketHeader packet_header{.packet_type = StreamingExchangeProtocol::PacketType::Data, .bytes_size = 0};
     out->write(reinterpret_cast<const char*>(&packet_header), sizeof(packet_header));
 
+    const bool final_chunk = chunk.empty();
+    const bool has_aggregated_chunk_info = !!chunk.getChunkInfos().get<AggregatedChunkInfo>();
+    UInt64 flags = 0;
+    if (final_chunk)
+        flags |= 1;
+    if (has_aggregated_chunk_info)
+        flags |= 2;
+    writeVarUInt(flags, *out);
     writeVarUInt(chunk.getNumRows(), *out);
     writeVarUInt(chunk.getNumColumns(), *out);
 

@@ -161,6 +161,10 @@ std::optional<Chunk> StreamingExchangeSource::tryGenerate()
     if (!packet_in)
         return Chunk(); /// Empty chunk means that we currently heve no data but we have not finished yet.
 
+    UInt64 flags = 0;
+    readVarUInt(flags, *packet_in);
+    const bool final_chunk = (flags & 1);
+    const bool has_aggregated_chunk_info = (flags & 2);
     UInt64 num_rows = 0;
     readVarUInt(num_rows, *packet_in);
     UInt64 num_columns = 0;
@@ -174,7 +178,7 @@ std::optional<Chunk> StreamingExchangeSource::tryGenerate()
         Block block = reader->read();
 
         result = Chunk(block.getColumns(), num_rows);
-        /// TODO: is this enough for passing chunk infos?
+        if (has_aggregated_chunk_info)
         {
             auto info = std::make_shared<AggregatedChunkInfo>();
             info->bucket_num = block.info.bucket_num;
@@ -196,9 +200,8 @@ std::optional<Chunk> StreamingExchangeSource::tryGenerate()
         result = Chunk(Columns{}, num_rows);
     }
 
-    if (num_rows == 0 && num_columns == 0)
+    if (final_chunk)
     {
-        /// Empty chunk with no columns means end of stream.
         finished_reading = true;
         LOG_TRACE(log, "Finished reading from exchange stream {}, total rows: {}, bytes: {}",
             stream_name, rows_read, bytes_read);
