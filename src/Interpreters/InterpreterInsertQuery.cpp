@@ -103,6 +103,7 @@ namespace ErrorCodes
 InterpreterInsertQuery::InterpreterInsertQuery(
     const ASTPtr & query_ptr_, ContextPtr context_, bool allow_materialized_, bool no_squash_, bool no_destination_, bool async_insert_)
     : WithContext(context_)
+    , logger(getLogger("InterpreterInsertQuery"))
     , query_ptr(query_ptr_)
     , allow_materialized(allow_materialized_)
     , no_squash(no_squash_)
@@ -628,10 +629,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     if (!ClusterProxy::isSuitableForParallelReplicas(selects.front(), context_ptr))
         return {};
 
-    LOG_TRACE(
-        getLogger("InterpreterInsertQuery"),
-        "Building distributed insert select pipeline with parallel replicas: table={}",
-        query.getTable());
+    LOG_TRACE(logger, "Building distributed insert select pipeline with parallel replicas: table={}", query.getTable());
 
     if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::parallel_replicas_insert_select_local_pipeline])
     {
@@ -750,7 +748,8 @@ InterpreterInsertQuery::distributedWriteFromClusterStorage(const ASTInsertQuery 
         return {};
 
     const Settings & settings = local_context->getSettingsRef();
-    if (settings[Setting::max_distributed_depth] && local_context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
+    if (settings[Setting::max_distributed_depth]
+        && local_context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
         throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
 
     /// Here we won't check that the cluster formed from table replicas is a subset of a cluster specified in s3Cluster/hdfsCluster table function
@@ -769,50 +768,39 @@ InterpreterInsertQuery::distributedWriteFromClusterStorage(const ASTInsertQuery 
     QueryPipeline pipeline;
     ContextMutablePtr query_context = Context::createCopy(local_context);
     query_context->increaseDistributedDepth();
+    query_context->setSetting("skip_unavailable_shards", Field{true});
 
     auto number_of_replicas = static_cast<UInt64>(src_cluster->getShardsAddresses().size());
     auto extension = src_storage_cluster->getTaskIteratorExtension(nullptr, nullptr, local_context, number_of_replicas);
 
+    /// -Cluster storage treat each replicas as a shard in cluster definition
+    /// so, it's enough to consider only shards here
     size_t replica_index = 0;
-    for (const auto & replicas : src_cluster->getShardsAddresses())
+    for (const auto & shard : src_cluster->getShardsInfo())
     {
-        /// There will be only one replica, because we consider each replica as a shard
-        for (const auto & node : replicas)
-        {
-            auto connection = std::make_shared<Connection>(
-                node.host_name, node.port, query_context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, node.proto_send_chunked, node.proto_recv_chunked,
-                SSHKey(), /*jwt*/"", node.quota_key, node.cluster, node.cluster_secret,
-                "ParallelInsertSelectInititiator",
-                node.compression,
-                node.secure,
-                node.bind_host
-            );
+        auto pools = shard.pool->getShuffledPools(settings);
+        chassert(pools.size() == 1);
 
-            IConnections::ReplicaInfo replica_info{ .number_of_current_replica = replica_index++ };
+        IConnections::ReplicaInfo replica_info{.number_of_current_replica = replica_index++};
+        auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+            pools.at(0).pool,
+            query_str,
+            Block{},
+            query_context,
+            /*throttler=*/nullptr,
+            Scalars{},
+            Tables{},
+            QueryProcessingStage::Complete,
+            RemoteQueryExecutor::Extension{.task_iterator = extension.task_iterator, .replica_info = std::move(replica_info)});
+        remote_query_executor->setLogger(logger);
 
-            auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                connection,
-                query_str,
-                Block{},
-                query_context,
-                /*throttler=*/nullptr,
-                Scalars{},
-                Tables{},
-                QueryProcessingStage::Complete,
-                RemoteQueryExecutor::Extension{.task_iterator = extension.task_iterator, .replica_info = std::move(replica_info)});
+        Pipe pipe{std::make_shared<RemoteSource>(
+            remote_query_executor, false, settings[Setting::async_socket_for_remote], settings[Setting::async_query_sending_for_remote])};
+        pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
+        QueryPipeline remote_pipeline{std::move(pipe)};
+        remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));
 
-            Pipe pipe{std::make_shared<RemoteSource>(
-                remote_query_executor,
-                false,
-                settings[Setting::async_socket_for_remote],
-                settings[Setting::async_query_sending_for_remote])};
-            pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
-            QueryPipeline remote_pipeline{std::move(pipe)};
-            remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));
-
-            pipeline.addCompletedPipeline(std::move(remote_pipeline));
-        }
+        pipeline.addCompletedPipeline(std::move(remote_pipeline));
     }
 
     return pipeline;

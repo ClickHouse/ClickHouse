@@ -71,6 +71,7 @@ private:
         bool allow_virtuals,
         bool allow_materialized);
 
+    LoggerPtr logger;
     ASTPtr query_ptr;
     const bool allow_materialized;
     bool no_squash = false;
