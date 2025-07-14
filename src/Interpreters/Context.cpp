@@ -39,6 +39,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
@@ -791,6 +792,9 @@ struct ContextSharedPart : boost::noncopyable
 
         /// Waiting for current backups/restores to be finished. This must be done before `DatabaseCatalog::shutdown()`.
         SHUTDOWN(log, "backups worker", backups_worker, shutdown());
+
+        LOG_TRACE(log, "Shutting down object storage queue streaming");
+        ObjectStorageQueueFactory::instance().shutdown();
 
         LOG_TRACE(log, "Shutting down database catalog");
         DatabaseCatalog::shutdown([this]()
@@ -5509,9 +5513,9 @@ size_t Context::getConfigReloaderInterval() const
     return shared->config_reload_interval_ms.load(std::memory_order_relaxed);
 }
 
-InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings, std::optional<size_t> max_parsing_threads) const
+InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings) const
 {
-    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings, max_parsing_threads);
+    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings);
 }
 
 OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const
