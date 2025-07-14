@@ -5,7 +5,7 @@ slug: /sql-reference/functions/financial-functions
 title: 'Financial Functions'
 ---
 
-# Financial Functions
+# Financial functions
 
 ## financialInternalRateOfReturn {#financialInternalRateOfReturn}
 

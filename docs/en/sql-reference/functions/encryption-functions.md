@@ -5,7 +5,7 @@ slug: /sql-reference/functions/encryption-functions
 title: 'Encryption Functions'
 ---
 
-# Encryption Functions
+# Encryption functions
 
 These functions  implement encryption and decryption of data with AES (Advanced Encryption Standard) algorithm.
 

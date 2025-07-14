@@ -22,12 +22,11 @@ namespace DB
 class DeltaLakeMetadataDeltaKernel final : public IDataLakeMetadata
 {
 public:
-    using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
     static constexpr auto name = "DeltaLake";
 
     DeltaLakeMetadataDeltaKernel(
         ObjectStoragePtr object_storage_,
-        ConfigurationObserverPtr configuration_);
+        StorageObjectStorageConfigurationWeakPtr configuration_);
 
     bool supportsUpdate() const override { return true; }
 
@@ -47,7 +46,7 @@ public:
 
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
-        ConfigurationObserverPtr configuration,
+        StorageObjectStorageConfigurationWeakPtr configuration,
         ContextPtr /* context */)
     {
         auto configuration_ptr = configuration.lock();
