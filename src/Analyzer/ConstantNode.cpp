@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <Analyzer/ConstantNode.h>
 
 #include <Analyzer/FunctionNode.h>
@@ -151,7 +152,7 @@ std::shared_ptr<ASTLiteral> ConstantNode::getCachedAST(const F &ast_generator) c
     HashState hash_state;
     hash_state.update(getTreeHash());
     /// ast_generator function's address is used as a key to uniquely define generated AST
-    hash_state.update(ast_generator);
+    hash_state.update(reinterpret_cast<const std::uintptr_t>(&ast_generator));
     auto hash = getSipHash128AsPair(hash_state);
 
     if (cached_ast && hash == hash_ast)
