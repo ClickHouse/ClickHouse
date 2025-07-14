@@ -632,7 +632,7 @@ private:
     bool with_version_column;
 
     FieldVectorPtr keys;
-    bool all_scan = false;
+    bool all_scan = true;
 
     template<typename KeyContainerPtr>
     void initializePipelineImpl(QueryPipelineBuilder & pipeline, KeyContainerPtr key_container);

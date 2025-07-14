@@ -42,7 +42,7 @@ public:
         FileIterator(
             std::shared_ptr<ObjectStorageQueueMetadata> metadata_,
             ObjectStoragePtr object_storage_,
-            ConfigurationPtr configuration_,
+            StorageObjectStorageConfigurationPtr configuration_,
             const StorageID & storage_id_,
             size_t list_objects_batch_size_,
             const ActionsDAG::Node * predicate_,
@@ -75,7 +75,7 @@ public:
 
         const std::shared_ptr<ObjectStorageQueueMetadata> metadata;
         const ObjectStoragePtr object_storage;
-        const ConfigurationPtr configuration;
+        const StorageObjectStorageConfigurationPtr configuration;
         const NamesAndTypesList virtual_columns;
         const bool file_deletion_on_processed_enabled;
         const ObjectStorageQueueMode mode;
@@ -149,7 +149,7 @@ public:
         String name_,
         size_t processor_id_,
         std::shared_ptr<FileIterator> file_iterator_,
-        ConfigurationPtr configuration_,
+        StorageObjectStorageConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
         ProcessingProgressPtr progress_,
         const ReadFromFormatInfo & read_from_format_info_,
@@ -184,12 +184,22 @@ public:
         int error_code = 0);
 
     /// Do some work after Processed/Failed files were successfully committed to keeper.
-    void finalizeCommit(bool insert_succeeded, const std::string & exception_message = {});
+    void finalizeCommit(
+        bool insert_succeeded,
+        UInt64 commit_id,
+        time_t commit_time,
+        time_t transaction_start_time_,
+        const std::string & exception_message = {});
 
 private:
     Chunk generateImpl();
     /// Log to system.s3(azure)_queue_log.
-    void appendLogElement(const FileMetadataPtr & file_metadata_, bool processed);
+    void appendLogElement(
+        const FileMetadataPtr & file_metadata_,
+        bool processed,
+        UInt64 commit_id,
+        time_t commit_time,
+        time_t transaction_start_time_);
     /// Commit processed files.
     /// This method is only used for SELECT query, not for streaming to materialized views.
     /// Which is defined by passing a flag commit_once_processed.
@@ -198,7 +208,7 @@ private:
     const String name;
     const size_t processor_id;
     const std::shared_ptr<FileIterator> file_iterator;
-    const ConfigurationPtr configuration;
+    const StorageObjectStorageConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
     const ProcessingProgressPtr progress;
     ReadFromFormatInfo read_from_format_info;
@@ -214,6 +224,7 @@ private:
     const std::shared_ptr<ObjectStorageQueueLog> system_queue_log;
     const StorageID storage_id;
     const bool commit_once_processed;
+    time_t transaction_start_time;
 
     LoggerPtr log;
 

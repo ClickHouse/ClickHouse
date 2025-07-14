@@ -89,7 +89,7 @@ def test_good_intent_size(kafka_cluster):
 
     produce_message(1)
 
-    create_kafka_query = k.generate_new_create_table_query("kafka", "a String", topic_list=topic_name, format="LineAsString", settings={"kafka_flush_interval_ms": 500})
+    create_kafka_query = k.generate_new_create_table_query("kafka", "a String", topic_list=topic_name, format="LineAsString", settings={"kafka_flush_interval_ms": 3000})
 
     with k.existing_kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
         instance.query(

@@ -1,4 +1,4 @@
-#include "Storages/ObjectStorage/StorageObjectStorageCluster.h"
+#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
@@ -55,7 +55,7 @@ String StorageObjectStorageCluster::getPathSample(StorageInMemoryMetadata metada
 
 StorageObjectStorageCluster::StorageObjectStorageCluster(
     const String & cluster_name_,
-    ConfigurationPtr configuration_,
+    StorageObjectStorageConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,

@@ -1,4 +1,4 @@
-#include "StorageObjectStorageSource.h"
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <memory>
 #include <optional>
 #include <Common/SipHash.h>
@@ -69,7 +69,7 @@ namespace ErrorCodes
 StorageObjectStorageSource::StorageObjectStorageSource(
     String name_,
     ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
+    StorageObjectStorageConfigurationPtr configuration_,
     const ReadFromFormatInfo & info,
     const std::optional<FormatSettings> & format_settings_,
     ContextPtr context_,
@@ -104,7 +104,7 @@ StorageObjectStorageSource::~StorageObjectStorageSource()
 }
 
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
-    const Configuration & configuration,
+    const StorageObjectStorageConfiguration & configuration,
     const ObjectInfo & object_info,
     bool include_connection_info)
 {
@@ -118,8 +118,8 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
 }
 
 std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
-    ConfigurationPtr configuration,
-    const StorageObjectStorage::QuerySettings & query_settings,
+    StorageObjectStorageConfigurationPtr configuration,
+    const StorageObjectStorageQuerySettings & query_settings,
     ObjectStoragePtr object_storage,
     bool distributed_processing,
     const ContextPtr & local_context,
@@ -379,7 +379,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(
     size_t processor,
     const std::shared_ptr<IObjectIterator> & file_iterator,
-    const ConfigurationPtr & configuration,
+    const StorageObjectStorageConfigurationPtr & configuration,
     const ObjectStoragePtr & object_storage,
     ReadFromFormatInfo & read_from_format_info,
     const std::optional<FormatSettings> & format_settings,
@@ -654,7 +654,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
 
     bool prefer_bigger_buffer_size = effective_read_settings.filesystem_cache_prefer_bigger_buffer_size && impl->isCached();
     size_t buffer_size = prefer_bigger_buffer_size
-        ? std::max<size_t>(effective_read_settings.remote_fs_buffer_size, DBMS_DEFAULT_BUFFER_SIZE)
+        ? std::max<size_t>(effective_read_settings.remote_fs_buffer_size, effective_read_settings.prefetch_buffer_size)
         : effective_read_settings.remote_fs_buffer_size;
     if (object_size)
         buffer_size = std::min<size_t>(object_size, buffer_size);
@@ -680,7 +680,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
 
 StorageObjectStorageSource::GlobIterator::GlobIterator(
     ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
+    StorageObjectStorageConfigurationPtr configuration_,
     const ActionsDAG::Node * predicate,
     const NamesAndTypesList & virtual_columns_,
     ContextPtr context_,
@@ -1032,7 +1032,7 @@ StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive::ObjectInfoInAr
 
 StorageObjectStorageSource::ArchiveIterator::ArchiveIterator(
     ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
+    StorageObjectStorageConfigurationPtr configuration_,
     std::unique_ptr<IObjectIterator> archives_iterator_,
     ContextPtr context_,
     ObjectInfos * read_keys_,
