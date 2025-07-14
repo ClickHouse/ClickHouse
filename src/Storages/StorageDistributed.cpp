@@ -1214,7 +1214,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     return pipeline;
 }
 
-static std::optional<ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextPtr context)
+static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextPtr context)
 {
     QueryPlan plan;
     SelectQueryOptions options;
@@ -1258,7 +1258,7 @@ static std::optional<ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextP
     }
 
     if (!source)
-        return {};
+        return nullptr;
 
     return source->detachFilterActionsDAG();
 }
@@ -1304,7 +1304,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     /// Select query is needed for pruining on virtual columns
     auto number_of_replicas = static_cast<UInt64>(cluster->getShardsInfo().size());
     auto extension = src_storage_cluster.getTaskIteratorExtension(
-        predicate, filter.has_value() ? &filter.value() : nullptr, local_context, number_of_replicas);
+        predicate, filter.get(), local_context, number_of_replicas);
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
     size_t replica_index = 0;
@@ -1383,12 +1383,6 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     if (auto src_storage_cluster = std::dynamic_pointer_cast<IStorageCluster>(src_storage))
     {
         return distributedWriteFromClusterStorage(*src_storage_cluster, query, local_context);
-    }
-    if (local_context->getClientInfo().distributed_depth == 0)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parallel distributed INSERT SELECT is not possible. "\
-                        "Reason: distributed reading is supported only from Distributed engine "
-                        "or *Cluster table functions, but got {} storage", src_storage->getName());
     }
 
     return {};

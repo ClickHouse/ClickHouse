@@ -248,6 +248,8 @@ add_contrib (jwt-cpp-cmake jwt-cpp)
 
 add_contrib (sha3iuf-cmake SHA3IUF)
 
+add_contrib (ai-sdk-cpp-cmake ai-sdk-cpp)
+
 add_contrib (bech32)
 
 add_contrib (sz3-cmake sz3)

@@ -57,6 +57,8 @@ public:
         ContextPtr local_context,
         AlterLockHolder & table_lock_holder) override;
 
+    void renameInMemory(const StorageID & new_table_id) override;
+
     const auto & getFormatName() const { return configuration->format; }
 
     const fs::path & getZooKeeperPath() const { return zk_path; }
@@ -137,6 +139,7 @@ private:
     std::shared_ptr<ObjectStorageQueueSource> createSource(
         size_t processor_id,
         const ReadFromFormatInfo & info,
+        FormatParserGroupPtr parser_group,
         ProcessingProgressPtr progress_,
         std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
         size_t max_block_size,

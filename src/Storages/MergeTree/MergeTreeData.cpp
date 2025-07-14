@@ -692,6 +692,7 @@ VirtualColumnsDescription MergeTreeData::createVirtuals(const StorageInMemoryMet
     desc.addEphemeral("_part_offset", std::make_shared<DataTypeUInt64>(), "Number of row in the part");
     desc.addEphemeral(PartDataVersionColumn::name, PartDataVersionColumn::type, "Data version of part (either min block number or mutation version)");
     desc.addEphemeral("_disk_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Disk name");
+    desc.addEphemeral("_distance", std::make_shared<DataTypeFloat32>(), "Pre-computed distance for vector search queries");
 
     if (metadata.hasPartitionKey())
     {
@@ -9680,9 +9681,10 @@ StorageSnapshotPtr MergeTreeData::createStorageSnapshot(const StorageMetadataPtr
     {
         auto lock = lockParts();
         parts = getVisibleDataPartsVectorUnlocked(query_context, lock);
-        snapshot_data->parts = RangesInDataParts(parts);
         object_columns_copy = object_columns;
     }
+    /// Avoid holding the lock while constructing RangesInDataParts
+    snapshot_data->parts = RangesInDataParts(parts);
 
     bool apply_mutations_on_fly = query_context->getSettingsRef()[Setting::apply_mutations_on_fly];
     bool apply_patch_parts = query_context->getSettingsRef()[Setting::apply_patch_parts];
