@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 
+#include <functional>
 #include <arrow/util/bit_stream_utils.h>
 
 #include <IO/VarInt.h>
@@ -77,7 +78,7 @@ struct BitPackedRLEDecoder : public PageDecoder
             /// Bit-packed run.
             size_t groups = len >> 1;
             run_bytes = groups * bit_width;
-            requireRemainingBytes(run_bytes > size_t(end - data));
+            requireRemainingBytes(run_bytes);
             run_is_rle = false;
             run_length = groups << 3;
             bit_idx = 0;
@@ -153,6 +154,10 @@ struct BitPackedRLEDecoder : public PageDecoder
                         ++out;
                         bit_idx += bit_width;
                     }
+                }
+                else
+                {
+                    bit_idx += bit_width * n;
                 }
 
                 if (!run_length)
@@ -309,6 +314,9 @@ struct PlainStringDecoder : public PageDecoder
     }
 };
 
+template <typename T>
+static T identity(T x) { return x; }
+
 struct DeltaBinaryPackedDecoder : public PageDecoder
 {
     std::shared_ptr<FixedSizeConverter> converter;
@@ -324,7 +332,8 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
     UInt64 min_delta = 0;
     const UInt8 * miniblock_bit_widths = nullptr;
     size_t miniblock_idx = 0; // within block
-    size_t miniblock_values_remaining = 0;
+    /// Initially set to 1 as a special case to report the first value.
+    size_t miniblock_values_remaining = 1;
     arrow::bit_util::BitReader bit_reader;
 
     PODArray<UInt64> temp_values;
@@ -395,10 +404,15 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
 
     void skip(size_t num_values) override
     {
+        /// Temporary buffer for decoding deltas (needed for updating current_value, can't skip).
+        size_t num_u64s = converter->input_size == 4 ? (num_values + 1) / 2 : num_values;
+        temp_values.resize(num_u64s);
+        char * to = reinterpret_cast<char *>(temp_values.data());
+
         switch (converter->input_size)
         {
-            case 4: decodeImpl<UInt32, true>(num_values, nullptr, [](UInt32 x) { return x; }); break;
-            case 8: decodeImpl<UInt64, true>(num_values, nullptr, [](UInt64 x) { return x; }); break;
+            case 4: decodeImpl<UInt32>(num_values, to, identity<UInt32>); break;
+            case 8: decodeImpl<UInt64>(num_values, to, identity<UInt64>); break;
             default: chassert(false);
         }
     }
@@ -416,15 +430,15 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
         else
         {
             /// (temp_values is array of UInt64 rather than char because it needs to be aligned)
-            size_t num_u64s = converter->input_size == 32 ? (num_values + 1) / 2 : num_values;
+            size_t num_u64s = converter->input_size == 4 ? (num_values + 1) / 2 : num_values;
             temp_values.resize(num_u64s);
             to = reinterpret_cast<char *>(temp_values.data());
         }
 
         switch (converter->input_size)
         {
-            case 4: decodeImpl<UInt32, false>(num_values, to, [](UInt32 x) { return x; }); break;
-            case 8: decodeImpl<UInt64, false>(num_values, to, [](UInt64 x) { return x; }); break;
+            case 4: decodeImpl<UInt32>(num_values, to, identity<UInt32>); break;
+            case 8: decodeImpl<UInt64>(num_values, to, identity<UInt64>); break;
             default: chassert(false);
         }
 
@@ -432,7 +446,7 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
             converter->convertColumn(std::span(to, num_values * converter->input_size), num_values, col);
     }
 
-    template <typename T, bool SKIP, typename F>
+    template <typename T, typename F>
     void decodeImpl(size_t num_values, char * out_bytes, F func)
     {
         if (total_values_remaining < num_values)
@@ -440,33 +454,34 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
         total_values_remaining -= num_values;
 
         T * out_values = reinterpret_cast<T *>(out_bytes);
+
+        /// The very first value needs special treatment because it has no corresponding delta.
+        if (!miniblock_bit_widths && miniblock_values_remaining)
+        {
+            *out_values = func(T(current_value));
+            ++out_values;
+            num_values -= 1;
+            miniblock_values_remaining -= 1;
+        }
+
         while (num_values)
         {
             if (!miniblock_values_remaining)
                 nextMiniblock();
 
             size_t n = std::min(num_values, miniblock_values_remaining);
+            num_values -= n;
+            miniblock_values_remaining -= n;
+
             int bits_per_delta = int(miniblock_bit_widths[miniblock_idx]);
+            int read_count = bit_reader.GetBatch(bits_per_delta, out_values, n);
+            chassert(read_count == int(n));
 
-            if constexpr (SKIP)
+            for (size_t i = 0; i < n; ++i)
             {
-                bool ok = bit_reader.Advance(bits_per_delta * n);
-                chassert(ok);
-            }
-            else
-            {
-                /// Unpack deltas.
-                int read_count = bit_reader.GetBatch(bits_per_delta, out_values, n);
-                chassert(read_count == int(n));
-
-                for (size_t i = 0; i < n; ++i)
-                {
-                    current_value += min_delta + UInt64(out_values[i]);
-                    out_values[i] = func(T(current_value));
-                }
-
-                miniblock_values_remaining -= n;
-                out_values += n;
+                current_value += min_delta + UInt64(*out_values);
+                *out_values = func(T(current_value));
+                ++out_values;
             }
         }
     }
@@ -485,7 +500,7 @@ struct DeltaLengthByteArrayDecoder : public PageDecoder
         DeltaBinaryPackedDecoder lengths_decoder(data_, nullptr);
         offsets.resize(lengths_decoder.total_values_remaining);
         size_t last_offset = 0;
-        lengths_decoder.decodeImpl<UInt64, false>(
+        lengths_decoder.decodeImpl<UInt64>(
             lengths_decoder.total_values_remaining, reinterpret_cast<char *>(offsets.data()),
             [&](UInt64 len)
             {
@@ -535,9 +550,9 @@ struct DeltaByteArrayDecoder : public PageDecoder
         {
             DeltaBinaryPackedDecoder decoder(std::span(data, end - data), nullptr);
             lengths->resize(decoder.total_values_remaining);
-            decoder.decodeImpl<UInt64, false>(
+            decoder.decodeImpl<UInt64>(
                 decoder.total_values_remaining, reinterpret_cast<char *>(lengths->data()),
-                [&](UInt64 x) { return x; });
+                identity<UInt64>);
             data = decoder.data;
         }
 
@@ -623,7 +638,7 @@ struct DeltaByteArrayDecoder : public PageDecoder
                 if (current_value.size() != fixed_size)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected fixed string size in DELTA_BYTE_ARRAY");
 
-                if constexpr(!SKIP)
+                if constexpr (!SKIP)
                 {
                     memcpy(out_fixed_size, current_value.data(), fixed_size);
                     out_fixed_size += fixed_size;

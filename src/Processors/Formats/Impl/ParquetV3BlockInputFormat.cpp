@@ -1,4 +1,4 @@
-#include "ParquetV3BlockInputFormat.h"
+#include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 
 #if USE_PARQUET
 

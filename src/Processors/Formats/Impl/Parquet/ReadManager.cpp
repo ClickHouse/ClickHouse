@@ -810,9 +810,10 @@ std::tuple<Chunk, BlockMissingValues> ReadManager::read()
     {
         std::unique_lock lock(delivery_mutex);
 
-        size_t consecutive_timeouts_with_no_running_tasks = 0;
         while (true)
         {
+            bool thread_pool_was_idle = parser_group->parsing_runner.isIdle();
+
             if (exception)
                 std::rethrow_exception(exception);
 
@@ -855,31 +856,20 @@ std::tuple<Chunk, BlockMissingValues> ReadManager::read()
                 /// Pump the manual executor.
                 lock.unlock();
                 if (!parser_group->parsing_runner.runTaskInline())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Deadlock in Parquet::ReadManager");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Deadlock in Parquet::ReadManager (single-threaded)");
                 lock.lock();
+            }
+            else if (thread_pool_was_idle)
+            {
+                /// Task scheduling code is complicated and error-prone. In particular it's easy to
+                /// have a bug where tasks stop getting scheduled under some conditions
+                /// (see is_privileged_task). So we specifically check for getting stuck.
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Deadlock in Parquet::ReadManager (thread pool)");
             }
             else
             {
-                /// Wait for progress.
-                auto wait_result = delivery_cv.wait_for(lock, std::chrono::seconds(10));
-
-                if (wait_result == std::cv_status::timeout)
-                {
-                    /// Task scheduling code is complicated and error-prone. In particular it's easy to
-                    /// have a bug where tasks stop getting scheduled under some conditions (see is_privileged_task).
-                    /// So let's have this hacky check to detect if nothing is running for a while.
-                    ++consecutive_timeouts_with_no_running_tasks;
-                    for (const Stage & s : stages)
-                    {
-                        if (s.batches_in_progress.load(std::memory_order_relaxed) != 0)
-                        {
-                            consecutive_timeouts_with_no_running_tasks = 0;
-                            break;
-                        }
-                    }
-                    if (consecutive_timeouts_with_no_running_tasks >= 3)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parquet task scheduling appears to be stuck");
-                }
+                /// Wait for progress. Re-check parsing_runner.isIdle() every few seconds.
+                delivery_cv.wait_for(lock, std::chrono::seconds(10));
             }
         }
     }
