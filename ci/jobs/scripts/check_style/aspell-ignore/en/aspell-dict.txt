@@ -785,7 +785,7 @@ Observability
 Octonica
 Ok
 OkLab
-OkLCH
+OKLCH
 OnTime
 OpenCelliD
 OpenFileForRead
@@ -1563,8 +1563,8 @@ codepoint
 codepoints
 codespell
 collapsingmergetree
-colorOkLCHToSRGB
-colorSRGBToOkLCH
+colorOKLCHToSRGB
+colorSRGBToOKLCH
 combinator
 combinators
 compareSubstrings

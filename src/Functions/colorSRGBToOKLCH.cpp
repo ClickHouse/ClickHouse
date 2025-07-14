@@ -7,6 +7,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/ITupleFunction.h>
 #include <Interpreters/castColumn.h>
+#include <Functions/ColorConversion.h>
 
 namespace DB
 {
@@ -18,37 +19,20 @@ namespace ErrorCodes
 }
 
 /** Function that converts color from sRGB color space
-  * to perceptual OkLCH color space.
+  * to perceptual OKLCH color space.
   * Returns a tuple of type Tuple(Float64, Float64, Float64).
   */
 
 namespace
 {
-class FunctionColorSRGBToOkLCH : public ITupleFunction
+class FunctionColorSRGBToOKLCH : public ITupleFunction
 {
-private:
-
-    static constexpr Float64 eps          = 1e-6;
-    static constexpr Float64 rad2deg      = 57.2957795131;
-    static constexpr size_t  channels_num = 3;
-
-    using Colors = std::array<Float64, channels_num>;
-    using Mat3x3 = std::array<Float64, 9>;
-
-    static constexpr Mat3x3 rgb_to_lms = {0.4122214708, 0.5363325363, 0.0514459929,
-                                          0.2119034982, 0.6806995451, 0.1073969566,
-                                          0.0883024619, 0.2817188376, 0.6299787005};
-
-    static constexpr Mat3x3 lms_to_oklab_base = {0.2104542553,  0.7936177850, -0.0040720468,
-                                                 1.9779984951, -2.4285922050,  0.45059370996,
-                                                 0.0259040371,  0.7827717662, -0.8086757660};
 
 public:
+    static constexpr auto name = "colorSRGBToOKLCH";
 
-    static constexpr auto name = "colorSRGBToOkLCH";
-
-    explicit FunctionColorSRGBToOkLCH(ContextPtr context_) : ITupleFunction(context_) {}
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionColorSRGBToOkLCH>(context_); }
+    explicit FunctionColorSRGBToOKLCH(ContextPtr context_) : ITupleFunction(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionColorSRGBToOKLCH>(context_); }
 
     String  getName() const override { return name; }
     bool    isVariadic() const override { return true; }
@@ -58,7 +42,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments.empty() || 2 < arguments.size())
+        if (arguments.empty() || arguments.size() > 2)
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} requires 1 or 2 arguments, {} provided.",
@@ -66,6 +50,9 @@ public:
 
         const auto * first_arg = arguments[0].get();
 
+        /// We require the first argument to be a Tuple rather than an Array to keep
+        /// in order for user to flexible in which types they can use for input
+        /// e.g. (32.7554 Float64, 49 UInt8, 132 UInt8)
         if (!isTuple(first_arg))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -104,73 +91,69 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto float_64_ptr  = std::make_shared<DataTypeFloat64>();
+        const auto float_64_ptr = std::make_shared<DataTypeFloat64>();
         const auto tuple_f64_ptr = std::make_shared<DataTypeTuple>(DataTypes(channels_num, float_64_ptr));
 
-        const auto   tuple_f64_arg    = castColumn(arguments[0], tuple_f64_ptr);
-        const auto   rgb_cols         = getTupleElements(*tuple_f64_arg);
+        const auto   tuple_f64_arg = castColumn(arguments[0], tuple_f64_ptr);
+        const auto   rgb_cols = getTupleElements(*tuple_f64_arg);
 
         ColumnPtr gamma;
         if (arguments.size() == 2)
-        {
             gamma = castColumn(arguments[1], float_64_ptr);
-        }
-        else
-        {
-            gamma = ColumnFloat64::create(input_rows_count, 2.2);
-        }
 
-        const auto & r_data     = assert_cast<const ColumnFloat64 &>(*rgb_cols[0]).getData();
-        const auto & g_data     = assert_cast<const ColumnFloat64 &>(*rgb_cols[1]).getData();
-        const auto & b_data     = assert_cast<const ColumnFloat64 &>(*rgb_cols[2]).getData();
-        const auto & gamma_data = assert_cast<const ColumnFloat64 &>(*gamma).getData();
 
-        auto col_l = ColumnFloat64::create();
-        auto col_c = ColumnFloat64::create();
-        auto col_h = ColumnFloat64::create();
+        const auto & r_data = assert_cast<const ColumnFloat64 &>(*rgb_cols[0]).getData();
+        const auto & g_data = assert_cast<const ColumnFloat64 &>(*rgb_cols[1]).getData();
+        const auto & b_data = assert_cast<const ColumnFloat64 &>(*rgb_cols[2]).getData();
+        const auto * gamma_data = gamma ? &assert_cast<const ColumnFloat64 &>(*gamma).getData() : nullptr;
 
-        auto & l_data = col_l->getData();
-        auto & c_data = col_c->getData();
-        auto & h_data = col_h->getData();
-        l_data.reserve(input_rows_count);
-        c_data.reserve(input_rows_count);
-        h_data.reserve(input_rows_count);
+        auto col_lightness = ColumnFloat64::create();
+        auto col_chroma = ColumnFloat64::create();
+        auto col_hue = ColumnFloat64::create();
+
+        auto & lightness_data = col_lightness->getData();
+        auto & chroma_data = col_chroma->getData();
+        auto & hue_data = col_hue->getData();
+        lightness_data.reserve(input_rows_count);
+        chroma_data.reserve(input_rows_count);
+        hue_data.reserve(input_rows_count);
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            Colors rgb_data{r_data[row],
+            Color rgb_data{r_data[row],
                             g_data[row],
                             b_data[row]};
-            Colors res = srgbToOklchBase(rgb_data, gamma_data[row]);
-            l_data.push_back(res[0]);
-            c_data.push_back(res[1]);
-            h_data.push_back(res[2]);
+            Float64 gamma_cur = gamma_data ? (*gamma_data)[row] : default_gamma;
+            Color res = convertSrgbToOklch(rgb_data, gamma_cur);
+            lightness_data.push_back(res[0]);
+            chroma_data.push_back(res[1]);
+            hue_data.push_back(res[2]);
         }
 
-        return ColumnTuple::create(Columns({std::move(col_l), std::move(col_c), std::move(col_h)}));
+        return ColumnTuple::create(Columns({std::move(col_lightness), std::move(col_chroma), std::move(col_hue)}));
     }
 
 private:
-
-    Colors srgbToOklchBase(const Colors & rgb, Float64 gamma) const
+    /// sRGB -> OKLCH.
+    /// Follows the step-by-step pipeline described in Ottosson’s article
+    /// (see constants block above for reference and matrices).
+    Color convertSrgbToOklch(const Color & rgb, Float64 gamma) const
     {
-        Colors rgb_lin;
+        Color rgb_lin;
         for (size_t i = 0; i < channels_num; ++i)
-        {
             rgb_lin[i] = std::pow(rgb[i] / 255.0, gamma);
-        }
 
-        Colors lms{};
+        Color lms{};
         for (size_t i = 0; i < channels_num; ++i)
         {
             for (size_t channel = 0; channel < channels_num; ++channel)
             {
-                lms[i] = std::fma(rgb_lin[channel], rgb_to_lms[(3 * i) + channel], lms[i]);
+                lms[i] = std::fma(rgb_lin[channel], linear_to_lms_base[(3 * i) + channel], lms[i]);
             }
             lms[i] = std::cbrt(lms[i]);
         }
 
-        Colors oklab{};
+        Color oklab{};
         for (size_t i = 0; i < channels_num; ++i)
         {
             for (size_t channel = 0; channel < channels_num; ++channel)
@@ -179,44 +162,44 @@ private:
             }
         }
 
-        Colors oklch = oklab;
+        Color OKLCH = oklab;
 
         Float64 a = oklab[1];
         Float64 b = oklab[2];
 
-        oklch[1] = std::sqrt(a * a + b * b);
-        if (oklch[1] >= eps)
+        OKLCH[1] = std::sqrt(a * a + b * b);
+        if (OKLCH[1] >= eps)
         {
-            Float64 degrees = std::atan2(b, a) * rad2deg;
-            oklch[2]  = std::fmod(degrees + 360.0, 360.0);
+            Float64 hue_degrees = std::atan2(b, a) * rad2deg;
+            OKLCH[2]  = std::fmod(hue_degrees + 360.0, 360.0);
         }
         else
         {
-            oklch[1] = 0;
-            oklch[2] = 0;
+            OKLCH[1] = 0;
+            OKLCH[2] = 0;
         }
 
-        return oklch;
+        return OKLCH;
     }
 
 };
 
 }
 
-REGISTER_FUNCTION(ColorSRGBToOkLCH)
+REGISTER_FUNCTION(ColorSRGBToOKLCH)
 {
     const FunctionDocumentation description = {
-        .description=R"(Converts converts color from sRGB color space to perceptual OkLCH color space.
-Takes an optional parameter gamma, that is defaulted at 2.2 in case it is not provided. Dual of colorOkLCHToSRGB)",
+        .description=R"(Converts converts color from sRGB color space to perceptual OKLCH color space.
+Takes an optional parameter gamma, that is defaulted at 2.2 in case it is not provided. Dual of colorOKLCHToSRGB)",
         .arguments={
             {"rgb_tuple", "A 3-element tuple of numeric values (e.g. integers in rage [0...255])"},
             {"gamma", "Optional gamma exponent to linearize sRGB before conversion. Defaults to 2.2."},
         },
-        .returned_value{"Returns a 3-element tuple of OkLCH values", {"Tuple(Float64, Float64, Float64)"}},
+        .returned_value{"Returns a 3-element tuple of OKLCH values", {"Tuple(Float64, Float64, Float64)"}},
         .introduced_in = {25, 7},
         .category = FunctionDocumentation::Category::Other,
     };
-    factory.registerFunction<FunctionColorSRGBToOkLCH>(description);
+    factory.registerFunction<FunctionColorSRGBToOKLCH>(description);
 }
 
 }
