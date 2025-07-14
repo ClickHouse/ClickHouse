@@ -345,22 +345,12 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_sl
             context.processing_time_ns += processing_time_watch.elapsed();
 #endif
 
-            try
+            /// Communicate with resource scheduler or ConcurrencyControl
+            /// Do upscaling, downscaling, or sleep for preemption
+            if (!controlConcurrency(cpu_lease, pool && spawn_status == ExecutorTasks::SHOULD_SPAWN))
             {
-                /// Communicate with resource scheduler or ConcurrencyControl
-                /// Do upscaling, downscaling, or sleep for preemption
-                if (!controlConcurrency(cpu_lease, pool && spawn_status == ExecutorTasks::SHOULD_SPAWN))
-                {
-                    yield = true;
-                    break;
-                }
-            }
-            catch (...)
-            {
-                /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
-                /// We should cancel execution properly before rethrow.
-                cancel(ExecutionStatus::Exception);
-                throw;
+                yield = true;
+                break;
             }
 
             /// We have executed single processor. Check if we need to yield execution.
@@ -379,7 +369,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_sl
 static SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control, bool trace_cpu_scheduling)
 {
     // The first thread is called master thread.
-    // It is NOT the thread that handles async tasks.
+    // It is NOT the thread that handles async tasks (unless query has max_threads=1).
     // Master thread is different from other threads due to special role in scheduling:
     //  1. During query start, master thread spawns worker threads, so starting it fast is important.
     //  2. It should never be downscaled to avoid query deadlock (0 threads to process tasks), although it can be preempted.
@@ -479,20 +469,43 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
 bool PipelineExecutor::controlConcurrency(ISlotLease * cpu_lease, bool should_spawn)
 {
     /// Only allow one thread to spawn, if someone is already spawning threads, just skip.
-    if (should_spawn && spawn_mutex.try_lock())
+    if (should_spawn)
     {
-        std::lock_guard lock(spawn_mutex, std::adopt_lock);
-        spawnThreads({});
+        if (spawn_mutex.try_lock())
+        {
+            try
+            {
+                std::lock_guard lock(spawn_mutex, std::adopt_lock);
+                spawnThreads({});
+            }
+            catch (...)
+            {
+                /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
+                /// We should cancel execution properly before rethrow.
+                cancel(ExecutionStatus::Exception);
+                throw;
+            }
+        }
     }
 
     if (cpu_lease) // Check if preemption is enabled (see `cpu_slot_preemption` server setting)
     {
-        // Preemption point. Renewal could block execution due to CPU overload.
-        if (!cpu_lease->renew())
+        try
         {
-            size_t slot_id = cpu_lease->slot_id;
-            tasks.downscale(slot_id);
-            return false; // Downscaling. Unable to renew the lease - thread should stop (but could be rerun later).
+            // Preemption point. Renewal could block execution due to CPU overload.
+            if (!cpu_lease->renew())
+            {
+                size_t slot_id = cpu_lease->slot_id;
+                tasks.downscale(slot_id);
+                return false; // Downscaling. Unable to renew the lease - thread should stop (but could be rerun later).
+            }
+        }
+        catch (...)
+        {
+            /// renew() can throw an exception, for example RESOURCE_ACCESS_DENIED.
+            /// We should cancel execution properly before rethrow.
+            cancel(ExecutionStatus::Exception);
+            throw;
         }
     }
 
