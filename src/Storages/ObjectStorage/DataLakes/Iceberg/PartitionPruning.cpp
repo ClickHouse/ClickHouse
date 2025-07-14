@@ -115,8 +115,8 @@ PartitionPruner::PartitionPruner(
         auto transformed_dag = transformFilterDagForManifest(filter_dag, manifest_file.getSchemaId(), manifest_file.getPartitionKeyColumnIDs());
         if (transformed_dag != nullptr)
         {
-            ActionsDAGWithInversionPushDown filter_dag(transformed_dag->getOutputs().front(), context);
-            key_condition.emplace(filter_dag, context, partition_key->column_names, partition_key->expression, true /* single_point */);
+            ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
+            key_condition.emplace(inverted_dag, context, partition_key->column_names, partition_key->expression, true /* single_point */);
         }
     }
 }
