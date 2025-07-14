@@ -1,5 +1,6 @@
--- Tags: no-fasttest, no-shared-merge-tree
+-- Tags: no-fasttest, no-shared-merge-tree, no-replicated-database
 -- no-shared-merge-tree: depend on custom storage policy
+-- no-replicated-database: incompatible with replicated database (due to multiple shards)
 
 SET send_logs_level = 'fatal';
 

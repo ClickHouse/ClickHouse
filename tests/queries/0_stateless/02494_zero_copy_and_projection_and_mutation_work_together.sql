@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- no-replicated-database: incompatible with replicated database (due to multiple shards)
+
 DROP TABLE IF EXISTS wikistat1;
 DROP TABLE IF EXISTS wikistat2;
 

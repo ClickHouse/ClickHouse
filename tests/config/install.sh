@@ -315,6 +315,9 @@ if [[ "$USE_ASYNC_INSERT" == "1" ]]; then
 fi
 
 if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
+    # Zero-copy is not compatible with Replicated database due to multi-shard setup
+    rm $DEST_SERVER_PATH/config.d/enable_zero_copy_replication.xml
+
     ln -sf $SRC_PATH/users.d/database_replicated.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/config.d/database_replicated.xml $DEST_SERVER_PATH/config.d/
     rm $DEST_SERVER_PATH/config.d/zookeeper.xml

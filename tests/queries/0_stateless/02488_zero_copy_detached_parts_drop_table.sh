@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, zookeeper, no-shared-merge-tree
+# Tags: no-fasttest, zookeeper, no-shared-merge-tree, no-replicated-database
+# no-replicated-database: incompatible with replicated database (due to multiple shards)
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -1,4 +1,5 @@
--- Tags: long, no-parallel
+-- Tags: no-replicated-database, long, no-parallel
+-- no-replicated-database: incompatible with replicated database (due to multiple shards)
 
 DROP TABLE IF EXISTS t;
 
