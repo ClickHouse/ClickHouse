@@ -3,8 +3,8 @@
 #include <Client/ConnectionPool.h>
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
+#include <Interpreters/ClientInfo.h>
 #include <Storages/IStorage_fwd.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 #include <sys/types.h>
 

@@ -43,7 +43,7 @@ The default sampling frequency is one sample per second and both CPU and real ti
 
 To analyze the `trace_log` system table:
 
-- Install the `clickhouse-common-static-dbg` package. See [Install from DEB Packages](../../getting-started/install.md#install-from-deb-packages).
+- Install the `clickhouse-common-static-dbg` package. See [Install from DEB Packages](../../getting-started/install/install.mdx).
 
 - Allow introspection functions by the [allow_introspection_functions](../../operations/settings/settings.md#allow_introspection_functions) setting.
 

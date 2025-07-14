@@ -2624,7 +2624,7 @@ Note that the `arrayLastIndex` is a [higher-order function](/sql-reference/funct
 
 Returns the minimum of elements in the source array.
 
-If the `func` function is specified, returns the mininum of elements converted by this function.
+If the `func` function is specified, returns the minimum of elements converted by this function.
 
 Note that the `arrayMin` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
 

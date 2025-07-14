@@ -1697,28 +1697,28 @@ namespace ErrorCodes
     DECLARE(UInt64, shared_merge_tree_merge_coordinator_merges_prepare_count, 100, R"(
     Number of merge entries that coordinator should prepare and distribute across workers
     )", EXPERIMENTAL) \
-    DECLARE(UInt64, shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms, 10000, R"(
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms, 10000, R"(
     How often merge coordinator should sync with zookeeper to take fresh metadata
     )", EXPERIMENTAL) \
     DECLARE(UInt64, shared_merge_tree_merge_coordinator_max_merge_request_size, 20, R"(
     Number of merges that coordinator can request from MergerMutator at once
     )", EXPERIMENTAL) \
-    DECLARE(UInt64, shared_merge_tree_merge_coordinator_election_check_period_ms, 30000, R"(
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_election_check_period_ms, 30000, R"(
     Time between runs of merge coordinator election thread
     )", EXPERIMENTAL) \
-    DECLARE(UInt64, shared_merge_tree_merge_coordinator_min_period_ms, 1, R"(
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_min_period_ms, 1, R"(
     Minimum time between runs of merge coordinator thread
     )", EXPERIMENTAL) \
-    DECLARE(UInt64, shared_merge_tree_merge_coordinator_max_period_ms, 10000, R"(
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_max_period_ms, 10000, R"(
     Maximum time between runs of merge coordinator thread
     )", EXPERIMENTAL) \
     DECLARE(UInt64, shared_merge_tree_merge_coordinator_factor, 2, R"(
     Time changing factor for delay of coordinator thread
     )", EXPERIMENTAL) \
-    DECLARE(UInt64, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
+    DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
     Timeout that merge worker thread will use if it is needed to update it's state after immediate action
     )", EXPERIMENTAL) \
-    DECLARE(UInt64, shared_merge_tree_merge_worker_regular_timeout_ms, 10000, R"(
+    DECLARE(Milliseconds, shared_merge_tree_merge_worker_regular_timeout_ms, 10000, R"(
     Time between runs of merge worker thread
     )", EXPERIMENTAL) \
     \
@@ -2281,16 +2281,17 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
     for (const auto & setting : impl->all())
     {
         const auto & setting_name = setting.getName();
-        res_columns[0]->insert(setting_name);
-        res_columns[1]->insert(setting.getValueString());
-        res_columns[2]->insert(setting.getDefaultValueString());
-        res_columns[3]->insert(setting.isValueChanged());
-        res_columns[4]->insert(setting.getDescription());
-
+        size_t col = 0;
+        res_columns[col++]->insert(setting_name);
+        res_columns[col++]->insert(setting.getValueString());
+        res_columns[col++]->insert(setting.getDefaultValueString());
+        res_columns[col++]->insert(setting.isValueChanged());
+        res_columns[col++]->insert(setting.getDescription());
         Field min;
         Field max;
+        std::vector<Field> disallowed_values;
         SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
-        constraints.get(*this, setting_name, min, max, writability);
+        constraints.get(*this, setting_name, min, max, disallowed_values, writability);
 
         /// These two columns can accept strings only.
         if (!min.isNull())
@@ -2298,12 +2299,17 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
         if (!max.isNull())
             max = MergeTreeSettings::valueToStringUtil(setting_name, max);
 
-        res_columns[5]->insert(min);
-        res_columns[6]->insert(max);
-        res_columns[7]->insert(writability == SettingConstraintWritability::CONST);
-        res_columns[8]->insert(setting.getTypeName());
-        res_columns[9]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
-        res_columns[10]->insert(setting.getTier());
+        Array disallowed_array;
+        for (const auto & value : disallowed_values)
+                disallowed_array.emplace_back(MergeTreeSettings::valueToStringUtil(setting_name, value));
+
+        res_columns[col++]->insert(min);
+        res_columns[col++]->insert(max);
+        res_columns[col++]->insert(disallowed_array);
+        res_columns[col++]->insert(writability == SettingConstraintWritability::CONST);
+        res_columns[col++]->insert(setting.getTypeName());
+        res_columns[col++]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
+        res_columns[col++]->insert(setting.getTier());
     }
 }
 

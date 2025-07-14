@@ -42,6 +42,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int ABORTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -2424,10 +2425,26 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
         std::unordered_set<String> existing_replicas;
         if (!src_replicas.empty())
         {
-            Strings unfiltered_hosts;
-            unfiltered_hosts = storage.getZooKeeper()->getChildren(zookeeper_path + "/replicas");
+            Strings unfiltered_hosts = storage.getZooKeeper()->getChildren(zookeeper_path + "/replicas");
+            existing_replicas.reserve(unfiltered_hosts.size());
+
             for (const auto & host : unfiltered_hosts)
-                existing_replicas.insert(host);
+                existing_replicas.emplace(host);
+
+            for (const auto & requested_replica : src_replicas)
+            {
+                if (!existing_replicas.contains(requested_replica))
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "SYSTEM SYNC REPLICA FROM '{}' failed: replica does not exist. "
+                        "Available replicas at '{}/replicas': {}",
+                        requested_replica,
+                        zookeeper_path,
+                        fmt::join(unfiltered_hosts, ", ")
+                    );
+                }
+            }
         }
 
         out_entry_names.reserve(queue.size());

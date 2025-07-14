@@ -1961,6 +1961,8 @@ try
             global_context->setMaxPendingMutationsExecutionTimeToWarn(new_server_settings[ServerSetting::max_pending_mutations_execution_time_to_warn]);
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
 
+            global_context->setOSCPUOverloadSettings(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection], new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]);
+
             size_t read_bandwidth = new_server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server];
             size_t write_bandwidth = new_server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server];
 
@@ -2869,10 +2871,9 @@ void Server::createServers(
 
     const TCPServerConnectionFilter::Ptr & connection_filter = new TCPServerConnectionFilter{[&]()
     {
-        const auto & server_settings = global_context->getServerSettings();
-        return !ProfileEvents::checkCPUOverload(server_settings[ServerSetting::os_cpu_busy_time_threshold],
-                server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection],
-                server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection],
+        return !ProfileEvents::checkCPUOverload(global_context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold],
+                global_context->getMinOSCPUWaitTimeRatioToDropConnection(),
+                global_context->getMaxOSCPUWaitTimeRatioToDropConnection(),
                 /*should_throw*/ false);
     }};
 

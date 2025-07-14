@@ -6,6 +6,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageURL.h>
+#include <Interpreters/Context.h>
 
 #include <IO/S3/getObjectInfo.h>
 #include <Formats/FormatFactory.h>

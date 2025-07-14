@@ -1593,3 +1593,33 @@ def test_alter_rename(started_cluster):
         settings=settings,
     )
     assert "PROJECTION" in res
+
+
+@pytest.mark.parametrize("engine", ["ReplicatedMergeTree"])
+def test_create_alter_sleeping(started_cluster, engine):
+    competing_node.query("DROP DATABASE IF EXISTS create_alter_sleeping")
+    dummy_node.query("DROP DATABASE IF EXISTS create_alter_sleeping")
+
+    competing_node.query(
+        "CREATE DATABASE create_alter_sleeping ENGINE = Replicated('/clickhouse/databases/create_alter_sleeping', 'shard1', 'replica1');"
+    )
+    dummy_node.query(
+        "CREATE DATABASE create_alter_sleeping ENGINE = Replicated('/clickhouse/databases/create_alter_sleeping', 'shard1', 'replica2');"
+    )
+
+    dummy_node.stop_clickhouse()
+    competing_node.query(
+        f"""
+        CREATE TABLE create_alter_sleeping.t (n int) ENGINE={engine} ORDER BY n;
+        ALTER TABLE create_alter_sleeping.t ADD INDEX n_idx n TYPE minmax GRANULARITY 10;
+        """,
+        settings={"distributed_ddl_task_timeout": 0},
+    )
+
+    dummy_node.start_clickhouse()
+    assert "n_idx" in dummy_node.query(
+        """
+        SYSTEM SYNC DATABASE REPLICA create_alter_sleeping;
+        SHOW CREATE TABLE create_alter_sleeping.t;
+        """, timeout=10
+    )

@@ -312,4 +312,10 @@ IMPLEMENT_SETTING_ENUM(
      {"prefilter", VectorSearchFilterStrategy::PREFILTER},
      {"postfilter", VectorSearchFilterStrategy::POSTFILTER}})
 
+IMPLEMENT_SETTING_ENUM(
+    GeoToH3ArgumentOrder,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"lat_lon", GeoToH3ArgumentOrder::LAT_LON},
+     {"lon_lat", GeoToH3ArgumentOrder::LON_LAT}})
+
 }

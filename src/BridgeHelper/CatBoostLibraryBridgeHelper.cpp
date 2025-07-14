@@ -8,6 +8,7 @@
 #include <Formats/NativeWriter.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/Context.h>
 #include <Poco/Net/HTTPRequest.h>
 
 #include <random>

@@ -346,6 +346,8 @@ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?databa
 
 By default, the database that is registered in the server settings is used as the default database. Out of the box, this is the database called `default`. Alternatively, you can always specify the database using a dot before the table name.
 
+## Authentication {#authentication}
+
 The username and password can be indicated in one of three ways:
 
 1. Using HTTP Basic Authentication.

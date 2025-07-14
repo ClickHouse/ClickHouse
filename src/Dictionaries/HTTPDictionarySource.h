@@ -8,7 +8,7 @@
 #include <Common/LocalDateTime.h>
 #include "DictionaryStructure.h"
 #include "IDictionarySource.h"
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <IO/CompressionMethod.h>
 
 namespace Poco
