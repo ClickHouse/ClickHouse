@@ -21,7 +21,7 @@ The Hive engine allows you to perform `SELECT` queries on HDFS Hive table. Curre
 
 - Parquet: support all simple scalar columns types; only support complex types like `array`
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -47,9 +47,9 @@ The table structure can differ from the original Hive table structure:
 
 - `table` — Remote table name.
 
-## Usage Example {#usage-example}
+## Usage example {#usage-example}
 
-### How to Use Local Cache for HDFS Filesystem {#how-to-use-local-cache-for-hdfs-filesystem}
+### How to use local cache for HDFS filesystem {#how-to-use-local-cache-for-hdfs-filesystem}
 
 We strongly advice you to enable local cache for remote filesystems. Benchmark shows that its almost 2x faster with cache.
 
@@ -68,7 +68,7 @@ Before using cache, add it to `config.xml`
 - limit_size: Required. The maximum size(in bytes) of local cache files.
 - bytes_read_before_flush: Control bytes before flush to local filesystem when downloading file from remote filesystem. The default value is 1MB.
 
-### Query Hive Table with ORC Input Format  {#query-hive-table-with-orc-input-format}
+### Query Hive table with ORC input format  {#query-hive-table-with-orc-input-format}
 
 #### Create Table in Hive {#create-table-in-hive}
 
@@ -190,7 +190,7 @@ day:                  2021-09-18
 1 rows in set. Elapsed: 0.078 sec.
 ```
 
-### Query Hive Table with Parquet Input Format {#query-hive-table-with-parquet-input-format}
+### Query Hive table with Parquet input format {#query-hive-table-with-parquet-input-format}
 
 #### Create Table in Hive {#create-table-in-hive-1}
 
@@ -313,7 +313,7 @@ day:                  2021-09-18
 1 rows in set. Elapsed: 0.357 sec.
 ```
 
-### Query Hive Table with Text Input Format {#query-hive-table-with-text-input-format}
+### Query Hive table with Text input format {#query-hive-table-with-text-input-format}
 
 #### Create Table in Hive {#create-table-in-hive-2}
 

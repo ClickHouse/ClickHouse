@@ -27,6 +27,6 @@ You can use this format to quickly generate dumps that can only be read by the C
 It might not be practical to work with this format yourself.
 :::
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}

@@ -659,7 +659,7 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
     auto request_validator = [&](const Coordination::ZooKeeperRequest & current_request)
     {
         if (!keeper_dispatcher->getKeeperContext()->isOperationSupported(current_request.getOpNum()))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported operation: {}", current_request.getOpNum());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported operation: {}, Path: '{}'", current_request.getOpNum(), current_request.getPath());
     };
 
     if (auto * multi_request = dynamic_cast<Coordination::ZooKeeperMultiRequest *>(request.get()))

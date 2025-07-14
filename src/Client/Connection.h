@@ -32,13 +32,13 @@ struct TimeoutSetter;
 
 class Connection;
 struct ConnectionParameters;
+struct ClusterFunctionReadTaskResponse;
 
 using ConnectionPtr = std::shared_ptr<Connection>;
 using Connections = std::vector<ConnectionPtr>;
 
 class NativeReader;
 class NativeWriter;
-
 
 /** Connection with database server, to use by client.
   * How to use - see Core/Protocol.h
@@ -138,9 +138,9 @@ public:
 
     void forceConnected(const ConnectionTimeouts & timeouts) override;
 
-    bool isConnected() const override { return connected; }
+    bool isConnected() const override { return connected && in && out && !in->isCanceled() && !out->isCanceled(); }
 
-    bool checkConnected(const ConnectionTimeouts & timeouts) override { return connected && ping(timeouts); }
+    bool checkConnected(const ConnectionTimeouts & timeouts) override { return isConnected() && ping(timeouts); }
 
     void disconnect() override;
 
@@ -148,7 +148,7 @@ public:
     /// You could pass size of serialized/compressed block.
     void sendPreparedData(ReadBuffer & input, size_t size, const String & name = "");
 
-    void sendReadTaskResponse(const String &);
+    void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response);
     /// Send all scalars.
     void sendScalarsData(Scalars & data);
     /// Send parts' uuids to excluded them from query processing
@@ -227,6 +227,7 @@ private:
     UInt64 server_version_patch = 0;
     UInt64 server_revision = 0;
     UInt64 server_parallel_replicas_protocol_version = 0;
+    UInt64 server_cluster_function_protocol_version = 0;
     UInt64 server_query_plan_serialization_version = 0;
     String server_timezone;
     String server_display_name;

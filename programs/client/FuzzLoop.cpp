@@ -1,5 +1,5 @@
+#include <Client.h>
 #include <base/scope_guard.h>
-#include "Client.h"
 
 #include <Core/Settings.h>
 
@@ -41,6 +41,7 @@ extern const SettingsDialect dialect;
 
 namespace ErrorCodes
 {
+extern const int CANNOT_PARSE_TEXT;
 extern const int NOT_IMPLEMENTED;
 extern const int SYNTAX_ERROR;
 extern const int TOO_DEEP_RECURSION;
@@ -479,50 +480,15 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
 bool Client::processBuzzHouseQuery(const String & full_query)
 {
     bool server_up = true;
-    ASTPtr orig_ast;
 
-    have_error = false;
-    try
+    if (!processQueryText(full_query))
     {
-        const char * begin = full_query.data();
-
-        if ((orig_ast = parseQuery(begin, begin + full_query.size(), client_context->getSettingsRef(), false)))
-        {
-            bool async_insert = false;
-            const String query_to_execute = orig_ast->formatWithSecretsOneLine();
-
-            processParsedSingleQuery(query_to_execute, orig_ast, async_insert);
-        }
-        else
-        {
-            have_error = true;
-        }
-    }
-    catch (...)
-    {
-        client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
         have_error = true;
+        error_code = ErrorCodes::CANNOT_PARSE_TEXT;
     }
-    if (have_error && orig_ast)
+    if (error_code > 0)
     {
-        const auto * exception = server_exception ? server_exception.get() : client_exception.get();
-        fmt::print(
-            stderr,
-            "Error on processing query '{}': {}\n",
-            orig_ast->formatForErrorMessage(),
-            exception ? exception->message() : "no exception");
-    }
-    if (have_error)
-    {
-        // Query completed with error, keep the previous starting AST.
-        // Also discard the exception that we now know to be non-fatal,
-        // so that it doesn't influence the exit code.
-        const auto * exception = server_exception ? server_exception.get() : (client_exception ? client_exception.get() : nullptr);
-        const int error_code = exception ? exception->code() : 0;
-
-        server_exception.reset();
-        client_exception.reset();
-        if (error_code > 0 && fuzz_config->disallowed_error_codes.find(error_code) != fuzz_config->disallowed_error_codes.end())
+        if (fuzz_config->disallowed_error_codes.find(error_code) != fuzz_config->disallowed_error_codes.end())
         {
             throw Exception(ErrorCodes::BUZZHOUSE, "Found disallowed error code {} - {}", error_code, ErrorCodes::getName(error_code));
         }
@@ -544,11 +510,18 @@ static void finishBuzzHouse(int num)
     buzz_done = 1;
 }
 
+bool Client::fuzzLoopReconnect()
+{
+    connection->disconnect();
+    return tryToReconnect(fuzz_config->max_reconnection_attempts, fuzz_config->time_to_sleep_between_reconnects);
+}
+
 /// Returns false when server is not available.
 bool Client::buzzHouse()
 {
     bool server_up = true;
     String full_query;
+    static const String & restart_cmd = "--Reconnecting client";
 
     /// Set time to run, but what if a query runs for too long?
     buzz_done = 0;
@@ -564,7 +537,14 @@ bool Client::buzzHouse()
 
         while (server_up && !buzz_done && std::getline(infile, full_query))
         {
-            server_up &= processBuzzHouseQuery(full_query);
+            if (full_query == restart_cmd)
+            {
+                server_up &= fuzzLoopReconnect();
+            }
+            else
+            {
+                server_up &= processBuzzHouseQuery(full_query);
+            }
             full_query.resize(0);
         }
     }
@@ -574,7 +554,7 @@ bool Client::buzzHouse()
         std::vector<BuzzHouse::SQLQuery> peer_queries;
         bool replica_setup = true;
         bool has_cloud_features = true;
-        BuzzHouse::RandomGenerator rg(fuzz_config->seed);
+        BuzzHouse::RandomGenerator rg(fuzz_config->seed, fuzz_config->min_string_length, fuzz_config->max_string_length);
         BuzzHouse::SQLQuery sq1;
         BuzzHouse::SQLQuery sq2;
         BuzzHouse::SQLQuery sq3;
@@ -641,13 +621,13 @@ bool Client::buzzHouse()
             }
             else
             {
-                const uint32_t correctness_oracle = 30;
-                const uint32_t settings_oracle = 30;
-                const uint32_t dump_oracle = 30
+                const uint32_t correctness_oracle = 20;
+                const uint32_t settings_oracle = 20;
+                const uint32_t dump_oracle = 10
                     * static_cast<uint32_t>(fuzz_config->use_dump_table_oracle > 0
                                             && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_to_test_format));
                 const uint32_t peer_oracle
-                    = 30 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_table_peer_oracle));
+                    = 20 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_table_peer_oracle));
                 const uint32_t restart_client = 1 * static_cast<uint32_t>(fuzz_config->allow_client_restarts);
                 const uint32_t run_query = 910;
                 const uint32_t prob_space = correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + run_query;
@@ -665,7 +645,7 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query, sq1);
                     fuzz_config->outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
-                    qo.processFirstOracleQueryResult(!have_error, *external_integrations);
+                    qo.processFirstOracleQueryResult(error_code, *external_integrations);
 
                     sq2.Clear();
                     full_query.resize(0);
@@ -673,7 +653,7 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query, sq2);
                     fuzz_config->outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
-                    qo.processSecondOracleQueryResult(!have_error, *external_integrations, "Correctness query");
+                    qo.processSecondOracleQueryResult(error_code, *external_integrations, "Correctness query");
                 }
                 else if (settings_oracle && nopt < (correctness_oracle + settings_oracle + 1))
                 {
@@ -695,7 +675,7 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query2, sq2);
                     fuzz_config->outf << full_query2 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query2);
-                    qo.processFirstOracleQueryResult(!have_error, *external_integrations);
+                    qo.processFirstOracleQueryResult(error_code, *external_integrations);
 
                     sq3.Clear();
                     full_query.resize(0);
@@ -707,7 +687,7 @@ bool Client::buzzHouse()
 
                     fuzz_config->outf << full_query2 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query2);
-                    qo.processSecondOracleQueryResult(!have_error, *external_integrations, "Multi setting query");
+                    qo.processSecondOracleQueryResult(error_code, *external_integrations, "Multi setting query");
                 }
                 else if (dump_oracle && nopt < (correctness_oracle + settings_oracle + dump_oracle + 1))
                 {
@@ -730,7 +710,7 @@ bool Client::buzzHouse()
                         BuzzHouse::SQLQueryToString(full_query2, sq1);
                         fuzz_config->outf << full_query2 << std::endl;
                         server_up &= processBuzzHouseQuery(full_query2);
-                        qo.processFirstOracleQueryResult(!have_error, *external_integrations);
+                        qo.processFirstOracleQueryResult(error_code, *external_integrations);
                     }
 
                     if (!use_optimize)
@@ -772,13 +752,13 @@ bool Client::buzzHouse()
 
                         fuzz_config->outf << full_query2 << std::endl;
                         server_up &= processBuzzHouseQuery(full_query2);
-                        qo.processSecondOracleQueryResult(!have_error, *external_integrations, "Dump and read table");
+                        qo.processSecondOracleQueryResult(error_code, *external_integrations, "Dump and read table");
                     }
                 }
                 else if (peer_oracle && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + 1))
                 {
                     /// Test results with peer tables
-                    bool has_success = false;
+                    int err_res = 0;
                     BuzzHouse::PeerQuery nquery
                         = ((!external_integrations->hasMySQLConnection() && !external_integrations->hasPostgreSQLConnection()
                             && !external_integrations->hasSQLiteConnection())
@@ -811,28 +791,27 @@ bool Client::buzzHouse()
                     BuzzHouse::SQLQueryToString(full_query, sq1);
                     fuzz_config->outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
-                    qo.processFirstOracleQueryResult(!have_error, *external_integrations);
+                    qo.processFirstOracleQueryResult(error_code, *external_integrations);
 
                     full_query2.resize(0);
                     BuzzHouse::SQLQueryToString(full_query2, sq2);
                     fuzz_config->outf << full_query2 << std::endl;
                     if (clickhouse_only)
                     {
-                        has_success = external_integrations->performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, full_query2);
+                        err_res = external_integrations->performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, full_query2);
                     }
                     else
                     {
                         server_up &= processBuzzHouseQuery(full_query2);
-                        has_success = !have_error;
+                        err_res = error_code;
                     }
-                    qo.processSecondOracleQueryResult(has_success, *external_integrations, "Peer table query");
+                    qo.processSecondOracleQueryResult(err_res, *external_integrations, "Peer table query");
                 }
                 else if (restart_client && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + 1))
                 {
-                    fuzz_config->outf << "--Reconnecting client" << std::endl;
-                    connection->disconnect();
+                    fuzz_config->outf << restart_cmd << std::endl;
                     gen.setInTransaction(false);
-                    server_up &= tryToReconnect(fuzz_config->max_reconnection_attempts, fuzz_config->time_to_sleep_between_reconnects);
+                    server_up &= fuzzLoopReconnect();
                 }
                 else if (
                     run_query && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + run_query + 1))

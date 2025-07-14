@@ -1,5 +1,5 @@
-#include "Common/DateLUTImpl.h"
-#include "Common/Exception.h"
+#include <Common/DateLUTImpl.h>
+#include <Common/Exception.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
@@ -344,173 +344,100 @@ struct ChangeSecondTraits
 REGISTER_FUNCTION(ChangeDate)
 {
     {
-        FunctionDocumentation::Description description = R"(
-Changes the year component of a date or date time.
-    )";
-        FunctionDocumentation::Syntax syntax = R"(
-changeYear(datetime, value)
-    )";
+        FunctionDocumentation::Description description = "Changes the year component of a date or date time.";
+        FunctionDocumentation::Syntax syntax = "changeYear(date_or_datetime, value);";
         FunctionDocumentation::Arguments arguments = {
-            {"datetime", "A date or date with time to modify.", {"Date", "Date32", "DateTime", "DateTime64"}},
-            {"value", "A new value of the year.", {"(U)Int*"}}
+            {"date_or_datetime", "The value to change.", {"Date", "Date32", "DateTime", "DateTime64"}},
+            {"value", "The new value.", {"(U)Int*"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value = {"Returns the same type as `datetime` with modified year component.", {"Date", "Date32", "DateTime", "DateTime64"};
-        FunctionDocumentation::Examples examples = {
-            {"Change year for different date types", R"(
-SELECT changeYear(toDate('1999-01-01'), 2000), changeYear(toDateTime64('1999-01-01 00:00:00.000', 3), 2000)
-        )",
-            R"(
-┌─changeYear(toDate('1999-01-01'), 2000)─┬─changeYear(toDateTime64('1999-01-01 00:00:00.000', 3), 2000)─┐
-│                             2000-01-01 │                                      2000-01-01 00:00:00.000 │
-└────────────────────────────────────────┴──────────────────────────────────────────────────────────────┘
-        )"}
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns a value of the same type as `date_or_datetime` with modified year component.", {"Date", "Date32", "DateTime", "DateTime64"}};
+        FunctionDocumentation::Examples example = {
+            {"Usage example", "SELECT changeYear('2024-01-01'::DateTime, 2023)", "2023-01-01 00:00:00"}
         };
-        FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
+        FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-
-        factory.registerFunction<FunctionChangeDate<ChangeYearTraits>>(documentation);
+        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+        factory.registerFunction<FunctionChangeDate<ChangeYearTraits>>(function_documentation);
     }
     {
-        FunctionDocumentation::Description description = R"(
-Changes the month component of a date or date time.
-    )";
-        FunctionDocumentation::Syntax syntax = R"(
-changeMonth(datetime, value)
-    )";
+        FunctionDocumentation::Description description = "Changes the month component of a date or date time.";
+        FunctionDocumentation::Syntax syntax = "changeMonth(date_or_datetime, value);";
         FunctionDocumentation::Arguments arguments = {
-            {"datetime", "A date or date with time to modify.", {"Date", "Date32", "DateTime", "DateTime64"}},
-            {"value", "A new value of the month.", {"(U)Int*"}}
+            {"date_or_datetime", "The value to change.", {"Date", "Date32", "DateTime", "DateTime64"}},
+            {"value", "The new value.", {"(U)Int*"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value = {"Returns the same type as `datetime` with modified month component.", {"Date", "Date32", "DateTime", "DateTime64"};};
-        FunctionDocumentation::Examples examples = {
-            {"Change month for different date types", R"(
-SELECT changeMonth(toDate('1999-01-01'), 2), changeMonth(toDateTime64('1999-01-01 00:00:00.000', 3), 2)
-        )",
-            R"(
-┌─changeMonth(toDate('1999-01-01'), 2)─┬─changeMonth(toDateTime64('1999-01-01 00:00:00.000', 3), 2)─┐
-│                           1999-02-01 │                                    1999-02-01 00:00:00.000 │
-└──────────────────────────────────────┴────────────────────────────────────────────────────────────┘
-        )"}
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns a value of the same type as `date_or_datetime` with modified month component.", {"Date", "Date32", "DateTime", "DateTime64"}};
+        FunctionDocumentation::Examples example = {
+            {"Usage example", "SELECT changeMonth('2024-01-01'::DateTime, 12)", "2024-12-01 00:00:00"}
         };
-        FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
+        FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-
-        factory.registerFunction<FunctionChangeDate<ChangeMonthTraits>>(documentation);
+        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+        factory.registerFunction<FunctionChangeDate<ChangeMonthTraits>>(function_documentation);
     }
     {
-        FunctionDocumentation::Description description = R"(
-Changes the day component of a date or date time.
-    )";
-        FunctionDocumentation::Syntax syntax = R"(
-changeDay(datetime, value)
-    )";
+        FunctionDocumentation::Description description = "Changes the day component of a date or date time.";
+        FunctionDocumentation::Syntax syntax = "changeDay(date_or_datetime, value);";
         FunctionDocumentation::Arguments arguments = {
-            {"datetime", "A date or date with time to modify.", {"Date", "Date32", "DateTime", "DateTime64"}},
-            {"value", "A new value of the day.", {"(U)Int*"}}
+            {"date_or_datetime", "The value to change.", {"Date", "Date32", "DateTime", "DateTime64"}},
+            {"value", "The new value.", {"(U)Int*"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value = {"Returns the same type as `datetime` with modified day component.", {"Date", "Date32", "DateTime", "DateTime64"}};
-        FunctionDocumentation::Examples examples = {
-            {"Change day for different date types", R"(
-SELECT changeDay(toDate('1999-01-01'), 5), changeDay(toDateTime64('1999-01-01 00:00:00.000', 3), 5)
-        )",
-            R"(
-┌─changeDay(toDate('1999-01-01'), 5)─┬─changeDay(toDateTime64('1999-01-01 00:00:00.000', 3), 5)─┐
-│                         1999-01-05 │                                  1999-01-05 00:00:00.000 │
-└────────────────────────────────────┴──────────────────────────────────────────────────────────┘
-        )"}
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns a value of the same type as `date_or_datetime` with modified day component.", {"Date", "Date32", "DateTime", "DateTime64"}};
+        FunctionDocumentation::Examples example = {
+            {"Usage example", "SELECT changeDay('2024-01-31'::DateTime, 15)", "2024-01-15 00:00:00"}
         };
-        FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
+        FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-
-        factory.registerFunction<FunctionChangeDate<ChangeDayTraits>>(documentation);
+        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+        factory.registerFunction<FunctionChangeDate<ChangeDayTraits>>(function_documentation);
     }
     {
-        FunctionDocumentation::Description description = R"(
-Changes the hour component of a date or date time.
-        )";
-        FunctionDocumentation::Syntax syntax = R"(
-changeHour(datetime, value)
-        )";
+        FunctionDocumentation::Description description = "Changes the hour component of a date or date time.";
+        FunctionDocumentation::Syntax syntax = "changeHour(date_or_datetime, value);";
         FunctionDocumentation::Arguments arguments = {
-            {"datetime", "A date or date with time to modify.", {"Date", "Date32", "DateTime", "DateTime64"}},
-            {"value", "A new value of the hour.", {"(U)Int*"}}
+            {"date_or_datetime", "The value to change.", {"Date", "Date32", "DateTime", "DateTime64"}},
+            {"value", "The new value.", {"(U)Int*"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value = {"Returns the same type as `datetime` with modified hour component.", {"DateTime", "DateTime64"}};
-        FunctionDocumentation::Examples examples = {
-            {"Change hour for different date types", R"(
-SELECT changeHour(toDate('1999-01-01'), 14), changeHour(toDateTime64('1999-01-01 00:00:00.000', 3), 14)
-            )",
-            R"(
-┌─changeHour(toDate('1999-01-01'), 14)─┬─changeHour(toDateTime64('1999-01-01 00:00:00.000', 3), 14)─┐
-│                  1999-01-01 14:00:00 │                                    1999-01-01 14:00:00.000 │
-└──────────────────────────────────────┴────────────────────────────────────────────────────────────┘
-            )"}
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns a value of the same type as `date_or_datetime` with modified hour component.", {"DateTime", "DateTime64"}};
+        FunctionDocumentation::Examples example = {
+            {"Usage example", "SELECT changeHour('2024-01-01 12:00:00'::DateTime, 5)", "2024-01-01 05:00:00"}
         };
-        FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
+        FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-
-        factory.registerFunction<FunctionChangeDate<ChangeHourTraits>>(documentation);
-
+        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+        factory.registerFunction<FunctionChangeDate<ChangeHourTraits>>(function_documentation);
     }
     {
-        FunctionDocumentation::Description description = R"(
-Changes the minute component of a date or date time.
-    )";
-        FunctionDocumentation::Syntax syntax = R"(
-changeMinute(datetime, value)
-        )";
+        FunctionDocumentation::Description description = "Changes the minute component of a `date or date time`.";
+        FunctionDocumentation::Syntax syntax = "changeMinute(date_or_datetime, value);";
         FunctionDocumentation::Arguments arguments = {
-            {"datetime", "A date or date with time to modify.", {"Date", "Date32", "DateTime", "DateTime64"}},
-            {"value", "A new value of the minute.", {"(U)Int*"}}
+            {"date_or_datetime", "The value to change.", {"Date", "Date32", "DateTime", "DateTime64"}},
+            {"value", "The new value.", {"(U)Int*"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value = {"Returns the same type as `datetime` with modified minute component.", {"DateTime", "DateTime64"}};
-        FunctionDocumentation::Examples examples = {
-            {"Change minute for different date types", R"(
-SELECT changeMinute(toDate('1999-01-01'), 15), changeMinute(toDateTime64('1999-01-01 00:00:00.000', 3), 15)
-            )",
-            R"(
-┌─changeMinute(toDate('1999-01-01'), 15)─┬─changeMinute(toDateTime64('1999-01-01 00:00:00.000', 3), 15)─┐
-│                    1999-01-01 00:15:00 │                                      1999-01-01 00:15:00.000 │
-└────────────────────────────────────────┴──────────────────────────────────────────────────────────────┘
-            )"}
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns a value of the same type as `date_or_datetime` with modified minute component.", {"DateTime", "DateTime64"}};
+        FunctionDocumentation::Examples example = {
+            {"Usage example", "SELECT changeMinute('2024-01-01 12:30:00'::DateTime, 45)", "2024-01-01 12:45:00"}
         };
-        FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
+        FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-
-        factory.registerFunction<FunctionChangeDate<ChangeMinuteTraits>>(documentation);
+        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+        factory.registerFunction<FunctionChangeDate<ChangeMinuteTraits>>(function_documentation);
     }
     {
-        FunctionDocumentation::Description description = R"(
-Changes the second component of a date or date time.
-    )";
-        FunctionDocumentation::Syntax syntax = R"(
-changeSecond(datetime, value)
-        )";
+        FunctionDocumentation::Description description = "Changes the second component of a date or date time.";
+        FunctionDocumentation::Syntax syntax = "changeSecond(date_or_datetime, value);";
         FunctionDocumentation::Arguments arguments = {
-            {"datetime", "A date or date with time to modify.", {"Date", "Date32", "DateTime", "DateTime64"}},
-            {"value", "A new value of the second.", {"(U)Int*"}}
+            {"date_or_datetime", "The value to change.", {"Date", "Date32", "DateTime", "DateTime64"}},
+            {"value", "The new value.", {"(U)Int*"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value = {"Returns the same type as `datetime` with modified second component.", {"DateTime", "DateTime64"}};
-        FunctionDocumentation::Examples examples = {
-            {"Change second for different date types", R"(
-SELECT changeSecond(toDate('1999-01-01'), 15), changeSecond(toDateTime64('1999-01-01 00:00:00.000', 3), 15)
-            )",
-            R"(
-┌─changeSecond(toDate('1999-01-01'), 15)─┬─changeSecond(toDateTime64('1999-01-01 00:00:00.000', 3), 15)─┐
-│                    1999-01-01 00:00:15 │                                      1999-01-01 00:00:15.000 │
-└────────────────────────────────────────┴──────────────────────────────────────────────────────────────┘
-            )"}
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns a value of the same type as `date_or_datetime` with modified seconds component.", {"DateTime", "DateTime64"}};
+        FunctionDocumentation::Examples example = {
+            {"Usage example", "SELECT changeSecond('2024-01-01 12:30:45'::DateTime, 15)", "2024-01-01 12:30:15"}
         };
-        FunctionDocumentation::IntroducedIn introduced_in = {24, 8};
+        FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation documentation = {description syntax, arguments, returned_value, examples, introduced_in, category};
-
-        factory.registerFunction<FunctionChangeDate<ChangeSecondTraits>>(documentation);
+        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+        factory.registerFunction<FunctionChangeDate<ChangeSecondTraits>>(function_documentation);
     }
 }
 

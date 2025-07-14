@@ -20,6 +20,19 @@ from .utils import Shell, Utils
 
 assert Settings.CI_CONFIG_RUNS_ON
 
+
+# TODO: find the right place to not dublicate
+def _GH_Auth(workflow):
+    if not Settings.USE_CUSTOM_GH_AUTH:
+        return
+    from .gh_auth import GHAuth
+
+    if not Shell.check(f"gh auth status", verbose=True):
+        pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
+        app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
+        GHAuth.auth(app_id=app_id, app_key=pem)
+
+
 _workflow_config_job = Job.Config(
     name=Settings.CI_CONFIG_JOB_NAME,
     runs_on=Settings.CI_CONFIG_RUNS_ON,
@@ -295,11 +308,13 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             print("ERROR: yaml files are outdated - regenerate, commit and push")
         results.append(result_)
 
-    if results[-1].is_ok() and workflow.secrets:
-        result_ = _check_secrets(workflow.secrets)
-        if result_.status != Result.Status.SUCCESS:
-            print(f"ERROR: Invalid secrets in workflow [{workflow.name}]")
-        results.append(result_)
+    # TODO: commented out to decrease risk of throttling:
+    #       An error occurred (ThrottlingException) when calling the GetParameter operation (reached max retries: 2): Rate exceeded
+    # if results[-1].is_ok() and workflow.secrets:
+    #     result_ = _check_secrets(workflow.secrets)
+    #     if result_.status != Result.Status.SUCCESS:
+    #         print(f"ERROR: Invalid secrets in workflow [{workflow.name}]")
+    #     results.append(result_)
 
     if results[-1].is_ok() and workflow.enable_cidb:
         result_ = _check_db(workflow)
@@ -555,11 +570,7 @@ def _finish_workflow(workflow, job_name):
             ready_for_merge_description += f", Dropped: {len(dropped_results)}"
 
     if workflow.enable_merge_ready_status or workflow.enable_gh_summary_comment:
-        pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
-        app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-        from .gh_auth import GHAuth
-
-        GHAuth.auth(app_id=app_id, app_key=pem)
+        _GH_Auth(workflow)
 
         if workflow.enable_merge_ready_status:
             if not GH.post_commit_status(

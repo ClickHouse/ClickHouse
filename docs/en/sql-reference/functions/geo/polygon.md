@@ -240,7 +240,7 @@ Returns true or false depending on whether or not one polygon lies completely in
 ### Example {#example-6}
 
 ```sql
-select polygonsWithinSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]], [[[(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]]]);
+SELECT polygonsWithinSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]], [[[(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]]]);
 ```
 ```response
 0
@@ -528,6 +528,48 @@ SELECT polygonsWithinCartesian([[[(2., 2.), (2., 3.), (3., 3.), (3., 2.)]]], [[[
 Two polygons
 
 ### Returned value {#returned-value-18}
+
+UInt8, 0 for false, 1 for true
+
+## polygonsIntersectCartesian {#polygonsintersectcartesian}
+
+Returns true if the two polygons intersect (share any common area or boundary).
+
+### Example {#example-intersects-cartesian}
+
+```sql
+SELECT polygonsIntersectCartesian([[[(2., 2.), (2., 3.), (3., 3.), (3., 2.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]])
+```
+```response
+1
+```
+
+### Input parameters {#input-parameters-intersects-cartesian}
+
+Two polygons
+
+### Returned value {#returned-value-intersects-cartesian}
+
+UInt8, 0 for false, 1 for true
+
+## polygonsIntersectSpherical {#polygonsintersectspherical}
+
+Returns true if the two polygons intersect (share any common area or boundary). Reference https://www.boost.org/doc/libs/1_62_0/libs/geometry/doc/html/geometry/reference/algorithms/intersects.html
+
+### Example {#example-intersects-spherical}
+
+```sql
+SELECT polygonsIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]], [[[(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]]]);
+```
+```response
+1
+```
+
+### Input parameters {#input-parameters-intersects-spherical}
+
+Two polygons
+
+### Returned value {#returned-value-intersects-spherical}
 
 UInt8, 0 for false, 1 for true
 

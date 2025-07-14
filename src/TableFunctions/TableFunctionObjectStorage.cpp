@@ -52,7 +52,7 @@ ObjectStoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_l
 }
 
 template <typename Definition, typename Configuration, bool is_data_lake>
-StorageObjectStorage::ConfigurationPtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::getConfiguration() const
+StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::getConfiguration() const
 {
     if (!configuration)
     {
@@ -127,7 +127,8 @@ ColumnsDescription TableFunctionObjectStorage<
 {
     if (configuration->structure == "auto")
     {
-        context->checkAccess(getSourceAccessType());
+        if (const auto access_object = getSourceAccessObject())
+            context->checkAccess(AccessType::READ, toStringSource(*access_object));
 
         auto storage = getObjectStorage(context, !is_insert_query);
         configuration->update(

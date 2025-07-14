@@ -7,8 +7,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 options=(
     compress=0
     compress=1
-    wait_end_of_query=0
-    wait_end_of_query=1
+    http_wait_end_of_query=0
+    http_wait_end_of_query=1
 )
 for option in "${options[@]}"; do
     # We are sending two queries, to make sure that when the second finished,
