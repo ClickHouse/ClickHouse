@@ -6,12 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 alive_host=$CLICKHOUSE_HOST
-not_alive_host="10.100.0.0"
+not_alive_host="255.255.255.255"
 
-export CLICKHOUSE_HOST=$not_alive_host
-error="$($CLICKHOUSE_CLIENT --connect_timeout 1 --query "SELECT 1" 2>&1 > /dev/null)"
-echo "${error}" | grep -Fc "DB::NetException"
-echo "${error}" | grep -Fc "${CLICKHOUSE_HOST}"
-
-export CLICKHOUSE_HOST=$alive_host
-$CLICKHOUSE_CLIENT -q "SELECT 1"
+CLICKHOUSE_HOST=$not_alive_host $CLICKHOUSE_CLIENT --connect_timeout 1 --query "SELECT 1" |& grep -Fo 'Network is unreachable: 255.255.255.255:9000'
+CLICKHOUSE_HOST=$alive_host $CLICKHOUSE_CLIENT --query "SELECT 1"
