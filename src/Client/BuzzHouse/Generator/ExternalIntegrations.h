@@ -22,6 +22,7 @@
 #    include <mongocxx/client.hpp>
 #    include <mongocxx/collection.hpp>
 #    include <mongocxx/database.hpp>
+#    include <mongocxx/exception/exception.hpp>
 #endif
 
 #if USE_LIBPQXX
@@ -80,7 +81,7 @@ public:
     {
     }
 
-    virtual bool performQuery(const String &) { return false; }
+    virtual int performQuery(const String &) { return 1; }
 
     virtual String getTableName(std::shared_ptr<SQLDatabase>, uint32_t) { return String(); }
 
@@ -146,7 +147,7 @@ public:
 
     bool optimizeTableForOracle(PeerTableDatabase pt, const SQLTable & t) override;
 
-    bool performQuery(const String & query) override;
+    int performQuery(const String & query) override;
 
     String columnTypeAsString(RandomGenerator & rg, bool is_deterministic, SQLType * tp) const override;
 #else
@@ -170,6 +171,8 @@ private:
 
     PostgreSQLUniqueKeyPtr postgres_connection;
 
+    int sqlstateToInt(const String & sqlstate);
+
 public:
     PostgreSQLIntegration(FuzzConfig & fcc, const ServerCredentials & scc, PostgreSQLUniqueKeyPtr pcon)
         : ClickHouseIntegratedDatabase(fcc, scc)
@@ -188,7 +191,7 @@ public:
 
     String columnTypeAsString(RandomGenerator & rg, bool is_deterministic, SQLType * tp) const override;
 
-    bool performQuery(const String & query) override;
+    int performQuery(const String & query) override;
 #else
 public:
     PostgreSQLIntegration(FuzzConfig & fcc, const ServerCredentials & scc)
@@ -230,7 +233,7 @@ public:
 
     String columnTypeAsString(RandomGenerator & rg, bool is_deterministic, SQLType * tp) const override;
 
-    bool performQuery(const String & query) override;
+    int performQuery(const String & query) override;
 #else
 public:
     const std::filesystem::path sqlite_path;
@@ -322,7 +325,7 @@ public:
     {
     }
 
-    String getConnectionURL();
+    String getConnectionURL(bool client);
 
     void setEngineDetails(RandomGenerator &, const SQLBase & b, const String & tname, TableEngine * te) override;
 
@@ -360,7 +363,7 @@ public:
     {
     }
 
-    String getConnectionURL();
+    String getConnectionURL(bool client);
 
     void setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te) override;
 
@@ -438,7 +441,7 @@ public:
 
     void dropPeerTableOnRemote(const SQLTable & t);
 
-    bool performQuery(PeerTableDatabase pt, const String & query);
+    int performQuery(PeerTableDatabase pt, const String & query);
 
     bool getPerformanceMetricsForLastQuery(PeerTableDatabase pt, PerformanceResult & res);
 

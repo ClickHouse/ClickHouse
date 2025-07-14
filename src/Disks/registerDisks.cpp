@@ -1,6 +1,6 @@
-#include "registerDisks.h"
+#include <Disks/registerDisks.h>
 
-#include "DiskFactory.h"
+#include <Disks/DiskFactory.h>
 
 #include "config.h"
 

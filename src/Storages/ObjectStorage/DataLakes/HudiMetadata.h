@@ -13,11 +13,9 @@ namespace DB
 class HudiMetadata final : public IDataLakeMetadata, private WithContext
 {
 public:
-    using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
-
     static constexpr auto name = "Hudi";
 
-    HudiMetadata(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_);
+    HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_);
 
     NamesAndTypesList getTableSchema() const override { return {}; }
 
@@ -31,7 +29,7 @@ public:
 
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
-        ConfigurationObserverPtr configuration,
+        StorageObjectStorageConfigurationWeakPtr configuration,
         ContextPtr local_context)
     {
         return std::make_unique<HudiMetadata>(object_storage, configuration, local_context);
@@ -41,11 +39,12 @@ protected:
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,
-        size_t list_batch_size) const override;
+        size_t list_batch_size,
+        ContextPtr context) const override;
 
 private:
     const ObjectStoragePtr object_storage;
-    const ConfigurationObserverPtr configuration;
+    const StorageObjectStorageConfigurationWeakPtr configuration;
     mutable Strings data_files;
 
     Strings getDataFilesImpl() const;

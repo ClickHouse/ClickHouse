@@ -13,7 +13,7 @@ Keeps tables in RAM only `expiration_time_in_seconds` seconds after last access.
 
 It's optimized for storing many small \*Log tables, for which there is a long time interval between accesses.
 
-## Creating a Database {#creating-a-database}
+## Creating a database {#creating-a-database}
 
 ```sql
 CREATE DATABASE testlazy 

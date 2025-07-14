@@ -6,8 +6,8 @@
 #include <memory>
 #include <optional>
 #include <Poco/Event.h>
-#include "ZooKeeper.h"
-#include "Common.h"
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/Common.h>
 
 namespace DB
 {

@@ -2,7 +2,8 @@
 #include <Functions/PolygonUtils.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <boost/geometry.hpp>
+#include <boost/geometry/core/tag.hpp>
+#include <boost/geometry/core/tags.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
@@ -49,34 +50,62 @@ namespace ErrorCodes
 namespace
 {
 
-using CoordinateType = Float64;
-using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
-using Polygon = boost::geometry::model::polygon<Point, false>;
-using Box = boost::geometry::model::box<Point>;
+namespace bg = boost::geometry;
 
-template <typename Polygon>
-UInt128 sipHash128(Polygon && polygon)
+using CoordinateType = Float64;
+using Point = bg::model::d2::point_xy<CoordinateType>;
+using Polygon = bg::model::polygon<Point, false>;
+using MultiPolygon = bg::model::multi_polygon<Polygon>;
+using Box = bg::model::box<Point>;
+
+template <typename G>
+concept PolygonGeometry = std::is_same_v<typename bg::traits::tag<G>::type, bg::polygon_tag>;
+
+template <typename G>
+concept MultiPolygonGeometry = std::is_same_v<typename bg::traits::tag<G>::type, bg::multi_polygon_tag>;
+
+template <class Ring>
+inline void sipHashRing(SipHash & hash, const Ring & ring)
+{
+    static_assert(std::contiguous_iterator<decltype(ring.data())>, "sipHashRing expects a container with contiguous storage (e.g. std::vector).");
+
+    UInt32 size = static_cast<UInt32>(ring.size());
+    hash.update(size);
+    hash.update(reinterpret_cast<const char *>(ring.data()), size * sizeof(ring[0]));
+}
+
+template <PolygonGeometry Polygon>
+UInt128 sipHash128(const Polygon & polygon)
 {
     SipHash hash;
 
-    auto hash_ring = [&hash](const auto & ring)
-    {
-        UInt32 size = static_cast<UInt32>(ring.size());
-        hash.update(size);
-        hash.update(reinterpret_cast<const char *>(ring.data()), size * sizeof(ring[0]));
-    };
-
-    hash_ring(polygon.outer());
+    sipHashRing(hash, polygon.outer());
 
     const auto & inners = polygon.inners();
-    hash.update(inners.size());
-    for (auto & inner : inners)
-        hash_ring(inner);
+    hash.update(static_cast<UInt32>(inners.size()));
+    for (const auto & inner_ring : inners)
+        sipHashRing(hash, inner_ring);
 
     return hash.get128();
 }
 
-template <typename PointInConstPolygonImpl>
+template <MultiPolygonGeometry MultiPolygon>
+UInt128 sipHash128(const MultiPolygon & multi_polygon)
+{
+    SipHash hash;
+
+    hash.update(static_cast<UInt32>(multi_polygon.size()));
+
+    for (const auto & component : multi_polygon)
+    {
+        UInt128 component_hash = sipHash128(component);
+        hash.update(component_hash);
+    }
+
+    return hash.get128();
+}
+
+template <typename PointInConstPolygonImpl, typename PointInConstMultiPolygonImpl>
 class FunctionPointInPolygon : public IFunction
 {
 public:
@@ -86,7 +115,8 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionPointInPolygon<PointInConstPolygonImpl>>(context->getSettingsRef()[Setting::validate_polygons]);
+        return std::make_shared<FunctionPointInPolygon<PointInConstPolygonImpl, PointInConstMultiPolygonImpl>>(
+            context->getSettingsRef()[Setting::validate_polygons]);
     }
 
     String getName() const override
@@ -121,6 +151,10 @@ public:
           * - polygon with a number of holes, each hole as a subsequent argument.
           * pointInPolygon((x, y), [[(x1, y1), (x2, y2), ...], [(x21, y21), (x22, y22), ...], ...])
           * - polygon with a number of holes, all as multidimensional array
+          * pointInPolygon((x, y), [[[(x1, y1), (x2, y2), ...], [(x21, y21), (x22, y22), ...], ...]])
+          * - multi polygon
+          * pointInPolygon((x, y), [[(x1, y1), (x2, y2), ...], [(x21, y21), (x22, y22), ...]], [[(x1, y1), (x2, y2), ...], [(x21, y21), (x22, y22), ...], ...])
+          * - multi polygon, each polygon as a subsequent argument.
           */
 
         auto validate_tuple = [this](size_t i, const DataTypeTuple * tuple)
@@ -143,31 +177,69 @@ public:
             }
         };
 
+
+        /// Validate the given first argument point (x, y) tuple.
         validate_tuple(0, checkAndGetDataType<DataTypeTuple>(arguments[0].get()));
+
+        auto getArrayDepthAndInnermostTuple = [this](const IDataType & type, size_t arg_pos) -> std::pair<size_t, const DataTypeTuple *>
+        {
+            const IDataType * current_type = &type;
+            size_t array_depth = 0;
+
+            while (WhichDataType(*current_type).isArray())
+            {
+                ++array_depth;
+                current_type = static_cast<const DataTypeArray *>(current_type)->getNestedType().get();
+            }
+
+            if (array_depth == 0 || array_depth > 3)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "{} must contain an array of tuples or an array of arrays of tuples or an array of arrays of arrays of tuples.",
+                    getMessagePrefix(arg_pos));
+
+            return {array_depth, checkAndGetDataType<DataTypeTuple>(current_type)};
+        };
+
+        auto [depth_first_polygon_argument, tuple_first_polygon_argument] = getArrayDepthAndInnermostTuple(*arguments[1], 1);
+
+        validate_tuple(1, tuple_first_polygon_argument); /// verify its innermost tuple
 
         if (arguments.size() == 2)
         {
-            const auto * array = checkAndGetDataType<DataTypeArray>(arguments[1].get());
-            if (array == nullptr)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} must contain an array of tuples or an array of arrays of tuples.", getMessagePrefix(1));
-
-            const auto * nested_array = checkAndGetDataType<DataTypeArray>(array->getNestedType().get());
-            if (nested_array != nullptr)
-            {
-                array = nested_array;
-            }
-
-            validate_tuple(1, checkAndGetDataType<DataTypeTuple>(array->getNestedType().get()));
+            /// depth 1  -> polygon without holes
+            /// depth 2  -> polygon with holes
+            /// depth 3  -> multi polygon
+            return std::make_shared<DataTypeUInt8>();
         }
-        else
-        {
-            for (size_t i = 1; i < arguments.size(); ++i)
-            {
-                const auto * array = checkAndGetDataType<DataTypeArray>(arguments[i].get());
-                if (array == nullptr)
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} must contain an array of tuples", getMessagePrefix(i));
 
-                validate_tuple(i, checkAndGetDataType<DataTypeTuple>(array->getNestedType().get()));
+        if (depth_first_polygon_argument == 3)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "{}: an array of arrays of arrays of tuples can be used only "
+                "when it is the sole polygon argument.",
+                getMessagePrefix(1));
+
+        for (size_t i = 2; i < arguments.size(); ++i)
+        {
+            auto [depth_current_argument, tuple_current_argument] = getArrayDepthAndInnermostTuple(*arguments[i], i);
+
+            validate_tuple(i, tuple_current_argument);
+
+            if (depth_first_polygon_argument == 2) /// Variadic multi polygon: first polygon given as 2-array
+            {
+                /// Every subsequent polygon argument must also be 2-array.
+                if (depth_current_argument != 2)
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "{} must be a array of arrays of tuples because an array of arrays of"
+                        " tuples of first polygon indicates that it is part of MultiPolygon.",
+                        getMessagePrefix(i));
+            }
+            else /// Polygon with holes case
+            {
+                if (depth_current_argument != 1)
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} must be a array of tuples.", getMessagePrefix(i));
             }
         }
 
@@ -193,12 +265,19 @@ public:
 
         const auto & tuple_columns = tuple_col->getColumns();
 
-        const ColumnWithTypeAndName & poly = arguments[1];
-        const IColumn * poly_col = poly.column.get();
-        const ColumnConst * const_poly_col = checkAndGetColumn<ColumnConst>(poly_col);
-
         bool point_is_const = const_tuple_col != nullptr;
-        bool poly_is_const = const_poly_col != nullptr;
+        bool poly_is_const = true;
+
+        for (size_t i = 1; i < arguments.size(); ++i)
+        {
+            const IColumn * poly_col = arguments[i].column.get();
+            const auto * const_poly_col = checkAndGetColumn<ColumnConst>(poly_col);
+            if (const_poly_col == nullptr)
+            {
+                poly_is_const = false;
+                break;
+            }
+        }
 
         /// Two different algorithms are used for constant and non constant polygons.
         /// Constant polygons are preprocessed to speed up matching.
@@ -207,39 +286,75 @@ public:
 
         if (poly_is_const)
         {
-            Polygon polygon;
-            parseConstPolygon(arguments, polygon);
+            const ColumnWithTypeAndName & first_poly_col = arguments[1];
+            bool is_const_multi_polygon = (arguments.size() == 2 && isThreeDimensionalArray(*first_poly_col.type))
+                || (arguments.size() > 2 && isTwoDimensionalArray(*first_poly_col.type));
 
-            /// Polygons are preprocessed and saved in cache.
-            /// Preprocessing can be computationally heavy but dramatically speeds up matching.
-
-            using Pool = ObjectPoolMap<PointInConstPolygonImpl, UInt128>;
-            /// C++11 has thread-safe function-local static.
-            static Pool known_polygons;
-
-            auto factory = [&polygon]()
+            if (is_const_multi_polygon)
             {
-                auto ptr = std::make_unique<PointInConstPolygonImpl>(polygon);
+                MultiPolygon multi_polygon;
+                parseConstMultiPolygon(arguments, multi_polygon);
 
-                ProfileEvents::increment(ProfileEvents::PolygonsAddedToPool);
-                ProfileEvents::increment(ProfileEvents::PolygonsInPoolAllocatedBytes, ptr->getAllocatedBytes());
+                /// Polygons are preprocessed and saved in cache.
+                /// Preprocessing can be computationally heavy but dramatically speeds up matching.
 
-                return ptr.release();
-            };
+                using Pool = ObjectPoolMap<PointInConstMultiPolygonImpl, UInt128>;
 
-            auto impl = known_polygons.get(sipHash128(polygon), factory);
+                /// C++11 has thread-safe function-local static.
+                static Pool known_multi_polygons;
 
-            if (point_is_const)
-            {
-                bool is_in = impl->contains(tuple_columns[0]->getFloat64(0), tuple_columns[1]->getFloat64(0));
-                return result_type->createColumnConst(input_rows_count, is_in);
+                auto factory = [&multi_polygon]()
+                {
+                    auto ptr = std::make_unique<PointInConstMultiPolygonImpl>(multi_polygon);
+
+                    ProfileEvents::increment(ProfileEvents::PolygonsAddedToPool);
+                    ProfileEvents::increment(ProfileEvents::PolygonsInPoolAllocatedBytes, ptr->getAllocatedBytes());
+
+                    return ptr.release();
+                };
+
+                auto impl = known_multi_polygons.get(sipHash128(multi_polygon), factory);
+
+                if (point_is_const)
+                {
+                    bool is_in = impl->contains(tuple_columns[0]->getFloat64(0), tuple_columns[1]->getFloat64(0));
+                    return result_type->createColumnConst(input_rows_count, is_in);
+                }
+
+                return pointInPolygon(*tuple_columns[0], *tuple_columns[1], *impl);
             }
+            else // Kept for easier readability
+            {
+                Polygon polygon;
+                parseConstPolygon(arguments, polygon);
 
-            return pointInPolygon(*tuple_columns[0], *tuple_columns[1], *impl);
+                using Pool = ObjectPoolMap<PointInConstPolygonImpl, UInt128>;
+                static Pool known_polygons;
+
+                auto factory = [&polygon]()
+                {
+                    auto ptr = std::make_unique<PointInConstPolygonImpl>(polygon);
+
+                    ProfileEvents::increment(ProfileEvents::PolygonsAddedToPool);
+                    ProfileEvents::increment(ProfileEvents::PolygonsInPoolAllocatedBytes, ptr->getAllocatedBytes());
+
+                    return ptr.release();
+                };
+
+                auto impl = known_polygons.get(sipHash128(polygon), factory);
+
+                if (point_is_const)
+                {
+                    bool is_in = impl->contains(tuple_columns[0]->getFloat64(0), tuple_columns[1]->getFloat64(0));
+                    return result_type->createColumnConst(input_rows_count, is_in);
+                }
+
+                return pointInPolygon(*tuple_columns[0], *tuple_columns[1], *impl);
+            }
         }
 
         if (arguments.size() != 2)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multi-argument version of function {} works only with const polygon", getName());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multi-argument version of function {} works only with const Polygon/MultiPolygon", getName());
 
         auto res_column = ColumnVector<UInt8>::create(input_rows_count);
         auto & data = res_column->getData();
@@ -249,8 +364,28 @@ public:
         ///
         /// Or, a polygon without holes can be represented by 1d array:
         /// [(outer_x_1, outer_y_1, ...)]
+        ///
+        /// A multi-polygon is represented by 3d array:
+        /// [[[(outer_x_1, outer_y_1, ...)], [(hole1_x_1, hole1_y_1), ...], ...], ...]
 
-        if (isTwoDimensionalArray(*arguments[1].type))
+        if (isThreeDimensionalArray(*arguments[1].type))
+        {
+            ColumnPtr multi_polygon_column_float64 = castColumn(
+                arguments[1],
+                std::make_shared<DataTypeArray>( // depth-1
+                    std::make_shared<DataTypeArray>( // depth-2
+                        std::make_shared<DataTypeArray>( // depth-3
+                            std::make_shared<DataTypeTuple>(
+                                DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()})))));
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                size_t point_index = point_is_const ? 0 : i;
+                data[i] = isInsideMultiPolygon(
+                    tuple_columns[0]->getFloat64(point_index), tuple_columns[1]->getFloat64(point_index), *multi_polygon_column_float64, i);
+            }
+        }
+        else if (isTwoDimensionalArray(*arguments[1].type))
         {
             /// We cast everything to Float64 in advance (in batch fashion)
             ///  to avoid casting with virtual calls in a loop.
@@ -258,8 +393,10 @@ public:
 
             ColumnPtr polygon_column_float64 = castColumn(
                 arguments[1],
-                std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(
-                    std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()}))));
+                std::make_shared<DataTypeArray>( // depth-1
+                  std::make_shared<DataTypeArray>( // depth-2
+                    std::make_shared<DataTypeTuple>(
+                      DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()}))));
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
@@ -298,6 +435,20 @@ private:
     {
         return WhichDataType(type).isArray()
             && WhichDataType(static_cast<const DataTypeArray &>(type).getNestedType()).isArray();
+    }
+
+    bool isThreeDimensionalArray(const IDataType & type) const
+    {
+        const auto * level1 = checkAndGetDataType<DataTypeArray>(&type);
+        if (!level1)
+            return false;
+
+        const auto * level2 = checkAndGetDataType<DataTypeArray>(level1->getNestedType().get());
+        if (!level2)
+            return false;
+
+        const auto * level3 = checkAndGetDataType<DataTypeArray>(level2->getNestedType().get());
+        return level3 != nullptr;
     }
 
     /// Implementation methods to check point-in-polygon on the fly (for non-const polygons).
@@ -425,7 +576,25 @@ private:
         return true;
     }
 
-    /// Implementation methods to create boost::geometry::polygon for subsequent preprocessing.
+    bool isInsideMultiPolygon(Float64 point_x, Float64 point_y, const IColumn & multi_polygon_column, size_t i) const
+    {
+        const auto & array_col = static_cast<const ColumnArray &>(multi_polygon_column);
+        size_t polys_begin = array_col.getOffsets()[i - 1];
+        size_t polys_end = array_col.getOffsets()[i];
+
+        const auto & nested_array_col = static_cast<const ColumnArray &>(array_col.getData());
+
+        for (size_t j = polys_begin; j < polys_end; ++j)
+        {
+            if (isInsidePolygonWithHoles(point_x, point_y, nested_array_col, j))
+                return true;
+        }
+
+        return false;
+    }
+
+
+    /// Implementation methods to create bg::polygon for subsequent preprocessing.
     /// They are used to optimize matching for constant polygons. Preprocessing may take significant amount of time.
 
     template <typename T>
@@ -528,12 +697,12 @@ private:
         }
     }
 
-    void parseConstPolygonFromSingleColumn(const ColumnsWithTypeAndName & arguments, Polygon & out_polygon) const
+    void parseConstPolygonFromSingleColumn(const ColumnWithTypeAndName & argument, Polygon & out_polygon) const
     {
-        if (isTwoDimensionalArray(*arguments[1].type))
+        if (isTwoDimensionalArray(*argument.type))
         {
             ColumnPtr polygon_column_float64 = castColumn(
-                arguments[1],
+                argument,
                 std::make_shared<DataTypeArray>(
                     std::make_shared<DataTypeArray>(
                         std::make_shared<DataTypeTuple>(DataTypes{
@@ -548,7 +717,7 @@ private:
         else
         {
             ColumnPtr polygon_column_float64 = castColumn(
-                arguments[1],
+                argument,
                 std::make_shared<DataTypeArray>(
                     std::make_shared<DataTypeTuple>(DataTypes{
                         std::make_shared<DataTypeFloat64>(),
@@ -564,20 +733,72 @@ private:
     void NO_SANITIZE_UNDEFINED parseConstPolygon(const ColumnsWithTypeAndName & arguments, Polygon & out_polygon) const
     {
         if (arguments.size() == 2)
-            parseConstPolygonFromSingleColumn(arguments, out_polygon);
+            parseConstPolygonFromSingleColumn(arguments[1], out_polygon);
         else
             parseConstPolygonWithHolesFromMultipleColumns(arguments, out_polygon);
 
         /// Fix orientation and close rings. It's required for subsequent processing.
-        boost::geometry::correct(out_polygon);
+        bg::correct(out_polygon);
 
 #if !defined(__clang_analyzer__) /// It does not like boost.
         if (validate)
         {
             std::string failure_message;
-            auto is_valid = boost::geometry::is_valid(out_polygon, failure_message);
+            auto is_valid = bg::is_valid(out_polygon, failure_message);
             if (!is_valid)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Polygon is not valid: {}", failure_message);
+        }
+#endif
+    }
+
+    void parseConstMultiPolygonFromSingleColumn(const ColumnWithTypeAndName & argument, MultiPolygon & out_multi_polygon) const
+    {
+        ColumnPtr multi_polygon_column_float64 = castColumn(
+            argument,
+            std::make_shared<DataTypeArray>(
+              std::make_shared<DataTypeArray>(
+                std::make_shared<DataTypeArray>(
+                std::make_shared<DataTypeTuple>(
+                  DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()})))));
+
+        const ColumnConst & column_const = typeid_cast<const ColumnConst &>(*multi_polygon_column_float64);
+        const auto & array_col = static_cast<const ColumnArray &>(column_const.getDataColumn()); // depth-1 (polygons)
+        const auto & nested_array_col = static_cast<const ColumnArray &>(array_col.getData());
+
+        size_t polygons_count = nested_array_col.size();
+        for (size_t i = 0; i < polygons_count; ++i)
+        {
+            out_multi_polygon.emplace_back();
+            parseConstPolygonWithHolesFromSingleColumn(nested_array_col, i, out_multi_polygon.back());
+        }
+    }
+
+    void parseConstMultiPolygonFromMultipleColumns(const ColumnsWithTypeAndName & arguments, MultiPolygon & out_multi_polygon) const
+    {
+        for (size_t arg_pos = 1; arg_pos < arguments.size(); ++arg_pos)
+        {
+            out_multi_polygon.emplace_back();
+            parseConstPolygonFromSingleColumn(arguments[arg_pos], out_multi_polygon.back());
+        }
+    }
+
+    void NO_SANITIZE_UNDEFINED parseConstMultiPolygon(const ColumnsWithTypeAndName & arguments, MultiPolygon & out_multi_polygon) const
+    {
+        if (arguments.size() == 2)
+            parseConstMultiPolygonFromSingleColumn(arguments[1], out_multi_polygon);
+        else
+            parseConstMultiPolygonFromMultipleColumns(arguments, out_multi_polygon);
+
+
+        /// Fix orientation and close rings. It's required for subsequent processing.
+        bg::correct(out_multi_polygon);
+
+#if !defined(__clang_analyzer__)
+        if (validate)
+        {
+            std::string failure_message;
+            if (!bg::is_valid(out_multi_polygon, failure_message))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "MultiPolygon is not valid: {}", failure_message);
         }
 #endif
     }
@@ -587,7 +808,10 @@ private:
 
 REGISTER_FUNCTION(PointInPolygon)
 {
-    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid<Float64>>>();
+    using PointInPolygonWithGridF64 = PointInPolygonWithGrid<Float64>;
+    using PointInMultiPolygonRTreeWithGrid = PointInMultiPolygonRTree<PointInPolygonWithGridF64>;
+
+    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGridF64, PointInMultiPolygonRTreeWithGrid>>();
 }
 
 }

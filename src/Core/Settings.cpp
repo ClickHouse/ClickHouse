@@ -27,10 +27,12 @@
 constexpr UInt64 default_max_size_to_drop = 50000000000lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = 20lu;
 constexpr UInt64 default_distributed_cache_read_request_max_tries = 20lu;
+constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = 5;
 #else
 constexpr UInt64 default_max_size_to_drop = 0lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = DistributedCache::DEFAULT_CONNECT_MAX_TRIES;
 constexpr UInt64 default_distributed_cache_read_request_max_tries = DistributedCache::DEFAULT_READ_REQUEST_MAX_TRIES;
+constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = DistributedCache::DEFAULT_CREDENTIALS_REFRESH_PERIOD_SECONDS;
 #endif
 
 namespace DB
@@ -168,8 +170,11 @@ Squash blocks passed to the external table to a specified size in bytes, if bloc
     DECLARE(UInt64, max_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
 Maximum block size for JOIN result (if join algorithm supports it). 0 means unlimited.
 )", 0) \
+    DECLARE(UInt64, min_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
+Minimum block size in rows for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
+)", 0) \
     DECLARE(UInt64, min_joined_block_size_bytes, 524288, R"(
-Minimum block size for JOIN result (if join algorithm supports it). 0 means unlimited.
+Minimum block size in bytes for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
 )", 0) \
     DECLARE(UInt64, max_insert_threads, 0, R"(
 The maximum number of threads to execute the `INSERT SELECT` query.
@@ -215,7 +220,7 @@ Respect the server's concurrency control (see the `concurrent_threads_soft_limit
 The maximum number of threads to download data (e.g. for URL engine).
 )", 0) \
     DECLARE(MaxThreads, max_parsing_threads, 0, R"(
-The maximum number of threads to parse data in input formats that support parallel parsing. By default, it is determined automatically
+The maximum number of threads to parse data in input formats that support parallel parsing. By default, it is determined automatically.
 )", 0) \
     DECLARE(UInt64, max_download_buffer_size, 10*1024*1024, R"(
 The maximal size of buffer for parallel downloading (e.g. for URL engine) per each thread.
@@ -1012,25 +1017,33 @@ The table below shows the behavior of this setting for various date-time functio
 
 | Function | `enable_extended_results_for_datetime_functions = 0` | `enable_extended_results_for_datetime_functions = 1` |
 |----------|---------------------------------------------------|---------------------------------------------------|
-| `toStartOfYear` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfISOYear` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfQuarter` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfMonth` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfWeek` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
-| `toLastDayOfWeek` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
-| `toLastDayOfMonth` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
-| `toMonday` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfDay` | Returns `DateTime`<br>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br>Returns `DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfHour` | Returns `DateTime`<br>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br>Returns `DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfFifteenMinutes` | Returns `DateTime`<br>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br>Returns `DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfTenMinutes` | Returns `DateTime`<br>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br>Returns `DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfFiveMinutes` | Returns `DateTime`<br>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br>Returns `DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfMinute` | Returns `DateTime`<br>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br>Returns `DateTime64` for `Date32`/`DateTime64` input |
-| `timeSlot` | Returns `DateTime`<br>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br>Returns `DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfYear` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfISOYear` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfQuarter` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfMonth` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfWeek` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
+| `toLastDayOfWeek` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
+| `toLastDayOfMonth` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
+| `toMonday` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfDay` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfHour` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfFifteenMinutes` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfTenMinutes` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfFiveMinutes` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfMinute` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
+| `timeSlot` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 )", 0) \
     DECLARE(Bool, allow_nonconst_timezone_arguments, false, R"(
 Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*()
 )", 0) \
+    DECLARE(Bool, use_legacy_to_time, true, R"(
+When enabled, allows to use legacy toTime function, which converts a date with time to a certain fixed date, while preserving the time.
+Otherwise, uses a new toTime function, that converts different type of data into the Time type.
+The old legacy function is also unconditionally accessible as toTimeWithFixedDate.
+)", 0) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_time_time64_type, false, R"(
+Allows creation of [Time](../../sql-reference/data-types/time.md) and [Time64](../../sql-reference/data-types/time64.md) data types.
+)", EXPERIMENTAL, enable_time_time64_type) \
     DECLARE(Bool, function_locate_has_mysql_compatible_argument_order, true, R"(
 Controls the order of arguments in function [locate](../../sql-reference/functions/string-search-functions.md/#locate).
 
@@ -1083,16 +1096,18 @@ Possible values:
     If a shard is unavailable, ClickHouse throws an exception.
 )", 0) \
     \
-    DECLARE(UInt64, parallel_distributed_insert_select, 0, R"(
+    DECLARE(UInt64, parallel_distributed_insert_select, 2, R"(
 Enables parallel distributed `INSERT ... SELECT` query.
 
 If we execute `INSERT INTO distributed_table_a SELECT ... FROM distributed_table_b` queries and both tables use the same cluster, and both tables are either [replicated](../../engines/table-engines/mergetree-family/replication.md) or non-replicated, then this query is processed locally on every shard.
 
 Possible values:
 
-- 0 — Disabled.
-- 1 — `SELECT` will be executed on each shard from the underlying table of the distributed engine.
-- 2 — `SELECT` and `INSERT` will be executed on each shard from/to the underlying table of the distributed engine.
+- `0` — Disabled.
+- `1` — `SELECT` will be executed on each shard from the underlying table of the distributed engine.
+- `2` — `SELECT` and `INSERT` will be executed on each shard from/to the underlying table of the distributed engine.
+
+Setting `enable_parallel_replicas = 1` is needed when using this setting.
 )", 0) \
     DECLARE(UInt64, distributed_group_by_no_merge, 0, R"(
 Do not merge aggregation states from different servers for distributed query processing, you can use this in case it is for certain that there are different keys on different shards
@@ -3966,9 +3981,12 @@ Allows to execute `ALTER TABLE ... UPDATE|DELETE|MATERIALIZE INDEX|MATERIALIZE P
 
 Possible values:
 
-- 0 - Mutations execute asynchronously.
-- 1 - The query waits for all mutations to complete on the current server.
-- 2 - The query waits for all mutations to complete on all replicas (if they exist).
+| Value | Description                                                                                                                                           |
+|-------|-------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `0`   | Mutations execute asynchronously.                                                                                                                     |
+| `1`   | The query waits for all mutations to complete on the current server.                                                                                  |
+| `2`   | The query waits for all mutations to complete on all replicas (if they exist).                                                                        |
+| `3`   | The query waits only for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `mutations_sync = 2`.|
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, enable_lightweight_delete, true, R"(
 Enable lightweight DELETE mutations for mergetree tables.
@@ -3986,9 +4004,12 @@ The same as [`mutations_sync`](#mutations_sync), but controls only execution of 
 
 Possible values:
 
-- 0 - Mutations execute asynchronously.
-- 1 - The query waits for the lightweight deletes to complete on the current server.
-- 2 - The query waits for the lightweight deletes to complete on all replicas (if they exist).
+| Value | Description                                                                                                                                           |
+|-------|-------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `0`   | Mutations execute asynchronously.                                                                                                                     |
+| `1`   | The query waits for the lightweight deletes to complete on the current server.                                                                        |
+| `2`   | The query waits for the lightweight deletes to complete on all replicas (if they exist).                                                              |
+| `3`   | The query waits only for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `mutations_sync = 2`.|
 
 **See Also**
 
@@ -4003,6 +4024,9 @@ Rewrite aggregate functions that semantically equals to count() as count().
 )", 0) \
     DECLARE(Bool, optimize_injective_functions_inside_uniq, true, R"(
 Delete injective functions of one argument inside uniq*() functions.
+)", 0) \
+    DECLARE(Bool, count_matches_stop_at_empty_match, false, R"(
+Stop counting once a pattern matches zero-length in the `countMatches` function.
 )", 0) \
     DECLARE(Bool, rewrite_count_distinct_if_with_count_distinct_implementation, false, R"(
 Allows you to rewrite `countDistcintIf` with [count_distinct_implementation](#count_distinct_implementation) setting.
@@ -4152,12 +4176,12 @@ Possible values:
       0 — Disabled.
       1 — Enabled.
 
-Usage
+When enabled, ClickHouse performs deduplication of blocks in materialized views that depend on Replicated\* tables.
+This setting is useful for ensuring that materialized views do not contain duplicate data when the insertion operation is being retried due to a failure.
 
-By default, deduplication is not performed for materialized views but is done upstream, in the source table.
-If an INSERTed block is skipped due to deduplication in the source table, there will be no insertion into attached materialized views. This behaviour exists to enable the insertion of highly aggregated data into materialized views, for cases where inserted blocks are the same after materialized view aggregation but derived from different INSERTs into the source table.
-At the same time, this behaviour "breaks" `INSERT` idempotency. If an `INSERT` into the main table was successful and `INSERT` into a materialized view failed (e.g. because of communication failure with ClickHouse Keeper) a client will get an error and can retry the operation. However, the materialized view won't receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` allows for changing this behaviour. On retry, a materialized view will receive the repeat insert and will perform a deduplication check by itself,
-ignoring check result for the source table, and will insert rows lost because of the first failure.
+**See Also**
+
+- [NULL Processing in IN Operators](/guides/developer/deduplicating-inserts-on-retries#insert-deduplication-with-materialized-views)
 )", 0) \
     DECLARE(Bool, throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert, true, R"(
 Throw exception on INSERT query when the setting `deduplicate_blocks_in_dependent_materialized_views` is enabled along with `async_insert`. It guarantees correctness, because these features can't work together.
@@ -4922,6 +4946,45 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(Bool, enable_shared_storage_snapshot_in_query, false, R"(
+If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
+This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
+
+This is required for queries where internal consistency of data parts is important. Example:
+
+```sql
+SELECT
+    count()
+FROM events
+WHERE (_part, _part_offset) IN (
+    SELECT _part, _part_offset
+    FROM events
+    WHERE user_id = 42
+)
+```
+
+Without this setting, the outer and inner queries may operate on different data snapshots, leading to incorrect results.
+
+:::note
+Enabling this setting disables the optimization which removes unnecessary data parts from snapshots once the planning stage is complete.
+As a result, long-running queries may hold onto obsolete parts for their entire duration, delaying part cleanup and increasing storage pressure.
+
+This setting currently applies only to tables from the MergeTree family.
+:::
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
+    DECLARE(UInt64, merge_tree_storage_snapshot_sleep_ms, 0, R"(
+Inject artificial delay (in milliseconds) when creating a storage snapshot for MergeTree tables.
+Used for testing and debugging purposes only.
+
+Possible values:
+- 0 - No delay (default)
+- N - Delay in milliseconds
+)", 0) \
     DECLARE(Bool, optimize_rewrite_sum_if_to_count_if, true, R"(
 Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent
 )", 0) \
@@ -5401,6 +5464,9 @@ Use query plan for lazy materialization optimization.
     DECLARE(Bool, serialize_query_plan, false, R"(
 Serialize query plan for distributed processing
 )", 0) \
+    DECLARE(Bool, correlated_subqueries_substitute_equivalent_expressions, true, R"(
+Use filter expressions to inference equivalent expressions and substitute them instead of creating a CROSS JOIN.
+)", 0) \
     \
     DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(
 Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](/sql-reference/functions/string-search-functions#extractallgroupshorizontal) function.
@@ -5472,7 +5538,7 @@ Maximum number of microseconds the function `sleep` is allowed to sleep for each
 The version of `visibleWidth` behavior. 0 - only count the number of code points; 1 - correctly count zero-width and combining characters, count full-width characters as two, estimate the tab width, count delete characters.
 )", 0) \
     DECLARE(ShortCircuitFunctionEvaluation, short_circuit_function_evaluation, ShortCircuitFunctionEvaluation::ENABLE, R"(
-Allows calculating the [if](../../sql-reference/functions/conditional-functions.md/#if), [multiIf](../../sql-reference/functions/conditional-functions.md/#multiif), [and](/sql-reference/functions/logical-functions#and), and [or](/sql-reference/functions/logical-functions#or) functions according to a [short scheme](https://en.wikipedia.org/wiki/Short-circuit_evaluation). This helps optimize the execution of complex expressions in these functions and prevent possible exceptions (such as division by zero when it is not expected).
+Allows calculating the [if](../../sql-reference/functions/conditional-functions.md/#if), [multiIf](../../sql-reference/functions/conditional-functions.md/#multiIf), [and](/sql-reference/functions/logical-functions#and), and [or](/sql-reference/functions/logical-functions#or) functions according to a [short scheme](https://en.wikipedia.org/wiki/Short-circuit_evaluation). This helps optimize the execution of complex expressions in these functions and prevent possible exceptions (such as division by zero when it is not expected).
 
 Possible values:
 
@@ -5575,6 +5641,9 @@ Max wait time when trying to read data for remote disk
     DECLARE(UInt64, remote_fs_read_backoff_max_tries, 5, R"(
 Max attempts to read with backoff
 )", 0) \
+    DECLARE(Bool, cluster_function_process_archive_on_multiple_nodes, true, R"(
+If set to `true`, increases performance of processing archives in cluster functions. Should be set to `false` for compatibility and to avoid errors during upgrade to 25.7+ if using cluster functions with archives on earlier versions.
+)", 0) \
     DECLARE(Bool, enable_filesystem_cache, true, R"(
 Use cache for remote filesystem. This setting does not turn on/off cache for disks (must be done via disk config), but allows to bypass cache for some queries if intended
 )", 0) \
@@ -5582,7 +5651,8 @@ Use cache for remote filesystem. This setting does not turn on/off cache for dis
 Filesystem cache name to use for stateless table engines or data lakes
 )", 0) \
     DECLARE(Bool, enable_filesystem_cache_on_write_operations, false, R"(
-Write into cache on write operations. To actually work this setting requires be added to disk config too
+Enables or disables `write-through` cache. If set to `false`, the `write-through` cache is disabled for write operations. If set to `true`, `write-through` cache is enabled as long as `cache_on_write_operations` is turned on in the server config's cache disk configuration section.
+See ["Using local cache"](/operations/storing-data#using-local-cache) for more details.
 )", 0) \
     DECLARE(Bool, enable_filesystem_cache_log, false, R"(
 Allows to record the filesystem caching log for each query
@@ -5877,7 +5947,7 @@ Only has an effect in ClickHouse Cloud. Allow to bypass distributed cache connec
     DECLARE(DistributedCachePoolBehaviourOnLimit, distributed_cache_pool_behaviour_on_limit, DistributedCachePoolBehaviourOnLimit::WAIT, R"(
 Only has an effect in ClickHouse Cloud. Identifies behaviour of distributed cache connection on pool limit reached
 )", 0) \
-    DECLARE(UInt64, distributed_cache_read_alignment, 0, R"(
+    DECLARE(UInt64, distributed_cache_alignment, 0, R"(
 Only has an effect in ClickHouse Cloud. A setting for testing purposes, do not change it
 )", 0) \
     DECLARE(UInt64, distributed_cache_max_unacked_inflight_packets, DistributedCache::MAX_UNACKED_INFLIGHT_PACKETS, R"(
@@ -5892,8 +5962,17 @@ Only has an effect in ClickHouse Cloud. Discard connection if some data is unrea
     DECLARE(UInt64, distributed_cache_min_bytes_for_seek, 0, R"(
 Only has an effect in ClickHouse Cloud. Minimum number of bytes to do seek in distributed cache.
 )", 0) \
+    DECLARE(UInt64, distributed_cache_credentials_refresh_period_seconds, default_distributed_cache_credentials_refresh_period_seconds, R"(
+Only has an effect in ClickHouse Cloud. A period of credentials refresh.
+)", 0) \
     DECLARE(Bool, distributed_cache_read_only_from_current_az, true, R"(
 Only has an effect in ClickHouse Cloud. Allow to read only from current availability zone. If disabled, will read from all cache servers in all availability zones.
+)", 0) \
+    DECLARE(UInt64, write_through_distributed_cache_buffer_size, 0, R"(
+Only has an effect in ClickHouse Cloud. Set buffer size for write-through distributed cache. If 0, will use buffer size which would have been used if there was not distributed cache.
+)", 0) \
+    DECLARE(Bool, table_engine_read_through_distributed_cache, false, R"(
+Only has an effect in ClickHouse Cloud. Allow reading from distributed cache via table engines / table functions (s3, azure, etc)
 )", 0) \
     DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
 Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
@@ -6067,7 +6146,7 @@ Columns preceding WITH FILL columns in ORDER BY clause form sorting prefix. Rows
 Rewrite uniq and its variants(except uniqUpTo) to count if subquery has distinct or group by clause.
 )", 0) \
     DECLARE(Bool, use_variant_as_common_type, false, R"(
-Allows to use `Variant` type as a result type for [if](../../sql-reference/functions/conditional-functions.md/#if)/[multiIf](../../sql-reference/functions/conditional-functions.md/#multiif)/[array](../../sql-reference/functions/array-functions.md)/[map](../../sql-reference/functions/tuple-map-functions.md) functions when there is no common type for argument types.
+Allows to use `Variant` type as a result type for [if](../../sql-reference/functions/conditional-functions.md/#if)/[multiIf](../../sql-reference/functions/conditional-functions.md/#multiIf)/[array](../../sql-reference/functions/array-functions.md)/[map](../../sql-reference/functions/tuple-map-functions.md) functions when there is no common type for argument types.
 
 Example:
 
@@ -6592,6 +6671,7 @@ When the query prioritization mechanism is employed (see setting `priority`), lo
 )", BETA) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 0.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
     DECLARE(Float, max_os_cpu_wait_time_ratio_to_throw, 0.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
+    DECLARE(Bool, enable_parallel_blocks_marshalling, true, "Affects only distributed queries. If enabled, blocks will be (de)serialized and (de)compressed on pipeline threads (i.e. with higher parallelism that what we have by default) before/after sending to the initiator.", 0) \
     DECLARE(UInt64, min_outstreams_per_resize_after_split, 24, R"(
 Specifies the minimum number of output streams of a `Resize` or `StrictResize` processor after the split is performed during pipeline generation. If the resulting number of streams is less than this value, the split operation will not occur.
 
@@ -6620,6 +6700,13 @@ The `min_outstreams_per_resize_after_split` setting ensures that the splitting o
 ### Disabling the Setting
 To disable the split of `Resize` nodes, set this setting to 0. This will prevent the splitting of `Resize` nodes during pipeline generation, allowing them to retain their original structure without division into smaller nodes.
 )", 0) \
+    DECLARE(UInt64, function_date_trunc_return_type_behavior, 0, R"(
+Allows to change the behaviour of the result type of `dateTrunc` function.
+
+Possible values:
+- 0 - When the second argument is `DateTime64/Date32` the return type will be `DateTime64/Date32` regardless of the time unit in the first argument.
+- 1 - For `Date32` the result is always `Date`. For `DateTime64` the result is `DateTime` for time units `second` and higher.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
@@ -6646,12 +6733,12 @@ Allows creation of tables with the [TimeSeries](../../engines/table-engines/inte
 - 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
 - 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_vector_similarity_index, false, R"(
-Allow experimental vector similarity index
-)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_codecs, false, R"(
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
 )", EXPERIMENTAL) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_vector_similarity_index, false, R"(
+Enable vector similarity index.
+)", BETA, enable_vector_similarity_index) \
     DECLARE(UInt64, max_limit_for_vector_search_queries, 1'000, R"(
 SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.
 )", BETA) \
@@ -6699,18 +6786,11 @@ Allows using statistics to optimize queries
 Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md/#column-statistics).
 )", EXPERIMENTAL, allow_experimental_statistic) \
     \
-    DECLARE(Bool, allow_experimental_inverted_index, false, R"(
-If it is set to true, allow to use experimental inverted index.
-)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_full_text_index, false, R"(
-If it is set to true, allow to use experimental full-text index.
+If it is set to true, allow to use experimental text index.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_lightweight_update, false, R"(
 Allow to use lightweight updates.
-)", EXPERIMENTAL) \
-    \
-    DECLARE(Bool, allow_experimental_join_condition, false, R"(
-Support join with inequal conditions which involve columns from both left and right table. e.g. `t1.y < t2.y`.
 )", EXPERIMENTAL) \
     \
     DECLARE(Bool, allow_experimental_live_view, false, R"(
@@ -6801,11 +6881,14 @@ Possible values:
  - 'Persisted' - use temporary files in object storage,
  - 'Streaming' - stream exchange data over network.
 )", EXPERIMENTAL) \
-    \
-    /** Experimental tsToGrid aggregate function. */ \
-    DECLARE(Bool, allow_experimental_ts_to_grid_aggregate_function, false, R"(
-Experimental tsToGrid aggregate function for Prometheus-like timeseries resampling. Cloud only
+    DECLARE(UInt64, distributed_plan_max_rows_to_broadcast, 20000, R"(
+Maximum rows to use broadcast join instead of shuffle join in distributed query plan.
 )", EXPERIMENTAL) \
+    \
+    /** Experimental timeSeries* aggregate functions. */ \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_time_series_aggregate_functions, false, R"(
+Experimental timeSeries* aggregate functions for Prometheus-like timeseries resampling, rate, delta calculation.
+)", EXPERIMENTAL, allow_experimental_ts_to_grid_aggregate_function) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
@@ -6830,6 +6913,7 @@ Experimental tsToGrid aggregate function for Prometheus-like timeseries resampli
     MAKE_OBSOLETE(M, Bool, allow_experimental_database_replicated, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_refreshable_materialized_view, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_bfloat16_type, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_inverted_index, false) \
     \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
     MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \
@@ -6845,6 +6929,7 @@ Experimental tsToGrid aggregate function for Prometheus-like timeseries resampli
     MAKE_OBSOLETE(M, Bool, s3queue_allow_experimental_sharded_mode, false) \
     MAKE_OBSOLETE(M, LightweightMutationProjectionMode, lightweight_mutation_projection_mode, LightweightMutationProjectionMode::THROW) \
     MAKE_OBSOLETE(M, Bool, use_local_cache_for_remote_storage, false) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_join_condition, false) \
     \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
@@ -6892,6 +6977,7 @@ Experimental tsToGrid aggregate function for Prometheus-like timeseries resampli
     MAKE_OBSOLETE(M, Bool, allow_experimental_database_materialized_mysql, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_shared_set_join, true) \
     MAKE_OBSOLETE(M, UInt64, min_external_sort_block_bytes, 100_MiB) \
+    MAKE_OBSOLETE(M, UInt64, distributed_cache_read_alignment, 0) \
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 

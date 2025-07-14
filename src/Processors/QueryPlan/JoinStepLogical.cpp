@@ -375,7 +375,7 @@ void predicateOperandsToCommonType(JoinPredicate & predicate, JoinExpressionActi
             expression_actions.left_pre_join_actions);
     }
 
-    if (!join_context.prepared_join_storage && !right_type->equals(*common_type))
+    if (!right_type->equals(*common_type) && (!join_context.prepared_join_storage || join_context.prepared_join_storage->storage_key_value))
     {
         const std::string & result_name = join_context.is_using ? right_node.getColumnName() : "";
         right_node = addNewOutput(

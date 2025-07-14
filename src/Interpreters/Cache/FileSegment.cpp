@@ -1,4 +1,4 @@
-#include "FileSegment.h"
+#include <Interpreters/Cache/FileSegment.h>
 
 #include <filesystem>
 #include <IO/Operators.h>
@@ -582,7 +582,8 @@ bool FileSegment::reserve(
     if (!reserve_stat)
         reserve_stat = &dummy_stat;
 
-    bool reserved = cache->tryReserve(*this, size_to_reserve, *reserve_stat, getKeyMetadata()->user, lock_wait_timeout_milliseconds, failure_reason);
+    bool reserved = cache->tryReserve(
+        *this, size_to_reserve, *reserve_stat, getKeyMetadata()->user, lock_wait_timeout_milliseconds, failure_reason);
 
     if (!reserved)
         setDownloadFailedUnlocked(lock());
@@ -869,6 +870,9 @@ void FileSegment::complete(bool allow_background_download)
     }
 
     LOG_TEST(log, "Completed file segment: {}", getInfoForLogUnlocked(segment_lock));
+
+    if (download_state != State::DETACHED)
+        chassert(assertCorrectnessUnlocked(segment_lock));
 }
 
 String FileSegment::getInfoForLog() const
@@ -1135,6 +1139,21 @@ void FileSegment::increasePriority()
 
         /// Used only for system.filesystem_cache.
         ++hits_count;
+    }
+}
+
+FileSegment::~FileSegment()
+{
+    try
+    {
+        /// Can be non-finalized in case it was push to background download
+        /// but not executed before server shutdown.
+        if (cache_writer)
+            cache_writer->finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
     }
 }
 

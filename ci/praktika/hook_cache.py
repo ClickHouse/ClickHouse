@@ -179,5 +179,6 @@ class CacheRunnerHooks:
                 job.name,
                 job_digest,
                 workflow_runtime.sha,
+                workflow_name=workflow.name,
                 if_not_exist=workflow.is_event_pull_request(),
             )
