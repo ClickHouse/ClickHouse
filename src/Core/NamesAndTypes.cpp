@@ -172,12 +172,12 @@ NameSet NamesAndTypesList::getNameSet() const
     return res;
 }
 
-std::unordered_map<std::string, NameAndTypePair> NamesAndTypesList::getNameToPairMap() const
+std::unordered_map<std::string, DataTypePtr> NamesAndTypesList::getNameToTypeMap() const
 {
-    std::unordered_map<std::string, NameAndTypePair> res;
+    std::unordered_map<std::string, DataTypePtr> res;
     res.reserve(size());
     for (const NameAndTypePair & column : *this)
-        res.emplace(column.name, column);
+        res.emplace(column.name, column.type);
     return res;
 }
 

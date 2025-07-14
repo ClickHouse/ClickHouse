@@ -375,7 +375,7 @@ void StorageObjectStorage::read(
         storage_snapshot,
         supportsSubsetOfColumns(local_context),
         local_context,
-        PrepareReadingFromFormatHiveParams { all_file_columns, hive_partition_columns_to_read_from_file_path.getNameToPairMap() });
+        PrepareReadingFromFormatHiveParams { all_file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
 
     const bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
                                  && local_context->getSettingsRef()[Setting::optimize_count_from_files];
