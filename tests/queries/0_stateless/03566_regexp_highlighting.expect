@@ -12,7 +12,7 @@ if {[info exists env(CLICKHOUSE_TMP)]} {
 exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
 set history_file $CLICKHOUSE_TMP/$basename.history
 
-log_user 0
+log_user 1
 set timeout 60
 match_max 100000
 
@@ -23,15 +23,15 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_LOCAL --history_file=$history_file"
+spawn bash -c "source $basedir/../shell_config.sh; TERM=xterm \$CLICKHOUSE_LOCAL --history_file=$history_file"
 expect ":) "
 
 send -- "WITH '' AS test, '' AS str SELECT test LIKE '%test%' AND test LIKE 'te_st' AND exp(str = 'hello.world' AND match(str, 'goodbye.world'))\r"
 
-expect -- "\033\\\[0;95;1m%\033\\\[0;22;32mtest\033\\\[0;95;1m%"
-expect -- "te\033\\\[0;95;1m_\033\\\[0;22;32mst"
+expect -- "\033\\\[0;1;35;1m%\033\\\[0;22;32mtest\033\\\[0;1;35;1m%"
+expect -- "te\033\\\[0;1;35;1m_\033\\\[0;22;32mst"
 expect -- "hello.world"
-expect -- "goodbye\033\\\[0;95;1m.\033\\\[0;22;32mworld"
+expect -- "goodbye\033\\\[0;1;35;1m.\033\\\[0;22;32mworld"
 expect -- ":) "
 
 send -- "q\r"
