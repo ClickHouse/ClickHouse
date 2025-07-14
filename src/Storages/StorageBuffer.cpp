@@ -516,7 +516,7 @@ void StorageBuffer::read(
     auto result_header = buffers_plan.getCurrentHeader();
 
     /// Convert structure from table to structure from buffer.
-    if (!blocksHaveEqualStructure(*query_plan.getCurrentHeader(), *result_header))
+    if (query_plan.getCurrentHeader() != result_header && !blocksHaveEqualStructure(*query_plan.getCurrentHeader(), *result_header))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
                 query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),

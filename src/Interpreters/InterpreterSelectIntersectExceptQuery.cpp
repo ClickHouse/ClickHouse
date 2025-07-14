@@ -135,7 +135,7 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
         plans[i] = std::make_unique<QueryPlan>();
         nested_interpreters[i]->buildQueryPlan(*plans[i]);
 
-        if (!blocksHaveEqualStructure(*plans[i]->getCurrentHeader(), *result_header))
+        if (plans[i]->getCurrentHeader() != result_header && !blocksHaveEqualStructure(*plans[i]->getCurrentHeader(), *result_header))
         {
             auto actions_dag = ActionsDAG::makeConvertingActions(
                     plans[i]->getCurrentHeader()->getColumnsWithTypeAndName(),

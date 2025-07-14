@@ -176,7 +176,7 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
         return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals, nullptr, condition);
     });
 
-    if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
+    if (pipeline.getSharedHeader() != output_header && !blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
                 pipeline.getHeader().getColumnsWithTypeAndName(),

@@ -1116,7 +1116,7 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
     executeImpl(query_plan, std::move(input_pipe));
 
     /// We must guarantee that result structure is the same as in getSampleBlock()
-    if (!blocksHaveEqualStructure(*query_plan.getCurrentHeader(), *result_header))
+    if (query_plan.getCurrentHeader() != result_header && !blocksHaveEqualStructure(*query_plan.getCurrentHeader(), *result_header))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),

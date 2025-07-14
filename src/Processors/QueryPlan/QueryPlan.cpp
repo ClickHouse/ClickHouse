@@ -88,7 +88,7 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
     {
         const auto & step_header = inputs[i];
         const auto & plan_header = plans[i]->getCurrentHeader();
-        if (!blocksHaveEqualStructure(*step_header, *plan_header))
+        if (step_header != plan_header && !blocksHaveEqualStructure(*step_header, *plan_header))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot unite QueryPlans using {} because it has incompatible header with plan {} plan header: {} step header: {}",
@@ -143,7 +143,7 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
 
         const auto & root_header = root->step->getOutputHeader();
         const auto & step_header = step->getInputHeaders().front();
-        if (!blocksHaveEqualStructure(*root_header, *step_header))
+        if (root_header != step_header && !blocksHaveEqualStructure(*root_header, *step_header))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot add step {} to QueryPlan because it has incompatible header with root step {} root header: {} step header: {}",
@@ -713,7 +713,7 @@ void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlanPtr plan)
     const auto & header = node->step->getOutputHeader();
     const auto & plan_header = plan->getCurrentHeader();
 
-    if (!blocksHaveEqualStructure(*header, *plan_header))
+    if (header != plan_header && !blocksHaveEqualStructure(*header, *plan_header))
     {
         auto converting_dag = ActionsDAG::makeConvertingActions(
             plan_header->getColumnsWithTypeAndName(), header->getColumnsWithTypeAndName(), ActionsDAG::MatchColumnsMode::Name);
