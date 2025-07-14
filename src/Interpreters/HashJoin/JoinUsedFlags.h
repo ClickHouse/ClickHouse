@@ -91,7 +91,7 @@ public:
     /// Get flags for block. If block is not found, return nullptr.
     std::unique_ptr<UsedFlagsHolder> getUsedFlagsHolder(const Columns * columns) const
     {
-        if (auto it = flags.find(columns); it != flags.end())
+        if (auto it = per_row_flags.find(columns); it != per_row_flags.end())
             return std::make_unique<UsedFlagsHolder>(need_flags, &it->second);
         return std::make_unique<UsedFlagsHolder>(need_flags, nullptr);
     }
