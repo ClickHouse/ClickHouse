@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-shared-merge-tree, no-replicated-database
+-- Tags: no-fasttest, no-shared-merge-tree, no-replicated-database, long
 -- no-shared-merge-tree: depend on custom storage policy
 -- no-replicated-database: incompatible with replicated database (due to multiple shards)
 
