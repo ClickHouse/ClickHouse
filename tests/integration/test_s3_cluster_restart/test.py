@@ -200,30 +200,64 @@ def test_reconnect_after_nodes_restart_no_wait(started_cluster):
     node2.wait_for_start(30)
 
 
-def test_insert_select(started_cluster):
-
+def createTable(table, missing_table):
     node1.query(
-        """DROP TABLE IF EXISTS t_rmt_target ON CLUSTER 'cluster_simple' SYNC;"""
-    )
-
-    node1.query(
-        """
-    CREATE TABLE t_rmt_target ON CLUSTER 'cluster_simple' (a String, b UInt64)
-    ENGINE=ReplicatedMergeTree('/clickhouse/tables/f15b1936-ae89-416b-8626-7c88d9fbe6a3/t_rmt_target', '{replica}')
+        f"""
+    CREATE TABLE {table} (a String, b UInt64)
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/f15b1936-ae89-416b-8626-7c88d9fbe6a3/{table}', '{{replica}}')
     ORDER BY (a, b);
         """
     )
+    node2.query(
+        f"""
+    CREATE TABLE {table} (a String, b UInt64)
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/f15b1936-ae89-416b-8626-7c88d9fbe6a3/{table}', '{{replica}}')
+    ORDER BY (a, b);
+        """
+    )
+    if (not missing_table):
+        node3.query(
+            f"""
+        CREATE TABLE {table} (a String, b UInt64)
+        ENGINE=ReplicatedMergeTree('/clickhouse/tables/f15b1936-ae89-416b-8626-7c88d9fbe6a3/{table}', '{{replica}}')
+        ORDER BY (a, b);
+            """
+        )
 
-    node2.stop()
-    node2.start()
+
+@pytest.mark.parametrize(
+    "wait_restart, missing_table",
+    [
+        pytest.param(False, False),
+        pytest.param(False, True),
+        pytest.param(True, False),
+        pytest.param(True, True),
+    ],
+)
+def test_insert_select(started_cluster, wait_restart, missing_table):
+    table = 't_rmt_target'
 
     node1.query(
+        f"""DROP TABLE IF EXISTS {table} ON CLUSTER 'cluster_simple' SYNC;"""
+    )
+
+    createTable(table, missing_table);
+
+    if (wait_restart):
+        node2.restart_clickhouse()
+    else:
+        node2.stop()
+        node2.start()
+
+    uuid = str(uuid4())
+    node1.query(
         f"""
-    INSERT INTO t_rmt_target SELECT * FROM s3Cluster(
-        'cluster_simple',
-        'http://minio1:9001/root/data/generated/*.csv', 'minio', '{minio_secret_key}', 'CSV','a String, b UInt64'
-    ) SETTINGS parallel_distributed_insert_select=1;
+        INSERT INTO t_rmt_target SELECT * FROM s3Cluster(
+            'cluster_simple',
+            'http://minio1:9001/root/data/generated/*.csv', 'minio', '{minio_secret_key}', 'CSV','a String, b UInt64'
+        ) SETTINGS parallel_distributed_insert_select=1;
         """
+        , query_id = uuid
     )
 
     # Check whether we inserted at least something
@@ -236,8 +270,13 @@ def test_insert_select(started_cluster):
         != 0
     )
 
-    # avoid leaving the test w/o started node, so next test will start with fully runnning cluster
-    node2.wait_for_start(30)
+    if (missing_table):
+        node1.query("SYSTEM FLUSH LOGS query_log");
+        assert ( node1.query(f"select ProfileEvents['DistributedConnectionMissingTable'] as missing_table from system.query_log where initial_query_id = '{uuid}' and type = 'QueryFinish' and missing_table > 0") == "1\n")
+
+
+    if (wait_restart):
+        node2.wait_for_start(30)
 
     node1.query(
         """DROP TABLE IF EXISTS t_rmt_target ON CLUSTER 'cluster_simple' SYNC;"""
