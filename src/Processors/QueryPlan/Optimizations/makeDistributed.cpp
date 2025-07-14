@@ -239,32 +239,18 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
         exchange_scatter_node.step->setStepDescription("any");
         exchange_scatter_node.children = {source};
 
-        /// Params will be used by both partial aggregation step and merge step
+        /// Params will be used by merge step
         Aggregator::Params aggregator_params = aggregating_step->getParams();
         GroupingSetsParamsList grouping_sets_params = aggregating_step->getGroupingSetsParamsList();
 
         const bool should_produce_results_in_order_of_bucket_number = aggregating_step->shouldProduceResultsInBucketOrder();
         const bool memory_bound_merging_of_aggregation_results_enabled = aggregating_step->usingMemoryBoundMerging();
-        const bool explicit_sorting_required_for_aggregation_in_order = aggregating_step->explicitSortingRequired();
+        const bool original_step_was_final = aggregating_step->getFinal();   /// Save whether the original AggregatingStep was final or partial
 
         /// Convert Aggregation step to partial aggregation
         auto & partial_aggregation_node = nodes.emplace_back();
-        partial_aggregation_node.step = std::make_unique<AggregatingStep>(
-            source->step->getOutputHeader(),
-            aggregator_params,
-            grouping_sets_params,
-            /* final */ false, /// 'false' means partial aggregation
-            /* max_block_size */ aggregating_step->getMaxBlockSize(),
-            /* aggregation_in_order_max_block_size */ aggregating_step->getMaxBlockSizeForAggregationInOrder(),
-            /* merge_threads */ aggregating_step->getMergeThreads(),
-            /* temporary_data_merge_threads */ aggregating_step->getTemporaryDataMergeThreads(),
-            /* storage_has_evenly_distributed_read */ true,
-            /* group_by_use_nulls */ aggregating_step->isGroupByUseNulls(),
-            /* sort_description_for_merging */ SortDescription{},
-            /* group_by_sort_description */ SortDescription{},
-            should_produce_results_in_order_of_bucket_number,
-            memory_bound_merging_of_aggregation_results_enabled,
-            explicit_sorting_required_for_aggregation_in_order);
+        partial_aggregation_node.step = aggregating_step->clone();
+        typeid_cast<AggregatingStep *>(partial_aggregation_node.step.get())->setFinal(false);
         partial_aggregation_node.step->setStepDescription("partial");
         partial_aggregation_node.children = {&exchange_scatter_node};
 
@@ -279,8 +265,8 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
             gather_node.step->getOutputHeader(),
             aggregator_params,
             grouping_sets_params,
-            /* final */ true,
-            /* memory_efficient_aggragation */ false,
+            /* final */ original_step_was_final,
+            /* memory_efficient_aggregation */ false,
             aggregating_step->getTemporaryDataMergeThreads(),
             should_produce_results_in_order_of_bucket_number,
             aggregating_step->getMaxBlockSize(),
