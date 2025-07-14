@@ -568,28 +568,25 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
 #if USE_PARQUET
             if (configuration_ptr->format == "Parquet")
                 opaque = std::make_shared<ParquetOpaque>();
-#endif
 
-            if (opaque)
+            auto parquet_opaque = std::static_pointer_cast<ParquetOpaque>(opaque);
+
+            Int32 schema_id = snapshot->getValue<Int32>(f_schema_id);
+            auto schemas = metadata_object->getArray(f_schemas);
+            for (size_t j = 0; j < schemas->size(); ++j)
             {
-                auto parquet_opaque = std::static_pointer_cast<ParquetOpaque>(opaque);
+                auto schema = schemas->getObject(j);
+                if (schema->getValue<Int32>(f_schema_id) != schema_id)
+                    continue;
 
-                Int32 schema_id = snapshot->getValue<Int32>(f_schema_id);
-                auto schemas = metadata_object->getArray(f_schemas);
-                for (size_t j = 0; j < schemas->size(); ++j)
+                auto fields = schema->getArray(f_fields);
+                for (size_t field_ind = 0; field_ind < fields->size(); ++field_ind)
                 {
-                    auto schema = schemas->getObject(j);
-                    if (schema->getValue<Int32>(f_schema_id) != schema_id)
-                        continue;
-
-                    auto fields = schema->getArray(f_fields);
-                    for (size_t field_ind = 0; field_ind < fields->size(); ++field_ind)
-                    {
-                        auto field = fields->getObject(field_ind);
-                        parquet_opaque->column_name_to_parquet_field_id[field->getValue<String>(f_name)] = field->getValue<Int32>(f_id);
-                    }
+                    auto field = fields->getObject(field_ind);
+                    parquet_opaque->column_name_to_parquet_field_id[field->getValue<String>(f_name)] = field->getValue<Int32>(f_id);
                 }
             }
+#endif
 
             relevant_snapshot = IcebergSnapshot{
                 getManifestList(local_context, getProperFilePathFromMetadataInfo(

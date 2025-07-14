@@ -58,6 +58,8 @@ public:
     virtual std::optional<size_t> totalRows(ContextPtr) const { return {}; }
     virtual std::optional<size_t> totalBytes(ContextPtr) const { return {}; }
 
+    /// Some data lakes specify information for reading files from disks.
+    /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
     virtual std::shared_ptr<void> getOpaque() const { return nullptr; }
 
 protected:
