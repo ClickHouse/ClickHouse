@@ -26,6 +26,7 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int FILE_DOESNT_EXIST;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(
@@ -749,6 +750,14 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     const WriteSettings & settings,
     bool autocommit)
 {
+    if (mode == WriteMode::Append)
+    {
+        if (dynamic_cast<const MetadataStorageFromPlainObjectStorageTransaction *>(metadata_transaction.get()))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "MetadataStorageFromPlainObjectStorageTransaction does not support writeFile with WriteMode::Append");
+    }
+
     auto object_key = object_storage.generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     std::optional<ObjectAttributes> object_attributes;
 
