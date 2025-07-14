@@ -26,7 +26,6 @@ verify()
                 =
             (SELECT sum(active), sum(NOT active) FROM (
                 SELECT active FROM system.parts
-                UNION ALL SELECT active FROM system.projection_parts
                 UNION ALL SELECT active FROM system.dropped_tables_parts
             ))"
         )
@@ -52,9 +51,11 @@ verify()
                 'PartsCommitted', sumIf(value, metric = 'PartsCommitted'),
                 'PartsOutdated', sumIf(value, metric = 'PartsOutdated'),
                 'PartsDeleting', sumIf(value, metric = 'PartsDeleting'),
-                'PartsDeleteOnDestroy', sumIf(value, metric = 'PartsDeleteOnDestroy')
+                'PartsDeleteOnDestroy', sumIf(value, metric = 'PartsDeleteOnDestroy'),
+                'PartsWide', sumIf(value, metric = 'PartsWide'),
+                'PartsCompact', sumIf(value, metric = 'PartsCompact')
         FROM system.metrics;
-        SELECT 'state to count', _state, count() FROM system.parts GROUP BY _state ORDER BY _state;
+        SELECT 'state', _state, 'wide', countIf(part_type = 'Wide'), 'compact', countIf(part_type = 'Compact') FROM system.parts GROUP BY _state ORDER BY _state;
     "
 }
 
