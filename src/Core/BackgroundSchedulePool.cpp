@@ -372,7 +372,8 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
 
             while (!shutdown)
             {
-                Poco::Timestamp min_time;
+                Poco::Timestamp current_time;
+                Poco::Timestamp min_time = current_time;
 
                 if (!delayed_tasks.empty())
                 {
@@ -386,8 +387,6 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
                     delayed_tasks_cond_var.wait(lock.getUnderlyingLock());
                     continue;
                 }
-
-                Poco::Timestamp current_time;
 
                 if (min_time > current_time)
                 {
