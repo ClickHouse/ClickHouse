@@ -1345,7 +1345,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 }
 
                 for (size_t granule = 0; granule != structure_granules->size(); ++granule)
-                    granules_paths[granule].insert(granules_paths[granule].end(), (*structure_granules)[granule].all_paths.begin(),  (*structure_granules)[granule].all_paths.end());
+                    granules_paths[granule].insert(granules_paths[granule].end(), (*structure_granules)[granule].all_paths.begin(), (*structure_granules)[granule].all_paths.end());
 
                 settings.path.pop_back();
             }

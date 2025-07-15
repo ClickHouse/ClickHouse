@@ -494,6 +494,11 @@ void SerializationDynamic::serializeBinaryBulkStateSuffix(
         if (!stream)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for Dynamic column structure during serialization of binary bulk state suffix");
 
+        /// If serialization version supports it, write flag that statistics is not empty.
+        /// It is needed to be able to write empty statistics if needed.
+        if (dynamic_state->structure_version.supportsEmptyStatistics())
+            writeBinary(true, *stream);
+
         /// First, write statistics for usual variants.
         for (const auto & variant_name : dynamic_state->variant_names)
             writeVarUInt(dynamic_state->statistics.variants_statistics[variant_name], *stream);

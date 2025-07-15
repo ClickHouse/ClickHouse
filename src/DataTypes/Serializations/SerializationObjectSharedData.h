@@ -149,8 +149,6 @@ private:
         /// Mark of the ObjectSharedDataPathsSubstreamsMetadata stream for this granule.
         MarkInCompressedFile paths_substreams_metadata_stream_mark;
 
-        StructureGranule() {}
-
         void clear()
         {
             position_to_requested_path.clear();
@@ -176,7 +174,7 @@ private:
     /// We can read more than 1 granule at a time, so we need to be able to store a list of StructureGranule structures in the cache.
     struct SubstreamsCacheStructureElement : public ISerialization::ISubstreamsCacheElement
     {
-        SubstreamsCacheStructureElement(std::shared_ptr<StructureGranules> structure_granules_) : structure_granules(structure_granules_) {}
+        explicit SubstreamsCacheStructureElement(std::shared_ptr<StructureGranules> structure_granules_) : structure_granules(structure_granules_) {}
 
         std::shared_ptr<StructureGranules> structure_granules;
     };
@@ -277,7 +275,7 @@ private:
     /// We deserialize paths infos only once and then put it in the cache.
     struct SubstreamsCachePathsInfosElement : public ISubstreamsCacheElement
     {
-        SubstreamsCachePathsInfosElement(std::shared_ptr<PathsInfosGranules> paths_infos_granules_) : paths_infos_granules(paths_infos_granules_) {}
+        explicit SubstreamsCachePathsInfosElement(std::shared_ptr<PathsInfosGranules> paths_infos_granules_) : paths_infos_granules(paths_infos_granules_) {}
 
         std::shared_ptr<PathsInfosGranules> paths_infos_granules;
     };
@@ -305,7 +303,7 @@ private:
     /// We deserialize paths data only once and then put it in the cache.
     struct SubstreamsCachePathsDataElement : public ISubstreamsCacheElement
     {
-        SubstreamsCachePathsDataElement(std::shared_ptr<PathsDataGranules> paths_data_granules_) : paths_data_granules(paths_data_granules_) {}
+        explicit SubstreamsCachePathsDataElement(std::shared_ptr<PathsDataGranules> paths_data_granules_) : paths_data_granules(paths_data_granules_) {}
 
         std::shared_ptr<PathsDataGranules> paths_data_granules;
     };

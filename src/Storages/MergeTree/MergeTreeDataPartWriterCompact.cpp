@@ -301,7 +301,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             auto stream_mark_getter = [&](const ISerialization::SubstreamPath & substream_path) -> MarkInCompressedFile
             {
                 String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path);
-                return {plain_hashing.count(),  compressed_streams[stream_name]->hashing_buf.offset()};
+                return {plain_hashing.count(), compressed_streams[stream_name]->hashing_buf.offset()};
             };
 
             writeColumnSingleGranule(
