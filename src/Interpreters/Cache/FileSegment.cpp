@@ -1,6 +1,7 @@
 #include <Interpreters/Cache/FileSegment.h>
 
 #include <filesystem>
+#include <system_error>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Cache/FileCache.h>
@@ -14,6 +15,7 @@
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
+#include <Common/FailPoint.h>
 
 namespace fs = std::filesystem;
 
@@ -42,6 +44,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char cache_filesystem_failure[];
 }
 
 String toString(FileSegmentKind kind)
@@ -411,6 +418,11 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
             int flags = -1;
             if (downloaded_size > 0)
                 flags = O_WRONLY | O_APPEND | O_CLOEXEC;
+
+            fiu_do_on(FailPoints::cache_filesystem_failure,
+            {
+                throw std::filesystem::filesystem_error("FailPoint while writing to FileSegment", std::error_code());
+            });
             cache_writer = std::make_unique<WriteBufferFromFile>(getPath(), /* buf_size */0, flags);
         }
 
@@ -461,6 +473,11 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
         auto lk = lock();
         e.addMessage(fmt::format("{}, current cache state: {}", e.what(), getInfoForLogUnlocked(lk)));
         setDownloadFailedUnlocked(lk);
+        throw;
+    }
+    catch (const fs::filesystem_error &)
+    {
+        setDownloadFailed();
         throw;
     }
 

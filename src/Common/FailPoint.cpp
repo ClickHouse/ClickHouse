@@ -98,8 +98,8 @@ static struct InitFiu
     REGULAR(database_replicated_delay_recovery) \
     REGULAR(database_replicated_delay_entry_execution) \
     REGULAR(plain_object_storage_copy_temp_source_file_fail_on_file_move) \
-    REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move)
-
+    REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move) \
+    REGULAR(cache_filesystem_failure) \
 
 namespace FailPoints
 {
