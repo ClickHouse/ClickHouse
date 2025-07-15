@@ -9,6 +9,7 @@
 #include <Common/Scheduler/CPUSlotsAllocation.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
+#include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
 #include <Processors/Executors/PipelineExecutor.h>
@@ -22,10 +23,6 @@
 #include <Common/Exception.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Core/Settings.h>
-
-#ifndef NDEBUG
-    #include <Common/Stopwatch.h>
-#endif
 
 
 namespace CurrentMetrics
@@ -291,15 +288,53 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, IAcquiredSlot * cp
 #endif
 }
 
+// Class helping a thread to deal with CPU lease
+struct CPUHelper
+{
+    ISlotLease * lease;
+    UInt64 last_renew_ns = 0;
+
+    explicit CPUHelper(IAcquiredSlot * cpu_slot)
+        : lease(dynamic_cast<ISlotLease*>(cpu_slot))
+    {
+        if (lease)
+        {
+            lease->startConsumption();
+            last_renew_ns = clock_gettime_ns();
+        }
+    }
+
+    bool isRenewNeeded()
+    {
+        if (!lease)
+            return false;
+        UInt64 now_ns = clock_gettime_ns();
+        if (now_ns - last_renew_ns < 1000000) // 1 ms: do not renew too often
+            return false;
+        last_renew_ns = now_ns;
+        return true;
+    }
+
+    bool renew()
+    {
+        chassert(lease);
+        return lease->renew();
+    }
+
+    size_t id() const
+    {
+        chassert(lease);
+        return lease->slot_id;
+    }
+};
+
 void PipelineExecutor::executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_slot, std::atomic_bool * yield_flag)
 {
 #ifndef NDEBUG
     Stopwatch total_time_watch;
 #endif
 
-    ISlotLease * cpu_lease = dynamic_cast<ISlotLease*>(cpu_slot);
-    if (cpu_lease)
-        cpu_lease->startConsumption();
+    CPUHelper cpu_helper(cpu_slot);
 
     auto & context = tasks.getThreadContext(thread_num);
     bool yield = false;
@@ -345,12 +380,48 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_sl
             context.processing_time_ns += processing_time_watch.elapsed();
 #endif
 
-            /// Communicate with resource scheduler or ConcurrencyControl
-            /// Do upscaling, downscaling, or sleep for preemption
-            if (!controlConcurrency(cpu_lease, pool && spawn_status == ExecutorTasks::SHOULD_SPAWN))
+
+            /// Upscaling.
+            if (pool && spawn_status == ExecutorTasks::SHOULD_SPAWN)
             {
-                yield = true;
-                break;
+                // Only allow one thread to spawn, if someone is already spawning threads, just skip.
+                if (spawn_mutex.try_lock())
+                {
+                    try
+                    {
+                        std::lock_guard lock(spawn_mutex, std::adopt_lock);
+                        spawnThreads({});
+                    }
+                    catch (...)
+                    {
+                        /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
+                        /// We should cancel execution properly before rethrow.
+                        cancel(ExecutionStatus::Exception);
+                        throw;
+                    }
+                }
+            }
+
+            /// Preemption and downscaling.
+            if (cpu_helper.isRenewNeeded()) // Check if preemption is enabled (see `cpu_slot_preemption` server setting)
+            {
+                try
+                {
+                    // Preemption point. Renewal could block execution due to CPU overload.
+                    if (!cpu_helper.renew())
+                    {
+                        tasks.downscale(cpu_helper.id());
+                        yield = true;
+                        break; // Downscaling. Unable to renew the lease - thread should stop (but could be rerun later).
+                    }
+                }
+                catch (...)
+                {
+                    /// renew() can throw an exception, for example RESOURCE_ACCESS_DENIED.
+                    /// We should cancel execution properly before rethrow.
+                    cancel(ExecutionStatus::Exception);
+                    throw;
+                }
             }
 
             /// We have executed single processor. Check if we need to yield execution.
@@ -464,52 +535,6 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
 
     if (num_threads > 1)
         pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, CurrentMetrics::QueryPipelineExecutorThreadsScheduled, num_threads);
-}
-
-bool PipelineExecutor::controlConcurrency(ISlotLease * cpu_lease, bool should_spawn)
-{
-    /// Only allow one thread to spawn, if someone is already spawning threads, just skip.
-    if (should_spawn)
-    {
-        if (spawn_mutex.try_lock())
-        {
-            try
-            {
-                std::lock_guard lock(spawn_mutex, std::adopt_lock);
-                spawnThreads({});
-            }
-            catch (...)
-            {
-                /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
-                /// We should cancel execution properly before rethrow.
-                cancel(ExecutionStatus::Exception);
-                throw;
-            }
-        }
-    }
-
-    if (cpu_lease) // Check if preemption is enabled (see `cpu_slot_preemption` server setting)
-    {
-        try
-        {
-            // Preemption point. Renewal could block execution due to CPU overload.
-            if (!cpu_lease->renew())
-            {
-                size_t slot_id = cpu_lease->slot_id;
-                tasks.downscale(slot_id);
-                return false; // Downscaling. Unable to renew the lease - thread should stop (but could be rerun later).
-            }
-        }
-        catch (...)
-        {
-            /// renew() can throw an exception, for example RESOURCE_ACCESS_DENIED.
-            /// We should cancel execution properly before rethrow.
-            cancel(ExecutionStatus::Exception);
-            throw;
-        }
-    }
-
-    return true;
 }
 
 void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
