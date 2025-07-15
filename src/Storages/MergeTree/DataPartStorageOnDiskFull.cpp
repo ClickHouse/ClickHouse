@@ -31,9 +31,7 @@ DataPartStorageOnDiskFull::DataPartStorageOnDiskFull(
 {
 }
 
-DataPartStorageOnDiskFull::~DataPartStorageOnDiskFull()
-{
-}
+DataPartStorageOnDiskFull::~DataPartStorageOnDiskFull() = default;
 
 MutableDataPartStoragePtr DataPartStorageOnDiskFull::create(
     VolumePtr volume_, std::string root_path_, std::string part_dir_, bool /*initialize_*/) const
