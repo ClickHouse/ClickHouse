@@ -4165,7 +4165,12 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             partitions_to_merge_in = merger_mutator.getPartitionsThatMayBeMerged(
                 std::make_shared<ReplicatedMergeTreePartsCollector>(*this, local_merge_pred),
                 local_merge_pred,
-                MergeSelectorApplier{max_source_parts_size_for_merge, merge_with_ttl_allowed});
+                MergeSelectorApplier(
+                    /*max_merge_sizes=*/{max_source_parts_size_for_merge},
+                    /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
+                    /*aggressive_=*/false,
+                    /*range_filter_=*/nullptr
+                ));
 
             if (partitions_to_merge_in.empty())
                 can_assign_merge = false;
@@ -4179,12 +4184,18 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             auto select_merge_result = merger_mutator.selectPartsToMerge(
                 std::make_shared<ReplicatedMergeTreePartsCollector>(*this, merge_predicate),
                 merge_predicate,
-                MergeSelectorApplier{max_source_parts_size_for_merge, merge_with_ttl_allowed},
+                MergeSelectorApplier(
+                    /*max_merge_sizes=*/{max_source_parts_size_for_merge},
+                    /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
+                    /*aggressive_=*/false,
+                    /*range_filter_=*/nullptr
+                ),
                 partitions_to_merge_in);
 
             if (select_merge_result.has_value())
             {
-                future_merged_part = constructFuturePart(*this, select_merge_result.value(), {MergeTreeDataPartState::Active});
+                chassert(select_merge_result.value().size() == 1);
+                future_merged_part = constructFuturePart(*this, select_merge_result.value()[0], {MergeTreeDataPartState::Active});
                 if (!future_merged_part)
                 {
                     LOG_DEBUG(log,
@@ -6121,7 +6132,7 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
     {
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(
-            /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
+            /*one_line=*/true, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
         query.IAST::format(buf, ast_format_settings);
         query_str = buf.str();
     }
@@ -6209,24 +6220,9 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWrite(const 
         return {};
 
     if (auto src_distributed = std::dynamic_pointer_cast<IStorageCluster>(src_storage))
-    {
         return distributedWriteFromClusterStorage(src_distributed, query, local_context);
-    }
-    else if (auto src_mt = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(src_storage))
-    {
-        // pipeline will be built outside
-        return {};
-    }
 
-    if (local_context->getClientInfo().distributed_depth == 0)
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Parallel distributed INSERT SELECT is not possible. Reason: distributed "
-            "reading into Replicated table is supported only from *Cluster table functions, but got {} storage",
-            src_storage->getName());
-    }
-
+    // pipeline will be built outside
     return {};
 }
 
@@ -6305,18 +6301,19 @@ bool StorageReplicatedMergeTree::optimize(
             auto merge_predicate = queue.getMergePredicate(zookeeper, std::move(partition_ids_hint));
             auto parts_collector = std::make_shared<ReplicatedMergeTreePartsCollector>(*this, merge_predicate);
 
-            const auto select_merge = [&]() -> std::expected<MergeSelectorChoice, SelectMergeFailure>
+            const auto select_merge = [&]() -> std::expected<MergeSelectorChoices, SelectMergeFailure>
             {
                 if (partition_id.empty())
                 {
                     return merger_mutator.selectPartsToMerge(
                         parts_collector,
                         merge_predicate,
-                        MergeSelectorApplier{
-                            .max_total_size_to_merge = (*storage_settings_ptr)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool],
-                            .merge_with_ttl_allowed = false,
-                            .aggressive = true,
-                        },
+                        MergeSelectorApplier(
+                            /*max_merge_sizes=*/{(*storage_settings_ptr)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool]},
+                            /*merge_with_ttl_allowed=*/false,
+                            /*aggressive=*/true,
+                            /*range_filter_=*/nullptr
+                        ),
                         /*partitions_hint=*/std::nullopt);
                 }
                 else
@@ -6331,8 +6328,11 @@ bool StorageReplicatedMergeTree::optimize(
                 }
             };
 
-            const auto construct_future_part = [&](MergeSelectorChoice choice) -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
+            const auto construct_future_part = [&](MergeSelectorChoices choices) -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
             {
+                chassert(choices.size() == 1);
+                MergeSelectorChoice choice = std::move(choices[0]);
+
                 auto future_part = constructFuturePart(*this, choice, {MergeTreeDataPartState::Active});
                 if (!future_part)
                     return std::unexpected(SelectMergeFailure{
