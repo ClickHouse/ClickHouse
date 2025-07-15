@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Client/ClientBase.h>
 #include <Client/ClientBaseHelpers.h>
 #include <Client/InternalTextLogs.h>
@@ -5,6 +7,12 @@
 #include <Client/TerminalKeystrokeInterceptor.h>
 #include <Client/TestHint.h>
 #include <Client/TestTags.h>
+
+#if USE_CLIENT_AI
+#include <Client/AI/AISQLGenerator.h>
+#include <Client/AI/AIClientFactory.h>
+#include <Client/AI/AIConfiguration.h>
+#endif
 
 #include <Core/Block.h>
 #include <Core/Protocol.h>
@@ -17,6 +25,7 @@
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/TerminalSize.h>
 #include <Common/StringUtils.h>
@@ -70,9 +79,11 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ForkWriteBuffer.h>
+#include <IO/SharedThreadPools.h>
 
 #include <Access/AccessControl.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/SelectQueryInfo.h>
 #include <TableFunctions/ITableFunction.h>
 
 #include <filesystem>
@@ -89,7 +100,6 @@
 
 #include <Common/config_version.h>
 #include <base/find_symbols.h>
-#include "config.h"
 
 #if USE_GWP_ASAN
 #    include <Common/GWPAsan.h>
@@ -122,6 +132,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_PARSE_TEXT;
     extern const int DEADLOCK_AVOIDED;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
@@ -2536,18 +2547,21 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
             case MultiQueryProcessingStage::PARSING_FAILED:
             {
                 have_error |= buzz_house;
+                error_code = buzz_house ? ErrorCodes::CANNOT_PARSE_TEXT : error_code;
                 return true;
             }
             case MultiQueryProcessingStage::CONTINUE_PARSING:
             {
                 is_first = false;
                 have_error |= buzz_house;
+                error_code = buzz_house ? ErrorCodes::CANNOT_PARSE_TEXT : error_code;
                 continue;
             }
             case MultiQueryProcessingStage::PARSING_EXCEPTION:
             {
                 is_first = false;
                 have_error |= buzz_house;
+                error_code = buzz_house ? ErrorCodes::CANNOT_PARSE_TEXT : error_code;
                 this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
 
                 // Try to find test hint for syntax error. We don't know where
@@ -2561,7 +2575,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     current_exception->rethrow();
                 }
 
-                if (!hint.hasExpectedClientError(current_exception->code()))
+                if (!hint.hasExpectedClientError(current_exception->code()) || buzz_house)
                 {
                     if (hint.hasClientErrors())
                         current_exception->addMessage("\nExpected client error: {}.", hint.clientErrors());
@@ -2783,7 +2797,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
                 if (buzz_house && have_error)
                 {
-                    // Test if error is disallowed by BuzzHouse
+                    // Retrieve the right error code for BuzzHouse
                     const auto * exception = server_exception ? server_exception.get() : (client_exception ? client_exception.get() : nullptr);
                     error_code = exception ? exception->code() : 0;
                 }
@@ -2793,8 +2807,8 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     processError(full_query);
 
                 // Stop processing queries if needed.
-                if (have_error && !ignore_error)
-                    return is_interactive;
+                if (have_error && (buzz_house || !ignore_error))
+                    return buzz_house || is_interactive;
 
                 if (!need_retry)
                     this_query_begin = this_query_end;
@@ -2821,6 +2835,43 @@ bool ClientBase::processQueryText(const String & text)
 
         return processMultiQueryFromFile(file_name);
     }
+
+#if USE_CLIENT_AI
+    // Handle "?? <free_text>" command
+    if (text.starts_with("??"))
+    {
+        size_t skip_prefix_size = 2; // Length of "??"
+        auto free_text = text.substr(skip_prefix_size);
+        // Trim leading whitespace from the free text
+        free_text = trim(free_text, [](char c) { return isWhitespaceASCII(c); });
+
+        if (!ai_generator)
+        {
+            error_stream << "AI SQL generator is not initialized" << std::endl;
+            return true;
+        }
+
+        if (free_text.empty())
+        {
+            error_stream << "Please provide a natural language query after ??" << std::endl;
+            return true;
+        }
+
+        try
+        {
+            std::string generated_sql = ai_generator->generateSQL(free_text);
+
+            /// Prepopulate the next query with the generated SQL
+            next_query_to_prepopulate = generated_sql;
+        }
+        catch (const std::exception & e)
+        {
+            error_stream << "AI query generation failed: " << e.what() << std::endl;
+        }
+
+        return true;
+    }
+#endif
 
     if (query_fuzzer_runs)
     {
@@ -2942,6 +2993,99 @@ void ClientBase::stopKeystrokeInterceptorIfExists()
         }
     }
 }
+
+#if USE_CLIENT_AI
+void ClientBase::initAIProvider()
+{
+    try {
+        AIConfiguration ai_config = AIClientFactory::loadConfiguration(getClientConfiguration());
+
+        // Create a query executor that uses the connection
+        auto query_executor = [this](const std::string & query) -> std::string
+        {
+            return executeQueryForSingleString(query);
+        };
+
+        ai_generator = std::make_unique<AISQLGenerator>(ai_config, query_executor, error_stream);
+    }
+    catch (const std::exception & e)
+    {
+        auto logger = getLogger("ClientBase");
+        LOG_DEBUG(logger, "Failed to initialize AI SQL generator: {}", e.what());
+    }
+}
+
+std::string ClientBase::executeQueryForSingleString(const std::string & query)
+{
+    if (!connection)
+        return "";
+
+    try
+    {
+        std::string result;
+
+        /// Send the query
+        connection->sendQuery(
+            connection_parameters.timeouts,
+            query,
+            {},  /// query_parameters
+            "",  /// query_id
+            QueryProcessingStage::Complete,
+            nullptr,  /// settings
+            nullptr,  /// client_info
+            false,    /// with_pending_data
+            {},       /// external_roles
+            {}        /// external_data
+        );
+
+        /// Receive and process results
+        while (true)
+        {
+            Packet packet = connection->receivePacket();
+            switch (packet.type)
+            {
+                case Protocol::Server::Data:
+                    if (packet.block && packet.block.rows() > 0)
+                    {
+                        /// Convert block to string representation
+                        /// For schema queries, we expect single column results
+                        const auto & column = packet.block.getByPosition(0).column;
+                        for (size_t i = 0; i < column->size(); ++i)
+                        {
+                            if (!result.empty())
+                                result += "\n";
+                            result += column->getDataAt(i).toString();
+                        }
+                    }
+                    break;
+
+                case Protocol::Server::EndOfStream:
+                    return result;
+
+                case Protocol::Server::Exception:
+                    /// Return empty string on exception
+                    return "";
+
+                case Protocol::Server::Progress:
+                case Protocol::Server::ProfileInfo:
+                case Protocol::Server::Log:
+                case Protocol::Server::ProfileEvents:
+                case Protocol::Server::TimezoneUpdate:
+                    /// Ignore these packet types
+                    break;
+
+                default:
+                    /// Ignore unknown packet types
+                    break;
+            }
+        }
+    }
+    catch (...)
+    {
+        return "";
+    }
+}
+#endif
 
 void ClientBase::addCommonOptions(OptionsDescription & options_description)
 {
@@ -3197,6 +3341,10 @@ void ClientBase::runInteractive()
 
     initQueryIdFormats();
 
+#if USE_CLIENT_AI
+    initAIProvider();
+#endif
+
     /// Initialize DateLUT here to avoid counting time spent here as query execution time.
     const auto local_tz = DateLUT::instance().getTimeZone();
 
@@ -3330,6 +3478,13 @@ void ClientBase::runInteractive()
             lr->enableBracketedPaste();
             SCOPE_EXIT_SAFE({ lr->disableBracketedPaste(); });
 
+            // Check if we have a prepopulated query to show
+            if (!next_query_to_prepopulate.empty())
+            {
+                lr->setInitialText(next_query_to_prepopulate);
+                next_query_to_prepopulate.clear();
+            }
+
             input = lr->readLine(getPrompt(), ":-] ");
         }
 
@@ -3436,6 +3591,10 @@ void ClientBase::runNonInteractive()
 {
     if (delayed_interactive)
         initQueryIdFormats();
+
+#if USE_CLIENT_AI
+    initAIProvider();
+#endif
 
     if (!buzz_house && !queries_files.empty())
     {
