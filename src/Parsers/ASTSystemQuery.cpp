@@ -94,14 +94,14 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 {
     auto print_identifier = [&](const String & identifier) -> WriteBuffer &
     {
-        ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(identifier)
-                      << (settings.hilite ? hilite_none : "");
+        ostr << backQuoteIfNeed(identifier)
+                     ;
         return ostr;
     };
 
     auto print_keyword = [&](const auto & keyword) -> WriteBuffer &
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << keyword << (settings.hilite ? hilite_none : "");
+        ostr << keyword;
         return ostr;
     };
 
@@ -233,7 +233,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
             if (query_settings)
             {
-                ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
+                ostr << settings.nl_or_ws << "SETTINGS ";
                 query_settings->format(ostr, settings, state, frame);
             }
 
@@ -272,6 +272,11 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             ostr << ' ';
             print_identifier(database->as<ASTIdentifier>()->name());
+            if (sync_replica_mode != SyncReplicaMode::DEFAULT)
+            {
+                ostr << ' ';
+                print_keyword(magic_enum::enum_name(sync_replica_mode));
+            }
             break;
         }
         case Type::DROP_REPLICA:
@@ -332,7 +337,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             if (distributed_cache_drop_connections)
                 print_keyword(" CONNECTIONS");
             else if (!distributed_cache_server_id.empty())
-                ostr << (settings.hilite ? hilite_none : "") << " " << distributed_cache_server_id;
+                ostr << " " << distributed_cache_server_id;
             break;
         }
         case Type::UNFREEZE:

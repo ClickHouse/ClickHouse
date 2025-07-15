@@ -22,12 +22,12 @@ You can see an example of how to use the AggregatingMergeTree and Aggregate func
 
 The engine processes all columns with the following types:
 
-## [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md) {#aggregatefunction}
-## [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md) {#simpleaggregatefunction}
+- [`AggregateFunction`](../../../sql-reference/data-types/aggregatefunction.md)
+- [`SimpleAggregateFunction`](../../../sql-reference/data-types/simpleaggregatefunction.md)
 
 It is appropriate to use `AggregatingMergeTree` if it reduces the number of rows by orders.
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -76,7 +76,7 @@ When selecting data from `AggregatingMergeTree` table, use `GROUP BY` clause and
 
 In the results of `SELECT` query, the values of `AggregateFunction` type have implementation-specific binary representation for all of the ClickHouse output formats. For example, if you dump data into `TabSeparated` format with a `SELECT` query, then this dump can be loaded back using an `INSERT` query.
 
-## Example of an Aggregated Materialized View {#example-of-an-aggregated-materialized-view}
+## Example of an aggregated materialized view {#example-of-an-aggregated-materialized-view}
 
 The following example assumes that you have a database named `test`. Create it if it doesn't already exist using the command below:
 
@@ -188,6 +188,6 @@ Each source row produces one row in the materialized view, and the actual aggreg
 `AggregatingMergeTree` merges parts. This is only true if `optimize_on_insert = 0`.
 :::
 
-## Related Content {#related-content}
+## Related content {#related-content}
 
 - Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

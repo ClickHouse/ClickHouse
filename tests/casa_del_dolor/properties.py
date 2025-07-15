@@ -39,13 +39,21 @@ def generate_xml_safe_string(length: int = 10) -> str:
     return "".join(random.choice(valid_chars) for _ in range(length))
 
 
-def threshold_generator(always_on_prob, always_off_prob, min_val, max_val):
+def threshold_generator(
+    always_on_prob, always_off_prob, min_val, max_val, bits: int = 64
+):
     def gen():
         tmp = random.random()
         if tmp <= always_on_prob:
             return min_val
         if tmp <= always_on_prob + always_off_prob:
             return max_val
+        if (
+            tmp <= always_on_prob + always_off_prob + 0.01
+            and isinstance(min_val, int)
+            and isinstance(max_val, int)
+        ):
+            return 2**bits - 1
 
         if isinstance(min_val, int) and isinstance(max_val, int):
             return random.randint(min_val, max_val)
@@ -54,10 +62,10 @@ def threshold_generator(always_on_prob, always_off_prob, min_val, max_val):
     return gen
 
 
-def file_size_value(max_val: int):
+def file_size_value(max_val: int, bits: int = 64):
     def gen():
-        return str(threshold_generator(0.2, 0.2, 1, max_val)()) + random.choice(
-            ["ki", "ki", "Mi", "Gi"]  # Increased probability
+        return str(threshold_generator(0.2, 0.2, 1, max_val, bits)()) + random.choice(
+            ["Ki", "Ki", "Mi", "Gi"]  # Increased probability
         )
 
     return gen
@@ -69,6 +77,15 @@ no_zero_threads_lambda = lambda: random.randint(1, multiprocessing.cpu_count())
 
 
 possible_properties = {
+    "access_control_improvements": {
+        "on_cluster_queries_require_cluster_grant": true_false_lambda,
+        "role_cache_expiration_time_seconds": threshold_generator(0.2, 0.2, 1, 60, 31),
+        "select_from_information_schema_requires_grant": true_false_lambda,
+        "select_from_system_db_requires_grant": true_false_lambda,
+        "settings_constraints_replace_previous": true_false_lambda,
+        "table_engines_require_grant": true_false_lambda,
+        "users_without_row_policies_can_read_rows": true_false_lambda,
+    },
     "aggregate_function_group_array_action_when_limit_is_reached": lambda: random.choice(
         ["throw", "discard"]
     ),
@@ -99,7 +116,7 @@ possible_properties = {
     "background_schedule_pool_size": no_zero_threads_lambda,
     "backup_threads": no_zero_threads_lambda,
     "backups_io_thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
-    "bcrypt_workfactor": threshold_generator(0.2, 0.2, 0, 20),
+    "bcrypt_workfactor": threshold_generator(0.2, 0.2, 0, 20, 31),
     "cache_size_to_ram_max_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     # "cannot_allocate_thread_fault_injection_probability": threshold_generator(0.2, 0.2, 0.0, 1.0), the server may not start
     "cgroup_memory_watcher_hard_limit_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
@@ -272,17 +289,17 @@ distributed_properties = {
 object_storages_properties = {
     "local": {},
     "s3": {
-        "list_object_keys_size": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+        "list_object_keys_size": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024, 31),
         "metadata_keep_free_space_bytes": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
         "objects_chunk_size_to_delete": threshold_generator(
-            0.2, 0.2, 0, 10 * 1024 * 1024
+            0.2, 0.2, 0, 10 * 1024 * 1024, 32
         ),
         "object_metadata_cache_size": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
-        "remove_shared_recursive_file_limit": threshold_generator(0.2, 0.2, 0, 32),
+        "remove_shared_recursive_file_limit": threshold_generator(0.2, 0.2, 0, 31),
         "s3_check_objects_after_upload": true_false_lambda,
         "s3_max_inflight_parts_for_one_file": threshold_generator(0.2, 0.2, 0, 16),
         "s3_max_get_burst": threshold_generator(0.2, 0.2, 0, 100),
@@ -313,7 +330,7 @@ object_storages_properties = {
         "objects_chunk_size_to_delete": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
-        "remove_shared_recursive_file_limit": threshold_generator(0.2, 0.2, 0, 32),
+        "remove_shared_recursive_file_limit": threshold_generator(0.2, 0.2, 0, 31),
         "send_metadata": true_false_lambda,
         "skip_access_check": true_false_lambda,
         "thread_pool_size": threads_lambda,
@@ -340,7 +357,6 @@ cache_storage_properties = {
     "boundary_alignment": threshold_generator(0.2, 0.2, 0, 128),
     "cache_hits_threshold": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
     "cache_on_write_operations": true_false_lambda,
-    "cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "enable_bypass_cache_with_threshold": true_false_lambda,
     "enable_filesystem_query_cache_limit": true_false_lambda,
     "keep_free_space_elements_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
@@ -348,7 +364,7 @@ cache_storage_properties = {
     "keep_free_space_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "load_metadata_asynchronously": true_false_lambda,
     "load_metadata_threads": threads_lambda,
-    "max_elements": threshold_generator(0.2, 0.2, 2, 10000000),
+    "max_elements": threshold_generator(0.2, 0.2, 3, 10000000),
     "max_file_segment_size": file_size_value(100),
     # "max_size_ratio_to_total_space": threshold_generator(0.2, 0.2, 0.0, 1.0), cannot be specified with `max_size` at the same time
     "slru_size_ratio": threshold_generator(0.2, 0.2, 0.01, 0.99),
@@ -634,7 +650,7 @@ def add_single_disk(
 
         if disk_type == "cache":
             max_size_xml = ET.SubElement(next_disk, "max_size")
-            max_size_xml.text = file_size_value(100)()
+            max_size_xml.text = file_size_value(100, 4)()
 
             # Add random settings
             if random.randint(1, 100) <= 70:
@@ -656,7 +672,7 @@ def add_single_disk(
                     ]
                 )
 
-    if random.randint(1, 100) <= 50:
+    if disk_type != "cache" and random.randint(1, 100) <= 50:
         apply_properties_recursively(next_disk, all_disks_properties)
     return (prev_disk, final_type)
 
@@ -769,7 +785,7 @@ class DiskPropertiesGroup(PropertiesGroup):
 
 def add_single_cache(i: int, next_cache: ET.Element):
     max_size_xml = ET.SubElement(next_cache, "max_size")
-    max_size_xml.text = file_size_value(10)()
+    max_size_xml.text = file_size_value(10, 4)()
     path_xml = ET.SubElement(next_cache, "path")
     path_xml.text = f"/var/lib/clickhouse/fcache{i}/"
 
@@ -850,17 +866,24 @@ class SharedCatalogPropertiesGroup(PropertiesGroup):
     ):
         number_clusters = 0
         shared_settings = {
-            "delay_before_drop_intention_seconds": threshold_generator(0.2, 0.2, 0, 60),
-            "delay_before_drop_table_seconds": threshold_generator(0.2, 0.2, 0, 60),
+            "delay_before_drop_intention_seconds": threshold_generator(
+                0.2, 0.2, 0, 60, 32
+            ),
+            "delay_before_drop_table_seconds": threshold_generator(0.2, 0.2, 0, 60, 31),
             "drop_local_thread_pool_size": threads_lambda,
-            "drop_lock_duration_seconds": threshold_generator(0.2, 0.2, 0, 60),
+            "drop_ignore_inactive_replica_after_seconds": threshold_generator(
+                0.2, 0.2, 0, 60, 32
+            ),
+            "drop_lock_duration_seconds": threshold_generator(0.2, 0.2, 0, 60, 31),
             "drop_zookeeper_thread_pool_size": threads_lambda,
             # "migration_from_database_replicated": true_false_lambda, not suitable for testing
             "state_application_thread_pool_size": threads_lambda,
         }
         remote_servers = top_root.find("remote_servers")
         if remote_servers is not None:
-            number_clusters = len(list(remote_servers))
+            number_clusters = len(
+                [c for c in remote_servers if "remove" not in c.attrib]
+            )
         if number_clusters > 0 and random.randint(1, 100) <= 75:
             cluster_name_choices = [f"cluster{i}" for i in range(0, number_clusters)]
             if remote_servers is None or remote_servers.find("default") is None:
@@ -953,6 +976,13 @@ def modify_server_settings(
         possible_timezones = get_system_timezones()
         if len(possible_timezones) > 0:
             possible_properties["timezone"] = lambda: random.choice(possible_timezones)
+    if "cache_policy" not in cache_storage_properties:
+        possible_policies = ["LRU", "SLRU"]
+        if is_private_binary:
+            possible_policies.extend(["LRU_OVERCOMMIT", "SLRU_OVERCOMMIT"])
+        cache_storage_properties["cache_policy"] = lambda: random.choice(
+            possible_policies
+        )
 
     selected_properties = {}
     # Select random properties to the XML
