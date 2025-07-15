@@ -263,6 +263,11 @@ MutableColumns ColumnLazy::scatter(ColumnIndex, const Selector &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method scatter is not supported for {}", getName());
 }
 
+MutableColumns ColumnLazy::scatter(const std::vector<size_t> &, const Selector &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method scatter is not supported for {}", getName());
+}
+
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnLazy::compareAt(size_t, size_t, const IColumn &, int) const
 {

@@ -275,6 +275,29 @@ MutableColumns IColumnHelper<Derived, Parent>::scatter(IColumn::ColumnIndex num_
 }
 
 template <typename Derived, typename Parent>
+MutableColumns IColumnHelper<Derived, Parent>::scatter(const std::vector<size_t> & rows_per_shard, const IColumn::Selector & selector) const
+{
+    const auto & self = static_cast<const Derived &>(*this);
+    size_t num_rows = self.size();
+
+    if (num_rows != selector.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of selector: {} doesn't match size of column: {}", selector.size(), num_rows);
+
+    size_t num_columns = rows_per_shard.size();
+    MutableColumns columns(num_columns);
+    for (auto & column : columns)
+        column = self.cloneEmpty();
+
+    for (size_t col = 0; col < num_columns; ++col)
+        columns[col]->reserve(rows_per_shard[col]);
+
+    for (size_t i = 0; i < num_rows; ++i)
+        static_cast<Derived &>(*columns[selector[i]]).insertFrom(*this, i);
+
+    return columns;
+}
+
+template <typename Derived, typename Parent>
 void IColumnHelper<Derived, Parent>::gather(ColumnGathererStream & gatherer)
 {
     gatherer.gather(static_cast<Derived &>(*this));

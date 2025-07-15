@@ -447,6 +447,7 @@ public:
     using ColumnIndex = UInt64;
     using Selector = PaddedPODArray<ColumnIndex>;
     [[nodiscard]] virtual std::vector<MutablePtr> scatter(ColumnIndex num_columns, const Selector & selector) const = 0;
+    [[nodiscard]] virtual std::vector<MutablePtr> scatter(const std::vector<size_t> & rows_per_shard, const Selector & selector) const = 0;
 
     /// Insert data from several other columns according to source mask (used in vertical merge).
     /// For now it is a helper to de-virtualize calls to insert*() functions inside gather loop
@@ -819,6 +820,7 @@ private:
 
     /// Devirtualize insertFrom.
     MutableColumns scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const override;
+    MutableColumns scatter(const std::vector<size_t> & rows_per_shard, const IColumn::Selector & selector) const override;
 
     /// Devirtualize insertFrom and insertRangeFrom.
     void gather(ColumnGathererStream & gatherer) override;

@@ -167,6 +167,11 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method scatter is not supported for ColumnUnique.");
     }
 
+    std::vector<MutableColumnPtr> scatter(const std::vector<size_t> &, const Selector &) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method scatter is not supported for ColumnUnique.");
+    }
+
     WeakHash32 getWeakHash32() const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getWeakHash32 is not supported for ColumnUnique.");

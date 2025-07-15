@@ -109,6 +109,7 @@ public:
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
+    MutableColumns scatter(const std::vector<size_t> & rows_per_shard, const Selector & selector) const override;
     void gather(ColumnGathererStream & gatherer_stream) override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
