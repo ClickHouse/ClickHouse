@@ -24,7 +24,9 @@ Internally, Time64 stores data as an Int64 number of ticks since the start of th
 
 Unlike DateTime64, Time64 does not store a date component, meaning that it only represents time. See details in [Time](../../sql-reference/data-types/time.md).
 
-Supported range of values: \[000:00:00, 999:59:59.99999999\]
+Supported range of values: \[-999:59:59.999999999, 999:59:59.999999999\]
+
+The number of digits after the decimal point depends on the precision parameter.
 
 ## Examples {#examples}
 

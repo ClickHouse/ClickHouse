@@ -31,13 +31,13 @@ Nevertheless, it is possible to work with individual values as well. To represen
 
 `Field` does not have enough information about a specific data type for a table. For example, `UInt8`, `UInt16`, `UInt32`, and `UInt64` are all represented as `UInt64` in a `Field`.
 
-## Leaky Abstractions {#leaky-abstractions}
+## Leaky abstractions {#leaky-abstractions}
 
 `IColumn` has methods for common relational transformations of data, but they do not meet all needs. For example, `ColumnUInt64` does not have a method to calculate the sum of two columns, and `ColumnString` does not have a method to run a substring search. These countless routines are implemented outside of `IColumn`.
 
 Various functions on columns can be implemented in a generic, non-efficient way using `IColumn` methods to extract `Field` values, or in a specialized way using knowledge of inner memory layout of data in a specific `IColumn` implementation. It is implemented by casting functions to a specific `IColumn` type and deal with internal representation directly. For example, `ColumnUInt64` has the `getData` method that returns a reference to an internal array, then a separate routine reads or fills that array directly. We have "leaky abstractions" to allow efficient specializations of various routines.
 
-## Data Types {#data_types}
+## Data types {#data_types}
 
 `IDataType` is responsible for serialization and deserialization: for reading and writing chunks of columns or individual values in binary or text form. `IDataType` directly corresponds to data types in tables. For example, there are `DataTypeUInt32`, `DataTypeDateTime`, `DataTypeString` and so on.
 
@@ -142,7 +142,7 @@ It is an excellent place to implement runtime code generation to avoid template 
 
 Due to vectorized query execution, functions are not short-circuited. For example, if you write `WHERE f(x) AND g(y)`, both sides are calculated, even for rows, when `f(x)` is zero (except when `f(x)` is a zero constant expression). But if the selectivity of the `f(x)` condition is high, and calculation of `f(x)` is much cheaper than `g(y)`, it's better to implement multi-pass calculation. It would first calculate `f(x)`, then filter columns by the result, and then calculate `g(y)` only for smaller, filtered chunks of data.
 
-## Aggregate Functions {#aggregate-functions}
+## Aggregate functions {#aggregate-functions}
 
 Aggregate functions are stateful functions. They accumulate passed values into some state and allow you to get results from that state. They are managed with the `IAggregateFunction` interface. States can be rather simple (the state for `AggregateFunctionCount` is just a single `UInt64` value) or quite complex (the state of `AggregateFunctionUniqCombined` is a combination of a linear array, a hash table, and a `HyperLogLog` probabilistic data structure).
 
@@ -239,7 +239,7 @@ API of `ConcurrencyControl` consists of the following functions:
 
 This API allows queries to start with at least one thread (in presence of CPU pressure) and later scale up to `max_threads`.
 
-## Distributed Query Execution {#distributed-query-execution}
+## Distributed query execution {#distributed-query-execution}
 
 Servers in a cluster setup are mostly independent. You can create a `Distributed` table on one or all servers in a cluster. The `Distributed` table does not store data itself – it only provides a "view" to all local tables on multiple nodes of a cluster. When you SELECT from a `Distributed` table, it rewrites that query, chooses remote nodes according to load balancing settings, and sends the query to them. The `Distributed` table requests remote servers to process a query just up to a stage where intermediate results from different servers can be merged. Then it receives the intermediate results and merges them. The distributed table tries to distribute as much work as possible to remote servers and does not send much intermediate data over the network.
 
@@ -247,7 +247,7 @@ Things become more complicated when you have subqueries in IN or JOIN clauses, a
 
 There is no global query plan for distributed query execution. Each node has its local query plan for its part of the job. We only have simple one-pass distributed query execution: we send queries for remote nodes and then merge the results. But this is not feasible for complicated queries with high cardinality `GROUP BY`s or with a large amount of temporary data for JOIN. In such cases, we need to "reshuffle" data between servers, which requires additional coordination. ClickHouse does not support that kind of query execution, and we need to work on it.
 
-## Merge Tree {#merge-tree}
+## Merge tree {#merge-tree}
 
 `MergeTree` is a family of storage engines that supports indexing by primary key. The primary key can be an arbitrary tuple of columns or expressions. Data in a `MergeTree` table is stored in "parts". Each part stores data in the primary key order, so data is ordered lexicographically by the primary key tuple. All the table columns are stored in separate `column.bin` files in these parts. The files consist of compressed blocks. Each block is usually from 64 KB to 1 MB of uncompressed data, depending on the average value size. The blocks consist of column values placed contiguously one after the other. Column values are in the same order for each column (the primary key defines the order), so when you iterate by many columns, you get values for the corresponding rows.
 

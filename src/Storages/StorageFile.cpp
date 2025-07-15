@@ -55,7 +55,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
 #include <Formats/SchemaInferenceUtils.h>
-#include "base/defines.h"
+#include <base/defines.h>
 
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
@@ -2131,7 +2131,7 @@ void registerStorageFile(StorageFactory & factory)
     StorageFactory::StorageFeatures storage_features{
         .supports_settings = true,
         .supports_schema_inference = true,
-        .source_access_type = AccessType::FILE,
+        .source_access_type = AccessTypeObjects::Source::FILE,
         .has_builtin_setting_fn = Settings::hasBuiltin,
     };
 
