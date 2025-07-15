@@ -591,7 +591,7 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
 
 IcebergStorageSink::IcebergStorageSink(
     ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
+    StorageObjectStorageConfigurationPtr configuration_,
     const std::optional<FormatSettings> & format_settings_,
     const Block & sample_block_,
     ContextPtr context_)
@@ -767,8 +767,8 @@ bool IcebergStorageSink::initializeMetadata()
 
         if (object_storage->exists(StoredObject(metadata_name)))
         {
-            for (const auto & [_, data_filename] : data_filenames)
-                object_storage->removeObjectIfExists(StoredObject(data_filename));
+            for (const auto & manifest_filename : manifest_entries)
+                object_storage->removeObjectIfExists(StoredObject(manifest_filename));
 
             object_storage->removeObjectIfExists(StoredObject(manifest_list_name));
             return false;

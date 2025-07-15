@@ -122,11 +122,9 @@ private:
 class IcebergStorageSink : public SinkToStorage
 {
 public:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
-
     IcebergStorageSink(
         ObjectStoragePtr object_storage_,
-        ConfigurationPtr configuration_,
+        StorageObjectStorageConfigurationPtr configuration_,
         const std::optional<FormatSettings> & format_settings_,
         const Block & sample_block_,
         ContextPtr context_);
@@ -147,7 +145,7 @@ private:
     ObjectStoragePtr object_storage;
     Poco::JSON::Object::Ptr metadata;
     ContextPtr context;
-    ConfigurationPtr configuration;
+    StorageObjectStorageConfigurationPtr configuration;
     std::optional<FormatSettings> format_settings;
     Int32 total_rows = 0;
     Int32 total_chunks_size = 0;
