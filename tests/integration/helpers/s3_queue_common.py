@@ -131,7 +131,7 @@ def create_table(
     else:
         engine_def = f"{engine_name}('{started_cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{started_cluster.azurite_container}', '{files_path}/', 'CSV')"
 
-    node.query(f"DROP TABLE IF EXISTS {table_name}")
+    node.query(f"DROP TABLE IF EXISTS {database_name}.{table_name}")
     if no_settings:
         create_query = f"""
             CREATE TABLE {database_name}.{table_name} ({format})
@@ -159,6 +159,8 @@ def create_mv(
     format="column1 UInt32, column2 UInt32, column3 UInt32",
     virtual_columns="_path String",
     extra_dst_format=None,
+    dst_table_engine="MergeTree()",
+    dst_table_exists=False
 ):
     if mv_name is None:
         mv_name = f"{src_table_name}_mv"
@@ -167,10 +169,10 @@ def create_mv(
     else:
         extra_dst_format = ""
 
-    node.query(f"""
-        DROP TABLE IF EXISTS {dst_table_name};
-        DROP TABLE IF EXISTS {mv_name};
-    """)
+    if not dst_table_exists:
+        node.query(f"DROP TABLE IF EXISTS {dst_table_name};")
+
+    node.query(f"DROP TABLE IF EXISTS {mv_name};")
 
     virtual_format = ""
     virtual_names = ""
@@ -181,11 +183,14 @@ def create_mv(
         virtual_names += f", {name}"
 
     if create_dst_table_first:
+        if not dst_table_exists:
+            node.query(f"""
+                CREATE TABLE {dst_table_name} ({format}{extra_dst_format}{virtual_format})
+                ENGINE = {dst_table_engine}
+                ORDER BY column1;
+            """)
         node.query(
             f"""
-            CREATE TABLE {dst_table_name} ({format}{extra_dst_format}{virtual_format})
-            ENGINE = MergeTree()
-            ORDER BY column1;
             CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * {virtual_names} FROM {src_table_name};
             """
         )
@@ -194,11 +199,13 @@ def create_mv(
             f"""
             SET allow_materialized_view_with_bad_select=1;
             CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * {virtual_names} FROM {src_table_name};
-            CREATE TABLE {dst_table_name} ({format}{extra_dst_format}{virtual_format})
-            ENGINE = MergeTree()
-            ORDER BY column1;
-            """
-    )
+            """)
+        if not dst_table_exists:
+            node.query(f"""
+                CREATE TABLE {dst_table_name} ({format}{extra_dst_format}{virtual_format})
+                ENGINE = {dst_table_engine}
+                ORDER BY column1;
+            """)
 
 
 def generate_random_string(length=6):

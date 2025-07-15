@@ -286,13 +286,12 @@ private:
     String getNextAlias() { return "a" + std::to_string(aliases_counter++); }
     void columnPathRef(const ColumnPathChain & entry, Expr * expr) const;
     void columnPathRef(const ColumnPathChain & entry, ColumnPath * cp) const;
-    String columnPathRef(const ColumnPathChain & entry) const;
     void
     colRefOrExpression(RandomGenerator & rg, const SQLRelation & rel, TableEngineValues teng, const ColumnPathChain & entry, Expr * expr);
     String nextComment(RandomGenerator & rg) const;
     SQLRelation createTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
     void addTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
-    SQLRelation createViewRelation(const String & rel_name, size_t ncols);
+    SQLRelation createViewRelation(const String & rel_name, const SQLView & v);
     void addViewRelation(const String & rel_name, const SQLView & v);
     void addDictionaryRelation(const String & rel_name, const SQLDictionary & d);
     String strAppendAnyValue(RandomGenerator & rg, SQLType * tp);
@@ -313,7 +312,6 @@ private:
         bool modify,
         bool is_pk,
         ColumnSpecial special,
-        uint32_t col_tp_mask,
         SQLColumn & col,
         ColumnDef * cd);
     void addTableColumn(
@@ -343,7 +341,7 @@ private:
     void generateNextOptimizeTableInternal(RandomGenerator & rg, const SQLTable & t, bool strict, OptimizeTable * ot);
     void generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot);
     void generateNextCheckTable(RandomGenerator & rg, CheckTable * ct);
-    void generateNextDescTable(RandomGenerator & rg, DescTable * dt);
+    void generateNextDescTable(RandomGenerator & rg, DescribeStatement * dt);
     void generateNextRename(RandomGenerator & rg, Rename * ren);
     void generateNextExchange(RandomGenerator & rg, Exchange * exc);
     void generateNextKill(RandomGenerator & rg, Kill * kil);
@@ -454,7 +452,7 @@ public:
     const std::function<bool(const SQLTable &)> attached_tables_to_compare_content = [](const SQLTable & t)
     {
         return t.isAttached() && !t.isNotTruncableEngine() && t.teng != TableEngineValues::CollapsingMergeTree
-            && t.teng != TableEngineValues::GenerateRandom;
+            && t.teng != TableEngineValues::VersionedCollapsingMergeTree && t.is_deterministic;
     };
     const std::function<bool(const SQLTable &)> attached_tables_for_table_peer_oracle
         = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.is_deterministic; };

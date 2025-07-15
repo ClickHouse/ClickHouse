@@ -330,11 +330,17 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
     extern const ServerSettingsFloat min_os_cpu_wait_time_ratio_to_drop_connection;
     extern const ServerSettingsFloat max_os_cpu_wait_time_ratio_to_drop_connection;
+    extern const ServerSettingsBool skip_binary_checksum_checks;
 }
 
 namespace ErrorCodes
 {
     extern const int STARTUP_SCRIPTS_ERROR;
+}
+
+namespace FileCacheSetting
+{
+    extern const FileCacheSettingsBool load_metadata_asynchronously;
 }
 
 }
@@ -773,7 +779,7 @@ void sanityChecks(Server & server)
                 Context::WarningType::DELAY_ACCOUNTING_DISABLED,
                 PreformattedMessage::create(
                     "Delay accounting is not enabled, OSIOWaitMicroseconds will not be gathered. You can enable it "
-                    "using `echo 1 > {}` or by using sysctl.",
+                    "using `sudo sh -c 'echo 1 > {}'` or by using sysctl.",
                     String(filename)));
     }
     catch (...) // NOLINT(bugprone-empty-catch)
@@ -1436,7 +1442,11 @@ try
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
 
-    if (!executable_path.empty())
+    if (server_settings[ServerSetting::skip_binary_checksum_checks])
+    {
+        LOG_WARNING(log, "Binary checksum checks disabled due to skip_binary_checksum_checks - not recommended for production deployments");
+    }
+    else if (!executable_path.empty())
     {
         /// Integrity check based on checksum of the executable code.
         /// Note: it is not intended to protect from malicious party,
@@ -1644,13 +1654,33 @@ try
     if (config().has("macros"))
         global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
 
+
+    const auto & cache_disk_name = server_settings[ServerSetting::temporary_data_in_cache].value;
+
     /// Storage with temporary data for processing of heavy queries.
     if (!server_settings[ServerSetting::tmp_policy].value.empty())
     {
         global_context->setTemporaryStoragePolicy(server_settings[ServerSetting::tmp_policy], server_settings[ServerSetting::max_temporary_data_on_disk_size]);
     }
-    else if (!server_settings[ServerSetting::temporary_data_in_cache].value.empty())
+    else if (!cache_disk_name.empty())
     {
+        /// When cache is used as a temporary data storage with load_metadata_asynchronously
+        /// the cache might not be fully ready when setTemporaryStorageInCache() is called
+        /// below which might try to use the cache before it's fully loaded leading to
+        /// `File cache is not initialized` errors. Instead disallow load_metadata_asynchronously
+        /// for cache disks used as temporary storage.
+        auto cache_name = global_context->getDisk(cache_disk_name)->getCacheName();
+        if (!cache_name.empty())
+        {
+            auto cache_data = FileCacheFactory::instance().getByName(cache_name);
+            if (cache_data->getSettings()[FileCacheSetting::load_metadata_asynchronously])
+            {
+                throw Exception(
+                    ErrorCodes::INVALID_SETTING_VALUE,
+                    "Cache disk '{}' is used as a temporary storage, load_metadata_asynchronously is disallowed.",
+                    cache_name);
+            }
+        }
         global_context->setTemporaryStorageInCache(server_settings[ServerSetting::temporary_data_in_cache], server_settings[ServerSetting::max_temporary_data_on_disk_size]);
     }
     else
@@ -2000,7 +2030,7 @@ try
             global_context->setMaxPendingMutationsExecutionTimeToWarn(new_server_settings[ServerSetting::max_pending_mutations_execution_time_to_warn]);
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
 
-            global_context->setServerSetting("s3queue_disable_streaming", new_server_settings[ServerSetting::s3queue_disable_streaming].value);
+            global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
 
             global_context->setOSCPUOverloadSettings(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection], new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]);
 

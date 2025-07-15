@@ -4,7 +4,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/StringUtils.h>
-#include "Columns/IColumn.h"
+#include <Columns/IColumn.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>

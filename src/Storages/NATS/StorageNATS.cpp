@@ -37,7 +37,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsMilliseconds stream_flush_interval_ms;
     extern const SettingsBool stream_like_engine_allow_direct_select;
     extern const SettingsString stream_like_engine_insert_queue;
@@ -783,7 +783,7 @@ void registerStorageNATS(StorageFactory & factory)
         creator_fn,
         StorageFactory::StorageFeatures{
             .supports_settings = true,
-            .source_access_type = AccessType::NATS,
+            .source_access_type = AccessTypeObjects::Source::NATS,
             .has_builtin_setting_fn = NATSSettings::hasBuiltin,
         });
 }
