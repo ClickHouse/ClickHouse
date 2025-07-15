@@ -18,9 +18,9 @@ title: 'JSONCompactEachRowWithNames'
 Differs from the [`JSONCompactEachRow`](./JSONCompactEachRow.md) format in that it also prints the header row with column names, similar to the [`TabSeparatedWithNames`](../TabSeparated/TabSeparatedWithNames.md) format.
 
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
-### Inserting Data {#inserting-data}
+### Inserting data {#inserting-data}
 
 Using a JSON file with the following data, named as `football.json`:
 
@@ -51,7 +51,7 @@ Insert the data:
 INSERT INTO football FROM INFILE 'football.json' FORMAT JSONCompactEachRowWithNames;
 ```
 
-### Reading Data {#reading-data}
+### Reading data {#reading-data}
 
 Read data using the `JSONCompactEachRowWithNames` format:
 
@@ -85,7 +85,7 @@ The output will be in JSON format:
 ```
 
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}
 
 :::note
 If setting [`input_format_with_names_use_header`](/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,

@@ -142,3 +142,53 @@ def test_reconnect_after_nodes_restart(started_cluster):
             f"""SELECT ProfileEvents['DistributedConnectionReconnectCount'] FROM system.query_log WHERE query_id = '{uuid}' and type = 'QueryFinish';"""
         ) == "2\n"
     )
+
+
+def test_reconnect_after_nodes_restart_no_wait(started_cluster):
+    uuid = str(uuid4())
+    result = node1.query(
+        f"""
+        SELECT count(*) from s3Cluster(
+            'cluster_simple',
+            'http://minio1:9001/root/data/generated/*.csv',
+            'minio', '{minio_secret_key}', 'CSV', 'a String, b UInt64')
+        """
+        , query_id=uuid
+    )
+
+    assert result == "14950\n"
+
+    node1.query("system flush logs query_log")
+
+    assert (
+        node1.query(
+            f"""SELECT ProfileEvents['DistributedConnectionReconnectCount'] FROM system.query_log WHERE query_id = '{uuid}' and type = 'QueryFinish';"""
+        ) == "0\n"
+    )
+
+    node2.stop()
+    node2.start()
+
+    uuid = str(uuid4())
+    result = node1.query(
+        f"""
+        SELECT count(*) from s3Cluster(
+            'cluster_simple',
+            'http://minio1:9001/root/data/generated/*.csv',
+            'minio', '{minio_secret_key}', 'CSV', 'a String, b UInt64')
+        """
+        ,query_id=uuid
+    )
+
+    assert result == "14950\n"
+
+    node1.query("system flush logs query_log")
+
+    assert (
+        node1.query(
+            f"""SELECT ProfileEvents['DistributedConnectionReconnectCount'], ProfileEvents['DistributedConnectionFailTry'] > 0 FROM system.query_log WHERE query_id = '{uuid}' and type = 'QueryFinish';"""
+        ) == "1\t1\n"
+    )
+
+    # avoid leaving the test w/o started node, so next test will start with fully runnning cluster
+    node2.wait_for_start(30)

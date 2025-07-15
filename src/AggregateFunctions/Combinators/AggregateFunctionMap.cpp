@@ -1,5 +1,6 @@
 #include <absl/container/flat_hash_map.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/Helpers.h>
 #include <Columns/ColumnFixedString.h>
@@ -16,7 +17,6 @@
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Core/CompareHelper.h>
-#include "AggregateFunctionCombinatorFactory.h"
 
 
 namespace DB

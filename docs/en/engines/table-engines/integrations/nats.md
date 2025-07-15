@@ -7,7 +7,7 @@ slug: /engines/table-engines/integrations/nats
 title: 'NATS Engine'
 ---
 
-# NATS Engine {#redisstreams-engine}
+# NATS engine {#redisstreams-engine}
 
 This engine allows integrating ClickHouse with [NATS](https://nats.io/).
 
@@ -16,7 +16,7 @@ This engine allows integrating ClickHouse with [NATS](https://nats.io/).
 - Publish or subscribe to message subjects.
 - Process new messages as they become available.
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -166,7 +166,7 @@ To stop receiving streams data or to change the conversion logic, detach the mat
 
 If you want to change the target table by using `ALTER`, we recommend disabling the material view to avoid discrepancies between the target table and the data from the view.
 
-## Virtual Columns {#virtual-columns}
+## Virtual columns {#virtual-columns}
 
 - `_subject` - NATS message subject. Data type: `String`.
 

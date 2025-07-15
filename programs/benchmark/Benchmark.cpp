@@ -35,7 +35,7 @@
 #include <Common/TerminalSize.h>
 #include <Common/StudentTTest.h>
 #include <Common/CurrentMetrics.h>
-#include "IO/WriteBuffer.h"
+#include <IO/WriteBuffer.h>
 
 
 /** A tool for evaluating ClickHouse performance.
@@ -608,6 +608,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         /// So we copy the results to std::string.
         std::optional<std::string> env_user_str;
         std::optional<std::string> env_password_str;
+        std::optional<std::string> env_host_str;
         std::optional<std::string> env_quota_key_str;
 
         const char * env_user = getenv("CLICKHOUSE_USER"); // NOLINT(concurrency-mt-unsafe)
@@ -617,6 +618,10 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         const char * env_password = getenv("CLICKHOUSE_PASSWORD"); // NOLINT(concurrency-mt-unsafe)
         if (env_password != nullptr)
             env_password_str.emplace(std::string(env_password));
+
+        const char * env_host = getenv("CLICKHOUSE_HOST"); // NOLINT(concurrency-mt-unsafe)
+        if (env_host != nullptr)
+            env_host_str.emplace(std::string(env_host));
 
         const char * env_quota_key = getenv("CLICKHOUSE_QUOTA_KEY"); // NOLINT(concurrency-mt-unsafe)
         if (env_quota_key != nullptr)
@@ -648,7 +653,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("query_id_prefix", value<std::string>()->default_value(""), "")
             ("max-consecutive-errors", value<size_t>()->default_value(0), "set number of allowed consecutive errors")
             ("ignore-error,continue_on_errors", "continue testing even if a query fails")
-            ("reconnect", value<size_t>()->default_value(1), "control reconnection behaviour: 0 (never reconnect), 1 (reconnect for every query), or N (reconnect after every N queries)")
+            ("reconnect", value<size_t>()->default_value(0), "control reconnection behaviour: 0 (never reconnect), 1 (reconnect for every query), or N (reconnect after every N queries)")
             ("client-side-time", "display the time including network communication instead of server-side time; note that for server versions before 22.8 we always display client-side time")
         ;
 
@@ -683,7 +688,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ? options["port"].as<Ports>()
             : Ports({default_port});
 
-        Strings hosts = options.contains("host") ? options["host"].as<Strings>() : Strings({"localhost"});
+        Strings hosts = options.contains("host") ? options["host"].as<Strings>() : Strings({env_host_str.value_or("localhost")});
 
         String proto_send_chunked {"notchunked"};
         String proto_recv_chunked {"notchunked"};

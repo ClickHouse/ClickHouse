@@ -83,7 +83,6 @@ addDate
 addressToLine
 addressToLineWithInlines
 addressToSymbol
-age
 alphaTokens
 and
 appendTrailingCharIfAbsent
@@ -155,7 +154,6 @@ dateDiff
 dateName
 dateTime64ToSnowflake
 dateTimeToSnowflake
-dateTrunc
 decodeHTMLComponent
 decodeURLComponent
 decodeURLFormComponent
@@ -273,7 +271,6 @@ formatReadableTimeDelta
 formatRow
 formatRowNoNewline
 fragment
-fromDaysSinceYearZero
 fromDaysSinceYearZero32
 fromModifiedJulianDay
 fromModifiedJulianDayOrNull
@@ -678,7 +675,6 @@ tcpPort
 tgamma
 throwIf
 tid
-timeDiff
 timeSlot
 timeSlots
 toBFloat16
@@ -703,7 +699,6 @@ toDateTime64OrZero
 toDateTimeOrDefault
 toDateTimeOrNull
 toDateTimeOrZero
-toDaysSinceYearZero
 toDecimal128
 toDecimal128OrDefault
 toDecimal128OrNull
@@ -739,7 +734,6 @@ toIPv6OrDefault
 toIPv6OrNull
 toIPv6OrZero
 toISOWeek
-toISOYear
 toInt128
 toInt128OrDefault
 toInt128OrNull
@@ -781,15 +775,6 @@ toLowCardinality
 toModifiedJulianDay
 toModifiedJulianDayOrNull
 toNullable
-toRelativeDayNum
-toRelativeHourNum
-toRelativeMinuteNum
-toRelativeMonthNum
-toRelativeQuarterNum
-toRelativeSecondNum
-toRelativeWeekNum
-toRelativeYearNum
-toStartOfInterval
 toStartOfMillisecond
 toString
 toStringCutToZero
@@ -799,7 +784,6 @@ toTime64OrNull
 toTime64OrZero
 toTimeOrNull
 toTimeOrZero
-toTimeWithFixedDate
 toTypeName
 toUInt128
 toUInt128OrDefault
@@ -835,11 +819,9 @@ toUnixTimestamp64Milli
 toUnixTimestamp64Nano
 toUnixTimestamp64Second
 toValidUTF8
-toWeek
 toYYYYMM
 toYYYYMMDD
 toYYYYMMDDhhmmss
-toYearWeek
 today
 tokens
 topLevelDomain
