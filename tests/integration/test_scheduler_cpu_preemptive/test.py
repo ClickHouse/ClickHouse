@@ -281,11 +281,15 @@ def test_threads_oversubscription():
         pytest.param(10, 2, 0.5, 4, True, id="random_longer_dev"),
     ]
 )
-def test_cpu_time_fairness_fixed_queries(queries, threads, production_length, development_length, randomize):
+def test_cpu_time_fairness(queries, threads, production_length, development_length, randomize):
+
+    # We use max_cpus=1 to make sure that we have voilated constraint.
+    # In CI we should have at least one CPU core, so we never hit CPU bottleneck w/o hitting scheduler limit.
+    # This turns ON fair scheduling and we test should not be flaky.
     node.query(
         f"""
         create resource cpu (master thread, worker thread);
-        create workload all settings max_concurrent_threads=8;
+        create workload all settings max_concurrent_threads=8, max_cpus=1;
         create workload production in all settings weight=3;
         create workload development in all;
     """
