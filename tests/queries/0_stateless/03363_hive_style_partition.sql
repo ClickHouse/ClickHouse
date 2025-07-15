@@ -46,6 +46,19 @@ select distinct on (counter) replaceRegexpAll(_path, '/[0-9]+\\.csv', '/<snowfla
 INSERT INTO FUNCTION s3(s3_conn, filename='t_03363_function', format=Parquet, partition_strategy='hive') PARTITION BY (year, country) SELECT country, year, counter FROM t_03363_parquet;
 select distinct on (counter) replaceRegexpAll(_path, '/[0-9]+\\.parquet', '/<snowflakeid>.parquet') AS _path, counter from s3(s3_conn, filename='t_03363_function/**.parquet') order by counter;
 
+-- create a "bucket" with mixed partitioning schemes so we can simulate a malformed storage
+INSERT INTO FUNCTION s3(s3_conn, filename='t_03363_mixed_partitioning', format=Parquet, partition_strategy='hive') PARTITION BY (year) select 1 as id, 2025 as year;
+INSERT INTO FUNCTION s3(s3_conn, filename='t_03363_mixed_partitioning', format=Parquet, partition_strategy='hive') PARTITION BY (country) select 1 as id, 'Brazil' as country;
+
+-- Depends on the above two inserts, should throw exception because it could not find the hive partition columns it was looking for
+-- The format is null because one of the files contains the requested columns and might return the data before we throw the exception
+select * from s3(s3_conn, filename='t_03363_mixed_partitioning/**.parquet') Format null; -- {serverError INCORRECT_DATA}
+
+-- Depends on the above two inserts, should throw exception because it could not find the hive partition columns it was looking for
+-- The format is null because one of the files contains the requested columns and might return the data before we throw the exception
+CREATE TABLE t_03363_mixed_partitioning (id Int32, year UInt16) ENGINE=S3(s3_conn, filename='t_03363_mixed_partitioning', format=Parquet, partition_strategy='hive') PARTITION BY (year);
+SELECT * FROM t_03363_mixed_partitioning Format null; -- {serverError INCORRECT_DATA}
+
 -- should output 1 because partition columns are not written down to the file by default when hive style is being used
 select num_columns from s3(s3_conn, filename='t_03363_function/**.parquet', format=ParquetMetadata) limit 1;
 

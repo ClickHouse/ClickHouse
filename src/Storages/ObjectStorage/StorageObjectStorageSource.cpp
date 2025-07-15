@@ -66,6 +66,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
+    extern const int INCORRECT_DATA;
 }
 
 StorageObjectStorageSource::StorageObjectStorageSource(
@@ -298,14 +299,25 @@ Chunk StorageObjectStorageSource::generate()
             // The order is important, it must be added after virtual columns..
             if (!read_from_format_info.hive_partition_columns_to_read_from_file_path.empty())
             {
-                auto hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
+                const auto hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
+
                 for (const auto & column : read_from_format_info.hive_partition_columns_to_read_from_file_path)
                 {
-                    if (auto it = hive_map.find(column.getNameInStorage()); it != hive_map.end())
+                    const std::string column_name = column.getNameInStorage();
+                    const auto it = hive_map.find(column_name);
+
+                    if (it == hive_map.end())
                     {
-                        auto chunk_column = column.type->createColumnConst(chunk.getNumRows(), convertFieldToType(Field(it->second), *column.type))->convertToFullColumnIfConst();
-                        chunk.addColumn(std::move(chunk_column));
+                        throw Exception(
+                            ErrorCodes::INCORRECT_DATA,
+                            "Expected to find hive partitioning column {} in the path {}."
+                            "Try it with hive partitioning disabled (partition_strategy='wildcard' and/or use_hive_partitioning=0",
+                            column_name,
+                            path);
                     }
+
+                    auto chunk_column = column.type->createColumnConst(chunk.getNumRows(), convertFieldToType(Field(it->second), *column.type))->convertToFullColumnIfConst();
+                    chunk.addColumn(std::move(chunk_column));
                 }
             }
 #if USE_PARQUET && USE_AWS_S3
