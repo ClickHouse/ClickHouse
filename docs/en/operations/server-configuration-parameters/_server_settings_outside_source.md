@@ -1898,12 +1898,12 @@ Port for communicating with clients over PostgreSQL protocol.
 
 ## mysql_require_secure_transport {#mysql_require_secure_transport}
 
-If set to true, secure communication is required with clients over [mysql_port](#mysql_port). Connection with option "--ssl-mode=none" will be refused. Use it with [OpenSSL](#openssl) settings.
+If set to true, secure communication is required with clients over [mysql_port](#mysql_port). Connection with option `--ssl-mode=none` will be refused. Use it with [OpenSSL](#openssl) settings.
 
 
 ## postgresql_require_secure_transport {#postgresql_require_secure_transport}
 
-If set to true, secure communication is required with clients over [postgresql_port](#postgresql_port). Connection with option "sslmode=disable" will be refused. Use it with [OpenSSL](#openssl) settings.
+If set to true, secure communication is required with clients over [postgresql_port](#postgresql_port). Connection with option `sslmode=disable` will be refused. Use it with [OpenSSL](#openssl) settings.
 
 ## tmp_path {#tmp_path}
 
