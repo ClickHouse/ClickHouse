@@ -68,7 +68,7 @@ namespace DB
 class ReadFromFileStep : public ISourceStep
 {
 public:
-    ReadFromFileStep(Header header_, const String & file_name_)
+    ReadFromFileStep(SharedHeader header_, const String & file_name_)
         : ISourceStep(std::move(header_))
         , file_name(file_name_)
     {
@@ -78,7 +78,7 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & /*settings*/) override
     {
-        pipeline.init(Pipe(std::make_shared<NativeCompressedSource>(output_header.value(), std::make_unique<ReadBufferFromFile>(file_name), file_name)));
+        pipeline.init(Pipe(std::make_shared<NativeCompressedSource>(output_header, std::make_unique<ReadBufferFromFile>(file_name), file_name)));
     }
 
     void serialize(Serialization & ctx) const override
@@ -90,7 +90,7 @@ public:
     {
         String file_name;
         readStringBinary(file_name, ctx.in);
-        return std::make_unique<ReadFromFileStep>(*ctx.output_header, file_name);
+        return std::make_unique<ReadFromFileStep>(ctx.output_header, file_name);
     }
 
 private:
@@ -107,10 +107,10 @@ void registerReadFromFileStep(QueryPlanStepRegistry & registry)
 class PrintTSVSink : public ISink
 {
 public:
-    explicit PrintTSVSink(Header header_)
+    explicit PrintTSVSink(SharedHeader header_)
         : ISink(std::move(header_))
         , out("/dev/stdout")
-        , output_format(std::make_shared<TabSeparatedRowOutputFormat>(out, input.getHeader(), false, false, false, DB::FormatSettings{}))
+        , output_format(std::make_shared<TabSeparatedRowOutputFormat>(out, input.getSharedHeader(), false, false, false, DB::FormatSettings{}))
     {}
 
     String getName() const override { return "PrintTSVSink"; }
@@ -137,7 +137,7 @@ private:
 class PrintTSVStep : public IQueryPlanStep
 {
 public:
-    explicit PrintTSVStep(Header input_header_)
+    explicit PrintTSVStep(SharedHeader input_header_)
     {
         updateInputHeaders({input_header_});
     }
@@ -154,7 +154,7 @@ public:
         /// Single sink to print to stdout
         pipeline.resize(1);
 
-        pipeline.setSinks([&](const Block & header, Pipe::StreamType stream_type) -> ProcessorPtr
+        pipeline.setSinks([&](const SharedHeader & header, Pipe::StreamType stream_type) -> ProcessorPtr
         {
             chassert(stream_type == Pipe::StreamType::Main);
             return std::make_shared<PrintTSVSink>(header);
@@ -179,7 +179,7 @@ void registerPrintTSVStep(QueryPlanStepRegistry & registry)
     registry.registerStep("PrintTSV", PrintTSVStep::deserialize);
 }
 
-Header prepareSourceFileInNativeFormat(const String & file_name, const String & data, size_t input_replicate_count)
+SharedHeader prepareSourceFileInNativeFormat(const String & file_name, const String & data, size_t input_replicate_count)
 {
     ReadBufferFromString read_buffer(data);
 
@@ -193,16 +193,20 @@ Header prepareSourceFileInNativeFormat(const String & file_name, const String & 
             header.insert({type->createColumn(), type, name});
     }
 
+    auto shared_header = std::make_shared<const Block>(std::move(header));
+
     {
         auto file_buffer = std::make_unique<WriteBufferFromFile>(file_name);
-        NativeCompressedSink sink(header, *file_buffer, file_name);
+        auto compressed_buffer = std::make_unique<CompressedWriteBuffer>(*file_buffer);
+
+        auto writer = std::make_unique<NativeWriter>(*compressed_buffer, DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS, shared_header);
 
         auto reader = std::make_shared<TabSeparatedRowInputFormat>(
-            header, read_buffer, IRowInputFormat::Params{}, true, true, false, FormatSettings{});
+            shared_header, read_buffer, IRowInputFormat::Params{}, true, true, false, FormatSettings{});
 
         while (auto chunk = reader->read())
         {
-            Block block = header.cloneWithColumns(chunk.getColumns());
+            Block block = shared_header->cloneWithColumns(chunk.getColumns());
 
             /// Repeat the same block multiple times to make the file bigger
             for (size_t i = 0; i < input_replicate_count; ++i)
@@ -211,10 +215,10 @@ Header prepareSourceFileInNativeFormat(const String & file_name, const String & 
         sink.onFinish();
     }
 
-    return header;
+    return shared_header;
 }
 
-QueryPlanStepPtr createSourceStepFromFileInNativeFormat(Header header, const String & file_name)
+QueryPlanStepPtr createSourceStepFromFileInNativeFormat(SharedHeader header, const String & file_name)
 {
     auto step = std::make_unique<ReadFromFileStep>(std::move(header), file_name);
     return step;
@@ -229,8 +233,8 @@ QueryPlan createHashJoinQueryPlan(const String & data_a, const String & data_b)
 //    const size_t num_shards_b = 2;
     const size_t replicate_input_count = 2; // Replicate the same data many times just for testing
 
-    Header header_a = prepareSourceFileInNativeFormat(file_name_a, data_a, replicate_input_count);
-    Header header_b = prepareSourceFileInNativeFormat(file_name_b, data_b, replicate_input_count);
+    SharedHeader header_a = prepareSourceFileInNativeFormat(file_name_a, data_a, replicate_input_count);
+    SharedHeader header_b = prepareSourceFileInNativeFormat(file_name_b, data_b, replicate_input_count);
 
     /// Create source for table A
     QueryPlan left_plan;
@@ -255,11 +259,11 @@ QueryPlan createHashJoinQueryPlan(const String & data_a, const String & data_b)
             return result;
         };
 
-        ColumnsWithTypeAndName all_columns =  header_a.getColumnsWithTypeAndName();
-        all_columns.insert(all_columns.end(), header_b.getColumnsWithTypeAndName().begin(), header_b.getColumnsWithTypeAndName().end());
+        ColumnsWithTypeAndName all_columns =  header_a->getColumnsWithTypeAndName();
+        all_columns.insert(all_columns.end(), header_b->getColumnsWithTypeAndName().begin(), header_b->getColumnsWithTypeAndName().end());
         JoinExpressionActions join_expression_actions(
-            remove_column_pointers(header_a.getColumnsWithTypeAndName()),
-            remove_column_pointers(header_b.getColumnsWithTypeAndName()),
+            remove_column_pointers(header_a->getColumnsWithTypeAndName()),
+            remove_column_pointers(header_b->getColumnsWithTypeAndName()),
             remove_column_pointers(all_columns)
         );
 
