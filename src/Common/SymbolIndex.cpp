@@ -54,7 +54,7 @@ Otherwise you will get only exported symbols from program headers.
 
 */
 
-struct DynamicLinkingProgramHeaderInfo
+extern "C" struct dl_phdr_info
 {
     uint64_t addr;
     const char * name;
@@ -66,7 +66,9 @@ struct DynamicLinkingProgramHeaderInfo
     void * tls_data;
 };
 
-extern "C" int dl_iterate_phdr(int (*)(struct DynamicLinkingProgramHeaderInfo *, size_t, void *), void *);
+using DynamicLinkingProgramHeaderInfo = dl_phdr_info;
+
+extern "C" int dl_iterate_phdr(int (*)(DynamicLinkingProgramHeaderInfo *, size_t, void *), void *);
 
 
 namespace DB
