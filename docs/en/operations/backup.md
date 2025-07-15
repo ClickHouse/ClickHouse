@@ -1,12 +1,12 @@
 ---
 description: 'Guide to backing up and restoring ClickHouse databases and tables'
-sidebar_label: 'Backup and Restore'
+sidebar_label: 'Backup and restore'
 sidebar_position: 10
 slug: /operations/backup
-title: 'Backup and Restore'
+title: 'Backup and restore'
 ---
 
-# Backup and Restore
+# Backup and restore
 
 - [Backup to a local disk](#backup-to-a-local-disk)
 - [Configuring backup/restore to use an S3 endpoint](#configuring-backuprestore-to-use-an-s3-endpoint)
@@ -394,7 +394,7 @@ SELECT throwIf((
         FROM data3
     ), 'Data does not match after BACKUP/RESTORE')
 ```
-## BACKUP/RESTORE Using an S3 Disk {#backuprestore-using-an-s3-disk}
+## BACKUP/RESTORE using an S3 disk {#backuprestore-using-an-s3-disk}
 
 It is also possible to `BACKUP`/`RESTORE` to S3 by configuring an S3 disk in the ClickHouse storage configuration.  Configure the disk like this by adding a file to `/etc/clickhouse-server/config.d`:
 
@@ -439,7 +439,7 @@ But keep in mind that:
 - If your tables are backed by S3 storage and types of the disks are different, it doesn't use `CopyObject` calls to copy parts to the destination bucket, instead, it downloads and uploads them, which is very inefficient. Prefer to use `BACKUP ... TO S3(<endpoint>)` syntax for this use-case.
 :::
 
-## Using Named Collections {#using-named-collections}
+## Using named collections {#using-named-collections}
 
 Named collections can be used for `BACKUP/RESTORE` parameters. See [here](./named-collections.md#named-collections-for-backups) for an example.
 
@@ -447,17 +447,17 @@ Named collections can be used for `BACKUP/RESTORE` parameters. See [here](./name
 
 ClickHouse stores data on disk, and there are many ways to backup disks.  These are some alternatives that have been used in the past, and that may fit in well in your environment.
 
-### Duplicating Source Data Somewhere Else {#duplicating-source-data-somewhere-else}
+### Duplicating source data somewhere else {#duplicating-source-data-somewhere-else}
 
 Often data that is ingested into ClickHouse is delivered through some sort of persistent queue, such as [Apache Kafka](https://kafka.apache.org). In this case it is possible to configure an additional set of subscribers that will read the same data stream while it is being written to ClickHouse and store it in cold storage somewhere. Most companies already have some default recommended cold storage, which could be an object store or a distributed filesystem like [HDFS](https://hadoop.apache.org/docs/stable/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html).
 
-### Filesystem Snapshots {#filesystem-snapshots}
+### Filesystem snapshots {#filesystem-snapshots}
 
 Some local filesystems provide snapshot functionality (for example, [ZFS](https://en.wikipedia.org/wiki/ZFS)), but they might not be the best choice for serving live queries. A possible solution is to create additional replicas with this kind of filesystem and exclude them from the [Distributed](../engines/table-engines/special/distributed.md) tables that are used for `SELECT` queries. Snapshots on such replicas will be out of reach of any queries that modify data. As a bonus, these replicas might have special hardware configurations with more disks attached per server, which would be cost-effective.
 
 For smaller volumes of data, a simple `INSERT INTO ... SELECT ...` to remote tables might work as well.
 
-### Manipulations with Parts {#manipulations-with-parts}
+### Manipulations with parts {#manipulations-with-parts}
 
 ClickHouse allows using the `ALTER TABLE ... FREEZE PARTITION ...` query to create a local copy of table partitions. This is implemented using hardlinks to the `/var/lib/clickhouse/shadow/` folder, so it usually does not consume extra disk space for old data. The created copies of files are not handled by ClickHouse server, so you can just leave them there: you will have a simple backup that does not require any additional external system, but it will still be prone to hardware issues. For this reason, it's better to remotely copy them to another location and then remove the local copies. Distributed filesystems and object stores are still a good options for this, but normal attached file servers with a large enough capacity might work as well (in this case the transfer will occur via the network filesystem or maybe [rsync](https://en.wikipedia.org/wiki/Rsync)).
 Data can be restored from backup using the `ALTER TABLE ... ATTACH PARTITION ...`
@@ -508,11 +508,11 @@ RESTORE TABLE data AS data_restored FROM AzureBlobStorage('DefaultEndpointsProto
 
 System tables can also be included in your backup and restore workflows, but their inclusion depends on your specific use case.
 
-### Backing Up Log Tables {#backing-up-log-tables}
+### Backing up log tables {#backing-up-log-tables}
 
 System tables that store historic data, such as those with a _log suffix (e.g., `query_log`, `part_log`), can be backed up and restored like any other table. If your use case relies on analyzing historic data—for example, using query_log to track query performance or debug issues—it's recommended to include these tables in your backup strategy. However, if historic data from these tables is not required, they can be excluded to save backup storage space.
 
-### Backing Up Access Management Tables {#backing-up-access-management-tables}
+### Backing up access management tables {#backing-up-access-management-tables}
 
 System tables related to access management, such as users, roles, row_policies, settings_profiles, and quotas, receive special treatment during backup and restore operations. When these tables are included in a backup, their content is exported to a special `accessXX.txt` file, which encapsulates the equivalent SQL statements for creating and configuring the access entities. Upon restoration, the restore process interprets these files and re-applies the SQL commands to recreate the users, roles, and other configurations.
 
