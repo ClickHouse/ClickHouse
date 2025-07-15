@@ -29,7 +29,6 @@ namespace Setting
 ReadFromObjectStorageStep::ReadFromObjectStorageStep(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
-    const String & name_,
     const Names & columns_to_read,
     const NamesAndTypesList & virtual_columns_,
     const SelectQueryInfo & query_info_,
@@ -47,7 +46,6 @@ ReadFromObjectStorageStep::ReadFromObjectStorageStep(
     , info(std::move(info_))
     , virtual_columns(virtual_columns_)
     , format_settings(format_settings_)
-    , name(name_ + "ReadStep")
     , need_only_count(need_only_count_)
     , max_block_size(max_block_size_)
     , num_streams(num_streams_)
@@ -58,7 +56,6 @@ ReadFromObjectStorageStep::ReadFromObjectStorageStep(
 void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-    createIterator();
 }
 
 void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
