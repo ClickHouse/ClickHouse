@@ -12,8 +12,6 @@ set(CRC32C_SOURCES
     "${CRC32C_DIR}/src/crc32c.cc"
 )
 
-set(CRC32C_FLAGS)
-
 if(ARCH_AARCH64)
   include_directories(${CRC32C_CMAKE_DIR}/aarch64)
   list(APPEND CRC32C_SOURCES "${CRC32C_DIR}/src/crc32c_arm64.cc")
@@ -27,7 +25,6 @@ else()
 endif()
 
 add_library(_crc32c ${CRC32C_SOURCES})
-target_compile_options(_crc32c PRIVATE ${CRC32C_FLAGS})
 
 target_include_directories(_crc32c
   PUBLIC
