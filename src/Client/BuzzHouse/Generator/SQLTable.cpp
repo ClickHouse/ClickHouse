@@ -2231,7 +2231,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         /// Many types are not allowed in dictionaries
         this->next_type_mask = fc.type_mask
             & ~(allow_JSON | allow_variant | allow_dynamic | allow_tuple | allow_low_cardinality | allow_map | allow_enum | allow_geo
-                | allow_fixed_strings);
+                | allow_fixed_strings | allow_time);
         col.tp = randomNextType(rg, this->next_type_mask, col_counter, dc->mutable_type()->mutable_type());
         this->next_type_mask = type_mask_backup;
 
