@@ -242,6 +242,7 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
         /// Params will be used by merge step
         Aggregator::Params aggregator_params = aggregating_step->getParams();
         GroupingSetsParamsList grouping_sets_params = aggregating_step->getGroupingSetsParamsList();
+        const bool has_grouping_sets = !grouping_sets_params.empty();
 
         const bool should_produce_results_in_order_of_bucket_number = aggregating_step->shouldProduceResultsInBucketOrder();
         const bool memory_bound_merging_of_aggregation_results_enabled = aggregating_step->usingMemoryBoundMerging();
@@ -266,7 +267,8 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
             aggregator_params,
             grouping_sets_params,
             /* final */ original_step_was_final,
-            /* memory_efficient_aggregation */ false,
+            /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
+            optimization_settings.distributed_aggregation_memory_efficient && !has_grouping_sets,
             aggregating_step->getTemporaryDataMergeThreads(),
             should_produce_results_in_order_of_bucket_number,
             aggregating_step->getMaxBlockSize(),
