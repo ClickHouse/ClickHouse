@@ -1209,7 +1209,7 @@ public:
     {
         Time time_offset = hour * 3600 + minute * 60 + second;
 
-        if (std::cmp_greater_equal(time_offset, lut[0].time_at_offset_change()))
+        if (std::cmp_greater_equal(time_offset, lut[1].time_at_offset_change()))
             time_offset -= lut[0].amount_of_offset_change();
 
         return time_offset;

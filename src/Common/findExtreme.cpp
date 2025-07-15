@@ -93,25 +93,31 @@ MULTITARGET_FUNCTION_AVX2_SSE42(
         else
         {
             /// Only native integers
-            if constexpr (add_all_elements)
-            {
-                for (; i < count; i++)
-                    ret = ComparatorClass::cmp(ret, ptr[i]);
-                return ret;
-            }
-
-            constexpr bool is_min = std::same_as<ComparatorClass, MinComparator<T>>;
-            constexpr auto default_value = is_min ? std::numeric_limits<T>::max() : std::numeric_limits<T>::lowest();
-
             for (; i < count; i++)
             {
-                /// keep_number will be 0 or 1
-                bool keep_number = !condition_map[i] == add_if_cond_zero;
-                /// If keep_number = ptr[i] * 1 + 0 * max = ptr[i]
-                /// If not keep_number = ptr[i] * 0 + 1 * max = max
-                T val = ptr[i] * T{keep_number};
-                T val2 = T{!keep_number} * default_value;
-                ret = ComparatorClass::cmp(ret, ComparatorClass::cmp(val, val2));
+                constexpr bool is_min = std::same_as<ComparatorClass, MinComparator<T>>;
+                if constexpr (add_all_elements)
+                {
+                    ret = ComparatorClass::cmp(ret, ptr[i]);
+                }
+                else if constexpr (is_min)
+                {
+                    /// keep_number will be 0 or 1
+                    bool keep_number = !condition_map[i] == add_if_cond_zero;
+                    /// If keep_number = ptr[i] * 1 + 0 * max = ptr[i]
+                    /// If not keep_number = ptr[i] * 0 + 1 * max = max
+                    T final = ptr[i] * T{keep_number} + T{!keep_number} * std::numeric_limits<T>::max();
+                    ret = ComparatorClass::cmp(ret, final);
+                }
+                else
+                {
+                    /// keep_number will be 0 or 1
+                    bool keep_number = !condition_map[i] == add_if_cond_zero;
+                    /// If keep_number = ptr[i] * 1 + 0 * lowest = ptr[i]
+                    /// If not keep_number = ptr[i] * 0 + 1 * lowest = lowest
+                    T final = ptr[i] * T{keep_number} + T{!keep_number} * std::numeric_limits<T>::lowest();
+                    ret = ComparatorClass::cmp(ret, final);
+                }
             }
             return ret;
         }

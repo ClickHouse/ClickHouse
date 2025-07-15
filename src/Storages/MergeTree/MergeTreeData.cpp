@@ -5037,7 +5037,7 @@ void MergeTreeData::checkChecksumsFileIsConsistentWithFileSystem(MutableDataPart
     std::sort(files_in_checksums.begin(), files_in_checksums.end());
 
     /// make sure we do not hold part by shared ptr inside the lambda
-    auto shared_counter = part.use_count();
+    auto shared_counter = part.use_count();  // NOLINT(clang-analyzer-deadcode.DeadStores)
     SCOPE_EXIT({ chassert(shared_counter == part.use_count()); });
 
     part->getDataPartStorage().validateDiskTransaction(

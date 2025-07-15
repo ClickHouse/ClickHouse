@@ -24,7 +24,7 @@ CONV_FN_QUOTE(Column, col)
     {
         if (c == '`')
         {
-            for (uint32_t i = 0; i < (1 << quote); i++)
+            for (uint32_t i = 0; i < (1U << quote); i++)
             {
                 ret += "`";
             }
