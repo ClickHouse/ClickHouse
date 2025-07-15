@@ -502,26 +502,10 @@ Chunk StorageURLSource::generate()
             if (!hive_partition_columns_to_read_from_file_path.empty())
             {
                 const auto path = curr_uri.getPath();
-                const auto hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
-
-                for (const auto & column : hive_partition_columns_to_read_from_file_path)
-                {
-                    const std::string column_name = column.getNameInStorage();
-                    const auto it = hive_map.find(column_name);
-
-                    if (it == hive_map.end())
-                    {
-                        throw Exception(
-                            ErrorCodes::INCORRECT_DATA,
-                            "Expected to find hive partitioning column {} in the path {}."
-                            "Try it with hive partitioning disabled (partition_strategy='wildcard' and/or use_hive_partitioning=0",
-                            column_name,
-                            path);
-                    }
-
-                    auto chunk_column = column.type->createColumnConst(chunk.getNumRows(), convertFieldToType(Field(it->second), *column.type))->convertToFullColumnIfConst();
-                    chunk.addColumn(std::move(chunk_column));
-                }
+                HivePartitioningUtils::addPartitionColumnsToChunk(
+                    chunk,
+                    hive_partition_columns_to_read_from_file_path,
+                    path);
             }
 
             chassert(dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get()));

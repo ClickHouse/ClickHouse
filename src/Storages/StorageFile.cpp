@@ -1536,26 +1536,10 @@ Chunk StorageFileSource::generate()
             // The order is important, it must be added after virtual columns..
             if (!hive_partition_columns_to_read_from_file_path.empty())
             {
-                const auto hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(current_path);
-
-                for (const auto & column : hive_partition_columns_to_read_from_file_path)
-                {
-                    const std::string column_name = column.getNameInStorage();
-                    const auto it = hive_map.find(column_name);
-
-                    if (it == hive_map.end())
-                    {
-                        throw Exception(
-                            ErrorCodes::INCORRECT_DATA,
-                            "Expected to find hive partitioning column {} in the path {}."
-                            "Try it with hive partitioning disabled (partition_strategy='wildcard' and/or use_hive_partitioning=0",
-                            column_name,
-                            current_path);
-                    }
-
-                    auto chunk_column = column.type->createColumnConst(chunk.getNumRows(), convertFieldToType(Field(it->second), *column.type))->convertToFullColumnIfConst();
-                    chunk.addColumn(std::move(chunk_column));
-                }
+                HivePartitioningUtils::addPartitionColumnsToChunk(
+                    chunk,
+                    hive_partition_columns_to_read_from_file_path,
+                    current_path);
             }
 
             return chunk;
