@@ -160,7 +160,7 @@ private:
         bool check_null_map,
         typename AddedColumns,
         typename Selector>
-    static size_t joinRightColumnsSwitchJoinMaskKind(
+    static void joinRightColumnsSwitchJoinMaskKind(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
