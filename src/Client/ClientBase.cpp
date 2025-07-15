@@ -115,7 +115,7 @@ namespace Setting
     extern const SettingsBool async_insert;
     extern const SettingsDialect dialect;
     extern const SettingsNonZeroUInt64 max_block_size;
-    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
