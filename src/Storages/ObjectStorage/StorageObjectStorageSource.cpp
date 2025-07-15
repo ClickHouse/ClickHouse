@@ -66,7 +66,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
-    extern const int INCORRECT_DATA;
 }
 
 StorageObjectStorageSource::StorageObjectStorageSource(
