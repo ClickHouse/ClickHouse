@@ -1,8 +1,9 @@
 #pragma once
 
-#include <Client/AI/AIConfiguration.h>
 #include <ai/ai.h>
 #include <Poco/Util/AbstractConfiguration.h>
+
+#include <Client/AI/AIConfiguration.h>
 
 namespace DB
 {
@@ -10,9 +11,10 @@ namespace DB
 /// Result of AI client creation with metadata
 struct AIClientResult
 {
-    ai::Client client;
+    std::optional<ai::Client> client;
     bool inferred_from_env = false;
     std::string provider;
+    bool no_configuration_found = false;
 };
 
 /// Factory for creating AI provider clients

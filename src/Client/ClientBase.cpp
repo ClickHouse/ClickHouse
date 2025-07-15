@@ -2850,7 +2850,10 @@ bool ClientBase::processQueryText(const String & text)
 
         if (!ai_generator)
         {
-            error_stream << "AI SQL generator is not initialized" << std::endl;
+            error_stream << "AI SQL generator is not initialized. "
+                         << "Please set OPENAI_API_KEY or ANTHROPIC_API_KEY environment variable, "
+                         << "or configure AI settings in your configuration file. "
+                         << "See documentation for detailed setup instructions." << std::endl;
             return true;
         }
 
@@ -3012,6 +3015,12 @@ void ClientBase::initAIProvider()
         // Create the AI client and get metadata about how it was created
         AIClientResult ai_result = AIClientFactory::createClient(ai_config);
 
+        // If no configuration was found, don't initialize the AI generator
+        if (ai_result.no_configuration_found || !ai_result.client.has_value())
+        {
+            return;
+        }
+
         // Store metadata for later use
         ai_inferred_from_env = ai_result.inferred_from_env;
         ai_provider_name = ai_result.provider;
@@ -3022,7 +3031,7 @@ void ClientBase::initAIProvider()
             return executeQueryForSingleString(query);
         };
 
-        ai_generator = std::make_unique<AISQLGenerator>(ai_config, std::move(ai_result.client), query_executor, error_stream);
+        ai_generator = std::make_unique<AISQLGenerator>(ai_config, std::move(ai_result.client.value()), query_executor, error_stream);
     }
     catch (const std::exception & e)
     {

@@ -23,7 +23,7 @@ AIClientResult AIClientFactory::createClient(const AIConfiguration & config)
         auto client = ai::openai::try_create_client();
         if (client.has_value())
         {
-            result.client = std::move(client).value();
+            result.client = std::move(client);
             result.inferred_from_env = true;
             result.provider = "openai";
             return result;
@@ -32,15 +32,14 @@ AIClientResult AIClientFactory::createClient(const AIConfiguration & config)
         client = ai::anthropic::try_create_client();
         if (client.has_value())
         {
-            result.client = std::move(client).value();
+            result.client = std::move(client);
             result.inferred_from_env = true;
             result.provider = "anthropic";
             return result;
         }
 
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "No AI provider specified and no valid environment configuration found. "
-            "Please either set 'ai.provider' in config or set OPENAI_API_KEY/ANTHROPIC_API_KEY environment variable");
+        result.no_configuration_found = true;
+        return result;
     }
     else if (config.provider == "openai")
     {
@@ -58,7 +57,6 @@ AIClientResult AIClientFactory::createClient(const AIConfiguration & config)
     }
 
     // Unknown provider
-    LOG_ERROR(logger, "Unknown AI provider: '{}'. Supported providers are: 'openai', 'anthropic'", config.provider);
     throw Exception(ErrorCodes::BAD_ARGUMENTS,
         "Unknown AI provider: '{}'. Supported providers are: 'openai', 'anthropic'",
         config.provider);

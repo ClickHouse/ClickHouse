@@ -440,7 +440,7 @@ protected:
     bool ai_provider_acknowledged = false;
     /// Whether the AI API key was inferred from environment
     bool ai_inferred_from_env = false;
-    /// The AI provider name (e.g., "OpenAI", "Anthropic")
+    /// The AI provider name (e.g., "openai", "anthropic")
     std::string ai_provider_name;
 #endif
 
