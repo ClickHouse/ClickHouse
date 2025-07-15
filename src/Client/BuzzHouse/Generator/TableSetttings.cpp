@@ -373,7 +373,6 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {"max_processed_bytes_before_commit", CHSetting(bytesRange, {}, false)},
          {"max_processed_files_before_commit", CHSetting(rowsRange, {}, false)},
          {"max_processed_rows_before_commit", CHSetting(rowsRange, {}, false)},
-         {"mode", CHSetting([](RandomGenerator & rg) { return fmt::format("'{}orderded'", rg.nextBool() ? "un" : ""); }, {}, false)},
          {"parallel_inserts", CHSetting(trueOrFalse, {}, false)},
          {"s3queue_buckets",
           CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 16)); }, {}, false)},

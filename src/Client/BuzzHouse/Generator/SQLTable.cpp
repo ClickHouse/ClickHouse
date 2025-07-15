@@ -1279,8 +1279,15 @@ void StatementGenerator::generateEngineDetails(
             sv->set_property("input_format_with_names_use_header");
             sv->set_value("0");
         }
-        else if (
-            b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TShared
+        if (b.isS3QueueEngine() || b.isAzureQueueEngine())
+        {
+            svs = svs ? svs : te->mutable_setting_values();
+            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+
+            sv->set_property("mode");
+            sv->set_value(fmt::format("'{}orderded'", rg.nextBool() ? "un" : ""));
+        }
+        if (b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TShared
             && (!fc.storage_policies.empty() || !fc.keeper_disks.empty())
             && (!svs
                 || (svs->set_value().property() != "storage_policy" && svs->set_value().property() != "disk"
