@@ -52,6 +52,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_distributed_insert_select", 0, 2, "Enable parallel distributed insert select by default"},
             {"write_through_distributed_cache_buffer_size", 0, 0, "New cloud setting"},
             {"min_joined_block_size_rows", 0, DEFAULT_BLOCK_SIZE, "New setting."},
+            {"min_count_to_compile_expression", 3, 1, "For ci tests"},
             {"table_engine_read_through_distributed_cache", false, false, "New setting"},
             {"distributed_cache_alignment", 0, 0, "Rename of distributed_cache_read_alignment"},
             {"output_format_parquet_enum_as_byte_array", false, false, "Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM"},

@@ -39,6 +39,7 @@ ColumnPtr FunctionIsNull::getConstantResultForNonConstArguments(const ColumnsWit
     return result_type->createColumnConst(1, UInt8(0));
 }
 
+
 ColumnPtr FunctionIsNull::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
 {
     const ColumnWithTypeAndName & elem = arguments[0];
@@ -78,9 +79,23 @@ ColumnPtr FunctionIsNull::executeImpl(const ColumnsWithTypeAndName & arguments, 
     return DataTypeUInt8().createColumnConst(elem.column->size(), 0u);
 }
 
+#if USE_EMBEDDED_COMPILER
+llvm::Value *
+FunctionIsNull::compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & /*result_type*/) const
+{
+    auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+    if (arguments[0].type->isNullable())
+    {
+        auto * is_null = b.CreateExtractValue(arguments[0].value, {1});
+        return b.CreateSelect(is_null, b.getInt8(1), b.getInt8(0));
+    }
+    else
+        return b.getInt8(0);
+}
+#endif
+
 REGISTER_FUNCTION(IsNull)
 {
     factory.registerFunction<FunctionIsNull>({}, FunctionFactory::Case::Insensitive);
 }
-
-}
+};
