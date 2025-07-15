@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3283 
+personal_ws-1.1 en 3285 
 AArch
 ACLs
 ALTERs
@@ -28,6 +28,7 @@ Akka
 AlertManager
 Alexey
 AnyEvent
+Anthropic
 AppleClang
 Approximative
 ArrayJoin
@@ -585,6 +586,7 @@ LogsLevel
 Logstash
 LookML
 LoongArch
+Lossy
 LowCardinality
 LpDistance
 LpNorm
@@ -623,6 +625,7 @@ MaxThreads
 Mbps
 McNeal
 Memcheck
+memcheck
 MemoryCode
 MemoryDataAndStack
 MemoryResident
@@ -789,6 +792,7 @@ OpenSSL
 OpenSUSE
 OpenSky
 OpenStack
+OpenAI
 OpenTelemetry
 OrDefault
 OrNull
@@ -807,8 +811,6 @@ PagerDuty
 ParallelFormattingOutputFormatThreads
 ParallelFormattingOutputFormatThreadsActive
 ParallelParsingInputFormat
-ParallelParsingInputFormatThreads
-ParallelParsingInputFormatThreadsActive
 ParallelReplicasMode
 ParquetCompression
 ParquetMetadata
@@ -2224,6 +2226,7 @@ loghouse
 london
 lookups
 loongarch
+lossy
 lowCardinalityIndices
 lowCardinalityKeys
 lowcardinality
@@ -2530,6 +2533,8 @@ polygonsDistanceSpherical
 polygonsEqualsCartesian
 polygonsIntersectionCartesian
 polygonsIntersectionSpherical
+polygonsIntersectCartesian
+polygonsIntersectSpherical
 polygonsSymDifferenceCartesian
 polygonsSymDifferenceSpherical
 polygonsUnionCartesian

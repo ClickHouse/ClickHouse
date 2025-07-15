@@ -37,7 +37,7 @@ The order of priority for defining a setting is:
     and is reset to the default or previous value after the query is executed.
 
 
-## Converting a Setting to its Default Value {#converting-a-setting-to-its-default-value}
+## Converting a setting to its default value {#converting-a-setting-to-its-default-value}
 
 If you change a setting and would like to revert it back to its default value, set the value to `DEFAULT`. The syntax looks like:
 
@@ -77,7 +77,7 @@ The setting is now back to its default:
 └─────────┘
 ```
 
-## Custom Settings {#custom_settings}
+## Custom settings {#custom_settings}
 
 In addition to the common [settings](/operations/settings/settings.md), users can define custom settings.
 

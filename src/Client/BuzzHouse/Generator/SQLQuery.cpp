@@ -1078,6 +1078,7 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool
                     {
                         UnaryExpr * uexpr = expr->mutable_comp_expr()->mutable_unary_expr();
 
+                        uexpr->set_paren(true);
                         uexpr->set_unary_op(UnaryOperator::UNOP_NOT);
                         expr = uexpr->mutable_expr();
                     }
@@ -1199,6 +1200,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
         Expr * expr2 = bexpr->mutable_expr2();
         Expr * expr3 = bexpr->mutable_expr3();
 
+        bexpr->set_paren(rg.nextMediumNumber() < 96);
         bexpr->set_not_(rg.nextBool());
         if (noption2 < 34)
         {
@@ -1370,6 +1372,7 @@ void StatementGenerator::generateWherePredicate(RandomGenerator & rg, Expr * exp
                 {
                     UnaryExpr * uexpr = expr->mutable_comp_expr()->mutable_unary_expr();
 
+                    uexpr->set_paren(true);
                     uexpr->set_unary_op(UnaryOperator::UNOP_NOT);
                     expr = uexpr->mutable_expr();
                 }
@@ -1881,6 +1884,8 @@ void StatementGenerator::generateSelect(
         std::uniform_int_distribution<uint32_t> set_range(1, static_cast<uint32_t>(SetQuery::SetOp_MAX));
 
         setq->set_set_op(static_cast<SetQuery_SetOp>(set_range(rg.generator)));
+        setq->set_paren1(rg.nextSmallNumber() < 9);
+        setq->set_paren2(rg.nextSmallNumber() < 9);
         if (rg.nextSmallNumber() < 8)
         {
             setq->set_s_or_d(rg.nextBool() ? AllOrDistinct::ALL : AllOrDistinct::DISTINCT);

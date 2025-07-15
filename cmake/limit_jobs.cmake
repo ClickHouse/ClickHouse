@@ -2,7 +2,7 @@
 #
 # Usage from CMake:
 #    set (MAX_COMPILER_MEMORY 2000 CACHE INTERNAL "") # megabyte
-#    set (MAX_LINKER_MEMORY 3500 CACHE INTERNAL "") # megabyte
+#    set (MAX_LINKER_MEMORY 5000 CACHE INTERNAL "") # megabyte
 #    include (cmake/limit_jobs.cmake)
 #
 # (bigger values mean fewer jobs)
@@ -42,9 +42,28 @@ endif ()
 # But use 2 parallel jobs, since:
 # - this is what llvm does
 # - and I've verfied that lld-11 does not use all available CPU time (in peak) while linking one binary
-if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" AND ENABLE_THINLTO AND PARALLEL_LINK_JOBS GREATER 2)
-    message(STATUS "ThinLTO provides its own parallel linking - limiting parallel link jobs to 2.")
-    set (PARALLEL_LINK_JOBS 2)
+if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" AND ENABLE_THINLTO)
+    if (ARCH_AARCH64 OR ARCH_RISCV64)
+        # aarch64 builds start to often fail with OOMs (reason not yet clear), for now let's limit the concurrency
+        message(STATUS "ThinLTO provides its own parallel linking - limiting parallel link jobs to 1.")
+        set (PARALLEL_LINK_JOBS 1)
+        if (LINKER_NAME MATCHES "lld")
+            math(EXPR LTO_JOBS ${NUMBER_OF_LOGICAL_CORES}/4)
+            set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--thinlto-jobs=${LTO_JOBS}")
+        endif()
+    elseif (PARALLEL_LINK_JOBS GREATER 2)
+        message(STATUS "ThinLTO provides its own parallel linking - limiting parallel link jobs to 2.")
+        set (PARALLEL_LINK_JOBS 2)
+    endif ()
+endif()
+
+if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" AND ENABLE_FUZZING AND (ARCH_AARCH64 OR ARCH_RISCV64))
+    message(STATUS "Limiting parallel link jobs to 1.")
+    set (PARALLEL_LINK_JOBS 1)
+    if (LINKER_NAME MATCHES "lld")
+        math(EXPR LINKING_JOBS ${NUMBER_OF_LOGICAL_CORES}/4)
+        set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--threads=${LINKING_JOBS}")
+    endif()
 endif()
 
 message(STATUS "Building sub-tree with ${PARALLEL_COMPILE_JOBS} compile jobs and ${PARALLEL_LINK_JOBS} linker jobs (system: ${NUMBER_OF_LOGICAL_CORES} cores, ${TOTAL_PHYSICAL_MEMORY} MB RAM, 'OFF' means the native core count).")

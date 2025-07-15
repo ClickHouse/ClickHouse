@@ -1380,7 +1380,7 @@ Packet Connection::receivePacket()
 
         /// Add server address to exception message, if need.
         if (e.code() != ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
-            e.addMessage("while receiving packet from " + getDescription());
+            e.addMessage("while receiving packet from " + getDescription(true));
 
         throw;
     }
