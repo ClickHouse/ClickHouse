@@ -1117,6 +1117,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     See [Controlling behavior on server CPU overload](/operations/settings/server-overload) for more details.
     )", 0) \
     DECLARE(Float, distributed_cache_keep_up_free_connections_ratio, 0.1f, "Soft limit for number of active connection distributed cache will try to keep free. After the number of free connections goes below distributed_cache_keep_up_free_connections_ratio * max_connections, connections with oldest activity will be closed until the number goes above the limit.", 0) \
+    DECLARE(Bool, skip_binary_checksum_checks, false, R"(Skips ClickHouse binary checksum integrity checks)", 0) \
 
 
 // clang-format on
