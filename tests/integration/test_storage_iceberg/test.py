@@ -2059,6 +2059,8 @@ def check_validity_and_get_prunned_files_general(instance, table_name, settings1
     query_id1 = f"{table_name}-{uuid.uuid4()}"
     query_id2 = f"{table_name}-{uuid.uuid4()}"
 
+    print(f"Query ID 1: {query_id1}, Query ID 2: {query_id2}")
+
     data1 = instance.query(
         select_expression,
         query_id=query_id1,
