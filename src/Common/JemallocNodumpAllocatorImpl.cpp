@@ -1,7 +1,7 @@
 #include <Common/JemallocNodumpAllocatorImpl.h>
 
 #if USE_JEMALLOC
-#include <format>
+#include <fmt/format.h>
 #include <base/errnoToString.h>
 #include <base/defines.h>
 #include <sys/mman.h>
@@ -35,12 +35,12 @@ void * JemallocNodumpAllocatorImpl::alloc(
 #if defined(MADV_DONTDUMP)
         if (auto ret = madvise(result, size, MADV_DONTDUMP))
         {
-            throw std::runtime_error(std::format("Failed to run madvise: {}", errnoToString(ret)));
+            throw std::runtime_error(fmt::format("Failed to run madvise: {}", errnoToString(ret)));
         }
 #elif defined(MADV_NOCORE)
         if (auto ret = madvise(result, size, MADV_NOCORE))
         {
-            throw std::runtime_error(std::format("Failed to run madvise: {}", errnoToString(ret)));
+            throw std::runtime_error(fmt::format("Failed to run madvise: {}", errnoToString(ret)));
         }
 #endif
     }
@@ -57,16 +57,16 @@ void JemallocNodumpAllocatorImpl::setupArena()
     size_t len = sizeof(arena_index);
     if (auto ret = mallctl("arenas.create", &arena_index, &len, nullptr, 0))
     {
-        throw std::runtime_error(std::format("Failed to create jemalloc arena: {}", errnoToString(ret)));
+        throw std::runtime_error(fmt::format("Failed to create jemalloc arena: {}", errnoToString(ret)));
     }
     flags = MALLOCX_ARENA(arena_index) | MALLOCX_TCACHE_NONE;
 
-    const std::string key = std::format("arena.{}.extent_hooks", arena_index);
+    const std::string key = fmt::format("arena.{}.extent_hooks", arena_index);
     extent_hooks_t * hooks;
     len = sizeof(extent_hooks_t *);
     if (auto ret = mallctl(key.c_str(), &hooks, &len, nullptr, 0))
     {
-        throw std::runtime_error(std::format("Failed to get default extent hooks (arena {}): {}", arena_index, errnoToString(ret)));
+        throw std::runtime_error(fmt::format("Failed to get default extent hooks (arena {}): {}", arena_index, errnoToString(ret)));
     }
     chassert(original_alloc_ == nullptr);
     original_alloc_ = hooks->alloc;
@@ -76,7 +76,7 @@ void JemallocNodumpAllocatorImpl::setupArena()
     extent_hooks_t * new_hooks = &extent_hooks_;
     if (auto ret = mallctl(key.c_str(), nullptr, nullptr, &new_hooks, sizeof(extent_hooks_t *)))
     {
-        throw std::runtime_error(std::format("Failed to set custom extent hooks (arena {}): {}", arena_index, errnoToString(ret)));
+        throw std::runtime_error(fmt::format("Failed to set custom extent hooks (arena {}): {}", arena_index, errnoToString(ret)));
     }
 }
 
