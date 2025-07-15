@@ -16,7 +16,7 @@ public:
     {
     }
 
-    struct DynamicSerializationVersion
+    struct SerializationVersion
     {
         enum Value
         {
@@ -53,10 +53,9 @@ public:
             return value == V3;
         }
 
-        explicit DynamicSerializationVersion(UInt64 version);
-        explicit DynamicSerializationVersion(MergeTreeDynamicSerializationVersion version);
-
-        DynamicSerializationVersion(Value value_) : value(value_) {}
+        explicit SerializationVersion(UInt64 version);
+        explicit SerializationVersion(MergeTreeDynamicSerializationVersion version);
+        explicit SerializationVersion(Value value_) : value(value_) {}
     };
 
     void enumerateStreams(
@@ -145,7 +144,7 @@ private:
 
     struct DeserializeBinaryBulkStateDynamicStructure : public ISerialization::DeserializeBinaryBulkState
     {
-        DynamicSerializationVersion structure_version;
+        SerializationVersion structure_version;
         DataTypePtr variant_type;
         size_t num_dynamic_types;
         ColumnDynamic::StatisticsPtr statistics;

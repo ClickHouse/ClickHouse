@@ -82,10 +82,7 @@ try
                 ISerialization::SubstreamsCache substreams_cache;
                 size_t subcolumns_size_before_reading = res_columns[subcolumns_order[0]]->size();
                 for (size_t pos : subcolumns_order)
-                {
-                    stream->adjustRightMark(current_task_last_mark);
                     readData(pos, res_columns[pos], rows_to_read, rows_offset, from_mark, subcolumns_size_before_reading, *stream, columns_cache, &columns_cache_for_subcolumns, &substreams_cache);
-                }
             }
         }
 

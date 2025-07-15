@@ -1,8 +1,0 @@
-//
-// Created by Павел Круглов on 17/06/2025.
-//
-
-#ifndef CLICKHOUSE_DATATYPESCACHE_H
-#define CLICKHOUSE_DATATYPESCACHE_H
-
-#endif //CLICKHOUSE_DATATYPESCACHE_H

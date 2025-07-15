@@ -12,7 +12,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -211,12 +210,12 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
         else
         {
             SerializationVersion serialization_version(settings.object_serialization_version);
-            SerializationObjectSharedData::SerializationVersion shared_data_serialization_version = SerializationObjectSharedData::SerializationVersion::MAP;
+            SerializationObjectSharedData::SerializationVersion shared_data_serialization_version(SerializationObjectSharedData::SerializationVersion::MAP);
             size_t num_buckets = 1;
             /// Only in V3 Object serialization we can choose different shared data serialization. In V1 and V2 we should use MAP without buckets.
             if (serialization_version.value == SerializationVersion::V3)
             {
-                shared_data_serialization_version = settings.object_shared_data_serialization_version;
+                shared_data_serialization_version = SerializationObjectSharedData::SerializationVersion(settings.object_shared_data_serialization_version);
                 /// Avoid creating buckets in shared data for Wide part if shared data is empty.
                 if (settings.data_part_type != MergeTreeDataPartType::Wide || !column_object->getStatistics() || !column_object->getStatistics()->shared_data_paths_statistics.empty())
                     num_buckets = settings.object_shared_data_buckets;
@@ -257,9 +256,9 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
     SerializationVersion serialization_version(settings.object_serialization_version);
     /// Check if we are writing data in Native format and have STRING or FLATTENED serializations enabled.
     if (settings.native_format && settings.format_settings && settings.format_settings->native.write_json_as_string)
-        serialization_version = SerializationVersion::STRING;
+        serialization_version = SerializationVersion(SerializationVersion::STRING);
     else if (settings.native_format && settings.format_settings && settings.format_settings->native.use_flattened_dynamic_and_json_serialization)
-        serialization_version = SerializationVersion::FLATTENED;
+        serialization_version = SerializationVersion(SerializationVersion::FLATTENED);
 
     /// Write selected serialization version.
     writeBinaryLittleEndian(static_cast<UInt64>(serialization_version.value), *stream);
@@ -321,13 +320,13 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
 
     const auto & statistics = column_object.getStatistics();
 
-    SerializationObjectSharedData::SerializationVersion shared_data_serialization_version = SerializationObjectSharedData::SerializationVersion::MAP;
+    SerializationObjectSharedData::SerializationVersion shared_data_serialization_version(SerializationObjectSharedData::SerializationVersion::MAP);
     size_t shared_data_buckets = 1;
     /// In V3 serialization we can choose different serialize version of shared data serialization and number of buckets if this serialization supports it.
     /// We need to write selected serialization version and the number of buckets to be able to deserialize it back.
     if (serialization_version.value == SerializationVersion::V3)
     {
-        shared_data_serialization_version = settings.object_shared_data_serialization_version;
+        shared_data_serialization_version = SerializationObjectSharedData::SerializationVersion(settings.object_shared_data_serialization_version);
         writeVarUInt(static_cast<UInt64>(shared_data_serialization_version.value), *stream);
         /// If serialization supports buckets, write number of buckets that will be used.
         if (shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP_WITH_BUCKETS
@@ -337,7 +336,6 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
             if (settings.data_part_type != MergeTreeDataPartType::Wide || !statistics || !statistics->shared_data_paths_statistics.empty())
                 shared_data_buckets = settings.object_shared_data_buckets;
 
-            LOG_DEBUG(getLogger("SerializationObject"), "Use {} buckets", shared_data_buckets);
             writeVarUInt(shared_data_buckets, *stream);
         }
     }
@@ -705,7 +703,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
             {
                 UInt64 shared_data_serialization_version;
                 readVarUInt(shared_data_serialization_version, *structure_stream);
-                structure_state->shared_data_serialization_version = shared_data_serialization_version;
+                structure_state->shared_data_serialization_version = SerializationObjectSharedData::SerializationVersion(shared_data_serialization_version);
                 /// If shared serialization version supports buckets, read number of buckets.
                 if (structure_state->shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP_WITH_BUCKETS
                     || structure_state->shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)

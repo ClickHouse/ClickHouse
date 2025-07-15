@@ -1,3 +1,5 @@
+set output_format_json_quote_64bit_integers=0;
+
 drop table if exists source;
 create table source (json JSON(max_dynamic_paths=8)) engine=Memory;
 insert into source format JSONAsObject
@@ -19,7 +21,7 @@ create table test_compact_without_substreams_advanced (json JSON(max_dynamic_pat
 insert into test_compact_without_substreams_advanced select * from source;
 
 select 'select json';
-select json from test_compact_advanced;
+select json from test_compact_without_substreams_advanced;
 
 drop table test_compact_without_substreams_advanced;
 

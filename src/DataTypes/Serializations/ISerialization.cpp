@@ -317,7 +317,7 @@ namespace
 /// Element of substeams cache that contains single column.
 struct SubstreamsCacheColumnElement : public ISerialization::ISubstreamsCacheElement
 {
-    SubstreamsCacheColumnElement(ColumnPtr column_) : column(column_) {}
+    explicit SubstreamsCacheColumnElement(ColumnPtr column_) : column(column_) {}
 
     ColumnPtr column;
 };

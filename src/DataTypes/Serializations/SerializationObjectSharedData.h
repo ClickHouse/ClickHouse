@@ -62,10 +62,9 @@ public:
 
         static void checkVersion(UInt64 version);
 
-        SerializationVersion(UInt64 version);
-        SerializationVersion(MergeTreeObjectSharedDataSerializationVersion version);
-
-        SerializationVersion(Value value_) : value(value_) {}
+        explicit SerializationVersion(UInt64 version);
+        explicit SerializationVersion(MergeTreeObjectSharedDataSerializationVersion version);
+        explicit SerializationVersion(Value value_) : value(value_) {}
     };
 
 
@@ -198,7 +197,7 @@ private:
             SerializationPtr serialization;
         };
         std::unordered_map<String, std::vector<SubcolumnInfo>> requested_paths_subcolumns;
-        /// List of paths prefixes that were requestd by reading a sub-object, all paths
+        /// List of paths prefixes that were requested by reading a sub-object, all paths
         /// that matches these prefixes needs to be read.
         std::vector<String> requested_paths_prefixes;
         /// If we read the whole shared data we need the list of all paths stored in each granule.

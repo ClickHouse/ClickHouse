@@ -57,10 +57,9 @@ public:
 
         static void checkVersion(UInt64 version);
 
-        SerializationVersion(UInt64 version);
-        SerializationVersion(MergeTreeObjectSerializationVersion version);
-
-        SerializationVersion(Value value_) : value(value_) {}
+        explicit SerializationVersion(UInt64 version);
+        explicit SerializationVersion(MergeTreeObjectSerializationVersion version);
+        explicit SerializationVersion(Value value_) : value(value_) {}
     };
 
     SerializationObject(
@@ -122,7 +121,7 @@ private:
         SerializationVersion serialization_version;
         std::shared_ptr<std::vector<String>> sorted_dynamic_paths; /// Use shared_ptr to avoid copying during state clone.
         std::unordered_set<std::string_view> dynamic_paths;
-        SerializationObjectSharedData::SerializationVersion shared_data_serialization_version = SerializationObjectSharedData::SerializationVersion::MAP;
+        SerializationObjectSharedData::SerializationVersion shared_data_serialization_version;
         size_t shared_data_buckets = 1;
         /// Paths statistics. Map (dynamic path) -> (number of non-null values in this path).
         ColumnObject::StatisticsPtr statistics;
@@ -130,7 +129,11 @@ private:
         /// For flattened serialization only.
         std::vector<String> flattened_paths;
 
-        explicit DeserializeBinaryBulkStateObjectStructure(UInt64 serialization_version_) : serialization_version(serialization_version_) {}
+        explicit DeserializeBinaryBulkStateObjectStructure(UInt64 serialization_version_)
+            : serialization_version(serialization_version_)
+            , shared_data_serialization_version(SerializationObjectSharedData::SerializationVersion::MAP)
+        {
+        }
 
         DeserializeBinaryBulkStatePtr clone() const override
         {

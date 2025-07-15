@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
-#include <boost/algorithm/string/join.hpp>
 
 namespace DB
 {

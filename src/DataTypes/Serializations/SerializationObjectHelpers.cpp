@@ -71,31 +71,27 @@ void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, std::v
 {
     /// Iterate over paths and try to add them to dynamic paths until the limit is reached.
     /// All remaining paths will be inserted into shared data.
-    std::map<String, ColumnPtr> flattened_paths_for_shared_data;
+    std::map<std::string_view, ColumnPtr> paths_for_shared_data;
     for (size_t i = 0; i != flattened_paths.size(); ++i)
     {
         if (object_column.canAddNewDynamicPath())
             object_column.addNewDynamicPath(flattened_paths[i], IColumn::mutate(std::move(flattened_columns[i])));
         else
-            flattened_paths_for_shared_data.emplace(flattened_paths[i], std::move(flattened_columns[i]));
+            paths_for_shared_data.emplace(flattened_paths[i], std::move(flattened_columns[i]));
     }
 
-    unflattenAndInsertSharedDataPaths(flattened_paths_for_shared_data, object_column.getSharedDataColumn(), num_rows);
-}
-
-void unflattenAndInsertSharedDataPaths(const std::map<String, ColumnPtr> & flattened_paths, IColumn & shared_data_column, size_t num_rows)
-{
-    auto [shared_data_paths, shared_data_values, shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(shared_data_column);
+    auto [shared_data_paths, shared_data_values] = object_column.getSharedDataPathsAndValues();
+    auto & shared_data_offsets = object_column.getSharedDataOffsets();
     std::unordered_map<std::string_view, const ColumnDynamic *> dynamic_columns_ptrs;
     dynamic_columns_ptrs.reserve(flattened_paths.size());
-    for (const auto & [path, column] : flattened_paths)
+    for (const auto & [path, column] : paths_for_shared_data)
         dynamic_columns_ptrs[path] = assert_cast<const ColumnDynamic *>(column.get());
 
     for (size_t i = 0; i != num_rows; ++i)
     {
-        for (const auto & [path, column] : flattened_paths)
+        for (const auto & [path, column] : paths_for_shared_data)
             ColumnObject::serializePathAndValueIntoSharedData(shared_data_paths, shared_data_values, path, *dynamic_columns_ptrs[path], i);
-        shared_data_offsets->push_back(shared_data_paths->size());
+        shared_data_offsets.push_back(shared_data_paths->size());
     }
 }
 

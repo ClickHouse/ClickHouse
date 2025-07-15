@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 SerializationSubObjectSharedData::SerializationSubObjectSharedData(
     SerializationObjectSharedData::SerializationVersion serialization_version_,
     size_t buckets_,

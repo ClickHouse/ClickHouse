@@ -10,7 +10,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
-#include <Common/logger_useful.h>
 #include <Core/NamesAndTypes.h>
 
 namespace DB
@@ -20,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+    extern const int NOT_IMPLEMENTED;
 }
 
 SerializationObjectSharedData::SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, size_t buckets_)
@@ -663,7 +663,7 @@ std::shared_ptr<SerializationObjectSharedData::StructureGranules> SerializationO
     }
 
     auto result = std::make_shared<StructureGranules>();
-    
+
     /// In Compact part we always read one whole granule, so we don't need to worry about reading structure from multiple granules.
     if (settings.data_part_type == MergeTreeDataPartType::Compact)
     {
@@ -793,17 +793,17 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosGranules> Serialization
     /// Deserialize paths infos granule by granule.
     auto paths_infos_granules = std::make_shared<PathsInfosGranules>();
     paths_infos_granules->reserve(structure_granules.size());
-    for (size_t granule = 0; granule != structure_granules.size(); ++granule)
+    for (const auto & structure_granule : structure_granules)
     {
         auto & path_to_info = (*paths_infos_granules).emplace_back().path_to_info;
 
         /// If there is nothing to read from this granule, just skip it.
-        if (structure_granules[granule].limit == 0 || structure_granules[granule].position_to_requested_path.empty())
+        if (structure_granule.limit == 0 || structure_granule.position_to_requested_path.empty())
             continue;
 
         bool need_paths_marks = false;
         bool need_subcolumns_info = false;
-        for (const auto & [_, requested_path] : structure_granules[granule].position_to_requested_path)
+        for (const auto & [_, requested_path] : structure_granule.position_to_requested_path)
         {
             /// For paths inside requested_paths_subcolumns we will need to read only subcolumns
             /// and don't need paths marks.
@@ -825,13 +825,13 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosGranules> Serialization
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data paths marks");
 
             /// We don't read data from marks stream continuously, so we need to seek to the start of this granule.
-            settings.seek_stream_to_mark_callback(settings.path, structure_granules[granule].paths_marks_stream_mark);
+            settings.seek_stream_to_mark_callback(settings.path, structure_granule.paths_marks_stream_mark);
 
-            for (size_t i = 0; i != structure_granules[granule].num_paths; ++i)
+            for (size_t i = 0; i != structure_granule.num_paths; ++i)
             {
-                auto path_it = structure_granules[granule].position_to_requested_path.find(i);
+                auto path_it = structure_granule.position_to_requested_path.find(i);
                 /// Skip marks of not requested paths.
-                if (path_it == structure_granules[granule].position_to_requested_path.end())
+                if (path_it == structure_granule.position_to_requested_path.end())
                 {
                     paths_marks_stream->ignore(2 * sizeof(UInt64));
                 }
@@ -845,7 +845,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosGranules> Serialization
 
             settings.path.pop_back();
         }
-        
+
         if (need_subcolumns_info)
         {
             /// Read metadata about paths subcolumns.
@@ -856,12 +856,12 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosGranules> Serialization
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data paths substreams metadata");
 
             /// We don't read data from marks stream continuously, so we need to seek to the start of this granule.
-            settings.seek_stream_to_mark_callback(settings.path, structure_granules[granule].paths_substreams_metadata_stream_mark);
-            for (size_t i = 0; i != structure_granules[granule].num_paths; ++i)
+            settings.seek_stream_to_mark_callback(settings.path, structure_granule.paths_substreams_metadata_stream_mark);
+            for (size_t i = 0; i != structure_granule.num_paths; ++i)
             {
-                auto path_it = structure_granules[granule].position_to_requested_path.find(i);
+                auto path_it = structure_granule.position_to_requested_path.find(i);
                 /// Skip metadata of not requested paths.
-                if (path_it == structure_granules[granule].position_to_requested_path.end())
+                if (path_it == structure_granule.position_to_requested_path.end())
                 {
                     paths_substreams_metadata_stream->ignore(4 * sizeof(UInt64));
                 }
@@ -884,7 +884,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosGranules> Serialization
             if (!paths_substreams_stream)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data paths substreams");
 
-            for (const auto & [_, requested_path] : structure_granules[granule].position_to_requested_path)
+            for (const auto & [_, requested_path] : structure_granule.position_to_requested_path)
             {
                 if (!structure_state.requested_paths_subcolumns.contains(requested_path))
                     continue;
@@ -911,7 +911,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosGranules> Serialization
             if (!paths_substreams_marks_stream)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data paths substreams marks");
 
-            for (const auto & [_, requested_path] : structure_granules[granule].position_to_requested_path)
+            for (const auto & [_, requested_path] : structure_granule.position_to_requested_path)
             {
                 if (!structure_state.requested_paths_subcolumns.contains(requested_path))
                     continue;

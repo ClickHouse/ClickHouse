@@ -6,16 +6,11 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 /// Serialization of dynamic Object paths from shared data.
 class SerializationObjectSharedDataPath final : public SerializationWrapper
 {
 public:
-    SerializationObjectSharedDataPath(const SerializationPtr & nested_, SerializationObjectSharedData::SerializationVersion serialization_version_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_,  const DataTypePtr & subcolumn_type_, size_t bucket);
+    SerializationObjectSharedDataPath(const SerializationPtr & nested_, SerializationObjectSharedData::SerializationVersion serialization_version_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const DataTypePtr & subcolumn_type_, size_t bucket);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

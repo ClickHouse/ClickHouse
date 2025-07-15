@@ -1350,7 +1350,7 @@ Possible values:
 - Any positive integer.
 )", 0) \
 DECLARE(Bool, merge_tree_use_deserialization_prefixes_cache, true, R"(
-Enables caching of columns metadata from the file prefixes during reading from Wide parts in MergeTree.
+Enables caching of columns metadata from the file prefixes during reading from remote disks in MergeTree.
 )", 0) \
 DECLARE(Bool, merge_tree_use_prefixes_deserialization_thread_pool, true, R"(
 Enables usage of the thread pool for parallel prefixes reading in Wide parts in MergeTree. Size of that thread pool is controlled by server setting `max_prefixes_deserialization_thread_pool_size`.
