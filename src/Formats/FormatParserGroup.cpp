@@ -17,6 +17,27 @@ namespace Setting
     extern const SettingsMaxThreads max_parsing_threads;
 }
 
+void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_)
+{
+    storage_encoding = std::move(storage_encoding_);
+}
+
+void ColumnMapper::setFormatEncoding(std::unordered_map<Int64, String> && format_encoding_)
+{
+    format_encoding = std::move(format_encoding_);
+}
+
+std::unordered_map<String, String> ColumnMapper::makeMapping() const
+{
+    std::unordered_map<String, String> result;
+    for (const auto & [clickhouse_column, field_id] : storage_encoding)
+    {
+        if (auto it = format_encoding.find(field_id); it != format_encoding.end())
+            result[clickhouse_column] = it->second;
+    }
+    return result;
+}
+
 FormatParserGroup::FormatParserGroup(const Settings & settings, size_t num_streams_, std::shared_ptr<const ActionsDAG> filter_actions_dag_, const ContextPtr & context_)
     : max_parsing_threads(settings[Setting::max_parsing_threads])
     , max_io_threads(settings[Setting::max_download_threads])

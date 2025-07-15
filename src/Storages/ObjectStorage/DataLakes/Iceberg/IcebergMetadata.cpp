@@ -1,6 +1,7 @@
 #include <memory>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
+#include "Formats/FormatParserGroup.h"
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 #if USE_AVRO
@@ -567,27 +568,27 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
 
 #if USE_PARQUET
             if (configuration_ptr->format == "Parquet")
-                opaque = std::make_shared<ParquetOpaque>();
+                column_mapper = std::make_shared<ColumnMapper>();
 
-            if (opaque)
+            if (column_mapper)
             {
-                auto parquet_opaque = std::static_pointer_cast<ParquetOpaque>(opaque);
-
                 Int32 schema_id = snapshot->getValue<Int32>(f_schema_id);
                 auto schemas = metadata_object->getArray(f_schemas);
-                for (size_t j = 0; j < schemas->size(); ++j)
+                std::unordered_map<String, Int64> column_name_to_parquet_field_id;
+                for (UInt32 j = 0; j < schemas->size(); ++j)
                 {
                     auto schema = schemas->getObject(j);
                     if (schema->getValue<Int32>(f_schema_id) != schema_id)
                         continue;
 
                     auto fields = schema->getArray(f_fields);
-                    for (size_t field_ind = 0; field_ind < fields->size(); ++field_ind)
+                    for (UInt32 field_ind = 0; field_ind < fields->size(); ++field_ind)
                     {
                         auto field = fields->getObject(field_ind);
-                        parquet_opaque->column_name_to_parquet_field_id[field->getValue<String>(f_name)] = field->getValue<Int32>(f_id);
+                        column_name_to_parquet_field_id[field->getValue<String>(f_name)] = field->getValue<Int32>(f_id);
                     }
                 }
+                column_mapper->setStorageColumnEncoding(std::move(column_name_to_parquet_field_id));
             }
 #endif
 

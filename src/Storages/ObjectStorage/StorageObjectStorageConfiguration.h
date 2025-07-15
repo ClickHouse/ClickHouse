@@ -144,7 +144,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", getTypeName());
     }
 
-    virtual std::shared_ptr<void> getOpaque() const { return nullptr; }
+    virtual ColumnMapperPtr getColumnMapper() const { return nullptr; }
 
     String format = "auto";
     String compression_method = "auto";

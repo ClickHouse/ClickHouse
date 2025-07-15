@@ -14,6 +14,7 @@
 #include <Storages/StorageFactory.h>
 #include <Common/logger_useful.h>
 #include <Storages/ColumnsDescription.h>
+#include <Formats/FormatParserGroup.h>
 
 #include <memory>
 #include <string>
@@ -166,9 +167,9 @@ public:
         current_metadata->modifyFormatSettings(settings_);
     }
 
-    std::shared_ptr<void> getOpaque() const override
+    ColumnMapperPtr getColumnMapper() const override
     {
-        return current_metadata->getOpaque();
+        return current_metadata->getColumnMapper();
     }
 
 private:

@@ -634,9 +634,8 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         format_settings.parquet.allow_missing_columns);
 
     std::optional<std::unordered_map<String, String>> clickhouse_to_parquet_names;
-    if (parser_group && parser_group->opaque)
+    if (parser_group && parser_group->column_mapper)
     {
-        auto parquet_opaque = std::static_pointer_cast<ParquetOpaque>(parser_group->opaque);
         auto header = getPort().getHeader();
         const auto & group_node = metadata->schema()->group_node();
 
@@ -645,19 +644,9 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         for (int i = 0; i < group_node->field_count(); ++i)
             parquet_field_ids[group_node->field(i)->field_id()] = group_node->field(i)->name();
 
-        auto result = std::unordered_map<String, String>{};
-        for (size_t i = 0; i < header.columns(); ++i)
-        {
-            auto column_name = header.getNames()[i];
-            int64_t field_id;
-            if (auto it = parquet_opaque->column_name_to_parquet_field_id.find(column_name); it != parquet_opaque->column_name_to_parquet_field_id.end())
-                field_id = it->second;
-            else
-                continue;
-            result[column_name] = parquet_field_ids[field_id];
-            parquet_names_to_clickhouse->emplace(parquet_field_ids[field_id], column_name);
-        }
-        clickhouse_to_parquet_names = std::move(result);
+        parser_group->column_mapper->setFormatEncoding(std::move(parquet_field_ids));        
+        auto column_mapping = parser_group->column_mapper->makeMapping();
+        clickhouse_to_parquet_names = std::move(column_mapping);
     }
     auto index_mapping = field_util.findRequiredIndices(getPort().getHeader(), *schema, *metadata, clickhouse_to_parquet_names);
 

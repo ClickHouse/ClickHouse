@@ -5,6 +5,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Formats/FormatParserGroup.h>
 
 namespace DB
 {
@@ -60,7 +61,7 @@ public:
 
     /// Some data lakes specify information for reading files from disks.
     /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
-    virtual std::shared_ptr<void> getOpaque() const { return nullptr; }
+    virtual ColumnMapperPtr getColumnMapper() const { return nullptr; }
 
 protected:
     ObjectIterator createKeysIterator(
