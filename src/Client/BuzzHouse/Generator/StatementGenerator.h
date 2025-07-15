@@ -291,7 +291,7 @@ private:
     String nextComment(RandomGenerator & rg) const;
     SQLRelation createTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
     void addTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
-    SQLRelation createViewRelation(const String & rel_name, size_t ncols);
+    SQLRelation createViewRelation(const String & rel_name, const SQLView & v);
     void addViewRelation(const String & rel_name, const SQLView & v);
     void addDictionaryRelation(const String & rel_name, const SQLDictionary & d);
     String strAppendAnyValue(RandomGenerator & rg, SQLType * tp);
@@ -312,7 +312,6 @@ private:
         bool modify,
         bool is_pk,
         ColumnSpecial special,
-        uint32_t col_tp_mask,
         SQLColumn & col,
         ColumnDef * cd);
     void addTableColumn(

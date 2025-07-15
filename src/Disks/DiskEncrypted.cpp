@@ -11,7 +11,6 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
-
 namespace DB
 {
 

@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
-#include <Common/SipHash.h>
-#include <base/hex.h>
+
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -10,6 +9,10 @@
 #include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/GinIndexStore.h>
+#include <Common/SipHash.h>
+#include <Common/logger_useful.h>
+#include <base/hex.h>
+
 #include <optional>
 
 #include <fmt/ranges.h>
@@ -64,7 +67,7 @@ void MergeTreeDataPartChecksum::checkEqual(const MergeTreeDataPartChecksum & rhs
 
 void MergeTreeDataPartChecksum::checkSize(const IDataPartStorage & storage, const String & name) const
 {
-    /// Skip full-text index files, these have a default MergeTreeDataPartChecksum with file_size == 0
+    /// Skip text index files, these have a default MergeTreeDataPartChecksum with file_size == 0
     if (isGinFile(name))
         return;
 
@@ -91,8 +94,8 @@ void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & r
 
     for (const auto & [name, checksum] : files)
     {
-        /// Exclude files written by full-text index from check. No correct checksums are available for them currently.
-        if (name.ends_with(".gin_dict") || name.ends_with(".gin_post") || name.ends_with(".gin_seg") || name.ends_with(".gin_sid"))
+        /// Exclude files written by text index from check. No correct checksums are available for them currently.
+        if (isGinFile(name))
             continue;
 
         auto it = rhs.files.find(name);
@@ -244,6 +247,19 @@ void MergeTreeDataPartChecksums::write(WriteBuffer & to) const
     }
 
     out.finalize();
+}
+
+Strings MergeTreeDataPartChecksums::getFileNames() const
+{
+    Strings result;
+    result.reserve(files.size());
+
+    for (const auto & [name, _] : files)
+        result.push_back(name);
+
+    std::sort(result.begin(), result.end());
+
+    return result;
 }
 
 void MergeTreeDataPartChecksums::addFile(const String & file_name, UInt64 file_size, MergeTreeDataPartChecksum::uint128 file_hash)
@@ -506,4 +522,10 @@ MinimalisticDataPartChecksums MinimalisticDataPartChecksums::deserializeFrom(con
     return res;
 }
 
+void MergeTreeDataPartChecksums::addExistingFile(
+    const MergeTreeDataPartChecksums & source, const String & file_from, const String & file_to)
+{
+    if (auto it = source.files.find(file_from); it != source.files.end())
+        files.emplace(file_to, it->second);
+}
 }

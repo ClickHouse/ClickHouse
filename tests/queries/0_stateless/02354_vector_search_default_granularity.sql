@@ -2,7 +2,7 @@
 
 -- Tests that vector search indexes use a (non-standard) index granularity of 100 mio by default.
 
-SET allow_experimental_vector_similarity_index = 1;
+SET enable_vector_similarity_index = 1;
 
 -- After CREATE TABLE
 DROP TABLE IF EXISTS tab;

@@ -20,7 +20,7 @@ During import, ClickHouse treats the top level dimension as an array of rows wit
 
 The table below gives the supported Npy data types and their corresponding type in ClickHouse:
 
-## Data Types Matching {#data_types-matching}
+## Data types matching {#data_types-matching}
 
 
 | Npy data type (`INSERT`) | ClickHouse data type                                            | Npy data type (`SELECT`) |
@@ -38,7 +38,7 @@ The table below gives the supported Npy data types and their corresponding type 
 | `S`, `U`                 | [String](/sql-reference/data-types/string.md)           | `S`                     |
 |                          | [FixedString](/sql-reference/data-types/fixedstring.md) | `S`                     |
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
 ### Saving an array in .npy format using Python {#saving-an-array-in-npy-format-using-python}
 
@@ -62,7 +62,7 @@ FROM file('example_array.npy', Npy)
 └───────────────┘
 ```
 
-### Selecting Data {#selecting-data}
+### Selecting data {#selecting-data}
 
 You can select data from a ClickHouse table and save it into a file in the Npy format using the following command with clickhouse-client:
 
@@ -70,4 +70,4 @@ You can select data from a ClickHouse table and save it into a file in the Npy f
 $ clickhouse-client --query="SELECT {column} FROM {some_table} FORMAT Npy" > {filename.npy}
 ```
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}
