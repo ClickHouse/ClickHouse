@@ -19,7 +19,7 @@ ClickHouse supports special functions for working with dictionaries that can be 
 ClickHouse supports:
 
 - Dictionaries with a [set of functions](../../sql-reference/functions/ext-dict-functions.md).
-- [Embedded dictionaries](#embedded-dictionaries) with a specific [set of functions](../../sql-reference/functions/ym-dict-functions.md).
+- [Embedded dictionaries](#embedded-dictionaries) with a specific [set of functions](../../sql-reference/functions/embedded-dict-functions.md).
 
 
 :::tip Tutorial
