@@ -350,6 +350,23 @@ def main():
     else:
         Utils.raise_with_error(f"Unknown processor architecture")
 
+    if compare_against_release:
+        print("It's a comparison against latest release baseline")
+        print(
+            "Unshallow and Checkout on baseline sha to drop new queries that might be not supported by old version"
+        )
+        reference_sha = info.get_custom_data(
+            "release_branch_base_sha_with_predecessors"
+        )[0]
+        Shell.check(
+            f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin {info.git_branch} ||:", verbose=True
+        )
+        Shell.check(
+            f"rm -rf ./tests/performance && git checkout {reference_sha} ./tests/performance",
+            verbose=True,
+            strict=True,
+        )
+
     test_keyword = args.test
 
     ch_path = args.ch_path
@@ -644,7 +661,7 @@ def main():
 
         res = results[-1].is_ok()
 
-    if res and not info.is_local_run:
+    if res and not info.is_local_run and not compare_against_release:
 
         def insert_historical_data():
             cidb = CIDBCluster()

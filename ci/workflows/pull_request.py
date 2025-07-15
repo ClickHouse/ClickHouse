@@ -61,7 +61,6 @@ workflow = Workflow.Config(
         *JobConfigs.ast_fuzzer_jobs,
         *JobConfigs.buzz_fuzzer_jobs,
         *JobConfigs.performance_comparison_with_master_head_jobs,
-        *JobConfigs.performance_comparison_with_release_base_jobs,
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
