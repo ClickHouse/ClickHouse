@@ -265,7 +265,6 @@ void addDistinctRecursively(const QueryTreeNodePtr & node)
     else if (auto * union_node = node->as<UnionNode>())
     {
         auto union_mode = union_node->getUnionMode();
-        
         // Only add DISTINCT recursively for UNION operations where it's beneficial
         // For UNION_DISTINCT, the union already ensures distinctness, so adding DISTINCT to subqueries is redundant
         // For EXCEPT and INTERSECT operations, adding DISTINCT can change the result set semantics
