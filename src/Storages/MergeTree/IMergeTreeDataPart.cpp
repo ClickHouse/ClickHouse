@@ -273,6 +273,10 @@ String IMergeTreeDataPart::MinMaxIndex::getFileColumnName(const String & column_
 
 void IMergeTreeDataPart::incrementStateMetric(MergeTreeDataPartState state_) const
 {
+    /// If part is a child of another part, we do not increment metrics.
+    if (parent_part)
+        return;
+
     switch (state_)
     {
         case MergeTreeDataPartState::Temporary:
@@ -301,6 +305,10 @@ void IMergeTreeDataPart::incrementStateMetric(MergeTreeDataPartState state_) con
 
 void IMergeTreeDataPart::decrementStateMetric(MergeTreeDataPartState state_) const
 {
+    /// If part is a child of another part, we do not increment metrics.
+    if (parent_part)
+        return;
+
     switch (state_)
     {
         case MergeTreeDataPartState::Temporary:
@@ -327,8 +335,12 @@ void IMergeTreeDataPart::decrementStateMetric(MergeTreeDataPartState state_) con
     }
 }
 
-static void incrementTypeMetric(MergeTreeDataPartType type)
+void IMergeTreeDataPart::incrementTypeMetric(MergeTreeDataPartType type) const
 {
+    /// If part is a child of another part, we do not increment metrics.
+    if (parent_part)
+        return;
+
     switch (type.getValue())
     {
         case MergeTreeDataPartType::Wide:
@@ -342,8 +354,12 @@ static void incrementTypeMetric(MergeTreeDataPartType type)
     }
 }
 
-static void decrementTypeMetric(MergeTreeDataPartType type)
+void IMergeTreeDataPart::decrementTypeMetric(MergeTreeDataPartType type) const
 {
+    /// If part is a child of another part, we do not increment metrics.
+    if (parent_part)
+        return;
+
     switch (type.getValue())
     {
         case MergeTreeDataPartType::Wide:
@@ -494,6 +510,7 @@ std::optional<size_t> IMergeTreeDataPart::getColumnPosition(const String & colum
 
 void IMergeTreeDataPart::setState(MergeTreeDataPartState new_state) const
 {
+    chassert(!parent_part);
     decrementStateMetric(state);
     state.store(new_state);
     incrementStateMetric(state);
@@ -2701,4 +2718,9 @@ std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFileIfExists(const String & 
     return {};
 }
 
+ALWAYS_INLINE MergeTreeDataPartState IMergeTreeDataPart::getState() const
+{
+    chassert(!parent_part);
+    return state.load(std::memory_order_relaxed);
+}
 }
