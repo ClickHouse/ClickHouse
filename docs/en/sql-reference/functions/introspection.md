@@ -1,12 +1,11 @@
 ---
 description: 'Documentation for Introspection Functions'
 sidebar_label: 'Introspection'
-sidebar_position: 100
 slug: /sql-reference/functions/introspection
 title: 'Introspection Functions'
 ---
 
-# Introspection Functions
+# Introspection functions
 
 You can use functions described in this chapter to introspect [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) and [DWARF](https://en.wikipedia.org/wiki/DWARF) for query profiling.
 
@@ -99,7 +98,7 @@ LIMIT 1
 \G
 ```
 
-The [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) function allows to process each individual element of the `trace` array by the `addressToLine` function. The result of this processing you see in the `trace_source_code_lines` column of output.
+The [arrayMap](/sql-reference/functions/array-functions#arrayMap)) function allows to process each individual element of the `trace` array by the `addressToLine` function. The result of this processing you see in the `trace_source_code_lines` column of output.
 
 ```text
 Row 1:
@@ -160,7 +159,7 @@ Applying the function to the whole stack trace:
 
 ```sql
 SELECT
-    ta, addressToLineWithInlines(arrayJoin(trace) as ta)
+    ta, addressToLineWithInlines(arrayJoin(trace) AS ta)
 FROM system.trace_log
 WHERE
     query_id = '5e173544-2020-45de-b645-5deebe2aae54';
@@ -284,7 +283,7 @@ LIMIT 1
 \G
 ```
 
-The [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) function allows to process each individual element of the `trace` array by the `addressToSymbols` function. The result of this processing you see in the `trace_symbols` column of output.
+The [arrayMap](/sql-reference/functions/array-functions#arrayMap)) function allows to process each individual element of the `trace` array by the `addressToSymbols` function. The result of this processing you see in the `trace_symbols` column of output.
 
 ```text
 Row 1:
@@ -378,7 +377,7 @@ LIMIT 1
 \G
 ```
 
-The [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) function allows to process each individual element of the `trace` array by the `demangle` function. The result of this processing you see in the `trace_functions` column of output.
+The [arrayMap](/sql-reference/functions/array-functions#arrayMap)) function allows to process each individual element of the `trace` array by the `demangle` function. The result of this processing you see in the `trace_functions` column of output.
 
 ```text
 Row 1:

@@ -12,7 +12,7 @@
 #if USE_VECTORSCAN
 #    include <hs.h>
 #else
-#    include "MatchImpl.h"
+#    include <Functions/MatchImpl.h>
     #include <Common/Volnitsky.h>
 #endif
 

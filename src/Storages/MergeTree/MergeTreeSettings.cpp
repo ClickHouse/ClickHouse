@@ -267,7 +267,7 @@ namespace ErrorCodes
     )", 0) \
     \
     /** Merge settings. */ \
-    DECLARE(UInt64, merge_max_block_size, 8192, R"(
+    DECLARE(NonZeroUInt64, merge_max_block_size, 8192, R"(
     The number of rows that are read from the merged parts into memory.
 
     Possible values:
@@ -990,8 +990,7 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(Seconds, remote_fs_execute_merges_on_single_replica_time_threshold, 3 * 60 * 60, R"(
     When this setting has a value greater than zero only a single replica starts
-    the merge immediately if merged part on shared storage and
-    `allow_remote_fs_zero_copy_replication` is enabled.
+    the merge immediately if merged part on shared storage.
 
     :::note
     Zero-copy replication is not ready for production
@@ -1592,6 +1591,10 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in
+    the partition or sorting key.
+    )", 0) \
+    DECLARE(Bool, allow_coalescing_columns_in_partition_or_order_key, false, R"(
+    When enabled, allows coalescing columns in a CoalescingMergeTree table to be used in
     the partition or sorting key.
     )", 0) \
     \

@@ -626,6 +626,7 @@
     M(744, SESSION_ID_EMPTY) \
     M(745, SERVER_OVERLOADED) \
     M(746, DEPENDENCIES_NOT_FOUND) \
+    M(747, FILECACHE_CANNOT_WRITE_THROUGH_CACHE_WITH_CONCURRENT_READS) /* private error code */ \
 \
     M(900, DISTRIBUTED_CACHE_ERROR) \
     M(901, CANNOT_USE_DISTRIBUTED_CACHE) \
@@ -670,7 +671,7 @@ namespace ErrorCodes
 
     std::string_view getName(ErrorCode error_code)
     {
-        if (error_code < 0 || error_code >= END)
+        if (error_code < 0 || error_code > END)
             return std::string_view();
         return error_codes_names.names[error_code];
     }

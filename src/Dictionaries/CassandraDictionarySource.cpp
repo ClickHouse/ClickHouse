@@ -1,11 +1,11 @@
-#include "CassandraDictionarySource.h"
+#include <Dictionaries/CassandraDictionarySource.h>
 #include <Columns/IColumn.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Common/RemoteHostFilter.h>
-#include "DictionarySourceFactory.h"
-#include "DictionaryStructure.h"
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionaryStructure.h>
 
 namespace DB
 {

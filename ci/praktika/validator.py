@@ -39,7 +39,7 @@ class Validator:
         workflows = _get_workflows(_for_validation_check=True)
         for workflow in workflows:
             print(f"Validating workflow [{workflow.name}]")
-            if Settings.USE_CUSTOM_GH_AUTH:
+            if Settings.USE_CUSTOM_GH_AUTH and workflow.enable_report:
                 secret = workflow.get_secret(Settings.SECRET_GH_APP_ID)
                 cls.evaluate_check(
                     bool(secret),
@@ -57,6 +57,13 @@ class Validator:
                 cls.evaluate_check(
                     isinstance(job, Job.Config),
                     f"Invalid job type [{job}]: type [{type(job)}]",
+                    workflow.name,
+                )
+                cls.evaluate_check(
+                    job.runs_on
+                    and isinstance(job.runs_on, list)
+                    or isinstance(job.runs_on, tuple),
+                    f"Invalid Job.Config.runs_on [{job.runs_on}] for [{job.name}]",
                     workflow.name,
                 )
 
@@ -128,17 +135,25 @@ class Validator:
                 if Settings.ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB == False:
                     cls.evaluate_check_simple(
                         Settings.DOCKER_BUILD_ARM_RUNS_ON
-                        and Settings.DOCKER_BUILD_AND_MERGE_RUNS_ON
+                        and Settings.DOCKER_MERGE_RUNS_ON
+                        and Settings.DOCKER_BUILD_AMD_RUNS_ON
                         and Settings.DOCKER_BUILD_ARM_RUNS_ON
-                        != Settings.DOCKER_BUILD_AND_MERGE_RUNS_ON,
-                        f"Settings: DOCKER_BUILD_AND_MERGE_RUNS_ON, DOCKER_BUILD_ARM_RUNS_ON must be provided and be different CPU architecture machines",
+                        != Settings.DOCKER_BUILD_AMD_RUNS_ON,
+                        f"Settings: DOCKER_MERGE_RUNS_ON, DOCKER_BUILD_ARM_RUNS_ON, DOCKER_BUILD_AMD_RUNS_ON must be provided and be different CPU architecture machines",
                     )
                 else:
                     cls.evaluate_check(
-                        Settings.DOCKER_BUILD_AND_MERGE_RUNS_ON,
+                        Settings.DOCKER_MERGE_RUNS_ON,
                         f"DOCKER_BUILD_AND_MERGE_RUNS_ON settings must be defined if workflow has dockers",
                         workflow_name=workflow.name,
                     )
+
+            if workflow.set_latest_for_docker_merged_manifest:
+                cls.evaluate_check(
+                    workflow.enable_dockers_manifest_merge,
+                    f".set_latest_for_docker_merged_manifest workflow setting is applicable with .enable_dockers_manifest_merge=True",
+                    workflow_name=workflow.name,
+                )
 
             if workflow.enable_report:
                 assert (
@@ -206,6 +221,18 @@ class Validator:
                     workflow,
                 )
 
+            if workflow.enable_gh_summary_comment:
+                cls.evaluate_check(
+                    workflow.event == Workflow.Event.PULL_REQUEST,
+                    ".enable_gh_summary_comment=True applicable for pull_request workflow only",
+                    workflow,
+                )
+                cls.evaluate_check(
+                    workflow.enable_report,
+                    ".enable_gh_summary_comment=True requires .enable_report==True",
+                    workflow,
+                )
+
     @classmethod
     def validate_file_paths_in_run_command(cls, workflow: Workflow.Config) -> None:
         if not Settings.VALIDATE_FILE_PATHS:
@@ -257,7 +284,7 @@ class Validator:
                         message += "\n  If requirements needs to be installed - add requirements file (Settings.INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS):"
                         message += "\n      echo jwt==1.3.1 > ./ci/requirements.txt"
                         message += (
-                            "\n      echo requests==2.32.3 >> ./ci/requirements.txt"
+                            "\n      echo requests==2.32.4 >> ./ci/requirements.txt"
                         )
                         message += "\n      echo https://clickhouse-builds.s3.amazonaws.com/packages/praktika-0.1-py3-none-any.whl >> ./ci/requirements.txt"
                     cls.evaluate_check(path.is_file(), message, job.name, workflow.name)

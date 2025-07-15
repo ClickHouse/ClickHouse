@@ -109,7 +109,7 @@ ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization pa
 
 In this case, ensure that the username follows the `mysql4<subdomain>_<username>` format, as described ([above](#creating-multiple-mysql-users-in-clickhouse-cloud)).
 
-## Enabling the MySQL Interface On Self-managed ClickHouse {#enabling-the-mysql-interface-on-self-managed-clickhouse}
+## Enabling the MySQL interface on self-managed ClickHouse {#enabling-the-mysql-interface-on-self-managed-clickhouse}
 
 Add the [mysql_port](../operations/server-configuration-parameters/settings.md#mysql_port) setting to your server's configuration file. For example, you could define the port in a new XML file in your `config.d/` [folder](../operations/configuration-files):
 

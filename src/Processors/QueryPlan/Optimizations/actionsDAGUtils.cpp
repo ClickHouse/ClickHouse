@@ -7,6 +7,13 @@
 
 #include <stack>
 
+namespace DB::ErrorCodes
+{
+
+extern const int LOGICAL_ERROR;
+
+}
+
 namespace DB
 {
 MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag, const ActionsDAG & outer_dag, bool check_monotonicity)
@@ -494,6 +501,123 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
     }
 
     return new_inputs;
+}
+
+bool isInjectiveFunction(const ActionsDAG::Node * node)
+{
+    if (node->function_base->isInjective({}))
+        return true;
+
+    size_t fixed_args = 0;
+    for (const auto & child : node->children)
+        if (child->type == ActionsDAG::ActionType::COLUMN)
+            ++fixed_args;
+    static const std::vector<String> injective = {"plus", "minus", "negate", "tuple"};
+    return (fixed_args + 1 >= node->children.size()) && (std::ranges::find(injective, node->function_base->getName()) != injective.end());
+}
+
+NodeSet removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG & actions)
+{
+    NodeSet irreducible;
+    NodeSet visited;
+    for (const auto & node : actions.getOutputs())
+        removeInjectiveFunctionsFromResultsRecursively(node, irreducible, visited);
+    return irreducible;
+}
+
+void removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG::Node * node, NodeSet & irreducible, NodeSet & visited)
+{
+    if (visited.contains(node))
+        return;
+    visited.insert(node);
+
+    switch (node->type)
+    {
+        case ActionsDAG::ActionType::ALIAS:
+            assert(node->children.size() == 1);
+            removeInjectiveFunctionsFromResultsRecursively(node->children.at(0), irreducible, visited);
+            break;
+        case ActionsDAG::ActionType::ARRAY_JOIN:
+            UNREACHABLE();
+        case ActionsDAG::ActionType::COLUMN:
+            irreducible.insert(node);
+            break;
+        case ActionsDAG::ActionType::FUNCTION:
+            if (!isInjectiveFunction(node))
+            {
+                irreducible.insert(node);
+            }
+            else
+            {
+                for (const auto & child : node->children)
+                    removeInjectiveFunctionsFromResultsRecursively(child, irreducible, visited);
+            }
+            break;
+        case ActionsDAG::ActionType::INPUT:
+            irreducible.insert(node);
+            break;
+        case ActionsDAG::ActionType::PLACEHOLDER:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "PLACEHOLDER action node must be removed before query plan optimization");
+    }
+}
+
+bool allOutputsDependsOnlyOnAllowedNodes(
+    const NodeSet & irreducible_nodes, const MatchedTrees::Matches & matches, const ActionsDAG::Node * node, NodeMap & visited)
+{
+    if (visited.contains(node))
+        return visited[node];
+
+    bool res = false;
+    /// `matches` maps partition key nodes into nodes in group by actions
+    if (matches.contains(node))
+    {
+        const auto & match = matches.at(node);
+        /// Function could be mapped into its argument. In this case .monotonicity != std::nullopt (see matchTrees)
+        if (match.node && !match.monotonicity)
+            res = irreducible_nodes.contains(match.node);
+    }
+
+    if (!res)
+    {
+        switch (node->type)
+        {
+            case ActionsDAG::ActionType::ALIAS:
+                assert(node->children.size() == 1);
+                res = allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node->children.at(0), visited);
+                break;
+            case ActionsDAG::ActionType::ARRAY_JOIN:
+                UNREACHABLE();
+            case ActionsDAG::ActionType::COLUMN:
+                /// Constants doesn't matter, so let's always consider them matched.
+                res = true;
+                break;
+            case ActionsDAG::ActionType::FUNCTION:
+                res = true;
+                for (const auto & child : node->children)
+                    res &= allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, child, visited);
+                break;
+            case ActionsDAG::ActionType::INPUT:
+                break;
+            case ActionsDAG::ActionType::PLACEHOLDER:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "PLACEHOLDER action node must be removed before query plan optimization");
+        }
+    }
+    visited[node] = res;
+    return res;
+}
+
+/// Here we check that partition key expression is a deterministic function of the reduced set of group by key nodes.
+/// No need to explicitly check that each function is deterministic, because it is a guaranteed property of partition key expression (checked on table creation).
+/// So it is left only to check that each output node depends only on the allowed set of nodes (`irreducible_nodes`).
+bool allOutputsDependsOnlyOnAllowedNodes(
+    const ActionsDAG & partition_actions, const NodeSet & irreducible_nodes, const MatchedTrees::Matches & matches)
+{
+    NodeMap visited;
+    bool res = true;
+    for (const auto & node : partition_actions.getOutputs())
+        if (node->type != ActionsDAG::ActionType::INPUT)
+            res &= allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node, visited);
+    return res;
 }
 
 }

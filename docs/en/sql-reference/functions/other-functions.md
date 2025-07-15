@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for Other Functions'
 sidebar_label: 'Other'
-sidebar_position: 140
 slug: /sql-reference/functions/other-functions
 title: 'Other Functions'
 ---
@@ -10,7 +9,7 @@ import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
 
-# Other Functions
+# Other functions
 
 ## hostName {#hostname}
 
@@ -1277,7 +1276,7 @@ uptime()
 Query:
 
 ```sql
-SELECT uptime() as Uptime;
+SELECT uptime() AS Uptime;
 ```
 
 Result:
@@ -2015,7 +2014,7 @@ blockSerializedSize(value[, value[, ...]])
 Query:
 
 ```sql
-SELECT blockSerializedSize(maxState(1)) as x
+SELECT blockSerializedSize(maxState(1)) AS x
 ```
 
 Result:
@@ -2538,7 +2537,7 @@ INSERT INTO metrics VALUES (0, initializeAggregation('sumState', toUInt64(42)))
 
 **See Also**
 
-- [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
+- [arrayReduce](../../sql-reference/functions/array-functions.md#arrayReduce)
 
 ## finalizeAggregation {#finalizeaggregation}
 
@@ -2640,7 +2639,7 @@ Result:
 
 **See Also**
 
-- [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
+- [arrayReduce](../../sql-reference/functions/array-functions.md#arrayReduce)
 - [initializeAggregation](#initializeaggregation)
 
 ## runningAccumulate {#runningaccumulate}
@@ -2676,7 +2675,7 @@ Consider how you can use `runningAccumulate` to find the cumulative sum of numbe
 Query:
 
 ```sql
-SELECT k, runningAccumulate(sum_k) AS res FROM (SELECT number as k, sumState(k) AS sum_k FROM numbers(10) GROUP BY k ORDER BY k);
+SELECT k, runningAccumulate(sum_k) AS res FROM (SELECT number AS k, sumState(k) AS sum_k FROM numbers(10) GROUP BY k ORDER BY k);
 ```
 
 Result:
@@ -2805,7 +2804,7 @@ SELECT * FROM db_test.id_val;
 Query:
 
 ```sql
-SELECT number, joinGet(db_test.id_val, 'val', toUInt32(number)) from numbers(4);
+SELECT number, joinGet(db_test.id_val, 'val', toUInt32(number)) FROM numbers(4);
 ```
 
 Result:
@@ -2839,7 +2838,7 @@ SELECT * FROM db_test.id_val_nulls;
 Query:
 
 ```sql
-SELECT number, joinGet(db_test.id_val_nulls, 'val', toUInt32(number)) from numbers(4);
+SELECT number, joinGet(db_test.id_val_nulls, 'val', toUInt32(number)) FROM numbers(4);
 ```
 
 Result:
@@ -2903,7 +2902,7 @@ SELECT * FROM db_test.id_val;
 Query:
 
 ```sql
-SELECT number, joinGetOrNull(db_test.id_val, 'val', toUInt32(number)) from numbers(4);
+SELECT number, joinGetOrNull(db_test.id_val, 'val', toUInt32(number)) FROM numbers(4);
 ```
 
 Result:

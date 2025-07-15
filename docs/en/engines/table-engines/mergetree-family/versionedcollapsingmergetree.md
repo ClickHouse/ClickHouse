@@ -18,7 +18,7 @@ See the section [Collapsing](#table_engines_versionedcollapsingmergetree) for de
 
 The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree) and adds the logic for collapsing rows to the algorithm for merging data parts. `VersionedCollapsingMergeTree` serves the same purpose as [CollapsingMergeTree](../../../engines/table-engines/mergetree-family/collapsingmergetree.md) but uses a different collapsing algorithm that allows inserting the data in any order with multiple threads. In particular, the `Version` column helps to collapse the rows properly even if they are inserted in the wrong order. In contrast, `CollapsingMergeTree` allows only strictly consecutive insertion.
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -35,7 +35,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 For a description of query parameters, see the [query description](../../../sql-reference/statements/create/table.md).
 
-### Engine Parameters {#engine-parameters}
+### Engine parameters {#engine-parameters}
 
 ```sql
 VersionedCollapsingMergeTree(sign, version)
@@ -46,7 +46,7 @@ VersionedCollapsingMergeTree(sign, version)
 | `sign`    | Name of the column with the type of row: `1` is a "state" row, `-1` is a "cancel" row. | [`Int8`](/sql-reference/data-types/int-uint)                                                                                                                                                                                                                                    |
 | `version` | Name of the column with the version of the object state.                               | [`Int*`](/sql-reference/data-types/int-uint), [`UInt*`](/sql-reference/data-types/int-uint), [`Date`](/sql-reference/data-types/date), [`Date32`](/sql-reference/data-types/date32), [`DateTime`](/sql-reference/data-types/datetime) or [`DateTime64`](/sql-reference/data-types/datetime64) |
 
-### Query Clauses {#query-clauses}
+### Query clauses {#query-clauses}
 
 When creating a `VersionedCollapsingMergeTree` table, the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required as when creating a `MergeTree` table.
 
@@ -133,7 +133,7 @@ When ClickHouse merges data parts, it deletes each pair of rows that have the sa
 
 When ClickHouse inserts data, it orders rows by the primary key. If the `Version` column is not in the primary key, ClickHouse adds it to the primary key implicitly as the last field and uses it for ordering.
 
-## Selecting Data {#selecting-data}
+## Selecting data {#selecting-data}
 
 ClickHouse does not guarantee that all of the rows with the same primary key will be in the same resulting data part or even on the same physical server. This is true both for writing the data and for subsequent merging of the data parts. In addition, ClickHouse processes `SELECT` queries with multiple threads, and it cannot predict the order of rows in the result. This means that aggregation is required if there is a need to get completely "collapsed" data from a `VersionedCollapsingMergeTree` table.
 
@@ -143,7 +143,7 @@ The aggregates `count`, `sum` and `avg` can be calculated this way. The aggregat
 
 If you need to extract the data with "collapsing" but without aggregation (for example, to check whether rows are present whose newest values match certain conditions), you can use the `FINAL` modifier for the `FROM` clause. This approach is inefficient and should not be used with large tables.
 
-## Example of Use {#example-of-use}
+## Example of use {#example-of-use}
 
 Example data:
 

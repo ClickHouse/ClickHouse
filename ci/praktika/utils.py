@@ -172,6 +172,7 @@ class Shell:
             stderr=subprocess.PIPE,
             text=True,
             executable="/bin/bash",
+            errors="ignore",
         )
         if res.stderr:
             print(f"WARNING: stderr: {res.stderr.strip()}")
@@ -191,6 +192,7 @@ class Shell:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            errors="ignore",
         )
         if strip:
             return res.returncode, res.stdout.strip(), res.stderr.strip()
@@ -326,6 +328,7 @@ class Shell:
                         start_new_session=True,  # Start a new process group for signal handling
                         bufsize=1,  # Line-buffered
                         errors="backslashreplace",
+                        executable="/bin/bash",
                         **kwargs,
                     )
 
@@ -434,7 +437,7 @@ class Utils:
     @staticmethod
     def is_amd():
         arch = platform.machine()
-        if "x86_64" in arch.lower() or "amd64" in arch.lower():
+        if "x86" in arch.lower() or "amd" in arch.lower():
             return True
         return False
 
@@ -445,6 +448,18 @@ class Utils:
                 os.killpg(os.getpgid(pid), signal.SIGTERM)
             else:
                 os.killpg(os.getpgid(pid), signal.SIGKILL)
+        except Exception as e:
+            print(
+                f"ERROR: Exception while terminating process [{pid}]: [{e}], (force={force})"
+            )
+
+    @staticmethod
+    def terminate_process(pid, force=False):
+        try:
+            if not force:
+                os.kill(pid, signal.SIGTERM)
+            else:
+                os.kill(pid, signal.SIGKILL)
         except Exception as e:
             print(
                 f"ERROR: Exception while terminating process [{pid}]: [{e}], (force={force})"
@@ -618,42 +633,65 @@ class Utils:
         return res
 
     @classmethod
-    def compress_file_zst(cls, path):
+    def compress_zst(cls, path):
+        path = str(path).rstrip("/")
+        path_obj = Path(path)
+        is_dir = path_obj.is_dir()
         path_out = ""
+
         if Shell.check("which zstd"):
-            path_out = f"{path}.zst"
-            Shell.check(
-                f"rm -f {path_out} && zstd < {path} > {path_out}",
-                verbose=True,
-                strict=True,
-            )
+            if is_dir:
+                # Compress just the directory's content, not full path
+                parent = str(path_obj.parent.resolve())
+                name = path_obj.name
+                path_out = f"{parent}/{name}.tar.zst"
+                Shell.check(
+                    f"cd {parent} && rm -f {name}.tar.zst && tar -cf - {name} | zstd -c > {name}.tar.zst",
+                    verbose=True,
+                    strict=True,
+                )
+            elif path_obj.is_file():
+                path_out = f"{path}.zst"
+                Shell.check(
+                    f"rm -f '{path_out}' && zstd -c '{path}' > '{path_out}'",
+                    verbose=True,
+                    strict=True,
+                )
         return path_out
 
     @classmethod
-    def compress_file_gz(cls, path):
+    def compress_gz(cls, path):
+        path = str(path).rstrip("/")
+        path_obj = Path(path)
+        is_dir = path_obj.is_dir()
         path_out = ""
+
         if Shell.check("which gzip"):
-            path_out = f"{path}.gz"
-            Shell.check(
-                f"rm -f {path_out} && gzip < {path} > {path_out}",
-                verbose=True,
-                strict=True,
-            )
+            if is_dir:
+                # Compress just the directory's content, not full path
+                parent = str(path_obj.parent.resolve())
+                name = path_obj.name
+                path_out = f"{parent}/{name}.tar.gz"
+                Shell.check(
+                    f"cd {parent} && rm -f {name}.tar.gz && tar -cf - {name} | gzip > {name}.tar.gz",
+                    verbose=True,
+                    strict=True,
+                )
+            elif path_obj.is_file():
+                path_out = f"{path}.gz"
+                Shell.check(
+                    f"rm -f {path_out} && gzip -c '{path}' > '{path_out}'",
+                    verbose=True,
+                    strict=True,
+                )
         return path_out
 
     @classmethod
     def compress_file(cls, path, no_strict=False):
         if Shell.check("which zstd"):
-            return cls.compress_file_zst(path)
-        elif Shell.check("which pigz"):
-            path_out = f"{path}.gz"
-            Shell.check(
-                f"rm -f {path_out} && pigz < {path} > {path_out}",
-                verbose=True,
-                strict=True,
-            )
+            return cls.compress_zst(path)
         elif Shell.check("which gzip"):
-            return cls.compress_file_gz(path)
+            return cls.compress_gz(path)
         else:
             path_out = path
             if not no_strict:
@@ -704,6 +742,32 @@ class Utils:
         @property
         def duration(self) -> float:
             return datetime.now().timestamp() - self.start_time
+
+    class Tee:
+        def __init__(self, stdout=None):
+            self.original_stdout = sys.stdout
+            self.stdout = stdout
+
+        def __enter__(self):
+            class DualWriter:
+                def __init__(self, original, duplicate):
+                    self.original = original
+                    self.duplicate = duplicate
+
+                def write(self, message):
+                    self.original.write(message)
+                    self.duplicate.write(message)
+
+                def flush(self):
+                    self.original.flush()
+                    self.duplicate.flush()
+
+            if self.stdout:
+                sys.stdout = DualWriter(self.original_stdout, self.stdout)
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            sys.stdout = self.original_stdout
 
 
 class TeePopen:
@@ -804,14 +868,4 @@ class TeePopen:
 
 if __name__ == "__main__":
 
-    @dataclasses.dataclass
-    class Test(MetaClasses.Serializable):
-        name: str
-
-        @staticmethod
-        def file_name_static(name):
-            return f"/tmp/{Utils.normalize_string(name)}.json"
-
-    Test(name="dsada").dump()
-    t = Test.from_fs("dsada")
-    print(t)
+    Utils.compress_gz("/tmp/test/")

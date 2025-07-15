@@ -16,8 +16,6 @@
 namespace Iceberg
 {
 
-struct ManifestFileContentImpl;
-
 enum class ManifestEntryStatus : uint8_t
 {
     EXISTING = 0,
@@ -127,7 +125,6 @@ private:
 
 };
 
-/// Once manifest file is constructed. It's unchangeable.
 using ManifestFilePtr = std::shared_ptr<const ManifestFileContent>;
 
 }

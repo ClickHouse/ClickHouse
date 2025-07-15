@@ -41,11 +41,12 @@ public:
         return type->getDictionaryType();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & arg = arguments[0];
         const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(arg.column.get());
-        return low_cardinality_column->getDictionary().getNestedColumn()->cloneResized(arg.column->size());
+        /// In the case of a shared dictionary, we want only dictionary keys that correspond to this block:
+        return low_cardinality_column->cutAndCompact(0, input_rows_count)->getDictionary().getNestedColumn()->cloneResized(arg.column->size());
     }
 };
 
