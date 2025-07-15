@@ -199,6 +199,9 @@ public:
         }
     }
 
+    const ExpressionActionsPtr & getActions() const { return expression_actions; }
+    const LambdaCapturePtr & getCapture() const { return capture; }
+
 private:
     ExpressionActionsPtr expression_actions;
     LambdaCapturePtr capture;
