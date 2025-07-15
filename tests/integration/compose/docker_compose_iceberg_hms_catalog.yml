@@ -31,7 +31,7 @@ services:
       test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/9083"]
       interval: 2s
       timeout: 5s
-      retries: 15
+      retries: 45
       start_period: 45s
 
   # TODO: can we simply use with_minio=True instead?
