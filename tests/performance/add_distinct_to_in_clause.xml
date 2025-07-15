@@ -1,7 +1,7 @@
 <test>
     <settings>
         <allow_experimental_analyzer>1</allow_experimental_analyzer>
-        <prefer_localhost_replica>1</prefer_localhost_replica>
+        <prefer_localhost_replica>0</prefer_localhost_replica>
         <prefer_global_in_and_join>1</prefer_global_in_and_join>
         <distributed_product_mode>global</distributed_product_mode>
         <max_rows_to_read>1000000000000</max_rows_to_read>
