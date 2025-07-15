@@ -843,7 +843,7 @@ JSONExtractRaw(json [, indices_or_keys]...)
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]';
 ```
 
-### Case-Insensitive JSONExtract Functions
+### Case-Insensitive JSONExtract Functions {#case-insensitive-jsonextract-functions}
 
 The following functions perform case-insensitive key matching when extracting values from JSON objects. They work identically to their case-sensitive counterparts, except that object keys are matched without regard to case.
 
