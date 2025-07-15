@@ -205,8 +205,9 @@ static std::pair<Int32, String> getMetadataFileAndVersion(const std::string & pa
         version_str = String(file_name.begin(), file_name.begin() + file_name.find_first_of('-'));
 
     if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: {}. Expected vN.metadata.json where N is a number", file_name);
+        return std::make_pair(0, path);
+        // throw Exception(
+        //     ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: {}. Expected vN.metadata.json where N is a number", file_name);
 
     return std::make_pair(std::stoi(version_str), path);
 }
