@@ -188,7 +188,7 @@ def main():
     build_path.mkdir(parents=True, exist_ok=True)
 
     if validate_bugfix_check:
-        download_clickhouse_master(build_path)
+        download_clickhouse_master(build_path, full=True)
     else:
         download_clickhouse_binary(check_name, reports_path, build_path)
 

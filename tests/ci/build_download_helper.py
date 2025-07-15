@@ -282,7 +282,7 @@ def download_clickhouse_binary(
     )
 
 
-def download_clickhouse_master(result_path: Path) -> None:
+def download_clickhouse_master(result_path: Path, full: bool = False) -> None:
     if platform.system() not in ("Linux", "Darwin"):
         raise DownloadException(
             f"Unsupported platform {platform.system()} for downloading ClickHouse master build"
@@ -297,6 +297,7 @@ def download_clickhouse_master(result_path: Path) -> None:
 
     url = (
         f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/{arch}/clickhouse"
+        f"{'-full' if full else ''}"
     )
     download_build_with_progress(url, result_path / "clickhouse")
 
