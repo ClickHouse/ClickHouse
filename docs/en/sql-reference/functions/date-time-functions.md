@@ -1,12 +1,11 @@
 ---
 description: 'Documentation for Functions for Working with Dates and Times'
-sidebar_label: 'Dates and Times'
-sidebar_position: 45
+sidebar_label: 'Dates and time'
 slug: /sql-reference/functions/date-time-functions
 title: 'Functions for Working with Dates and Times'
 ---
 
-# Functions for Working with Dates and Times
+# Functions for working with dates and times
 
 Most functions in this section accept an optional time zone argument, e.g. `Europe/Amsterdam`. In this case, the time zone is the specified one instead of the local (default) one.
 
@@ -1352,16 +1351,15 @@ Result:
 Query with timezone:
 
 ```sql
-┌─toStartOfMillisecond(dt64, 'Asia/Istanbul')─┐
-│               2020-01-01 12:20:30.999000000 │
-└─────────────────────────────────────────────┘
+WITH toDateTime64('2020-01-01 10:20:30.999999999', 9) AS dt64
+SELECT toStartOfMillisecond(dt64, 'Asia/Istanbul');
 ```
 
 Result:
 
 ```text
 ┌─toStartOfMillisecond(dt64, 'Asia/Istanbul')─┐
-│                     2020-01-01 12:20:30.999 │
+│               2020-01-01 13:20:30.999000000 │
 └─────────────────────────────────────────────┘
 ```
 
@@ -1412,7 +1410,7 @@ Result:
 
 ```text
 ┌─toStartOfMicrosecond(dt64, 'Asia/Istanbul')─┐
-│               2020-01-01 12:20:30.999999000 │
+│               2020-01-01 13:20:30.999999000 │
 └─────────────────────────────────────────────┘
 ```
 
@@ -1467,7 +1465,7 @@ Result:
 
 ```text
 ┌─toStartOfNanosecond(dt64, 'Asia/Istanbul')─┐
-│              2020-01-01 12:20:30.999999999 │
+│              2020-01-01 13:20:30.999999999 │
 └────────────────────────────────────────────┘
 ```
 

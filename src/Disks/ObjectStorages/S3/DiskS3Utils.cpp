@@ -1,4 +1,4 @@
-#include "DiskS3Utils.h"
+#include <Disks/ObjectStorages/S3/DiskS3Utils.h>
 
 #if USE_AWS_S3
 #include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>

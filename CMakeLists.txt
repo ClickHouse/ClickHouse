@@ -229,6 +229,8 @@ if (SPLIT_DEBUG_SYMBOLS)
     set(SPLIT_DEBUG_SYMBOLS_DIR "stripped" CACHE STRING "A separate directory for stripped information")
 endif()
 
+option(BUILD_STRIPPED_BINARY "Build stripped binary (clickhouse-stripped)" OFF)
+
 cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd
 
 
@@ -367,6 +369,15 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
 elseif (ENABLE_THINLTO)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
 endif ()
+
+if(COMPILER_PIPE)
+    set(MAX_COMPILER_MEMORY 2500)
+else()
+    set(MAX_COMPILER_MEMORY 1500)
+endif()
+set(MAX_LINKER_MEMORY 5000)
+include(cmake/limit_jobs.cmake)
+
 
 # Turns on all external libs like s3, kafka, ODBC, ...
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)

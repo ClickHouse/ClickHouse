@@ -25,7 +25,7 @@ Resolution: 1 second.
 
 The `Date` data type is faster than `DateTime` under _most_ conditions.
 
-The `Date` type requires 2 bytes of storage, while `DateTime` requires 4. However, when the database compresses the database, this difference is amplified. This amplification is due to the minutes and seconds in `DateTime` being less compressible. Filtering and aggregating `Date` instead of `DateTime` is also faster.
+The `Date` type requires 2 bytes of storage, while `DateTime` requires 4. However, during compression, the size difference between Date and DateTime becomes more significant. This amplification is due to the minutes and seconds in `DateTime` being less compressible. Filtering and aggregating `Date` instead of `DateTime` is also faster.
 
 ## Usage Remarks {#usage-remarks}
 
@@ -144,7 +144,7 @@ Similar issue exists for Casey Antarctic station in year 2010. They changed time
 
 Time shifts for multiple days. Some pacific islands changed their timezone offset from UTC+14 to UTC-12. That's alright but some inaccuracies may present if you do calculations with their timezone for historical time points at the days of conversion.
 
-## Handling Daylight Saving Time (DST) {#handling-daylight-saving-time-dst}
+## Handling daylight saving time (DST) {#handling-daylight-saving-time-dst}
 
 ClickHouse's DateTime type with time zones can exhibit unexpected behavior during Daylight Saving Time (DST) transitions, particularly when:
 

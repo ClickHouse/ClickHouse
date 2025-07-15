@@ -1166,7 +1166,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     {
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(
-            /*one_line*/ true, /*hilite*/ false, /*identifier_quoting_rule_=*/IdentifierQuotingRule::Always);
+            /*one_line*/ true, /*identifier_quoting_rule_=*/IdentifierQuotingRule::Always);
         new_query->IAST::format(buf, ast_format_settings);
         new_query_str = buf.str();
     }
@@ -1212,7 +1212,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     return pipeline;
 }
 
-static std::optional<ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextPtr context)
+static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextPtr context)
 {
     QueryPlan plan;
     SelectQueryOptions options;
@@ -1256,7 +1256,7 @@ static std::optional<ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextP
     }
 
     if (!source)
-        return {};
+        return nullptr;
 
     return source->detachFilterActionsDAG();
 }
@@ -1285,7 +1285,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     {
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(
-            /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
+            /*one_line=*/true, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
         new_query->IAST::format(buf, ast_format_settings);
         new_query_str = buf.str();
     }
@@ -1302,7 +1302,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     /// Select query is needed for pruining on virtual columns
     auto number_of_replicas = static_cast<UInt64>(cluster->getShardsInfo().size());
     auto extension = src_storage_cluster.getTaskIteratorExtension(
-        predicate, filter.has_value() ? &filter.value() : nullptr, local_context, number_of_replicas);
+        predicate, filter.get(), local_context, number_of_replicas);
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
     size_t replica_index = 0;
@@ -2135,7 +2135,7 @@ void registerStorageDistributed(StorageFactory & factory)
         .supports_settings = true,
         .supports_parallel_insert = true,
         .supports_schema_inference = true,
-        .source_access_type = AccessType::REMOTE,
+        .source_access_type = AccessTypeObjects::Source::REMOTE,
         .has_builtin_setting_fn = DistributedSettings::hasBuiltin,
     });
 }
