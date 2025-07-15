@@ -190,7 +190,12 @@ static size_t numLeftRowsForNextBlock(
     const IColumn::Offsets & offsets,
     size_t max_joined_block_rows)
 {
+    /// If rows are not replicated, do not split block.
     if (offsets.empty() || max_joined_block_rows == 0)
+        return 0;
+
+    /// If offsets does not increase block size, do not split block.
+    if (offsets.back() <= offsets.size())
         return 0;
 
     const size_t prev_offset = next_row ? offsets[next_row - 1] : 0;

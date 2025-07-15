@@ -858,7 +858,6 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtit
             current_added_rows,
             row_replicate_offset.size());
 
-
     auto filter_col = buildAdditionalFilter(selector, selected_rows, row_replicate_offset, added_columns);
 
     {
