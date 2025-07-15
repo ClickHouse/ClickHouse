@@ -127,9 +127,6 @@ protected:
     ReaderHolder reader;
     ThreadPoolCallbackRunnerUnsafe<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
-
-    size_t thread_order_number;
-
     /// Recreate ReadBuffer and Pipeline for each file.
     static ReaderHolder createReader(
         size_t processor,
@@ -152,6 +149,9 @@ protected:
 
     void addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows);
     void lazyInitialize();
+
+public:
+    size_t thread_order_number;
 };
 
 class StorageObjectStorageSource::ReadTaskIterator : public IObjectIterator

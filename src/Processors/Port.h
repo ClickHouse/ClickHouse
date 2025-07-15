@@ -8,6 +8,7 @@
 #include <Core/Block.h>
 #include <Core/Defines.h>
 #include <Processors/Chunk.h>
+#include "Common/logger_useful.h"
 #include <Common/Exception.h>
 
 namespace DB
@@ -439,6 +440,12 @@ public:
 
     void ALWAYS_INLINE finish()
     {
+        LOG_DEBUG(
+            &Poco::Logger::get("OutputPort, finish"),
+            "Finishing port: {}, stacktrace: {}",
+            header.dumpStructure(),
+            StackTrace().toString());
+
         assumeConnected();
 
         auto flags = state->setFlags(State::IS_FINISHED, State::IS_FINISHED);

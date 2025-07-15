@@ -42,8 +42,8 @@ public:
     Status prepare() override;
     void work() override;
 
-    OutputPort & getPort() { return output; }
-    const OutputPort & getPort() const { return output; }
+    OutputPort & getPort();
+    const OutputPort & getPort() const;
 
     void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_) override;
 

@@ -1,5 +1,7 @@
 #include <Processors/ISource.h>
 #include <QueryPipeline/StreamLocalLimits.h>
+#include "Common/logger_useful.h"
+#include "Storages/ObjectStorage/StorageObjectStorageSource.h"
 
 
 namespace DB
@@ -19,26 +21,82 @@ ISource::ISource(Block header, bool enable_auto_progress)
 {
 }
 
+OutputPort & ISource::getPort()
+{
+    auto thread_order_number = -1;
+    if (auto * ptr = dynamic_cast<StorageObjectStorageSource *>(this))
+    {
+        thread_order_number = ptr->thread_order_number;
+    }
+    LOG_DEBUG(
+        &Poco::Logger::get("ISource, getPort mutable"),
+        "thread_order_number: {}, stacktrace: {}",
+        thread_order_number,
+        StackTrace().toString());
+    return output;
+}
+const OutputPort & ISource::getPort() const
+{
+    auto thread_order_number = -1;
+    if (const auto * ptr = dynamic_cast<const StorageObjectStorageSource *>(this))
+    {
+        thread_order_number = ptr->thread_order_number;
+    }
+    LOG_DEBUG(
+        &Poco::Logger::get("ISource, getPort const"),
+        "thread_order_number: {}, stacktrace: {}",
+        thread_order_number,
+        StackTrace().toString());
+    return output;
+}
+
 ISource::Status ISource::prepare()
 {
+    int64_t thread_order_number = -1;
+    if (auto * ptr = dynamic_cast<StorageObjectStorageSource *>(this))
+    {
+        thread_order_number = ptr->thread_order_number;
+    }
+
+    LOG_DEBUG(
+        &Poco::Logger::get("ISource, prepare, 0"),
+        "Prepare called, has_input: {}, finished: {}, read_progress_was_set: {}, thread_order_number: {}, output.isFinished(): {}, "
+        "stacktrace: {}, processor: {}",
+        has_input,
+        finished,
+        read_progress_was_set.load(),
+        thread_order_number,
+        output.isFinished(),
+        StackTrace().toString(),
+        debug());
     if (finished)
     {
         output.finish();
         return Status::Finished;
     }
 
+    LOG_DEBUG(&Poco::Logger::get("ISource, prepare, 1"), "Prepare called, thread_order_number: {}", thread_order_number);
+
     /// Check can output.
     if (output.isFinished())
         return Status::Finished;
 
+    LOG_DEBUG(&Poco::Logger::get("ISource, prepare, 2"), "Prepare called, thread_order_number: {}", thread_order_number);
+
     if (!output.canPush())
         return Status::PortFull;
+
+    LOG_DEBUG(&Poco::Logger::get("ISource, prepare, 3"), "Prepare called, thread_order_number: {}", thread_order_number);
 
     if (!has_input)
         return Status::Ready;
 
+    LOG_DEBUG(&Poco::Logger::get("ISource, prepare, 4"), "Prepare called, thread_order_number: {}", thread_order_number);
+
     output.pushData(std::move(current_chunk));
     has_input = false;
+
+    LOG_DEBUG(&Poco::Logger::get("ISource, prepare, 5"), "Prepare called, thread_order_number: {}", thread_order_number);
 
     if (isCancelled())
     {
@@ -46,11 +104,21 @@ ISource::Status ISource::prepare()
         return Status::Finished;
     }
 
+    LOG_DEBUG(&Poco::Logger::get("ISource, prepare, 6"), "Prepare called, thread_order_number: {}", thread_order_number);
+
     if (got_exception)
     {
         output.finish();
         return Status::Finished;
     }
+
+
+    LOG_DEBUG(
+        &Poco::Logger::get("ISource, prepare, 7"),
+        "Prepare called, thread_order_number: {}, output.isFinished(): {}",
+        thread_order_number,
+        output.isFinished());
+
 
     /// Now, we pushed to output, and it must be full.
     return Status::PortFull;
@@ -100,6 +168,12 @@ void ISource::addTotalBytes(size_t value)
 
 void ISource::work()
 {
+    LOG_DEBUG(
+        &Poco::Logger::get("ISource, work"),
+        "Work started, has_input: {}, finished: {}, read_progress_was_set: {}",
+        has_input,
+        finished,
+        read_progress_was_set.load());
     try
     {
         if (finished)
@@ -125,9 +199,26 @@ void ISource::work()
 
         if (finished)
             onFinish();
+
+        int64_t thread_order_number = -1;
+        if (auto * ptr = dynamic_cast<StorageObjectStorageSource *>(this))
+        {
+            thread_order_number = ptr->thread_order_number;
+        }
+
+        LOG_DEBUG(
+            &Poco::Logger::get("ISource, work"),
+            "Work finished, has_input: {}, finished: {}, read_progress_was_set: {}, thread_order_number: {}, stacktrace: {}",
+            has_input,
+            finished,
+            read_progress_was_set.load(),
+            thread_order_number,
+            StackTrace().toString());
     }
     catch (...)
     {
+        LOG_DEBUG(&Poco::Logger::get("ISource, work"), "Exception in work: {}", getCurrentExceptionMessage(false));
+
         got_exception = true;
 
         if (!std::exchange(finished, true))

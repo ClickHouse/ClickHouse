@@ -1,7 +1,9 @@
 #pragma once
 
+#include "Common/logger_useful.h"
 #include <Common/MemorySpillScheduler.h>
 #include <Common/Stopwatch.h>
+// #include "Storages/ObjectStorage/StorageObjectStorageSource.h"
 
 #include <list>
 #include <memory>
@@ -249,14 +251,14 @@ public:
     virtual ~IProcessor() = default;
 
     auto & getInputs() { return inputs; }
-    auto & getOutputs() { return outputs; }
+    OutputPorts & getOutputs();
 
     UInt64 getInputPortNumber(const InputPort * input_port) const;
 
     UInt64 getOutputPortNumber(const OutputPort * output_port) const;
 
     const auto & getInputs() const { return inputs; }
-    const auto & getOutputs() const { return outputs; }
+    const OutputPorts & getOutputs() const;
 
     /// Debug output.
     String debug() const;

@@ -438,11 +438,13 @@ Chunk StorageObjectStorageSource::generate()
     auto chunk = generateImpl();
     LOG_DEBUG(
         &Poco::Logger::get("StorageObjectStorageSource, generate finsh"),
-        "Generated chunk: {}, object storage source: {}, is empty: {}, thread_order_number: {}",
+        "Generated chunk: {}, object storage source: {}, is empty: {}, thread_order_number: {}, StackTrace: {}",
         chunk.getNumRows(),
         configuration->getTypeName(),
         chunk.empty(),
-        thread_order_number);
+        thread_order_number,
+        StackTrace().toString());
+    return chunk;
 }
 
 void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
