@@ -330,7 +330,7 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size, bool t
     {
         fiu_do_on(FailPoints::cache_filesystem_failure,
         {
-            throw std::filesystem::filesystem_error("Failpoint while writing to FileSegment", std::error_code());
+            throw std::filesystem::filesystem_error("Failpoint while caching data", std::error_code());
         });
         if (!cache_writer->write(data, size, current_download_offset, file_segment_kind))
         {

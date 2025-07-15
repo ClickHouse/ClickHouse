@@ -412,6 +412,10 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
         /// which is only executed in debug/sanitizer builds (under DEBUG_OR_SANITIZER_BUILD).
         std::lock_guard lock(write_mutex);
 #endif
+        fiu_do_on(FailPoints::cache_filesystem_failure,
+        {
+            throw std::filesystem::filesystem_error("FailPoint while caching data", std::error_code());
+        });
 
         if (!cache_writer)
         {
@@ -419,10 +423,6 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
             if (downloaded_size > 0)
                 flags = O_WRONLY | O_APPEND | O_CLOEXEC;
 
-            fiu_do_on(FailPoints::cache_filesystem_failure,
-            {
-                throw std::filesystem::filesystem_error("FailPoint while writing to FileSegment", std::error_code());
-            });
             cache_writer = std::make_unique<WriteBufferFromFile>(getPath(), /* buf_size */0, flags);
         }
 
