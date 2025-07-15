@@ -20,10 +20,6 @@ if (ENABLE_FUZZING)
     add_subdirectory(fuzzers)
 endif()
 
-if (ENABLE_TESTS)
-    add_subdirectory(HiliteComparator)
-endif ()
-
 if (ENABLE_LEXER_TEST)
     set(LEXER_STANDALONE_BUILD ON CACHE BOOL "Enable standalone lexer build")
 endif ()

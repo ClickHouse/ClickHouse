@@ -55,7 +55,7 @@ The `DWARF` format outputs the following columns:
     - `attr_int` - integer value of the attribute; 0 if the attribute doesn't have a numeric value
     - `attr_str` - string value of the attribute; empty if the attribute doesn't have a string value
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
 The `DWARF` format can be used to find compilation units that have the most function definitions (including template instantiations and functions from included header files):
 
@@ -80,7 +80,7 @@ LIMIT 3
 Peak memory usage: 271.92 MiB.
 ```
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}
 
 
 

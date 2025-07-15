@@ -6,7 +6,7 @@ slug: /engines/table-engines/special/
 title: 'Special Table Engines'
 ---
 
-# Special Table Engines
+# Special table engines
 
 There are three main categories of table engines:
 
