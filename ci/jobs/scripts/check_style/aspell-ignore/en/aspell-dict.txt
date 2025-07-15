@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3285 
+personal_ws-1.1 en 3351 
 AArch
 ACLs
 ALTERs
@@ -27,8 +27,8 @@ AggregatorThreadsActive
 Akka
 AlertManager
 Alexey
-AnyEvent
 Anthropic
+AnyEvent
 AppleClang
 Approximative
 ArrayJoin
@@ -234,8 +234,8 @@ DESC
 DIEs
 DOGEFI
 Damerau
-Databricks
 DataGrip
+DataLakeCatalog
 DataLens
 DataPacket
 DataTypes
@@ -248,7 +248,7 @@ DatabaseOnDiskThreads
 DatabaseOnDiskThreadsActive
 DatabaseOrdinaryThreads
 DatabaseOrdinaryThreadsActive
-DataLakeCatalog
+Databricks
 DateTime
 DateTimeInputFormat
 DateTimeOutputFormat
@@ -500,6 +500,17 @@ JSONExtractKeysAndValuesRaw
 JSONExtractRaw
 JSONExtractString
 JSONExtractUInt
+JSONExtractArrayRawCaseInsensitive
+JSONExtractBoolCaseInsensitive
+JSONExtractCaseInsensitive
+JSONExtractFloatCaseInsensitive
+JSONExtractIntCaseInsensitive
+JSONExtractKeysAndValuesCaseInsensitive
+JSONExtractKeysAndValuesRawCaseInsensitive
+JSONExtractKeysCaseInsensitive
+JSONExtractRawCaseInsensitive
+JSONExtractStringCaseInsensitive
+JSONExtractUIntCaseInsensitive
 JSONHas
 JSONLength
 JSONLines
@@ -625,7 +636,6 @@ MaxThreads
 Mbps
 McNeal
 Memcheck
-memcheck
 MemoryCode
 MemoryDataAndStack
 MemoryResident
@@ -785,6 +795,7 @@ Observability
 Octonica
 Ok
 OnTime
+OpenAI
 OpenCelliD
 OpenFileForRead
 OpenFileForWrite
@@ -792,7 +803,6 @@ OpenSSL
 OpenSUSE
 OpenSky
 OpenStack
-OpenAI
 OpenTelemetry
 OrDefault
 OrNull
@@ -2280,6 +2290,7 @@ mdadm
 meanZTest
 meanztest
 mebibytes
+memcheck
 memtable
 memtables
 mergeTreeIndex
@@ -2532,10 +2543,10 @@ polygonPerimeterSpherical
 polygonsDistanceCartesian
 polygonsDistanceSpherical
 polygonsEqualsCartesian
-polygonsIntersectionCartesian
-polygonsIntersectionSpherical
 polygonsIntersectCartesian
 polygonsIntersectSpherical
+polygonsIntersectionCartesian
+polygonsIntersectionSpherical
 polygonsSymDifferenceCartesian
 polygonsSymDifferenceSpherical
 polygonsUnionCartesian
@@ -2802,8 +2813,8 @@ satisfiable
 scala
 sccache
 schemas
-searchAny
 searchAll
+searchAny
 seekable
 seektable
 sequenceCount
@@ -3036,10 +3047,10 @@ throwif
 timeDiff
 timeSeriesData
 timeSeriesDeltaToGrid
-timeSeriesMetrics
 timeSeriesInstantDeltaToGrid
 timeSeriesInstantRateToGrid
 timeSeriesLastTwoSamples
+timeSeriesMetrics
 timeSeriesRateToGrid
 timeSeriesResampleToGridWithStaleness
 timeSeriesTags
