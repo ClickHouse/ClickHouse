@@ -48,6 +48,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
             {"min_joined_block_size_rows", 0, DEFAULT_BLOCK_SIZE, "New setting."},
             {"table_engine_read_through_distributed_cache", false, false, "New setting"},
+            {"enable_function_early_short_circuit", false, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
