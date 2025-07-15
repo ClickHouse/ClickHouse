@@ -3,6 +3,7 @@
 #if USE_EMBEDDED_COMPILER
 
 #include <stack>
+#include <iostream>
 
 #include <Common/logger_useful.h>
 #include <base/sort.h>
@@ -98,7 +99,16 @@ public:
             columns[arguments.size()] = getColumnData(result_column.get());
 
             auto jit_compiled_function = compiled_function_holder->compiled_function.compiled_function;
-            jit_compiled_function(input_rows_count, columns.data());
+
+            try
+            {
+                jit_compiled_function(input_rows_count, columns.data());
+            }
+            catch (const Exception & e)
+            {
+                std::cout << "catch exception in LLVMExecutableFunction: " << e.displayText() << std::endl;
+                throw;
+            }
 
             #if defined(MEMORY_SANITIZER)
             /// Memory sanitizer don't know about stores from JIT-ed code.

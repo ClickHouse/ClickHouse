@@ -8,10 +8,12 @@
 #include <Common/NaNUtils.h>
 #include <DataTypes/NumberTraits.h>
 #include <DataTypes/Native.h>
+#include <iostream>
 
 #if USE_EMBEDDED_COMPILER
 #    include <Core/ValuesWithType.h>
 #    include <llvm/IR/IRBuilder.h>
+#    include <llvm/IR/Module.h>
 #endif
 
 
@@ -60,6 +62,7 @@ static llvm::Value * compileWithNullableValues(llvm::IRBuilder<> & b, llvm::Valu
 template <typename A, typename B>
 inline void throwIfDivisionLeadsToFPE(A a, B b)
 {
+    std::cout << "jit stacktrace:" << StackTrace().toString() << std::endl;
     /// Is it better to use siglongjmp instead of checks?
 
     if (unlikely(b == 0))
@@ -69,7 +72,33 @@ inline void throwIfDivisionLeadsToFPE(A a, B b)
     if (unlikely(is_signed_v<A> && is_signed_v<B> && a == std::numeric_limits<A>::min() && b == -1))
         throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division of minimal signed number by minus one");
 }
+}
 
+/*
+#if USE_EMBEDDED_COMPILER
+
+#define THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(TYPE) \
+        extern "C" void throwIfDivisionLeadsToFPE##TYPE(TYPE a, TYPE b);
+
+THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(Int8)
+THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(UInt8)
+THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(Int16)
+THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(UInt16)
+THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(Int32)
+THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(UInt32)
+THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(Int64)
+THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(UInt64)
+THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(Int128)
+THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(UInt128)
+THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(Int256)
+THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER(UInt256)
+#undef THROW_IF_DIVISION_LEADS_TO_FPE_WRAPPER
+
+#endif
+*/
+
+namespace DB
+{
 template <typename A, typename B>
 inline bool divisionLeadsToFPE(A a, B b)
 {
@@ -230,12 +259,40 @@ struct ModuloImpl
         if (left->getType()->isFloatingPointTy())
             return b.CreateFRem(left, right);
         else if (left->getType()->isIntegerTy())
+        {
+            std::string check_func_name;
+            auto * type = left->getType();
+            if (type->isIntegerTy(8))
+                check_func_name = is_signed ? "throwIfDivisionLeadsToFPEInt8" : "throwIfDivisionLeadsToFPEUInt8";
+            else if (type->isIntegerTy(16))
+                check_func_name = is_signed ? "throwIfDivisionLeadsToFPEInt16" : "throwIfDivisionLeadsToFPEUInt16";
+            else if (type->isIntegerTy(32))
+                check_func_name = is_signed ? "throwIfDivisionLeadsToFPEInt32" : "throwIfDivisionLeadsToFPEUInt32";
+            else if (type->isIntegerTy(64))
+                check_func_name = is_signed ? "throwIfDivisionLeadsToFPEInt64" : "throwIfDivisionLeadsToFPEUInt64";
+            else if (type->isIntegerTy(128))
+                check_func_name = is_signed ? "throwIfDivisionLeadsToFPEInt128" : "throwIfDivisionLeadsToFPEUInt128";
+            else if (type->isIntegerTy(256))
+                check_func_name = is_signed ? "throwIfDivisionLeadsToFPEInt256" : "throwIfDivisionLeadsToFPEUInt256";
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "ModuloImpl compilation expected integer types in (U)Int8|16|32|64|128|256");
+
+            auto * mod = b.GetInsertBlock()->getParent()->getParent();
+            // for (const auto & func : mod->functions())
+            // {
+            //     std::cout << "register function:" << func.getName().str() << std::endl;
+            // }
+            auto * func_type = llvm::FunctionType::get(b.getVoidTy(), {left->getType(), right->getType()}, false);
+            // auto * func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, check_func_name, mod);
+            auto func = mod->getOrInsertFunction(check_func_name, func_type);
+            b.CreateCall(func, {left, right});
             return is_signed ? b.CreateSRem(left, right) : b.CreateURem(left, right);
+        }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ModuloImpl compilation expected native integer or floating point type");
     }
 
-    #endif
+#endif
 };
 
 template <typename A, typename B>

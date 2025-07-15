@@ -35,6 +35,7 @@
 #include <Common/formatReadable.h>
 #include <Core/Types.h>
 #include <Core/Field.h>
+#include <Functions/DivisionUtils.h>
 
 
 namespace DB
@@ -358,6 +359,12 @@ public:
 
     llvm::JITSymbol findSymbol(const std::string & Name) override
     {
+        // std::cout << StackTrace().toString() << std::endl;
+        // for (const auto & pair : symbol_name_to_symbol_address)
+        // {
+        //     std::cout << "JITSymbolResolver: " << pair.first << std::endl;
+        // }
+
         auto address_it = symbol_name_to_symbol_address.find(Name);
         if (address_it == symbol_name_to_symbol_address.end())
             throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Could not find symbol {}", Name);
@@ -421,6 +428,26 @@ CHJIT::CHJIT()
     symbol_resolver->registerSymbol("__floattidf", reinterpret_cast<void *>(&castInt128ToDouble));
     symbol_resolver->registerSymbol("__fixsfti", reinterpret_cast<void *>(&castFloatToInt128));
     symbol_resolver->registerSymbol("__floattisf", reinterpret_cast<void *>(&castInt128ToFloat));
+
+#define REGISTER_THROW_IF_DIVISION_LEADS_TO_FPE(type) \
+        symbol_resolver->registerSymbol( \
+            "throwIfDivisionLeadsToFPE" #type, \
+            reinterpret_cast<void *>(static_cast<void (*)(type, type)>(&throwIfDivisionLeadsToFPE<type>)));
+
+    REGISTER_THROW_IF_DIVISION_LEADS_TO_FPE(UInt8)
+    REGISTER_THROW_IF_DIVISION_LEADS_TO_FPE(Int8)
+    REGISTER_THROW_IF_DIVISION_LEADS_TO_FPE(UInt16)
+    REGISTER_THROW_IF_DIVISION_LEADS_TO_FPE(Int16)
+    REGISTER_THROW_IF_DIVISION_LEADS_TO_FPE(UInt32)
+    REGISTER_THROW_IF_DIVISION_LEADS_TO_FPE(Int32)
+    REGISTER_THROW_IF_DIVISION_LEADS_TO_FPE(UInt64)
+    REGISTER_THROW_IF_DIVISION_LEADS_TO_FPE(Int64)
+    REGISTER_THROW_IF_DIVISION_LEADS_TO_FPE(UInt128)
+    REGISTER_THROW_IF_DIVISION_LEADS_TO_FPE(Int128)
+    REGISTER_THROW_IF_DIVISION_LEADS_TO_FPE(UInt256)
+    REGISTER_THROW_IF_DIVISION_LEADS_TO_FPE(Int256)
+
+#undef REGISTER_THROW_IF_DIVISION_LEADS_TO_FPE
 }
 
 CHJIT::~CHJIT() = default;
