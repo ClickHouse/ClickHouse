@@ -3337,7 +3337,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     }
 }
 
-static std::optional<String> backupOrRestoreObject(BackupRestoreObject * bro, const SQLObject obj, const SQLBase & b)
+std::optional<String> StatementGenerator::backupOrRestoreObject(BackupRestoreObject * bro, const SQLObject obj, const SQLBase & b)
 {
     bro->set_is_temp(b.is_temp);
     bro->set_sobject(obj);
@@ -3358,6 +3358,78 @@ static std::optional<String> backupOrRestoreDatabase(BackupRestoreObject * bro, 
     bro->set_sobject(SQLObject::DATABASE);
     d->setName(bro->mutable_object()->mutable_database());
     return d->getCluster();
+}
+
+void StatementGenerator::setBackupDestination(RandomGenerator & rg, BackupRestore * br)
+{
+    const uint32_t out_to_disk = 10 * static_cast<uint32_t>(!fc.disks.empty());
+    const uint32_t out_to_file = 10;
+    const uint32_t out_to_s3 = 10 * static_cast<uint32_t>(connections.hasMinIOConnection());
+    const uint32_t out_to_azure = 10 * static_cast<uint32_t>(connections.hasAzuriteConnection());
+    const uint32_t out_to_memory = 5;
+    const uint32_t out_to_null = 3;
+    const uint32_t prob_space2 = out_to_disk + out_to_file + out_to_s3 + out_to_azure + out_to_memory + out_to_null;
+    std::uniform_int_distribution<uint32_t> next_dist2(1, prob_space2);
+    const uint32_t nopt2 = next_dist2(rg.generator);
+    String backup_file = "backup";
+    BackupRestore_BackupOutput outf = BackupRestore_BackupOutput_Null;
+
+    br->set_backup_number(backup_counter++);
+    /// Set backup file
+    if (nopt2 < (out_to_disk + out_to_file + out_to_s3 + out_to_memory + 1))
+    {
+        backup_file += std::to_string(br->backup_number());
+    }
+    if (nopt2 < (out_to_disk + out_to_file + out_to_s3 + 1) && rg.nextBool())
+    {
+        static const DB::Strings & backupFormats = {"tar", "zip", "tzst", "tgz"};
+        const String & nsuffix = rg.pickRandomly(backupFormats);
+
+        backup_file += ".";
+        backup_file += nsuffix;
+        if (nsuffix == "tar" && rg.nextBool())
+        {
+            static const DB::Strings & tarSuffixes = {"gz", "bz2", "lzma", "zst", "xz"};
+
+            backup_file += ".";
+            backup_file += rg.pickRandomly(tarSuffixes);
+        }
+    }
+    if (out_to_disk && (nopt2 < out_to_disk + 1))
+    {
+        outf = BackupRestore_BackupOutput_Disk;
+        br->add_out_params(rg.pickRandomly(fc.disks));
+        br->add_out_params(std::move(backup_file));
+    }
+    else if (out_to_file && (nopt2 < out_to_disk + out_to_file + 1))
+    {
+        outf = BackupRestore_BackupOutput_File;
+        br->add_out_params((fc.server_file_path / std::move(backup_file)).generic_string());
+    }
+    else if (out_to_s3 && (nopt2 < out_to_disk + out_to_file + out_to_s3 + 1))
+    {
+        outf = BackupRestore_BackupOutput_S3;
+        connections.setBackupDetails(IntegrationCall::MinIO, backup_file, br);
+    }
+    else if (out_to_azure && (nopt2 < out_to_disk + out_to_file + out_to_s3 + out_to_azure + 1))
+    {
+        outf = BackupRestore_BackupOutput_AzureBlobStorage;
+        connections.setBackupDetails(IntegrationCall::Azurite, backup_file, br);
+    }
+    else if (out_to_memory && nopt2 < (out_to_disk + out_to_file + out_to_s3 + out_to_azure + out_to_memory + 1))
+    {
+        outf = BackupRestore_BackupOutput_Memory;
+        br->add_out_params(std::move(backup_file));
+    }
+    else if (out_to_null && nopt2 < (out_to_disk + out_to_file + out_to_s3 + out_to_azure + out_to_memory + out_to_null + 1))
+    {
+        outf = BackupRestore_BackupOutput_Null;
+    }
+    else
+    {
+        chassert(0);
+    }
+    br->set_out(outf);
 }
 
 void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore * br)
@@ -3427,75 +3499,8 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     {
         br->mutable_cluster()->set_cluster(cluster.value());
     }
+    setBackupDestination(rg, br);
 
-    const uint32_t out_to_disk = 10 * static_cast<uint32_t>(!fc.disks.empty());
-    const uint32_t out_to_file = 10;
-    const uint32_t out_to_s3 = 10 * static_cast<uint32_t>(connections.hasMinIOConnection());
-    const uint32_t out_to_azure = 10 * static_cast<uint32_t>(connections.hasAzuriteConnection());
-    const uint32_t out_to_memory = 5;
-    const uint32_t out_to_null = 3;
-    const uint32_t prob_space2 = out_to_disk + out_to_file + out_to_s3 + out_to_azure + out_to_memory + out_to_null;
-    std::uniform_int_distribution<uint32_t> next_dist2(1, prob_space2);
-    const uint32_t nopt2 = next_dist2(rg.generator);
-    String backup_file = "backup";
-    BackupRestore_BackupOutput outf = BackupRestore_BackupOutput_Null;
-
-    br->set_backup_number(backup_counter++);
-    /// Set backup file
-    if (nopt2 < (out_to_disk + out_to_file + out_to_s3 + out_to_memory + 1))
-    {
-        backup_file += std::to_string(br->backup_number());
-    }
-    if (nopt2 < (out_to_disk + out_to_file + out_to_s3 + 1) && rg.nextBool())
-    {
-        static const DB::Strings & backupFormats = {"tar", "zip", "tzst", "tgz"};
-        const String & nsuffix = rg.pickRandomly(backupFormats);
-
-        backup_file += ".";
-        backup_file += nsuffix;
-        if (nsuffix == "tar" && rg.nextBool())
-        {
-            static const DB::Strings & tarSuffixes = {"gz", "bz2", "lzma", "zst", "xz"};
-
-            backup_file += ".";
-            backup_file += rg.pickRandomly(tarSuffixes);
-        }
-    }
-    if (out_to_disk && (nopt2 < out_to_disk + 1))
-    {
-        outf = BackupRestore_BackupOutput_Disk;
-        br->add_out_params(rg.pickRandomly(fc.disks));
-        br->add_out_params(std::move(backup_file));
-    }
-    else if (out_to_file && (nopt2 < out_to_disk + out_to_file + 1))
-    {
-        outf = BackupRestore_BackupOutput_File;
-        br->add_out_params((fc.server_file_path / std::move(backup_file)).generic_string());
-    }
-    else if (out_to_s3 && (nopt2 < out_to_disk + out_to_file + out_to_s3 + 1))
-    {
-        outf = BackupRestore_BackupOutput_S3;
-        connections.setBackupDetails(IntegrationCall::MinIO, backup_file, br);
-    }
-    else if (out_to_azure && (nopt2 < out_to_disk + out_to_file + out_to_s3 + out_to_azure + 1))
-    {
-        outf = BackupRestore_BackupOutput_AzureBlobStorage;
-        connections.setBackupDetails(IntegrationCall::Azurite, backup_file, br);
-    }
-    else if (out_to_memory && nopt2 < (out_to_disk + out_to_file + out_to_s3 + out_to_azure + out_to_memory + 1))
-    {
-        outf = BackupRestore_BackupOutput_Memory;
-        br->add_out_params(std::move(backup_file));
-    }
-    else if (out_to_null && nopt2 < (out_to_disk + out_to_file + out_to_s3 + out_to_azure + out_to_memory + out_to_null + 1))
-    {
-        outf = BackupRestore_BackupOutput_Null;
-    }
-    else
-    {
-        chassert(0);
-    }
-    br->set_out(outf);
     if (rg.nextBool())
     {
         /// Most of the times, use formats that can be read later

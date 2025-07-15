@@ -11,7 +11,8 @@ enum class DumpOracleStrategy
 {
     DUMP_TABLE = 1,
     OPTIMIZE = 2,
-    REATTACH = 3
+    REATTACH = 3,
+    BACKUP_RESTORE = 4
 };
 
 class QueryOracle

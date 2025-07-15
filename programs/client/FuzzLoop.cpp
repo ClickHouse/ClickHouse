@@ -699,9 +699,10 @@ bool Client::buzzHouse()
                         test_content ? gen.attached_tables_to_compare_content : gen.attached_tables_to_test_format));
 
                     const uint32_t optimize_table = 20 * static_cast<uint32_t>(test_content && tbl.get().supportsOptimize());
-                    const uint32_t reattach_table = 10 * static_cast<uint32_t>(test_content);
-                    const uint32_t dump_table = 20;
-                    const uint32_t prob_space2 = optimize_table + reattach_table + dump_table;
+                    const uint32_t reattach_table = 20 * static_cast<uint32_t>(test_content);
+                    const uint32_t backup_restore_table = 20 * static_cast<uint32_t>(test_content);
+                    const uint32_t dump_table = 50;
+                    const uint32_t prob_space2 = optimize_table + reattach_table + backup_restore_table + dump_table;
                     std::uniform_int_distribution<uint32_t> next_dist2(1, prob_space2);
                     const uint32_t nopt2 = next_dist2(rg.generator);
                     BuzzHouse::DumpOracleStrategy strategy = BuzzHouse::DumpOracleStrategy::DUMP_TABLE;
@@ -713,6 +714,10 @@ bool Client::buzzHouse()
                     else if (reattach_table && nopt2 < (optimize_table + reattach_table + 1))
                     {
                         strategy = BuzzHouse::DumpOracleStrategy::REATTACH;
+                    }
+                    else if (backup_restore_table && nopt2 < (optimize_table + reattach_table + backup_restore_table + 1))
+                    {
+                        strategy = BuzzHouse::DumpOracleStrategy::BACKUP_RESTORE;
                     }
 
                     if (test_content)

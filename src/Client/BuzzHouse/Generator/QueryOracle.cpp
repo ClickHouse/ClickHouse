@@ -367,6 +367,55 @@ void QueryOracle::dumpOracleIntermediateSteps(
             intermediate_queries.emplace_back(next2);
         }
         break;
+        case DumpOracleStrategy::BACKUP_RESTORE: {
+            SQLQuery next1, next2;
+            std::optional<String> cluster;
+            BackupRestore * bac = next1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
+            BackupRestore * res = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
+            SettingValues * bac_vals = nullptr;
+            SettingValues * res_vals = nullptr;
+
+            bac->set_command(BackupRestore_BackupCommand_BACKUP);
+            res->set_command(BackupRestore_BackupCommand_RESTORE);
+            cluster = gen.backupOrRestoreObject(bac->mutable_backup_element()->mutable_bobject(), SQLObject::TABLE, t);
+            cluster = gen.backupOrRestoreObject(res->mutable_backup_element()->mutable_bobject(), SQLObject::TABLE, t);
+            if (cluster.has_value())
+            {
+                bac->mutable_cluster()->set_cluster(cluster.value());
+                res->mutable_cluster()->set_cluster(cluster.value());
+            }
+
+            gen.setBackupDestination(rg, bac);
+            res->set_backup_number(bac->backup_number());
+            res->set_out(bac->out());
+            res->mutable_out_params()->CopyFrom(bac->out_params());
+
+            bac->set_sync(BackupRestore_SyncOrAsync_SYNC);
+            res->set_sync(BackupRestore_SyncOrAsync_SYNC);
+            if (rg.nextSmallNumber() < 4)
+            {
+                bac_vals = bac->mutable_setting_values();
+                gen.generateSettingValues(rg, backupSettings, bac_vals);
+            }
+            if (rg.nextSmallNumber() < 4)
+            {
+                bac_vals = bac_vals ? bac_vals : bac->mutable_setting_values();
+                gen.generateSettingValues(rg, formatSettings, bac_vals);
+            }
+            if (rg.nextSmallNumber() < 4)
+            {
+                res_vals = res->mutable_setting_values();
+                gen.generateSettingValues(rg, restoreSettings, res_vals);
+            }
+            if (rg.nextSmallNumber() < 4)
+            {
+                res_vals = res_vals ? res_vals : res->mutable_setting_values();
+                gen.generateSettingValues(rg, formatSettings, res_vals);
+            }
+            intermediate_queries.emplace_back(next1);
+            intermediate_queries.emplace_back(next2);
+        }
+        break;
     }
 }
 
