@@ -112,6 +112,7 @@
             margin: 0;
             /* This enables position: sticky on controls */
             overflow: auto;
+            scrollbar-color: var(--border-color) var(--element-background-color);
         }
 
         html
@@ -1616,10 +1617,10 @@ function updateProgress(progress) {
     let stats = document.getElementById('stats');
     let progress_elem = document.getElementById('progress');
 
-    const rows = progress.read_rows;
-    const bytes = progress.read_bytes;
-    const total_rows = progress.total_rows_to_read;
-    elapsed_ns = progress.elapsed_ns;
+    const rows = +progress.read_rows;
+    const bytes = +progress.read_bytes;
+    const total_rows = +progress.total_rows_to_read;
+    elapsed_ns = +progress.elapsed_ns;
 
     let formatted_rows = formatReadableRows(rows);
     let formatted_bytes = formatReadableBytes(bytes);

@@ -22,12 +22,11 @@ namespace DB
 class DeltaLakeMetadataDeltaKernel final : public IDataLakeMetadata
 {
 public:
-    using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
     static constexpr auto name = "DeltaLake";
 
     DeltaLakeMetadataDeltaKernel(
         ObjectStoragePtr object_storage_,
-        ConfigurationObserverPtr configuration_);
+        StorageObjectStorageConfigurationWeakPtr configuration_);
 
     bool supportsUpdate() const override { return true; }
 
@@ -35,9 +34,9 @@ public:
 
     NamesAndTypesList getTableSchema() const override;
 
-    DB::ReadFromFormatInfo prepareReadingFromFormat(
+    ReadFromFormatInfo prepareReadingFromFormat(
         const Strings & requested_columns,
-        const DB::StorageSnapshotPtr & storage_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context,
         bool supports_subset_of_columns) override;
 
@@ -47,7 +46,7 @@ public:
 
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
-        ConfigurationObserverPtr configuration,
+        StorageObjectStorageConfigurationWeakPtr configuration,
         ContextPtr /* context */)
     {
         auto configuration_ptr = configuration.lock();
@@ -57,7 +56,8 @@ public:
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,
-        size_t list_batch_size) const override;
+        size_t list_batch_size,
+        ContextPtr context) const override;
 
 private:
     const LoggerPtr log;

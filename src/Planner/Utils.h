@@ -109,4 +109,6 @@ void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
 /// If the window frame is set in sql, use it anyway.
 std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node);
 
+ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate);
+
 }

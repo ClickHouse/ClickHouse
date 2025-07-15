@@ -2,7 +2,6 @@
 #include <stack>
 
 #include <Storages/VirtualColumnUtils.h>
-#include "Formats/NumpyDataTypes.h"
 
 #include <Core/NamesAndTypes.h>
 #include <Core/TypeId.h>

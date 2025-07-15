@@ -6,7 +6,7 @@ slug: /sql-reference/aggregate-functions/reference/quantileexact
 title: 'quantileExact Functions'
 ---
 
-# quantileExact Functions
+# quantileExact functions
 
 ## quantileExact {#quantileexact}
 

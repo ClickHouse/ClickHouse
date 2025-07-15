@@ -114,6 +114,19 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         if (options.count("comments"))
             comments_callback = [](const std::string_view comment) { std::cout << comment << '\n'; };
 
+        SharedContextHolder shared_context = Context::createShared();
+        auto context = Context::createGlobal(shared_context.get());
+        auto context_const = WithContext(context).getContext();
+        context->makeGlobalContext();
+
+#if !USE_REPLXX
+        if (hilite)
+        {
+            std::cerr << "Option 'hilite' is only available if ClickHouse is built with replxx library." << std::endl;
+            return 2;
+        }
+#endif
+
         if (quiet && (hilite || oneline || obfuscate))
         {
             std::cerr << "Options 'hilite' or 'oneline' or 'obfuscate' have no sense in 'quiet' mode." << std::endl;
@@ -160,11 +173,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             {
                 hash_func.update(options["seed"].as<std::string>());
             }
-
-            SharedContextHolder shared_context = Context::createShared();
-            auto context = Context::createGlobal(shared_context.get());
-            auto context_const = WithContext(context).getContext();
-            context->makeGlobalContext();
 
             registerInterpreters();
             registerFunctions();
@@ -257,11 +265,19 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     if (!backslash)
                     {
                         WriteBufferFromOwnString str_buf;
+
+                        WriteBufferFromOwnString query_buf;
                         bool oneline_current_query = oneline || approx_query_length < max_line_length;
-                        IAST::FormatSettings settings(oneline_current_query, hilite);
+                        IAST::FormatSettings settings(oneline_current_query);
                         settings.show_secrets = show_secrets;
                         settings.print_pretty_type_names = !oneline_current_query;
-                        res->format(str_buf, settings);
+                        res->format(query_buf, settings);
+                        String formatted_query = query_buf.str();
+#if USE_REPLXX
+                        if (hilite)
+                            formatted_query = highlighted(formatted_query, *context);
+#endif
+                        str_buf.write(formatted_query.data(), formatted_query.size());
 
                         if (insert_query_payload)
                         {
@@ -305,16 +321,20 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     {
                         WriteBufferFromOwnString str_buf;
                         bool oneline_current_query = oneline || approx_query_length < max_line_length;
-                        IAST::FormatSettings settings(oneline_current_query, hilite);
+                        IAST::FormatSettings settings(oneline_current_query);
                         settings.show_secrets = show_secrets;
                         settings.print_pretty_type_names = !oneline_current_query;
                         res->format(str_buf, settings);
 
-                        auto res_string = str_buf.str();
+                        String formatted_query = str_buf.str();
+#if USE_REPLXX
+                        if (hilite)
+                            formatted_query = highlighted(formatted_query, *context);
+#endif
                         WriteBufferFromOStream res_cout(std::cout, 4096);
 
-                        const char * s_pos= res_string.data();
-                        const char * s_end = s_pos + res_string.size();
+                        const char * s_pos = formatted_query.data();
+                        const char * s_end = s_pos + formatted_query.size();
 
                         while (s_pos != s_end)
                         {

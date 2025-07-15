@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config.h"
 
 #include <Client/ProgressTable.h>
 #include <Client/Suggest.h>
@@ -14,6 +15,10 @@
 #include <Core/ExternalTable.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageFile.h>
+
+#if USE_CLIENT_AI
+#include <Client/AI/AISQLGenerator.h>
+#endif
 
 #include <boost/program_options.hpp>
 
@@ -152,6 +157,10 @@ protected:
     void clearTerminal();
     void showClientVersion();
 
+#if USE_CLIENT_AI
+    void initAIProvider();
+#endif
+
     using ProgramOptionsDescription = boost::program_options::options_description;
     using CommandLineOptions = boost::program_options::variables_map;
 
@@ -201,8 +210,9 @@ private:
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
     void receiveLogsAndProfileEvents(ASTPtr parsed_query);
     bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
-    bool receiveEndOfQuery();
+    bool receiveEndOfQueryForInsert();
     void cancelQuery();
+    void sendCancel(std::exception_ptr exception_ptr = nullptr);
 
     void onProgress(const Progress & value);
     void onTimezoneUpdate(const String & tz);
@@ -239,6 +249,10 @@ private:
     void startKeystrokeInterceptorIfExists();
     void stopKeystrokeInterceptorIfExists();
 
+    /// Execute a query and collect all results as a single string (rows separated by newlines)
+    /// Returns empty string on exception
+    std::string executeQueryForSingleString(const std::string & query);
+
 protected:
 
     class QueryInterruptHandler : private boost::noncopyable
@@ -271,10 +285,10 @@ protected:
     static bool isFileDescriptorSuitableForInput(int fd);
 
     /// Adjust some settings after command line options and config had been processed.
-    void adjustSettings();
+    void adjustSettings(ContextMutablePtr context);
 
     /// Initializes the client context.
-    void initClientContext();
+    void initClientContext(ContextMutablePtr context);
 
     void setDefaultFormatsAndCompressionFromConfiguration();
 
@@ -288,8 +302,6 @@ protected:
     /// This holder may not be initialized in case if we run the client in the embedded mode (SSH).
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
-
-    /// Client context is a context used only by the client to parse queries, process query parameters and to connect to clickhouse-server.
     ContextMutablePtr client_context;
 
     String default_database;
@@ -344,10 +356,6 @@ protected:
     std::unique_ptr<Settings> cmd_settings;
     std::unique_ptr<MergeTreeSettings> cmd_merge_tree_settings;
 
-    /// thread status should be destructed before shared context because it relies on process list.
-    /// This field may not be initialized in case if we run the client in the embedded mode (SSH).
-    std::optional<ThreadStatus> thread_status;
-
     ServerConnectionPtr connection;
     ConnectionParameters connection_parameters;
 
@@ -375,8 +383,6 @@ protected:
     String home_path;
     String history_file; /// Path to a file containing command history.
     UInt32 history_max_entries; /// Maximum number of entries in the history file.
-
-    String current_profile;
 
     UInt64 server_revision = 0;
     String server_version;
@@ -415,9 +421,18 @@ protected:
     int query_fuzzer_runs = 0;
     int create_query_fuzzer_runs = 0;
 
-    //Options for BuzzHouse
+    /// Options for BuzzHouse
     String buzz_house_options_path;
+
+    /// Text to prepopulate in the next query prompt
+    String next_query_to_prepopulate;
     bool buzz_house = false;
+    int error_code = 0;
+
+#if USE_CLIENT_AI
+    /// Cached AI SQL generator
+    std::unique_ptr<AISQLGenerator> ai_generator;
+#endif
 
     struct
     {

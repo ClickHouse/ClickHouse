@@ -2,6 +2,7 @@
 
 #include <unistd.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/FormatParserGroup.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <IO/SharedThreadPools.h>
@@ -38,10 +39,8 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsBool input_format_parallel_parsing;
     extern const SettingsBool log_queries;
     extern const SettingsUInt64 max_download_buffer_size;
-    extern const SettingsMaxThreads max_download_threads;
     extern const SettingsSeconds max_execution_time;
     extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsMaxThreads max_parsing_threads;
     extern const SettingsUInt64 max_memory_usage;
     extern const SettingsUInt64 max_memory_usage_for_user;
     extern const SettingsMaxThreads max_threads;
@@ -143,7 +142,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.date_time_input_format = settings[Setting::date_time_input_format];
     format_settings.date_time_output_format = settings[Setting::date_time_output_format];
     format_settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = settings[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands];
-    format_settings.interval.output_format = settings[Setting::interval_output_format];
+    format_settings.interval_output_format = settings[Setting::interval_output_format];
     format_settings.input_format_ipv4_default_on_conversion_error = settings[Setting::input_format_ipv4_default_on_conversion_error];
     format_settings.input_format_ipv6_default_on_conversion_error = settings[Setting::input_format_ipv6_default_on_conversion_error];
     format_settings.bool_true_representation = settings[Setting::bool_true_representation];
@@ -216,6 +215,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.local_read_min_bytes_for_seek = settings[Setting::input_format_parquet_local_file_min_bytes_for_seek];
     format_settings.parquet.enable_row_group_prefetch = settings[Setting::input_format_parquet_enable_row_group_prefetch];
     format_settings.parquet.allow_geoparquet_parser = settings[Setting::input_format_parquet_allow_geoparquet_parser];
+    format_settings.parquet.write_geometadata = settings[Setting::output_format_parquet_geometadata];
     format_settings.pretty.charset = settings[Setting::output_format_pretty_grid_charset].toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings[Setting::output_format_pretty_color].valueOr(2);
     format_settings.pretty.glue_chunks = settings[Setting::output_format_pretty_glue_chunks].valueOr(2);
@@ -246,7 +246,9 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.regexp.escaping_rule = settings[Setting::format_regexp_escaping_rule];
     format_settings.regexp.regexp = settings[Setting::format_regexp];
     format_settings.regexp.skip_unmatched = settings[Setting::format_regexp_skip_unmatched];
+    format_settings.schema.format_schema_source = settings[Setting::format_schema_source];
     format_settings.schema.format_schema = settings[Setting::format_schema];
+    format_settings.schema.format_schema_message_name = settings[Setting::format_schema_message_name];
     format_settings.schema.format_schema_path = context->getFormatSchemaPath();
     format_settings.schema.is_server = context->hasGlobalContext() && (context->getGlobalContext()->getApplicationType() == Context::ApplicationType::SERVER);
     format_settings.schema.output_format_schema = settings[Setting::output_format_schema];
@@ -368,8 +370,7 @@ InputFormatPtr FormatFactory::getInput(
     const ContextPtr & context,
     UInt64 max_block_size,
     const std::optional<FormatSettings> & _format_settings,
-    std::optional<size_t> _max_parsing_threads,
-    std::optional<size_t> _max_download_threads,
+    std::shared_ptr<FormatParserGroup> parser_group,
     bool is_remote_fs,
     CompressionMethod compression,
     bool need_only_count) const
@@ -378,10 +379,19 @@ InputFormatPtr FormatFactory::getInput(
     if (!creators.input_creator && !creators.random_access_input_creator)
         throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT, "Format {} is not suitable for input", name);
 
+    /// Some formats use this thread pool. Lazily initialize it.
+    /// This doesn't affect server and clickhouse-local, they initialize threads pools on startup.
+    getFormatParsingThreadPool().initializeWithDefaultSettingsIfNotInitialized();
+
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     const Settings & settings = context->getSettingsRef();
-    size_t max_parsing_threads = _max_parsing_threads.value_or(settings[Setting::max_parsing_threads]);
-    size_t max_download_threads = _max_download_threads.value_or(settings[Setting::max_download_threads]);
+
+    if (!parser_group)
+        parser_group = std::make_shared<FormatParserGroup>(
+            settings,
+            /*num_streams_=*/ 1,
+            /*filter_actions_dag_=*/ nullptr,
+            /*context_=*/ nullptr);
 
     RowInputFormatParams row_input_format_params;
     row_input_format_params.max_block_size = max_block_size;
@@ -396,11 +406,12 @@ InputFormatPtr FormatFactory::getInput(
 
     // Add ParallelReadBuffer and decompression if needed.
 
-    auto owned_buf = wrapReadBufferIfNeeded(_buf, compression, creators, format_settings, settings, is_remote_fs, max_download_threads);
+    auto owned_buf = wrapReadBufferIfNeeded(_buf, compression, creators, format_settings, settings, is_remote_fs, parser_group);
     auto & buf = owned_buf ? *owned_buf : _buf;
 
     // Decide whether to use ParallelParsingInputFormat.
 
+    size_t max_parsing_threads = parser_group->getParsingThreadsPerReader();
     bool parallel_parsing = max_parsing_threads > 1 && settings[Setting::input_format_parallel_parsing]
         && creators.file_segmentation_engine_creator && !creators.random_access_input_creator && !need_only_count;
 
@@ -432,6 +443,8 @@ InputFormatPtr FormatFactory::getInput(
             (ReadBuffer & input) -> InputFormatPtr
             { return input_getter(input, sample, row_input_format_params, format_settings); };
 
+        /// TODO: Try using parser_group->parsing_runner instead of creating a ThreadPool in
+        ///       ParallelParsingInputFormat.
         ParallelParsingInputFormat::Params params{
             buf,
             sample,
@@ -449,7 +462,7 @@ InputFormatPtr FormatFactory::getInput(
     else if (creators.random_access_input_creator)
     {
         format = creators.random_access_input_creator(
-            buf, sample, format_settings, context->getReadSettings(), is_remote_fs, max_download_threads, max_parsing_threads);
+            buf, sample, format_settings, context->getReadSettings(), is_remote_fs, parser_group);
     }
     else
     {
@@ -482,10 +495,11 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
     const FormatSettings & format_settings,
     const Settings & settings,
     bool is_remote_fs,
-    size_t max_download_threads) const
+    const FormatParserGroupPtr & parser_group) const
 {
     std::unique_ptr<ReadBuffer> res;
 
+    size_t max_download_threads = parser_group->getIOThreadsPerReader();
     bool parallel_read = is_remote_fs && max_download_threads > 1 && format_settings.seekable_read && isBufferWithFileSize(buf);
     if (creators.random_access_input_creator)
         parallel_read &= compression != CompressionMethod::None;
@@ -517,6 +531,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
             max_download_threads,
             settings[Setting::max_download_buffer_size].value);
 
+        /// TODO: Consider using parser_group->io_runner instead of threadPoolCallbackRunnerUnsafe.
         res = wrapInParallelReadBufferIfSupported(
             buf,
             threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "ParallelRead"),
@@ -617,22 +632,9 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     return format;
 }
 
-String FormatFactory::getContentType(
-    const String & name,
-    const ContextPtr & context,
-    const std::optional<FormatSettings> & _format_settings) const
+String FormatFactory::getContentType(const String & name, const std::optional<FormatSettings> & settings) const
 {
-    const auto & output_getter = getCreators(name).output_creator;
-    if (!output_getter)
-        throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output", name);
-
-    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
-
-    Block empty_block;
-    WriteBufferFromOwnString empty_buffer;
-    auto format = output_getter(empty_buffer, empty_block, format_settings);
-
-    return format->getContentType();
+    return getCreators(name).content_type(settings);
 }
 
 SchemaReaderPtr FormatFactory::getSchemaReader(
@@ -859,6 +861,16 @@ void FormatFactory::markOutputFormatNotTTYFriendly(const String & name)
     if (!target)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as non-TTY-friendly", name);
     target = false;
+}
+
+void FormatFactory::setContentType(const String & name, const String & content_type)
+{
+    getOrCreateCreators(name).content_type = [=](const std::optional<FormatSettings> &){ return content_type; };
+}
+
+void FormatFactory::setContentType(const String & name, ContentTypeGetter content_type)
+{
+    getOrCreateCreators(name).content_type = content_type;
 }
 
 bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_) const
