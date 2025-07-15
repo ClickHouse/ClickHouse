@@ -35,6 +35,12 @@ void StatisticsUniq::build(const ColumnPtr & column)
     collector->addBatchSinglePlace(0, column->size(), data, &(raw_ptr), nullptr);
 }
 
+void StatisticsUniq::merge(const StatisticsPtr & other_stats)
+{
+    const StatisticsUniq * other = typeid_cast<const StatisticsUniq *>(other_stats.get());
+    collector->merge(data, other->data, arena.get());
+}
+
 void StatisticsUniq::serialize(WriteBuffer & buf)
 {
     collector->serialize(data, buf);
@@ -46,6 +52,7 @@ void StatisticsUniq::deserialize(ReadBuffer & buf)
 }
 
 UInt64 StatisticsUniq::estimateCardinality() const
+
 {
     auto column = DataTypeUInt64().createColumn();
     collector->insertResultInto(data, *column, nullptr);
