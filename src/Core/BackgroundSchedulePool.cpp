@@ -344,6 +344,8 @@ void BackgroundSchedulePool::threadFunction()
             {
                 return shutdown || !tasks.empty();
             });
+            if (shutdown)
+                break;
 
             if (!tasks.empty())
             {
@@ -385,12 +387,16 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
                 if (!task)
                 {
                     delayed_tasks_cond_var.wait(lock.getUnderlyingLock());
+                    if (shutdown)
+                        break;
                     continue;
                 }
 
                 if (min_time > current_time)
                 {
                     delayed_tasks_cond_var.wait_for(lock.getUnderlyingLock(), std::chrono::microseconds(min_time - current_time));
+                    if (shutdown)
+                        break;
                     continue;
                 }
 
