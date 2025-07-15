@@ -58,7 +58,7 @@ void SerializationObjectSharedData::SerializationVersion::checkVersion(UInt64 ve
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version for Object shared data serialization: {}", version);
 }
 
-struct SerializeBinaryBulkStateObjectSharedDataMapWithBuckets : public ISerialization::SerializeBinaryBulkState
+struct SerializeBinaryBulkStateObjectSharedData : public ISerialization::SerializeBinaryBulkState
 {
     ISerialization::SerializeBinaryBulkStatePtr map_state;
     std::vector<ISerialization::SerializeBinaryBulkStatePtr> bucket_map_states;
@@ -194,7 +194,7 @@ void SerializationObjectSharedData::serializeBinaryBulkStatePrefix(
     ISerialization::SerializeBinaryBulkSettings & settings,
     ISerialization::SerializeBinaryBulkStatePtr & state) const
 {
-    auto shared_data_state = std::make_shared<SerializeBinaryBulkStateObjectSharedDataMapWithBuckets>();
+    auto shared_data_state = std::make_shared<SerializeBinaryBulkStateObjectSharedData>();
 
     if (serialization_version.value == SerializationVersion::MAP)
     {
@@ -232,7 +232,7 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
     ISerialization::SerializeBinaryBulkSettings & settings,
     ISerialization::SerializeBinaryBulkStatePtr & state) const
 {
-    auto * shared_data_state = checkAndGetState<SerializeBinaryBulkStateObjectSharedDataMapWithBuckets>(state);
+    auto * shared_data_state = checkAndGetState<SerializeBinaryBulkStateObjectSharedData>(state);
 
     if (serialization_version.value == SerializationVersion::MAP)
     {
@@ -524,7 +524,7 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
 void SerializationObjectSharedData::serializeBinaryBulkStateSuffix(
     ISerialization::SerializeBinaryBulkSettings & settings, ISerialization::SerializeBinaryBulkStatePtr & state) const
 {
-    auto * shared_data_state = checkAndGetState<SerializeBinaryBulkStateObjectSharedDataMapWithBuckets>(state);
+    auto * shared_data_state = checkAndGetState<SerializeBinaryBulkStateObjectSharedData>(state);
 
     if (serialization_version.value == SerializationVersion::MAP)
     {

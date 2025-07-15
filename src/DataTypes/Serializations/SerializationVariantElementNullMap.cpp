@@ -101,11 +101,6 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
     DeserializeBinaryBulkStateVariantElementNullMap * variant_element_null_map_state = nullptr;
     std::optional<size_t> variant_limit;
     size_t num_read_discriminators = 0;
-    if (auto cached_discriminators = getColumnFromSubstreamsCache(cache, settings.path))
-    {
-        variant_element_null_map_state = checkAndGetState<DeserializeBinaryBulkStateVariantElementNullMap>(state);
-        variant_element_null_map_state->discriminators = cached_discriminators;
-    }
     if (const auto * cached_element  = getElementFromSubstreamsCache(cache, settings.path))
     {
         const auto * discriminators_element = assert_cast<const SerializationVariant::SubstreamsCacheDiscriminatorsWithNumReadRowsElement *>(cached_element);

@@ -75,7 +75,6 @@ private:
     /// Take offsets from column and return as MarkInCompressed file with stream name
     StreamsWithMarks getCurrentMarksForColumn(
         const NameAndTypePair & name_and_type,
-        const ColumnPtr & column_sample,
         WrittenOffsetColumns & offset_columns);
 
     /// Write mark to disk using stream and rows count
@@ -95,7 +94,6 @@ private:
 
     void addStreams(
         const NameAndTypePair & name_and_type,
-        const ColumnPtr & column,
         const ASTPtr & effective_codec_desc) override;
 
     /// Method for self check (used in debug-build only). Checks that written

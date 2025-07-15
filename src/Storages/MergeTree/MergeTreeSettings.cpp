@@ -272,7 +272,7 @@ namespace ErrorCodes
     Number of buckets for `map_with_buckets` and `advanced` serializations is determined by settings
     [object_shared_data_buckets_for_compact_part](#object_shared_data_buckets_for_compact_part)/[object_shared_data_buckets_for_wide_part](#object_shared_data_buckets_for_wide_part).
     )", 0) \
-    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version_for_zero_level_parts, "advanced", R"(
+    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version_for_zero_level_parts, "map", R"(
     This setting allows to specify different serialization version of the
     shared data inside JSON type for zero level parts that are created during inserts.
     It's recommended not to use `advanced` shared data serialization for zero level parts because it can increase

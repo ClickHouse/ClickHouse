@@ -24,7 +24,8 @@ size_t getSharedDataPathBucket(std::string_view path, size_t num_buckets);
 /// Split shared data column to num_buckets columns by putting all paths from the original column to the corresponding bucket column.
 std::vector<ColumnPtr> splitSharedDataPathsToBuckets(const IColumn & shared_data_column, size_t start, size_t end, size_t num_buckets);
 /// Collect paths from bucket columns into a single shared data column.
-/// If paths_prefix != nullptr collect only paths that matches this prefix.
+/// If paths_prefix != nullptr collect only paths that matches this prefix
+/// and write paths without this prefix in the result column.
 void collectSharedDataFromBuckets(const std::vector<ColumnPtr> & shared_data_buckets, IColumn & shared_data_column, const String * paths_prefix = nullptr);
 
 /// Create a column that will contain indexes of paths from paths_column column based on provided mapping path_to_index.

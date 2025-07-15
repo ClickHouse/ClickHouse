@@ -580,17 +580,18 @@ void MergeTreeDataPartWriterOnDisk::initOrAdjustDynamicStructureIfNeeded(Block &
 {
     if (!is_dynamic_streams_initialized)
     {
+        block_sample = block.cloneEmpty();
+
         for (const auto & column : columns_list)
         {
             if (column.type->hasDynamicSubcolumns())
             {
                 /// Create all streams for dynamic subcolumns using dynamic structure from block.
                 auto compression = getCodecDescOrDefault(column.name, default_codec);
-                addStreams(column, block.getByName(column.name).column, compression);
+                addStreams(column, compression);
             }
         }
         is_dynamic_streams_initialized = true;
-        block_sample = block.cloneEmpty();
     }
     else
     {

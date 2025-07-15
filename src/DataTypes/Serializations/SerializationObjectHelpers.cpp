@@ -175,7 +175,8 @@ void collectSharedDataFromBuckets(const std::vector<ColumnPtr> & shared_data_buc
                     auto path = shared_data_paths_buckets[bucket]->getDataAt(lower_bound_index).toView();
                     if (!path.starts_with(*paths_prefix))
                         break;
-                    all_paths.emplace_back(path, bucket, lower_bound_index);
+                    auto sub_path = path.substr(paths_prefix->size());
+                    all_paths.emplace_back(sub_path, bucket, lower_bound_index);
                 }
             }
         }

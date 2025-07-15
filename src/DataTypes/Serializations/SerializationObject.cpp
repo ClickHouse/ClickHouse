@@ -231,8 +231,9 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
                                               .withDeserializeState(deserialize_state ? deserialize_state->shared_data_state : nullptr);
         shared_data_serialization->enumerateStreams(settings, callback, shared_data_substream_data);
         settings.path.pop_back();
-        settings.path.pop_back();
     }
+
+    settings.path.pop_back();
 }
 
 void SerializationObject::serializeBinaryBulkStatePrefix(

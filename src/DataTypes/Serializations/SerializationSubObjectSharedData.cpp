@@ -342,7 +342,10 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 for (const auto & [path, path_column] : paths_data)
                 {
                     if (path.starts_with(paths_prefix))
-                        all_paths.emplace_back(path, assert_cast<const ColumnDynamic *>(path_column.get()));
+                    {
+                        auto sub_path = path.substr(paths_prefix.size());
+                        all_paths.emplace_back(sub_path, assert_cast<const ColumnDynamic *>(path_column.get()));
+                    }
                 }
             }
 

@@ -119,7 +119,7 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     for (const auto & column : columns_list)
     {
         auto compression = getCodecDescOrDefault(column.name, default_codec);
-        MergeTreeDataPartWriterWide::addStreams(column, nullptr, compression);
+        MergeTreeDataPartWriterWide::addStreams(column, compression);
     }
 }
 
@@ -135,7 +135,6 @@ ISerialization::EnumerateStreamsSettings MergeTreeDataPartWriterWide::getEnumera
 
 void MergeTreeDataPartWriterWide::addStreams(
     const NameAndTypePair & name_and_type,
-    const ColumnPtr & column,
     const ASTPtr & effective_codec_desc)
 {
     std::optional<String> prev_stream_name;
@@ -217,7 +216,8 @@ void MergeTreeDataPartWriterWide::addStreams(
     };
 
     auto serialization = getSerialization(name_and_type.name);
-    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(column);
+    auto * sample_column = block_sample.findByName(name_and_type.name);
+    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(sample_column ? sample_column->column : nullptr);
     auto enumerate_settings = getEnumerateSettings();
     serialization->enumerateStreams(enumerate_settings, callback, data);
 }
@@ -382,8 +382,7 @@ void MergeTreeDataPartWriterWide::writeSingleMark(
     WrittenOffsetColumns & offset_columns,
     size_t number_of_rows)
 {
-    auto * sample_column = block_sample.findByName(name_and_type.name);
-    StreamsWithMarks marks = getCurrentMarksForColumn(name_and_type, sample_column ? sample_column->column : nullptr, offset_columns);
+    StreamsWithMarks marks = getCurrentMarksForColumn(name_and_type, offset_columns);
     for (const auto & mark : marks)
         flushMarkToFile(mark, number_of_rows);
 }
@@ -405,7 +404,6 @@ void MergeTreeDataPartWriterWide::flushMarkToFile(const StreamNameAndMark & stre
 
 StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
     const NameAndTypePair & name_and_type,
-    const ColumnPtr & column_sample,
     WrittenOffsetColumns & offset_columns)
 {
     StreamsWithMarks result;
@@ -445,7 +443,7 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
     };
 
     auto serialization = getSerialization(name_and_type.name);
-    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(column_sample);
+    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
     auto enumerate_settings = getEnumerateSettings();
     serialization->enumerateStreams(enumerate_settings, callback, data);
     return result;
@@ -485,7 +483,7 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
         column_streams.at(stream_name)->compressed_hashing.nextIfAtEnd();
     };
 
-    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(column.getPtr());
+    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
     auto enumerate_settings = getEnumerateSettings();
     serialization->enumerateStreams(enumerate_settings, callback, data);
 }
@@ -543,7 +541,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
                                 "We have to add new mark for column, but already have non written mark. "
                                 "Current mark {}, total marks {}, offset {}",
                                 getCurrentMark(), index_granularity->getMarksCount(), rows_written_in_last_mark);
-            last_non_written_marks[name] = getCurrentMarksForColumn(name_and_type, column.getPtr(), offset_columns);
+            last_non_written_marks[name] = getCurrentMarksForColumn(name_and_type, offset_columns);
         }
 
         writeSingleGranule(
@@ -574,7 +572,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
             offset_columns.insert(getStreamName(name_and_type, substream_path));
     };
 
-    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(column.getPtr());
+    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
     auto enumerate_settings = getEnumerateSettings();
     serialization->enumerateStreams(enumerate_settings, callback, data);
 }
