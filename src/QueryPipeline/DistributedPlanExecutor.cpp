@@ -493,8 +493,6 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
 
     auto logger = Poco::Logger::getShared("executeDistributedQuery");
 
-    QueryPlan query_plan = deserializeQueryPlan(task_description.serialized_query_plan, context);
-
     Strings input_exchange_streams;
     for (const auto & stream_id : task.input_exchange_streams)
         input_exchange_streams.push_back(stream_id.toString());
@@ -521,11 +519,17 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
 
     auto optimization_settings = QueryPlanOptimizationSettings(context);
 
-    auto builder = query_plan.buildQueryPipeline(
-        optimization_settings,
-        pipeline_settings);
+    QueryPipeline pipeline;
 
-    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+    {
+        QueryPlan query_plan = deserializeQueryPlan(task_description.serialized_query_plan, context);
+
+        auto builder = query_plan.buildQueryPipeline(
+                optimization_settings,
+                pipeline_settings);
+
+        pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+    }
 
     ASTPtr ast_stub = std::make_shared<ASTSelectQuery>(); /// FIXME: this is only used to populate query_kind
     UInt64 query_plan_hash = sipHash64(task_description.serialized_query_plan);
