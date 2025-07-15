@@ -11,7 +11,7 @@ String ASTKillQueryQuery::getID(char delim) const
 
 void ASTKillQueryQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "KILL ";
+    ostr << "KILL ";
 
     switch (type)
     {
@@ -29,17 +29,15 @@ void ASTKillQueryQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings
             break;
     }
 
-    ostr << (settings.hilite ? hilite_none : "");
-
     formatOnCluster(ostr, settings);
 
     if (where_expression)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
+        ostr << " WHERE ";
         where_expression->format(ostr, settings, state, frame);
     }
 
-    ostr << " " << (settings.hilite ? hilite_keyword : "") << (test ? "TEST" : (sync ? "SYNC" : "ASYNC")) << (settings.hilite ? hilite_none : "");
+    ostr << " " << (test ? "TEST" : (sync ? "SYNC" : "ASYNC"));
 }
 
 }
