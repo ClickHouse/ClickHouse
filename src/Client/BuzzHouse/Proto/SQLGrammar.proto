@@ -2178,6 +2178,7 @@ message ComplicatedExpr {
         ExprList array = 19;
         ExprList tuple = 20;
         Table table = 21;
+        LambdaExpr lambda = 22;
     }
 }
 

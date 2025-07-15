@@ -558,7 +558,7 @@ bool Client::buzzHouse()
         BuzzHouse::SQLQuery sq1;
         BuzzHouse::SQLQuery sq2;
         BuzzHouse::SQLQuery sq3;
-        BuzzHouse::SQLQuery sq4;
+        std::vector<BuzzHouse::SQLQuery> intermediate_queries;
         uint32_t nsuccessfull_create_database = 0;
         uint32_t total_create_database_tries = 0;
         const uint32_t max_initial_databases = std::min(UINT32_C(3), fuzz_config->max_databases);
@@ -695,63 +695,52 @@ bool Client::buzzHouse()
                     /// When testing content, we have to export and import to the same table
                     const bool test_content = fuzz_config->use_dump_table_oracle > 1 && rg.nextBool()
                         && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_to_compare_content);
-                    const auto & t1 = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(
+                    const auto & tbl = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(
                         test_content ? gen.attached_tables_to_compare_content : gen.attached_tables_to_test_format));
-                    const auto & t2 = test_content
-                        ? t1
-                        : rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_to_test_format));
-                    const bool use_optimize = test_content && t1.get().supportsOptimize() && rg.nextMediumNumber() < 21;
+
+                    const uint32_t optimize_table = 20 * static_cast<uint32_t>(test_content && tbl.get().supportsOptimize());
+                    const uint32_t reattach_table = 10 * static_cast<uint32_t>(test_content);
+                    const uint32_t dump_table = 20;
+                    const uint32_t prob_space2 = optimize_table + reattach_table + dump_table;
+                    std::uniform_int_distribution<uint32_t> next_dist2(1, prob_space2);
+                    const uint32_t nopt2 = next_dist2(rg.generator);
+                    BuzzHouse::DumpOracleStrategy strategy = BuzzHouse::DumpOracleStrategy::DUMP_TABLE;
+
+                    if (optimize_table && nopt2 < (optimize_table + 1))
+                    {
+                        strategy = BuzzHouse::DumpOracleStrategy::OPTIMIZE;
+                    }
+                    else if (reattach_table && nopt2 < (optimize_table + reattach_table + 1))
+                    {
+                        strategy = BuzzHouse::DumpOracleStrategy::REATTACH;
+                    }
 
                     if (test_content)
                     {
                         /// Dump table content and read it later to look for correctness
-                        full_query2.resize(0);
-                        qo.dumpTableContent(rg, gen, t1, sq1);
-                        BuzzHouse::SQLQueryToString(full_query2, sq1);
-                        fuzz_config->outf << full_query2 << std::endl;
-                        server_up &= processBuzzHouseQuery(full_query2);
+                        full_query.resize(0);
+                        qo.dumpTableContent(rg, gen, test_content, tbl, sq1);
+                        BuzzHouse::SQLQueryToString(full_query, sq1);
+                        fuzz_config->outf << full_query << std::endl;
+                        server_up &= processBuzzHouseQuery(full_query);
                         qo.processFirstOracleQueryResult(error_code, *external_integrations);
                     }
 
-                    if (!use_optimize)
+                    qo.dumpOracleIntermediateSteps(rg, gen, tbl, strategy, test_content, intermediate_queries);
+                    for (const auto & entry : intermediate_queries)
                     {
-                        sq2.Clear();
-                        qo.generateExportQuery(rg, gen, test_content, t1, sq2);
-                        BuzzHouse::SQLQueryToString(full_query, sq2);
-                        fuzz_config->outf << full_query << std::endl;
-                        server_up &= processBuzzHouseQuery(full_query);
-                    }
-
-                    if (test_content)
-                    {
-                        /// The intermediate step could be either clearing or optimizing the table
-                        qo.setIntermediateStepSuccess(!have_error);
-
-                        sq3.Clear();
-                        full_query.resize(0);
-                        qo.dumpOracleIntermediateStep(rg, gen, t1, use_optimize, sq3);
-                        BuzzHouse::SQLQueryToString(full_query, sq3);
-                        fuzz_config->outf << full_query << std::endl;
-                        server_up &= processBuzzHouseQuery(full_query);
-                        qo.setIntermediateStepSuccess(!have_error);
-                    }
-
-                    if (!use_optimize)
-                    {
-                        sq4.Clear();
-                        full_query.resize(0);
-                        qo.generateImportQuery(rg, gen, t2, sq2, sq4);
-                        BuzzHouse::SQLQueryToString(full_query, sq4);
-                        fuzz_config->outf << full_query << std::endl;
-                        server_up &= processBuzzHouseQuery(full_query);
-                    }
-
-                    if (test_content)
-                    {
-                        qo.setIntermediateStepSuccess(!have_error);
-
+                        /// Run each from the choosen strategy
+                        full_query2.resize(0);
+                        BuzzHouse::SQLQueryToString(full_query2, entry);
                         fuzz_config->outf << full_query2 << std::endl;
                         server_up &= processBuzzHouseQuery(full_query2);
+                        qo.setIntermediateStepSuccess(!have_error);
+                    }
+
+                    if (test_content)
+                    {
+                        fuzz_config->outf << full_query << std::endl;
+                        server_up &= processBuzzHouseQuery(full_query);
                         qo.processSecondOracleQueryResult(error_code, *external_integrations, "Dump and read table");
                     }
                 }

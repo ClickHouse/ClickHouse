@@ -1673,6 +1673,9 @@ CONV_FN(ComplicatedExpr, expr)
             TableToString(ret, expr.table());
             ret += ".*";
             break;
+        case ExprType::kLambda:
+            LambdaExprToString(ret, expr.lambda());
+            break;
         default:
             ret += "1";
     }
