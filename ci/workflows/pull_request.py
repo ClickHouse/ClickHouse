@@ -46,7 +46,9 @@ workflow = Workflow.Config(
         *JobConfigs.unittest_jobs,
         *[
             j.set_dependency(
-                FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES if "sequential" in j.name else []
+                FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+                if "sequential" in j.name
+                else []
             )
             for j in JobConfigs.functional_tests_jobs
         ],
@@ -68,8 +70,12 @@ workflow = Workflow.Config(
             for job in JobConfigs.integration_test_jobs_non_required
         ],
         JobConfigs.integration_test_asan_flaky_pr_job,
-        JobConfigs.docker_sever.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES),
-        JobConfigs.docker_keeper.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES),
+        JobConfigs.docker_sever.set_dependency(
+            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+        ),
+        JobConfigs.docker_keeper.set_dependency(
+            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+        ),
         *[
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.install_check_jobs

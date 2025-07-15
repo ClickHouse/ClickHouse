@@ -301,7 +301,8 @@ class JobConfigs:
             "amd_debug, sequential",
             "amd_tsan, parallel, 1/2",
             "amd_tsan, parallel, 2/2",
-            "amd_tsan, sequential",
+            "amd_tsan, sequential, 1/2",
+            "amd_tsan, sequential, 2/2",
             "amd_msan, parallel, 1/2",
             "amd_msan, sequential, 1/2",
             "amd_msan, parallel, 2/2",
@@ -329,7 +330,8 @@ class JobConfigs:
             RunnerLabels.FUNC_TESTER_AMD,  # amd_debug, sequential
             RunnerLabels.FUNC_TESTER_AMD,  # amd_tsan, parallel, 1/2
             RunnerLabels.FUNC_TESTER_AMD,  # amd_tsan, parallel, 2/2
-            RunnerLabels.FUNC_TESTER_AMD,  # amd_tsan, sequential
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_tsan, sequential, 1/2
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_tsan, sequential, 2/2
             RunnerLabels.FUNC_TESTER_AMD,  # amd_msan, parallel, 1/2
             RunnerLabels.FUNC_TESTER_AMD,  # amd_msan, sequential, 1/2
             RunnerLabels.FUNC_TESTER_AMD,  # amd_msan, parallel, 2/2
@@ -385,7 +387,10 @@ class JobConfigs:
             ],  # amd_tsan, parallel, 2/2
             [
                 ArtifactNames.CH_AMD_TSAN,
-            ],  # amd_tsan, sequential
+            ],  # amd_tsan, sequential, 1/2
+            [
+                ArtifactNames.CH_AMD_TSAN,
+            ],  # amd_tsan, sequential, 2/2
             [
                 ArtifactNames.CH_AMD_MSAN,
             ],  # amd_msan, parallel, 1/2
