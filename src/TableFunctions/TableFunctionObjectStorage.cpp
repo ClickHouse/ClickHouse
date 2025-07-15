@@ -52,7 +52,7 @@ ObjectStoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_l
 }
 
 template <typename Definition, typename Configuration, bool is_data_lake>
-StorageObjectStorage::ConfigurationPtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::getConfiguration() const
+StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::getConfiguration() const
 {
     if (!configuration)
     {
@@ -127,11 +127,27 @@ ColumnsDescription TableFunctionObjectStorage<
 {
     if (configuration->structure == "auto")
     {
-        context->checkAccess(getSourceAccessType());
-        ColumnsDescription columns;
+        if (const auto access_object = getSourceAccessObject())
+            context->checkAccess(AccessType::READ, toStringSource(*access_object));
+
         auto storage = getObjectStorage(context, !is_insert_query);
+        configuration->update(
+            object_storage,
+            context,
+            /* if_not_updated_before */true,
+            /* check_consistent_with_previous_metadata */true);
+
         std::string sample_path;
-        resolveSchemaAndFormat(columns, configuration->format, storage, configuration, std::nullopt, sample_path, context);
+        ColumnsDescription columns;
+        resolveSchemaAndFormat(
+            columns,
+            configuration->format,
+            std::move(storage),
+            configuration,
+            /* format_settings */std::nullopt,
+            sample_path,
+            context);
+
         return columns;
     }
     return parseColumnsListFromString(configuration->structure, context);

@@ -9,6 +9,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 
 #include <IO/ReadBufferFromFileBase.h>
@@ -111,17 +112,15 @@ DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type)
 
 struct DeltaLakeMetadataImpl
 {
-    using ConfigurationObserverPtr = DeltaLakeMetadata::ConfigurationObserverPtr;
-
     ObjectStoragePtr object_storage;
-    ConfigurationObserverPtr configuration;
+    StorageObjectStorageConfigurationWeakPtr configuration;
     ContextPtr context;
 
     /**
      * Useful links:
      *  - https://github.com/delta-io/delta/blob/master/PROTOCOL.md#data-files
      */
-    DeltaLakeMetadataImpl(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_)
+    DeltaLakeMetadataImpl(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_)
         : object_storage(object_storage_), configuration(configuration_), context(context_)
     {
     }
@@ -505,6 +504,7 @@ struct DeltaLakeMetadataImpl
 
         ArrowColumnToCHColumn column_reader(
             header, "Parquet",
+            format_settings,
             format_settings.parquet.allow_missing_columns,
             /* null_as_default */true,
             format_settings.date_time_overflow_behavior,
@@ -602,7 +602,7 @@ struct DeltaLakeMetadataImpl
     LoggerPtr log = getLogger("DeltaLakeMetadataParser");
 };
 
-DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_)
+DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_)
 {
     auto impl = DeltaLakeMetadataImpl(object_storage_, configuration_, context_);
     auto result = impl.processMetadataFiles();
@@ -617,7 +617,7 @@ DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, Configura
 
 DataLakeMetadataPtr DeltaLakeMetadata::create(
     ObjectStoragePtr object_storage,
-    ConfigurationObserverPtr configuration,
+    StorageObjectStorageConfigurationWeakPtr configuration,
     ContextPtr local_context)
 {
 #if USE_DELTA_KERNEL_RS
@@ -749,7 +749,8 @@ Field DeltaLakeMetadata::getFieldValue(const String & value, DataTypePtr data_ty
 ObjectIterator DeltaLakeMetadata::iterate(
     const ActionsDAG * filter_dag,
     FileProgressCallback callback,
-    size_t /* list_batch_size */) const
+    size_t /* list_batch_size */,
+    ContextPtr /*context*/) const
 {
     return createKeysIterator(getDataFiles(filter_dag), object_storage, callback);
 }

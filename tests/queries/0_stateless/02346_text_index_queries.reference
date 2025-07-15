@@ -23,19 +23,6 @@ af	text
 101	x Alick a01 y
 111	x Alick b01 y
 1
-Test on array columns
-af	text
-3	['x Click a03 y','x Click b03 y']
-1
-Test on map columns
-af	text
-103	{'Click':'Click a03'}
-108	{'Click':'Click a08'}
-113	{'Click':'Click b03'}
-118	{'Click':'Click b08'}
-1
-103	{'Click':'Click a03'}
-1
 Test text(tokenizer = "ngram", ngram_size = 2) on a column with two parts
 af	text
 101	Alick a01

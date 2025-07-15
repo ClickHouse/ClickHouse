@@ -87,9 +87,9 @@ these are replaced with the corresponding array value.
 )";
     FunctionDocumentation::Syntax syntax = "arrayJoin(arr)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "An array to unfold. [`Array(T)`](/sql-reference/data-types/array)."}
+        {"arr", "An array to unfold.", {"Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns a set of rows unfolded from `arr`.";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a set of rows unfolded from `arr`."};
     FunctionDocumentation::Examples examples = {
         {"Basic usage", R"(SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src)", R"(
 ┌─dst─┬─\'Hello\'─┬─src─────┐

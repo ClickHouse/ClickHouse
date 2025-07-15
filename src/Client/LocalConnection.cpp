@@ -1,8 +1,9 @@
-#include "LocalConnection.h"
+#include <Client/LocalConnection.h>
 #include <memory>
 #include <Client/ClientBase.h>
 #include <Client/ClientApplicationBase.h>
 #include <Core/Protocol.h>
+#include <Core/Settings.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -31,7 +32,7 @@ namespace Setting
     extern const SettingsDialect dialect;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
-    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -58,7 +59,9 @@ LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool sen
 {
     /// Authenticate and create a context to execute queries.
     session->authenticate("default", "", Poco::Net::SocketAddress{});
-    session->makeSessionContext();
+    ContextMutablePtr session_context = session->makeSessionContext();
+    /// Re-apply settings from the command line arguments
+    session_context->applySettingsChanges(getContext()->getSettingsRef().changes());
 }
 
 LocalConnection::LocalConnection(

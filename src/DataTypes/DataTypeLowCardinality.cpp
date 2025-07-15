@@ -83,6 +83,8 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
         return creator(static_cast<ColumnVector<Int32> *>(nullptr));
     if (which.isDateTime())
         return creator(static_cast<ColumnVector<UInt32> *>(nullptr));
+    if (which.isTime())
+        return creator(static_cast<ColumnVector<Int32> *>(nullptr));
     if (which.isUUID())
         return creator(static_cast<ColumnVector<UUID> *>(nullptr));
     if (which.isIPv4())
@@ -146,6 +148,11 @@ bool DataTypeLowCardinality::equals(const IDataType & rhs) const
 
     const auto & low_cardinality_rhs= static_cast<const DataTypeLowCardinality &>(rhs);
     return dictionary_type->equals(*low_cardinality_rhs.dictionary_type);
+}
+
+void DataTypeLowCardinality::updateHashImpl(SipHash & hash) const
+{
+    dictionary_type->updateHash(hash);
 }
 
 SerializationPtr DataTypeLowCardinality::doGetDefaultSerialization() const

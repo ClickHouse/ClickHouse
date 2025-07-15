@@ -7,6 +7,6 @@ slug: /interfaces/jdbc
 title: 'JDBC Driver'
 ---
 
-# JDBC Driver
+# JDBC driver
 
 Use the [official JDBC driver](/docs/integrations/language-clients/java/jdbc) (and Java client) to access ClickHouse from your Java applications.

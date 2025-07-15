@@ -1,20 +1,21 @@
+#include <algorithm>
+#include <ranges>
 #include <Core/Settings.h>
+#include <DataTypes/NestedUtils.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
-#include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/KeyCondition.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Parsers/ASTSelectQuery.h>
+#include <Interpreters/misc.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
-#include <Interpreters/misc.h>
+#include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Common/typeid_cast.h>
-#include <DataTypes/NestedUtils.h>
-#include <Interpreters/ActionsDAG.h>
-#include <base/map.h>
 
 namespace DB
 {
@@ -62,7 +63,8 @@ static Int64 findMinPosition(const NameSet & condition_table_columns, const Name
 static NameSet getTableColumns(const StorageMetadataPtr & metadata_snapshot, const Names & queried_columns)
 {
     const auto & columns_description = metadata_snapshot->getColumns();
-    NameSet table_columns = collections::map<std::unordered_set>(columns_description.getAllPhysical(), [](const NameAndTypePair & col) { return col.name; });
+    NameSet table_columns(std::from_range_t{},
+          metadata_snapshot->getColumns().getAllPhysical() | std::views::transform([](const auto & col) { return col.name; }));
 
     /// Add also requested subcolumns to known table columns.
     for (const auto & column : queried_columns)
