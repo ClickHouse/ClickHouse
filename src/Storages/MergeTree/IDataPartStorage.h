@@ -346,6 +346,9 @@ public:
     /// It may be flush of buffered data or similar.
     virtual void precommitTransaction() = 0;
     virtual bool hasActiveTransaction() const = 0;
+
+    virtual bool isTransactional() const = 0;
+    virtual void validateDiskTransaction(std::function<void(IDiskTransaction&)> check_function) = 0;
 };
 
 using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;
