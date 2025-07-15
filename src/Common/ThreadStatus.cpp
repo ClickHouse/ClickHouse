@@ -190,8 +190,9 @@ void ThreadStatus::flushUntrackedMemory()
     if (untracked_memory == 0)
         return;
 
-    memory_tracker.adjustWithUntrackedMemory(untracked_memory);
+    Int64 current_untracked_memory = current_thread->untracked_memory;
     untracked_memory = 0;
+    memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
 }
 
 bool ThreadStatus::isQueryCanceled() const
