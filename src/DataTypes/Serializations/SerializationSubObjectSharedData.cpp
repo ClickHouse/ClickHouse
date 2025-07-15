@@ -336,7 +336,7 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         {
             /// Collect list of all paths that match prefix from all buckets in this granule.
             std::vector<std::pair<std::string_view, const ColumnDynamic *>> all_paths;
-            for (auto paths_data_granules : bucket_paths_data_granules)
+            for (const auto & paths_data_granules : bucket_paths_data_granules)
             {
                 const auto & paths_data = (*paths_data_granules)[granule].paths_data;
                 for (const auto & [path, path_column] : paths_data)
