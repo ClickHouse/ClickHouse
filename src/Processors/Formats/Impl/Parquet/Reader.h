@@ -41,13 +41,13 @@ namespace DB::Parquet
 //  * stats (reuse the ones from the other PR?)
 //     - number of row groups that were split into chunks
 //  * add comments everywhere
-//  * test getMissingValues()
 //  * progress indication and estimating bytes to read; allow negative total_bytes_to_read?
 //  * cache FileMetaData in something like SchemaCache
 //  * TSA
 //  * test with tsan
 //  * use dictionary page instead of bloom filter when possible
 //  * test performance with prewhere i%2=0, to have lots of range skips
+//  * check if prewhere works with datalakes
 //  * remember to test these:
 //     - expression appearing both in prewhere and in select list (presumably remove_prewhere_column = false)
 //     - prewhere with all 3 storages (maybe have the main big test pick random storage)
@@ -69,6 +69,8 @@ namespace DB::Parquet
 //     - prewhere on virtual columns (do they end up in additional_columns?)
 //     - prewhere with weird filter type (LowCardinality(UInt8), Nullable(UInt8), const UInt8)
 //     - prewhere involving arrays and tuples
+//     - prewhere with url() and s3()
+//     - tuple elements with url() and s3()
 //     - IN with subqueries with and without prewhere
 //     - compare performance to MergeTree (full scan, prewhere, skipping granules)
 //     - `insert into function file('t.parquet') select number as k, toString(number)||':'||randomPrintableASCII(1000) as v from numbers(1000000) settings engine_file_truncate_on_insert=1; select count(), sum(length(v)) from file('t.parquet')` - new reader is slower than default
@@ -78,7 +80,6 @@ namespace DB::Parquet
 //     - Bool type
 //     - looking for NaN using min/max indices; try it with merge tree too
 //     - input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference, make a file by hacking PrepareForWrite.cpp to use garbage physical type for some data type (~/t/invalid_type.parquet has column `invalid` that's FixedString(5) but has type=42 instead of type=FIXED_LEN_BYTE_ARRAY)
-//     - block_missing_values (missing whole column or subset of rows)
 //  * write a comment explaining the advantage of the weird complicated two-step scheduling
 //    (tasks_to_schedule -> task queue -> run) and per-stage memory accounting - maximizing prefetch
 //    parallelism; contrast with a simpler strategy of having no queues, and worker threads e.g.

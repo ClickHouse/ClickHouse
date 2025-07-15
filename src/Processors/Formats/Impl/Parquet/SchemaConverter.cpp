@@ -254,19 +254,19 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
         if (!element.__isset.type)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet metadata is missing physical type for column {}", element.name);
 
-        const IDataType * primitive_type_hint = type_hint.get();
+        DataTypePtr primitive_type_hint = type_hint;
         bool output_nullable = false;
         bool output_nullable_if_not_json = false;
         if (primitive_type_hint)
         {
             if (primitive_type_hint->lowCardinality())
             {
-                primitive_type_hint = assert_cast<const DataTypeLowCardinality &>(*primitive_type_hint).getDictionaryType().get();
+                primitive_type_hint = assert_cast<const DataTypeLowCardinality &>(*primitive_type_hint).getDictionaryType();
             }
             if (primitive_type_hint->isNullable())
             {
                 output_nullable = true;
-                primitive_type_hint = assert_cast<const DataTypeNullable &>(*primitive_type_hint).getNestedType().get();
+                primitive_type_hint = assert_cast<const DataTypeNullable &>(*primitive_type_hint).getNestedType();
             }
         }
         else if (!options.schema_inference_force_not_nullable)
@@ -592,7 +592,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
 }
 
 void SchemaConverter::processPrimitiveColumn(
-    const parq::SchemaElement & element, const IDataType * type_hint,
+    const parq::SchemaElement & element, DataTypePtr type_hint,
     PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,
     DataTypePtr & out_inferred_type) const
 {
@@ -665,7 +665,7 @@ void SchemaConverter::processPrimitiveColumn(
 
     auto is_output_type_decimal = [&](size_t expected_size, UInt32 expected_scale) -> bool
     {
-        const IDataType * output_type = type_hint ? type_hint : out_inferred_type.get();
+        const IDataType * output_type = type_hint ? type_hint.get() : out_inferred_type.get();
         WhichDataType which(output_type->getTypeId());
         if (which.isDecimal())
             return output_type->getSizeOfValueInMemory() == expected_size && getDecimalScale(*output_type) == expected_scale;
@@ -695,7 +695,7 @@ void SchemaConverter::processPrimitiveColumn(
     /// If type FixedString is requested, and the parquet physical type is a fixed-size type of
     /// matching size, use a trivial FixedSizeConverter.
     /// E.g. don't do Decimal endianness conversion of INT96 timestamp conversion.
-    if (const DataTypeFixedString * fixed_string_type = typeid_cast<const DataTypeFixedString *>(type_hint))
+    if (const DataTypeFixedString * fixed_string_type = typeid_cast<const DataTypeFixedString *>(type_hint.get()))
     {
         size_t size = 0;
         bool found = true;
@@ -825,7 +825,7 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for timestamp logical type: {}", thriftToString(element));
 
         /// Can't leave int -> DateTime64 conversion to castColumn as it interprets the integer as seconds.
-        out_inferred_type = std::make_shared<DataTypeDateTime64>(scale);
+        out_inferred_type = std::make_shared<DataTypeDateTime64>(scale, "UTC");
         auto converter = std::make_shared<IntConverter>();
         /// Note: TIMESTAMP is always INT64. INT32 is only for weird unimportant case of TIME_MILLIS
         /// (i.e. time of day rather than timestamp).
@@ -852,7 +852,7 @@ void SchemaConverter::processPrimitiveColumn(
         else
         {
             converter->field_decimal_scale = scale;
-            out_decoder.allow_stats = is_output_type_decimal(8, scale);
+            out_decoder.allow_stats = is_output_type_decimal(sizeof(Int64), scale);
             if (converter->input_size == 4)
                 /// Can't leave Decimal32 -> DateTime64 conversion to castColumn because this
                 /// particular cast is not supported for some reason.
@@ -868,7 +868,8 @@ void SchemaConverter::processPrimitiveColumn(
         if (type != parq::Type::INT32)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for date logical type: {}", thriftToString(element));
 
-        bool output_plain_int = type_hint && !WhichDataType(type_hint->getTypeId()).isDateOrDate32();
+        /// Skip date range check if plain integer type is requested.
+        bool output_plain_int = type_hint && WhichDataType(type_hint->getTypeId()).isNativeInteger();
         if (output_plain_int)
             out_inferred_type = std::make_shared<DataTypeInt32>();
         else
@@ -993,7 +994,14 @@ void SchemaConverter::processPrimitiveColumn(
     }
     else if (logical.__isset.FLOAT16)
     {
-        /// TODO [parquet]: Support. For now, fall through to reading as FixedString(2).
+        if (type != parq::Type::FIXED_LEN_BYTE_ARRAY || element.type_length != 2)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for FLOAT16 column: {}", thriftToString(element));
+
+        out_inferred_type = std::make_shared<DataTypeFloat32>();
+        out_decoder.fixed_size_converter = std::make_shared<Float16Converter>();
+        /// (Comment in 03263_parquet_write_bloom_filter in parquet.thrift doesn't mention sort order
+        ///  for FLOAT16, so presumably it's undefined. Leaving allow_stats == false.)
+        return;
     }
     else if (converted == CONV::INTERVAL)
     {
@@ -1036,7 +1044,7 @@ void SchemaConverter::processPrimitiveColumn(
         }
         case parq::Type::INT96:
         {
-            out_inferred_type = std::make_shared<DataTypeDateTime64>(9);
+            out_inferred_type = std::make_shared<DataTypeDateTime64>(9, "UTC");
             out_decoder.fixed_size_converter = std::make_shared<Int96Converter>();
             /// (Leaving allow_stats == false because INT96 sort order is undefined.)
             return;
@@ -1075,10 +1083,29 @@ void SchemaConverter::processPrimitiveColumn(
         }
         case parq::Type::FIXED_LEN_BYTE_ARRAY:
         {
-            out_inferred_type = std::make_shared<DataTypeFixedString>(size_t(element.type_length));
+            if (type_hint)
+            {
+                /// If parquet type is FIXED_LEN_BYTE_ARRAY(16), and type hint is [U]Int128, assume
+                /// it's binary little-endian [U]Int128. That's how clickhouse parquet writer writes
+                /// [U]Int128 (btw, we should probably change that to Decimal).
+                /// Same for FIXED_LEN_BYTE_ARRAY(32) and [U]Int256.
+                /// We can't leave this conversion to castColumn because it would parse as text.
+                WhichDataType which(type_hint->getTypeId());
+                if (which.isInteger() && !which.isNativeInteger() &&
+                    type_hint->getSizeOfValueInMemory() == size_t(element.type_length))
+                {
+                    out_inferred_type = type_hint;
+                }
+            }
+
+            if (!out_inferred_type)
+                out_inferred_type = std::make_shared<DataTypeFixedString>(size_t(element.type_length));
             auto converter = std::make_shared<FixedStringConverter>();
             converter->input_size = size_t(element.type_length);
             out_decoder.fixed_size_converter = std::move(converter);
+
+            /// (The case where type_hint is FixedString is handled above, no need to check for it here.)
+            out_decoder.allow_stats = !logical.__isset.UUID && WhichDataType(get_output_type_index()).isString();
             return;
         }
     }

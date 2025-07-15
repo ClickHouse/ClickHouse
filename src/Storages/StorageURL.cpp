@@ -182,6 +182,8 @@ IStorageURLBase::IStorageURLBase(
         storage_metadata.setColumns(columns_);
     }
 
+    supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(format_name, context_, format_settings);
+
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
 
@@ -1053,6 +1055,26 @@ bool IStorageURLBase::supportsSubsetOfColumns(const ContextPtr & context) const
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings);
 }
 
+bool IStorageURLBase::supportsPrewhere() const
+{
+    return supports_prewhere;
+}
+
+bool IStorageURLBase::canMoveConditionsToPrewhere() const
+{
+    return supports_prewhere;
+}
+
+std::optional<NameSet> IStorageURLBase::supportedPrewhereColumns() const
+{
+    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions();
+}
+
+IStorage::ColumnSizeByName IStorageURLBase::getColumnSizes() const
+{
+    return getInMemoryMetadataPtr()->getFakeColumnSizes();
+}
+
 bool IStorageURLBase::prefersLargeBlocks() const
 {
     return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(format_name);
@@ -1069,6 +1091,7 @@ public:
     std::string getName() const override { return "ReadFromURL"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
+    void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
 
     ReadFromURL(
         const Names & column_names_,
@@ -1128,6 +1151,14 @@ void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)
     createIterator(predicate);
 }
 
+void ReadFromURL::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
+{
+    info = updateFormatPrewhereInfo(info, prewhere_info_value);
+    query_info.prewhere_info = prewhere_info_value;
+    prewhere_info = prewhere_info_value;
+    output_header = info.source_header;
+}
+
 void IStorageURLBase::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -1139,9 +1170,11 @@ void IStorageURLBase::read(
     size_t num_streams)
 {
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context), /*supports_tuple_elements=*/ supports_prewhere);
+    if (query_info.prewhere_info)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
 
-    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info))
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];
 
     auto read_post_data_callback = getReadPOSTDataCallback(
@@ -1254,6 +1287,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     pipes.reserve(num_streams);
 
     auto parser_group = std::make_shared<FormatParserGroup>(settings, num_streams, filter_actions_dag, context);
+    parser_group->prewhere_info = prewhere_info;
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -1308,9 +1342,11 @@ void StorageURLWithFailover::read(
     size_t num_streams)
 {
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context), /*supports_tuple_elements=*/ supports_prewhere);
+    if (query_info.prewhere_info)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
 
-    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info))
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];
 
     auto read_post_data_callback = getReadPOSTDataCallback(

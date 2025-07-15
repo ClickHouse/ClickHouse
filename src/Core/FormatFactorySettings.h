@@ -168,7 +168,7 @@ Ignore case when matching ORC columns with CH columns.
 Ignore case when matching Parquet columns with CH columns.
 )", 0) \
     DECLARE(Bool, input_format_parquet_preserve_order, false, R"(
-Avoid reordering rows when reading from Parquet files. Usually makes it much slower.
+Avoid reordering rows when reading from Parquet files. Usually makes it much slower. Not recommended as row ordering is generally not guaranteed, and other parts of query pipeline may break it.
 )", 0) \
     DECLARE(Bool, input_format_parquet_filter_push_down, true, R"(
 When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and min/max statistics in the Parquet metadata.
@@ -180,10 +180,10 @@ When reading Parquet files, skip whole row groups based on the WHERE expressions
 When reading Parquet files, parse JSON columns as ClickHouse JSON Column.
 )", 0) \
     DECLARE(Bool, input_format_parquet_use_native_reader, false, R"(
-Use native parquet reader v1. It's relatively fast but unfinished.
+Use native parquet reader v1. It's relatively fast but unfinished. Deprecated.
 )", 0) \
     DECLARE(Bool, input_format_parquet_use_native_reader_v3, false, R"(
-Use Parquet reader v3.
+Use Parquet reader v3. Experimental, has bugs.
 )", 0) \
     DECLARE(UInt64, input_format_parquet_memory_low_watermark, 2ul << 20, R"(
 Schedule prefetches more aggressively if memory usage is below than threshold. Potentially useful e.g. if there are many small bloom filters to read over network.

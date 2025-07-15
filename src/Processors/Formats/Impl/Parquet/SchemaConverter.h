@@ -50,7 +50,7 @@ private:
     std::optional<size_t> processSubtree(String name, bool requested, DataTypePtr type_hint, SchemaContext);
 
     void processPrimitiveColumn(
-        const parq::SchemaElement & element, const IDataType * type_hint,
+        const parq::SchemaElement & element, DataTypePtr type_hint,
         PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,
         DataTypePtr & out_inferred_type) const;
 };

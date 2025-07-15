@@ -1025,23 +1025,13 @@ bool StorageFile::canMoveConditionsToPrewhere() const
 std::optional<NameSet> StorageFile::supportedPrewhereColumns() const
 {
     /// Currently don't support prewhere for virtual columns and columns with default expressions.
-    auto meta = getInMemoryMetadataPtr();
-    NameSet names;
-    for (const auto & col : meta->columns)
-        if (!col.default_desc.expression)
-            names.insert(col.name);
-    return names;
+    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions();
 }
 
 IStorage::ColumnSizeByName StorageFile::getColumnSizes() const
 {
     /// Reporting some fake sizes to enable prewhere optimization.
-    /// TODO [parquet]: Propagate real sizes from file metadata.
-    auto meta = getInMemoryMetadataPtr();
-    ColumnSizeByName sizes;
-    for (const auto & col : meta->columns)
-        sizes[col.name] = ColumnSize {.marks = 1000, .data_compressed = 100000000, .data_uncompressed = 1000000000};
-    return sizes;
+    return getInMemoryMetadataPtr()->getFakeColumnSizes();
 }
 
 bool StorageFile::prefersLargeBlocks() const

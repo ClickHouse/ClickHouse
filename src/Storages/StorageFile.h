@@ -92,7 +92,6 @@ public:
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
     /// Things required for PREWHERE.
-    /// TODO [parquet]: Do the same in StorageURL and StorageObjectStorage.
     bool supportsPrewhere() const override;
     bool canMoveConditionsToPrewhere() const override;
     std::optional<NameSet> supportedPrewhereColumns() const override;

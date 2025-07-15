@@ -3,8 +3,9 @@
 #include <functional>
 #include <arrow/util/bit_stream_utils.h>
 
-#include <IO/VarInt.h>
 #include <base/arithmeticOverflow.h>
+#include <Common/FloatUtils.h>
+#include <IO/VarInt.h>
 
 namespace DB::ErrorCodes
 {
@@ -1164,6 +1165,19 @@ void FloatConverter<T>::convertField(std::span<const char> data, bool /*is_max*/
 
 template struct FloatConverter<float>;
 template struct FloatConverter<double>;
+
+void Float16Converter::convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const
+{
+    chassert(data.size() == num_values * 2);
+    auto & out_data = assert_cast<ColumnFloat32 &>(col).getData();
+    out_data.reserve(out_data.size() + num_values);
+    for (size_t i = 0; i < num_values; ++i)
+    {
+        uint16_t x;
+        memcpy(&x, data.data() + i * 2, 2);
+        out_data.push_back(convertFloat16ToFloat32(x));
+    }
+}
 
 void FixedStringConverter::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
 {

@@ -61,6 +61,14 @@ void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
     createIterator();
 }
 
+void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
+{
+    info = updateFormatPrewhereInfo(info, prewhere_info_value);
+    query_info.prewhere_info = prewhere_info_value;
+    prewhere_info = prewhere_info_value;
+    output_header = info.source_header;
+}
+
 void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     createIterator();
@@ -79,6 +87,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     }
 
     auto parser_group = std::make_shared<FormatParserGroup>(context->getSettingsRef(), num_streams, filter_actions_dag, context);
+    parser_group->prewhere_info = prewhere_info;
 
     for (size_t i = 0; i < num_streams; ++i)
     {

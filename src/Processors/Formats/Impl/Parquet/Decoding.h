@@ -192,10 +192,7 @@ struct IntConverter : public FixedSizeConverter
 template <typename T>
 struct FloatConverter : public FixedSizeConverter
 {
-    FloatConverter()
-    {
-        input_size = sizeof(T);
-    }
+    FloatConverter() { input_size = sizeof(T); }
 
     bool isTrivial() const override { return true; }
 
@@ -205,7 +202,15 @@ struct FloatConverter : public FixedSizeConverter
 extern template struct FloatConverter<float>;
 extern template struct FloatConverter<double>;
 
-/// FIXED_LEN_BYTE_ARRAY -> FixedString
+/// FIXED_LEN_BYTE_ARRAY[2] as float16 (not bfloat16) -> Float32.
+struct Float16Converter : public FixedSizeConverter
+{
+    Float16Converter() { input_size = 2; }
+
+    void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
+};
+
+/// FIXED_LEN_BYTE_ARRAY -> any fixed-size type
 struct FixedStringConverter : public FixedSizeConverter
 {
     bool isTrivial() const override { return true; }

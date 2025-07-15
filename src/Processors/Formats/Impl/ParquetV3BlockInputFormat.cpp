@@ -55,7 +55,7 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                 /// as a signal to disable thread pool altogether, sacrificing the ability to
                 /// use thread pool with 1 thread. We could subtract 1 instead, but then the
                 /// by default the thread pool will use `num_cores - 1` threads, also bad.
-                if (parser_group->max_parsing_threads <= 1)
+                if (parser_group->max_parsing_threads <= 1 || format_settings.parquet.preserve_order)
                     parser_group->parsing_runner.initManual();
                 else
                     parser_group->parsing_runner.initThreadPool(
