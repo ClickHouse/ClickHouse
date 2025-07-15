@@ -15,7 +15,7 @@ AIClientResult AIClientFactory::createClient(const AIConfiguration & config)
 {
     auto logger = getLogger("AIClientFactory");
     AIClientResult result;
-    
+
     // If no provider is specified, try environment-based fallbacks
     if (config.provider.empty())
     {
@@ -38,7 +38,7 @@ AIClientResult AIClientFactory::createClient(const AIConfiguration & config)
             return result;
         }
 
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, 
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "No AI provider specified and no valid environment configuration found. "
             "Please either set 'ai.provider' in config or set OPENAI_API_KEY/ANTHROPIC_API_KEY environment variable");
     }
@@ -59,8 +59,8 @@ AIClientResult AIClientFactory::createClient(const AIConfiguration & config)
 
     // Unknown provider
     LOG_ERROR(logger, "Unknown AI provider: '{}'. Supported providers are: 'openai', 'anthropic'", config.provider);
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, 
-        "Unknown AI provider: '{}'. Supported providers are: 'openai', 'anthropic'", 
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Unknown AI provider: '{}'. Supported providers are: 'openai', 'anthropic'",
         config.provider);
 }
 
@@ -105,7 +105,7 @@ AIConfiguration AIClientFactory::loadConfiguration(const Poco::Util::AbstractCon
     // Validate the loaded configuration
     if (!ai_config.provider.empty() && ai_config.provider != "openai" && ai_config.provider != "anthropic")
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid AI provider: '{}'. Must be 'openai' or 'anthropic'", ai_config.provider);
-    
+
     // Validate that base_url is only used with OpenAI provider
     if (!ai_config.base_url.empty() && ai_config.provider != "openai")
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Custom base_url is only supported with 'openai' provider for OpenAI-compatible APIs");

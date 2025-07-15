@@ -136,7 +136,7 @@ std::string AISQLGenerator::cleanSQL(const std::string & sql)
     // Extract SQL from <sql> tags
     size_t start_tag = cleaned.find("<sql>");
     size_t end_tag = cleaned.find("</sql>");
-    
+
     if (start_tag != std::string::npos && end_tag != std::string::npos)
     {
         // Extract content between tags

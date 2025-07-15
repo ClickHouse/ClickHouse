@@ -34,13 +34,14 @@ public:
         stopThinking();
 
         thinking_active = true;
-        thinking_thread = std::thread([this, message]() {
+        thinking_thread = std::thread([this, message]()
+        {
             int dot_count = 0;
             while (thinking_active)
             {
                 // Clear the line and show the message with dots
                 output_stream << "\r\033[K"; // Clear line
-                
+
                 if (use_colors)
                     output_stream << "\033[36m"; // Cyan
                 output_stream << "🧠 " << message;
@@ -50,19 +51,19 @@ public:
                 {
                     output_stream << ".";
                 }
-                
+
                 if (use_colors)
                     output_stream << resetColor();
-                
+
                 output_stream << std::flush;
-                
+
                 // Sleep before next update
                 std::this_thread::sleep_for(std::chrono::milliseconds(400));
-                
+
                 // Cycle through 0-3 dots
                 dot_count = (dot_count + 1) % 4;
             }
-            
+
             // Clear the line when done
             output_stream << "\r\033[K" << std::flush;
         });

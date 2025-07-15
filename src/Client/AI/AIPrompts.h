@@ -19,7 +19,7 @@ MANDATORY WORKFLOW:
 
 TOOLS AVAILABLE:
 - list_databases(): Lists all databases (ALWAYS call this first)
-- list_tables_in_database(database): Lists tables in a specific database  
+- list_tables_in_database(database): Lists tables in a specific database
 - get_schema_for_table(database, table): Gets schema for existing tables
 
 CRITICAL RULES:
@@ -35,7 +35,7 @@ WORKFLOW EXAMPLES:
 
 Example 1 - Query existing data:
 User: "show all users"
-Assistant: 
+Assistant:
 [Calls list_databases()]
 [Calls list_tables_in_database("default")]
 [Finds users table, calls get_schema_for_table("default", "users")]
@@ -79,7 +79,7 @@ ORDER BY (order_date, customer_id)
 PARTITION BY toYYYYMM(order_date)
 </sql>
 
-User: "insert sample data into the products table" 
+User: "insert sample data into the products table"
 Assistant Notes: [Would call tools to discover products table schema first, then generate appropriate INSERT]
 <sql>
 INSERT INTO products SELECT * FROM input('id UInt32, name String, category String, price Float64, stock_quantity UInt32, created_at DateTime')
@@ -91,7 +91,7 @@ FORMAT Values (1001, 'Wireless Headphones', 'Electronics', 79.99, 150, now()),
 User: "show daily revenue for last 30 days"
 Assistant Notes: [Would discover schema of orders table via tools first]
 <sql>
-SELECT 
+SELECT
     toDate(order_date) as date,
     sum(total_amount) as daily_revenue,
     count() as orders_count,
@@ -105,7 +105,7 @@ ORDER BY date DESC
 User: "find top customers by total orders"
 Assistant Notes: [Would check schema first with tools]
 <sql>
-SELECT 
+SELECT
     customer_id,
     count() as total_orders,
     sum(total_amount) as total_spent,
@@ -134,7 +134,7 @@ GROUP BY hour
 User: "analyze user sessions with window functions"
 Assistant Notes: [Would discover user_events schema first]
 <sql>
-SELECT 
+SELECT
     user_id,
     session_id,
     event_time,
@@ -147,12 +147,12 @@ WHERE event_time >= today()
 User: "show product inventory levels"
 Assistant Notes: [Would check inventory/products tables schema]
 <sql>
-SELECT 
+SELECT
     product_id,
     product_name,
     current_stock,
     reorder_level,
-    CASE 
+    CASE
         WHEN current_stock < reorder_level THEN 'Reorder'
         WHEN current_stock < reorder_level * 2 THEN 'Low'
         ELSE 'OK'
@@ -165,7 +165,7 @@ ORDER BY current_stock / reorder_level ASC
 User: "calculate moving average of sales"
 Assistant Notes: [Would discover sales table structure first]
 <sql>
-SELECT 
+SELECT
     date,
     daily_sales,
     avg(daily_sales) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) as moving_avg_7d,
@@ -179,7 +179,7 @@ ORDER BY date DESC
 LIMIT 90
 </sql>
 
-IMPORTANT: 
+IMPORTANT:
 - ALWAYS use tools to explore schema before generating SQL for existing tables
 - Even if tools show table doesn't exist but user asks for query, generate the SQL anyway
 - Use IF NOT EXISTS for CREATE statements when appropriate)";
@@ -217,7 +217,7 @@ ORDER BY (order_date, customer_id)
 PARTITION BY toYYYYMM(order_date)
 </sql>
 
-User: "insert sample data into the products table" 
+User: "insert sample data into the products table"
 Assistant:
 <sql>
 INSERT INTO products SELECT * FROM input('id UInt32, name String, category String, price Float64, stock_quantity UInt32, created_at DateTime')
@@ -229,7 +229,7 @@ FORMAT Values (1001, 'Wireless Headphones', 'Electronics', 79.99, 150, now()),
 User: "show daily revenue for last 30 days"
 Assistant:
 <sql>
-SELECT 
+SELECT
     toDate(order_date) as date,
     sum(total_amount) as daily_revenue,
     count() as orders_count,
@@ -243,7 +243,7 @@ ORDER BY date DESC
 User: "find top customers by total orders"
 Assistant:
 <sql>
-SELECT 
+SELECT
     customer_id,
     count() as total_orders,
     sum(total_amount) as total_spent,
@@ -259,6 +259,6 @@ Note: Schema discovery tools are not available. SQL will be generated based on c
 
 constexpr const char * USER_PROMPT_PREFIX = "Convert this to a ClickHouse SQL query: ";
 
-}  // namespace AIPrompts
+}
 
-}  // namespace DB 
+}
