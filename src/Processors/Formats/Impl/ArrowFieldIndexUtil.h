@@ -32,7 +32,6 @@ class Block;
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int THERE_IS_NO_COLUMN;
 }
 
