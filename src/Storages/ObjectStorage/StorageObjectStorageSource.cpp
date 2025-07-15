@@ -23,7 +23,6 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
-#include <Core/ColumnWithTypeAndName.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Cache/FileCache.h>
@@ -482,9 +481,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             }
             initial_header = sample_header;
         }
-
-        //if (parser_group)
-        //    parser_group->opaque = configuration->getOpaque();
 
         auto input_format = FormatFactory::instance().getInput(
             configuration->format,
