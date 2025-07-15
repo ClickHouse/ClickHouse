@@ -137,7 +137,8 @@ struct StatisticsFixedStringRef
     }
 };
 
-template<size_t S>
+/// If SIGNED, compare as signed big endian integers.
+template<size_t S, bool SIGNED>
 struct StatisticsFixedStringCopy
 {
     bool empty = true;
@@ -151,7 +152,7 @@ struct StatisticsFixedStringCopy
         empty = false;
     }
 
-    void merge(const StatisticsFixedStringCopy<S> & s)
+    void merge(const StatisticsFixedStringCopy<S, SIGNED> & s)
     {
         if (s.empty)
             return;
@@ -174,14 +175,22 @@ struct StatisticsFixedStringCopy
         return s;
     }
 
+    inline static int compare(const uint8_t * lhs, const uint8_t * rhs)
+    {
+        if constexpr (SIGNED)
+            /// Comparing the first byte as signed is sufficient.
+            if (*lhs != *rhs) return int(int8_t(*lhs)) - int(int8_t(*rhs));
+        return memcmp(lhs, rhs, S);
+    }
+
     void addMin(const uint8_t * p)
     {
-        if (empty || memcmp(p, min.data(), S) < 0)
+        if (empty || compare(p, min.data()) < 0)
             memcpy(min.data(), p, S);
     }
     void addMax(const uint8_t * p)
     {
-        if (empty || memcmp(p, max.data(), S) > 0)
+        if (empty || compare(p, max.data()) > 0)
             memcpy(max.data(), p, S);
     }
 };
@@ -386,7 +395,7 @@ struct ConverterNumberAsFixedString
 {
     /// Calculate min/max statistics for little-endian fixed strings, not numbers, because parquet
     /// doesn't know it's numbers.
-    using Statistics = StatisticsFixedStringCopy<sizeof(T)>;
+    using Statistics = StatisticsFixedStringCopy<sizeof(T), /*SIGNED=*/ false>;
 
     const ColumnVector<T> & column;
     PODArray<parquet::FixedLenByteArray> buf;
@@ -449,7 +458,7 @@ struct ConverterJSON
 template <typename T>
 struct ConverterDecimal
 {
-    using Statistics = StatisticsFixedStringCopy<sizeof(T)>;
+    using Statistics = StatisticsFixedStringCopy<sizeof(T), /*SIGNED=*/ true>;
 
     const ColumnDecimal<T> & column;
     PODArray<uint8_t> data_buf;
