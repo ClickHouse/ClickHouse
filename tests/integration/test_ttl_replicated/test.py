@@ -506,6 +506,11 @@ def test_ttl_empty_parts(started_cluster):
     [(node1, node2, 0), (node3, node4, 1), (node5, node6, 2)],
 )
 def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
+    # The test times out for sanitizer builds, so we increase the timeout.
+    timeout = 20
+    if node_left.is_built_with_sanitizer() or node_right.is_built_with_sanitizer():
+        timeout = 40
+
     table = f"test_ttl_compatibility_{node_left.name}_{node_right.name}_{num_run}"
     for node in [node_left, node_right]:
         node.query(
@@ -574,8 +579,8 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
     node_right.query(f"OPTIMIZE TABLE {table}_where FINAL")
 
     exec_query_with_retry(node_left, f"OPTIMIZE TABLE {table}_delete FINAL")
-    node_left.query(f"OPTIMIZE TABLE {table}_group_by FINAL", timeout=20)
-    node_left.query(f"OPTIMIZE TABLE {table}_where FINAL", timeout=20)
+    node_left.query(f"OPTIMIZE TABLE {table}_group_by FINAL", timeout=timeout)
+    node_left.query(f"OPTIMIZE TABLE {table}_where FINAL", timeout=timeout)
 
     # After OPTIMIZE TABLE, it is not guaranteed that everything is merged.
     # Possible scenario (for test_ttl_group_by):
@@ -586,13 +591,14 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
     # 4. OPTIMIZE FINAL does nothing, cause there is an entry for 0_3
     #
     # So, let's also sync replicas for node_right (for now).
+
     exec_query_with_retry(node_right, f"SYSTEM SYNC REPLICA {table}_delete")
-    node_right.query(f"SYSTEM SYNC REPLICA {table}_group_by", timeout=20)
-    node_right.query(f"SYSTEM SYNC REPLICA {table}_where", timeout=20)
+    node_right.query(f"SYSTEM SYNC REPLICA {table}_group_by", timeout=timeout)
+    node_right.query(f"SYSTEM SYNC REPLICA {table}_where", timeout=timeout)
 
     exec_query_with_retry(node_left, f"SYSTEM SYNC REPLICA {table}_delete")
-    node_left.query(f"SYSTEM SYNC REPLICA {table}_group_by", timeout=20)
-    node_left.query(f"SYSTEM SYNC REPLICA {table}_where", timeout=20)
+    node_left.query(f"SYSTEM SYNC REPLICA {table}_group_by", timeout=timeout)
+    node_left.query(f"SYSTEM SYNC REPLICA {table}_where", timeout=timeout)
 
     assert node_left.query(f"SELECT id FROM {table}_delete ORDER BY id") == "2\n4\n"
     assert node_right.query(f"SELECT id FROM {table}_delete ORDER BY id") == "2\n4\n"
