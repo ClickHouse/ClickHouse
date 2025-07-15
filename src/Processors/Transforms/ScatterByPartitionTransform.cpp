@@ -107,6 +107,27 @@ void ScatterByPartitionTransform::generateOutputChunks()
     auto num_rows = chunk.getNumRows();
     const auto & columns = chunk.getColumns();
 
+    output_chunks.resize(output_size);
+
+    /// Special case for 0 key columns. It is an unlikely but still valid case.
+    if (key_columns.empty())
+    {
+        /// Put all rows into the first bucket
+        if (output_size > 0)
+            output_chunks[0] = Chunk(columns, num_rows);
+        /// All other buckets are empty
+        if (output_size > 1)
+        {
+            Chunk empty_chunk(chunk.cloneEmptyColumns(), 0);
+            for (size_t i = 1; i < output_size; ++i)
+                output_chunks[i] = Chunk(empty_chunk.getColumns(), 0);
+        }
+
+        return;
+    }
+
+    chassert(!columns.empty());
+
     hash.reset(num_rows);
 
     for (const auto & column_number : key_columns)
@@ -114,31 +135,15 @@ void ScatterByPartitionTransform::generateOutputChunks()
 
     const auto & hash_data = hash.getData();
     IColumn::Selector selector(num_rows);
-    std::vector<size_t> rows_in_output_bucket(output_size, 0);
 
     for (size_t row = 0; row < num_rows; ++row)
-    {
-        const size_t output_bucket = hash_data[row] % output_size;  /// TODO: use libdivide to speedup modulus calculation?
-        selector[row] = output_bucket;
-        ++rows_in_output_bucket[output_bucket];
-    }
+        selector[row] = hash_data[row] % output_size;  /// TODO: use libdivide to speedup modulus calculation?
 
-    output_chunks.resize(output_size);
-
-    if (columns.empty())
+    for (const auto & column : columns)
     {
-        /// In case of no columns (query like 'count()') we still need to return output_chunks with the correct number of rows
+        auto filtered_columns = column->scatter(output_size, selector);
         for (size_t i = 0; i < output_size; ++i)
-            output_chunks[i] = Chunk(Columns{}, rows_in_output_bucket[i]);
-    }
-    else
-    {
-        for (const auto & column : columns)
-        {
-            auto filtered_columns = column->scatter(output_size, selector);
-            for (size_t i = 0; i < output_size; ++i)
-                output_chunks[i].addColumn(std::move(filtered_columns[i]));
-        }
+            output_chunks[i].addColumn(std::move(filtered_columns[i]));
     }
 }
 
