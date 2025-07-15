@@ -315,7 +315,7 @@ struct CPUHelper
         return true;
     }
 
-    bool renew()
+    bool renew() const
     {
         chassert(lease);
         return lease->renew();
