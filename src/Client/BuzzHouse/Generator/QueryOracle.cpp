@@ -348,7 +348,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
             t.setName(det->mutable_object()->mutable_est(), false);
             t.setName(att->mutable_object()->mutable_est(), false);
 
-            det->set_permanently(rg.nextSmallNumber() < 4);
+            det->set_permanently(rg.nextBool());
             det->set_sync(true);
             if (cluster.has_value())
             {
