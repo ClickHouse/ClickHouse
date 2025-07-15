@@ -242,9 +242,22 @@ add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobuf
 
 add_contrib (numactl-cmake numactl)
 
-add_contrib (nlohmann-json-cmake nlohmann-json)
-add_contrib (crc32c-cmake crc32c)
-add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf, absl, nlohmann's json, crc32c
+# Google Cloud Cpp
+if(OS_LINUX OR OS_DARWIN OR OS_FREEBSD)
+    set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT ON)
+else()
+    set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT OFF)
+endif()
+
+if(ENABLE_LIBRARIES)
+    set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT ON)
+endif()
+option(ENABLE_GOOGLE_CLOUD_CPP "Enable Google Cloud Cpp" ${ENABLE_GOOGLE_CLOUD_CPP_DEFAULT})
+if(ENABLE_GOOGLE_CLOUD_CPP)
+    add_contrib (nlohmann-json-cmake nlohmann-json)
+    add_contrib (crc32c-cmake crc32c)
+    add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf, absl, nlohmann's json, crc32c
+endif()
 
 add_contrib (jwt-cpp-cmake jwt-cpp)
 

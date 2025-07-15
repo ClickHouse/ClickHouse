@@ -1,11 +1,3 @@
-set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT ON)
-
-if(ENABLE_LIBRARIES)
-    set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT ON)
-endif()
-
-option(ENABLE_GOOGLE_CLOUD_CPP "Enable Google Cloud Cpp" ${ENABLE_GOOGLE_CLOUD_CPP_DEFAULT})
-
 if(NOT ENABLE_GOOGLE_CLOUD_CPP)
     message(STATUS "Not using Google Cloud Cpp")
     return()
@@ -18,11 +10,11 @@ endif()
 option(ENABLE_GOOGLE_CLOUD_CPP_KMS "Enable Google Cloud Cpp KMS" ${ENABLE_GOOGLE_CLOUD_CPP_KMS_DEFAULT})
 
 if(NOT ENABLE_GRPC)
-    message(STATUS "Can't use Google Cloud Cpp without gRPC")
+    message(${RECONFIGURE_MESSAGE_LEVEL} "Can't use Google Cloud Cpp without gRPC")
     return()
 endif()
 if(NOT ENABLE_PROTOBUF)
-    message(STATUS "Can't use Google Cloud Cpp without protobuf")
+    message(${RECONFIGURE_MESSAGE_LEVEL} "Can't use Google Cloud Cpp without protobuf")
     return()
 endif()
 

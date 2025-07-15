@@ -1,11 +1,6 @@
 set(CRC32C_DIR ${ClickHouse_SOURCE_DIR}/contrib/crc32c)
 set(CRC32C_CMAKE_DIR ${ClickHouse_SOURCE_DIR}/contrib/crc32c-cmake)
 
-configure_file(
-  "${CRC32C_DIR}/src/crc32c_config.h.in"
-  "${PROJECT_BINARY_DIR}/include/crc32c/crc32c_config.h"
-)
-
 include_directories("${PROJECT_BINARY_DIR}/include")
 
 set(CRC32C_SOURCES
