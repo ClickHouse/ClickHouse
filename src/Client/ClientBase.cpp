@@ -18,7 +18,6 @@
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
 #include <Common/DateLUT.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/MemoryTracker.h>
 #include <Common/formatReadable.h>
 #include <Common/scope_guard_safe.h>
@@ -45,7 +44,6 @@
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -117,7 +115,7 @@ namespace Setting
     extern const SettingsBool async_insert;
     extern const SettingsDialect dialect;
     extern const SettingsNonZeroUInt64 max_block_size;
-    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -132,6 +130,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_PARSE_TEXT;
     extern const int DEADLOCK_AVOIDED;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
@@ -422,14 +421,19 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
 
     if (is_interactive)
     {
-        output_stream << std::endl;
-        WriteBufferFromOStream res_buf(output_stream, 4096);
+        WriteBufferFromOwnString res_buf;
         IAST::FormatSettings format_settings(/* one_line */ false);
-        format_settings.hilite = true;
         format_settings.show_secrets = true;
         format_settings.print_pretty_type_names = true;
         res->format(res_buf, format_settings);
         res_buf.finalize();
+
+        output_stream << std::endl;
+#if USE_REPLXX
+        output_stream << highlighted(res_buf.str(), *client_context);
+#else
+        output_stream << res_buf.str();
+#endif
         output_stream << std::endl << std::endl;
     }
 
@@ -2546,18 +2550,21 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
             case MultiQueryProcessingStage::PARSING_FAILED:
             {
                 have_error |= buzz_house;
+                error_code = buzz_house ? ErrorCodes::CANNOT_PARSE_TEXT : error_code;
                 return true;
             }
             case MultiQueryProcessingStage::CONTINUE_PARSING:
             {
                 is_first = false;
                 have_error |= buzz_house;
+                error_code = buzz_house ? ErrorCodes::CANNOT_PARSE_TEXT : error_code;
                 continue;
             }
             case MultiQueryProcessingStage::PARSING_EXCEPTION:
             {
                 is_first = false;
                 have_error |= buzz_house;
+                error_code = buzz_house ? ErrorCodes::CANNOT_PARSE_TEXT : error_code;
                 this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
 
                 // Try to find test hint for syntax error. We don't know where
@@ -2571,7 +2578,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     current_exception->rethrow();
                 }
 
-                if (!hint.hasExpectedClientError(current_exception->code()))
+                if (!hint.hasExpectedClientError(current_exception->code()) || buzz_house)
                 {
                     if (hint.hasClientErrors())
                         current_exception->addMessage("\nExpected client error: {}.", hint.clientErrors());
@@ -2793,7 +2800,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
                 if (buzz_house && have_error)
                 {
-                    // Test if error is disallowed by BuzzHouse
+                    // Retrieve the right error code for BuzzHouse
                     const auto * exception = server_exception ? server_exception.get() : (client_exception ? client_exception.get() : nullptr);
                     error_code = exception ? exception->code() : 0;
                 }
@@ -2803,8 +2810,8 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     processError(full_query);
 
                 // Stop processing queries if needed.
-                if (have_error && !ignore_error)
-                    return is_interactive;
+                if (have_error && (buzz_house || !ignore_error))
+                    return buzz_house || is_interactive;
 
                 if (!need_retry)
                     this_query_begin = this_query_end;

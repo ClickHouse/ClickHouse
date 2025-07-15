@@ -112,7 +112,7 @@ The `max_block_size` setting indicates the recommended maximum number of rows to
 
 The block size should not be too small to avoid noticeable costs when processing each block. It should also not be too large to ensure that queries with a LIMIT clause execute quickly after processing the first block. When setting `max_block_size`, the goal should be to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
 )", 0) \
-    DECLARE(UInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, R"(
+    DECLARE(NonZeroUInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, R"(
 The size of blocks (in a count of rows) to form for insertion into a table.
 This setting only applies in cases when the server forms the blocks.
 For example, for an INSERT via the HTTP interface, the server parses the data format and forms blocks of the specified size.
@@ -1103,9 +1103,11 @@ If we execute `INSERT INTO distributed_table_a SELECT ... FROM distributed_table
 
 Possible values:
 
-- 0 — Disabled.
-- 1 — `SELECT` will be executed on each shard from the underlying table of the distributed engine.
-- 2 — `SELECT` and `INSERT` will be executed on each shard from/to the underlying table of the distributed engine.
+- `0` — Disabled.
+- `1` — `SELECT` will be executed on each shard from the underlying table of the distributed engine.
+- `2` — `SELECT` and `INSERT` will be executed on each shard from/to the underlying table of the distributed engine.
+
+Setting `enable_parallel_replicas = 1` is needed when using this setting.
 )", 0) \
     DECLARE(UInt64, distributed_group_by_no_merge, 0, R"(
 Do not merge aggregation states from different servers for distributed query processing, you can use this in case it is for certain that there are different keys on different shards

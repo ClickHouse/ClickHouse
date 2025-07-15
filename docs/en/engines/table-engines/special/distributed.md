@@ -9,7 +9,7 @@ slug: /engines/table-engines/special/distributed
 title: 'Distributed Table Engine'
 ---
 
-# Distributed Table Engine
+# Distributed table engine
 
 :::warning Distributed engine in Cloud
 To create a distributed table engine in ClickHouse Cloud, you can use the [`remote` and `remoteSecure`](../../../sql-reference/table-functions/remote) table functions. 
@@ -19,7 +19,7 @@ The `Distributed(...)` syntax cannot be used in ClickHouse Cloud.
 Tables with Distributed engine do not store any data of their own, but allow distributed query processing on multiple servers. 
 Reading is automatically parallelized. During a read, the table indexes on remote servers are used if they exist.
 
-## Creating a Table {#distributed-creating-a-table}
+## Creating a table {#distributed-creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -31,7 +31,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-### From a Table {#distributed-from-a-table}
+### From a table {#distributed-from-a-table}
 
 When the `Distributed` table is pointing to a table on the current server you can adopt that table's schema:
 
@@ -39,7 +39,7 @@ When the `Distributed` table is pointing to a table on the current server you ca
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2 ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
 ```
 
-### Distributed Parameters {#distributed-parameters}
+### Distributed parameters {#distributed-parameters}
 
 | Parameter                 | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 |---------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -54,7 +54,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
  - [distributed_foreground_insert](../../../operations/settings/settings.md#distributed_foreground_insert) setting
  - [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
 
-### Distributed Settings {#distributed-settings}
+### Distributed settings {#distributed-settings}
 
 | Setting                                    | Description                                                                                                                                                                                                                           | Default value |
 |--------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------|
@@ -221,9 +221,9 @@ When the `max_parallel_replicas` option is enabled, query processing is parallel
 
 To learn more about how distributed `in` and `global in` queries are processed, refer to [this](/sql-reference/operators/in#distributed-subqueries) documentation.
 
-## Virtual Columns {#virtual-columns}
+## Virtual columns {#virtual-columns}
 
-#### _shard_num {#_shard_num}
+#### _Shard_num {#_shard_num}
 
 `_shard_num` — Contains the `shard_num` value from the table `system.clusters`. Type: [UInt32](../../../sql-reference/data-types/int-uint.md).
 

@@ -88,7 +88,7 @@ parseTableSchemaFromManifestFile(const AvroForIcebergDeserializer & deserializer
 
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
-    ConfigurationObserverPtr configuration_,
+    StorageObjectStorageConfigurationWeakPtr configuration_,
     const ContextPtr & context_,
     Int32 metadata_version_,
     Int32 format_version_,
@@ -421,7 +421,7 @@ std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String da
 
 DataLakeMetadataPtr IcebergMetadata::create(
     const ObjectStoragePtr & object_storage,
-    const ConfigurationObserverPtr & configuration,
+    const StorageObjectStorageConfigurationWeakPtr & configuration,
     const ContextPtr & local_context)
 {
     auto configuration_ptr = configuration.lock();
