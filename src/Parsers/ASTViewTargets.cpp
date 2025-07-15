@@ -228,8 +228,8 @@ void ASTViewTargets::formatTarget(const ViewTarget & target, WriteBuffer & ostr,
         auto keyword = getKeywordForTableID(target.kind);
         if (!keyword)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No keyword for table name of kind {}", toString(target.kind));
-        ostr <<  " " << (s.hilite ? hilite_keyword : "") << toStringView(*keyword)
-               << (s.hilite ? hilite_none : "") << " "
+        ostr <<  " " << toStringView(*keyword)
+               << " "
                << (!target.table_id.database_name.empty() ? backQuoteIfNeed(target.table_id.database_name) + "." : "")
                << backQuoteIfNeed(target.table_id.table_name);
     }
@@ -239,8 +239,8 @@ void ASTViewTargets::formatTarget(const ViewTarget & target, WriteBuffer & ostr,
         auto keyword = getKeywordForInnerUUID(target.kind);
         if (!keyword)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No prefix keyword for inner UUID of kind {}", toString(target.kind));
-        ostr << " " << (s.hilite ? hilite_keyword : "") << toStringView(*keyword)
-               << (s.hilite ? hilite_none : "") << " " << quoteString(toString(target.inner_uuid));
+        ostr << " " << toStringView(*keyword)
+               << " " << quoteString(toString(target.inner_uuid));
     }
 
     if (target.inner_engine)
@@ -248,7 +248,7 @@ void ASTViewTargets::formatTarget(const ViewTarget & target, WriteBuffer & ostr,
         auto keyword = getKeywordForInnerStorage(target.kind);
         if (!keyword)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No prefix keyword for table engine of kind {}", toString(target.kind));
-        ostr << " " << (s.hilite ? hilite_keyword : "") << toStringView(*keyword) << (s.hilite ? hilite_none : "");
+        ostr << " " << toStringView(*keyword);
         target.inner_engine->format(ostr, s, state, frame);
     }
 }

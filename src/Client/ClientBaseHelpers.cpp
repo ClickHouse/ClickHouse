@@ -15,6 +15,9 @@
 #include <Poco/String.h>
 #include <string_view>
 
+#if USE_REPLXX
+namespace replxx { char const * ansi_color(Replxx::Color); }
+#endif
 
 namespace DB
 {
@@ -151,6 +154,8 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         {Highlight::substitution, Replxx::Color::MAGENTA},
         {Highlight::number, replxx::color::rgb666(0, 4, 0)},
         {Highlight::string, Replxx::Color::GREEN},
+        {Highlight::string_like, Replxx::Color::GREEN},
+        {Highlight::string_regexp, Replxx::Color::GREEN},
     };
 
     /// We set reasonably small limits for size/depth, because we don't want the CLI to be slow.
@@ -199,22 +204,49 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         return;
     }
 
-    size_t pos = 0;
-    const char * prev = begin;
+    /// We have to map from byte positions to Unicode positions.
+    size_t code_point_pos = 0;
+    const char * char_pos = begin;
     for (const auto & range : expected.highlights)
     {
+        const char * metacharacters = "";
+        if (range.highlight == Highlight::string_like)
+            metacharacters = "%_";
+        if (range.highlight == Highlight::string_regexp)
+            metacharacters = "|()^$.[]?*+{:-";
+
         auto it = type_to_color.find(range.highlight);
         if (it != type_to_color.end())
         {
-            /// We have to map from byte positions to Unicode positions.
-            pos += UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(prev), range.begin - prev);
-            size_t utf8_len = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(range.begin), range.end - range.begin);
+            while (char_pos < range.begin)
+            {
+                ++code_point_pos;
+                char_pos += UTF8::seqLength(*char_pos);
+            }
 
-            for (size_t code_point_index = 0; code_point_index < utf8_len; ++code_point_index)
-                colors[pos + code_point_index] = it->second;
+            int escaped = 0;
+            while (char_pos < range.end)
+            {
+                if (*char_pos == '\\')
+                {
+                    ++escaped;
+                    colors[code_point_pos] = replxx::color::bold(Replxx::Color::LIGHTGRAY);
+                }
+                /// The counting of escape characters is quite tricky due to double escaping of string literals + regexps,
+                /// and the special logic of interpreting escape sequences that are not interpreted by the string literals.
+                else if ((escaped % 4 == 0 || escaped % 4 == 3) && nullptr != strchr(metacharacters, *char_pos))
+                {
+                    colors[code_point_pos] = replxx::color::bold(Replxx::Color::BRIGHTMAGENTA);
+                }
+                else
+                {
+                    colors[code_point_pos] = it->second;
+                    escaped = 0;
+                }
 
-            pos += utf8_len;
-            prev = range.end;
+                ++code_point_pos;
+                char_pos += UTF8::seqLength(*char_pos);
+            }
         }
     }
 
@@ -341,14 +373,14 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     /// or if it didn't parse all the data (except, the data for INSERT query, which is legitimately unparsed)
     if ((!parse_res || last_token.isError())
         && !(insert_data && expected.max_parsed_pos >= insert_data)
-        && expected.max_parsed_pos >= prev)
+        && expected.max_parsed_pos >= char_pos)
     {
-        pos += UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(prev), expected.max_parsed_pos - prev);
+        code_point_pos += UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(char_pos), expected.max_parsed_pos - char_pos);
 
-        if (pos >= colors.size())
-            pos = colors.size() - 1;
+        if (code_point_pos >= colors.size())
+            code_point_pos = colors.size() - 1;
 
-        colors[pos] = Replxx::Color::BRIGHTRED;
+        colors[code_point_pos] = Replxx::Color::BRIGHTRED;
 
         if (active_matching_brace)
         {
@@ -359,7 +391,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
             /// If the cursor is on one of the round brackets marked as an error,
             /// highlight both with a brighter color.
-            if (pos == closing_brace_pos || pos == opening_brace_pos)
+            if (code_point_pos == closing_brace_pos || code_point_pos == opening_brace_pos)
             {
                 colors[closing_brace_pos] = replxx::color::rgb666(5, 0, 1);
                 colors[opening_brace_pos] = replxx::color::rgb666(5, 0, 1);
@@ -377,6 +409,38 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     {
         ReplxxLineReader::setLastIsDelimiter(false);
     }
+}
+
+String highlighted(const String & query, const Context & context)
+{
+    size_t num_code_points = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(query.data()), query.size());
+    std::vector<replxx::Replxx::Color> colors(num_code_points, replxx::Replxx::Color::DEFAULT);
+    highlight(query, colors, context, 0);
+
+    String res;
+    size_t query_size = query.size();
+    res.reserve(query_size * 2);
+
+    size_t byte_pos = 0;
+    size_t code_point_pos = 0;
+    replxx::Replxx::Color prev_color = replxx::Replxx::Color::DEFAULT;
+    while (byte_pos < query_size)
+    {
+        auto curr_color = colors[code_point_pos];
+        if (curr_color != prev_color)
+        {
+            res += replxx::ansi_color(curr_color);
+            prev_color = curr_color;
+        }
+        size_t code_point_length = UTF8::seqLength(query[byte_pos]);
+        res.append(query.data() + byte_pos, code_point_length);
+        byte_pos += code_point_length;
+        ++code_point_pos;
+    }
+    if (replxx::Replxx::Color::DEFAULT != prev_color)
+        res += replxx::ansi_color(replxx::Replxx::Color::DEFAULT);
+
+    return res;
 }
 #endif
 
