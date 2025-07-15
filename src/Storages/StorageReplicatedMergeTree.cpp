@@ -6119,13 +6119,6 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
 }
 
 
-std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWrite(const ASTInsertQuery &, ContextPtr)
-{
-    // pipeline will be built outside
-    return {};
-}
-
-
 bool StorageReplicatedMergeTree::optimize(
     const ASTPtr &,
     const StorageMetadataPtr &,

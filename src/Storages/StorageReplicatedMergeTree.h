@@ -171,8 +171,6 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
-    std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & /*query*/, ContextPtr /*context*/) override;
-
     bool optimize(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,

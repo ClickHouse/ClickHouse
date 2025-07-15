@@ -710,7 +710,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
 
 std::optional<QueryPipeline>
-InterpreterInsertQuery::distributedWriteFromClusterStorage(const ASTInsertQuery & query, ContextPtr local_context)
+InterpreterInsertQuery::distributedWriteIntoReplicatedMergeTreeFromClusterStorage(const ASTInsertQuery & query, ContextPtr local_context)
 {
     if (query.table_id.empty())
         return {};
@@ -720,22 +720,16 @@ InterpreterInsertQuery::distributedWriteFromClusterStorage(const ASTInsertQuery 
         return {};
 
     auto & select = query.select->as<ASTSelectWithUnionQuery &>();
-
     StoragePtr src_storage;
-
     if (select.list_of_selects->children.size() == 1)
     {
         if (auto * select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
         {
             JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
-
             if (joined_tables.tablesCount() == 1)
-            {
                 src_storage = joined_tables.getLeftTableStorage();
-            }
         }
     }
-
     if (!src_storage)
         return {};
 
@@ -752,7 +746,7 @@ InterpreterInsertQuery::distributedWriteFromClusterStorage(const ASTInsertQuery 
         && local_context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
         throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
 
-    /// Here we won't check that the cluster formed from table replicas is a subset of a cluster specified in s3Cluster/hdfsCluster table function
+    /// query will be executed on all nodes of the cluster
     auto src_cluster = src_storage_cluster->getCluster(local_context);
 
     /// Actually the query doesn't change, we just serialize it to string
@@ -768,12 +762,12 @@ InterpreterInsertQuery::distributedWriteFromClusterStorage(const ASTInsertQuery 
     QueryPipeline pipeline;
     ContextMutablePtr query_context = Context::createCopy(local_context);
     query_context->increaseDistributedDepth();
-    query_context->setSetting("skip_unavailable_shards", Field{true});
+    query_context->setSetting("skip_unavailable_shards", true);
 
     auto number_of_replicas = static_cast<UInt64>(src_cluster->getShardsAddresses().size());
     auto extension = src_storage_cluster->getTaskIteratorExtension(nullptr, nullptr, local_context, number_of_replicas);
 
-    /// -Cluster storage treat each replicas as a shard in cluster definition
+    /// -Cluster storage treats each replicas as a shard in cluster definition
     /// so, it's enough to consider only shards here
     size_t replica_index = 0;
     for (const auto & shard : src_cluster->getShardsInfo())
@@ -793,6 +787,7 @@ InterpreterInsertQuery::distributedWriteFromClusterStorage(const ASTInsertQuery 
             QueryProcessingStage::Complete,
             RemoteQueryExecutor::Extension{.task_iterator = extension.task_iterator, .replica_info = std::move(replica_info)});
         remote_query_executor->setLogger(logger);
+        /// check if destination table exists on nodes
         remote_query_executor->setMainTable(dst_storage->getStorageID());
 
         Pipe pipe{std::make_shared<RemoteSource>(
@@ -857,7 +852,7 @@ BlockIO InterpreterInsertQuery::execute()
             }
             if (!res.pipeline.initialized())
             {
-                if (auto pipeline = distributedWriteFromClusterStorage(query, context))
+                if (auto pipeline = distributedWriteIntoReplicatedMergeTreeFromClusterStorage(query, context))
                     res.pipeline = std::move(*pipeline);
             }
             if (!res.pipeline.initialized() && context->canUseParallelReplicasOnInitiator())
