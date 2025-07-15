@@ -578,7 +578,8 @@ void AggregatingStep::requestOnlyMergeForAggregateProjection(const SharedHeader 
     input_headers.front() = input_header;
     params.only_merge = true;
     updateOutputHeader();
-    assertBlocksHaveEqualStructure(*output_header, *getOutputHeader(), "AggregatingStep");
+    if (output_header != getOutputHeader())
+        assertBlocksHaveEqualStructure(*output_header, *getOutputHeader(), "AggregatingStep");
 }
 
 std::unique_ptr<AggregatingProjectionStep> AggregatingStep::convertToAggregatingProjection(const SharedHeader & input_header) const
@@ -594,7 +595,8 @@ std::unique_ptr<AggregatingProjectionStep> AggregatingStep::convertToAggregating
         temporary_data_merge_threads
     );
 
-    assertBlocksHaveEqualStructure(*getOutputHeader(), *aggregating_projection->getOutputHeader(), "AggregatingStep");
+    if (getOutputHeader() != aggregating_projection->getOutputHeader())
+        assertBlocksHaveEqualStructure(*getOutputHeader(), *aggregating_projection->getOutputHeader(), "AggregatingStep");
     return aggregating_projection;
 }
 
@@ -692,7 +694,8 @@ QueryPipelineBuilderPtr AggregatingProjectionStep::updatePipeline(
     auto pipeline = std::make_unique<QueryPipelineBuilder>();
 
     for (auto & cur_pipeline : pipelines)
-        assertBlocksHaveEqualStructure(cur_pipeline->getHeader(), *getOutputHeader(), "AggregatingProjectionStep");
+        if (cur_pipeline->getSharedHeader() != getOutputHeader())
+            assertBlocksHaveEqualStructure(cur_pipeline->getHeader(), *getOutputHeader(), "AggregatingProjectionStep");
 
     *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), 0, &processors);
     pipeline->resize(1);
