@@ -253,6 +253,7 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     void setVectorSearchParameters(std::optional<VectorSearchParameters> && vector_search_parameters_) { vector_search_parameters = vector_search_parameters_; }
+    std::optional<VectorSearchParameters> getVectorSearchParameters() const { return vector_search_parameters; }
 
 private:
     MergeTreeReaderSettings reader_settings;

@@ -744,11 +744,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         num_threads = std::min<size_t>(num_streams, settings[Setting::max_threads_for_indexes]);
     }
 
-    /// Some skip indexes are at 'part' level (e.g vector index) and can be used for
-    /// range pruning only if the full part is the candidate at the time of calling filterMarksUsingIndex()
-    bool any_skip_index_needs_full_part =
-        (!skip_indexes.useful_indices.empty() && skip_indexes.useful_indices[0].index->isVectorSimilarityIndex() && !settings[Setting::vector_search_with_rescoring]);
-
     /// Let's find what range to read from each part.
     {
         auto mark_cache = context->getIndexMarkCache();
@@ -763,8 +758,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 query_status->checkTimeLimit();
 
             auto & ranges = parts_with_ranges[part_index];
-            /// We may revert any partial pruning done by PK if the skip index needs the full part
-            bool is_pk_range_pruning_revert = false;
             if (metadata_snapshot->hasPrimaryKey() || part_offset_condition || total_offset_condition)
             {
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithPrimaryKey);
@@ -783,16 +776,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     find_exact_ranges ? &ranges.exact_ranges : nullptr,
                     settings,
                     log);
-
-                /// undo any partial filtering for special skip indexes (e.g vector index)
-                if (any_skip_index_needs_full_part)
-                {
-                    if (!ranges.ranges.empty() && ranges.ranges.getNumberOfMarks() != total_marks_count)
-                    {
-                        ranges.ranges = MarkRanges{MarkRange{0, total_marks_count}};
-                        is_pk_range_pruning_revert = true;
-                    }
-                }
 
                 pk_stat.search_algorithm.store(ranges.ranges.search_algorithm, std::memory_order_relaxed);
                 pk_stat.granules_dropped.fetch_add(total_marks_count - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
@@ -832,7 +815,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     mark_cache.get(),
                     uncompressed_cache.get(),
                     vector_similarity_index_cache.get(),
-                    is_pk_range_pruning_revert,
                     log);
 
                 stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
@@ -1622,7 +1604,6 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
     VectorSimilarityIndexCache * vector_similarity_index_cache,
-    bool is_pk_range_pruning_revert,
     LoggerPtr log)
 {
     if (!index_helper->getDeserializedFormat(part->getDataPartStorage(), index_helper->getFileName()))
@@ -1652,11 +1633,6 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     if (index_helper->isVectorSimilarityIndex() && !all_match)
     {
         return {ranges, in_read_hints};
-    }
-    else if (index_helper->isVectorSimilarityIndex() && is_pk_range_pruning_revert)
-    {
-        LOG_TRACE(log, "Vector Search will execute postfilter for primary key condition on part {} of table {}.",
-                    part->name, part->storage.getStorageID().getFullTableName());
     }
 
     MarkRanges index_ranges;
