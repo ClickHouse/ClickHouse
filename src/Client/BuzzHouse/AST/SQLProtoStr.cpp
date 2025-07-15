@@ -3134,13 +3134,14 @@ CONV_FN(TTLGroupBy, ttl_groupby)
 CONV_FN(TTLEntry, ttl_entry)
 {
     ExprToString(ret, ttl_entry.time_expr());
-    ret += " ";
     if (ttl_entry.has_update())
     {
+        ret += " ";
         TTLUpdateToString(ret, ttl_entry.update());
     }
     else if (ttl_entry.has_group_by())
     {
+        ret += " ";
         TTLGroupByToString(ret, ttl_entry.group_by());
     }
 }
