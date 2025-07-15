@@ -7,7 +7,7 @@ title: 'Functions for Splitting Strings'
 
 import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
 
-# Functions for Splitting Strings
+# Functions for splitting strings
 
 ## splitByChar {#splitbychar}
 

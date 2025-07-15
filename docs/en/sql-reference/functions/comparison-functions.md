@@ -5,7 +5,7 @@ slug: /sql-reference/functions/comparison-functions
 title: 'Comparison Functions'
 ---
 
-# Comparison Functions
+# Comparison functions
 
 ## Comparison rules {#comparison-rules}
 

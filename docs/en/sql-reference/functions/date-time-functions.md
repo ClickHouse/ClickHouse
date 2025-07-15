@@ -5,7 +5,7 @@ slug: /sql-reference/functions/date-time-functions
 title: 'Functions for Working with Dates and Times'
 ---
 
-# Functions for Working with Dates and Times
+# Functions for working with dates and times
 
 Most functions in this section accept an optional time zone argument, e.g. `Europe/Amsterdam`. In this case, the time zone is the specified one instead of the local (default) one.
 

@@ -625,6 +625,7 @@ MaxThreads
 Mbps
 McNeal
 Memcheck
+memcheck
 MemoryCode
 MemoryDataAndStack
 MemoryResident

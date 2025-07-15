@@ -5,7 +5,7 @@ slug: /sql-reference/functions/math-functions
 title: 'Mathematical Functions'
 ---
 
-# Mathematical Functions
+# Mathematical functions
 
 ## e {#e}
 
