@@ -141,7 +141,7 @@ def test_independent_pools():
     def assert_query(node, query_id, slots):
         node.query("SYSTEM FLUSH LOGS")
         # Note that we cannot guarantee that all slots that should be (a) granted, (b) acquired and (c) passed to a thread, will actually undergo even the first stage before query finishes
-        # So any attempt to make a stricter checks here lead to flakyiness due to described race condition. Workaround would require failpoint.
+        # So any attempt to make a stricter checks here lead to flakiness due to described race condition. Workaround would require failpoint.
         # We assume threads will never be preempted and downscaled and upscaled again, so we cna check ConcurrencyControlSlotsAcquired against limit
         assert_profile_event(
             node,
