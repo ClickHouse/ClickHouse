@@ -44,10 +44,10 @@ def test_check_projections_compatibility(started_cluster):
 
     # Create with invalid projection is not supported by default
 
-    assert "Projection is fully supported" in node.query_and_get_error(
+    assert "Projections are not supported" in node.query_and_get_error(
         create_with_invalid_projection.format("ReplacingMergeTree")
     )
-    assert "Projection is fully supported" in node.query_and_get_error(
+    assert "Projections are not supported" in node.query_and_get_error(
         create_with_invalid_projection.format(
             "ReplicatedReplacingMergeTree('/tables/tp', '0')"
         )
@@ -56,7 +56,7 @@ def test_check_projections_compatibility(started_cluster):
     # Adding invalid projection is not supported by default
 
     node.query(create_no_projection.format("ReplacingMergeTree"))
-    assert "Projection is fully supported" in node.query_and_get_error(
+    assert "ADD PROJECTION is not supported" in node.query_and_get_error(
         alter_add_projection
     )
     node.query("drop table tp;")
@@ -64,7 +64,7 @@ def test_check_projections_compatibility(started_cluster):
     node.query(
         create_no_projection.format("ReplicatedReplacingMergeTree('/tables/tp', '0')")
     )
-    assert "Projection is fully supported" in node.query_and_get_error(
+    assert "ADD PROJECTION is not supported" in node.query_and_get_error(
         alter_add_projection
     )
     node.query("drop table tp;")
@@ -102,13 +102,13 @@ def test_config_overrides_compatibility(started_cluster):
     """
 
     assert (
-        "Projection is fully supported"
+        "Projections are not supported"
         in node_with_compatibility_and_mt_setings.query_and_get_error(
             create_with_invalid_projection.format("ReplacingMergeTree")
         )
     )
     assert (
-        "Projection is fully supported"
+        "Projections are not supported"
         in node_with_compatibility_and_mt_setings.query_and_get_error(
             create_with_invalid_projection.format(
                 "ReplicatedReplacingMergeTree('/tables/tp', '0')"
