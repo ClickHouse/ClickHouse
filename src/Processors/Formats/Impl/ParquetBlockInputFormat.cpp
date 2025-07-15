@@ -650,14 +650,10 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         {
             auto column_name = header.getNames()[i];
             int64_t field_id;
-            try
-            {
-                field_id = parquet_opaque->column_name_to_parquet_field_id.at(column_name);
-            }
-            catch (...)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find column {} in opaque", column_name);
-            }
+            if (auto it = parquet_opaque->column_name_to_parquet_field_id.find(column_name); it != parquet_opaque->column_name_to_parquet_field_id.end())
+                field_id = it->second;
+            else
+                continue;
             result[column_name] = parquet_field_ids[field_id];
             parquet_names_to_clickhouse->emplace(parquet_field_ids[field_id], column_name);
         }

@@ -94,14 +94,10 @@ public:
             std::string col_name = named_col.name;
             if (clickhouse_to_parquet_names)
             {
-                try
-                {
-                    col_name = clickhouse_to_parquet_names->at(col_name);
-                }
-                catch (...)
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can't find column {} in header", col_name);
-                }
+                if (auto it = clickhouse_to_parquet_names->find(col_name); it != clickhouse_to_parquet_names->end())
+                    col_name = it->second;
+                else
+                    continue;
             }
             if (ignore_case)
                 boost::to_lower(col_name);
