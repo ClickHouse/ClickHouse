@@ -275,11 +275,11 @@ TEST(AIClientFactory, MissingRequiredFields)
 {
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration();
     
-    // Missing provider - should use default
+    // Missing provider - should remain empty
     config->setString("ai.api_key", "test_key");
     
     AIConfiguration ai_config = AIClientFactory::loadConfiguration(*config);
-    EXPECT_EQ("openai", ai_config.provider); // Should use default
+    EXPECT_TRUE(ai_config.provider.empty()); // Should remain empty
     
     // Missing API key - should remain empty
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config2 = new Poco::Util::XMLConfiguration();
