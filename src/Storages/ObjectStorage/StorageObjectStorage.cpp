@@ -185,18 +185,13 @@ StorageObjectStorage::StorageObjectStorage(
     }
     else if (context->getSettingsRef()[Setting::use_hive_partitioning])
     {
-        hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(columns, sample_path, format_settings, context);
-
-        if (columns_in_table_or_function_definition.empty())
-        {
-            for (const auto & [name, type]: hive_partition_columns_to_read_from_file_path)
-            {
-                if (!columns.has(name))
-                {
-                    columns.add({name, type});
-                }
-            }
-        }
+        HivePartitioningUtils::extractPartitionColumnsFromPathAndEnrichStorageColumns(
+           columns,
+           hive_partition_columns_to_read_from_file_path,
+           sample_path,
+           columns_in_table_or_function_definition.empty(),
+           format_settings,
+           context);
     }
 
     if (hive_partition_columns_to_read_from_file_path.size() == columns.size())

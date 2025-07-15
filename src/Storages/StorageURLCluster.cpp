@@ -88,27 +88,13 @@ StorageURLCluster::StorageURLCluster(
 
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
     {
-        hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, getSampleURI(uri, context), std::nullopt, context);
-
-        /// If the structure was inferred (not present in `columns_`), then we might need to enrich the schema with partition columns
-        /// Because they might not be present in the data and exist only in the path
-        if (columns_.empty())
-        {
-            for (const auto & [name, type]: hive_partition_columns_to_read_from_file_path)
-            {
-                if (!storage_columns.has(name))
-                {
-                    storage_columns.add({name, type});
-                }
-            }
-        }
-
-        if (hive_partition_columns_to_read_from_file_path.size() == storage_columns.size())
-        {
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "A hive partitioned file can't contain only partition columns. Try reading it with `use_hive_partitioning=0`");
-        }
+        HivePartitioningUtils::extractPartitionColumnsFromPathAndEnrichStorageColumns(
+            storage_columns,
+            hive_partition_columns_to_read_from_file_path,
+            getSampleURI(uri, context),
+            columns_.empty(),
+            std::nullopt,
+            context);
     }
 
     auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns);

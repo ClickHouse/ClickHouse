@@ -1151,27 +1151,13 @@ void StorageFile::setStorageMetadata(CommonArguments args)
 
     if (args.getContext()->getSettingsRef()[Setting::use_hive_partitioning])
     {
-        hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, sample_path, format_settings, args.getContext());
-
-        /// If the structure was inferred (not present in `args.columns`), then we might need to enrich the schema with partition columns
-        /// Because they might not be present in the data and exist only in the path
-        if (args.columns.empty())
-        {
-            for (const auto & [name, type]: hive_partition_columns_to_read_from_file_path)
-            {
-                if (!storage_columns.has(name))
-                {
-                    storage_columns.add({name, type});
-                }
-            }
-        }
-
-        if (hive_partition_columns_to_read_from_file_path.size() == storage_columns.size())
-        {
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "A hive partitioned file can't contain only partition columns. Try reading it with `use_hive_partitioning=0`");
-        }
+        HivePartitioningUtils::extractPartitionColumnsFromPathAndEnrichStorageColumns(
+           storage_columns,
+           hive_partition_columns_to_read_from_file_path,
+           sample_path,
+           args.columns.empty(),
+           format_settings,
+           args.getContext());
     }
 
     /// If the `partition_strategy` argument is ever implemented for File storage, this must be updated

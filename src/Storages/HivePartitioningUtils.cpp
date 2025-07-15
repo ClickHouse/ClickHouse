@@ -1,5 +1,7 @@
 #include <Storages/HivePartitioningUtils.h>
 
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Functions/keyvaluepair/impl/KeyValuePairExtractorBuilder.h>
 #include <Functions/keyvaluepair/impl/DuplicateKeyFoundException.h>
@@ -9,6 +11,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool use_hive_partitioning;
+}
 
 namespace ErrorCodes
 {
@@ -112,6 +119,37 @@ void addPartitionColumnsToChunk(
 
         auto chunk_column = column.type->createColumnConst(chunk.getNumRows(), convertFieldToType(Field(it->second), *column.type))->convertToFullColumnIfConst();
         chunk.addColumn(std::move(chunk_column));
+    }
+}
+
+void extractPartitionColumnsFromPathAndEnrichStorageColumns(
+    ColumnsDescription & storage_columns,
+    NamesAndTypesList & hive_partition_columns_to_read_from_file_path,
+    const std::string & path,
+    bool inferred_schema,
+    std::optional<FormatSettings> format_settings,
+    ContextPtr context)
+{
+    hive_partition_columns_to_read_from_file_path = extractHivePartitionColumnsFromPath(storage_columns, path, format_settings, context);
+
+    /// If the structure was inferred (not present in `columns_`), then we might need to enrich the schema with partition columns
+    /// Because they might not be present in the data and exist only in the path
+    if (inferred_schema)
+    {
+        for (const auto & [name, type]: hive_partition_columns_to_read_from_file_path)
+        {
+            if (!storage_columns.has(name))
+            {
+                storage_columns.add({name, type});
+            }
+        }
+    }
+
+    if (hive_partition_columns_to_read_from_file_path.size() == storage_columns.size())
+    {
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "A hive partitioned file can't contain only partition columns. Try reading it with `use_hive_partitioning=0`");
     }
 }
 

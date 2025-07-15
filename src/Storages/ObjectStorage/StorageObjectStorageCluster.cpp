@@ -30,6 +30,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 String StorageObjectStorageCluster::getPathSample(ContextPtr context)
@@ -101,18 +102,21 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     }
     else if (context_->getSettingsRef()[Setting::use_hive_partitioning])
     {
-        hive_partition_columns_to_read_from_file_path = HivePartitioningUtils::extractHivePartitionColumnsFromPath(columns, sample_path, {}, context_);
+        HivePartitioningUtils::extractPartitionColumnsFromPathAndEnrichStorageColumns(
+            columns,
+            hive_partition_columns_to_read_from_file_path,
+            sample_path,
+            columns_in_table_or_function_definition.empty(),
+            std::nullopt,
+            context_
+        );
+    }
 
-        if (columns_in_table_or_function_definition.empty())
-        {
-            for (const auto & [name, type]: hive_partition_columns_to_read_from_file_path)
-            {
-                if (!columns.has(name))
-                {
-                    columns.add({name, type});
-                }
-            }
-        }
+    if (hive_partition_columns_to_read_from_file_path.size() == columns.size())
+    {
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "A hive partitioned file can't contain only partition columns. Try reading it with `partition_strategy=wildcard` and `use_hive_partitioning=0`");
     }
 
     /// Hive: Not building the file_columns like `StorageObjectStorage` does because it is not necessary to do it here.
