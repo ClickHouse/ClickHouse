@@ -97,6 +97,10 @@ def test_ttl_columns(started_cluster):
         expected
     )
 
+    # Cleanup
+    for node in [node1, node2]:
+        node.query(f"DROP TABLE {table_name} SYNC")
+
 
 def test_merge_with_ttl_timeout(started_cluster):
     table = f"test_merge_with_ttl_timeout_{node1.name}_{node2.name}"
@@ -148,6 +152,10 @@ def test_merge_with_ttl_timeout(started_cluster):
         node2, "SELECT countIf(a = 0) FROM {table}".format(table=table), "3\n"
     )
 
+    # Cleanup
+    for node in [node1, node2]:
+        node.query(f"DROP TABLE {table} SYNC")
+
 
 def test_ttl_many_columns(started_cluster):
     table = f"test_ttl_2{node1.name}_{node2.name}"
@@ -198,6 +206,10 @@ def test_ttl_many_columns(started_cluster):
         node2.query(f"SELECT id, a, _idx, _offset, _partition FROM {table} ORDER BY id")
     ) == TSV(expected)
 
+    # Cleanup
+    for node in [node1, node2]:
+        node.query(f"DROP TABLE {table} SYNC")
+
 
 @pytest.mark.parametrize(
     "delete_suffix",
@@ -227,6 +239,10 @@ def test_ttl_table(started_cluster, delete_suffix):
 
     assert TSV(node1.query(f"SELECT * FROM {table}")) == TSV("")
     assert TSV(node2.query(f"SELECT * FROM {table}")) == TSV("")
+
+    # Cleanup
+    for node in [node1, node2]:
+        node.query(f"DROP TABLE {table} SYNC")
 
 
 def test_modify_ttl(started_cluster):
@@ -262,6 +278,10 @@ def test_modify_ttl(started_cluster):
     )
     assert node2.query(f"SELECT id FROM {table}") == ""
 
+    # Cleanup
+    for node in [node1, node2]:
+        node.query(f"DROP TABLE {table} SYNC")
+
 
 def test_modify_column_ttl(started_cluster):
     table = f"test_modify_column_ttl_{node1.name}_{node2.name}"
@@ -295,6 +315,10 @@ def test_modify_column_ttl(started_cluster):
         f"ALTER TABLE {table} MODIFY COLUMN id UInt32 TTL d + INTERVAL 30 MINUTE SETTINGS replication_alter_partitions_sync = 2"
     )
     assert node2.query(f"SELECT id FROM {table}") == "42\n42\n42\n"
+
+    # Cleanup
+    for node in [node1, node2]:
+        node.query(f"DROP TABLE {table} SYNC")
 
 
 def test_ttl_double_delete_rule_returns_error(started_cluster):
@@ -412,6 +436,9 @@ def test_ttl_alter_delete(started_cluster, name, engine):
     ).splitlines()
     assert r == ["\t0", "\t0", "hello2\t2"]
 
+    # Cleanup
+    node1.query(f"DROP TABLE {name} SYNC")
+
 
 def test_ttl_empty_parts(started_cluster):
     for node in [node1, node2]:
@@ -499,6 +526,10 @@ def test_ttl_empty_parts(started_cluster):
     )
     assert not node1.contains_in_log(error_msg)
     assert not node2.contains_in_log(error_msg)
+
+    # Cleanup
+    for node in [node1, node2]:
+        node.query("DROP TABLE test_ttl_empty_parts SYNC")
 
 
 @pytest.mark.parametrize(
@@ -608,3 +639,9 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
 
     assert node_left.query(f"SELECT id FROM {table}_where ORDER BY id") == "2\n4\n"
     assert node_right.query(f"SELECT id FROM {table}_where ORDER BY id") == "2\n4\n"
+
+    # Cleanup
+    for node in [node_left, node_right]:
+        node.query(f"DROP TABLE {table}_delete SYNC")
+        node.query(f"DROP TABLE {table}_group_by SYNC")
+        node.query(f"DROP TABLE {table}_where SYNC")
