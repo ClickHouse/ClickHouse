@@ -144,6 +144,7 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryP
 void optimizeJoinByShards(QueryPlan::Node & root);
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
 void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
+bool optimizeVectorSearchSecondPass(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
 // Should be called once the query plan tree structure is finalized, i.e. no nodes addition, deletion or pushing down should happen after that call.
 // Since those hashes are used for join optimization, the calculation performed before join optimization.

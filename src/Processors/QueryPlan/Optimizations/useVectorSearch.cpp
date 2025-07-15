@@ -37,7 +37,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
 {
     QueryPlan::Node * node = parent_node;
 
-    /// If the optimization pass did not change ReadFromMergeTree & Expression steps in the query plan.
+    /// In the first pass, we do not modify the plan
     constexpr size_t no_layers_updated = 0;
 
     bool additional_filters_present = false; /// WHERE or PREWHERE
@@ -194,6 +194,103 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     if (search_column.empty() || reference_vector.empty())
         return no_layers_updated;
 
+    /// All set for 2nd pass
+    auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column, distance_function, n, reference_vector, additional_filters_present, true);
+    read_from_mergetree_step->setVectorSearchParameters(std::move(vector_search_parameters));
+
+    return no_layers_updated;
+}
+
+bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
+{
+    /// QueryPlan::Node * node = parent_node;
+
+    /// Expect this query plan:
+    /// LimitStep
+    ///    ^
+    ///    |
+    /// SortingStep
+    ///    ^
+    ///    |
+    /// ExpressionStep
+    ///    ^
+    ///    |
+    /// (FilterStep, optional) Or (ExpressionStep, if prewhere optimization)
+    ///    ^
+    ///    |
+    /// ReadFromMergeTree
+    ///
+    const auto & frame = stack.back();
+
+    if (frame.node->children.size() != 1)
+        return false;
+
+    QueryPlan::Node * node = frame.node;
+
+    auto * limit_step = typeid_cast<LimitStep *>(node->step.get());
+    if (!limit_step)
+        return false;
+
+    if (node->children.size() != 1)
+        return false;
+    node = node->children.front();
+    auto * sorting_step = typeid_cast<SortingStep *>(node->step.get());
+    if (!sorting_step)
+        return false;
+
+    if (node->children.size() != 1)
+        return false;
+    node = node->children.front();
+    auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
+    if (!expression_step)
+        return false;
+
+    if (node->children.size() != 1)
+        return false;
+
+    auto * expression_node = node;
+    node = node->children.front();
+
+    auto * read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
+
+    FilterStep * filter_step = nullptr;
+    ExpressionStep * prewhere_expression_step = nullptr;
+    QueryPlan::Node * filter_or_prewhere_node = nullptr;
+    if (!read_from_mergetree_step)
+    {
+        /// Do we have a FilterStep Or ExpressionStep (PREWHERE) on top of ReadFromMergeTree?
+        filter_step = typeid_cast<FilterStep *>(node->step.get());
+        prewhere_expression_step = typeid_cast<ExpressionStep *>(node->step.get());
+        if (!filter_step && !prewhere_expression_step)
+            return false;
+
+        if (node->children.size() != 1)
+            return false;
+
+        filter_or_prewhere_node = node;
+        node = node->children.front();
+
+        read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
+        if (!read_from_mergetree_step)
+            return false;
+    }
+
+    /// Check if first pass has indicated vector index usage
+    auto vector_search_parameters = read_from_mergetree_step->getVectorSearchParameters();
+    if (!vector_search_parameters.has_value())
+        return false;
+
+    /// Not 100% sure but other sort types are likely not what we want
+    SortingStep::Type sorting_step_type = sorting_step->getType();
+    if (sorting_step_type != SortingStep::Type::Full)
+        return false;
+
+    /// Read ORDER BY clause
+    const auto & sort_description = sorting_step->getSortDescription();
+    if (sort_description.size() > 1)
+        return false;
+    const String & sort_column = sort_description.front().column_name;
+
     /// The Usearch index calculates and returns (at index granule level) the row ID(s) + corresponding distances for the top-N most similar
     /// matches to the given reference vector. This creates a mismatch to the granule-based interface of skip indexes in ClickHouse.
     /// To bridge this gap, MergeTreeVectorSimilarityIndex historically extrapolated the result from USearch to granule level. This caused
@@ -210,18 +307,43 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     /// MergeTreeRangeReader::executeActionsForReadHints() is the key - it creates and populates a filter that is True only for the exact
     /// row IDs/part offsets returned by vector search and the routine populates a virtual column named _distance for distance corresponding
     /// to the exact Row ID. The filter is then applied on the columns in the read list.
+
+    ActionsDAG & expression = expression_step->getExpression();
     bool optimize_plan = !settings.vector_search_with_rescoring;
-    size_t updated_layers = no_layers_updated;
     if (optimize_plan)
     {
+        auto search_column = vector_search_parameters.value().column;
         for (const auto & output : expression.getOutputs())
         {
             /// If the SELECT clause contains the vector column (rare situation), skip the optimization.
+            /// Multiple forms of analyzer nodes to handle.
             if (output->result_name == search_column ||
-                (output->type == ActionsDAG::ActionType::ALIAS && output->children.at(0)->result_name == search_column))
+                (output->type == ActionsDAG::ActionType::ALIAS && output->children.at(0)->result_name == search_column) ||
+                (output->result_name.contains('.') && output->result_name.ends_with("." + search_column)))
             {
                 optimize_plan = false;
                 break;
+            }
+        }
+
+        if (optimize_plan)
+        {
+            auto analyzed_result = read_from_mergetree_step->getAnalyzedResult();
+            analyzed_result = analyzed_result ? analyzed_result : read_from_mergetree_step->selectRangesToRead();
+
+            /// Only if full parts were candidates and vector index was used to fetch
+            /// distances, we can proceed with the optimization.
+            for (const auto & part_with_ranges : analyzed_result->parts_with_ranges)
+            {
+                if (part_with_ranges.ranges.size())
+                {
+                    if (!part_with_ranges.read_hints.vector_search_results.has_value() ||
+                        !part_with_ranges.read_hints.vector_search_results.value().distances.has_value())
+                    {
+                        optimize_plan = false;
+                        break;
+                    }
+                }
             }
         }
 
@@ -237,11 +359,10 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
             const auto * new_output = &expression.addAlias(*distance_node, sort_column);
             expression.getOutputs().push_back(new_output);
 
-            updated_layers = 2;
             /// Need to do same removal of the vector column from the Filter step
-            if (filter_step)
+            if (filter_or_prewhere_node)
             {
-                auto & filter_expression = filter_step->getExpression();
+                ActionsDAG & filter_expression = prewhere_expression_step ? prewhere_expression_step->getExpression() : filter_step->getExpression();
                 String output_result_to_delete;
                 for (const auto * output_node : filter_expression.getOutputs())
                 {
@@ -255,15 +376,21 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
                     output_result_to_delete = search_column; /// old analyzer
                 filter_expression.removeUnusedResult(output_result_to_delete);
                 filter_expression.removeUnusedActions();
-                updated_layers++;
+
+                /// Update the node with new Step
+                if (prewhere_expression_step)
+                    filter_or_prewhere_node->step = std::make_unique<ExpressionStep>(read_from_mergetree_step->getOutputHeader(), std::move(filter_expression));
+                else
+                    filter_or_prewhere_node->step = std::make_unique<FilterStep>(read_from_mergetree_step->getOutputHeader(), std::move(filter_expression), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
             }
         }
+
+        /// Update the node with new Step
+        expression_node->step = std::make_unique<ExpressionStep>(
+            filter_or_prewhere_node ? filter_or_prewhere_node->step.get()->getOutputHeader() : read_from_mergetree_step->getOutputHeader(), std::move(expression));
     }
 
-    auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column, distance_function, n, reference_vector, additional_filters_present, optimize_plan);
-    read_from_mergetree_step->setVectorSearchParameters(std::move(vector_search_parameters));
-
-    return updated_layers;
+    return true;
 }
 
 }
