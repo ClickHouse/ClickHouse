@@ -24,7 +24,7 @@ CONV_FN_QUOTE(Column, col)
     {
         if (c == '`')
         {
-            for (uint32_t i = 0; std::cmp_less(i, (1 << quote)); i++)
+            for (uint32_t i = 0; i < (1 << quote); i++)
             {
                 ret += "`";
             }

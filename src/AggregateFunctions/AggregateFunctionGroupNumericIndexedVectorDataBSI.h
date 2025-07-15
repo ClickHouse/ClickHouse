@@ -923,7 +923,7 @@ public:
 
                 auto * ctn = reinterpret_cast<roaring::internal::bitset_container_t *>(ctns[i]);
                 constexpr UInt64 shift = 6;
-                for (int j = 0; std::cmp_less(j, cnt[i]); ++j)
+                for (int j = 0; j < cnt[i]; ++j)
                 {
                     UInt64 tmp_offset;
                     UInt64 p = bit_buffer[i][j];
