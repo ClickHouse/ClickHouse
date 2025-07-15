@@ -776,7 +776,7 @@ public:
     {
         ReadBufferFromMemory buf(data.data(), data.size());
         const auto & date_lut = DateLUT::instance();
-        
+
         switch (time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
@@ -1000,7 +1000,7 @@ public:
     {
         ReadBufferFromMemory buf(data.data(), data.size());
         const auto & date_lut = DateLUT::instance();
-        
+
         switch (time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
