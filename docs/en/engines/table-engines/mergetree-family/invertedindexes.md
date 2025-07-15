@@ -9,7 +9,7 @@ title: 'Full-text Search using Text Indexes'
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# Full-text Search using Text Indexes
+# Full-text search using text indexes
 
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
@@ -20,18 +20,6 @@ The main idea of a text index is to store a mapping from "terms" to the rows whi
 For example, the string cell "I will be a little late" is by default tokenized into six terms "I", "will", "be", "a", "little" and "late". Another kind of tokenizer is n-grams.
 For example, the result of 3-gram tokenization will be 21 terms "I w", " wi", "wil", "ill", "ll ", "l b", " be" etc.
 The more fine-granular the input strings are tokenized, the bigger but also the more useful the resulting text index will be.
-
-<div class='vimeo-container'>
-  <iframe src="//www.youtube.com/embed/O_MnyUkrIq8"
-    width="640"
-    height="360"
-    frameborder="0"
-    allow="autoplay;
-    fullscreen;
-    picture-in-picture"
-    allowfullscreen>
-  </iframe>
-</div>
 
 :::note
 Text indexes are experimental and should not be used in production environments yet.
@@ -115,8 +103,6 @@ SELECT * from tab WHERE multiSearchAny(str, ['Hello', 'World']);
 SELECT * from tab WHERE hasToken(str, 'Hello');
 ```
 
-The text index also works on columns of type `Array(String)`, `Array(FixedString)`, `Map(String)` and `Map(String)`.
-
 Like for other secondary indices, each column part has its own text index.
 Furthermore, each text index is internally divided into "segments".
 The existence and size of the segments are generally transparent to users but the segment size determines the memory consumption during index construction (e.g. when two parts are merged).
@@ -124,22 +110,22 @@ Configuration parameter `max_digestion_size_per_segment` (default: 256 MB) contr
 The default value of the parameter provides a good balance between memory usage and performance for most use cases.
 Incrementing it raises the intermediate memory consumption for index construction but also improves lookup performance since fewer segments need to be checked on average to evaluate a query.
 
-### Functions Support {#functions-support}
+### Functions support {#functions-support}
 
 The conditions in the `WHERE` clause contains calls of the functions that operate with columns.
 If the column is a part of an index, ClickHouse tries to use this index when performing the functions.
 ClickHouse supports different subsets of functions for the `text` index.
 
-#### equals and notEquals {#functions-example-equals-notequals}
+#### `equals` and `notEquals` functions {#functions-example-equals-notequals}
 
 Functions `=` (equals) and `!=` (notEquals) check if the column contains rows which match the entire search term.
 
-#### in and notIn {#functions-example-in-notin}
+#### `in` and `notIn` functions {#functions-example-in-notin}
 
 Functions `IN` (in) and `NOT IN` (`notIn`) are similar to functions `equals` and `notEquals` respectively.
 Instead of matching a single term, they return true if any (`IN`) or no (`NOT IN`) search term matches a row value.
 
-#### like, notLike and match {#functions-example-like-notlike-match}
+#### `like`, `notLike` and `match` functions {#functions-example-like-notlike-match}
 
 :::note
 Currently, these functions use the text index for filtering only if the index tokenizer is either `default` or `ngram`.
@@ -220,24 +206,7 @@ SELECT count() FROM hackernews WHERE searchAny(lower(comment), 'clickhouse chdb'
 SELECT count() FROM hackernews WHERE searchAll(lower(comment), 'clickhouse chdb');
 ```
 
-#### has {#functions-example-has}
-
-Function `has` is also similar to `equals` in terms of matching the entire value.
-Instead it operates on `Array` type, therefore it can be used with `Array(String)` or `Array(FixedString)` in `text` index.
-
-Example how to define a `text` index to use with the `has` function:
-
-```sql
-CREATE TABLE tbl (
-    id UInt64,
-    values Array(String),
-    INDEX idx_values(values) TYPE text(tokenizer = 'default')
-)
-ENGINE = MergeTree
-ORDER BY id;
-```
-
-## Full-text search of the Hacker News dataset {#full-text-search-of-the-hacker-news-dataset}
+## Full text search of the hacker news dataset {#full-text-search-of-the-hacker-news-dataset}
 
 Let's look at the performance improvements of text indexes on a large dataset with lots of text.
 We will use 28.7M rows of comments on the popular Hacker News website. Here is the table without an text index:
@@ -356,6 +325,7 @@ In practice, users often search for multiple terms at once.
 For example, filter predicate `WHERE s LIKE '%little%' OR s LIKE '%big%'` can be evaluated directly using a text index by forming the union of the row id lists for terms "little" and "big".
 :::
 
-## Related Content {#related-content}
+## Related content {#related-content}
 
 - Blog: [Introducing Inverted Indices in ClickHouse](https://clickhouse.com/blog/clickhouse-search-with-inverted-indices)
+- Video: [Full-Text Indices: Design and Experiments](https://www.youtube.com/watch?v=O_MnyUkrIq8)

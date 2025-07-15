@@ -18,7 +18,7 @@ To safely implement ODBC connections, ClickHouse uses a separate program `clickh
 
 This engine supports the [Nullable](../../../sql-reference/data-types/nullable.md) data type.
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -27,7 +27,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name2 [type2],
     ...
 )
-ENGINE = ODBC(connection_settings, external_database, external_table)
+ENGINE = ODBC(datasource, external_database, external_table)
 ```
 
 See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
@@ -40,13 +40,13 @@ The table structure can differ from the source table structure:
 
 **Engine Parameters**
 
-- `connection_settings` — Name of the section with connection settings in the `odbc.ini` file.
+- `datasource` — Name of the section with connection settings in the `odbc.ini` file.
 - `external_database` — Name of a database in an external DBMS.
 - `external_table` — Name of a table in the `external_database`.
 
 These parameters can also be passed using [named collections](operations/named-collections.md).
 
-## Usage Example {#usage-example}
+## Usage example {#usage-example}
 
 **Retrieving data from the local MySQL installation via ODBC**
 
@@ -135,7 +135,7 @@ SELECT * FROM odbc_t
 └────────┴────────────────┘
 ```
 
-## See Also {#see-also}
+## See also {#see-also}
 
 - [ODBC dictionaries](/sql-reference/dictionaries#mysql)
 - [ODBC table function](../../../sql-reference/table-functions/odbc.md)

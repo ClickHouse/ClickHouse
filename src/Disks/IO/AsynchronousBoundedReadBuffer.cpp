@@ -333,9 +333,7 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
         {
             ProfileEvents::increment(ProfileEvents::RemoteFSCancelledPrefetches);
             if (read_settings.enable_filesystem_read_prefetches_log)
-            {
                 appendToPrefetchLog(FilesystemPrefetchState::CANCELLED_WITH_SEEK, -1, nullptr);
-            }
         }
 
         break;

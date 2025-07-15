@@ -12,8 +12,7 @@
 #include <Formats/verbosePrintString.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
-#include <boost/range/adaptor/map.hpp>
-#include "Formats/FormatSettings.h"
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {

@@ -3,6 +3,7 @@
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
+#include <Common/randomSeed.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
@@ -161,7 +162,7 @@ namespace
 
 StorageObjectStorageQueue::StorageObjectStorageQueue(
     std::unique_ptr<ObjectStorageQueueSettings> queue_settings_,
-    const ConfigurationPtr configuration_,
+    const StorageObjectStorageConfigurationPtr configuration_,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
@@ -259,6 +260,7 @@ void StorageObjectStorageQueue::startup()
     files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(temp_metadata), getStorageID());
     try
     {
+        ObjectStorageQueueFactory::instance().registerTable(getStorageID());
         files_metadata->startup();
         for (auto & task : streaming_tasks)
             task->activateAndSchedule();
@@ -274,6 +276,12 @@ void StorageObjectStorageQueue::startup()
 
 void StorageObjectStorageQueue::shutdown(bool is_drop)
 {
+    if (shutdown_called)
+        return;
+
+    if (is_drop)
+        ObjectStorageQueueFactory::instance().unregisterTable(getStorageID());
+
     table_is_being_dropped = is_drop;
     shutdown_called = true;
 
@@ -298,6 +306,13 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
         files_metadata.reset();
     }
     LOG_TRACE(log, "Shut down storage");
+}
+
+void StorageObjectStorageQueue::renameInMemory(const StorageID & new_table_id)
+{
+    const auto prev_storage_id = getStorageID();
+    IStorage::renameInMemory(new_table_id);
+    ObjectStorageQueueFactory::instance().renameTable(prev_storage_id, getStorageID());
 }
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
@@ -408,11 +423,14 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
     size_t processing_threads_num = storage->getTableMetadata().processing_threads_num;
 
     createIterator(nullptr);
+
+    auto parser_group = std::make_shared<FormatParserGroup>(context->getSettingsRef(), /*num_streams_=*/ processing_threads_num, nullptr, nullptr);
     auto progress = std::make_shared<ObjectStorageQueueSource::ProcessingProgress>();
     for (size_t i = 0; i < processing_threads_num; ++i)
         pipes.emplace_back(storage->createSource(
                                i/* processor_id */,
                                info,
+                               parser_group,
                                progress,
                                iterator,
                                max_block_size,
@@ -432,6 +450,7 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
 std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSource(
     size_t processor_id,
     const ReadFromFormatInfo & info,
+    FormatParserGroupPtr parser_group,
     ProcessingProgressPtr progress_,
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
     size_t max_block_size,
@@ -446,7 +465,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     return std::make_shared<ObjectStorageQueueSource>(
         getName(), processor_id,
         file_iterator, configuration, object_storage, progress_,
-        info, format_settings,
+        info, format_settings, parser_group,
         commit_settings_copy,
         files_metadata,
         local_context, max_block_size, shutdown_called, table_is_being_dropped,
@@ -525,7 +544,9 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
                 {
                     /// Increase the reschedule interval.
                     std::lock_guard lock(mutex);
-                    reschedule_processing_interval_ms = std::min<size_t>(polling_max_timeout_ms, reschedule_processing_interval_ms + polling_backoff_ms);
+                    reschedule_processing_interval_ms = std::min<size_t>(
+                        polling_max_timeout_ms,
+                        reschedule_processing_interval_ms + polling_backoff_ms);
                 }
 
                 LOG_DEBUG(log, "Stopped streaming to {} attached views", dependencies_count);
@@ -627,6 +648,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         pipes.reserve(threads);
         sources.reserve(threads);
 
+        auto parser_group = std::make_shared<FormatParserGroup>(queue_context->getSettingsRef(), /*num_streams_=*/ threads, nullptr, nullptr);
+
         auto processing_progress = std::make_shared<ProcessingProgress>();
         for (size_t i = 0; i < threads; ++i)
         {
@@ -634,6 +657,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
             auto source = createSource(
                 processor_id,
                 read_from_format_info,
+                parser_group,
                 processing_progress,
                 file_iterator,
                 DBMS_DEFAULT_BUFFER_SIZE,
@@ -654,6 +678,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
 
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueInsertIterations);
 
+        const auto transaction_start_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+
         try
         {
             CompletedPipelineExecutor executor(block_io.pipeline);
@@ -661,12 +687,28 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         }
         catch (...)
         {
-            commit(/*insert_succeeded=*/ false, rows, sources, getCurrentExceptionMessage(true), getCurrentExceptionCode());
-            file_iterator->releaseFinishedBuckets();
+            std::string message = getCurrentExceptionMessage(true);
+            try
+            {
+                commit(
+                    /*insert_succeeded=*/ false,
+                    rows,
+                    sources,
+                    transaction_start_time,
+                    getCurrentExceptionMessage(true),
+                    getCurrentExceptionCode());
+
+                file_iterator->releaseFinishedBuckets();
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("Previous exception: {}", message);
+                throw;
+            }
             throw;
         }
 
-        commit(/*insert_succeeded=*/ true, rows, sources);
+        commit(/*insert_succeeded=*/ true, rows, sources, transaction_start_time);
         file_iterator->releaseFinishedBuckets();
         total_rows += rows;
     }
@@ -679,6 +721,7 @@ void StorageObjectStorageQueue::commit(
     bool insert_succeeded,
     size_t inserted_rows,
     std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
+    time_t transaction_start_time,
     const std::string & exception_message,
     int error_code) const
 {
@@ -722,12 +765,25 @@ void StorageObjectStorageQueue::commit(
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueSuccessfulCommits);
 
-    for (auto & source : sources)
-        source->finalizeCommit(insert_succeeded, exception_message);
+    const auto commit_id = generateCommitID();
+    const auto commit_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
-    LOG_TRACE(
-        log, "Successfully committed {} requests for {} sources (inserted rows: {}, successful files: {})",
-        requests.size(), sources.size(), inserted_rows, successful_objects.size());
+    for (auto & source : sources)
+    {
+        source->finalizeCommit(
+            insert_succeeded, commit_id, commit_time, transaction_start_time, exception_message);
+    }
+
+    LOG_DEBUG(
+        log, "Successfully committed {} requests for {} sources with commit id {} "
+        "(inserted rows: {}, successful files: {})",
+        requests.size(), sources.size(), commit_id, inserted_rows, successful_objects.size());
+}
+
+UInt64 StorageObjectStorageQueue::generateCommitID()
+{
+    pcg64_fast rng(randomSeed());
+    return rng();
 }
 
 static const std::unordered_set<std::string_view> changeable_settings_unordered_mode
