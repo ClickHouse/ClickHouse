@@ -264,8 +264,17 @@ void addDistinctRecursively(const QueryTreeNodePtr & node)
     }
     else if (auto * union_node = node->as<UnionNode>())
     {
-        for (auto & child : union_node->getQueries().getNodes())
-            addDistinctRecursively(child);
+        auto union_mode = union_node->getUnionMode();
+        
+        // Only add DISTINCT recursively for UNION operations where it's beneficial
+        // For UNION_DISTINCT, the union already ensures distinctness, so adding DISTINCT to subqueries is redundant
+        // For EXCEPT and INTERSECT operations, adding DISTINCT can change the result set semantics
+        if (union_mode == SelectUnionMode::UNION_DEFAULT ||
+            union_mode == SelectUnionMode::UNION_ALL)
+        {
+            for (auto & child : union_node->getQueries().getNodes())
+                addDistinctRecursively(child);
+        }
     }
 }
 
@@ -392,6 +401,8 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
 
     QueryTreeNodePtrWithHashMap<TableNodePtr> global_in_temporary_tables;
 
+    bool enable_add_distinct_to_in_subqueries = planner_context->getQueryContext()->getSettingsRef()[Setting::enable_add_distinct_to_in_subqueries];
+
     for (const auto & global_in_or_join_node : global_in_or_join_nodes)
     {
         if (auto * join_node = global_in_or_join_node.query_node->as<JoinNode>())
@@ -441,7 +452,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                         planner_context->getQueryContext());
 
                 // If DISTINCT optimization is enabled, add DISTINCT before executing the subquery
-                if (planner_context->getQueryContext()->getSettingsRef()[Setting::enable_add_distinct_to_in_subqueries])
+                if (enable_add_distinct_to_in_subqueries)
                     addDistinctRecursively(subquery_to_execute);
 
                 temporary_table_expression_node = executeSubqueryNode(
