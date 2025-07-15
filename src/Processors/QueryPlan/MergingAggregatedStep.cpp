@@ -23,6 +23,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 max_entries_for_hash_table_stats;
     extern const QueryPlanSerializationSettingsUInt64 max_size_to_preallocate_for_aggregation;
     extern const QueryPlanSerializationSettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
+    extern const QueryPlanSerializationSettingsBool distributed_aggregation_memory_efficient;
 }
 
 namespace Setting
@@ -193,6 +194,7 @@ void MergingAggregatedStep::serializeSettings(QueryPlanSerializationSettings & s
     settings[QueryPlanSerializationSetting::collect_hash_table_stats_during_aggregation] = params.stats_collecting_params.isCollectionAndUseEnabled();
     settings[QueryPlanSerializationSetting::max_entries_for_hash_table_stats] = params.stats_collecting_params.max_entries_for_hash_table_stats;
     settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation] = params.stats_collecting_params.max_size_to_preallocate;
+    settings[QueryPlanSerializationSetting::distributed_aggregation_memory_efficient] = memory_efficient_aggregation;
 }
 
 void MergingAggregatedStep::serialize(Serialization & ctx) const
@@ -202,16 +204,14 @@ void MergingAggregatedStep::serialize(Serialization & ctx) const
         flags |= 1;
     if (params.overflow_row)
         flags |= 2;
-    if (memory_efficient_aggregation)
-        flags |= 4;
     if (!grouping_sets_params.empty())
-        flags |= 8;
+        flags |= 4;
     if (params.stats_collecting_params.isCollectionAndUseEnabled())
-        flags |= 16;
+        flags |= 8;
     if (should_produce_results_in_order_of_bucket_number)
-        flags |= 32;
+        flags |= 16;
     if (memory_bound_merging_of_aggregation_results_enabled)
-        flags |= 64;
+        flags |= 32;
 
     writeIntBinary(flags, ctx.out);
 
@@ -249,11 +249,10 @@ std::unique_ptr<IQueryPlanStep> MergingAggregatedStep::deserialize(Deserializati
 
     const bool final = bool(flags & 1);
     const bool overflow_row = bool(flags & 2);
-    const bool memory_efficient_aggregation = bool(flags & 4);
-    const bool has_grouping_sets = bool(flags & 8);
-    const bool has_stats_key = bool(flags & 16);
-    const bool should_produce_results_in_order_of_bucket_number = bool(flags & 32);
-    const bool memory_bound_merging_of_aggregation_results_enabled = bool(flags & 64);
+    const bool has_grouping_sets = bool(flags & 4);
+    const bool has_stats_key = bool(flags & 8);
+    const bool should_produce_results_in_order_of_bucket_number = bool(flags & 16);
+    const bool memory_bound_merging_of_aggregation_results_enabled = bool(flags & 32);
 
     UInt64 num_keys;
     readVarUInt(num_keys, ctx.in);
@@ -317,7 +316,7 @@ std::unique_ptr<IQueryPlanStep> MergingAggregatedStep::deserialize(Deserializati
         std::move(params),
         std::move(grouping_sets_params),
         final,
-        memory_efficient_aggregation,
+        ctx.settings[QueryPlanSerializationSetting::distributed_aggregation_memory_efficient],
         settings[Setting::aggregation_memory_efficient_merge_threads],
         should_produce_results_in_order_of_bucket_number,
         ctx.settings[QueryPlanSerializationSetting::max_block_size],
