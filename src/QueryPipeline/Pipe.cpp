@@ -135,8 +135,7 @@ Pipe::Pipe(ProcessorPtr source, OutputPort * output, OutputPort * totals, Output
             if (!port)
                 return;
 
-            if (port->getSharedHeader() != header)
-                assertBlocksHaveEqualStructure(*header, port->getHeader(), name);
+            assertBlocksHaveEqualStructure(*header, port->getHeader(), name);
 
             ++num_specified_ports;
 
@@ -227,8 +226,7 @@ Pipe::Pipe(std::shared_ptr<Processors> processors_) : processors(std::move(proce
 
     header = output_ports.front()->getSharedHeader();
     for (size_t i = 1; i < output_ports.size(); ++i)
-        if (header != output_ports[i]->getSharedHeader())
-            assertBlocksHaveEqualStructure(*header, output_ports[i]->getHeader(), "Pipe");
+        assertBlocksHaveEqualStructure(*header, output_ports[i]->getHeader(), "Pipe");
 
     max_parallel_streams = output_ports.size();
 
@@ -317,8 +315,7 @@ Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors, bool allow
     for (auto & pipe : pipes)
     {
         if (!allow_empty_header || !pipe.header->empty())
-            if (pipe.header != res.header)
-                assertCompatibleHeader(*pipe.header, *res.header, "Pipe::unitePipes");
+            assertCompatibleHeader(*pipe.header, *res.header, "Pipe::unitePipes");
 
         res.processors->insert(res.processors->end(), pipe.processors->begin(), pipe.processors->end());
         res.output_ports.insert(res.output_ports.end(), pipe.output_ports.begin(), pipe.output_ports.end());
@@ -354,11 +351,7 @@ void Pipe::addSource(ProcessorPtr source)
     if (output_ports.empty())
         header = source_header_ptr;
     else
-    {
-        if (header != source_header_ptr)
-            assertBlocksHaveEqualStructure(*header, *source_header_ptr, "Pipes");
-    }
-
+        assertBlocksHaveEqualStructure(*header, *source_header_ptr, "Pipes");
 
     if (collected_processors)
         collected_processors->emplace_back(source);
@@ -380,8 +373,7 @@ void Pipe::addTotalsSource(ProcessorPtr source)
     checkSource(*source);
     const auto & source_header = output_ports.front()->getSharedHeader();
 
-    if (header != source_header)
-        assertBlocksHaveEqualStructure(*header, *source_header, "Pipes");
+    assertBlocksHaveEqualStructure(*header, *source_header, "Pipes");
 
     if (collected_processors)
         collected_processors->emplace_back(source);
@@ -401,8 +393,7 @@ void Pipe::addExtremesSource(ProcessorPtr source)
     checkSource(*source);
     const auto & source_header = output_ports.front()->getSharedHeader();
 
-    if (header != source_header)
-        assertBlocksHaveEqualStructure(*header, *source_header, "Pipes");
+    assertBlocksHaveEqualStructure(*header, *source_header, "Pipes");
 
     if (collected_processors)
         collected_processors->emplace_back(source);
@@ -569,14 +560,13 @@ void Pipe::addTransform(
 
     header = output_ports.front()->getSharedHeader();
     for (size_t i = 1; i < output_ports.size(); ++i)
-        if (header != output_ports[i]->getSharedHeader())
-            assertBlocksHaveEqualStructure(*header, output_ports[i]->getHeader(), "Pipes");
+        assertBlocksHaveEqualStructure(*header, output_ports[i]->getHeader(), "Pipes");
 
     // Temporarily skip this check. TotalsHavingTransform may return finalized totals but not finalized data.
     // if (totals_port)
-    //     assertBlocksHaveEqualStructure(header, totals_port->getHeader(), "Pipes");
+    //     assertBlocksHaveEqualStructure(*header, totals_port->getHeader(), "Pipes");
 
-    if (extremes_port && header != extremes_port->getSharedHeader())
+    if (extremes_port)
         assertBlocksHaveEqualStructure(*header, extremes_port->getHeader(), "Pipes");
 
     if (collected_processors)
@@ -620,7 +610,7 @@ void Pipe::addSimpleTransform(const ProcessorGetterSharedHeaderWithStreamKind & 
 
         const auto & out_header = transform ? transform->getOutputs().front().getSharedHeader() : port->getSharedHeader();
 
-        if (new_header && new_header != out_header)
+        if (new_header)
             assertBlocksHaveEqualStructure(*new_header, *out_header, "QueryPipeline");
         else
             new_header = out_header;
@@ -674,8 +664,7 @@ void Pipe::addChains(std::vector<Chain> chains)
             new_header = chains[i].getOutputSharedHeader();
         else
         {
-            if (new_header != chains[i].getOutputSharedHeader())
-                assertBlocksHaveEqualStructure(*new_header, chains[i].getOutputHeader(), "QueryPipeline");
+            assertBlocksHaveEqualStructure(*new_header, chains[i].getOutputHeader(), "QueryPipeline");
         }
 
         connect(*output_ports[i], chains[i].getInputPort());
@@ -754,11 +743,7 @@ void Pipe::addSplitResizeTransform(size_t num_streams, size_t min_outstreams_per
 
     header = output_ports.front()->getSharedHeader();
     for (size_t i = 1; i < output_ports.size(); ++i)
-    {
-        if (header != output_ports[i]->getSharedHeader())
-            assertBlocksHaveEqualStructure(*header, output_ports[i]->getHeader(), "Pipes");
-    }
-
+        assertBlocksHaveEqualStructure(*header, output_ports[i]->getHeader(), "Pipes");
 
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
 }
@@ -926,13 +911,12 @@ void Pipe::transform(const Transformer & transformer, bool check_ports)
 
     header = output_ports.front()->getSharedHeader();
     for (size_t i = 1; i < output_ports.size(); ++i)
-        if (header != output_ports[i]->getSharedHeader())
-            assertBlocksHaveEqualStructure(*header, output_ports[i]->getHeader(), "Pipe");
+        assertBlocksHaveEqualStructure(*header, output_ports[i]->getHeader(), "Pipe");
 
-    if (totals_port && header != totals_port->getSharedHeader())
+    if (totals_port)
         assertBlocksHaveEqualStructure(*header, totals_port->getHeader(), "Pipes");
 
-    if (extremes_port && header != extremes_port->getSharedHeader())
+    if (extremes_port)
         assertBlocksHaveEqualStructure(*header, extremes_port->getHeader(), "Pipes");
 
     if (collected_processors)

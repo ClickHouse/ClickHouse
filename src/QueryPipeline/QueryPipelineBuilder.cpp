@@ -179,8 +179,7 @@ void QueryPipelineBuilder::addDelayedStream(ProcessorPtr source)
     checkInitializedAndNotCompleted();
 
     checkSource(source, false);
-    if (getSharedHeader() != source->getOutputs().front().getSharedHeader())
-        assertBlocksHaveEqualStructure(getHeader(), source->getOutputs().front().getHeader(), "QueryPipeline");
+    assertBlocksHaveEqualStructure(getHeader(), source->getOutputs().front().getHeader(), "QueryPipeline");
 
     IProcessor::PortNumbers delayed_streams = { pipe.numOutputPorts() };
     pipe.addSource(std::move(source));

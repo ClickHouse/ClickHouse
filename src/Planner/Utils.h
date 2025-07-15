@@ -26,9 +26,6 @@
 namespace DB
 {
 
-using SharedHeader = SharedHeader;
-using SharedHeaders = std::vector<SharedHeader>;
-
 /// Dump query plan
 String dumpQueryPlan(const QueryPlan & query_plan);
 

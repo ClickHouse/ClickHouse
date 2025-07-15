@@ -123,6 +123,10 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
 template <typename ReturnType>
 static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, std::string_view context_description, bool allow_materialize)
 {
+    /// It's common to have common SharedHeaders in the pipeline
+    if (&lhs == &rhs)
+        return ReturnType(true);
+
     size_t columns = rhs.columns();
     if (lhs.columns() != columns)
         return onError<ReturnType>(ErrorCodes::LOGICAL_ERROR, "Block structure mismatch in {} stream: different number of columns:\n{}\n{}",

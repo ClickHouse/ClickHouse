@@ -1336,7 +1336,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
         auto expected_header = planner.getQueryPlan().getCurrentHeader();
 
-        if (query_plan.getCurrentHeader() != expected_header && !blocksHaveEqualStructure(*query_plan.getCurrentHeader(), *expected_header))
+        if (!blocksHaveEqualStructure(*query_plan.getCurrentHeader(), *expected_header))
         {
             auto expected_block = *expected_header;
             materializeBlockInplace(expected_block);

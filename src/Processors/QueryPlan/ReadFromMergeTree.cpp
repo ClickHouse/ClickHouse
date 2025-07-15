@@ -2497,7 +2497,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     /// Some extra columns could be added by sample/final/in-order/etc
     /// Remove them from header if not needed.
-    if (pipe.getSharedHeader() != getOutputHeader() && !blocksHaveEqualStructure(pipe.getHeader(), *getOutputHeader()))
+    if (!blocksHaveEqualStructure(pipe.getHeader(), *getOutputHeader()))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             pipe.getHeader().getColumnsWithTypeAndName(),

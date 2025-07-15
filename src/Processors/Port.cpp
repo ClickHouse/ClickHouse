@@ -19,8 +19,7 @@ void connect(OutputPort & output, InputPort & input, bool reconnect)
     auto out_name = output.processor ? output.getProcessor().getName() : "null";
     auto in_name = input.processor ? input.getProcessor().getName() : "null";
 
-    if (output.getSharedHeader() != input.getSharedHeader())
-        assertCompatibleHeader(output.getHeader(), input.getHeader(), fmt::format("function connect between {} and {}", out_name, in_name));
+    assertCompatibleHeader(output.getHeader(), input.getHeader(), fmt::format("function connect between {} and {}", out_name, in_name));
 
     input.output_port = &output;
     output.input_port = &input;

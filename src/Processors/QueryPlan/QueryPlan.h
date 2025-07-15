@@ -13,8 +13,6 @@
 namespace DB
 {
 
-using SharedHeader = SharedHeader;
-
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 

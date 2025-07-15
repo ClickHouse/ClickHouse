@@ -283,7 +283,7 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
         return Status::NeedData;
     }
 
-    assert(!is_consume_finished);
+    chassert(!is_consume_finished);
     current_chunk = input.pull(true /* set_not_needed */);
     convertToFullIfSparse(current_chunk);
     return Status::Ready;
@@ -343,7 +343,7 @@ void AggregatingInOrderTransform::generate()
 FinalizeAggregatedTransform::FinalizeAggregatedTransform(SharedHeader header, const AggregatingTransformParamsPtr & params_)
     : ISimpleTransform({std::move(header)}, {std::make_shared<const Block>(params_->getHeader())}, true)
     , params(params_)
-    , aggregates_mask(getAggregatesMask(getOutputPort().getHeader(), params->params.aggregates))
+    , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
 {
 }
 

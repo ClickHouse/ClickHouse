@@ -23,9 +23,6 @@ using QueryPlanRawPtrs = std::list<QueryPlan *>;
 
 struct QueryPlanSerializationSettings;
 
-using SharedHeader = SharedHeader;
-using SharedHeaders = std::vector<SharedHeader>;
-
 struct ExplainPlanOptions;
 
 class IQueryPlanStep;

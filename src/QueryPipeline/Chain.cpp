@@ -168,7 +168,6 @@ const SharedHeader & Chain::getOutputSharedHeader() const
     return getOutputPort().getSharedHeader();
 }
 
-
 void Chain::reset()
 {
     Chain to_remove = std::move(*this);
