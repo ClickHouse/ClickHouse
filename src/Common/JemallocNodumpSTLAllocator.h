@@ -82,6 +82,7 @@ using NoDumpCharAllocator =
     ;
 
 /// Use for any sensitive data that needs to be excluded from core dumps.
+/// WARNING: Cannot be used for short strings due to Small String Optimization (SSO).
 using NoDumpString = std::basic_string<
     char,
     std::char_traits<char>,

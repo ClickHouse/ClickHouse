@@ -88,7 +88,6 @@ if (TARGET ch_contrib::aws_s3)
 endif()
 if (TARGET ch_contrib::google_cloud_cpp)
     set(USE_GOOGLE_CLOUD 1)
-    set(USE_AWS_MEMORY_MANAGEMENT 1)
 endif()
 if (TARGET ch_contrib::mariadbclient) # ch::mysqlxx
     set(USE_MYSQL 1)

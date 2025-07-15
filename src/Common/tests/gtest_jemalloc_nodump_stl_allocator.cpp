@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 #include <vector>
 #include <string>
+#include <fstream>
 
 #include <Common/JemallocNodumpSTLAllocator.h>
 
@@ -90,4 +91,42 @@ TEST(JemallocNodumpSTLAllocatorTest, EqualityOperators)
     EXPECT_TRUE(alloc1 == alloc3);
     EXPECT_FALSE(alloc1 != alloc3);
 }
+
+TEST(JemallocNodumpSTLAllocatorTest, NoDumpString)
+{
+    const NoDumpString s = "this is a very long string that should never be optimized by the short string optimization";
+    const uintptr_t target = reinterpret_cast<uintptr_t>(s.data());
+
+    std::ifstream smaps("/proc/self/smaps");
+    ASSERT_TRUE(smaps.is_open());
+    std::string line;
+    while (std::getline(smaps, line))
+    {
+        if (line.find('-') != std::string::npos)
+        {
+            uintptr_t start;
+            uintptr_t end;
+            char dash;
+            if (std::istringstream iss(line); iss >> std::hex >> start >> dash >> end && target >= start && target < end)
+            {
+                while (std::getline(smaps, line))
+                {
+                    if (line.find("VmFlags:") == 0)
+                    {
+                        EXPECT_TRUE(line.find("dd") != std::string::npos)
+                            << "Memory at " << s.data() << " does not have MADV_DONTDUMP flag";
+                        return;
+                    }
+                    if (line.find('-') != std::string::npos)
+                    {
+                        FAIL() << "VmFlags not found for segment containing " << s.data();
+                    }
+                }
+                FAIL() << "VmFlags not found for segment containing " << s.data();
+            }
+        }
+    }
+    FAIL() << "Address " << s.data() << " not found in /proc/self/smaps";
+}
+
 #endif
