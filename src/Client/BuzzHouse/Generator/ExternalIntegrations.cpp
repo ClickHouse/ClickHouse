@@ -75,7 +75,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
         {
             SetValue & sv = const_cast<SetValue &>(i == 0 ? svs.set_value() : svs.other_values(i - 1));
 
-            if (allSettings.find(sv.property()) != allSettings.end())
+            if (allSettings.contains(sv.property()))
             {
                 const CHSetting & chs = allSettings.at(sv.property());
 
@@ -182,7 +182,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
                         {
                             SetValue & sv = const_cast<SetValue &>(j == 0 ? svs.set_value() : svs.other_values(j - 1));
 
-                            if (allSettings.find(sv.property()) != allSettings.end())
+                            if (allSettings.contains(sv.property()))
                             {
                                 const CHSetting & chs = allSettings.at(sv.property());
 
@@ -1187,7 +1187,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else
     {
-        chassert(0);
+        chassert(false);
     }
 }
 
@@ -1333,7 +1333,7 @@ void MongoDBIntegration::documentAppendAnyValue(
     }
     else
     {
-        chassert(0);
+        chassert(false);
     }
 }
 
@@ -1700,7 +1700,7 @@ void ExternalIntegrations::createPeerTable(
             next_calls_succeeded.emplace_back(sqlite->performCreatePeerTable(rg, false, t, ct, entries));
             break;
         case PeerTableDatabase::None:
-            chassert(0);
+            chassert(false);
             break;
     }
 }
@@ -1718,7 +1718,7 @@ bool ExternalIntegrations::truncatePeerTableOnRemote(const SQLTable & t)
         case PeerTableDatabase::SQLite:
             return sqlite->truncatePeerTableOnRemote(t);
         case PeerTableDatabase::None:
-            chassert(0);
+            chassert(false);
             return false;
     }
 }
@@ -1769,7 +1769,7 @@ void ExternalIntegrations::setBackupDetails(const IntegrationCall dc, const Stri
             azurite->setBackupDetails(filename, br);
             break;
         default:
-            chassert(0);
+            chassert(false);
             break;
     }
 }

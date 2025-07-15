@@ -685,7 +685,7 @@ bool QueryOracle::findTablesWithPeersAndReplace(
             {
                 const uint32_t tname = static_cast<uint32_t>(std::stoul(est.table().table().substr(1)));
 
-                if (gen.tables.find(tname) != gen.tables.end())
+                if (gen.tables.contains(tname))
                 {
                     const SQLTable & t = gen.tables.at(tname);
 
@@ -826,8 +826,7 @@ void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalInte
     {
         if (first_errcode != errcode
             && ((first_errcode && errcode)
-                || fc.oracle_ignore_error_codes.find(static_cast<uint32_t>(first_errcode ? first_errcode : errcode))
-                    == fc.oracle_ignore_error_codes.end()))
+                || !fc.oracle_ignore_error_codes.contains(static_cast<uint32_t>(first_errcode ? first_errcode : errcode))))
         {
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "{}: failed with different success results", oracle_name);
         }

@@ -661,7 +661,7 @@ void StatementGenerator::colRefOrExpression(
     }
     else
     {
-        chassert(0);
+        chassert(false);
     }
 }
 
@@ -779,7 +779,7 @@ String StatementGenerator::setMergeTableParameter(RandomGenerator & rg, const St
     }
     else
     {
-        chassert(0);
+        chassert(false);
     }
     if (noption < 7)
     {
@@ -981,7 +981,7 @@ void StatementGenerator::generateEngineDetails(
                 tep->set_join_const(JoinConst::J_ALL);
                 break;
             default:
-                chassert(0);
+                chassert(false);
                 break;
         }
         te->add_params()->set_join_op(jt);
@@ -1024,7 +1024,7 @@ void StatementGenerator::generateEngineDetails(
         }
         else
         {
-            chassert(0);
+            chassert(false);
         }
         /// num_layers
         te->add_params()->set_num(static_cast<int32_t>(rg.nextRandomUInt32() % 101));
@@ -1082,7 +1082,7 @@ void StatementGenerator::generateEngineDetails(
         }
         else
         {
-            chassert(0);
+            chassert(false);
         }
         connections.createExternalDatabaseTable(rg, next, b, entries, te);
     }
@@ -1162,7 +1162,7 @@ void StatementGenerator::generateEngineDetails(
         }
         else
         {
-            chassert(0);
+            chassert(false);
         }
 
         if (rg.nextBool())
@@ -2207,7 +2207,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     }
     else
     {
-        chassert(0);
+        chassert(false);
     }
 
     /// Set columns

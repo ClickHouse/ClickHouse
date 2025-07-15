@@ -1257,7 +1257,7 @@ std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerato
         case 12:
             return std::make_tuple(new IntType(256, false), Integers::Int256);
         default:
-            chassert(0);
+            chassert(false);
     }
     return std::make_tuple(new IntType(32, false), Integers::Int32);
 }
@@ -1680,7 +1680,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
     }
     else
     {
-        chassert(0);
+        chassert(false);
     }
     return res;
 }
@@ -1836,7 +1836,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
     }
     else
     {
-        chassert(0);
+        chassert(false);
     }
     return nullptr;
 }
@@ -1868,7 +1868,7 @@ String appendDecimal(RandomGenerator & rg, const bool use_func, const uint32_t l
         }
         else
         {
-            chassert(0);
+            chassert(false);
         }
         ret += "('";
     }
@@ -2031,7 +2031,7 @@ String strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidt
                     ret += strBuildJSONElement(rg);
                     break;
                 default:
-                    chassert(0);
+                    chassert(false);
             }
         }
         else
@@ -2129,7 +2129,7 @@ String strBuildJSONElement(RandomGenerator & rg)
             ret = '"' + rg.nextIPv6() + '"';
             break;
         default:
-            chassert(0);
+            chassert(false);
     }
     return ret;
 }
@@ -2169,7 +2169,7 @@ String strBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth)
                     ret += strBuildJSONElement(rg);
                     break;
                 default:
-                    chassert(0);
+                    chassert(false);
             }
         }
     }

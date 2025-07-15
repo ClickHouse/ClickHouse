@@ -8,6 +8,7 @@
 #include <memory>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <utility>
 #include <vector>
 #include <zstd.h>
 
@@ -500,7 +501,7 @@ const char * get_param(int argc, char * const argv[], const char * name)
         if (nullptr == eq)
             eq = arg + arg_len;
 
-        if (name_len != static_cast<size_t>(eq - arg - 2))
+        if (std::cmp_not_equal(name_len, eq - arg - 2)
             continue;
 
         if (0 == memcmp(name, arg + 2, name_len))

@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <utility>
 #include <vector>
 
 #if defined(OS_DARWIN) && defined(__GNUC__)
@@ -377,7 +378,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
         ssize_t n = readlink("/proc/self/exe", exe, buf_sz - 1);
         if (n > 0)
             exe[n] = '\0';
-        return n > 0 && n < static_cast<ssize_t>(buf_sz);
+        return n > 0 && std::cmp_less(n, buf_sz);
     }
 
 #endif
