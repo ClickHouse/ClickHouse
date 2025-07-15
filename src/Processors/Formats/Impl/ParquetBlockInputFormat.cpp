@@ -644,7 +644,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         for (int i = 0; i < group_node->field_count(); ++i)
             parquet_field_ids[group_node->field(i)->field_id()] = group_node->field(i)->name();
 
-        parser_group->column_mapper->setFormatEncoding(std::move(parquet_field_ids));        
+        parser_group->column_mapper->setFormatEncoding(std::move(parquet_field_ids));
         auto column_mapping = parser_group->column_mapper->makeMapping();
         clickhouse_to_parquet_names = std::move(column_mapping);
     }
