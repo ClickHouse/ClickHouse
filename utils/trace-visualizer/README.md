@@ -10,6 +10,11 @@ Single page version is available at https://trace-visualizer.clickhouse.com.
 First of all [opentelemetry_span_log](https://clickhouse.com/docs/operations/opentelemetry/) system table must be enabled to save query traces. Then run a query you want to trace with a setting:
 ```sql
 SET opentelemetry_start_trace_probability=1, opentelemetry_trace_processors=1;
+```
+After this is run, the `opentelemetry_span_log` table will be created as traces will be logged there.
+
+Run a simple query:
+```sql
 SELECT 1;
 ```
 
@@ -21,7 +26,7 @@ The script should create a `query_trace_your-query-id.json` file that can be imp
 
 To find out `trace_id` of a query run the following command:
 ```sql
-SELECT DISTINCT trace_id FROM system.opentelemetry_span_log WHERE attribute['clickhouse.query_id'] = 'your-query-id';
+SELECT DISTINCT trace_id FROM system.opentelemetry_span_log WHERE attribute['clickhouse.query_id'] = 'your-query-id' ORDER BY start_time_us DESC;;
 ```
 
 ## Collect traces in local/development environment
