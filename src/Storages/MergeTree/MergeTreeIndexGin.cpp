@@ -335,7 +335,8 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
         else if (element.function == RPNElement::FUNCTION_EQUALS_INDEX)
         {
             // TODO: JAM This is totally arbitrary at the moment. needs polishing
-			rpn_stack.emplace_back(granule->gin_filter.contains(*element.gin_filter, cache_store), true);
+            // rpn_stack.emplace_back(true, true);
+            rpn_stack.emplace_back(granule->gin_filter.contains(*element.gin_filter, cache_store), true);
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in GinFilterCondition::RPNElement");
@@ -345,17 +346,6 @@ bool MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in GinFilterCondition::mayBeTrueOnGranule");
 
     return rpn_stack[0].can_be_true;
-}
-
-std::vector<uint32_t> MergeTreeIndexConditionGin::getVectorInGranule(
-	MergeTreeIndexGranuleGinPtr granule_gin,
-	PostingsCacheForStore & cache_store
-) const {
-
-	chassert(rpn.size() == 1);
-	const RPNElement &element = rpn.front();
-
-	return granule_gin->gin_filter.getIndices(element.gin_filter.get(), cache_store);
 }
 
 bool MergeTreeIndexConditionGin::traverseAtomAST(const RPNBuilderTreeNode & node, RPNElement & out)
@@ -750,6 +740,23 @@ bool MergeTreeIndexConditionGin::tryPrepareSetGinFilter(
     out.set_gin_filters = std::move(gin_filters);
 
     return true;
+}
+
+std::shared_ptr<const GinFilter> MergeTreeIndexConditionGin::getGinFilter(const std::string &token) const
+{
+    const auto it = std::find_if(rpn.begin(), rpn.end(),
+        [&token](const RPNElement &element) -> bool
+        {
+            // TODO: JAM This condition should check also the `index` argument
+            return (element.function == RPNElement::FUNCTION_EQUALS_INDEX
+                    && element.gin_filter != nullptr
+                    && element.gin_filter->getQueryString() == token);
+        });
+
+    if (it == rpn.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find condition for token: {}", token);
+
+    return it->gin_filter;
 }
 
 MergeTreeIndexGin::MergeTreeIndexGin(

@@ -228,51 +228,46 @@ std::vector<uint32_t> GinFilter::getIndices(const GinFilter *filter, PostingsCac
 
     const GinPostingsCachePtr postings_cache = cache_store.getPostings(*filter);
 
-	GinIndexPostingsList range_bitset;
+    GinIndexPostingsList range_bitset;
 
-	// std::println(" Ranges: {}  entries: {}", rowid_ranges.size(), postings_cache->size());
-	for (const GinSegmentWithRowIdRange &range : rowid_ranges)
-	{
+    for (const GinSegmentWithRowIdRange &range : rowid_ranges)
+    {
+        range_bitset.addRange(range.range_start, range.range_end + 1);
 
-        // std::println("  Range: {} - {}", range.range_start, range.range_end);
+        for (const auto & term_postings : *postings_cache)
+        {
+            /// Check if it is in the same segment by searching for segment_id
+            const GinSegmentedPostingsListContainer & container = term_postings.second;
+            auto container_it = container.find(range.segment_id);
 
-		//std::println("  GinRange: {} [{}-{}]", range.segment_id, range.range_start, range.range_end);
-		range_bitset.addRange(range.range_start, range.range_end);
+            if (container_it == container.cend()) {
+                range_bitset.removeRange(range.range_start, range.range_end);
+                break;
+            }
 
-		for (const auto & term_postings : *postings_cache)
-		{
-			/// Check if it is in the same segment by searching for segment_id
-			const GinSegmentedPostingsListContainer & container = term_postings.second;
-			auto container_it = container.find(range.segment_id);
+            if (hasAlwaysMatchFlag(*container_it->second))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "The gin range [{}:{}] has an all match flag.", range.range_start, range.range_end);
 
-			if (container_it == container.cend()) {
-				range_bitset.removeRange(range.range_start, range.range_end);
-				break;
-			}
+            auto min_in_container = container_it->second->minimum();
+            auto max_in_container = container_it->second->maximum();
 
-			if (hasAlwaysMatchFlag(*container_it->second))
-			    throw Exception(ErrorCodes::LOGICAL_ERROR, "The gin range [{}:{}] has an all match flag.", range.range_start, range.range_end);
+            if (range.range_start > max_in_container || min_in_container > range.range_end)
+            {
+                range_bitset.removeRange(range.range_start, range.range_end);
+                break;
+            }
 
-			auto min_in_container = container_it->second->minimum();
-			auto max_in_container = container_it->second->maximum();
+            range_bitset &= *container_it->second;
+        }
+    }
 
-			if (range.range_start > max_in_container || min_in_container > range.range_end)
-			{
-				range_bitset.removeRange(range.range_start, range.range_end);
-				break;
-			}
+    const size_t cardinality = range_bitset.cardinality();
+    std::vector<uint32_t> indices;
+    indices.resize(cardinality);
 
-			range_bitset &= *container_it->second;
-		}
-	}
+    range_bitset.toUint32Array(indices.data());
 
-	const size_t cardinality = range_bitset.cardinality();
-	std::vector<uint32_t> indices;
-	indices.resize(cardinality);
-
-	range_bitset.toUint32Array(indices.data());
-
-	return indices;
+    return indices;
 }
 
 }

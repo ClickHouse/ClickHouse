@@ -25,6 +25,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGin.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/SelectQueryInfo.h>
+#include <iterator>
 #include <print>
 
 namespace DB
@@ -141,7 +142,6 @@ public:
         chassert(part_offset_argument.column->size() == input_rows_count);
 
         auto col_res = ColumnVector<ResultType>::create(input_rows_count, ResultType());
-        //PaddedPODArray<ResultType> &vec_res = col_res->getData();
 
         /// This is a not totally save method to ensure that this works.
         /// Apparently when input_rows_count == 0 the indexes are not constructed yet.
@@ -162,6 +162,7 @@ public:
 
         // Find index and condition iterator
         const auto [index_helper, gin_filter_condition] = extractIndexAndCondition(skip_indexes, index_name);
+        const std::shared_ptr<const GinFilter> filter = gin_filter_condition->getGinFilter(token);
 
         const size_t index_granularity = index_helper->index.granularity;
 
@@ -180,17 +181,34 @@ public:
         // std::println("Called HasTokenIndex({}, {}, [{}], [{} -> {}]) diff: {} input_rows: {}",
         //     index_name, token, part_idx, first_row, last_row, last_row - first_row, input_rows_count);
 
+        // Check that we have the right boundary marks
         chassert(first_row == part->index_granularity->getMarkStartingRow(first_mark));
         chassert(last_row + 1 == part->index_granularity->getMarkStartingRow(last_mark) + part->index_granularity->getMarkRows(last_mark));
+        const MarkRange full_input_range(first_mark, last_mark);
+
+        // for (const auto & range : part_ranges.ranges)
+        // {
+        //     MarkRange index_range(
+        //         range.begin / index_granularity,
+        //         (range.end + index_granularity - 1) / index_granularity);
+        //     index_ranges.push_back(index_range);
+        // }
 
         MarkRanges index_ranges;
         for (const auto & range : part_ranges.ranges)
         {
+            if (range.end < full_input_range.begin)
+                continue;
+
+            if (full_input_range.end < range.begin) /// The range is on the right.
+                break;
+
             MarkRange index_range(
                 range.begin / index_granularity,
                 (range.end + index_granularity - 1) / index_granularity);
             index_ranges.push_back(index_range);
         }
+
 
         PostingsCacheForStore cache_in_store(index_helper->getFileName(), part->getDataPartStoragePtr());
 
@@ -212,61 +230,84 @@ public:
 
         auto & vec_res = col_res->getData();
 
-        size_t next_idx = 0;
-        size_t next_offset = first_row;
+        size_t idx = 0;
+        size_t offset = col_part_offset_vector->getElement(idx);
 
-        for (size_t i = 0; i < index_ranges.size(); ++i)
+        for (const MarkRange& irange : index_ranges)
         {
-            const MarkRange& irange = index_ranges[i];
-            //std::println("     range: {} [{} - {}]", i, irange.begin, irange.end);
-
             for (size_t index_mark = irange.begin; index_mark < irange.end; ++index_mark)
             {
                 if (index_mark < first_mark)
                     continue;
-
                 if (index_mark > last_mark)
                     break;
 
-                auto granule_start = part->index_granularity->getMarkStartingRow(index_mark);
-                auto granule_size = part->index_granularity->getMarkRows(index_mark);
+                const size_t mark_start = part->index_granularity->getMarkStartingRow(index_mark);
+                const size_t mark_size = part->index_granularity->getMarkRows(index_mark);
+                const size_t mark_end = mark_start + mark_size;
 
-                if (granule_start != next_offset)
+                chassert(mark_size > 0); /// yes let's be paranoiac.
+
+                /// This mark FULLY overlaps with a hole in the offsets?
+                if (mark_end < offset)
                     continue;
 
                 if (index_mark != irange.begin || !granule || last_index_mark != irange.begin)
                     reader.read(index_mark, granule);
 
-                MergeTreeIndexGranuleGinPtr granule_gin = std::dynamic_pointer_cast<MergeTreeIndexGranuleGin>(granule);
+                const MergeTreeIndexGranuleGinPtr granule_gin = std::dynamic_pointer_cast<MergeTreeIndexGranuleGin>(granule);
                 if (!granule_gin)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "GinFilter index condition got a granule with the wrong type.");
 
-                const std::vector<uint32_t> indices = gin_filter_condition->getVectorInGranule(granule_gin, cache_in_store);
+                const std::vector<uint32_t> matching_rows = granule_gin->gin_filter.getIndices(filter.get(), cache_in_store);
 
-                for (uint32_t global_idx : indices)
+                /// col_part_offset_vector may have some "holes" but will be always strictly increasing, so in the worst case the distance
+                /// to the next mark start will be smaller or equal to mark_size.
+                /// If we detect a performance issue here, then we could use bisection as the array is sorted and the boundaries are
+                /// known.
+                size_t next_idx = idx;
+                while(next_idx < input_rows_count && col_part_offset_vector->getElement(next_idx) < mark_end)
+                    ++next_idx;
+
+                /// Extra boundary check.
+                chassert(col_part_offset_vector->getElement(next_idx - 1) >= (matching_rows.back() - 1));
+
+                for (uint32_t row : matching_rows)
                 {
-                    const uint32_t granule_idx = global_idx - 1 - granule_start;
-                    chassert(granule_idx < granule_size);
+                    const size_t match_offset = row - 1;
 
-                    const uint32_t array_local_idx = granule_idx + next_idx;
-                    chassert(array_local_idx < input_rows_count);
-                    chassert(vec_res[array_local_idx] == 0);
-                    chassert(col_part_offset_vector->getElement(array_local_idx) == global_idx - 1);
-                    vec_res[array_local_idx] = 1;
-                    //++counter;
+                    /// This is the same than an std::lower_bound, but simpler (and faster ;)
+                    size_t lower_bound_offset = col_part_offset_vector->getElement(idx);
+                    while (idx < next_idx && lower_bound_offset < match_offset)
+                        lower_bound_offset = col_part_offset_vector->getElement(++idx);
+
+                    if (idx == next_idx)
+                        break;
+
+                    chassert(lower_bound_offset >= match_offset);
+
+                    if (lower_bound_offset == match_offset)
+                    {
+                        chassert(vec_res[idx] == 0);
+                        vec_res[idx] = 1;
+                    }
+                    /// if (lower_bound_offset > match_offset) continue; /// there is a hole... just continue
                 }
 
-                // if (indices.size() > 0)
+                idx = next_idx;
+                offset = (next_idx < input_rows_count) ? col_part_offset_vector->getElement(next_idx) : 0;
+
+                // if (matching_rows.size() > 0)
                 // {
-                //     std::println(" Mark: {}:  [{} : {}] diff: {} tokens: {}",
+                //     std::println("  Mark: {}:  [{} : {}] diff: {} tokens: {}",
                 //         index_mark,
-                //         granule_start,
-                //         granule_start + granule_size,
-                //         granule_size,
-                //         indices.size()
+                //         mark_start,
+                //         mark_end,
+                //         mark_size,
+                //         matching_rows.size()
                 //     );
 
-                //     counter += indices.size();
+                //     //counter += indices.size();
                 // }
             }
 

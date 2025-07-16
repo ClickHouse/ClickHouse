@@ -71,7 +71,7 @@ public:
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
     bool mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule, PostingsCacheForStore & cache_store) const;
 
-	std::vector<uint32_t> getVectorInGranule(MergeTreeIndexGranuleGinPtr granule_gin, PostingsCacheForStore & cache_store) const;
+	std::shared_ptr<const GinFilter> getGinFilter(const std::string &token) const;
 
 private:
     struct KeyTuplePositionMapping
@@ -115,7 +115,7 @@ private:
         Function function = FUNCTION_UNKNOWN;
 
         /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS
-        std::unique_ptr<GinFilter> gin_filter;
+        std::shared_ptr<GinFilter> gin_filter;
 
         /// For FUNCTION_IN, FUNCTION_NOT_IN and FUNCTION_MULTI_SEARCH
         std::vector<GinFilters> set_gin_filters;
