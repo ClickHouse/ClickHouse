@@ -4,10 +4,20 @@
 #include <IO/WriteBufferDecorator.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Port.h>
+#include "Common/Logger.h"
+#include "Common/StackTrace.h"
+#include "Common/logger_useful.h"
+#include <Common/FailPoint.h>
+#include <base/sleep.h>
 
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char output_format_sleep_on_progress[];
+}
 
 IOutputFormat::IOutputFormat(SharedHeader header_, WriteBuffer & out_)
     : IProcessor({header_, header_, header_}, {}), out(out_)
@@ -114,6 +124,9 @@ void IOutputFormat::work()
     if (auto_flush)
         flushImpl();
 
+    if (auto_flush)
+        LOG_ERROR(getLogger("OutputFormat"), "flushImpl from work");
+
     has_input = false;
 }
 
@@ -134,6 +147,9 @@ void IOutputFormat::flush()
 
 void IOutputFormat::write(const Block & block)
 {
+    LOG_ERROR(getLogger("OutputFormat"),
+        "write from \n{}", StackTrace().toString());
+
     std::lock_guard lock(writing_mutex);
 
     if (has_progress_update_to_write)
@@ -147,6 +163,9 @@ void IOutputFormat::write(const Block & block)
 
     if (auto_flush)
         flushImpl();
+
+    if (auto_flush)
+        LOG_ERROR(getLogger("OutputFormat"), "flushImpl from write");
 }
 
 void IOutputFormat::finalizeUnlocked()
@@ -166,6 +185,9 @@ void IOutputFormat::finalizeUnlocked()
 
     if (auto_flush)
         flushImpl();
+
+    LOG_ERROR(getLogger("OutputFormat"),
+        "finalizeImpl from \n{}", StackTrace().toString());
 
     finalizeBuffers();
     finalized = true;
@@ -194,6 +216,11 @@ void IOutputFormat::setExtremes(const Block & extremes)
 
 void IOutputFormat::onProgress(const Progress & progress)
 {
+    fiu_do_on(FailPoints::output_format_sleep_on_progress, {
+        LOG_DEBUG(getLogger("OutputFormat"), "Sleeping for 1 second to simulate slow progress writing");
+        sleepForMilliseconds(1000);
+    });
+
     statistics.progress.incrementPiecewiseAtomically(progress);
     UInt64 elapsed_ns = statistics.watch.elapsedNanoseconds();
     statistics.progress.elapsed_ns = elapsed_ns;
@@ -205,9 +232,13 @@ void IOutputFormat::onProgress(const Progress & progress)
         if (elapsed_ns >= prev_progress_write_ns + 1000 * progress_write_frequency_us)
         {
             std::unique_lock lock(writing_mutex, std::try_to_lock);
+
+            LOG_ERROR(getLogger("OutputFormat"), "progress is locked: {}", bool(lock));
+
             if (lock)
             {
                 writeProgress(statistics.progress);
+                LOG_ERROR(getLogger("OutputFormat"), "flushImpl from progress");
                 flushImpl();
                 prev_progress_write_ns = elapsed_ns;
                 has_progress_update_to_write = false;
