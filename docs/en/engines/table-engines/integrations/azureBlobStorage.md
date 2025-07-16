@@ -108,7 +108,7 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 
 `WILDCARD` (default): Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Reading is not supported.
 
-`HIVE` implements hive style partitioning for reads & writes. Reading is implemented using a recursive globbed pattern. Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
+`HIVE` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern. Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
 Note: When using `HIVE` partition strategy, the `use_hive_partitioning` setting has no effect.
 
