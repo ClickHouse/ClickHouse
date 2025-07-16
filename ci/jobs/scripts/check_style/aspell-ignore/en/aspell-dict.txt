@@ -728,6 +728,8 @@ NumericIndexedVectors
 OAuth
 ODBCDriver
 OFNS
+OKLab
+OKLCH
 OLAP
 OLTP
 ORCCompression
@@ -953,7 +955,6 @@ ReplicatedSend
 ReplicatedSummingMergeTree
 ReplicatedVersionedCollapsingMergeTree
 Resample
-Rescoring
 RestartReplicaThreads
 RestartReplicaThreadsActive
 RestoreThreads
@@ -1533,6 +1534,7 @@ checksumming
 checksums
 childern
 chproxy
+chroma
 chunksize
 cickhouse
 cipherList
@@ -1561,6 +1563,8 @@ codepoint
 codepoints
 codespell
 collapsingmergetree
+colorOKLCHToSRGB
+colorSRGBToOKLCH
 combinator
 combinators
 compareSubstrings
@@ -2209,6 +2213,7 @@ libuv
 libvirt
 linearizability
 linearizable
+linearize
 linearized
 lineasstring
 linefeeds
@@ -2751,7 +2756,6 @@ representable
 requestor
 requireTLSv
 rerange
-rescoring
 resharding
 reshards
 resolvers
@@ -2797,6 +2801,7 @@ russian
 rustc
 rustup
 rw
+sRGB
 sasl
 satisfiable
 scala

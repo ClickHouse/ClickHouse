@@ -8,9 +8,11 @@ title: 'Analyzer'
 
 # Analyzer
 
+In ClickHouse version `24.3`, the new query analyzer was enabled by default.
+You can read more details about how it works [here](/guides/developer/understanding-query-execution-with-the-analyzer#analyzer).
+
 ## Known incompatibilities {#known-incompatibilities}
 
-In ClickHouse version `24.3`, the new query analyzer was enabled by default.
 Despite fixing a large number of bugs and introducing new optimizations, it also introduces some breaking changes in ClickHouse behaviour. Please read the following changes to determine how to rewrite your queries for the new analyzer.
 
 ### Invalid queries are no longer optimized {#invalid-queries-are-no-longer-optimized}
@@ -61,7 +63,7 @@ GROUP BY n
 ### `CREATE VIEW` with an invalid query {#create-view-with-invalid-query}
 
 The new analyzer always performs type-checking.
-Previously, it was possible to create a `VIEW` with an invalid `SELECT` query. 
+Previously, it was possible to create a `VIEW` with an invalid `SELECT` query.
 It would then fail during the first `SELECT` or `INSERT` (in the case of `MATERIALIZED VIEW`).
 
 It is no longer possible to create a `VIEW` in this way.
@@ -95,7 +97,7 @@ JOIN VALUES('b UInt64, s String', (1, 'one'), (2, 'two')) t2
 USING (b);
 ```
 
-With `analyzer_compatibility_join_using_top_level_identifier` set to `true`, the join condition is interpreted as `t1.a + 1 = t2.b`, matching the behavior of the earlier versions. 
+With `analyzer_compatibility_join_using_top_level_identifier` set to `true`, the join condition is interpreted as `t1.a + 1 = t2.b`, matching the behavior of the earlier versions.
 The result will be `2, 'two'`.
 When the setting is `false`, the join condition defaults to `t1.b = t2.b`, and the query will return `2, 'one'`.
 If `b` is not present in `t1`, the query will fail with an error.
@@ -117,15 +119,15 @@ SELECT * FROM t1
 FULL JOIN t2 USING (payload);
 ```
 
-In the new analyzer, the result of this query will include the `payload` column along with `id` from both tables. 
-In contrast, the previous analyzer would only include these `ALIAS` columns if specific settings (`asterisk_include_alias_columns` or `asterisk_include_materialized_columns`) were enabled, 
+In the new analyzer, the result of this query will include the `payload` column along with `id` from both tables.
+In contrast, the previous analyzer would only include these `ALIAS` columns if specific settings (`asterisk_include_alias_columns` or `asterisk_include_materialized_columns`) were enabled,
 and the columns might appear in a different order.
 
 To ensure consistent and expected results, especially when migrating old queries to the new analyzer, it is advisable to specify columns explicitly in the `SELECT` clause rather than using `*`.
 
 #### Handling of type modifiers for columns in the `USING` clause {#handling-of-type-modifiers-for-columns-in-using-clause}
 
-In the new version of the analyzer, the rules for determining the common supertype for columns specified in the `USING` clause have been standardized to produce more predictable outcomes, 
+In the new version of the analyzer, the rules for determining the common supertype for columns specified in the `USING` clause have been standardized to produce more predictable outcomes,
 especially when dealing with type modifiers like `LowCardinality` and `Nullable`.
 
 - `LowCardinality(T)` and `T`: When a column of type `LowCardinality(T)` is joined with a column of type `T`, the resulting common supertype will be `T`, effectively discarding the `LowCardinality` modifier.
@@ -134,7 +136,7 @@ especially when dealing with type modifiers like `LowCardinality` and `Nullable`
 For example:
 
 ```sql
-SELECT id, toTypeName(id) 
+SELECT id, toTypeName(id)
 FROM VALUES('id LowCardinality(String)', ('a')) AS t1
 FULL OUTER JOIN VALUES('id String', ('b')) AS t2
 USING (id);
