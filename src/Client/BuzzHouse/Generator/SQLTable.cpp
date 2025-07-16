@@ -1285,7 +1285,7 @@ void StatementGenerator::generateEngineDetails(
             SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
             sv->set_property("mode");
-            sv->set_value(fmt::format("'{}orderded'", rg.nextBool() ? "un" : ""));
+            sv->set_value(fmt::format("'{}ordered'", rg.nextBool() ? "un" : ""));
         }
         if (b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TShared
             && (!fc.storage_policies.empty() || !fc.keeper_disks.empty())
