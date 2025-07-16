@@ -2632,7 +2632,9 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
     StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr();
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
     MergeTreeReaderSettings settings;
+    settings.read_settings = getReadSettingsForMetadata();
     settings.can_read_part_without_marks = true;
+    settings.use_prefixes_deserialization_thread_pool = true;
 
     auto alter_conversions = std::make_shared<AlterConversions>();
     auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);

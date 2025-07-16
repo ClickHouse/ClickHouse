@@ -371,6 +371,17 @@ static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool
             sampling_column_type->getName());
 }
 
+static bool hasColumnsWithDynamicSubcolumns(const Block & block)
+{
+    for (const auto & column : block.getColumnsWithTypeAndName())
+    {
+        if (column.type->hasDynamicSubcolumns())
+            return true;
+    }
+
+    return false;
+}
+
 
 void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & relative_data_path_, bool attach, const std::string & date_column_name, bool need_create_directories)
 {
@@ -2327,7 +2338,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     resetSerializationHints(part_lock);
     are_columns_and_secondary_indices_sizes_calculated = false;
     if (!(*settings)[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
-        calculateColumnAndSecondaryIndexSizesIfNeeded();
+        calculateColumnAndSecondaryIndexSizesIfNeeded(&part_lock);
 
     PartLoadingTreeNodes unloaded_parts;
 
@@ -5836,18 +5847,44 @@ void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr
     part->removeVersionMetadata();
 }
 
-void MergeTreeData::calculateColumnAndSecondaryIndexSizesIfNeeded() const
+void MergeTreeData::calculateColumnAndSecondaryIndexSizesIfNeeded(DataPartsLock * lock) const
 {
-    std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
+    std::unique_lock columns_and_secondary_indices_sizes_lock(columns_and_secondary_indices_sizes_mutex);
     if (are_columns_and_secondary_indices_sizes_calculated)
         return;
 
     column_sizes.clear();
 
-    /// Take into account only committed parts
-    auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
-    for (const auto & part : committed_parts_range)
-        addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
+    /// If we already have data parts lock, just iterate over parts and calculate sizes.
+    if (lock)
+    {
+        /// Take into account only committed parts
+        auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
+        for (const auto & part : committed_parts_range)
+            addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
+    }
+    /// If we have columns with dynamic subcolumns like JSON, columns size calculation
+    /// can read a column sample from each part, it can be slow and we don't want to
+    /// do it under parts lock, so we create a copy of the data parts.
+    else if (hasColumnsWithDynamicSubcolumns(getInMemoryMetadataPtr()->getSampleBlock()))
+    {
+        DataParts data_parts;
+        {
+            auto parts_lock = lockParts();
+            data_parts = getDataParts({DataPartState::Active}, {DataPartKind::Regular});
+        }
+
+        for (const auto & part : data_parts)
+            addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
+    }
+    /// If there are no columns with dynamic subcolumns, lock parts, iterate over them and calculate sizes.
+    else
+    {
+        auto parts_lock = lockParts();
+        auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
+        for (const auto & part : committed_parts_range)
+            addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
+    }
 
     are_columns_and_secondary_indices_sizes_calculated = true;
 }

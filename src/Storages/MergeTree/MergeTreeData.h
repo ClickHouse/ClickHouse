@@ -991,7 +991,6 @@ public:
 
     size_t getColumnCompressedSize(const std::string & name) const
     {
-        auto lock = lockParts();
         calculateColumnAndSecondaryIndexSizesIfNeeded();
         const auto it = column_sizes.find(name);
         return it == std::end(column_sizes) ? 0 : it->second.data_compressed;
@@ -999,7 +998,6 @@ public:
 
     ColumnSizeByName getColumnSizes() const override
     {
-        auto lock = lockParts();
         calculateColumnAndSecondaryIndexSizesIfNeeded();
         return column_sizes;
     }
@@ -1010,7 +1008,6 @@ public:
 
     IndexSizeByName getSecondaryIndexSizes() const override
     {
-        auto lock = lockParts();
         calculateColumnAndSecondaryIndexSizesIfNeeded();
         return secondary_index_sizes;
     }
@@ -1529,7 +1526,7 @@ protected:
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 
     /// Calculates column and secondary indexes sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
-    void calculateColumnAndSecondaryIndexSizesIfNeeded() const;
+    void calculateColumnAndSecondaryIndexSizesIfNeeded(DataPartsLock * lock = nullptr) const;
 
     /// Adds or subtracts the contribution of the part to compressed column and secondary indexes sizes.
     void addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const;
