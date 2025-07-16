@@ -26,6 +26,7 @@ public:
         MutableColumns columns_,
         IColumn::Offsets offsets_,
         IColumn::Filter filter_,
+        ScatteredBlock::IndexesPtr && new_selector_,
         ScatteredBlock && block_,
         Properties properties_);
 
@@ -40,6 +41,7 @@ private:
     MutableColumns columns;
     const IColumn::Offsets offsets;
     const IColumn::Filter filter;
+    ScatteredBlock::IndexesPtr new_selector;
 
     size_t next_row = 0;
     size_t next_row_ref = 0;
