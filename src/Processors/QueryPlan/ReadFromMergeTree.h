@@ -255,6 +255,8 @@ public:
     void setVectorSearchParameters(std::optional<VectorSearchParameters> && vector_search_parameters_) { vector_search_parameters = vector_search_parameters_; }
     std::optional<VectorSearchParameters> getVectorSearchParameters() const { return vector_search_parameters; }
 
+    bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
+
 private:
     MergeTreeReaderSettings reader_settings;
 

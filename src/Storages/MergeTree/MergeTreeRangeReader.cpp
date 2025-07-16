@@ -1432,8 +1432,10 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 {
     result.checkInternalConsistency();
 
+    /// The vector index has returned the exact row offsets of the nearest neighbours. We use the saved Filter
+    /// to only output those rows from this reader to the next Sorting step.
     bool is_vector_search = merge_tree_reader->data_part_info_for_read->getReadHints().vector_search_results.has_value();
-    if (is_vector_search)
+    if (is_vector_search && (part_offsets_filter_for_vector_search.size() == result.num_rows))
         result.optimize(part_offsets_filter_for_vector_search, merge_tree_reader->canReadIncompleteGranules());
 
     if (!prewhere_info)

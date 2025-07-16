@@ -280,6 +280,11 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
     if (!vector_search_parameters.has_value())
         return false;
 
+    /// The optimization is only possible if the index-analyis and query execution
+    /// are both executed on the same node.
+    if (read_from_mergetree_step->isParallelReadingFromReplicas())
+        return false;
+
     /// Not 100% sure but other sort types are likely not what we want
     SortingStep::Type sorting_step_type = sorting_step->getType();
     if (sorting_step_type != SortingStep::Type::Full)
