@@ -10,7 +10,8 @@
 #include <Processors/Chunk.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
-#include "Interpreters/ActionsDAG.h"
+#include <Interpreters/ActionsDAG.h>
+#include <Functions/IFunction.h>
 
 namespace ProfileEvents
 {
