@@ -734,7 +734,7 @@ bool Client::buzzHouse()
                     qo.dumpOracleIntermediateSteps(rg, gen, tbl, strategy, test_content, intermediate_queries);
                     for (const auto & entry : intermediate_queries)
                     {
-                        /// Run each from the choosen strategy
+                        /// Run each from the chosen strategy
                         full_query2.resize(0);
                         BuzzHouse::SQLQueryToString(full_query2, entry);
                         fuzz_config->outf << full_query2 << std::endl;
