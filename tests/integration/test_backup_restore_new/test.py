@@ -2051,6 +2051,27 @@ def test_required_privileges_with_partial_revokes():
     )
 
 
+def test_rmv_no_definer():
+    backup_name = new_backup_name()
+    instance.query("CREATE USER u1")
+    instance.query("GRANT CURRENT GRANTS ON *.* TO u1")
+    instance.query("CREATE TABLE test.src (x UInt64) ENGINE = MergeTree ORDER BY x")
+    instance.query("CREATE TABLE test.tgt (x UInt64) ENGINE = MergeTree ORDER BY x")
+    instance.query("CREATE MATERIALIZED VIEW test.rmv REFRESH EVERY 6 HOUR TO test.tgt (id UInt64) DEFINER = u1 SQL SECURITY DEFINER AS SELECT * FROM test.src")
+
+    instance.query(f"BACKUP DATABASE test TO {backup_name}")
+    instance.query("DROP USER u1")
+    instance.query("DROP TABLE test.rmv")
+
+    instance.query(f"RESTORE ALL FROM {backup_name}")
+
+    assert (
+        instance.query(
+            "SELECT name FROM system.tables where database='test' AND name='rmv'"
+        )
+        == "rmv"
+    )
+
 # Test for the "clickhouse_backupview" utility.
 
 test_backupview_dir = os.path.abspath(
