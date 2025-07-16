@@ -139,6 +139,7 @@ HashJoin::HashJoin(
     , tmp_data(table_join_->getTempDataOnDisk())
     , right_sample_block(*right_sample_block_)
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
+    , max_joined_block_bytes(table_join->maxJoinedBlockBytes())
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
@@ -922,9 +923,17 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
 
     size_t rows_total = block.rows();
     size_t rows_added = 0;
+    size_t bytes_added = 0;
+
+    auto enough_data = [&]()
+    {
+        return (join.max_joined_block_rows && rows_added > join.max_joined_block_rows)
+            || (join.max_joined_block_bytes && bytes_added > join.max_joined_block_bytes);
+    };
+
     for (; left_row < rows_total; ++left_row)
     {
-        if (rows_added >= join.max_joined_block_rows)
+        if (enough_data())
             break;
 
         auto process_right_block = [&](const Columns & columns)
@@ -940,6 +949,14 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
                 const IColumn & column_right = *columns[col_num];
                 dst_columns[num_existing_columns + col_num]->insertRangeFrom(column_right, 0, rows_right);
             }
+
+            if (join.max_joined_block_bytes)
+            {
+                bytes_added = 0;
+                /// Using byteSize here instead of allocatedBytes because memory was already reserved.
+                for (const auto & dst : dst_columns)
+                    bytes_added += dst->byteSize();
+            }
         };
 
         if (!right_block_it.has_value())
@@ -947,7 +964,7 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
 
         for (; *right_block_it != join.data->columns.end(); ++*right_block_it)
         {
-            if (rows_added >= join.max_joined_block_rows)
+            if (enough_data())
                 break;
 
             const auto & scattered_columns = **right_block_it;
@@ -978,7 +995,7 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
 
             while (reader)
             {
-                if (rows_added >= join.max_joined_block_rows)
+                if (enough_data())
                     break;
 
                 auto block_right = reader.value()->read();
