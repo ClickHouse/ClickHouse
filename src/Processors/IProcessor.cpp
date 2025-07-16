@@ -7,6 +7,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 
+#include "Storages/ObjectStorage/StorageObjectStorageSource.h"
+
 
 namespace DB
 {
@@ -118,6 +120,36 @@ IProcessor::ProcessorDataStats IProcessor::getProcessorDataStats() const
     }
 
     return stats;
+}
+
+const OutputPorts & IProcessor::getOutputs() const
+{
+    auto thread_order_number = -1;
+    if (const auto * ptr = dynamic_cast<const StorageObjectStorageSource *>(this))
+    {
+        thread_order_number = ptr->thread_order_number;
+    }
+    LOG_DEBUG(
+        &Poco::Logger::get("IProcessor, getOutputs const"),
+        "thread_order_number: {}, stacktrace: {}",
+        thread_order_number,
+        StackTrace().toString());
+    return outputs;
+}
+
+OutputPorts & IProcessor::getOutputs()
+{
+    auto thread_order_number = -1;
+    if (auto * ptr = dynamic_cast<StorageObjectStorageSource *>(this))
+    {
+        thread_order_number = ptr->thread_order_number;
+    }
+    LOG_DEBUG(
+        &Poco::Logger::get("IProcessor, getOutputs mutable"),
+        "thread_order_number: {}, stacktrace: {}",
+        thread_order_number,
+        StackTrace().toString());
+    return outputs;
 }
 
 String IProcessor::debug() const

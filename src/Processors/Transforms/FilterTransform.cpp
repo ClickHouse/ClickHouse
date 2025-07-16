@@ -69,15 +69,16 @@ FilterTransform::FilterTransform(
     std::shared_ptr<std::atomic<size_t>> rows_filtered_,
     std::optional<std::pair<size_t, String>> condition_)
     : ISimpleTransform(
-            header_,
-            transformHeader(header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_),
-            true)
+          header_,
+          transformHeader(header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_),
+          true)
     , expression(std::move(expression_))
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
     , on_totals(on_totals_)
     , rows_filtered(rows_filtered_)
     , condition(condition_)
+    , random_uuid(getRandomUUID())
 {
     transformed_header = getInputPort().getHeader();
     if (expression)
@@ -90,6 +91,19 @@ FilterTransform::FilterTransform(
 
     if (condition.has_value())
         query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+
+    LOG_DEBUG(
+        &Poco::Logger::get("FilterTransform"),
+        "Created FilterTransform with filter column: {}, remove_filter_column: {}, on_totals: {}, condition: {}, random_uuid: {}, "
+        "constant_filter_description.always_false: {}, constant_filter_description.always_true: {}, stacktrace: {}",
+        filter_column_name,
+        remove_filter_column,
+        on_totals,
+        condition.has_value() ? condition->second : "none",
+        random_uuid,
+        constant_filter_description.always_false,
+        constant_filter_description.always_true,
+        StackTrace().toString());
 }
 
 IProcessor::Status FilterTransform::prepare()
@@ -101,10 +115,38 @@ IProcessor::Status FilterTransform::prepare()
             /// It is implemented in prepare() stop pipeline before reading from input port.
             || (!are_prepared_sets_initialized && expression && expression->checkColumnIsAlwaysFalse(filter_column_name))))
     {
+        LOG_DEBUG(
+            &Poco::Logger::get("FilterTransform, prepare"),
+            "FilterTransform triggered 1, column: {}, remove_filter_column: {}, on_totals: {}, condition: {}, random_uuid: {}, "
+            "constant_filter_description.always_false: {}, constant_filter_description.always_true: {}, are_prepared_sets_initialized: {}, "
+            "expression: {}, column_is_always_false: {}"
+            "stacktrace: {}",
+            filter_column_name,
+            remove_filter_column,
+            on_totals,
+            condition.has_value() ? condition->second : "none",
+            random_uuid,
+            constant_filter_description.always_false,
+            constant_filter_description.always_true,
+            are_prepared_sets_initialized,
+            expression != nullptr ? expression->dumpActions() : "no expression",
+            (expression != nullptr) ? (expression->checkColumnIsAlwaysFalse(filter_column_name) ? "true" : "false") : "irrelevant",
+            StackTrace().toString());
         input.close();
         output.finish();
         return Status::Finished;
     }
+
+    LOG_DEBUG(
+        &Poco::Logger::get("FilterTransform, prepare"),
+        "FilterTransform triggered 2, column: {}, remove_filter_column: {}, on_totals: {}, condition: {}, random_uuid: {}, "
+        "stacktrace: {}",
+        filter_column_name,
+        remove_filter_column,
+        on_totals,
+        condition.has_value() ? condition->second : "none",
+        random_uuid,
+        StackTrace().toString());
 
     auto status = ISimpleTransform::prepare();
 
@@ -172,6 +214,18 @@ void FilterTransform::doTransform(Chunk & chunk)
     {
         writeIntoQueryConditionCache(chunk.getChunkInfos().get<MarkRangesInfo>());
         incrementProfileEvents(0, {});
+        LOG_DEBUG(
+            &Poco::Logger::get("FilterTransform, doTransform, 1"),
+            "Updated FilterTransform with filter column: {}, remove_filter_column: {}, on_totals: {}, condition: {}, random_uuid: {}, "
+            "constant_filter_description.always_false: {}, constant_filter_description.always_true: {}, stacktrace: {}",
+            filter_column_name,
+            remove_filter_column,
+            on_totals,
+            condition.has_value() ? condition->second : "none",
+            random_uuid,
+            constant_filter_description.always_false,
+            constant_filter_description.always_true,
+            StackTrace().toString());
         return; /// Will finish at next prepare call
     }
 
@@ -222,6 +276,18 @@ void FilterTransform::doTransform(Chunk & chunk)
     {
         writeIntoQueryConditionCache(chunk.getChunkInfos().get<MarkRangesInfo>());
         /// SimpleTransform will skip it.
+        LOG_DEBUG(
+            &Poco::Logger::get("FilterTransform, doTransform, 2"),
+            "Updated FilterTransform with filter column: {}, remove_filter_column: {}, on_totals: {}, condition: {}, random_uuid: {}, "
+            "constant_filter_description.always_false: {}, constant_filter_description.always_true: {}, stacktrace: {}",
+            filter_column_name,
+            remove_filter_column,
+            on_totals,
+            condition.has_value() ? condition->second : "none",
+            random_uuid,
+            constant_filter_description.always_false,
+            constant_filter_description.always_true,
+            StackTrace().toString());
         return;
     }
 
@@ -231,6 +297,18 @@ void FilterTransform::doTransform(Chunk & chunk)
         /// No need to touch the rest of the columns.
         removeFilterIfNeed(columns);
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
+        LOG_DEBUG(
+            &Poco::Logger::get("FilterTransform, doTransform, 3"),
+            "Updated FilterTransform with filter column: {}, remove_filter_column: {}, on_totals: {}, condition: {}, random_uuid: {}, "
+            "constant_filter_description.always_false: {}, constant_filter_description.always_true: {}, stacktrace: {}",
+            filter_column_name,
+            remove_filter_column,
+            on_totals,
+            condition.has_value() ? condition->second : "none",
+            random_uuid,
+            constant_filter_description.always_false,
+            constant_filter_description.always_true,
+            StackTrace().toString());
         return;
     }
 
@@ -253,6 +331,18 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     removeFilterIfNeed(columns);
     chunk.setColumns(std::move(columns), num_filtered_rows);
+    LOG_DEBUG(
+        &Poco::Logger::get("FilterTransform, doTransform, 4"),
+        "Updated FilterTransform with filter column: {}, remove_filter_column: {}, on_totals: {}, condition: {}, random_uuid: {}, "
+        "constant_filter_description.always_false: {}, constant_filter_description.always_true: {}, stacktrace: {}",
+        filter_column_name,
+        remove_filter_column,
+        on_totals,
+        condition.has_value() ? condition->second : "none",
+        random_uuid,
+        constant_filter_description.always_false,
+        constant_filter_description.always_true,
+        StackTrace().toString());
 }
 
 void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info)

@@ -1,8 +1,10 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Processors/Executors/ExecutionThreadContext.h>
 #include <QueryPipeline/ReadProgressCallback.h>
+#include "Common/logger_useful.h"
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
+#include "Storages/ObjectStorage/StorageObjectStorageSource.h"
 
 namespace DB
 {
@@ -43,7 +45,7 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
            && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
-static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_progress_callback)
+static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_progress_callback, size_t thread_number)
 {
     try
     {
@@ -51,6 +53,15 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
             CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(node->processor);
 
         node->processor->work();
+
+        if (auto * ptr = dynamic_cast<StorageObjectStorageSource *>(node->processor))
+        {
+            LOG_DEBUG(
+                &Poco::Logger::get("PipelineExecutor, executeJob"),
+                "thread_number: {} corresponds to thread_order_number: {}",
+                thread_number,
+                ptr->thread_order_number);
+        }
 
         /// Update read progress only for source nodes.
         bool is_source = node->back_edges.empty();
@@ -65,8 +76,16 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
                 if (read_progress->counters.total_bytes)
                     read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
 
-                if (!read_progress_callback->onProgress(read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits))
+                if (!read_progress_callback->onProgress(
+                        read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits))
+                {
+                    LOG_DEBUG(
+                        &Poco::Logger::get("PipelineExecutor, executeJob"),
+                        "Read progress callback returned false, cancelling processor: {}, thread_number: {}",
+                        node->processor->getName(),
+                        thread_number);
                     node->processor->cancel();
+                }
             }
         }
     }
@@ -99,7 +118,7 @@ bool ExecutionThreadContext::executeTask()
 
     try
     {
-        executeJob(node, read_progress_callback);
+        executeJob(node, read_progress_callback, thread_number);
         ++node->num_executed_jobs;
     }
     catch (...)
@@ -119,6 +138,14 @@ bool ExecutionThreadContext::executeTask()
     if (trace_processors)
         span->addAttribute("execution_time_ns", execution_time_watch->elapsed());
 #endif
+
+    LOG_DEBUG(
+        &Poco::Logger::get("ExecutionThreadContext, executeTask"),
+        "Executed processor: {}, thread_number: {}, num_executed_jobs: {}, exception: {}",
+        node->processor->getName(),
+        thread_number,
+        node->num_executed_jobs,
+        node->exception ? "yes" : "no");
     return node->exception == nullptr;
 }
 

@@ -1,12 +1,13 @@
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
-#include <Columns/FilterDescription.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnSparse.h>
+#include <Columns/FilterDescription.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include "Common/logger_useful.h"
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -20,14 +21,22 @@ namespace ErrorCodes
 
 ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
 {
+    LOG_DEBUG(
+        &Poco::Logger::get("ConstantFilterDescription"),
+        "Analyzing column for constant filter: {}, type: {}",
+        column.getName(),
+        column.getFamilyName());
     if (column.onlyNull())
     {
+        LOG_DEBUG(&Poco::Logger::get("ConstantFilterDescription"), "Column is only null, setting always_false to true");
         always_false = true;
         return;
     }
 
     if (isColumnConst(column))
     {
+        LOG_DEBUG(&Poco::Logger::get("ConstantFilterDescription"), "Column is const");
+
         const ColumnConst & column_const = assert_cast<const ColumnConst &>(column);
         ColumnPtr column_nested = column_const.getDataColumnPtr()->convertToFullColumnIfLowCardinality();
 
@@ -43,9 +52,15 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
         }
 
         if (column_const.getValue<UInt64>())
+        {
+            LOG_DEBUG(&Poco::Logger::get("ConstantFilterDescription"), "Column is always true");
             always_true = true;
+        }
         else
+        {
+            LOG_DEBUG(&Poco::Logger::get("ConstantFilterDescription"), "Column is always false");
             always_false = true;
+        }
         return;
     }
 }

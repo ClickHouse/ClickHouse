@@ -297,12 +297,26 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
 
     while (!tasks.isFinished() && !yield)
     {
+        LOG_DEBUG(
+            &Poco::Logger::get("PipelineExecutor, executeStepImpl, export while beginning"),
+            "Executing processor: {}, thread_number: {}, num_scheduled_local_tasks: {}",
+            context.hasTask() ? static_cast<int64_t>(context.getProcessorID()) : -1,
+            thread_num,
+            context.num_scheduled_local_tasks);
+
         /// First, find any processor to execute.
         while (!tasks.isFinished() && !context.hasTask())
             tasks.tryGetTask(context);
 
         while (!tasks.isFinished() && context.hasTask() && !yield)
         {
+            LOG_DEBUG(
+                &Poco::Logger::get("PipelineExecutor, executeStepImpl, inner while beginning"),
+                "Executing processor: {}, thread_number: {}, num_scheduled_local_tasks: {}",
+                context.hasTask() ? static_cast<int64_t>(context.getProcessorID()) : -1,
+                thread_num,
+                context.num_scheduled_local_tasks);
+
             if (!context.executeTask())
                 cancel(ExecutionStatus::Exception);
 
@@ -354,8 +368,29 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
 
             /// We have executed single processor. Check if we need to yield execution.
             if (yield_flag && *yield_flag)
+            {
+                LOG_DEBUG(
+                    &Poco::Logger::get("PipelineExecutor, executeStepImpl, yield"),
+                    "Yielding execution, thread_number: {}, num_scheduled_local_tasks: {}",
+                    thread_num,
+                    context.num_scheduled_local_tasks);
                 yield = true;
+            }
+
+            LOG_DEBUG(
+                &Poco::Logger::get("PipelineExecutor, executeStepImpl, inner while end"),
+                "Executing processor: {}, thread_number: {}, num_scheduled_local_tasks: {}",
+                context.hasTask() ? static_cast<int64_t>(context.getProcessorID()) : -1,
+                thread_num,
+                context.num_scheduled_local_tasks);
         }
+
+        LOG_DEBUG(
+            &Poco::Logger::get("PipelineExecutor, executeStepImpl, export while end"),
+            "Executing processor: {}, thread_number: {}, num_scheduled_local_tasks: {}",
+            context.hasTask() ? static_cast<int64_t>(context.getProcessorID()) : -1,
+            thread_num,
+            context.num_scheduled_local_tasks);
     }
 
 #ifndef NDEBUG

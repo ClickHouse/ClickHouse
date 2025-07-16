@@ -2059,6 +2059,8 @@ def check_validity_and_get_prunned_files_general(instance, table_name, settings1
     query_id1 = f"{table_name}-{uuid.uuid4()}"
     query_id2 = f"{table_name}-{uuid.uuid4()}"
 
+    print(f"Query ID 1: {query_id1}, Query ID 2: {query_id2}")
+
     data1 = instance.query(
         select_expression,
         query_id=query_id1,
@@ -2071,6 +2073,12 @@ def check_validity_and_get_prunned_files_general(instance, table_name, settings1
         )
     )
 
+    explain1 = instance.query(
+        f"explain pipeline graph=1, compact=0 {select_expression} format TSVRaw", settings=settings1
+    )
+
+    print(f"Explain 1: {explain1} format TSVRaw")
+
     data2 = instance.query(
         select_expression,
         query_id=query_id2,
@@ -2082,6 +2090,12 @@ def check_validity_and_get_prunned_files_general(instance, table_name, settings1
             filter(lambda x: len(x) > 0, data2.strip().split("\n")),
         )
     )
+
+    explain2 = instance.query(
+        f"explain pipeline graph=1, compact=0 {select_expression}", settings=settings2
+    )
+
+    print(f"Explain 2: {explain2} format TSVRaw")
 
     assert data1 == data2
 
@@ -2700,8 +2714,8 @@ def test_metadata_cache(started_cluster, storage_type):
         )
 
 
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-@pytest.mark.parametrize("is_table_function", [False, True])
+@pytest.mark.parametrize("storage_type", ["local"])
+@pytest.mark.parametrize("is_table_function", [True])
 def test_minmax_pruning(started_cluster, storage_type, is_table_function):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session

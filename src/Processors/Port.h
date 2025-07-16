@@ -3,12 +3,18 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <Core/Block.h>
 #include <Core/Defines.h>
 #include <Processors/Chunk.h>
+#include "Common/logger_useful.h"
 #include <Common/Exception.h>
+
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
 
 namespace DB
 {
@@ -21,6 +27,8 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+std::string getRandomUUID();
 
 class Port
 {
@@ -131,10 +139,17 @@ protected:
         };
 
         /// Not finished, not needed, has not data.
-        State() : data(new Data())
+        State()
+            : data(new Data())
+            , random_id(getRandomUUID())
         {
             if (unlikely((getUInt(data) & FLAGS_MASK) != 0))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Not alignment memory for Port");
+            LOG_DEBUG(
+                &Poco::Logger::get("Port, State, constructor"),
+                "State created with id: {}, stacktrace: {}",
+                random_id,
+                StackTrace().toString());
         }
 
         ~State()
@@ -150,6 +165,12 @@ protected:
 
         void ALWAYS_INLINE push(DataPtr & data_, std::uintptr_t & flags)
         {
+            LOG_DEBUG(
+                &Poco::Logger::get("Port, State, push"),
+                "Pushing data to port with id: {}, stacktrace: {}",
+                random_id,
+                StackTrace().toString());
+
             flags = data_.swap(data, HAS_DATA, HAS_DATA);
 
             /// It's possible to push data into finished port. Will just ignore it.
@@ -166,6 +187,11 @@ protected:
 
         void ALWAYS_INLINE pull(DataPtr & data_, std::uintptr_t & flags, bool set_not_needed = false)
         {
+            LOG_DEBUG(
+                &Poco::Logger::get("Port, State, pull"),
+                "Pulling data from state with id: {}, stacktrace: {}",
+                random_id,
+                StackTrace().toString());
             uintptr_t mask = HAS_DATA;
 
             if (set_not_needed)
@@ -183,6 +209,12 @@ protected:
 
         std::uintptr_t ALWAYS_INLINE setFlags(std::uintptr_t flags, std::uintptr_t mask)
         {
+            LOG_DEBUG(
+                &Poco::Logger::get("Port, State, setFlags"),
+                "Setting flags for state with id: {}, stacktrace: {}",
+                random_id,
+                StackTrace().toString());
+
             Data * expected = nullptr;
             Data * desired = getPtr(flags);
 
@@ -199,6 +231,8 @@ protected:
 
     private:
         std::atomic<Data *> data;
+
+        std::string random_id;
     };
 
     Block header;
@@ -215,8 +249,31 @@ protected:
 public:
     using Data = State::Data;
 
-    Port(Block header_) : header(std::move(header_)) {} /// NOLINT
-    Port(Block header_, IProcessor * processor_) : header(std::move(header_)), processor(processor_) {}
+    Port(Block header_)
+        : header(std::move(header_))
+        , random_id(getRandomUUID())
+    {
+        LOG_DEBUG(
+            &Poco::Logger::get("Port, constructor"),
+            "Port created with id: {}, header: {}, stacktrace: {}",
+            random_id,
+            header.dumpStructure(),
+            StackTrace().toString());
+    } /// NOLINT
+    Port(Block header_, IProcessor * processor_)
+        : header(std::move(header_))
+        , processor(processor_)
+        , random_id(getRandomUUID())
+    {
+        LOG_DEBUG(
+            &Poco::Logger::get("Port, constructor"),
+            "Port created with id: {}, header: {}, stacktrace: {}",
+            random_id,
+            header.dumpStructure(),
+            StackTrace().toString());
+    }
+
+    std::string getID() const { return random_id; }
 
     void setUpdateInfo(UpdateInfo * info) { update_info = info; }
 
@@ -259,6 +316,8 @@ protected:
     /// For processors_profile_log
     size_t rows = 0;
     size_t bytes = 0;
+
+    std::string random_id;
 };
 
 /// Invariants:
@@ -353,6 +412,8 @@ public:
     {
         assumeConnected();
 
+        LOG_DEBUG(&Poco::Logger::get("InputPort, close"), "Closing port with id: {}, stacktrace: {}", random_id, StackTrace().toString());
+
         if ((state->setFlags(State::IS_FINISHED, State::IS_FINISHED) & State::IS_FINISHED) == 0)
             updateVersion();
 
@@ -401,16 +462,28 @@ public:
 
     void ALWAYS_INLINE push(Chunk chunk)
     {
+        LOG_DEBUG(
+            &Poco::Logger::get("OutputPort, push"), "Pushing to port with id: {}, stacktrace: {}", random_id, StackTrace().toString());
         pushData({.chunk = std::move(chunk), .exception = {}});
     }
 
     void ALWAYS_INLINE pushException(std::exception_ptr exception)
     {
+        LOG_DEBUG(
+            &Poco::Logger::get("OutputPort, pushException"),
+            "Pushing exception to port with id: {}, stacktrace: {}",
+            random_id,
+            StackTrace().toString());
         pushData({.chunk = {}, .exception = exception});
     }
 
     void ALWAYS_INLINE pushData(Data data_)
     {
+        LOG_DEBUG(
+            &Poco::Logger::get("OutputPort, pushData"),
+            "Pushing data to port with id: {}, stacktrace: {}",
+            random_id,
+            StackTrace().toString());
         if (unlikely(!data_.exception && data_.chunk.getNumColumns() != header.columns()))
         {
             throw Exception(
@@ -439,6 +512,9 @@ public:
 
     void ALWAYS_INLINE finish()
     {
+        LOG_DEBUG(
+            &Poco::Logger::get("OutputPort, finish"), "Finishing port with id: {}, stacktrace: {}", random_id, StackTrace().toString());
+
         assumeConnected();
 
         auto flags = state->setFlags(State::IS_FINISHED, State::IS_FINISHED);
