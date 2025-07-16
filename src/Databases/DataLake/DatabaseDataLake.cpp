@@ -480,7 +480,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
     const FilterByNameFunction & filter_by_table_name,
     bool skip_not_loaded) const
 {
-     Tables tables;
+    Tables tables;
     auto catalog = getCatalog();
     const auto iceberg_tables = catalog->getTables();
 

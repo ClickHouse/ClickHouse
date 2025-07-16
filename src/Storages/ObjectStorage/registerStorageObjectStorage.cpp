@@ -22,11 +22,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace StorageObjectStorageSetting
-{
-    extern const StorageObjectStorageSettingsString object_storage_cluster;
-}
-
 namespace
 {
 
@@ -41,12 +36,14 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
     const auto context = args.getLocalContext();
-    auto storage_settings = std::make_shared<StorageObjectStorageSettings>();
+
+    std::string cluster_name = "";
 
     if (args.storage_def->settings)
-        storage_settings->loadFromQuery(*args.storage_def->settings);
-        
-    auto cluster_name = (*storage_settings)[StorageObjectStorageSetting::object_storage_cluster].value;
+    {
+        if (const auto * value = args.storage_def->settings->changes.tryGet("object_storage_cluster"))
+            cluster_name = value->safeGet<std::string>();
+    }
 
     configuration->initialize(args.engine_args, context, false);
 

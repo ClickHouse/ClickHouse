@@ -49,6 +49,8 @@ public:
 
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
+    IDataLakeMetadata * getExternalMetadata(ContextPtr query_context);
+
     bool updateExternalDynamicMetadataIfExists(ContextPtr context) override;
 
     StorageMetadataPtr getInMemoryMetadataPtr() const override;

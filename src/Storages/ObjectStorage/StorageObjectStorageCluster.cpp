@@ -551,4 +551,18 @@ StorageMetadataPtr StorageObjectStorageCluster::getInMemoryMetadataPtr() const
     return IStorageCluster::getInMemoryMetadataPtr();
 }
 
+IDataLakeMetadata * StorageObjectStorageCluster::getExternalMetadata(ContextPtr query_context)
+{
+    if (pure_storage)
+        return pure_storage->getExternalMetadata(query_context);
+
+    configuration->update(
+        object_storage,
+        query_context,
+        /* if_not_updated_before */false,
+        /* check_consistent_with_previous_metadata */false);
+
+    return configuration->getExternalMetadata();
+}
+
 }
