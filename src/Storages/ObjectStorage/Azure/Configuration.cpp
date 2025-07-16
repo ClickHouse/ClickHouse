@@ -62,13 +62,13 @@ void StorageAzureConfiguration::check(ContextPtr context) const
 {
     auto url = Poco::URI(connection_params.getConnectionURL());
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url);
-    StorageObjectStorageConfiguration::check(context);
+    Configuration::check(context);
 }
 
-StorageObjectStorageQuerySettings StorageAzureConfiguration::getQuerySettings(const ContextPtr & context) const
+StorageObjectStorage::QuerySettings StorageAzureConfiguration::getQuerySettings(const ContextPtr & context) const
 {
     const auto & settings = context->getSettingsRef();
-    return StorageObjectStorageQuerySettings{
+    return StorageObjectStorage::QuerySettings{
         .truncate_on_insert = settings[Setting::azure_truncate_on_insert],
         .create_new_file_on_insert = settings[Setting::azure_create_new_file_on_insert],
         .schema_inference_use_cache = settings[Setting::schema_inference_use_cache_for_azure],

@@ -1,5 +1,7 @@
 #pragma once
 
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+
 #include <vector>
 #include <string>
 #include <Common/Elf.h>
@@ -61,3 +63,5 @@ private:
 };
 
 }
+
+#endif

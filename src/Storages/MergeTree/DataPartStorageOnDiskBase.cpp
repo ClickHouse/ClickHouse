@@ -7,7 +7,6 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Interpreters/Context.h>
@@ -269,6 +268,16 @@ bool DataPartStorageOnDiskBase::isBroken() const
 bool DataPartStorageOnDiskBase::isReadonly() const
 {
     return volume->getDisk()->isReadOnly() || volume->getDisk()->isWriteOnce();
+}
+
+void DataPartStorageOnDiskBase::syncRevision(UInt64 revision) const
+{
+    volume->getDisk()->syncRevision(revision);
+}
+
+UInt64 DataPartStorageOnDiskBase::getRevision() const
+{
+    return volume->getDisk()->getRevision();
 }
 
 std::string DataPartStorageOnDiskBase::getDiskPath() const
@@ -656,9 +665,6 @@ void DataPartStorageOnDiskBase::rename(
     }
 
     String from = getRelativePath();
-
-    if (log)
-        LOG_TEST(log, "Renaming part {} to {}", from, to);
 
     /// Why?
     executeWriteOperation([&](auto & disk)

@@ -7,28 +7,28 @@ slug: /engines/table-engines/special/merge
 title: 'Merge Table Engine'
 ---
 
-# Merge table engine
+# Merge Table Engine
 
 The `Merge` engine (not to be confused with `MergeTree`) does not store data itself, but allows reading from any number of other tables simultaneously.
 
 Reading is automatically parallelized. Writing to a table is not supported. When reading, the indexes of tables that are actually being read are used, if they exist.
 
-## Creating a table {#creating-a-table}
+## Creating a Table {#creating-a-table}
 
 ```sql
 CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
 ```
 
-## Engine parameters {#engine-parameters}
+## Engine Parameters {#engine-parameters}
 
-### `db_name` {#db_name}
+### db_name {#db_name}
 
 `db_name` — Possible values:
     - database name,
     - constant expression that returns a string with a database name, for example, `currentDatabase()`,
     - `REGEXP(expression)`, where `expression` is a regular expression to match the DB names.
 
-### `tables_regexp` {#tables_regexp}
+### tables_regexp {#tables_regexp}
 
 `tables_regexp` — A regular expression to match the table names in the specified DB or DBs.
 
@@ -65,7 +65,7 @@ CREATE TABLE WatchLog_new(date Date, UserId Int64, EventType String, Cnt UInt64)
     ENGINE=MergeTree PARTITION BY date ORDER BY (UserId, EventType) SETTINGS index_granularity=8192;
 INSERT INTO WatchLog_new VALUES ('2018-01-02', 2, 'hit', 3);
 
-CREATE TABLE WatchLog AS WatchLog_old ENGINE=Merge(currentDatabase(), '^WatchLog');
+CREATE TABLE WatchLog as WatchLog_old ENGINE=Merge(currentDatabase(), '^WatchLog');
 
 SELECT * FROM WatchLog;
 ```
@@ -79,7 +79,7 @@ SELECT * FROM WatchLog;
 └────────────┴────────┴───────────┴─────┘
 ```
 
-## Virtual columns {#virtual-columns}
+## Virtual Columns {#virtual-columns}
 
 - `_table` — Contains the name of the table from which data was read. Type: [String](../../../sql-reference/data-types/string.md).
 

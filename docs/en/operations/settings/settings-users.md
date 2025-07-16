@@ -3,10 +3,10 @@ description: 'Settings for configuring users and roles.'
 sidebar_label: 'User Settings'
 sidebar_position: 63
 slug: /operations/settings/settings-users
-title: 'Users and roles settings'
+title: 'Users and Roles Settings'
 ---
 
-# Users and roles settings
+# Users and Roles Settings
 
 The `users` section of the `users.xml` configuration file contains user settings.
 

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/FST.h>
-#include <Compression/ICompressionCodec.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
@@ -14,7 +13,7 @@
 #include <vector>
 #include <absl/container/flat_hash_map.h>
 
-/// GinIndexStore manages the Generalized Inverted Index ("gin") (text index) for a data part, and it is made up of one or more
+/// GinIndexStore manages the generalized inverted index ("gin") (full-text index )for a data part, and it is made up of one or more
 /// immutable index segments.
 ///
 /// There are 4 types of index files in a store:
@@ -41,12 +40,6 @@ namespace DB
 using GinIndexPostingsList = roaring::Roaring;
 using GinIndexPostingsListPtr = std::shared_ptr<GinIndexPostingsList>;
 
-class GinIndexCompressionFactory
-{
-public:
-    static const CompressionCodecPtr & zstdCodec();
-};
-
 /// Build a postings list for a term
 class GinIndexPostingsBuilder
 {
@@ -67,6 +60,9 @@ public:
 
 private:
     constexpr static int MIN_SIZE_FOR_ROARING_ENCODING = 16;
+
+    static constexpr auto GIN_COMPRESSION_CODEC = "ZSTD";
+    static constexpr auto GIN_COMPRESSION_LEVEL = 1;
 
     /// When the list length is no greater than MIN_SIZE_FOR_ROARING_ENCODING, array 'rowid_lst' is used
     /// As a special case, rowid_lst[0] == CONTAINS_ALL encodes that all rowids are set.
@@ -131,19 +127,6 @@ using GinSegmentDictionaryPtr = std::shared_ptr<GinSegmentDictionary>;
 class GinIndexStore
 {
 public:
-    static constexpr auto GIN_SEGMENT_ID_FILE_TYPE = ".gin_sid";
-    static constexpr auto GIN_SEGMENT_METADATA_FILE_TYPE = ".gin_seg";
-    static constexpr auto GIN_DICTIONARY_FILE_TYPE = ".gin_dict";
-    static constexpr auto GIN_POSTINGS_FILE_TYPE = ".gin_post";
-
-    /// TODO(ahmadov): clean up versions when full-text search is not experimental feature anymore.
-    enum class Format : uint8_t
-    {
-        v0 = 0,
-        v1 = 1, /// Initial version
-        v2 = 2, /// Supports adaptive compression
-    };
-
     /// Container for all term's Gin Index Postings List Builder
     using GinIndexPostingsBuilderContainer = absl::flat_hash_map<std::string, GinIndexPostingsBuilderPtr>;
 
@@ -156,11 +139,11 @@ public:
     /// Get a range of next 'numIDs'-many available row IDs
     UInt32 getNextRowIDRange(size_t numIDs);
 
+    /// Get next available segment ID by updating file .gin_sid
+    UInt32 getNextSegmentID();
+
     /// Get total number of segments in the store
     UInt32 getNumOfSegments();
-
-    /// Get version
-    Format getVersion();
 
     /// Get current postings list builder
     const GinIndexPostingsBuilderContainer & getPostingsListBuilder() const { return current_postings; }
@@ -185,14 +168,7 @@ public:
 
     const String & getName() const { return name; }
 
-    bool filesWouldBeWritten() const { return bool(metadata_file_stream) || !current_postings.empty(); }
-
 private:
-    /// FST size less than 100KiB does not worth to compress.
-    static constexpr auto FST_SIZE_COMPRESSION_THRESHOLD = 100_KiB;
-    /// Current version of GinIndex to store FST
-    static constexpr auto CURRENT_GIN_FILE_FORMAT_VERSION = Format::v2;
-
     friend class GinIndexStoreDeserializer;
 
     /// Initialize all indexing files for this store
@@ -204,11 +180,10 @@ private:
     /// Stores segment id into disk
     void writeSegmentId();
 
-    /// Get next available segment ID by updating file .gin_sid
-    UInt32 getNextSegmentID();
-
     /// Get a range of next available segment IDs
     UInt32 getNextSegmentIDRange(size_t n);
+
+    void verifyFormatVersionIsSupported(size_t version);
 
     String name;
     DataPartStoragePtr storage;
@@ -239,6 +214,19 @@ private:
     std::unique_ptr<WriteBufferFromFileBase> metadata_file_stream;
     std::unique_ptr<WriteBufferFromFileBase> dict_file_stream;
     std::unique_ptr<WriteBufferFromFileBase> postings_file_stream;
+
+    static constexpr auto GIN_SEGMENT_ID_FILE_TYPE = ".gin_sid";
+    static constexpr auto GIN_SEGMENT_METADATA_FILE_TYPE = ".gin_seg";
+    static constexpr auto GIN_DICTIONARY_FILE_TYPE = ".gin_dict";
+    static constexpr auto GIN_POSTINGS_FILE_TYPE = ".gin_post";
+
+    enum class Format : uint8_t
+    {
+        v0 = 0,
+        v1 = 1, /// Initial version
+    };
+
+    static constexpr auto CURRENT_GIN_FILE_FORMAT_VERSION = Format::v1;
 };
 
 using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
@@ -324,6 +312,9 @@ private:
     std::mutex mutex;
 };
 
-bool isGinFile(const String & file_name);
+inline bool isGinFile(const String &file_name)
+{
+    return (file_name.ends_with(".gin_dict") || file_name.ends_with(".gin_post") || file_name.ends_with(".gin_seg") || file_name.ends_with(".gin_sid"));
+}
 
 }

@@ -13,7 +13,6 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/ISimpleTransform.h>
 #include <QueryPipeline/Pipe.h>
-#include <Core/Field.h>
 
 #include <boost/circular_buffer.hpp>
 #include <fmt/ranges.h>
@@ -343,7 +342,7 @@ namespace
             size_t command_read_timeout_milliseconds,
             ExternalCommandStderrReaction stderr_reaction,
             bool check_exit_code_,
-            SharedHeader sample_block_,
+            const Block & sample_block_,
             std::unique_ptr<ShellCommand> && command_,
             std::vector<SendDataTask> && send_data_tasks = {},
             const ShellCommandSourceConfiguration & configuration_ = {},
@@ -407,7 +406,7 @@ namespace
                     max_block_size = configuration.number_of_rows_to_read;
                 }
 
-                pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, *sample_block, max_block_size)));
+                pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, sample_block, max_block_size)));
                 executor = std::make_unique<PullingPipelineExecutor>(pipeline);
             }
             catch (...)
@@ -460,7 +459,7 @@ namespace
                         readChar(dummy, timeout_command_out);
 
                         size_t max_block_size = configuration.number_of_rows_to_read;
-                        pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, *sample_block, max_block_size)));
+                        pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, sample_block, max_block_size)));
                         executor = std::make_unique<PullingPipelineExecutor>(pipeline);
                     }
 
@@ -529,7 +528,7 @@ namespace
 
         ContextPtr context;
         std::string format;
-        SharedHeader sample_block;
+        Block sample_block;
 
         std::unique_ptr<ShellCommand> command;
         ShellCommandSourceConfiguration configuration;
@@ -557,7 +556,7 @@ namespace
     class SendingChunkHeaderTransform final : public ISimpleTransform
     {
     public:
-        SendingChunkHeaderTransform(SharedHeader header, std::shared_ptr<TimeoutWriteBufferFromFileDescriptor> buffer_)
+        SendingChunkHeaderTransform(const Block & header, std::shared_ptr<TimeoutWriteBufferFromFileDescriptor> buffer_)
             : ISimpleTransform(header, header, false)
             , buffer(buffer_)
         {
@@ -670,7 +669,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
 
         if (configuration.send_chunk_header)
         {
-            auto transform = std::make_shared<SendingChunkHeaderTransform>(input_pipes[i].getSharedHeader(), timeout_write_buffer);
+            auto transform = std::make_shared<SendingChunkHeaderTransform>(input_pipes[i].getHeader(), timeout_write_buffer);
             input_pipes[i].addTransform(std::move(transform));
         }
 
@@ -704,7 +703,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         configuration.command_read_timeout_milliseconds,
         configuration.stderr_reaction,
         configuration.check_exit_code,
-        std::make_shared<const Block>(std::move(sample_block)),
+        std::move(sample_block),
         std::move(process),
         std::move(tasks),
         source_configuration,

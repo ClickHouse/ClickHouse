@@ -17,7 +17,7 @@ class VersionedCollapsingTransform final : public IMergingTransform<VersionedCol
 public:
     /// Don't need version column. It's in primary key.
     VersionedCollapsingTransform(
-        SharedHeader header, size_t num_inputs,
+        const Block & header, size_t num_inputs,
         SortDescription description_, const String & sign_column_,
         size_t max_block_size_rows,
         size_t max_block_size_bytes,

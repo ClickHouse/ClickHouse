@@ -13,7 +13,7 @@ import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
 You can run a basic ClickHouse performance test on any server without installation of ClickHouse packages.
 
 
-## Automated run {#automated-run}
+## Automated Run {#automated-run}
 
 You can run the benchmark with a single script.
 

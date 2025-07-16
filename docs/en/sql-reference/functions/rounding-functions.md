@@ -1,11 +1,12 @@
 ---
 description: 'Documentation for Rounding Functions'
 sidebar_label: 'Rounding'
+sidebar_position: 155
 slug: /sql-reference/functions/rounding-functions
 title: 'Rounding Functions'
 ---
 
-# Rounding functions
+# Rounding Functions
 
 ## floor {#floor}
 
@@ -90,7 +91,7 @@ Alias: `trunc`.
 Query:
 
 ```sql
-SELECT truncate(123.499, 1) AS res;
+SELECT truncate(123.499, 1) as res;
 ```
 
 ```response
@@ -241,7 +242,7 @@ A value rounded by the banker's rounding method.
 Query:
 
 ```sql
- SELECT number / 2 AS x, roundBankers(x, 0) AS b FROM system.numbers LIMIT 10
+ SELECT number / 2 AS x, roundBankers(x, 0) AS b fROM system.numbers limit 10
 ```
 
 Result:

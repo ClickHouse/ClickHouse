@@ -17,7 +17,7 @@ class SummingSortedTransform final : public IMergingTransform<SummingSortedAlgor
 public:
 
     SummingSortedTransform(
-        SharedHeader header, size_t num_inputs,
+        const Block & header, size_t num_inputs,
         SortDescription description_,
         /// List of columns to be summed. If empty, all numeric columns that are not in the description are taken.
         const Names & partition_and_sorting_required_columns,

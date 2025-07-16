@@ -94,14 +94,14 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 {
     auto print_identifier = [&](const String & identifier) -> WriteBuffer &
     {
-        ostr << backQuoteIfNeed(identifier)
-                     ;
+        ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(identifier)
+                      << (settings.hilite ? hilite_none : "");
         return ostr;
     };
 
     auto print_keyword = [&](const auto & keyword) -> WriteBuffer &
     {
-        ostr << keyword;
+        ostr << (settings.hilite ? hilite_keyword : "") << keyword << (settings.hilite ? hilite_none : "");
         return ostr;
     };
 
@@ -233,7 +233,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
             if (query_settings)
             {
-                ostr << settings.nl_or_ws << "SETTINGS ";
+                ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
                 query_settings->format(ostr, settings, state, frame);
             }
 
@@ -336,8 +336,8 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             if (distributed_cache_drop_connections)
                 print_keyword(" CONNECTIONS");
-            else if (!distributed_cache_server_id.empty())
-                ostr << " " << distributed_cache_server_id;
+            else if (!distributed_cache_servive_id.empty())
+                ostr << (settings.hilite ? hilite_none : "") << " " << distributed_cache_servive_id;
             break;
         }
         case Type::UNFREEZE:
