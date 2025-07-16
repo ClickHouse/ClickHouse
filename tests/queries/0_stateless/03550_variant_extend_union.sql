@@ -17,4 +17,4 @@ FROM
         )
     )
 )
-ORDER BY ALL SETTINGS allow_suspicious_types_in_order_by = 1;
+ORDER BY ALL;
