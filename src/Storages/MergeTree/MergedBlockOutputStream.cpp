@@ -4,6 +4,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Core/Settings.h>
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -146,22 +148,10 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
             file->sync();
     }
 
-    /// TODO: this code looks really stupid. It's because DiskTransaction is
-    /// unable to see own write operations. When we merge part with column TTL
-    /// and column completely outdated we first write empty column and after
-    /// remove it. In case of single DiskTransaction it's impossible because
-    /// remove operation will not see just written files. That is why we finish
-    /// one transaction and start new...
-    ///
-    /// FIXME: DiskTransaction should see own writes. Column TTL implementation shouldn't be so stupid...
-    if (!files_to_remove_after_finish.empty())
-    {
-        part->getDataPartStorage().commitTransaction();
-        part->getDataPartStorage().beginTransaction();
-    }
-
     for (const auto & file_name : files_to_remove_after_finish)
+    {
         part->getDataPartStorage().removeFile(file_name);
+    }
 }
 
 void MergedBlockOutputStream::Finalizer::Impl::cancel() noexcept
@@ -230,7 +220,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         auto serialization_infos = new_part->getSerializationInfos();
 
         serialization_infos.replaceData(new_serialization_infos);
-        files_to_remove_after_sync = removeEmptyColumnsFromPart(new_part, part_columns, serialization_infos, checksums);
+        files_to_remove_after_sync = removeExpiredColumnsFromPart(new_part, part_columns, serialization_infos, checksums);
 
         new_part->setColumns(part_columns, serialization_infos, metadata_snapshot->getMetadataVersion());
     }
@@ -323,13 +313,22 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
             if (new_part->minmax_idx->initialized)
             {
-                auto files = new_part->minmax_idx->store(metadata_snapshot, new_part->getDataPartStorage(), checksums);
+                auto files = new_part->minmax_idx->store(metadata_snapshot, new_part->getDataPartStorage(), checksums, storage_settings);
                 for (auto & file : files)
                     written_files.emplace_back(std::move(file));
             }
             else if (rows_count)
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not initialized for new non-empty part {}", new_part->name);
+            }
+
+            const auto & source_parts = new_part->getSourcePartsSet();
+            if (!source_parts.empty())
+            {
+                write_hashed_file(SourcePartsSetForPatch::FILENAME, [&](auto & buffer)
+                {
+                    source_parts.writeBinary(buffer);
+                });
             }
         }
     }
@@ -360,6 +359,17 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     {
         new_part->getColumns().writeText(buffer);
     });
+
+    const auto & columns_substreams = writer->getColumnsSubstreams();
+    if (!columns_substreams.empty())
+    {
+        write_plain_file("columns_substreams.txt", [&](auto & buffer)
+        {
+            columns_substreams.writeText(buffer);
+        });
+
+        new_part->setColumnsSubstreams(columns_substreams);
+    }
 
     write_plain_file(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, [&](auto & buffer)
     {

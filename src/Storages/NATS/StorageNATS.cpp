@@ -37,7 +37,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsMilliseconds stream_flush_interval_ms;
     extern const SettingsBool stream_like_engine_allow_direct_select;
     extern const SettingsString stream_like_engine_insert_queue;
@@ -249,6 +249,7 @@ void StorageNATS::initializeConsumersFunc()
     }
     catch (...)
     {
+        LOG_WARNING(log, "Cannot initialize consumers: {}", getCurrentExceptionMessage(false));
         initialize_consumers_task->scheduleAfter(RESCHEDULE_MS);
         return;
     }
@@ -390,7 +391,7 @@ void StorageNATS::read(
             ActionsDAG::MatchColumnsMode::Name);
 
         auto converting = std::make_shared<ExpressionActions>(std::move(converting_dag));
-        auto converting_transform = std::make_shared<ExpressionTransform>(nats_source->getPort().getHeader(), std::move(converting));
+        auto converting_transform = std::make_shared<ExpressionTransform>(nats_source->getPort().getSharedHeader(), std::move(converting));
 
         pipes.emplace_back(std::move(nats_source));
         pipes.back().addTransform(std::move(converting_transform));
@@ -447,7 +448,7 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
     if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
         max_rows = local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].value;
     return std::make_shared<MessageQueueSink>(
-        metadata_snapshot->getSampleBlockNonMaterialized(), getFormatName(), max_rows, std::move(producer), getName(), modified_context);}
+        std::make_shared<const Block>(metadata_snapshot->getSampleBlockNonMaterialized()), getFormatName(), max_rows, std::move(producer), getName(), modified_context);}
 
 
 void StorageNATS::startup()
@@ -574,13 +575,12 @@ bool StorageNATS::isSubjectInSubscriptions(const std::string & subject)
     return false;
 }
 
-
 bool StorageNATS::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
     auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
     if (view_ids.empty())
-        return true;
+        return false;
 
     // Check the dependencies are ready?
     for (const auto & view_id : view_ids)
@@ -593,15 +593,10 @@ bool StorageNATS::checkDependencies(const StorageID & table_id)
         auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
         if (materialized_view && !materialized_view->tryGetTargetTable())
             return false;
-
-        // Check all its dependencies
-        if (!checkDependencies(view_id))
-            return false;
     }
 
     return true;
 }
-
 
 void StorageNATS::streamingToViewsFunc()
 {
@@ -621,7 +616,10 @@ void StorageNATS::streamingToViewsFunc()
             while (!shutdown_called && num_created_consumers > 0)
             {
                 if (!checkDependencies(table_id))
+                {
+                    consumers_queues_are_empty = true;
                     break;
+                }
 
                 LOG_DEBUG(log, "Started streaming to attached views");
 
@@ -652,6 +650,7 @@ void StorageNATS::streamingToViewsFunc()
         return;
 
     size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
+
     if (num_views != 0)
     {
         if (consumers_queues_are_empty)
@@ -784,7 +783,7 @@ void registerStorageNATS(StorageFactory & factory)
         creator_fn,
         StorageFactory::StorageFeatures{
             .supports_settings = true,
-            .source_access_type = AccessType::NATS,
+            .source_access_type = AccessTypeObjects::Source::NATS,
             .has_builtin_setting_fn = NATSSettings::hasBuiltin,
         });
 }

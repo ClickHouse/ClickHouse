@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Interpreters/Context.h>
@@ -268,16 +269,6 @@ bool DataPartStorageOnDiskBase::isBroken() const
 bool DataPartStorageOnDiskBase::isReadonly() const
 {
     return volume->getDisk()->isReadOnly() || volume->getDisk()->isWriteOnce();
-}
-
-void DataPartStorageOnDiskBase::syncRevision(UInt64 revision) const
-{
-    volume->getDisk()->syncRevision(revision);
-}
-
-UInt64 DataPartStorageOnDiskBase::getRevision() const
-{
-    return volume->getDisk()->getRevision();
 }
 
 std::string DataPartStorageOnDiskBase::getDiskPath() const
@@ -666,6 +657,9 @@ void DataPartStorageOnDiskBase::rename(
 
     String from = getRelativePath();
 
+    if (log)
+        LOG_TEST(log, "Renaming part {} to {}", from, to);
+
     /// Why?
     executeWriteOperation([&](auto & disk)
     {
@@ -895,6 +889,7 @@ void DataPartStorageOnDiskBase::clearDirectory(
         request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
         request.emplace_back(fs::path(dir) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME, true);
         request.emplace_back(fs::path(dir) / "metadata_version.txt", true);
+        request.emplace_back(fs::path(dir) / "columns_substreams.txt", true);
 
         disk->removeSharedFiles(request, !can_remove_shared_data, names_not_to_remove);
         disk->removeDirectory(dir);

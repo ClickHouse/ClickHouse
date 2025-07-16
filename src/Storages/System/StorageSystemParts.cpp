@@ -158,8 +158,20 @@ void StorageSystemParts::processNextStorage(
         const auto & part = all_parts[part_number];
         auto part_state = all_parts_state[part_number];
 
-        ColumnSize columns_size = part->getTotalColumnsSize();
-        ColumnSize secondary_indexes_size = part->getTotalSecondaryIndicesSize();
+        std::unique_ptr<ColumnSize> columns_size;
+        auto get_columns_size = [&]()
+        {
+            if (!columns_size)
+                columns_size = std::make_unique<ColumnSize>(part->getTotalColumnsSize());
+            return *columns_size;
+        };
+        std::unique_ptr<ColumnSize> secondary_indexes_size;
+        auto get_secondary_indexes_size = [&]()
+        {
+            if (!secondary_indexes_size)
+                secondary_indexes_size = std::make_unique<ColumnSize>(part->getTotalSecondaryIndicesSize());
+            return *secondary_indexes_size;
+        };
 
         size_t src_index = 0;
         size_t res_index = 0;
@@ -180,19 +192,19 @@ void StorageSystemParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getBytesOnDisk());
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(columns_size.data_compressed);
+            columns[res_index++]->insert(get_columns_size().data_compressed);
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(columns_size.data_uncompressed);
+            columns[res_index++]->insert(get_columns_size().data_uncompressed);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getIndexSizeFromFile());
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(columns_size.marks);
+            columns[res_index++]->insert(get_columns_size().marks);
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(secondary_indexes_size.data_compressed);
+            columns[res_index++]->insert(get_secondary_indexes_size().data_compressed);
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(secondary_indexes_size.data_uncompressed);
+            columns[res_index++]->insert(get_secondary_indexes_size().data_uncompressed);
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(secondary_indexes_size.marks);
+            columns[res_index++]->insert(get_secondary_indexes_size().marks);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(static_cast<UInt64>(part->modification_time));
 
@@ -218,7 +230,7 @@ void StorageSystemParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(static_cast<UInt32>(min_max_time.second));
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->info.partition_id);
+            columns[res_index++]->insert(part->info.getPartitionId());
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->info.min_block);
         if (columns_mask[src_index++])

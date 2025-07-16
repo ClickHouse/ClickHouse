@@ -39,9 +39,6 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 def get_spark():
     builder = (
         pyspark.sql.SparkSession.builder.appName("spark_test")
-        .config(
-            "org.apache.spark.sql.hudi.catalog.HoodieCatalog",
-        )
         .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
         .config(
             "spark.sql.catalog.local", "org.apache.spark.sql.hudi.catalog.HoodieCatalog"

@@ -107,7 +107,7 @@ void checkRequiredInstructionsImpl(volatile InstructionFail & fail)
     __asm__ volatile ("vpabsw %%ymm0, %%ymm0" : : : "ymm0");
 #endif
 
-#if defined(__AVX512__)
+#if defined(__AVX512F__)
     fail = InstructionFail::AVX512;
     __asm__ volatile ("vpabsw %%zmm0, %%zmm0" : : : "zmm0");
 #endif

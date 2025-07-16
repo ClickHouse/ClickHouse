@@ -78,13 +78,17 @@ void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams &
     if (!params.isCollectionAndUseEnabled())
         return;
 
-    std::vector<size_t> sizes(hash_joins.size());
-    for (size_t i = 0; i < hash_joins.size(); ++i)
-        sizes[i] = hash_joins[i]->data->getTotalRowCount();
-    const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
-    std::nth_element(sizes.begin(), median_size, sizes.end());
-    if (auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull))
-        DB::getHashTablesStatistics().update(sum_of_sizes, *median_size, params);
+    const auto ht_size = hash_joins.at(0)->data->getTotalRowCount();
+    if (!std::ranges::all_of(hash_joins, [&](const auto & hash_join) { return hash_join->data->getTotalRowCount() == ht_size; }))
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "HashJoin instances have different sizes");
+
+    const auto source_rows = std::accumulate(
+        hash_joins.begin(),
+        hash_joins.end(),
+        0ull,
+        [](auto acc, const auto & hash_join) { return acc + hash_join->data->getJoinedData()->rows_to_join; });
+    if (ht_size)
+        DB::getHashTablesStatistics<DB::HashJoinEntry>().update({.ht_size = ht_size, .source_rows = source_rows}, params);
 }
 
 UInt32 toPowerOfTwo(UInt32 x)
@@ -101,11 +105,11 @@ HashJoin::RightTableDataPtr getData(const std::shared_ptr<ConcurrentHashJoin::In
 
 void reserveSpaceInHashMaps(HashJoin & hash_join, size_t ind, const StatsCollectingParams & stats_collecting_params, size_t slots)
 {
-    if (auto hint = getSizeHint(stats_collecting_params, slots))
+    if (auto hint = getSizeHint(stats_collecting_params))
     {
         /// Hash map is shared between all `HashJoin` instances, so the `median_size` is actually the total size
         /// we need to preallocate in all buckets of all hash maps.
-        const size_t reserve_size = hint->median_size;
+        const size_t reserve_size = hint->ht_size;
 
         /// Each `HashJoin` instance will "own" a subset of buckets during the build phase. Because of that
         /// we preallocate space only in the specific buckets of each `HashJoin` instance.
@@ -147,7 +151,7 @@ namespace ErrorCodes
 ConcurrentHashJoin::ConcurrentHashJoin(
     std::shared_ptr<TableJoin> table_join_,
     size_t slots_,
-    const Block & right_sample_block,
+    SharedHeader right_sample_block,
     const StatsCollectingParams & stats_collecting_params_,
     bool any_take_last_row_)
     : table_join(table_join_)
@@ -205,7 +209,8 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
         if (!hash_joins[0]->data->twoLevelMapIsUsed())
             return;
 
-        updateStatistics(hash_joins, stats_collecting_params);
+        if (build_phase_finished)
+            updateStatistics(hash_joins, stats_collecting_params);
 
         for (size_t i = 0; i < slots; ++i)
         {
@@ -251,7 +256,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     size_t blocks_left = 0;
     for (const auto & block : dispatched_blocks)
     {
-        if (block)
+        if (block.rows())
         {
             ++blocks_left;
         }
@@ -265,7 +270,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
             auto & hash_join = hash_joins[i];
             auto & dispatched_block = dispatched_blocks[i];
 
-            if (dispatched_block)
+            if (dispatched_block.rows())
             {
                 /// if current hash_join is already processed by another thread, skip it and try later
                 std::unique_lock<std::mutex> lock(hash_join->mutex, std::try_to_lock);
@@ -344,14 +349,14 @@ void ConcurrentHashJoin::joinBlock(Block & block, ExtraScatteredBlocks & extra_b
         }
         auto & hash_join = hash_joins[i];
         auto & current_block = dispatched_blocks[i];
-        if (current_block && (i == 0 || current_block.rows()))
+        if (!current_block.empty() && (i == 0 || current_block.rows()))
             hash_join->data->joinBlock(current_block, remaining_blocks[i]);
         remaining_rows_before_limit -= std::min(current_block.rows(), remaining_rows_before_limit);
     }
     for (size_t i = 0; i < dispatched_blocks.size(); ++i)
     {
         auto & dispatched_block = dispatched_blocks[i];
-        if (dispatched_block && (i == 0 || dispatched_block.rows()))
+        if (!dispatched_block.empty() && (i == 0 || dispatched_block.rows()))
             res.emplace_back(std::move(dispatched_block).getSourceBlock());
     }
 }
@@ -363,7 +368,7 @@ void ConcurrentHashJoin::checkTypesOfKeys(const Block & block) const
 
 void ConcurrentHashJoin::setTotals(const Block & block)
 {
-    if (block)
+    if (!block.empty())
     {
         std::lock_guard lock(totals_mutex);
         totals = block;
@@ -643,6 +648,8 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
             hash_joins[i]->data->getUsedFlags() = hash_joins[0]->data->getUsedFlags();
         }
     }
+
+    build_phase_finished = true;
 }
 }
 

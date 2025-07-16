@@ -1,4 +1,12 @@
+before the test
 1
+after create table
 1
+after firtst insert
 1
+after second insert
+1
+after optimize
+1
+after drop table
 1

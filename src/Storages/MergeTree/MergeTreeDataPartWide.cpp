@@ -1,4 +1,4 @@
-#include "MergeTreeDataPartWide.h"
+#include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
@@ -8,6 +8,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Common/quoteString.h>
 #include <Core/NamesAndTypes.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -440,7 +441,7 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
             && getSerialization(column.name)->getKind() == ISerialization::Kind::DEFAULT)
         {
             size_t rows_in_column = size.data_uncompressed / column.type->getSizeOfValueInMemory();
-            if (rows_in_column != rows_count)
+            if (rows_in_column > 0 && rows_in_column != rows_count)
             {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,

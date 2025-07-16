@@ -7,7 +7,7 @@ slug: /interfaces/third-party/client-libraries
 title: 'Client Libraries from Third-party Developers'
 ---
 
-# Client Libraries from Third-party Developers
+# Client libraries from third-party developers
 
 :::note
 ClickHouse Inc does **not** maintain the libraries listed below and hasn't done any extensive testing to ensure their quality.
@@ -28,6 +28,7 @@ ClickHouse Inc does **not** maintain the libraries listed below and hasn't done 
  - [SeasClick C++ client](https://github.com/SeasX/SeasClick)
  - [one-ck](https://github.com/lizhichao/one-ck)
  - [glushkovds/phpclickhouse-laravel](https://packagist.org/packages/glushkovds/phpclickhouse-laravel)
+ - [glushkovds/php-clickhouse-schema-builder](https://packagist.org/packages/glushkovds/php-clickhouse-schema-builder)
  - [kolya7k ClickHouse PHP extension](https://github.com//kolya7k/clickhouse-php)
  - [hyvor/clickhouse-php](https://github.com/hyvor/clickhouse-php)
 ### Go {#go}
@@ -82,3 +83,4 @@ ClickHouse Inc does **not** maintain the libraries listed below and hasn't done 
  - [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 ### Haskell {#haskell}
  - [hdbc-clickhouse](https://github.com/zaneli/hdbc-clickhouse)
+ - [ClickHaskell](https://clickhaskell.dev/)

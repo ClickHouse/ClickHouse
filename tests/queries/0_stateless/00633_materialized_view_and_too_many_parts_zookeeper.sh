@@ -19,10 +19,13 @@ ${CLICKHOUSE_CLIENT} --query "CREATE MATERIALIZED VIEW c (d UInt64) ENGINE = Rep
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO root VALUES (1)";
 ${CLICKHOUSE_CLIENT} --query "SELECT _table, d FROM merge('${CLICKHOUSE_DATABASE}', '^[abc]\$') ORDER BY _table"
-if ${CLICKHOUSE_CLIENT} --query "INSERT INTO root VALUES (2)" 2>/dev/null; then
-    echo "FAIL"
-    echo "Expected 'too many parts' on table b"
-fi
+
+query_prefix="$CLICKHOUSE_DATABASE"
+query_id="${query_prefix}_insert"
+${CLICKHOUSE_CLIENT} --query-id="${query_id}" --materialized_views_ignore_errors=1 --query "INSERT INTO root VALUES (2)" 2>/dev/null
+
+${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_views_log";
+${CLICKHOUSE_CLIENT} --query "SELECT view_name, status FROM system.query_views_log WHERE initial_query_id = '${query_id}' ORDER BY view_name ASC" | sed 's/ExceptionWhileProcessing/Ex*WhileProcessing/g'
 
 echo
 ${CLICKHOUSE_CLIENT} --query "SELECT _table, d FROM merge('${CLICKHOUSE_DATABASE}', '^[abc]\$') ORDER BY _table, d"

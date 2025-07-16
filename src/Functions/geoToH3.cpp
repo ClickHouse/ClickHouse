@@ -10,6 +10,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 #include <base/range.h>
 
 #include <constants.h>
@@ -20,7 +21,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool geotoh3_lon_lat_input_order;
+    extern const SettingsGeoToH3ArgumentOrder geotoh3_argument_order;
 }
 namespace ErrorCodes
 {
@@ -37,14 +38,14 @@ namespace
 /// and returns h3 index of this point
 class FunctionGeoToH3 : public IFunction
 {
-    const bool geotoh3_lon_lat_input_order;
+    GeoToH3ArgumentOrder geotoh3_argument_order;
 public:
     static constexpr auto name = "geoToH3";
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionGeoToH3>(context); }
 
     explicit FunctionGeoToH3(ContextPtr context)
-    : geotoh3_lon_lat_input_order(context->getSettingsRef()[Setting::geotoh3_lon_lat_input_order])
+    : geotoh3_argument_order(context->getSettingsRef()[Setting::geotoh3_argument_order])
     {
     }
 
@@ -94,7 +95,7 @@ public:
         const ColumnFloat64 * col_lat = nullptr;
         const ColumnFloat64 * col_lon = nullptr;
 
-        if (geotoh3_lon_lat_input_order)
+        if (geotoh3_argument_order == GeoToH3ArgumentOrder::LON_LAT)
         {
             col_lon = checkAndGetColumn<ColumnFloat64>(non_const_arguments[0].column.get());
             col_lat = checkAndGetColumn<ColumnFloat64>(non_const_arguments[1].column.get());
