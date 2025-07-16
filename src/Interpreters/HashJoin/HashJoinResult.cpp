@@ -128,7 +128,7 @@ static void appendRightColumns(
 
     if (!offsets.empty())
     {
-        chassert(block);
+        chassert(!block.empty());
         chassert(offsets.size() == block.rows());
 
         auto columns_to_replicate = block.getColumns();

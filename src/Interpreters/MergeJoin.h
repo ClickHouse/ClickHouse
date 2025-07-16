@@ -30,7 +30,7 @@ public:
         size_t right_position;
         size_t right_block;
 
-        bool empty() const { return !block; }
+        bool empty() const { return block.empty(); }
     };
 
     std::string getName() const override { return "PartialMergeJoin"; }

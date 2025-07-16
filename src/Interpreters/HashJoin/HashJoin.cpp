@@ -982,7 +982,7 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
                     break;
 
                 auto block_right = reader.value()->read();
-                if (!block_right)
+                if (block_right.empty())
                 {
                     reader.reset();
                     break;

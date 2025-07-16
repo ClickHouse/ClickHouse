@@ -417,7 +417,7 @@ void GraceHashJoin::checkTypesOfKeys(const Block & block) const
 void GraceHashJoin::initialize(const Block & sample_block)
 {
     left_sample_block = std::make_shared<const Block>(sample_block.cloneEmpty());
-    output_sample_block = left_sample_block.cloneEmpty();
+    output_sample_block = left_sample_block->cloneEmpty();
     auto res = hash_join->joinBlock(output_sample_block)->next();
     output_sample_block = std::move(res.block);
     initBuckets();
