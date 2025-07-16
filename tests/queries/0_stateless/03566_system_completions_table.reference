@@ -1,22 +1,7 @@
-    ┌─token──────────────────────────┐
- 1. │ __actionname                   │
- 2. │ __bitboolmaskand               │
- 3. │ __bitboolmaskor                │
- 4. │ __bitswaplasttwo               │
- 5. │ __bitwrapperfunc               │
- 6. │ __getscalar                    │
- 7. │ __patchpartitionid             │
- 8. │ __scalarsubqueryresult         │
- 9. │ _cast                          │
-10. │ _temporary_and_external_tables │
-11. │ aaabar                         │
-12. │ aaabaz                         │
-13. │ aaadatabase                    │
-14. │ aaafoo                         │
-15. │ aaatable                       │
-16. │ abs                            │
-17. │ absolute_delay                 │
-18. │ access_type                    │
-19. │ accuratecast                   │
-20. │ accuratecastordefault          │
-    └────────────────────────────────┘
+   ┌─token──────────────┐
+1. │ 0003566aaabar      │
+2. │ 0003566aaabaz      │
+3. │ 0003566aaadatabase │
+4. │ 0003566aaafoo      │
+5. │ 0003566aaatable    │
+   └────────────────────┘
