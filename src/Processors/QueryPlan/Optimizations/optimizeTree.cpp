@@ -321,6 +321,8 @@ void optimizeTreeSecondPass(
 
             stack.pop_back();
         }
+        while (!stack.empty()) /// Vector search only for 1 substree with ORDER BY..LIMIT
+            stack.pop_back();
     }
 
     /// projection optimizations can introduce additional reading step
