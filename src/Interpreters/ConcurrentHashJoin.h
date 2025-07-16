@@ -44,7 +44,7 @@ public:
     explicit ConcurrentHashJoin(
         std::shared_ptr<TableJoin> table_join_,
         size_t slots_,
-        SharedHeader right_sample_block,
+        SharedHeader right_sample_block_,
         const StatsCollectingParams & stats_collecting_params_,
         bool any_take_last_row_ = false);
 
@@ -93,11 +93,14 @@ public:
     };
 
 private:
+    void createInternalHashJoin(size_t i);
+
     std::shared_ptr<TableJoin> table_join;
     size_t slots;
+    SharedHeader right_sample_block;
     bool any_take_last_row;
     std::unique_ptr<ThreadPool> pool;
-    std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
+    std::vector<std::unique_ptr<InternalHashJoin>> hash_joins;
     bool build_phase_finished = false;
 
     StatsCollectingParams stats_collecting_params;

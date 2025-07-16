@@ -79,14 +79,17 @@ void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams &
         return;
 
     const auto ht_size = hash_joins.at(0)->data->getTotalRowCount();
-    if (!std::ranges::all_of(hash_joins, [&](const auto & hash_join) { return hash_join->data->getTotalRowCount() == ht_size; }))
+    if (!std::ranges::all_of(
+            hash_joins,
+            [&](const auto & hash_join) { return hash_join->data == nullptr || hash_join->data->getTotalRowCount() == ht_size; }))
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "HashJoin instances have different sizes");
 
     const auto source_rows = std::accumulate(
         hash_joins.begin(),
         hash_joins.end(),
         0ull,
-        [](auto acc, const auto & hash_join) { return acc + hash_join->data->getJoinedData()->rows_to_join; });
+        [](auto acc, const auto & hash_join)
+        { return acc + (hash_join->data != nullptr ? hash_join->data->getJoinedData()->rows_to_join : 0); });
     if (ht_size)
         DB::getHashTablesStatistics<DB::HashJoinEntry>().update({.ht_size = ht_size, .source_rows = source_rows}, params);
 }
@@ -98,7 +101,7 @@ UInt32 toPowerOfTwo(UInt32 x)
     return static_cast<UInt32>(1) << (32 - std::countl_zero(x - 1));
 }
 
-HashJoin::RightTableDataPtr getData(const std::shared_ptr<ConcurrentHashJoin::InternalHashJoin> & join)
+HashJoin::RightTableDataPtr getData(const ConcurrentHashJoin::InternalHashJoin * join)
 {
     return join->data->getJoinedData();
 }
@@ -151,55 +154,51 @@ namespace ErrorCodes
 ConcurrentHashJoin::ConcurrentHashJoin(
     std::shared_ptr<TableJoin> table_join_,
     size_t slots_,
-    SharedHeader right_sample_block,
+    SharedHeader right_sample_block_,
     const StatsCollectingParams & stats_collecting_params_,
     bool any_take_last_row_)
     : table_join(table_join_)
     , slots(toPowerOfTwo(std::min<UInt32>(static_cast<UInt32>(slots_), 256)))
+    , right_sample_block(right_sample_block_)
     , any_take_last_row(any_take_last_row_)
-    , pool(std::make_unique<ThreadPool>(
-          CurrentMetrics::ConcurrentHashJoinPoolThreads,
-          CurrentMetrics::ConcurrentHashJoinPoolThreadsActive,
-          CurrentMetrics::ConcurrentHashJoinPoolThreadsScheduled,
-          /*max_threads_*/ slots,
-          /*max_free_threads_*/ 0,
-          /*queue_size_*/ slots))
+    , pool(
+          std::make_unique<ThreadPool>(
+              CurrentMetrics::ConcurrentHashJoinPoolThreads,
+              CurrentMetrics::ConcurrentHashJoinPoolThreadsActive,
+              CurrentMetrics::ConcurrentHashJoinPoolThreadsScheduled,
+              /*max_threads_*/ slots,
+              /*max_free_threads_*/ 0,
+              /*queue_size_*/ slots))
     , stats_collecting_params(stats_collecting_params_)
 {
     hash_joins.resize(slots);
 
-    try
-    {
-        for (size_t i = 0; i < slots; ++i)
-        {
-            pool->scheduleOrThrow(
-                [&, i, thread_group = CurrentThread::getGroup()]()
-                {
-                    ThreadGroupSwitcher switcher(thread_group, "ConcurrentJoin");
+    for (size_t i = 0; i < slots; ++i)
+        hash_joins[i] = std::make_unique<ConcurrentHashJoin::InternalHashJoin>();
 
-                    /// reserve is not needed anyway - either we will use fixed-size hash map or shared two-level map (then reserve will be done in a special way below)
-                    const size_t reserve_size = 0;
+    /// Create the first hash join instance in the current thread. The rest will be initialized lazily
+    createInternalHashJoin(0);
+}
 
-                    auto inner_hash_join = std::make_shared<InternalHashJoin>();
-                    inner_hash_join->data = std::make_unique<HashJoin>(
-                        table_join_,
-                        right_sample_block,
-                        any_take_last_row_,
-                        reserve_size,
-                        fmt::format("concurrent{}", i),
-                        /*use_two_level_maps*/ true);
-                    inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
-                    hash_joins[i] = std::move(inner_hash_join);
-                });
-        }
-        pool->wait();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        pool->wait();
-        throw;
-    }
+void ConcurrentHashJoin::createInternalHashJoin(size_t i)
+{
+    if (hash_joins[i]->data)
+        return;
+
+    auto thread_group = CurrentThread::getGroup();
+    ThreadGroupSwitcher switcher(thread_group, "ConcurrentJoin");
+
+    /// reserve is not needed anyway - either we will use fixed-size hash map or shared two-level map (then reserve will be done in a special way below)
+    const size_t reserve_size = 0;
+
+    hash_joins[i]->data = std::make_unique<HashJoin>(
+        table_join,
+        right_sample_block,
+        any_take_last_row,
+        reserve_size,
+        fmt::format("concurrent{}", i),
+        /*use_two_level_maps*/ true);
+    hash_joins[i]->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
 }
 
 ConcurrentHashJoin::~ConcurrentHashJoin()
@@ -214,10 +213,12 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
 
         for (size_t i = 0; i < slots; ++i)
         {
+            if (!hash_joins[i]->data)
+                continue;
             // Hash tables destruction may be very time-consuming.
             // Without the following code, they would be destroyed in the current thread (i.e. sequentially).
             pool->scheduleOrThrow(
-                [join = hash_joins[0], i, this, thread_group = CurrentThread::getGroup()]()
+                [join = hash_joins[0].get(), i, this, thread_group = CurrentThread::getGroup()]()
                 {
                     ThreadGroupSwitcher switcher(thread_group, "ConcurrentJoin");
 
@@ -235,9 +236,12 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
                     };
                     const auto & right_data = getData(join);
                     std::visit([&](auto & maps) { return clear_space_in_buckets(maps, right_data->type, i); }, right_data->maps.at(0));
+                    if (i != 0)
+                        hash_joins[i].reset();
                 });
         }
         pool->wait();
+        hash_joins[0].reset();
     }
     catch (...)
     {
@@ -267,15 +271,20 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
         /// insert blocks into corresponding HashJoin instances
         for (size_t i = 0; i < dispatched_blocks.size(); ++i)
         {
-            auto & hash_join = hash_joins[i];
             auto & dispatched_block = dispatched_blocks[i];
 
             if (dispatched_block.rows())
             {
+                auto & hash_join = hash_joins[i];
+
                 /// if current hash_join is already processed by another thread, skip it and try later
                 std::unique_lock<std::mutex> lock(hash_join->mutex, std::try_to_lock);
                 if (!lock.owns_lock())
                     continue;
+
+                /// We do lazy initialization of `hash_joins` instances (except 0), so we can have `nullptr` here.
+                if (!hash_joins[i]->data)
+                    createInternalHashJoin(i);
 
                 if (!hash_join->space_was_preallocated && hash_join->data->twoLevelMapIsUsed())
                 {
@@ -347,10 +356,14 @@ void ConcurrentHashJoin::joinBlock(Block & block, ExtraScatteredBlocks & extra_b
             remaining_blocks[i] = std::move(dispatched_blocks[i]);
             continue;
         }
-        auto & hash_join = hash_joins[i];
         auto & current_block = dispatched_blocks[i];
         if (!current_block.empty() && (i == 0 || current_block.rows()))
+        {
+            if (!hash_joins[i]->data)
+                createInternalHashJoin(i);
+            auto & hash_join = hash_joins[i];
             hash_join->data->joinBlock(current_block, remaining_blocks[i]);
+        }
         remaining_rows_before_limit -= std::min(current_block.rows(), remaining_rows_before_limit);
     }
     for (size_t i = 0; i < dispatched_blocks.size(); ++i)
@@ -386,7 +399,8 @@ size_t ConcurrentHashJoin::getTotalRowCount() const
     for (const auto & hash_join : hash_joins)
     {
         std::lock_guard lock(hash_join->mutex);
-        res += hash_join->data->getTotalRowCount();
+        if (hash_join->data)
+            res += hash_join->data->getTotalRowCount();
     }
     return res;
 }
@@ -397,7 +411,8 @@ size_t ConcurrentHashJoin::getTotalByteCount() const
     for (const auto & hash_join : hash_joins)
     {
         std::lock_guard lock(hash_join->mutex);
-        res += hash_join->data->getTotalByteCount();
+        if (hash_join->data)
+            res += hash_join->data->getTotalByteCount();
     }
     return res;
 }
@@ -407,7 +422,7 @@ bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
     for (const auto & hash_join : hash_joins)
     {
         std::lock_guard lock(hash_join->mutex);
-        if (!hash_join->data->alwaysReturnsEmptySet())
+        if (hash_join->data && !hash_join->data->alwaysReturnsEmptySet())
             return false;
     }
     return true;
@@ -606,6 +621,9 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
         //     1. Merge hash maps into a single one. For that, we iterate over all sub-maps and move buckets from the current `HashJoin` instance to the common map.
         for (size_t i = 1; i < slots; ++i)
         {
+            if (hash_joins[i]->data == nullptr)
+                continue;
+
             auto move_buckets = [&](auto & lhs_maps, HashJoin::Type type, auto & rhs_maps, size_t idx)
             {
                 APPLY_TO_MAP(
@@ -628,23 +646,26 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 [&](auto & lhs_map)
                 {
                     using T = std::decay_t<decltype(lhs_map)>;
-                    move_buckets(lhs_map, getData(hash_joins[0])->type, std::get<T>(getData(hash_joins[i])->maps.at(0)), i);
+                    move_buckets(lhs_map, getData(hash_joins[0].get())->type, std::get<T>(getData(hash_joins[i].get())->maps.at(0)), i);
                 },
-                getData(hash_joins[0])->maps.at(0));
+                getData(hash_joins[0].get())->maps.at(0));
         }
     }
 
     // `onBuildPhaseFinish` cannot be called concurrently with other IJoin methods, so we don't need a lock to access internal joins.
     // The following calls must be done after the final common map is constructed, otherwise we will incorrectly initialize `used_flags`.
     for (const auto & hash_join : hash_joins)
-        hash_join->data->onBuildPhaseFinish();
+        if (hash_join->data)
+            hash_join->data->onBuildPhaseFinish();
 
     if (hash_joins[0]->data->twoLevelMapIsUsed())
     {
         //     2. Copy this common map to all the `HashJoin` instances along with the `used_flags` data structure.
         for (size_t i = 1; i < slots; ++i)
         {
-            getData(hash_joins[i])->maps = getData(hash_joins[0])->maps;
+            if (hash_joins[i]->data == nullptr)
+                continue;
+            getData(hash_joins[i].get())->maps = getData(hash_joins[0].get())->maps;
             hash_joins[i]->data->getUsedFlags() = hash_joins[0]->data->getUsedFlags();
         }
     }
