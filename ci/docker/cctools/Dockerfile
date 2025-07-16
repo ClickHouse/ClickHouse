@@ -42,7 +42,7 @@ RUN git clone https://github.com/tpoechtrager/cctools-port.git --branch 986-ld64
 #     DWARF error: invalid or unhandled FORM value: 0x23
 #
 ENV LD=ld.lld-${LLVM_VERSION}
-ARG GDB_VERSION=16.2
+ARG GDB_VERSION=16.3
 RUN apt-get update \
     && apt-get install --yes \
         libgmp-dev \
