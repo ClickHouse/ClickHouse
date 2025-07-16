@@ -258,8 +258,8 @@ private:
     ///  - from 0 up to `max_threads` requests in "consuming" state (i.e. allocated by the scheduler);
     ///  - 0 or 1 request in "enqueued" state (i.e. sent to the scheduler, but not yet granted);
     /// RATIONALE:
-    /// The scheduler works with is a ResourceRequest. Old non-preemptive `CpuSlotsAllocation` has one-to-one mapping with a CPU slot.
-    /// But `CpuLeaseAllocation` interact with the scheduler more intensively. Every consumed quantum (10ms) is reported to the scheduler.
+    /// The scheduler works with is a ResourceRequest. Old non-preemptive `CPUSlotsAllocation` has one-to-one mapping with a CPU slot.
+    /// But `CPULeaseAllocation` interact with the scheduler more intensively. Every consumed quantum (10ms) is reported to the scheduler.
     /// We want interaction to be as reactive as possible to minimize scheduling latencies.
     /// So instead of having one request for every thread, we have a chain (cyclic buffer) of requests.
     /// Newly granted requests are added to the `head`, while current consumption of ALL threads goes to the `tail` request.

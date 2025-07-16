@@ -934,10 +934,10 @@ struct TestQuery {
 
     enum AllocationType
     {
-        AllocateSlots, // CpuSlotsAllocation (slot count fairness, no preemption)
-        AllocateLease, // CpuLeaseAllocation (cpu time fairness + preemption)
-        AllocateLeaseNoDownscale, // CpuLeaseAllocation (cpu time fairness + preemption w/o timeout)
-        AllocateLeaseQuantumX3, // CpuLeaseAllocation (cpu time fairness, preemption, x3 larger resource request cost)
+        AllocateSlots, // CPUSlotsAllocation (slot count fairness, no preemption)
+        AllocateLease, // CPULeaseAllocation (cpu time fairness + preemption)
+        AllocateLeaseNoDownscale, // CPULeaseAllocation (cpu time fairness + preemption w/o timeout)
+        AllocateLeaseQuantumX3, // CPULeaseAllocation (cpu time fairness, preemption, x3 larger resource request cost)
     };
 
     SlotAllocationPtr allocateCPUSlots(AllocationType type, ResourceLink master_link, ResourceLink worker_link, const String & workload)
