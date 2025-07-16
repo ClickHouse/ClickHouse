@@ -207,7 +207,7 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
     QueryAnalyzer analyzer(false);
-    analyzer.resolveConstantExpression(expression, fake_table_expression, execution_context);
+    analyzer.resolve(expression, fake_table_expression, execution_context);
 
     GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
@@ -227,7 +227,7 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     else
         actions.project(result_columns);
 
-    // Output all the rest columns
+    // Output columns without expression as-is
     NameSet outputs;
     for (const auto & output : actions.getOutputs())
         outputs.insert(output->result_name);
