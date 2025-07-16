@@ -44,6 +44,10 @@ private:
     using ComparatorCollationDescendingStable = ComparatorDescendingStableImpl<ComparatorCollationBase>;
     using ComparatorCollationEqual = ComparatorEqualImpl<ComparatorCollationBase>;
 
+    /// Enables replacement of a constant array name with array's hash.
+    /// Possible values: positive integer - number of elements in an array, 0 — always, negative integer - never.
+    static const Int64 optimize_const_array_name_size = 10;
+
 public:
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
@@ -136,6 +140,8 @@ public:
     /** More efficient methods of manipulation */
     IColumn & getData() { return *data; }
     const IColumn & getData() const { return *data; }
+
+    size_t getSize(size_t n) const { return sizeAt(n); }
 
     IColumn & getOffsetsColumn() { return *offsets; }
     const IColumn & getOffsetsColumn() const { return *offsets; }

@@ -157,6 +157,26 @@ std::pair<String, DataTypePtr> ColumnArray::getValueNameAndType(size_t n) const
     size_t offset = offsetAt(n);
     size_t size = sizeAt(n);
 
+
+    if (optimize_const_array_name_size < 0 || size <= optimize_const_array_name_size)
+    {
+        String value_name {"["};
+        DataTypes element_types;
+        element_types.reserve(size);
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            const auto & [value, type] = getData().getValueNameAndType(offset + i);
+            element_types.push_back(type);
+            if (i > 0)
+                value_name += ", ";
+            value_name += value;
+        }
+        value_name += "]";
+
+        return {value_name, std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types))};
+    }
+
     HashState h;
     const auto & data_column = getData();
     for (size_t i = 0; i < size; ++i)

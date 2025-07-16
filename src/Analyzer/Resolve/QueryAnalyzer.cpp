@@ -1,5 +1,7 @@
 #include <Common/FieldVisitorToString.h>
 
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -117,6 +119,7 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsInt64 optimize_const_array_to_scalar_size;
 }
 
 
@@ -802,11 +805,17 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
 void QueryAnalyzer::convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, IdentifierResolveScope & scope) const
 {
+    auto max_array_size = scope.context->getSettingsRef()[Setting::optimize_const_array_to_scalar_size];
+    if (max_array_size < 0)
+        return;
+
     auto * constant_node = node->as<ConstantNode>();
     if (!constant_node || !constant_node->hasSourceExpression())
         return;
 
-    if (!isArray(constant_node->getResultType()->getTypeId()))
+    const auto * col_const = typeid_cast<const ColumnConst *>(constant_node->getColumn().get());
+    const auto * col_array = typeid_cast<const ColumnArray *>(&col_const->getDataColumn());
+    if (!col_array || (max_array_size != 0 && col_array->getSize(0) <= static_cast<UInt64>(max_array_size)))
         return;
 
     // do not convert arguments of "in" functions
