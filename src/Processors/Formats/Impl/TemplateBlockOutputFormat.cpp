@@ -17,10 +17,10 @@ namespace ErrorCodes
     extern const int INVALID_TEMPLATE_FORMAT;
 }
 
-TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, WriteBuffer & out_, const FormatSettings & settings_,
+TemplateBlockOutputFormat::TemplateBlockOutputFormat(SharedHeader header_, WriteBuffer & out_, const FormatSettings & settings_,
                                                      ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_,
                                                      std::string row_between_delimiter_)
-    : IOutputFormat(header_, out_), settings(settings_), serializations(header_.getSerializations()), format(std::move(format_))
+    : IOutputFormat(header_, out_), settings(settings_), serializations(header_->getSerializations()), format(std::move(format_))
     , row_format(std::move(row_format_)), row_between_delimiter(std::move(row_between_delimiter_))
 {
     /// Validate format string for whole output
@@ -65,9 +65,9 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, Writ
     {
         if (!row_format.format_idx_to_column_idx[i])
             row_format.throwInvalidFormat("Cannot skip format field for output, it's a bug.", i);
-        if (header_.columns() <= *row_format.format_idx_to_column_idx[i])
+        if (header_->columns() <= *row_format.format_idx_to_column_idx[i])
             row_format.throwInvalidFormat("Column index " + std::to_string(*row_format.format_idx_to_column_idx[i]) +
-                                          " must be less then number of columns (" + std::to_string(header_.columns()) + ")", i);
+                                          " must be less then number of columns (" + std::to_string(header_->columns()) + ")", i);
         if (row_format.escaping_rules[i] == EscapingRule::None)
             row_format.throwInvalidFormat("Serialization type for file column is not specified", i);
     }
@@ -271,7 +271,7 @@ void registerOutputFormatTemplate(FormatFactory & factory)
                 throw Exception(DB::ErrorCodes::INVALID_TEMPLATE_FORMAT, "Expected either format_template_row or format_template_row_format, but not both");
             }
         }
-        return std::make_shared<TemplateBlockOutputFormat>(sample, buf, settings, resultset_format, row_format, settings.template_settings.row_between_delimiter);
+        return std::make_shared<TemplateBlockOutputFormat>(std::make_shared<const Block>(sample), buf, settings, resultset_format, row_format, settings.template_settings.row_between_delimiter);
     });
 
     factory.registerAppendSupportChecker("Template", [](const FormatSettings & settings)

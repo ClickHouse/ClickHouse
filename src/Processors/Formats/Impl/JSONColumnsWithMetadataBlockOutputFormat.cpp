@@ -13,8 +13,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-JSONColumnsWithMetadataBlockOutputFormat::JSONColumnsWithMetadataBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : JSONColumnsBlockOutputFormat(out_, header_, format_settings_, true, 1), types(header_.getDataTypes())
+JSONColumnsWithMetadataBlockOutputFormat::JSONColumnsWithMetadataBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
+    : JSONColumnsBlockOutputFormat(out_, header_, format_settings_, true, 1), types(header_->getDataTypes())
 {
 }
 
@@ -108,7 +108,7 @@ void registerOutputFormatJSONColumnsWithMetadata(FormatFactory & factory)
         const Block & sample,
         const FormatSettings & format_settings)
     {
-        return std::make_shared<JSONColumnsWithMetadataBlockOutputFormat>(buf, sample, format_settings);
+        return std::make_shared<JSONColumnsWithMetadataBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings);
     });
 
     factory.markFormatHasNoAppendSupport("JSONColumnsWithMetadata");

@@ -251,7 +251,7 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
 class PushingToLiveViewSink final : public SinkToStorage
 {
 public:
-    PushingToLiveViewSink(const Block & header, StorageLiveView & live_view_, ContextPtr context_)
+    PushingToLiveViewSink(SharedHeader header, StorageLiveView & live_view_, ContextPtr context_)
         : SinkToStorage(header)
         , live_view(live_view_)
         , context(std::move(context_))
@@ -280,7 +280,7 @@ private:
 class PushingToWindowViewSink final : public SinkToStorage
 {
 public:
-    PushingToWindowViewSink(const Block & header, StorageWindowView & window_view_, ContextPtr context_)
+    PushingToWindowViewSink(SharedHeader header, StorageWindowView & window_view_, ContextPtr context_)
         : SinkToStorage(header)
         , window_view(window_view_)
         , context(std::move(context_))
@@ -309,7 +309,7 @@ private:
 class BeginingViewsTransform final : public ISimpleTransform
 {
 public:
-    explicit BeginingViewsTransform(Block header)
+    explicit BeginingViewsTransform(SharedHeader header)
         : ISimpleTransform(header, header, false)
     {}
 
@@ -548,7 +548,7 @@ class ExecutingInnerQueryFromViewTransform final : public ExceptionKeepingTransf
 {
 public:
     ExecutingInnerQueryFromViewTransform(
-        const Block & input_header, const Block & output_header,
+        SharedHeader input_header, SharedHeader output_header,
         ASTPtr select_query_,
         StorageID source_id_, StoragePtr source_storage_, StorageMetadataPtr source_metadata_,
         StorageID view_id_,
@@ -672,7 +672,7 @@ private:
         auto final_dag = ActionsDAG::merge(std::move(merged_dag), std::move(converting_types_dag));
 
         pipeline.addTransform(std::make_shared<ExpressionTransform>(
-            pipeline.getHeader(),
+            pipeline.getSharedHeader(),
             std::make_shared<ExpressionActions>(std::move(final_dag))));
 
         inner_metadata->check(pipeline.getHeader());
@@ -681,21 +681,21 @@ private:
         /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
         /// and two-level aggregation is triggered).
         pipeline.addTransform(std::make_shared<SquashingTransform>(
-            pipeline.getHeader(),
+            pipeline.getSharedHeader(),
             context->getSettingsRef()[Setting::min_insert_block_size_rows],
             context->getSettingsRef()[Setting::min_insert_block_size_bytes]));
 
-        pipeline.addTransform(std::make_shared<RestoreChunkInfosTransform>(std::move(chunk_infos), pipeline.getHeader()));
+        pipeline.addTransform(std::make_shared<RestoreChunkInfosTransform>(std::move(chunk_infos), pipeline.getSharedHeader()));
 
         if (context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views])
         {
             String materialize_view_id = view_id.hasUUID() ? toString(view_id.uuid) : view_id.getFullNameNotQuoted();
-            pipeline.addTransform(std::make_shared<DeduplicationToken::SetViewIDTransform>(std::move(materialize_view_id), pipeline.getHeader()));
-            pipeline.addTransform(std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(pipeline.getHeader()));
+            pipeline.addTransform(std::make_shared<DeduplicationToken::SetViewIDTransform>(std::move(materialize_view_id), pipeline.getSharedHeader()));
+            pipeline.addTransform(std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(pipeline.getSharedHeader()));
         }
         else
         {
-            pipeline.addTransform(std::make_shared<DeduplicationToken::ResetTokenTransform>(pipeline.getHeader()));
+            pipeline.addTransform(std::make_shared<DeduplicationToken::ResetTokenTransform>(pipeline.getSharedHeader()));
         }
 
         return QueryPipelineBuilder::getPipeline(std::move(pipeline));
@@ -706,7 +706,7 @@ private:
 
 
 InsertDependenciesBuilder::InsertDependenciesBuilder(
-    StoragePtr table, ASTPtr query, Block insert_header,
+    StoragePtr table, ASTPtr query, SharedHeader insert_header,
     bool async_insert_, bool skip_destination_table_,
     ContextPtr context)
     : init_table_id(table->getStorageID())
@@ -965,7 +965,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         {
             /// set root_view to `{}`/`StorageID::createEmpty()` and dependent_views[{}] to the init_table_id
             set_defaults_for_root_view({}, init_table_id);
-            output_headers[{}] = metadata->getSampleBlock();
+            output_headers[{}] = std::make_shared<const Block>(metadata->getSampleBlock());
             view_types[{}] = QueryViewsLogElement::ViewType::DEFAULT;
             return true;
         }
@@ -973,7 +973,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         const auto & view_id = parent;
 
         chassert(inner_tables.at(view_id) == current);
-        output_headers[view_id] = metadata->getSampleBlock();
+        output_headers[view_id] = std::make_shared<const Block>(metadata->getSampleBlock());
 
         // TODO: remove sql_security_type check after we turn `ignore_empty_sql_security_in_create_view_query=false`
         auto view_storage = storages.at(view_id);
@@ -1069,7 +1069,7 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDPrivate view_id) const
     auto insert_context = insert_contexts.at(view_id);
     auto inner_table_id = inner_tables.at(view_id);
     auto inner_storage = storages.at(inner_table_id);
-    Block output_header = output_headers.at(view_id);
+    auto output_header = output_headers.at(view_id);
 
     bool no_squash = false;
     bool should_add_squashing = InterpreterInsertQuery::shouldAddSquashingForStorage(inner_storage, insert_context) && !no_squash && !async_insert;
@@ -1147,14 +1147,14 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDPrivate view_id) const
     auto insert_context = insert_contexts.at(view_id);
 
     auto adding_missing_defaults_dag = addMissingDefaults(
-        input_headers.at(view_id),
-        output_header.getNamesAndTypesList(),
+        *input_headers.at(view_id),
+        output_header->getNamesAndTypesList(),
         inner_metadata->getColumns(),
         insert_context,
         insert_null_as_default);
 
     auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(
-        input_headers.at(view_id),
+        *input_headers.at(view_id),
         adding_missing_defaults_dag.getRequiredColumnsNames(),
         insert_context);
 
@@ -1203,7 +1203,7 @@ Chain InsertDependenciesBuilder::createSink(StorageIDPrivate view_id) const
     }
     else if (auto * window_view = dynamic_cast<StorageWindowView *>(inner_storage.get()))
     {
-        auto sink = std::make_shared<PushingToWindowViewSink>(window_view->getInputHeader(), *window_view, insert_context);
+        auto sink = std::make_shared<PushingToWindowViewSink>(std::make_shared<const Block>(window_view->getInputHeader()), *window_view, insert_context);
         sink->setRuntimeData(thread_groups.at(view_id));
         result.addSink(std::move(sink));
     }
@@ -1222,7 +1222,7 @@ Chain InsertDependenciesBuilder::createSink(StorageIDPrivate view_id) const
     const auto & settings = insert_context->getSettingsRef();
 
     if (isViewsInvolved() && settings[Setting::deduplicate_blocks_in_dependent_materialized_views])
-        result.addSink(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result.getOutputHeader()));
+        result.addSink(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result.getOutputSharedHeader()));
 
     return result;
 }

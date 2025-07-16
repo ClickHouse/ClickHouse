@@ -433,6 +433,9 @@
     M(TaskTrackerThreads, "Number of threads used by the distributed query remote task tracker.") \
     M(TaskTrackerThreadsActive, "Number of threads in the distributed query remote task tracker thread pool running a task.") \
     M(TaskTrackerThreadsScheduled, "Number of queued or active jobs in the distributed query remote task tracker thread pool.") \
+    M(DropDistributedCacheThreads, "Number of threads in the threadpool for drop distributed cache query.") \
+    M(DropDistributedCacheThreadsActive, "Number of active threads in the threadpool for drop distributed cache query.") \
+    M(DropDistributedCacheThreadsScheduled, "Number of queued or active jobs in the threadpool for drop distributed cache.") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

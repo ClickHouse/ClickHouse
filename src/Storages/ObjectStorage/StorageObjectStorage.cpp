@@ -26,6 +26,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
@@ -304,7 +305,6 @@ void StorageObjectStorage::read(
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,
         configuration,
-        fmt::format("{}({})", getName(), getStorageID().getFullTableName()),
         column_names,
         getVirtualsList(),
         query_info,
@@ -335,7 +335,7 @@ SinkToStoragePtr StorageObjectStorage::write(
             /* check_consistent_with_previous_metadata */true);
     }
 
-    const auto sample_block = metadata_snapshot->getSampleBlock();
+    const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
     const auto & settings = configuration->getQuerySettings(local_context);
 
     if (configuration->isArchive())
