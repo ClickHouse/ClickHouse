@@ -778,7 +778,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         results.append(
             Result.from_commands_run(
                 name="Exception in test runner",
-                command=f"! grep -A10 'Traceback (most recent call last)' {temp_dir}/job.log | head -n 100 | tee /dev/stderr | grep -q .",
+                command=f"! awk 'found && /^[^[:space:]]/ {{ print; exit }} /^Traceback \(most recent call last\):/ {{ found=1 }} found {{ print }}' {temp_dir}/job.log | head -n 100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
