@@ -6132,7 +6132,7 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
     {
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(
-            /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
+            /*one_line=*/true, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
         query.IAST::format(buf, ast_format_settings);
         query_str = buf.str();
     }
@@ -6165,7 +6165,7 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                 connection,
                 query_str,
-                Block{},
+                std::make_shared<const Block>(Block{}),
                 query_context,
                 /*throttler=*/nullptr,
                 Scalars{},
@@ -6178,9 +6178,9 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
                 false,
                 settings[Setting::async_socket_for_remote],
                 settings[Setting::async_query_sending_for_remote])};
-            pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
+            pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
             QueryPipeline remote_pipeline{std::move(pipe)};
-            remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));
+            remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getSharedHeader()));
 
             pipeline.addCompletedPipeline(std::move(remote_pipeline));
         }

@@ -14,4 +14,7 @@ using Blocks = std::vector<Block>;
 using BlocksList = std::list<Block>;
 using BlocksPtr = std::shared_ptr<Blocks>;
 
+using SharedHeader =  std::shared_ptr<const Block>;
+using SharedHeaders = std::vector<SharedHeader>;
+
 }

@@ -190,7 +190,7 @@ class BufferSource : public ISource
 {
 public:
     BufferSource(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageSnapshotPtr & storage_snapshot)
-        : ISource(storage_snapshot->getSampleBlockForColumns(column_names_))
+        : ISource(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names_)))
         , column_names_and_types(storage_snapshot->getColumnsByNames(
             GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_names_))
         , buffer(buffer_)
@@ -385,7 +385,7 @@ void StorageBuffer::read(
                       * Instead, we rely on the converting actions at the end of this function.
                       */
                     auto actions = addMissingDefaults(
-                            query_plan.getCurrentHeader(),
+                            *query_plan.getCurrentHeader(),
                             header_after_adding_defaults.getNamesAndTypesList(),
                             metadata_snapshot->getColumns(),
                             local_context);
@@ -398,7 +398,7 @@ void StorageBuffer::read(
                     query_plan.addStep(std::move(adding_missed));
 
                     auto actions_dag = ActionsDAG::makeConvertingActions(
-                            query_plan.getCurrentHeader().getColumnsWithTypeAndName(),
+                            query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
                             header.getColumnsWithTypeAndName(),
                             ActionsDAG::MatchColumnsMode::Name);
 
@@ -428,7 +428,7 @@ void StorageBuffer::read(
         if (query_info.input_order_info)
         {
             /// Each buffer has one block, and it not guaranteed that rows in each block are sorted by order keys
-            pipe_from_buffers.addSimpleTransform([&](const Block & header)
+            pipe_from_buffers.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<PartialSortingTransform>(header, query_info.input_order_info->sort_description_for_merging, 0);
             });
@@ -478,7 +478,7 @@ void StorageBuffer::read(
             if (query_info.prewhere_info->row_level_filter)
             {
                 auto actions = std::make_shared<ExpressionActions>(query_info.prewhere_info->row_level_filter->clone(), actions_settings);
-                pipe_from_buffers.addSimpleTransform([&](const Block & header)
+                pipe_from_buffers.addSimpleTransform([&](const SharedHeader & header)
                 {
                     return std::make_shared<FilterTransform>(
                             header,
@@ -489,7 +489,7 @@ void StorageBuffer::read(
             }
 
             auto actions = std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions.clone(), actions_settings);
-            pipe_from_buffers.addSimpleTransform([&](const Block & header)
+            pipe_from_buffers.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<FilterTransform>(
                         header,
@@ -516,18 +516,18 @@ void StorageBuffer::read(
     auto result_header = buffers_plan.getCurrentHeader();
 
     /// Convert structure from table to structure from buffer.
-    if (!blocksHaveEqualStructure(query_plan.getCurrentHeader(), result_header))
+    if (!blocksHaveEqualStructure(*query_plan.getCurrentHeader(), *result_header))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-                query_plan.getCurrentHeader().getColumnsWithTypeAndName(),
-                result_header.getColumnsWithTypeAndName(),
+                query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
+                result_header->getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name);
 
         auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert_actions_dag));
         query_plan.addStep(std::move(converting));
     }
 
-    Headers input_headers;
+    SharedHeaders input_headers;
     input_headers.emplace_back(query_plan.getCurrentHeader());
     input_headers.emplace_back(buffers_plan.getCurrentHeader());
 
@@ -548,7 +548,7 @@ static void appendBlock(LoggerPtr log, const Block & from, Block & to)
     size_t old_rows = to.rows();
     size_t old_bytes = to.bytes();
 
-    if (!to)
+    if (to.empty())
         to = from.cloneEmpty();
 
     assertBlocksHaveEqualStructure(from, to, "Buffer");
@@ -648,7 +648,7 @@ public:
     explicit BufferSink(
         StorageBuffer & storage_,
         const StorageMetadataPtr & metadata_snapshot_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
     {
@@ -1015,7 +1015,7 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
 void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table)
 {
-    if (!destination_id || !block)
+    if (!destination_id || block.empty())
         return;
 
     if (!table)
@@ -1125,7 +1125,7 @@ void StorageBuffer::reschedule()
         std::unique_lock lock(buffer.tryLock());
         if (lock.owns_lock())
         {
-            if (buffer.data)
+            if (!buffer.data.empty())
             {
                 min_first_write_time = std::min(min_first_write_time, buffer.first_write_time);
                 rows += buffer.data.rows();

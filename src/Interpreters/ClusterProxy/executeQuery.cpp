@@ -313,7 +313,7 @@ getShardFilterGeneratorForCustomKey(const Cluster & cluster, ContextPtr context,
 
 void executeQuery(
     QueryPlan & query_plan,
-    const Block & header,
+    SharedHeader header,
     QueryProcessingStage::Enum processed_stage,
     const StorageID & main_table,
     const ASTPtr & table_func_ptr,
@@ -470,7 +470,7 @@ void executeQuery(
         return;
     }
 
-    Headers input_headers;
+    SharedHeaders input_headers;
     input_headers.reserve(plans.size());
     for (auto & plan : plans)
         input_headers.emplace_back(plan->getCurrentHeader());
@@ -636,7 +636,7 @@ static std::optional<size_t> findLocalReplicaIndexAndUpdatePools(std::vector<Con
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
     const StorageID & storage_id,
-    const Block & header,
+    SharedHeader header,
     QueryProcessingStage::Enum processed_stage,
     const ASTPtr & query_ast,
     ContextPtr context,
@@ -645,7 +645,7 @@ void executeQueryWithParallelReplicas(
 {
     auto logger = getLogger("executeQueryWithParallelReplicas");
     LOG_DEBUG(logger, "Executing read from {}, header {}, query ({}), stage {} with parallel replicas",
-        storage_id.getNameForLogs(), header.dumpStructure(), query_ast->formatForLogging(), processed_stage);
+        storage_id.getNameForLogs(), header->dumpStructure(), query_ast->formatForLogging(), processed_stage);
 
     auto new_context = updateContextForParallelReplicas(logger, context);
     auto [cluster, shard_num] = prepairClusterForParallelReplicas(logger, new_context);
@@ -664,7 +664,7 @@ void executeQueryWithParallelReplicas(
 
         auto [local_plan, with_parallel_replicas] = createLocalPlanForParallelReplicas(
             query_ast,
-            header,
+            *header,
             new_context,
             processed_stage,
             coordinator,
@@ -703,7 +703,7 @@ void executeQueryWithParallelReplicas(
         auto remote_plan = std::make_unique<QueryPlan>();
         remote_plan->addStep(std::move(read_from_remote));
 
-        Headers input_headers;
+        SharedHeaders input_headers;
         input_headers.reserve(2);
         input_headers.emplace_back(stub_local_plan->getCurrentHeader());
         input_headers.emplace_back(remote_plan->getCurrentHeader());
@@ -785,7 +785,7 @@ void executeQueryWithParallelReplicasCustomKey(
     const ColumnsDescription & columns,
     const StorageSnapshotPtr & snapshot,
     QueryProcessingStage::Enum processed_stage,
-    const Block & header,
+    SharedHeader header,
     ContextPtr context)
 {
     /// Return directly (with correct header) if no shard to query.
@@ -1055,7 +1055,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
 
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(
-            /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
+            /*one_line=*/true, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
         insert_ast->IAST::format(buf, ast_format_settings);
         formatted_query = buf.str();
     }
@@ -1084,7 +1084,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             connection_pools[i],
             formatted_query,
-            Block{},
+            std::make_shared<const Block>(Block{}),
             new_context,
             null_throttler,
             Scalars{},
@@ -1096,7 +1096,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
 
         QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(
             remote_query_executor, false, settings[Setting::async_socket_for_remote], settings[Setting::async_query_sending_for_remote]));
-        remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));
+        remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getSharedHeader()));
 
         pipeline.addCompletedPipeline(std::move(remote_pipeline));
     }

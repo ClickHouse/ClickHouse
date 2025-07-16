@@ -490,14 +490,14 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
 
     QueryTreeNodePtr modified_query_tree = query_node.clone();
 
-    Block initial_header = InterpreterSelectQueryAnalyzer::getSampleBlock(
+    auto initial_header = InterpreterSelectQueryAnalyzer::getSampleBlock(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
 
     rewriteJoinToGlobalJoin(modified_query_tree, context);
     modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
     ASTPtr modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
 
-    Block header = InterpreterSelectQueryAnalyzer::getSampleBlock(
+    auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
 
     const TableNode * table_node = findTableForParallelReplicas(modified_query_tree.get(), context);
@@ -516,8 +516,8 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
         nullptr);
 
     auto converting = ActionsDAG::makeConvertingActions(
-        header.getColumnsWithTypeAndName(),
-        initial_header.getColumnsWithTypeAndName(),
+        header->getColumnsWithTypeAndName(),
+        initial_header->getColumnsWithTypeAndName(),
         ActionsDAG::MatchColumnsMode::Position);
 
     /// initial_header is a header expected by initial query.

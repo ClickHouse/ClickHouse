@@ -104,7 +104,7 @@ private:
         }
 
         /// sorting removed, so need to update sorting traits for upstream steps
-        const Header * input_header = &parent_node->children.front()->step->getOutputHeader();
+        const SharedHeader * input_header = &parent_node->children.front()->step->getOutputHeader();
         chassert(parent_node == (stack.rbegin() + 1)->node); /// skip element on top of stack since it's sorting which was just removed
         for (StackWithParent::const_reverse_iterator it = stack.rbegin() + 1; it != stack.rend(); ++it)
         {

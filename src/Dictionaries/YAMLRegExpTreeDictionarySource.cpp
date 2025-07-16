@@ -313,7 +313,7 @@ QueryPipeline YAMLRegExpTreeDictionarySource::loadAll()
 
     const auto node = loadYAML(filepath);
 
-    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(parseYAMLAsRegExpTree(node, key_name, structure)));
+    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(parseYAMLAsRegExpTree(node, key_name, structure))));
 }
 
 bool YAMLRegExpTreeDictionarySource::isModified() const

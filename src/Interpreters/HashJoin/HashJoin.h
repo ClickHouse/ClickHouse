@@ -112,7 +112,7 @@ class HashJoin : public IJoin
 public:
     HashJoin(
         std::shared_ptr<TableJoin> table_join_,
-        const Block & right_sample_block,
+        SharedHeader right_sample_block,
         bool any_take_last_row_ = false,
         size_t reserve_num_ = 0,
         const String & instance_id_ = "",
@@ -126,12 +126,12 @@ public:
 
     bool isCloneSupported() const override
     {
-        return !getTotals() && getTotalRowCount() == 0;
+        return getTotals().empty() && getTotalRowCount() == 0;
     }
 
     std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
-        const Block &,
-        const Block & right_sample_block_) const override
+        SharedHeader,
+        SharedHeader right_sample_block_) const override
     {
         return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row, reserve_num, instance_id);
     }

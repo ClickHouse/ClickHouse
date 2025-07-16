@@ -151,7 +151,7 @@ namespace ErrorCodes
 ConcurrentHashJoin::ConcurrentHashJoin(
     std::shared_ptr<TableJoin> table_join_,
     size_t slots_,
-    const Block & right_sample_block,
+    SharedHeader right_sample_block,
     const StatsCollectingParams & stats_collecting_params_,
     bool any_take_last_row_)
     : table_join(table_join_)
@@ -355,7 +355,7 @@ void ConcurrentHashJoin::checkTypesOfKeys(const Block & block) const
 
 void ConcurrentHashJoin::setTotals(const Block & block)
 {
-    if (block)
+    if (!block.empty())
     {
         std::lock_guard lock(totals_mutex);
         totals = block;

@@ -56,7 +56,7 @@ class ParquetBlockInputFormat : public IInputFormat
 public:
     ParquetBlockInputFormat(
         ReadBuffer & buf,
-        const Block & header,
+        SharedHeader header,
         const FormatSettings & format_settings_,
         FormatParserGroupPtr parser_group_,
         size_t min_bytes_for_seek_);
