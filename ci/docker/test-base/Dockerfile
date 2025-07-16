@@ -86,6 +86,7 @@ RUN apt-get update \
         ripgrep \
         zstd \
         locales \
+        libmpfr6 \
         --yes --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
