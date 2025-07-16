@@ -152,7 +152,8 @@ static Block generateBlock(
     MutableColumns columns,
     const HashJoinResult::Properties & properties,
     const IColumn::Offsets & offsets,
-    const IColumn::Filter & filter)
+    const IColumn::Filter & filter,
+    ScatteredBlock::IndexesPtr && new_selector)
 {
     const auto * off_data = lazy_output.row_refs.data();
     if (properties.is_join_get)
@@ -169,7 +170,7 @@ static Block generateBlock(
     /// TODO: Technically, filter can be restored from the offsets.
     //        We can check if this faster vs building filter in main join loop.
     if (properties.need_filter)
-        scattered_block.filter(filter);
+        scattered_block.getSelector() = ScatteredBlock::Selector(std::move(new_selector));
 
     scattered_block.filterBySelector();
 
@@ -223,6 +224,7 @@ HashJoinResult::HashJoinResult(
     MutableColumns columns_,
     IColumn::Offsets offsets_,
     IColumn::Filter filter_,
+    ScatteredBlock::IndexesPtr && new_selector_,
     ScatteredBlock && block_,
     Properties properties_)
     : lazy_output(std::move(lazy_output_))
@@ -231,6 +233,7 @@ HashJoinResult::HashJoinResult(
     , columns(std::move(columns_))
     , offsets(std::move(offsets_))
     , filter(std::move(filter_))
+    , new_selector(std::move(new_selector_))
 {
 }
 
@@ -251,7 +254,8 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
             std::move(columns),
             properties,
             offsets,
-            filter);
+            filter,
+            std::move(new_selector));
 
         scattered_block.reset();
         return {std::move(block), true};
@@ -300,10 +304,12 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     }
 
     IColumn::Filter partial_filter;
+    auto partial_selector = ScatteredBlock::Indexes::create();
     if (!filter.empty())
     {
         partial_filter.resize(num_lhs_rows);
         memcpySmallAllowReadWriteOverflow15(partial_filter.data(), filter.data() + next_row, num_lhs_rows);
+        partial_selector->insertRangeFrom(*new_selector, next_row, num_lhs_rows);
     }
 
     const auto row_ref_start = next_row_ref;
@@ -344,7 +350,8 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         std::move(columns),
         properties,
         partial_offsets,
-        partial_filter);
+        partial_filter,
+        std::move(partial_selector));
 
     columns = std::move(next_columns);
     if (is_last)

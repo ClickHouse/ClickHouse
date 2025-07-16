@@ -221,6 +221,7 @@ struct ScatteredBlock : private boost::noncopyable
 
     Block && getSourceBlock() && { return std::move(block); }
 
+    auto & getSelector() { return selector; }
     const auto & getSelector() const { return selector; }
     std::pair<Block, Selector> detachData() && { return {std::move(block), std::move(selector)}; }
 
