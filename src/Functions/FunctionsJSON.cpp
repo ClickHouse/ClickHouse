@@ -35,6 +35,7 @@
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Common/JSONParsers/RapidJSONParser.h>
 #include <Functions/FunctionHelpers.h>
+#include <Common/FunctionDocumentation.h>
 
 #include <Interpreters/Context.h>
 
@@ -1134,19 +1135,279 @@ REGISTER_FUNCTION(JSON)
     factory.registerFunction<JSONOverloadResolver<NameJSONExtractArrayRaw, JSONExtractArrayRawImpl>>();
     factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysAndValuesRaw, JSONExtractKeysAndValuesRawImpl>>();
     factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeys, JSONExtractKeysImpl>>();
+}
 
-    // Register case-insensitive variants
-    factory.registerFunction<JSONOverloadResolver<NameJSONExtractIntCaseInsensitive, JSONExtractInt64Impl, true>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONExtractUIntCaseInsensitive, JSONExtractUInt64Impl, true>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONExtractFloatCaseInsensitive, JSONExtractFloat64Impl, true>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONExtractBoolCaseInsensitive, JSONExtractBoolImpl, true>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONExtractStringCaseInsensitive, JSONExtractStringImpl, true>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONExtractCaseInsensitive, JSONExtractImpl, true>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysAndValuesCaseInsensitive, JSONExtractKeysAndValuesImpl, true>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONExtractRawCaseInsensitive, JSONExtractRawImpl, true>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONExtractArrayRawCaseInsensitive, JSONExtractArrayRawImpl, true>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysAndValuesRawCaseInsensitive, JSONExtractKeysAndValuesRawImpl, true>>();
-    factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysCaseInsensitive, JSONExtractKeysImpl, true>>();
+REGISTER_FUNCTION(JSONExtractCaseInsensitive)
+{
+    // JSONExtractIntCaseInsensitive
+    {
+        FunctionDocumentation::Description description = R"(
+Parses JSON and extracts a value of Int type using ASCII case-insensitive key matching.
+)";
+        FunctionDocumentation::Syntax syntax = "JSONExtractIntCaseInsensitive(json [, indices_or_keys]...)";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse", {"String"}},
+            {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {
+            "Returns the extracted Int value, 0 if not found or cannot be converted.",
+            {"Int64"}
+        };
+        FunctionDocumentation::Examples examples = {
+            {"basic", "SELECT JSONExtractIntCaseInsensitive('{\"Value\": 123}', 'value')", "123"},
+            {"nested", "SELECT JSONExtractIntCaseInsensitive('{\"DATA\": {\"COUNT\": 42}}', 'data', 'Count')", "42"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        
+        factory.registerFunction<JSONOverloadResolver<NameJSONExtractIntCaseInsensitive, JSONExtractInt64Impl, true>>(documentation);
+    }
+    
+    // JSONExtractUIntCaseInsensitive
+    {
+        FunctionDocumentation::Description description = R"(
+Parses JSON and extracts a value of UInt type using ASCII case-insensitive key matching.
+)";
+        FunctionDocumentation::Syntax syntax = "JSONExtractUIntCaseInsensitive(json [, indices_or_keys]...)";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse", {"String"}},
+            {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {
+            "Returns the extracted UInt value, 0 if not found or cannot be converted.",
+            {"UInt64"}
+        };
+        FunctionDocumentation::Examples examples = {
+            {"basic", "SELECT JSONExtractUIntCaseInsensitive('{\"COUNT\": 789}', 'count')", "789"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        
+        factory.registerFunction<JSONOverloadResolver<NameJSONExtractUIntCaseInsensitive, JSONExtractUInt64Impl, true>>(documentation);
+    }
+    
+    // JSONExtractFloatCaseInsensitive
+    {
+        FunctionDocumentation::Description description = R"(
+Parses JSON and extracts a value of Float type using ASCII case-insensitive key matching.
+)";
+        FunctionDocumentation::Syntax syntax = "JSONExtractFloatCaseInsensitive(json [, indices_or_keys]...)";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse", {"String"}},
+            {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {
+            "Returns the extracted Float value, 0 if not found or cannot be converted.",
+            {"Float64"}
+        };
+        FunctionDocumentation::Examples examples = {
+            {"basic", "SELECT JSONExtractFloatCaseInsensitive('{\"Price\": 12.34}', 'PRICE')", "12.34"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        
+        factory.registerFunction<JSONOverloadResolver<NameJSONExtractFloatCaseInsensitive, JSONExtractFloat64Impl, true>>(documentation);
+    }
+    
+    // JSONExtractBoolCaseInsensitive
+    {
+        FunctionDocumentation::Description description = R"(
+Parses JSON and extracts a boolean value using ASCII case-insensitive key matching.
+)";
+        FunctionDocumentation::Syntax syntax = "JSONExtractBoolCaseInsensitive(json [, indices_or_keys]...)";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse", {"String"}},
+            {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {
+            "Returns the extracted boolean value (1 for true, 0 for false), 0 if not found.",
+            {"UInt8"}
+        };
+        FunctionDocumentation::Examples examples = {
+            {"basic", "SELECT JSONExtractBoolCaseInsensitive('{\"IsActive\": true}', 'isactive')", "1"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        
+        factory.registerFunction<JSONOverloadResolver<NameJSONExtractBoolCaseInsensitive, JSONExtractBoolImpl, true>>(documentation);
+    }
+    
+    // JSONExtractStringCaseInsensitive
+    {
+        FunctionDocumentation::Description description = R"(
+Parses JSON and extracts a string using ASCII case-insensitive key matching.
+)";
+        FunctionDocumentation::Syntax syntax = "JSONExtractStringCaseInsensitive(json [, indices_or_keys]...)";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse", {"String"}},
+            {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {
+            "Returns the extracted string value, empty string if not found.",
+            {"String"}
+        };
+        FunctionDocumentation::Examples examples = {
+            {"basic", "SELECT JSONExtractStringCaseInsensitive('{\"ABC\": \"def\"}', 'abc')", "def"},
+            {"nested", "SELECT JSONExtractStringCaseInsensitive('{\"User\": {\"Name\": \"John\"}}', 'user', 'name')", "John"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        
+        factory.registerFunction<JSONOverloadResolver<NameJSONExtractStringCaseInsensitive, JSONExtractStringImpl, true>>(documentation);
+    }
+    
+    // JSONExtractCaseInsensitive
+    {
+        FunctionDocumentation::Description description = R"(
+Parses JSON and extracts a value of the given ClickHouse data type using ASCII case-insensitive key matching.
+)";
+        FunctionDocumentation::Syntax syntax = "JSONExtractCaseInsensitive(json [, indices_or_keys...], return_type)";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse", {"String"}},
+            {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}},
+            {"return_type", "The ClickHouse data type to extract", {"String"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {
+            "Returns the extracted value in the specified data type.",
+            {}
+        };
+        FunctionDocumentation::Examples examples = {
+            {"int_type", "SELECT JSONExtractCaseInsensitive('{\"Number\": 123}', 'number', 'Int32')", "123"},
+            {"array_type", "SELECT JSONExtractCaseInsensitive('{\"List\": [1, 2, 3]}', 'list', 'Array(Int32)')", "[1,2,3]"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        
+        factory.registerFunction<JSONOverloadResolver<NameJSONExtractCaseInsensitive, JSONExtractImpl, true>>(documentation);
+    }
+    
+    // JSONExtractKeysAndValuesCaseInsensitive
+    {
+        FunctionDocumentation::Description description = R"(
+Parses key-value pairs from JSON using ASCII case-insensitive key matching when navigating to nested objects.
+)";
+        FunctionDocumentation::Syntax syntax = "JSONExtractKeysAndValuesCaseInsensitive(json [, indices_or_keys...], value_type)";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse", {"String"}},
+            {"indices_or_keys", "Optional. Indices or keys to navigate to the object. Keys use case-insensitive matching", {"String", "(U)Int*"}},
+            {"value_type", "The ClickHouse data type of the values", {"String"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {
+            "Returns an array of tuples containing key-value pairs.",
+            {"Array(Tuple(String, T))"}
+        };
+        FunctionDocumentation::Examples examples = {
+            {"basic", "SELECT JSONExtractKeysAndValuesCaseInsensitive('{\"Name\": \"Alice\", \"AGE\": 30}', 'String')", "[('Name','Alice'),('AGE','30')]"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        
+        factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysAndValuesCaseInsensitive, JSONExtractKeysAndValuesImpl, true>>(documentation);
+    }
+    
+    // JSONExtractRawCaseInsensitive
+    {
+        FunctionDocumentation::Description description = R"(
+Returns part of the JSON as an unparsed string using ASCII case-insensitive key matching.
+)";
+        FunctionDocumentation::Syntax syntax = "JSONExtractRawCaseInsensitive(json [, indices_or_keys]...)";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse", {"String"}},
+            {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {
+            "Returns the raw JSON string of the extracted element.",
+            {"String"}
+        };
+        FunctionDocumentation::Examples examples = {
+            {"object", "SELECT JSONExtractRawCaseInsensitive('{\"Object\": {\"key\": \"value\"}}', 'OBJECT')", "{\"key\":\"value\"}"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        
+        factory.registerFunction<JSONOverloadResolver<NameJSONExtractRawCaseInsensitive, JSONExtractRawImpl, true>>(documentation);
+    }
+    
+    // JSONExtractArrayRawCaseInsensitive
+    {
+        FunctionDocumentation::Description description = R"(
+Returns an array with elements of JSON array, each represented as unparsed string, using ASCII case-insensitive key matching.
+)";
+        FunctionDocumentation::Syntax syntax = "JSONExtractArrayRawCaseInsensitive(json [, indices_or_keys]...)";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse", {"String"}},
+            {"indices_or_keys", "Optional. Indices or keys to navigate to the array. Keys use case-insensitive matching", {"String", "(U)Int*"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {
+            "Returns an array of raw JSON strings.",
+            {"Array(String)"}
+        };
+        FunctionDocumentation::Examples examples = {
+            {"basic", "SELECT JSONExtractArrayRawCaseInsensitive('{\"Items\": [1, 2, 3]}', 'ITEMS')", "['1','2','3']"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        
+        factory.registerFunction<JSONOverloadResolver<NameJSONExtractArrayRawCaseInsensitive, JSONExtractArrayRawImpl, true>>(documentation);
+    }
+    
+    // JSONExtractKeysAndValuesRawCaseInsensitive
+    {
+        FunctionDocumentation::Description description = R"(
+Extracts raw key-value pairs from JSON using ASCII case-insensitive key matching when navigating to nested objects.
+)";
+        FunctionDocumentation::Syntax syntax = "JSONExtractKeysAndValuesRawCaseInsensitive(json [, indices_or_keys]...)";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse", {"String"}},
+            {"indices_or_keys", "Optional. Indices or keys to navigate to the object. Keys use case-insensitive matching", {"String", "(U)Int*"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {
+            "Returns an array of tuples containing key-value pairs as raw strings.",
+            {"Array(Tuple(String, String))"}
+        };
+        FunctionDocumentation::Examples examples = {
+            {"basic", "SELECT JSONExtractKeysAndValuesRawCaseInsensitive('{\"Name\": \"Alice\", \"AGE\": 30}')", "[('Name','\"Alice\"'),('AGE','30')]"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        
+        factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysAndValuesRawCaseInsensitive, JSONExtractKeysAndValuesRawImpl, true>>(documentation);
+    }
+    
+    // JSONExtractKeysCaseInsensitive
+    {
+        FunctionDocumentation::Description description = R"(
+Parses a JSON string and extracts the keys using ASCII case-insensitive key matching to navigate to nested objects.
+)";
+        FunctionDocumentation::Syntax syntax = "JSONExtractKeysCaseInsensitive(json [, indices_or_keys]...)";
+        FunctionDocumentation::Arguments arguments = {
+            {"json", "JSON string to parse", {"String"}},
+            {"indices_or_keys", "Optional. Indices or keys to navigate to the object. Keys use case-insensitive matching", {"String", "(U)Int*"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {
+            "Returns an array of keys from the JSON object.",
+            {"Array(String)"}
+        };
+        FunctionDocumentation::Examples examples = {
+            {"basic", "SELECT JSONExtractKeysCaseInsensitive('{\"Name\": \"Alice\", \"AGE\": 30}')", "['Name','AGE']"},
+            {"nested", "SELECT JSONExtractKeysCaseInsensitive('{\"User\": {\"name\": \"John\", \"AGE\": 25}}', 'user')", "['name','AGE']"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        
+        factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysCaseInsensitive, JSONExtractKeysImpl, true>>(documentation);
+    }
 }
 
 }
