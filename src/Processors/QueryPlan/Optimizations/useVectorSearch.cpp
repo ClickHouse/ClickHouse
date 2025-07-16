@@ -335,7 +335,7 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
             /// distances, we can proceed with the optimization.
             for (const auto & part_with_ranges : analyzed_result->parts_with_ranges)
             {
-                if (part_with_ranges.ranges.size())
+                if (!part_with_ranges.ranges.empty())
                 {
                     if (!part_with_ranges.read_hints.vector_search_results.has_value() ||
                         !part_with_ranges.read_hints.vector_search_results.value().distances.has_value())
