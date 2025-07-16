@@ -6890,11 +6890,11 @@ Maximum rows to use broadcast join instead of shuffle join in distributed query 
 Experimental timeSeries* aggregate functions for Prometheus-like timeseries resampling, rate, delta calculation.
 )", EXPERIMENTAL, allow_experimental_ts_to_grid_aggregate_function) \
     DECLARE(Int64, optimize_const_array_to_scalar_size, -1, R"(
-This is an experimental setting. Enables conversion of a constant array to scalar. 
+This is an experimental setting. Enables conversion of a constant array to scalar.
 
 Possible values:
 
-- positive integer - number of elements in an array
+- positive integer - number of elements in an array,
 - 0 — always,
 - negative integer - never.
 )", EXPERIMENTAL) \
