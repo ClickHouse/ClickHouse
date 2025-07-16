@@ -1,4 +1,8 @@
-#include "config.h"
+#include <memory>
+#include <Poco/JSON/Stringifier.h>
+#include <Common/Exception.h>
+#include <Formats/FormatParserGroup.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 #if USE_AVRO
 
@@ -102,7 +106,7 @@ std::string normalizeUuid(const std::string & uuid)
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
-    StorageObjectStorage::ConfigurationPtr configuration_ptr,
+    StorageObjectStorageConfigurationPtr configuration_ptr,
     IcebergMetadataFilesCachePtr cache_ptr,
     const ContextPtr & local_context,
     LoggerPtr log,
@@ -147,7 +151,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
 
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
-    ConfigurationObserverPtr configuration_,
+    StorageObjectStorageConfigurationWeakPtr configuration_,
     const ContextPtr & context_,
     Int32 metadata_version_,
     Int32 format_version_,
@@ -350,7 +354,7 @@ struct ShortMetadataFileInfo
  */
 static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
-    StorageObjectStorage::ConfigurationPtr configuration_ptr,
+    StorageObjectStorageConfigurationPtr configuration_ptr,
     IcebergMetadataFilesCachePtr cache_ptr,
     const ContextPtr & local_context,
     const std::optional<String> & table_uuid)
@@ -430,7 +434,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
 
 static MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
-    StorageObjectStorage::ConfigurationPtr configuration_ptr,
+    StorageObjectStorageConfigurationPtr configuration_ptr,
     IcebergMetadataFilesCachePtr cache_ptr,
     const ContextPtr & local_context,
     Poco::Logger * log)
@@ -562,6 +566,32 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
                     total_bytes = summary_object->getValue<Int64>(f_total_files_size);
             }
 
+#if USE_PARQUET
+            if (configuration_ptr->format == "Parquet")
+                column_mapper = std::make_shared<ColumnMapper>();
+
+            if (column_mapper)
+            {
+                Int32 schema_id = snapshot->getValue<Int32>(f_schema_id);
+                auto schemas = metadata_object->getArray(f_schemas);
+                std::unordered_map<String, Int64> column_name_to_parquet_field_id;
+                for (UInt32 j = 0; j < schemas->size(); ++j)
+                {
+                    auto schema = schemas->getObject(j);
+                    if (schema->getValue<Int32>(f_schema_id) != schema_id)
+                        continue;
+
+                    auto fields = schema->getArray(f_fields);
+                    for (UInt32 field_ind = 0; field_ind < fields->size(); ++field_ind)
+                    {
+                        auto field = fields->getObject(field_ind);
+                        column_name_to_parquet_field_id[field->getValue<String>(f_name)] = field->getValue<Int32>(f_id);
+                    }
+                }
+                column_mapper->setStorageColumnEncoding(std::move(column_name_to_parquet_field_id));
+            }
+#endif
+
             relevant_snapshot = IcebergSnapshot{
                 getManifestList(local_context, getProperFilePathFromMetadataInfo(
                     snapshot->getValue<String>(f_manifest_list), configuration_ptr->getPath(), table_location)),
@@ -686,7 +716,7 @@ std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String da
 
 DataLakeMetadataPtr IcebergMetadata::create(
     const ObjectStoragePtr & object_storage,
-    const ConfigurationObserverPtr & configuration,
+    const StorageObjectStorageConfigurationWeakPtr & configuration,
     const ContextPtr & local_context)
 {
     auto configuration_ptr = configuration.lock();

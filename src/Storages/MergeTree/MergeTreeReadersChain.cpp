@@ -11,15 +11,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static size_t getTotalBytesInColumns(const Columns & columns)
-{
-    size_t total_bytes = 0;
-    for (const auto & column : columns)
-        if (column)
-            total_bytes += column->byteSize();
-    return total_bytes;
-}
-
 MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_, MergeTreePatchReaders patch_readers_)
     : range_readers(std::move(range_readers_))
     , patch_readers(std::move(patch_readers_))
@@ -74,7 +65,6 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(size_t max_rows, M
 
     auto & first_reader = range_readers.front();
     auto read_result = first_reader.startReadingChain(max_rows, ranges);
-    read_result.addNumBytesRead(getTotalBytesInColumns(read_result.columns));
 
     LOG_TEST(log, "First reader returned: {}, requested columns: {}", read_result.dumpInfo(), first_reader.getSampleBlock().dumpNames());
 
@@ -91,9 +81,9 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(size_t max_rows, M
     {
         size_t num_read_rows = 0;
         auto columns = range_readers[i].continueReadingChain(read_result, num_read_rows);
-        read_result.addNumBytesRead(getTotalBytesInColumns(columns));
 
         /// Even if number of read rows is 0 we need to apply all steps to produce a block with correct structure.
+        /// It's also needed to properly advancing streams in later steps.
         if (read_result.num_rows == 0)
             continue;
 
@@ -136,7 +126,20 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     bool should_evaluate_missing_defaults = false;
     merge_tree_reader->fillMissingColumns(read_columns, should_evaluate_missing_defaults, num_read_rows);
 
-    if (result.total_rows_per_granule == num_read_rows && result.num_rows != num_read_rows)
+    if (result.total_rows_per_granule != num_read_rows)
+    {
+        /// This can only happen when all columns are missing during the current read step,
+        /// and num_read_rows is inferred from a previous read.
+        if (result.num_rows != num_read_rows)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Mismatch in expected row count: total_rows_per_granule={}, num_rows={}, num_read_rows={}. "
+                "This indicates an inconsistency in row filling logic when all columns are missing",
+                result.total_rows_per_granule,
+                result.num_rows,
+                num_read_rows);
+    }
+    else if (result.num_rows != num_read_rows)
     {
         /// We have filter applied from the previous step
         /// So we need to apply it to the newly read rows
@@ -178,7 +181,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     if (should_evaluate_missing_defaults)
     {
         Block additional_columns;
-        if (previous_header)
+        if (!previous_header.empty())
             additional_columns = previous_header.cloneWithColumns(result.columns);
 
         for (const auto & col : result.additional_columns)
@@ -235,27 +238,6 @@ void MergeTreeReadersChain::addPatchVirtuals(Block & to, const Block & from) con
     }
 }
 
-bool MergeTreeReadersChain::needApplyPatch(const Block & block, const IMergeTreeDataPartInfoForReader & patch) const
-{
-    const auto & patch_columns = patch.getColumnsDescription();
-    const auto & alter_conversions = patch.getAlterConversions();
-
-    for (const auto & column : block)
-    {
-        if (isPatchPartSystemColumn(column.name))
-            continue;
-
-        String column_name = column.name;
-        if (alter_conversions && alter_conversions->isColumnRenamed(column_name))
-            column_name = alter_conversions->getColumnOldName(column_name);
-
-        if (patch_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name))
-            return true;
-    }
-
-    return false;
-}
-
 void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector<MarkRanges> & patch_ranges, ReadResult & read_result)
 {
     if (patches_results.empty())
@@ -309,6 +291,36 @@ void MergeTreeReadersChain::applyPatchesAfterReader(ReadResult & result, size_t 
         result.columns_for_patches);
 }
 
+static UInt128 getColumnsHash(const Names & column_names)
+{
+    SipHash hash;
+    for (const auto & column_name : column_names)
+        hash.update(column_name);
+    return hash.get128();
+}
+
+Names getUpdatedColumns(const Block & block, const IMergeTreeDataPartInfoForReader & patch)
+{
+    Names res;
+    const auto & patch_columns = patch.getColumnsDescription();
+    const auto & alter_conversions = patch.getAlterConversions();
+
+    for (const auto & column : block)
+    {
+        if (isPatchPartSystemColumn(column.name))
+            continue;
+
+        String column_name = column.name;
+        if (alter_conversions && alter_conversions->isColumnRenamed(column_name))
+            column_name = alter_conversions->getColumnOldName(column_name);
+
+        if (patch_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name))
+            res.push_back(std::move(column_name));
+    }
+
+    return res;
+}
+
 void MergeTreeReadersChain::applyPatches(
     const Block & result_header,
     Columns & result_columns,
@@ -324,15 +336,21 @@ void MergeTreeReadersChain::applyPatches(
     auto result_block = result_header.cloneWithColumns(result_columns);
     addPatchVirtuals(result_block, additional_columns);
 
-    /// Combine patches for same partitions.
-    /// But we cannot combine patches for different partitions.
-    std::unordered_map<String, PatchesToApply> patches_to_apply;
+    /// Combine patches with the same structure.
+    std::unordered_map<UInt128, PatchesToApply> patches_to_apply;
     UInt64 source_data_version = patch_readers.front()->getPatchPart().source_data_version;
 
     for (size_t i = 0; i < patch_readers.size(); ++i)
     {
         const auto & patch = patch_readers[i]->getPatchPart();
         const auto & patch_results = patches_results[i];
+
+        if (static_cast<UInt64>(patch.source_data_version) != source_data_version)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Patches for one reader must have the same source data version. Got: {}, expected: {}",
+                patch.source_data_version, source_data_version);
+        }
 
         if (min_version.has_value() && !patchHasHigherDataVersion(*patch.part, *min_version))
             continue;
@@ -343,15 +361,12 @@ void MergeTreeReadersChain::applyPatches(
         if (after_conversions != patch.perform_alter_conversions)
             continue;
 
-        if (!needApplyPatch(result_block, *patch.part))
+        auto updated_columns = getUpdatedColumns(result_block, *patch.part);
+        if (updated_columns.empty())
             continue;
 
-        if (static_cast<UInt64>(patch.source_data_version) != source_data_version)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Patches for one reader must have the same source data version. Got: {}, expected: {}",
-                patch.source_data_version, source_data_version);
-        }
+        std::sort(updated_columns.begin(), updated_columns.end());
+        auto columns_hash = getColumnsHash(updated_columns);
 
         for (const auto & patch_result : patch_results)
         {
@@ -359,10 +374,7 @@ void MergeTreeReadersChain::applyPatches(
             auto patch_to_apply = patch_readers[i]->applyPatch(result_block, *patch_result);
 
             if (!patch_to_apply->empty())
-            {
-                const auto & partition_id = patch.part->getPartInfo().getPartitionId();
-                patches_to_apply[partition_id].push_back(std::move(patch_to_apply));
-            }
+                patches_to_apply[columns_hash].push_back(std::move(patch_to_apply));
         }
     }
 

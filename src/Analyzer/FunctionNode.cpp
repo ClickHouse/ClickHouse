@@ -211,7 +211,7 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions com
         return;
 
     if (auto result_type = getResultType())
-        updateHashForType(hash_state, result_type);
+        result_type->updateHash(hash_state);
 }
 
 QueryTreeNodePtr FunctionNode::cloneImpl() const

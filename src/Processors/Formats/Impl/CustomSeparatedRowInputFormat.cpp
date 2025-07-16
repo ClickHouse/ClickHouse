@@ -16,7 +16,7 @@ namespace ErrorCodes
 }
 
 CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
-    const Block & header_,
+    SharedHeader header_,
     ReadBuffer & in_buf_,
     const Params & params_,
     bool with_names_,
@@ -29,7 +29,7 @@ CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
 }
 
 CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
-    const Block & header_,
+    SharedHeader header_,
     std::unique_ptr<PeekableReadBuffer> buf_,
     const Params & params_,
     bool with_names_,
@@ -435,7 +435,7 @@ void registerInputFormatCustomSeparated(FormatFactory & factory)
                 IRowInputFormat::Params params,
                 const FormatSettings & settings)
             {
-                return std::make_shared<CustomSeparatedRowInputFormat>(sample, buf, params, with_names, with_types, ignore_spaces, settings);
+                return std::make_shared<CustomSeparatedRowInputFormat>(std::make_shared<const Block>(sample), buf, params, with_names, with_types, ignore_spaces, settings);
             });
         };
         registerWithNamesAndTypes(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", register_func);
