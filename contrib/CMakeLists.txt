@@ -243,7 +243,7 @@ add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobuf
 add_contrib (numactl-cmake numactl)
 
 # Google Cloud Cpp
-if(ENABLE_LIBRARIES AND (OS_LINUX OR OS_DARWIN OR OS_FREEBSD) AND (ARCH_AMD64 OR ARCH_AARCH64))
+if(ENABLE_LIBRARIES AND (OS_LINUX OR OS_DARWIN OR OS_FREEBSD) AND (ARCH_AMD64 OR (ARCH_AARCH64 AND NOT NO_ARMV81_OR_HIGHER)))
     set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT ON)
 else()
     set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT OFF)
