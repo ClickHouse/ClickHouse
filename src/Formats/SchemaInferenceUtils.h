@@ -108,6 +108,8 @@ void transformInferredJSONTypesFromDifferentFilesIfNeeded(DataTypePtr & first, D
 /// - LowCardinality(Type) -> LowCardinality(Nullable(Type))
 DataTypePtr makeNullableRecursively(DataTypePtr type, const FormatSettings & settings);
 
+DataTypePtr removeNullableRecursively(DataTypePtr type, const FormatSettings & settings);
+
 /// Call makeNullableRecursively for all types
 /// in the block and return names and types.
 NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header, const FormatSettings & settings);
