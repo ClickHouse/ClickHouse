@@ -289,7 +289,7 @@ distributed_properties = {
 object_storages_properties = {
     "local": {},
     "s3": {
-        "list_object_keys_size": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024, 31),
+        "list_object_keys_size": threshold_generator(0.2, 0.2, 1, 10 * 1024 * 1024, 31),
         "metadata_keep_free_space_bytes": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
@@ -317,7 +317,7 @@ object_storages_properties = {
         "use_insecure_imds_request": true_false_lambda,
     },
     "azure": {
-        "list_object_keys_size": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+        "list_object_keys_size": threshold_generator(0.2, 0.2, 1, 10 * 1024 * 1024),
         "max_single_download_retries": threshold_generator(0.2, 0.2, 0, 16),
         "max_single_part_upload_size": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
