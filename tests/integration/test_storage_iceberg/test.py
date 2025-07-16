@@ -3855,6 +3855,8 @@ def test_metadata_cache(started_cluster, storage_type):
     spark = started_cluster.spark_session
     TABLE_NAME = "test_metadata_cache_" + storage_type + "_" + get_uuid_str()
 
+    instance.query("SYSTEM DROP ICEBERG METADATA CACHE")
+
     write_iceberg_from_df(
         spark,
         generate_data(spark, 0, 10),
