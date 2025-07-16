@@ -150,6 +150,12 @@ namespace ProfileEvents
     extern const Event RemoteReadThrottlerSleepMicroseconds;
     extern const Event RemoteWriteThrottlerBytes;
     extern const Event RemoteWriteThrottlerSleepMicroseconds;
+    extern const Event BackupThrottlerBytes;
+    extern const Event BackupThrottlerSleepMicroseconds;
+    extern const Event MergesThrottlerBytes;
+    extern const Event MergesThrottlerSleepMicroseconds;
+    extern const Event MutationsThrottlerBytes;
+    extern const Event MutationsThrottlerSleepMicroseconds;
     extern const Event QueryLocalReadThrottlerBytes;
     extern const Event QueryLocalReadThrottlerSleepMicroseconds;
     extern const Event QueryLocalWriteThrottlerBytes;
@@ -158,6 +164,8 @@ namespace ProfileEvents
     extern const Event QueryRemoteReadThrottlerSleepMicroseconds;
     extern const Event QueryRemoteWriteThrottlerBytes;
     extern const Event QueryRemoteWriteThrottlerSleepMicroseconds;
+    extern const Event QueryBackupThrottlerBytes;
+    extern const Event QueryBackupThrottlerSleepMicroseconds;
 }
 
 namespace CurrentMetrics
