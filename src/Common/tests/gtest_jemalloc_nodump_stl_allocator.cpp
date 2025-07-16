@@ -111,7 +111,7 @@ TEST(JemallocNodumpSTLAllocatorTest, NoDumpString)
             {
                 while (std::getline(smaps, line))
                 {
-                    if (line.find("VmFlags:") == 0)
+                    if (line.starts_with("VmFlags:"))
                     {
                         EXPECT_TRUE(line.find("dd") != std::string::npos)
                             << "Memory at " << s.data() << " does not have MADV_DONTDUMP flag";
