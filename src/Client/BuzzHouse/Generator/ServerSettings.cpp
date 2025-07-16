@@ -15,8 +15,7 @@ static const auto setSetting = CHSetting(
     false);
 
 std::unordered_map<String, CHSetting> hotSettings
-    = {{"enable_analyzer", trueOrFalseSetting},
-       {"join_algorithm",
+    = {{"join_algorithm",
         CHSetting(
             [](RandomGenerator & rg)
             {
@@ -1033,6 +1032,10 @@ std::unordered_map<String, CHSetting> formatSettings;
 
 void loadFuzzerServerSettings(const FuzzConfig & fc)
 {
+    if (fc.disable_new_analyzer)
+    {
+        hotSettings.insert({{"enable_analyzer", trueOrFalseSetting}});
+    }
     if (!fc.clusters.empty())
     {
         hotSettings.insert({{"enable_parallel_replicas", trueOrFalseSetting}});
