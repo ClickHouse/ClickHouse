@@ -54,7 +54,7 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationPtr configuration,
     const std::optional<FormatSettings> & format_settings_,
-    const Block & sample_block_,
+    SharedHeader sample_block_,
     ContextPtr context)
     : SinkToStorage(sample_block_)
     , path(path_)
@@ -73,7 +73,7 @@ StorageObjectStorageSink::StorageObjectStorageSink(
         static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]));
 
     writer = FormatFactory::instance().getOutputFormatParallelIfPossible(
-        configuration->format, *write_buf, sample_block, context, format_settings_);
+        configuration->format, *write_buf, *sample_block, context, format_settings_);
 }
 
 void StorageObjectStorageSink::consume(Chunk & chunk)
@@ -131,7 +131,7 @@ PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
     std::optional<FormatSettings> format_settings_,
-    const Block & sample_block_,
+    SharedHeader sample_block_,
     ContextPtr context_)
     : PartitionedSink(configuration_->partition_strategy, context_, sample_block_)
     , object_storage(object_storage_)
@@ -167,7 +167,7 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
         object_storage,
         configuration,
         format_settings,
-        partition_strategy->getFormatHeader(),
+        std::make_shared<Block>(partition_strategy->getFormatHeader()),
         context
     );
 }

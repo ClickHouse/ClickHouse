@@ -57,7 +57,7 @@ std::shared_ptr<ISource> multiColumnsSource(const std::vector<DataTypePtr> & typ
         chunk = Chunk(Columns{std::move(columns)}, values[0].size());
         chunks.push_back(std::move(chunk));
     }
-    return std::make_shared<SourceFromChunks>(header, std::move(chunks));
+    return std::make_shared<SourceFromChunks>(std::make_shared<const Block>(header), std::move(chunks));
 }
 
 void validatePageIndex(
@@ -159,7 +159,7 @@ void writeParquet(SourcePtr source, const FormatSettings & format_settings, Stri
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
 
     WriteBufferFromFile write_buffer(parquet_path);
-    auto output = std::make_shared<ParquetBlockOutputFormat>(write_buffer, pipeline.getHeader(), format_settings);
+    auto output = std::make_shared<ParquetBlockOutputFormat>(write_buffer, pipeline.getSharedHeader(), format_settings);
 
     pipeline.complete(output);
     CompletedPipelineExecutor executor(pipeline);

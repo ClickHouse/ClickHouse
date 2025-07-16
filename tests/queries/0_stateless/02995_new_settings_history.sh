@@ -12,7 +12,7 @@ IGNORED_MERGETREE_SETTINGS_FOR_CLOUD="1 = 1"
 if [[ $($CLICKHOUSE_CLIENT --query "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'") -eq 1 ]];
 then
   IGNORED_SETTINGS_FOR_CLOUD="name NOT IN ('max_table_size_to_drop', 'max_partition_size_to_drop')"
-  IGNORED_MERGETREE_SETTINGS_FOR_CLOUD="name NOT IN ('allow_remote_fs_zero_copy_replication', 'min_bytes_for_wide_part')"
+  IGNORED_MERGETREE_SETTINGS_FOR_CLOUD="name NOT IN ('min_bytes_for_wide_part')"
 fi
 
 IGNORE_SETTINGS_FOR_SANITIZERS="1=1"

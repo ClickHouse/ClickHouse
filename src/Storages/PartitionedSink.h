@@ -22,7 +22,7 @@ public:
     PartitionedSink(
         std::shared_ptr<IPartitionStrategy> partition_strategy_,
         ContextPtr context_,
-        const Block & source_header_);
+        SharedHeader source_header_);
 
     ~PartitionedSink() override;
 
@@ -45,7 +45,7 @@ protected:
 
 private:
     ContextPtr context;
-    Block source_header;
+    SharedHeader source_header;
 
     absl::flat_hash_map<StringRef, SinkPtr> partition_id_to_sink;
     HashMapWithSavedHash<StringRef, size_t> partition_id_to_chunk_index;

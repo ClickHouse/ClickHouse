@@ -334,7 +334,7 @@ StorageURLSource::StorageURLSource(
     const URIParams & params,
     bool glob_url,
     bool need_only_count_)
-    : ISource(info.source_header, false)
+    : ISource(std::make_shared<const Block>(info.source_header), false)
     , WithContext(context_)
     , name(std::move(name_))
     , columns_description(info.columns_description)
@@ -399,7 +399,7 @@ StorageURLSource::StorageURLSource(
             /// (it can cause memory problems even with default values in columns or when virtual columns are requested).
             /// Instead, we use special ConstChunkGenerator that will generate chunks
             /// with max_block_size rows until total number of rows is reached.
-            auto source = std::make_shared<ConstChunkGenerator>(block_for_format, *num_rows_from_cache, max_block_size);
+            auto source = std::make_shared<ConstChunkGenerator>(std::make_shared<const Block>(block_for_format), *num_rows_from_cache, max_block_size);
             builder.init(Pipe(source));
         }
         else
@@ -426,7 +426,7 @@ StorageURLSource::StorageURLSource(
 
             if (columns_description.hasDefaults())
             {
-                builder.addSimpleTransform([&](const Block & cur_header)
+                builder.addSimpleTransform([&](const SharedHeader & cur_header)
                 {
                     return std::make_shared<AddingDefaultsTransform>(cur_header, columns_description, *input_format, getContext());
                 });
@@ -435,7 +435,7 @@ StorageURLSource::StorageURLSource(
 
         /// Add ExtractColumnsTransform to extract requested columns/subcolumns
         /// from chunk read by IInputFormat.
-        builder.addSimpleTransform([&](const Block & header)
+        builder.addSimpleTransform([&](const SharedHeader & header)
         {
             return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
         });
@@ -634,7 +634,7 @@ StorageURLSink::StorageURLSink(
     const CompressionMethod & compression_method_,
     HTTPHeaderEntries headers_,
     String method)
-    : SinkToStorage(sample_block)
+    : SinkToStorage(std::make_shared<const Block>(sample_block))
     , uri(std::move(uri_))
     , format(std::move(format_))
     , format_settings(format_settings_)
@@ -741,7 +741,7 @@ public:
         const CompressionMethod compression_method_,
         const HTTPHeaderEntries & headers_,
         const String & http_method_)
-        : PartitionedSink(partition_strategy_, context_, sample_block_)
+        : PartitionedSink(partition_strategy_, context_, std::make_shared<const Block>(sample_block_))
         , uri(uri_)
         , format(format_)
         , format_settings(format_settings_)
@@ -1115,7 +1115,7 @@ public:
         std::function<void(std::ostream &)> read_post_data_callback_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(std::make_shared<const Block>(std::move(sample_block)), column_names_, query_info_, storage_snapshot_, context_)
         , storage(std::move(storage_))
         , uri_options(uri_options_)
         , info(std::move(info_))
@@ -1282,7 +1282,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
 
     if (is_empty_glob)
     {
-        pipeline.init(Pipe(std::make_shared<NullSource>(info.source_header)));
+        pipeline.init(Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header))));
         return;
     }
 
@@ -1324,7 +1324,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
         pipe.resize(max_num_streams);
 
     if (pipe.empty())
-        pipe = Pipe(std::make_shared<NullSource>(info.source_header));
+        pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
 
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);

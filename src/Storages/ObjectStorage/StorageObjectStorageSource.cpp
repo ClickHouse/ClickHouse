@@ -79,7 +79,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     std::shared_ptr<IObjectIterator> file_iterator_,
     FormatParserGroupPtr parser_group_,
     bool need_only_count_)
-    : ISource(info.source_header, false)
+    : ISource(std::make_shared<const Block>(info.source_header), false)
     , name(std::move(name_))
     , object_storage(object_storage_)
     , configuration(configuration_)
@@ -478,7 +478,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// Instead, we use special ConstChunkGenerator that will generate chunks
         /// with max_block_size rows until total number of rows is reached.
         builder.init(Pipe(std::make_shared<ConstChunkGenerator>(
-                              read_from_format_info.format_header, *num_rows_from_cache, max_block_size)));
+                              std::make_shared<const Block>(read_from_format_info.format_header), *num_rows_from_cache, max_block_size)));
     }
     else
     {
@@ -536,7 +536,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (transformer)
         {
             auto schema_modifying_actions = std::make_shared<ExpressionActions>(transformer->clone());
-            builder.addSimpleTransform([&](const Block & header)
+            builder.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<ExpressionTransform>(header, schema_modifying_actions);
             });
@@ -545,7 +545,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (read_from_format_info.columns_description.hasDefaults())
         {
             builder.addSimpleTransform(
-                [&](const Block & header)
+                [&](const SharedHeader & header)
                 {
                     return std::make_shared<AddingDefaultsTransform>(header, read_from_format_info.columns_description, *input_format, context_);
                 });
@@ -556,7 +556,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
     /// Add ExtractColumnsTransform to extract requested columns/subcolumns
     /// from chunk read by IInputFormat.
-    builder.addSimpleTransform([&](const Block & header)
+    builder.addSimpleTransform([&](const SharedHeader & header)
     {
         return std::make_shared<ExtractColumnsTransform>(header, read_from_format_info.requested_columns);
     });

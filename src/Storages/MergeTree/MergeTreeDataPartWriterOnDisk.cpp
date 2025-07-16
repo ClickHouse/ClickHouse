@@ -1,13 +1,14 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
-
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexGin.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/GinIndexStore.h>
+#include <Compression/CompressionFactory.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
-#include <Compression/CompressionFactory.h>
+#include <base/defines.h>
 
 namespace ProfileEvents
 {
@@ -434,7 +435,7 @@ void MergeTreeDataPartWriterOnDisk::fillPrimaryIndexChecksums(MergeTreeData::Dat
 
     if (index_file_hashing_stream)
     {
-        if (write_final_mark && last_index_block)
+        if (write_final_mark && !last_index_block.empty())
         {
             MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
             calculateAndSerializePrimaryIndexRow(last_index_block, last_index_block.rows() - 1);
@@ -487,27 +488,37 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
 {
     for (size_t i = 0; i < skip_indices.size(); ++i)
     {
+        const auto & index = *skip_indices[i];
         auto & stream = *skip_indices_streams[i];
+
+        chassert(index.getFileName() == stream.escaped_column_name);
+
+        /// when there is no data in inder, the files are not written, so do not add them the checksums
         if (!skip_indices_aggregators[i]->empty())
             skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed_hashing);
 
-        /// Register additional files written only by the text index. Required because otherwise DROP TABLE complains about unknown
+        stream.preFinalize();
+        stream.addToChecksums(checksums);
+
+        if (!gin_index_stores.contains(index.getFileName()))
+            continue;
+
+        auto & gstore = gin_index_stores[index.getFileName()];
+
+        if (!gstore->filesWouldBeWritten())
+            continue;
+
+        /// Register additional files written only by the full-text index. Required because otherwise DROP TABLE complains about unknown
         /// files. Note that the provided actual checksums are bogus. The problem is that at this point the file writes happened already and
         /// we'd need to re-open + hash the files (fixing this is TODO). For now, CHECK TABLE skips these four files.
         if (typeid_cast<const MergeTreeIndexGin *>(&*skip_indices[i]) != nullptr)
         {
             String filename_without_extension = skip_indices[i]->getFileName();
-            checksums.files[filename_without_extension + ".gin_dict"] = MergeTreeDataPartChecksums::Checksum();
-            checksums.files[filename_without_extension + ".gin_post"] = MergeTreeDataPartChecksums::Checksum();
-            checksums.files[filename_without_extension + ".gin_seg"] = MergeTreeDataPartChecksums::Checksum();
-            checksums.files[filename_without_extension + ".gin_sid"] = MergeTreeDataPartChecksums::Checksum();
+            checksums.files[filename_without_extension + GinIndexStore::GIN_DICTIONARY_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
+            checksums.files[filename_without_extension + GinIndexStore::GIN_POSTINGS_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
+            checksums.files[filename_without_extension + GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
+            checksums.files[filename_without_extension + GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
         }
-    }
-
-    for (auto & stream : skip_indices_streams)
-    {
-        stream->preFinalize();
-        stream->addToChecksums(checksums);
     }
 }
 

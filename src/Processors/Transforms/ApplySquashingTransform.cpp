@@ -3,7 +3,7 @@
 namespace DB
 {
 
-ApplySquashingTransform::ApplySquashingTransform(const Block & header)
+ApplySquashingTransform::ApplySquashingTransform(SharedHeader header)
 : ExceptionKeepingTransform(header, header, false)
 {
 }
