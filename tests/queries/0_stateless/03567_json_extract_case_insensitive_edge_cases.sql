@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- Tag: no-fasttest due to only SIMD JSON is available in fasttest
-
 SELECT '--Edge cases for JSONExtractCaseInsensitive--';
 
 -- Keys with special characters

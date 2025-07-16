@@ -845,13 +845,15 @@ SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 
 
 ### Case-Insensitive JSONExtract Functions {#case-insensitive-jsonextract-functions}
 
-The following functions perform case-insensitive key matching when extracting values from JSON objects. They work identically to their case-sensitive counterparts, except that object keys are matched without regard to case.
+The following functions perform ASCII case-insensitive key matching when extracting values from JSON objects. They work identically to their case-sensitive counterparts, except that object keys are matched without regard to case. When multiple keys match with different cases, the first match is returned.
 
-> These functions may be less performant than their case-sensitive counterparts, so use the regular JSONExtract functions if possible.
+:::note
+These functions may be less performant than their case-sensitive counterparts, so use the regular JSONExtract functions if possible.
+:::
 
 ### JSONExtractIntCaseInsensitive {#jsonextractintcaseinsensitive}
 
-Parses JSON and extracts a value of Int type using case-insensitive key matching.
+Parses JSON and extracts a value of Int type using case-insensitive key matching. This function is similar to [`JSONExtractInt`](#jsonextractint).
 
 **Syntax**
 
@@ -862,13 +864,13 @@ JSONExtractIntCaseInsensitive(json [, indices_or_keys]...)
 **Example**
 
 ```sql
-SELECT JSONExtractIntCaseInsensitive('{"Value": 123}', 'value') = 123
-SELECT JSONExtractIntCaseInsensitive('{"VALUE": -456}', 'Value') = -456
+SELECT JSONExtractIntCaseInsensitive('{"Value": 123}', 'value') = 123;
+SELECT JSONExtractIntCaseInsensitive('{"VALUE": -456}', 'Value') = -456;
 ```
 
 ### JSONExtractUIntCaseInsensitive {#jsonextractuintcaseinsensitive}
 
-Parses JSON and extracts a value of UInt type using case-insensitive key matching.
+Parses JSON and extracts a value of UInt type using case-insensitive key matching. This function is similar to [`JSONExtractUInt`](#jsonextractuint).
 
 **Syntax**
 
@@ -879,12 +881,12 @@ JSONExtractUIntCaseInsensitive(json [, indices_or_keys]...)
 **Example**
 
 ```sql
-SELECT JSONExtractUIntCaseInsensitive('{"COUNT": 789}', 'count') = 789
+SELECT JSONExtractUIntCaseInsensitive('{"COUNT": 789}', 'count') = 789;
 ```
 
 ### JSONExtractFloatCaseInsensitive {#jsonextractfloatcaseinsensitive}
 
-Parses JSON and extracts a value of Float type using case-insensitive key matching.
+Parses JSON and extracts a value of Float type using case-insensitive key matching. This function is similar to [`JSONExtractFloat`](#jsonextractfloat).
 
 **Syntax**
 
@@ -895,12 +897,12 @@ JSONExtractFloatCaseInsensitive(json [, indices_or_keys]...)
 **Example**
 
 ```sql
-SELECT JSONExtractFloatCaseInsensitive('{"Price": 12.34}', 'PRICE') = 12.34
+SELECT JSONExtractFloatCaseInsensitive('{"Price": 12.34}', 'PRICE') = 12.34;
 ```
 
 ### JSONExtractBoolCaseInsensitive {#jsonextractboolcaseinsensitive}
 
-Parses JSON and extracts a boolean value using case-insensitive key matching.
+Parses JSON and extracts a boolean value using case-insensitive key matching. This function is similar to [`JSONExtractBool`](#jsonextractbool).
 
 **Syntax**
 
@@ -911,12 +913,12 @@ JSONExtractBoolCaseInsensitive(json [, indices_or_keys]...)
 **Example**
 
 ```sql
-SELECT JSONExtractBoolCaseInsensitive('{"IsActive": true}', 'isactive') = 1
+SELECT JSONExtractBoolCaseInsensitive('{"IsActive": true}', 'isactive') = 1;
 ```
 
 ### JSONExtractStringCaseInsensitive {#jsonextractstringcaseinsensitive}
 
-Parses JSON and extracts a string using case-insensitive key matching.
+Parses JSON and extracts a string using case-insensitive key matching. This function is similar to [`JSONExtractString`](#jsonextractstring).
 
 **Syntax**
 
@@ -927,13 +929,13 @@ JSONExtractStringCaseInsensitive(json [, indices_or_keys]...)
 **Example**
 
 ```sql
-SELECT JSONExtractStringCaseInsensitive('{"ABC": "def"}', 'abc') = 'def'
-SELECT JSONExtractStringCaseInsensitive('{"User": {"Name": "John"}}', 'user', 'name') = 'John'
+SELECT JSONExtractStringCaseInsensitive('{"ABC": "def"}', 'abc') = 'def';
+SELECT JSONExtractStringCaseInsensitive('{"User": {"Name": "John"}}', 'user', 'name') = 'John';
 ```
 
 ### JSONExtractCaseInsensitive {#jsonextractcaseinsensitive}
 
-Parses JSON and extracts a value of the given ClickHouse data type using case-insensitive key matching.
+Parses JSON and extracts a value of the given ClickHouse data type using case-insensitive key matching. This function is similar to [`JSONExtract`](#jsonextract).
 
 **Syntax**
 
@@ -944,13 +946,13 @@ JSONExtractCaseInsensitive(json [, indices_or_keys...], return_type)
 **Example**
 
 ```sql
-SELECT JSONExtractCaseInsensitive('{"Number": 123}', 'number', 'Int32') = 123
-SELECT JSONExtractCaseInsensitive('{"List": [1, 2, 3]}', 'list', 'Array(Int32)') = [1, 2, 3]
+SELECT JSONExtractCaseInsensitive('{"Number": 123}', 'number', 'Int32') = 123;
+SELECT JSONExtractCaseInsensitive('{"List": [1, 2, 3]}', 'list', 'Array(Int32)') = [1, 2, 3];
 ```
 
 ### JSONExtractKeysAndValuesCaseInsensitive {#jsonextractkeysandvaluescaseinsensitive}
 
-Parses key-value pairs from JSON using case-insensitive key matching.
+Parses key-value pairs from JSON using case-insensitive key matching. This function is similar to [`JSONExtractKeysAndValues`](#jsonextractkeysandvalues).
 
 **Syntax**
 
@@ -961,12 +963,12 @@ JSONExtractKeysAndValuesCaseInsensitive(json [, indices_or_keys...], value_type)
 **Example**
 
 ```sql
-SELECT JSONExtractKeysAndValuesCaseInsensitive('{"Name": "Alice", "AGE": 30}', 'String')[1] = ('Name', 'Alice')
+SELECT JSONExtractKeysAndValuesCaseInsensitive('{"Name": "Alice", "AGE": 30}', 'String')[1] = ('Name', 'Alice');
 ```
 
 ### JSONExtractRawCaseInsensitive {#jsonextractrawcaseinsensitive}
 
-Returns part of the JSON as an unparsed string using case-insensitive key matching.
+Returns part of the JSON as an unparsed string using case-insensitive key matching. This function is similar to [`JSONExtractRaw`](#jsonextractraw).
 
 **Syntax**
 
@@ -977,12 +979,12 @@ JSONExtractRawCaseInsensitive(json [, indices_or_keys]...)
 **Example**
 
 ```sql
-SELECT JSONExtractRawCaseInsensitive('{"Object": {"key": "value"}}', 'OBJECT') = '{"key":"value"}'
+SELECT JSONExtractRawCaseInsensitive('{"Object": {"key": "value"}}', 'OBJECT') = '{"key":"value"}';
 ```
 
 ### JSONExtractArrayRawCaseInsensitive {#jsonextractarrayrawcaseinsensitive}
 
-Returns an array with elements of JSON array, each represented as unparsed string, using case-insensitive key matching.
+Returns an array with elements of JSON array, each represented as unparsed string, using case-insensitive key matching. This function is similar to [`JSONExtractArrayRaw`](#jsonextractarrayraw).
 
 **Syntax**
 
@@ -993,12 +995,12 @@ JSONExtractArrayRawCaseInsensitive(json [, indices_or_keys]...)
 **Example**
 
 ```sql
-SELECT JSONExtractArrayRawCaseInsensitive('{"Items": [1, 2, 3]}', 'ITEMS') = ['1', '2', '3']
+SELECT JSONExtractArrayRawCaseInsensitive('{"Items": [1, 2, 3]}', 'ITEMS') = ['1', '2', '3'];
 ```
 
 ### JSONExtractKeysAndValuesRawCaseInsensitive {#jsonextractkeysandvaluesrawcaseinsensitive}
 
-Extracts raw key-value pairs from JSON using case-insensitive key matching.
+Extracts raw key-value pairs from JSON using case-insensitive key matching. This function is similar to [`JSONExtractKeysAndValuesRaw`](#jsonextractkeysandvaluesraw).
 
 **Syntax**
 
@@ -1009,12 +1011,12 @@ JSONExtractKeysAndValuesRawCaseInsensitive(json [, indices_or_keys]...)
 **Example**
 
 ```sql
-SELECT JSONExtractKeysAndValuesRawCaseInsensitive('{"Name": "Alice", "AGE": 30}')[1] = ('Name', '"Alice"')
+SELECT JSONExtractKeysAndValuesRawCaseInsensitive('{"Name": "Alice", "AGE": 30}')[1] = ('Name', '"Alice"');
 ```
 
-### JSONExtractKeysCaseInsensitive {#jsonextractkeyescaseinsensitive}
+### JSONExtractKeysCaseInsensitive {#jsonextractkeyscaseinsensitive}
 
-Parses a JSON string and extracts the keys using case-insensitive key matching to navigate to nested objects.
+Parses a JSON string and extracts the keys using case-insensitive key matching to navigate to nested objects. This function is similar to [`JSONExtractKeys`](#jsonextractkeys).
 
 **Syntax**
 
@@ -1025,15 +1027,9 @@ JSONExtractKeysCaseInsensitive(json [, indices_or_keys]...)
 **Example**
 
 ```sql
-SELECT JSONExtractKeysCaseInsensitive('{"Name": "Alice", "AGE": 30}') = ['Name', 'AGE']
-SELECT JSONExtractKeysCaseInsensitive('{"User": {"name": "John", "AGE": 25}}', 'user') = ['name', 'AGE']
+SELECT JSONExtractKeysCaseInsensitive('{"Name": "Alice", "AGE": 30}') = ['Name', 'AGE'];
+SELECT JSONExtractKeysCaseInsensitive('{"User": {"name": "John", "AGE": 25}}', 'user') = ['name', 'AGE'];
 ```
-
-**Implementation Notes**
-
-- When multiple keys match with different cases, the first match is returned
-- Case-insensitive matching only applies to object keys, not to array indices or the extracted values
-- The comparison is ASCII case-insensitive
 
 ### JSONExtractArrayRaw {#jsonextractarrayraw}
 
