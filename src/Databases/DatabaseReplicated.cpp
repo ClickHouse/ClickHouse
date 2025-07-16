@@ -1459,7 +1459,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     tables_dependencies.checkNoCyclicDependencies();
 
-    auto allow_concurrent_table_creation = getContext()->getServerSettings()[ServerSetting::max_database_replicated_create_table_thread_pool_size] > 1;
+    /// 0 means "choose the number of threads automatically"
+    auto allow_concurrent_table_creation = getContext()->getServerSettings()[ServerSetting::max_database_replicated_create_table_thread_pool_size] != 1;
     auto tables_to_create_by_level = tables_dependencies.getTablesSplitByDependencyLevel();
 
     ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseReplicatedCreateTablesThreadPool().get(), "CreateTables");
