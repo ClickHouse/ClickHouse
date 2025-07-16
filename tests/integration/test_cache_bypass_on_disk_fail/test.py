@@ -13,6 +13,8 @@ def started_cluster():
 
 
 def test_bypass(started_cluster):
+    node.query("DROP TABLE IF EXISTS t0")
+
     node.query(
         """
         CREATE TABLE t0 (key String, value String)
@@ -43,3 +45,4 @@ def test_bypass(started_cluster):
         """
     )
     assert node.query("SELECT count(*) FROM system.detached_parts WHERE table = 't0'") == '0\n'
+    node.query("DROP TABLE t0")
