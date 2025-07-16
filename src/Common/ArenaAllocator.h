@@ -121,42 +121,4 @@ protected:
 template <size_t alignment, size_t REAL_ALLOCATION_THRESHOLD = 4096>
 using MixedAlignedArenaAllocator = MixedArenaAllocator<REAL_ALLOCATION_THRESHOLD, Allocator<false>, AlignedArenaAllocator<alignment>, alignment>;
 
-
-template <size_t N = 64, typename Base = ArenaAllocator>
-class ArenaAllocatorWithStackMemory : public Base
-{
-    char stack_memory[N] = {};
-
-public:
-
-    void * alloc(size_t size, Arena * arena)
-    {
-        return (size > N) ? Base::alloc(size, arena) : stack_memory;
-    }
-
-    void * realloc(void * buf, size_t old_size, size_t new_size, Arena * arena)
-    {
-        /// Was in stack_memory, will remain there.
-        if (new_size <= N)
-            return buf;
-
-        /// Already was big enough to not fit in stack_memory.
-        if (old_size > N)
-            return Base::realloc(buf, old_size, new_size, arena);
-
-        /// Was in stack memory, but now will not fit there.
-        void * new_buf = Base::alloc(new_size, arena);
-        memcpy(new_buf, buf, old_size);
-        return new_buf;
-    }
-
-    void free(void * /*buf*/, size_t /*size*/) {}
-
-protected:
-    static constexpr size_t getStackThreshold()
-    {
-        return N;
-    }
-};
-
 }
