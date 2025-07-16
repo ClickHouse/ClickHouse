@@ -746,6 +746,7 @@ void writeColumnImpl(
     /// Start of current page.
     size_t def_offset = 0; // index in def and rep
     size_t data_offset = 0; // index in primitive_column
+    size_t row_idx = 0;
 
     auto flush_page = [&](size_t def_count, size_t data_count)
     {
@@ -753,8 +754,17 @@ void writeColumnImpl(
 
         /// Concatenate encoded rep, def, and data.
 
+        size_t row_count = def_count;
         if (s.max_rep > 0)
+        {
             encodeRepDefLevelsRLE(s.rep.data() + def_offset, def_count, s.max_rep, encoded);
+
+            row_count = 0;
+            for (size_t i = def_offset; i < def_offset + def_count; ++i)
+            {
+                row_count += s.rep[i] == 0;
+            }
+        }
         if (s.max_def > 0)
             encodeRepDefLevelsRLE(s.def.data() + def_offset, def_count, s.max_def, encoded);
 
@@ -813,15 +823,16 @@ void writeColumnImpl(
 
         if (use_dictionary)
         {
-            dict_encoded_pages.push_back({.header = std::move(header), .data = {}, .first_row_index = def_offset});
+            dict_encoded_pages.push_back({.header = std::move(header), .data = {}, .first_row_index = row_idx});
             std::swap(dict_encoded_pages.back().data, compressed);
         }
         else
         {
-            writePage(header, compressed, s, options.write_page_index, def_offset, out);
+            writePage(header, compressed, s, options.write_page_index, row_idx, out);
         }
         def_offset += def_count;
         data_offset += data_count;
+        row_idx += row_count;
     };
 
     auto flush_dict = [&] -> bool
@@ -937,6 +948,7 @@ void writeColumnImpl(
 
                 def_offset = 0;
                 data_offset = 0;
+                row_idx = 0;
                 dict_encoded_pages.clear();
                 use_dictionary = false;
 
