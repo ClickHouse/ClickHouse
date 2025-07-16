@@ -827,10 +827,12 @@ struct ContextSharedPart : boost::noncopyable
         std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> delete_external_user_defined_executable_functions_loader;
         std::unique_ptr<IUserDefinedSQLObjectsStorage> delete_user_defined_sql_objects_storage;
         std::unique_ptr<IWorkloadEntityStorage> delete_workload_entity_storage;
+
         BackgroundSchedulePoolPtr delete_buffer_flush_schedule_pool;
         BackgroundSchedulePoolPtr delete_schedule_pool;
         BackgroundSchedulePoolPtr delete_distributed_schedule_pool;
         BackgroundSchedulePoolPtr delete_message_broker_schedule_pool;
+
         std::unique_ptr<DDLWorker> delete_ddl_worker;
         std::unique_ptr<AccessControl> delete_access_control;
 
@@ -923,10 +925,12 @@ struct ContextSharedPart : boost::noncopyable
             delete_external_user_defined_executable_functions_loader = std::move(external_user_defined_executable_functions_loader);
             delete_user_defined_sql_objects_storage = std::move(user_defined_sql_objects_storage);
             delete_workload_entity_storage = std::move(workload_entity_storage);
+
             delete_buffer_flush_schedule_pool = std::move(buffer_flush_schedule_pool);
             delete_schedule_pool = std::move(schedule_pool);
             delete_distributed_schedule_pool = std::move(distributed_schedule_pool);
             delete_message_broker_schedule_pool = std::move(message_broker_schedule_pool);
+
             delete_access_control = std::move(access_control);
 
             /// Stop trace collector if any
@@ -943,10 +947,19 @@ struct ContextSharedPart : boost::noncopyable
         delete_user_defined_sql_objects_storage.reset();
         delete_workload_entity_storage.reset();
         delete_ddl_worker.reset();
-        delete_buffer_flush_schedule_pool.reset();
-        delete_schedule_pool.reset();
-        delete_distributed_schedule_pool.reset();
-        delete_message_broker_schedule_pool.reset();
+
+        auto join_background_pool = [&](BackgroundSchedulePoolPtr && pool_ptr)
+        {
+            if (!pool_ptr)
+                return;
+            pool_ptr->join();
+            pool_ptr.reset();
+        };
+        join_background_pool(std::move(delete_buffer_flush_schedule_pool));
+        join_background_pool(std::move(delete_schedule_pool));
+        join_background_pool(std::move(delete_distributed_schedule_pool));
+        join_background_pool(std::move(delete_message_broker_schedule_pool));
+
         delete_access_control.reset();
 
         total_memory_tracker.resetOvercommitTracker();
@@ -2383,7 +2396,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, getQueryContext());
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
-                                                     ColumnsDescription(sample_block.getNamesAndTypesList()),
+                                                     ColumnsDescription(sample_block->getNamesAndTypesList()),
                                                      /* comment */ "",
                                                      /* is_parameterized_view */ true);
             res->startup();
@@ -2607,7 +2620,7 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
     auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                 create,
-                                                ColumnsDescription(sample_block.getNamesAndTypesList()),
+                                                ColumnsDescription(sample_block->getNamesAndTypesList()),
             /* comment */ "",
             /* is_parameterized_view */ true);
     res->startup();

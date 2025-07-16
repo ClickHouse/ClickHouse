@@ -32,7 +32,7 @@ static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_
 }
 
 MergingAggregatedStep::MergingAggregatedStep(
-    const Header & input_header_,
+    const SharedHeader & input_header_,
     Aggregator::Params params_,
     GroupingSetsParamsList grouping_sets_params_,
     bool final_,
@@ -44,7 +44,7 @@ MergingAggregatedStep::MergingAggregatedStep(
     bool memory_bound_merging_of_aggregation_results_enabled_)
     : ITransformingStep(
           input_header_,
-          MergingAggregatedTransform::appendGroupingIfNeeded(input_header_, params_.getHeader(input_header_, final_)),
+          std::make_shared<const Block>(MergingAggregatedTransform::appendGroupingIfNeeded(*input_header_, params_.getHeader(*input_header_, final_))),
           getTraits(should_produce_results_in_order_of_bucket_number_))
     , params(std::move(params_))
     , grouping_sets_params(std::move(grouping_sets_params_))
@@ -69,13 +69,13 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
 {
     if (memoryBoundMergingWillBeUsed())
     {
-        if (input_headers.front().has("__grouping_set") || !grouping_sets_params.empty())
+        if (input_headers.front()->has("__grouping_set") || !grouping_sets_params.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                  "Memory bound merging of aggregated results is not supported for grouping sets.");
 
-        auto transform_params = std::make_shared<AggregatingTransformParams>(pipeline.getHeader(), std::move(params), final);
+        auto transform_params = std::make_shared<AggregatingTransformParams>(pipeline.getSharedHeader(), std::move(params), final);
         auto transform = std::make_shared<FinishAggregatingInOrderTransform>(
-            pipeline.getHeader(),
+            pipeline.getSharedHeader(),
             pipeline.getNumStreams(),
             transform_params,
             group_by_sort_description,
@@ -91,7 +91,7 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
             = should_produce_results_in_order_of_bucket_number ? group_by_sort_description : SortDescription{};
 
         pipeline.addSimpleTransform(
-            [&](const Block &) { return std::make_shared<MergingAggregatedBucketTransform>(transform_params, required_sort_description); });
+            [&](const SharedHeader &) { return std::make_shared<MergingAggregatedBucketTransform>(transform_params, required_sort_description); });
 
         if (should_produce_results_in_order_of_bucket_number)
         {
@@ -108,19 +108,19 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
         pipeline.resize(1);
 
         /// Now merge the aggregated blocks
-        auto transform = std::make_shared<MergingAggregatedTransform>(pipeline.getHeader(), params, final, grouping_sets_params);
+        auto transform = std::make_shared<MergingAggregatedTransform>(pipeline.getSharedHeader(), params, final, grouping_sets_params);
         pipeline.addTransform(std::move(transform));
     }
     else
     {
-        if (input_headers.front().has("__grouping_set") || !grouping_sets_params.empty())
+        if (input_headers.front()->has("__grouping_set") || !grouping_sets_params.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                  "Memory efficient merging of aggregated results is not supported for grouping sets.");
         auto num_merge_threads = memory_efficient_merge_threads
                                  ? memory_efficient_merge_threads
                                  : max_threads;
 
-        auto transform_params = std::make_shared<AggregatingTransformParams>(pipeline.getHeader(), std::move(params), final);
+        auto transform_params = std::make_shared<AggregatingTransformParams>(pipeline.getSharedHeader(), std::move(params), final);
         pipeline.addMergingAggregatedMemoryEfficientTransform(transform_params, num_merge_threads);
     }
 
@@ -147,7 +147,7 @@ void MergingAggregatedStep::describeActions(JSONBuilder::JSONMap & map) const
 void MergingAggregatedStep::updateOutputHeader()
 {
     const auto & in_header = input_headers.front();
-    output_header = MergingAggregatedTransform::appendGroupingIfNeeded(in_header, params.getHeader(in_header, final));
+    output_header = std::make_shared<const Block>(MergingAggregatedTransform::appendGroupingIfNeeded(*in_header, params.getHeader(*in_header, final)));
 }
 
 bool MergingAggregatedStep::memoryBoundMergingWillBeUsed() const

@@ -402,13 +402,13 @@ void MergeTreeRangeReader::ReadResult::checkInternalConsistency() const
             num_rows, final_filter.countBytesInFilter(), total_rows_per_granule);
 
     /// Check that additional columns have the same number of rows as the main columns.
-    if (additional_columns && additional_columns.rows() != num_rows)
+    if (!additional_columns.empty() && additional_columns.rows() != num_rows)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Number of rows in additional columns {} is not equal to number of rows in result columns {}",
             additional_columns.rows(), num_rows);
 
     /// Check that columns for patches have the same number of rows as the main columns.
-    if (columns_for_patches && columns_for_patches.rows() != num_rows)
+    if (!columns_for_patches.empty() && columns_for_patches.rows() != num_rows)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Number of rows in columns for patches {} is not equal to number of rows in result columns {}",
             columns_for_patches.rows(), num_rows);
@@ -445,11 +445,11 @@ std::string MergeTreeRangeReader::ReadResult::dumpInfo() const
             out << " " << columns[ci]->dumpStructure();
         }
     }
-    if (additional_columns)
+    if (!additional_columns.empty())
     {
         out << ", additional_columns: " << additional_columns.dumpStructure();
     }
-    if (columns_for_patches)
+    if (!columns_for_patches.empty())
     {
         out << ", columns_for_patches: " << columns_for_patches.dumpStructure();
     }

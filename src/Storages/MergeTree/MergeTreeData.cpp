@@ -9404,12 +9404,12 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
 
     pipeline_builder.resize(1);
     pipeline_builder.addTransform(std::make_shared<SimpleSquashingChunksTransform>(
-        pipeline_builder.getHeader(),
+        pipeline_builder.getSharedHeader(),
         query_context->getSettingsRef()[Setting::min_insert_block_size_rows],
         query_context->getSettingsRef()[Setting::min_insert_block_size_bytes]));
 
     /// Required by MergeTree sinks.
-    pipeline_builder.addSimpleTransform([&](const Block & header) -> ProcessorPtr
+    pipeline_builder.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
     {
         return std::make_shared<DeduplicationToken::AddTokenInfoTransform>(header);
     });
