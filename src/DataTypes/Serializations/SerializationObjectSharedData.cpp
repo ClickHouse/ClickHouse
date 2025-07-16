@@ -1138,6 +1138,13 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
     }
     else if (serialization_version.value == SerializationVersion::ADVANCED)
     {
+        /// Check if we have shared data column in cache.
+        if (const auto & cached_shared_data = getColumnFromSubstreamsCache(cache, settings.path))
+        {
+            column = cached_shared_data;
+            return;
+        }
+
         /// In Compact part we always read one whole granule, so we don't need to worry about reading data from multiple granules.
         if (settings.data_part_type == MergeTreeDataPartType::Compact)
         {
@@ -1415,6 +1422,8 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
 
             settings.path.pop_back();
         }
+
+        addColumnToSubstreamsCache(cache, settings.path, column);
     }
     else
     {
