@@ -117,7 +117,7 @@ CPULeaseAllocation::RequestChain::RequestChain(CPULeaseAllocation * lease, size_
     , head(requests.begin())
     , tail(requests.begin())
 {
-    chassert(max_threads > 0);
+    chassert(max_threads_ > 0);
     for (Request & request : requests)
         request.lease = lease;
 }
