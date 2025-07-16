@@ -644,11 +644,9 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         for (int i = 0; i < group_node->field_count(); ++i)
             parquet_field_ids[group_node->field(i)->field_id()] = group_node->field(i)->name();
 
-        parser_group->column_mapper->setFormatEncoding(std::move(parquet_field_ids));
-        auto column_mapping = parser_group->column_mapper->makeMapping();
-        clickhouse_to_parquet_names = std::move(column_mapping);
-        for (const auto & [ch_name, pq_name] : *clickhouse_to_parquet_names)
-            parquet_names_to_clickhouse->emplace(pq_name, ch_name);
+        auto result = parser_group->column_mapper->makeMapping(header, parquet_field_ids);
+        clickhouse_to_parquet_names = std::move(result.first);
+        parquet_names_to_clickhouse = std::move(result.second);
     }
     auto index_mapping = field_util.findRequiredIndices(getPort().getHeader(), *schema, *metadata, clickhouse_to_parquet_names);
 

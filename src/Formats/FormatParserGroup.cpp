@@ -22,20 +22,25 @@ void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> &&
     storage_encoding = std::move(storage_encoding_);
 }
 
-void ColumnMapper::setFormatEncoding(std::unordered_map<Int64, String> && format_encoding_)
+std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> ColumnMapper::makeMapping(
+    const Block & header,
+    const std::unordered_map<Int64, String> & format_encoding)
 {
-    format_encoding = std::move(format_encoding_);
-}
+    std::unordered_map<String, String> clickhouse_to_parquet_names;
+    std::unordered_map<String, String> parquet_names_to_clickhouse;
 
-std::unordered_map<String, String> ColumnMapper::makeMapping() const
-{
-    std::unordered_map<String, String> result;
-    for (const auto & [clickhouse_column, field_id] : storage_encoding)
+    for (size_t i = 0; i < header.columns(); ++i)
     {
-        if (auto it = format_encoding.find(field_id); it != format_encoding.end())
-            result[clickhouse_column] = it->second;
+        auto column_name = header.getNames()[i];
+        int64_t field_id;
+        if (auto it = storage_encoding.find(column_name); it != storage_encoding.end())
+            field_id = it->second;
+        else
+            continue;
+        clickhouse_to_parquet_names[column_name] = format_encoding.at(field_id);
+        parquet_names_to_clickhouse.emplace(format_encoding.at(field_id), column_name);
     }
-    return result;
+    return {clickhouse_to_parquet_names, parquet_names_to_clickhouse};
 }
 
 FormatParserGroup::FormatParserGroup(const Settings & settings, size_t num_streams_, std::shared_ptr<const ActionsDAG> filter_actions_dag_, const ContextPtr & context_)

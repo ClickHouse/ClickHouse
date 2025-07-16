@@ -19,15 +19,14 @@ class ColumnMapper
 public:
     /// clickhouse_column_name -> field_id
     void setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_);
-    /// format_column_name -> field_id
-    void setFormatEncoding(std::unordered_map<Int64, String> && format_encoding_);
 
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
-    std::unordered_map<String, String> makeMapping() const;
+    std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> makeMapping(
+        const Block & header,
+        const std::unordered_map<Int64, String> & format_encoding);
 
 private:
     std::unordered_map<String, Int64> storage_encoding;
-    std::unordered_map<Int64, String> format_encoding;
 };
 
 using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;
