@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include <limits>
 
 #if USE_PROTOBUF
 #   include <Columns/IColumn_fwd.h>

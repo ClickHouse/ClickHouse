@@ -149,8 +149,18 @@ public:
                     if (auto * replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(storage.get()))
                     {
                         replicated_table->getStatus(status, with_zk_fields);
+                        promise->set_value(std::move(status));
                     }
-                    promise->set_value(std::move(status));
+                    else
+                    {
+                        promise->set_exception(
+                            std::make_exception_ptr(
+                                DB::Exception(
+                                    ErrorCodes::ABORTED,
+                                    "Storage {} is not a StorageReplicatedMergeTree",
+                                    storage->getStorageID().getNameForLogs()
+                                )));
+                    }
                 }
                 catch (...)
                 {

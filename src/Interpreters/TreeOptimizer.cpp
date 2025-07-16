@@ -515,7 +515,7 @@ void optimizeUsing(const ASTSelectQuery * select_query)
     for (const auto & expression : expression_list)
     {
         auto expression_name = expression->getAliasOrColumnName();
-        if (expressions_names.find(expression_name) == expressions_names.end())
+        if (!expressions_names.contains(expression_name))
         {
             uniq_expressions_list.push_back(expression);
             expressions_names.insert(expression_name);

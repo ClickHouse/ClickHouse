@@ -492,7 +492,7 @@ void StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
     }
     else
     {
-        chassert(0);
+        chassert(false);
     }
     if (cluster.has_value())
     {
@@ -717,7 +717,7 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
     }
     else
     {
-        chassert(0);
+        chassert(false);
     }
     if (rg.nextSmallNumber() < 3)
     {
@@ -785,7 +785,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
         URLFunc * ufunc = tof->mutable_tfunc()->mutable_url();
         const OutFormat outf = rg.nextBool() ? rg.pickRandomly(outIn)
                                              : static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1);
-        const InFormat iinf = (outIn.find(outf) != outIn.end()) && rg.nextBool()
+        const InFormat iinf = (outIn.contains(outf)) && rg.nextBool()
             ? outIn.at(outf)
             : static_cast<InFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InFormat_MAX)) + 1);
 
@@ -823,7 +823,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
     }
     else
     {
-        chassert(0);
+        chassert(false);
     }
     if (!is_url)
     {
@@ -975,7 +975,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
         }
         else
         {
-            chassert(0);
+            chassert(false);
         }
     }
     this->entries.clear();
@@ -1147,7 +1147,7 @@ void StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * t
     }
     else
     {
-        chassert(0);
+        chassert(false);
     }
     if (cluster.has_value())
     {
@@ -1235,7 +1235,7 @@ void StatementGenerator::generateNextExchange(RandomGenerator & rg, Exchange * e
     }
     else
     {
-        chassert(0);
+        chassert(false);
     }
     this->ids.clear();
     if (cluster1.has_value() && cluster2.has_value() && cluster1 == cluster2)
@@ -1314,7 +1314,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
             }
             else
             {
-                chassert(0);
+                chassert(false);
             }
         }
     }
@@ -2195,7 +2195,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
             }
             else
             {
-                chassert(0);
+                chassert(false);
             }
         }
     }
@@ -2216,7 +2216,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
     }
     else
     {
-        chassert(0);
+        chassert(false);
     }
     if (cluster.has_value())
     {
@@ -2276,7 +2276,7 @@ void StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
     }
     else
     {
-        chassert(0);
+        chassert(false);
     }
     if (cluster.has_value())
     {
@@ -2338,7 +2338,7 @@ void StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
     }
     else
     {
-        chassert(0);
+        chassert(false);
     }
     if (cluster.has_value())
     {
@@ -3323,7 +3323,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     }
     else
     {
-        chassert(0);
+        chassert(false);
     }
 
     /// Set cluster option when that's the case
@@ -3421,7 +3421,7 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     }
     else
     {
-        chassert(0);
+        chassert(false);
     }
     if (cluster.has_value())
     {
@@ -3493,7 +3493,7 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     }
     else
     {
-        chassert(0);
+        chassert(false);
     }
     br->set_out(outf);
     if (rg.nextBool())
@@ -3566,7 +3566,7 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
         }
         else
         {
-            chassert(0);
+            chassert(false);
         }
     }
 
@@ -3582,7 +3582,7 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
     if (backup.out_format.has_value())
     {
         br->set_informat(
-            (outIn.find(backup.out_format.value()) != outIn.end()) && rg.nextBool()
+            (outIn.contains(backup.out_format.value())) && rg.nextBool()
                 ? outIn.at(backup.out_format.value())
                 : static_cast<InFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InFormat_MAX)) + 1));
     }
@@ -3694,7 +3694,7 @@ void StatementGenerator::generateNextRename(RandomGenerator & rg, Rename * ren)
     }
     else
     {
-        chassert(0);
+        chassert(false);
     }
     if (newn->has_est() && rg.nextBool())
     {
@@ -3959,7 +3959,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
     }
     else
     {
-        chassert(0);
+        chassert(false);
     }
 }
 
@@ -4106,7 +4106,7 @@ void StatementGenerator::generateNextStatement(RandomGenerator & rg, SQLQuery & 
         }
         else
         {
-            chassert(0);
+            chassert(false);
         }
     }
 }
@@ -4115,7 +4115,7 @@ void StatementGenerator::dropTable(const bool staged, bool drop_peer, const uint
 {
     auto & map_to_delete = staged ? this->staged_tables : this->tables;
 
-    if (map_to_delete.find(tname) != map_to_delete.end())
+    if (map_to_delete.contains(tname))
     {
         if (drop_peer)
         {
@@ -4760,21 +4760,21 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                 }
                 for (const auto & [key, val] : backup.tables)
                 {
-                    if (!val.db || this->databases.find(val.db->dname) != this->databases.end())
+                    if (!val.db || this->databases.contains(val.db->dname))
                     {
                         this->tables[key] = val;
                     }
                 }
                 for (const auto & [key, val] : backup.views)
                 {
-                    if (!val.db || this->databases.find(val.db->dname) != this->databases.end())
+                    if (!val.db || this->databases.contains(val.db->dname))
                     {
                         this->views[key] = val;
                     }
                 }
                 for (const auto & [key, val] : backup.dictionaries)
                 {
-                    if (!val.db || this->databases.find(val.db->dname) != this->databases.end())
+                    if (!val.db || this->databases.contains(val.db->dname))
                     {
                         this->dictionaries[key] = val;
                     }

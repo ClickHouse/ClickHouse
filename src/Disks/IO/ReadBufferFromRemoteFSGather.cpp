@@ -1,3 +1,4 @@
+#include <utility>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
@@ -162,8 +163,8 @@ off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
     else
     {
         if (!working_buffer.empty()
-            && static_cast<size_t>(offset) >= file_offset_of_buffer_end - working_buffer.size()
-            && static_cast<size_t>(offset) < file_offset_of_buffer_end)
+            && std::cmp_greater_equal(offset, file_offset_of_buffer_end - working_buffer.size())
+            && std::cmp_less(offset, file_offset_of_buffer_end))
         {
             pos = working_buffer.end() - (file_offset_of_buffer_end - offset);
             assert(pos >= working_buffer.begin());

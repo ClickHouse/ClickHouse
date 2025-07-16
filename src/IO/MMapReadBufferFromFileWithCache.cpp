@@ -67,7 +67,7 @@ off_t MMapReadBufferFromFileWithCache::seek(off_t offset, int whence)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "MMapReadBufferFromFileWithCache::seek expects SEEK_SET or SEEK_CUR as whence");
 
     working_buffer = internal_buffer;
-    if (new_pos < 0 || new_pos > off_t(working_buffer.size()))
+    if (new_pos < 0 || std::cmp_greater(new_pos, working_buffer.size()))
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
             "Cannot seek through file {} because seek position ({}) is out of bounds [0, {}]",
             getFileName(), new_pos, working_buffer.size());

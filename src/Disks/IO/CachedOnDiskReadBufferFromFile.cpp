@@ -1,5 +1,6 @@
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <algorithm>
+#include <utility>
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
@@ -514,7 +515,7 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
             }
 
             const auto current_write_offset = file_segment.getCurrentWriteOffset();
-            if (current_write_offset != static_cast<size_t>(read_buffer_for_file_segment->getPosition()))
+            if (std::cmp_not_equal(current_write_offset, read_buffer_for_file_segment->getPosition()))
             {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
@@ -601,7 +602,7 @@ bool CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
 
         /// chassert(implementation_buffer->getFileOffsetOfBufferEnd() == file_segment.getCurrentWriteOffset());
         size_t current_offset = file_segment.getCurrentWriteOffset();
-        chassert(static_cast<size_t>(implementation_buffer->getPosition()) == current_offset);
+        chassert(std::cmp_equal(implementation_buffer->getPosition(), current_offset));
         const auto & current_range = file_segment.range();
 
         while (true)
@@ -639,7 +640,7 @@ bool CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
                     nextimpl_working_buffer_offset = implementation_buffer->offset();
 
                     auto current_write_offset = file_segment.getCurrentWriteOffset();
-                    if (current_write_offset != static_cast<size_t>(implementation_buffer->getPosition())
+                    if (std::cmp_not_equal(current_write_offset, implementation_buffer->getPosition())
                         || current_write_offset != file_offset_of_buffer_end)
                     {
                         throw Exception(

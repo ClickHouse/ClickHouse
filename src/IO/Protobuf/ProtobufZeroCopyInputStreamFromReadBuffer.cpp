@@ -33,7 +33,7 @@ bool ProtobufZeroCopyInputStreamFromReadBuffer::Next(const void ** data, int * s
 
 void ProtobufZeroCopyInputStreamFromReadBuffer::BackUp(int count)
 {
-    if (static_cast<Int64>(in->offset()) < count)
+    if (std::cmp_less(in->offset(), count))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "ProtobufZeroCopyInputStreamFromReadBuffer::BackUp() cannot back up {} bytes (max = {} bytes)",
@@ -45,7 +45,7 @@ void ProtobufZeroCopyInputStreamFromReadBuffer::BackUp(int count)
 
 bool ProtobufZeroCopyInputStreamFromReadBuffer::Skip(int count)
 {
-    return static_cast<Int64>(in->tryIgnore(count)) == count;
+    return std::cmp_equal(in->tryIgnore(count), count);
 }
 
 int64_t ProtobufZeroCopyInputStreamFromReadBuffer::ByteCount() const

@@ -11,6 +11,8 @@
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <roaring/containers/containers.h>
 
+#include <utility>
+
 namespace DB
 {
 

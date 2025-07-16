@@ -25,10 +25,13 @@ Checks: [
   '-bugprone-implicit-widening-of-multiplication-result',
   '-bugprone-multi-level-implicit-pointer-conversion',
   '-bugprone-narrowing-conversions',
+  '-bugprone-nondeterministic-pointer-iteration-order',
+  '-bugprone-not-null-terminated-result',
+  '-bugprone-forward-declaration-namespace',
   '-bugprone-unchecked-optional-access',
   '-bugprone-crtp-constructor-accessibility',
   '-bugprone-not-null-terminated-result',
-  '-bugprone-forward-declaration-namespace',
+  '-bugprone-nondeterministic-pointer-iteration-order',
 
   '-cert-dcl16-c',
   '-cert-err58-cpp',
@@ -98,6 +101,7 @@ Checks: [
   '-performance-unnecessary-value-param',
 
   '-portability-simd-intrinsics',
+  '-portability-template-virtual-member-function',
 
   '-readability-avoid-nested-conditional-operator',
   '-readability-avoid-unconditional-preprocessor-if',

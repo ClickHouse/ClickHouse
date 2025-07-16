@@ -4,6 +4,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <utility>
+
 
 namespace DB
 {
@@ -63,7 +65,7 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shingle argument of function {} must be a positive integer.", getName());
 
             const size_t array_length = arr_offsets[row] - arr_offsets[row - 1];
-            if (static_cast<size_t>(shingle_length) > array_length)
+            if (std::cmp_greater(shingle_length, array_length))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shingle argument of function {} must less or equal than the array length.", getName());
 
             for (size_t i = 0; i < array_length - shingle_length + 1; ++i)

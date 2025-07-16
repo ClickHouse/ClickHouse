@@ -529,7 +529,7 @@ void CompressionCodecDoubleDelta::doDecompressData(const char * source, UInt32 s
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
     UInt32 output_size = uncompressed_size - bytes_to_skip;
 
-    if (static_cast<UInt32>(2 + bytes_to_skip) > source_size)
+    if (std::cmp_greater(2 + bytes_to_skip, source_size))
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress double-delta encoded data. File has wrong header");
 
     memcpy(dest, &source[2], bytes_to_skip);

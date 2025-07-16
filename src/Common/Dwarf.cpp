@@ -1,3 +1,4 @@
+#include <limits>
 #if defined(__ELF__) && !defined(OS_FREEBSD)
 
 /*
@@ -439,7 +440,7 @@ bool Dwarf::Section::next(std::string_view & chunk)
     // a 96-bit value (0xffffffff followed by the 64-bit length) for a 64-bit
     // section.
     auto initial_length = read<uint32_t>(chunk);
-    is64_bit = (initial_length == uint32_t(-1));
+    is64_bit = (initial_length == std::numeric_limits<uint32_t>::max());
     auto length = is64_bit ? read<uint64_t>(chunk) : initial_length;
     SAFE_CHECK(length <= chunk.size(), "invalid DWARF section");
     chunk = std::string_view(chunk.data(), length);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
@@ -740,7 +741,7 @@ Dwarf::CompilationUnit Dwarf::getCompilationUnit(uint64_t offset) const
 
     // 1) unit_length
     auto initial_length = read<uint32_t>(chunk);
-    cu.is64Bit = (initial_length == uint32_t(-1));
+    cu.is64Bit = (initial_length == std::numeric_limits<uint32_t>::max());
     cu.size = cu.is64Bit ? read<uint64_t>(chunk) : initial_length;
     SAFE_CHECK(cu.size <= chunk.size(), "invalid chunk size");
     cu.size += cu.is64Bit ? 12 : 4;
@@ -834,7 +835,7 @@ Dwarf::CompilationUnit Dwarf::findCompilationUnit(uint64_t targetOffset) const
         chunk.remove_prefix(offset);
 
         auto initial_length = read<uint32_t>(chunk);
-        auto is64_bit = (initial_length == static_cast<uint32_t>(-1));
+        auto is64_bit = (initial_length == std::numeric_limits<uint32_t>::max());
         auto size = is64_bit ? read<uint64_t>(chunk) : initial_length;
         SAFE_CHECK(size <= chunk.size(), "invalid chunk size");
         size += is64_bit ? 12 : 4;

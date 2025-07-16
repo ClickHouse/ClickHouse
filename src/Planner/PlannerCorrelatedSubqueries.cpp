@@ -730,8 +730,8 @@ void buildQueryPlanForCorrelatedSubquery(
     const CorrelatedSubquery & correlated_subquery,
     const SelectQueryOptions & select_query_options)
 {
-    auto * query_node = correlated_subquery.query_tree->as<QueryNode>();
-    auto * union_node = correlated_subquery.query_tree->as<UnionNode>();
+    [[maybe_unused]] auto * query_node = correlated_subquery.query_tree->as<QueryNode>();
+    [[maybe_unused]] auto * union_node = correlated_subquery.query_tree->as<UnionNode>();
     chassert(query_node != nullptr && query_node->isCorrelated() || union_node != nullptr && union_node->isCorrelated());
 
     switch (correlated_subquery.kind)

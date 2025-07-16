@@ -3,6 +3,8 @@
 #include <Common/logger_useful.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 
+#include <utility>
+
 namespace DB
 {
 
@@ -345,7 +347,7 @@ void MergeTreeReadersChain::applyPatches(
         const auto & patch = patch_readers[i]->getPatchPart();
         const auto & patch_results = patches_results[i];
 
-        if (static_cast<UInt64>(patch.source_data_version) != source_data_version)
+        if (std::cmp_not_equal(patch.source_data_version, source_data_version))
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Patches for one reader must have the same source data version. Got: {}, expected: {}",

@@ -1,3 +1,4 @@
+#include <utility>
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
 #include <Common/SipHash.h>
@@ -429,7 +430,7 @@ void CompressionCodecGorilla::doDecompressData(const char * source, UInt32 sourc
 
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
 
-    if (static_cast<UInt32>(2 + bytes_to_skip) > source_size)
+    if (std::cmp_greater(2 + bytes_to_skip, source_size))
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Gorilla-encoded data. File has wrong header");
 
     if (bytes_to_skip >= uncompressed_size)

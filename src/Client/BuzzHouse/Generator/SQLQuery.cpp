@@ -574,7 +574,7 @@ bool StatementGenerator::joinedTableOrFunction(
         }
         else
         {
-            chassert(0);
+            chassert(false);
         }
     }
     else if (generate_series_udf && nopt < (derived_table + cte + table + view + remote_udf + generate_series_udf + 1))
@@ -768,7 +768,7 @@ bool StatementGenerator::joinedTableOrFunction(
         }
         else
         {
-            chassert(0);
+            chassert(false);
         }
         if (ctof->has_est() && rg.nextBool())
         {
@@ -900,7 +900,7 @@ bool StatementGenerator::joinedTableOrFunction(
         const std::optional<String> & cluster = tt.getCluster();
         const OutFormat outf = rg.nextBool() ? rg.pickRandomly(outIn)
                                              : static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1);
-        const InFormat iinf = (outIn.find(outf) != outIn.end()) && rg.nextBool()
+        const InFormat iinf = (outIn.contains(outf)) && rg.nextBool()
             ? outIn.at(outf)
             : static_cast<InFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InFormat_MAX)) + 1);
 
@@ -933,7 +933,7 @@ bool StatementGenerator::joinedTableOrFunction(
     }
     else
     {
-        chassert(0);
+        chassert(false);
     }
     return (t && t->supportsFinal() && (this->enforce_final || rg.nextSmallNumber() < 3))
         || (v && v->supportsFinal() && (this->enforce_final || rg.nextSmallNumber() < 3));

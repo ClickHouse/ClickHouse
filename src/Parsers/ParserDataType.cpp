@@ -303,7 +303,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 }
             }
 
-            if (arg_num == (have_version_of_aggregate_function ? 1 : 0))
+            if (std::cmp_equal(arg_num, (have_version_of_aggregate_function ? 1 : 0)))
             {
                 ParserFunction function_parser;
                 ParserIdentifier identifier_parser;

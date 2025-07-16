@@ -40,7 +40,7 @@ namespace ErrorCodes
 // Replace NLMSG_OK with explicit casts since that system macro contains signedness bugs which are not going to be fixed.
 static inline bool is_nlmsg_ok(const struct nlmsghdr * const nlh, const ssize_t len)
 {
-    return len >= static_cast<ssize_t>(sizeof(*nlh)) && nlh->nlmsg_len >= sizeof(*nlh) && static_cast<size_t>(len) >= nlh->nlmsg_len;
+    return std::cmp_greater_equal(len, sizeof(*nlh)) && nlh->nlmsg_len >= sizeof(*nlh) && std::cmp_greater_equal(len, nlh->nlmsg_len);
 }
 
 namespace

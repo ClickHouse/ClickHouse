@@ -84,7 +84,7 @@ size_t CachedInMemoryReadBufferFromFile::getFileOffsetOfBufferEnd() const
 void CachedInMemoryReadBufferFromFile::setReadUntilPosition(size_t position)
 {
     read_until_position = std::min(position, file_size.value());
-    if (position < static_cast<size_t>(getPosition()))
+    if (std::cmp_less(position, getPosition()))
     {
         resetWorkingBuffer();
         chunk.reset();

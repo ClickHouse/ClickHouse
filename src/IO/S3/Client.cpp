@@ -81,7 +81,7 @@ bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client:
     if (error.GetResponseCode() == Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
         return false;
 
-    if (attemptedRetries >= maxRetries)
+    if (std::cmp_greater_equal(attemptedRetries, maxRetries))
         return false;
 
     if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())

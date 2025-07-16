@@ -109,7 +109,7 @@ void FileLogConsumer::readNewRecords(FileLogConsumer::Records & new_records, siz
         {
             /// Need to get offset before reading record from stream
             auto offset = reader.tellg();
-            if (static_cast<UInt64>(offset) >= file_meta.last_open_end)
+            if (std::cmp_greater_equal(static_cast<UInt64>(offset), file_meta.last_open_end))
                 break;
             record.offset = offset;
             StorageFileLog::assertStreamGood(reader);

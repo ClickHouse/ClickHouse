@@ -28,6 +28,8 @@
 
 #if USE_SNAPPY
 #include <snappy.h>
+
+#include <utility>
 #endif
 
 namespace DB::ErrorCodes
@@ -859,7 +861,7 @@ void writeColumnImpl(
     auto is_dict_too_big = [&] {
         auto * dict_encoder = dynamic_cast<parquet::DictEncoder<ParquetDType> *>(encoder.get());
         int dict_size = dict_encoder->dict_encoded_size();
-        return static_cast<size_t>(dict_size) >= options.dictionary_size_limit;
+        return std::cmp_greater_equal(dict_size, options.dictionary_size_limit);
     };
 
     while (def_offset < num_values)
