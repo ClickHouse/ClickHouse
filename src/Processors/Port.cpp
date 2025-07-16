@@ -1,6 +1,10 @@
 #include <Processors/Port.h>
 #include <Processors/IProcessor.h>
 
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -25,6 +29,17 @@ void connect(OutputPort & output, InputPort & input, bool reconnect)
     output.input_port = &input;
     input.state = std::make_shared<Port::State>();
     output.state = input.state;
+}
+
+std::string getRandomUUID()
+{
+    static boost::uuids::random_generator generator;
+
+    // Generate UUID
+    boost::uuids::uuid uuid = generator();
+
+    // Convert to string
+    return boost::uuids::to_string(uuid);
 }
 
 }

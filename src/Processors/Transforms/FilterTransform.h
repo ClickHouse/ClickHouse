@@ -40,7 +40,7 @@ private:
     ExpressionActionsPtr expression;
     String filter_column_name;
     bool remove_filter_column;
-    bool on_totals;
+    const bool on_totals;
 
     ConstantFilterDescription constant_filter_description;
     size_t filter_column_position = 0;
@@ -64,6 +64,8 @@ private:
     void removeFilterIfNeed(Columns & columns) const;
 
     void writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info);
+
+    std::string random_uuid;
 };
 
 }

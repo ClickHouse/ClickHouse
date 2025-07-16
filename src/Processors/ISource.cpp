@@ -35,6 +35,7 @@ OutputPort & ISource::getPort()
         StackTrace().toString());
     return output;
 }
+
 const OutputPort & ISource::getPort() const
 {
     auto thread_order_number = -1;
@@ -60,15 +61,17 @@ ISource::Status ISource::prepare()
 
     LOG_DEBUG(
         &Poco::Logger::get("ISource, prepare, 0"),
-        "Prepare called, has_input: {}, finished: {}, read_progress_was_set: {}, thread_order_number: {}, output.isFinished(): {}, "
-        "stacktrace: {}, processor: {}",
+        "Prepare called, has_input: {}, finished: {}, read_progress_was_set: {}, thread_order_number: {}, output.isFinished(): {}, output "
+        "port id: {}, "
+        "processor: {}, stacktrace: {}",
         has_input,
         finished,
         read_progress_was_set.load(),
         thread_order_number,
         output.isFinished(),
-        StackTrace().toString(),
-        debug());
+        output.getID(),
+        debug(),
+        StackTrace().toString());
     if (finished)
     {
         output.finish();
