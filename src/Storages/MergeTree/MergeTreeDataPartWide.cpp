@@ -139,7 +139,7 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
                 return;
 
             add_stream_size(*stream_name);
-        }, column.type);
+        }, column.type, getColumnSample(column));
     }
 
     return size;
