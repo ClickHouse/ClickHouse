@@ -2073,6 +2073,12 @@ def check_validity_and_get_prunned_files_general(instance, table_name, settings1
         )
     )
 
+    explain1 = instance.query(
+        f"explain pipeline graph=1, compact=0 {select_expression} format TSVRaw", settings=settings1
+    )
+
+    print(f"Explain 1: {explain1} format TSVRaw")
+
     data2 = instance.query(
         select_expression,
         query_id=query_id2,
@@ -2084,6 +2090,12 @@ def check_validity_and_get_prunned_files_general(instance, table_name, settings1
             filter(lambda x: len(x) > 0, data2.strip().split("\n")),
         )
     )
+
+    explain2 = instance.query(
+        f"explain pipeline graph=1, compact=0 {select_expression}", settings=settings2
+    )
+
+    print(f"Explain 2: {explain2} format TSVRaw")
 
     assert data1 == data2
 
