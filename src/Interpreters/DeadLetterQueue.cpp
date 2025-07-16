@@ -1,4 +1,4 @@
-#include <Interpreters/DeadLetter.h>
+#include <Interpreters/DeadLetterQueue.h>
 
 #include <Core/Settings.h>
 #include <Common/DateLUTImpl.h>
@@ -13,7 +13,7 @@
 namespace DB
 {
 
-ColumnsDescription DeadLetterElement::getColumnsDescription()
+ColumnsDescription DeadLetterQueueElement::getColumnsDescription()
 {
     auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
@@ -64,7 +64,7 @@ struct DetailsVisitor
     {
     }
 
-    void operator()(const DeadLetterElement::KafkaDetails & kafka) const
+    void operator()(const DeadLetterQueueElement::KafkaDetails & kafka) const
     {
         explicitly_set[i] = true;
         columns[i++]->insertData(kafka.topic_name.data(), kafka.topic_name.size());
@@ -76,7 +76,7 @@ struct DetailsVisitor
         columns[i++]->insertData(kafka.key.data(), kafka.key.size());
     }
 
-    void operator()(const DeadLetterElement::RabbitMQDetails & rabbit_mq) const
+    void operator()(const DeadLetterQueueElement::RabbitMQDetails & rabbit_mq) const
     {
         i += 4; // skip rows specific for previous details
 
@@ -96,7 +96,7 @@ struct DetailsVisitor
 };
 }
 
-void DeadLetterElement::appendToBlock(MutableColumns & columns) const
+void DeadLetterQueueElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
@@ -129,7 +129,7 @@ void DeadLetterElement::appendToBlock(MutableColumns & columns) const
     }
 }
 
-NamesAndAliases DeadLetterElement::getNamesAndAliases()
+NamesAndAliases DeadLetterQueueElement::getNamesAndAliases()
 {
     return NamesAndAliases{};
 }

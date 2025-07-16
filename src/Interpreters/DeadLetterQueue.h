@@ -8,7 +8,7 @@
 namespace DB
 {
 
-struct DeadLetterElement
+struct DeadLetterQueueElement
 {
     enum class StreamType : int8_t
     {
@@ -45,16 +45,16 @@ struct DeadLetterElement
     std::variant<KafkaDetails, RabbitMQDetails> details;
 
 
-    static std::string name() { return "DeadLetter"; }
+    static std::string name() { return "DeadLetterQueue"; }
 
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
 };
 
-class DeadLetter : public SystemLog<DeadLetterElement>
+class DeadLetterQueue : public SystemLog<DeadLetterQueueElement>
 {
-    using SystemLog<DeadLetterElement>::SystemLog;
+    using SystemLog<DeadLetterQueueElement>::SystemLog;
 };
 
 }

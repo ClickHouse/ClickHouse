@@ -11,7 +11,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/DeadLetter.h>
+#include <Interpreters/DeadLetterQueue.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -161,7 +161,7 @@ StorageKafka2::StorageKafka2(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "With multiple consumers, it is required to use `kafka_thread_per_consumer` setting");
 
     if (auto mode = getHandleKafkaErrorMode();
-        mode == StreamingHandleErrorMode::STREAM || mode == StreamingHandleErrorMode::DEAD_LETTER)
+        mode == StreamingHandleErrorMode::STREAM || mode == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
     {
         (*kafka_settings)[KafkaSetting::input_format_allow_errors_num] = 0;
         (*kafka_settings)[KafkaSetting::input_format_allow_errors_ratio] = 0;
@@ -781,7 +781,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
                 }
                 return 1;
             }
-            case StreamingHandleErrorMode::DEAD_LETTER:
+            case StreamingHandleErrorMode::DEAD_LETTER_QUEUE:
             {
                 exception_message = e.message();
                 for (size_t i = 0; i < result_columns.size(); ++i)
@@ -903,17 +903,17 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
                 const auto time_now = std::chrono::system_clock::now();
                 auto storage_id = getStorageID();
 
-                auto dead_letter = getContext()->getDeadLetter();
-                dead_letter->add(
-                    DeadLetterElement{
-                        .table_engine = DeadLetterElement::StreamType::Kafka,
+                auto dead_letter_queue = getContext()->getDeadLetterQueue();
+                dead_letter_queue->add(
+                    DeadLetterQueueElement{
+                        .table_engine = DeadLetterQueueElement::StreamType::Kafka,
                         .event_time = timeInSeconds(time_now),
                         .event_time_microseconds = timeInMicroseconds(time_now),
                         .database = storage_id.database_name,
                         .table = storage_id.table_name,
                         .raw_message = msg_info.currentPayload(),
                         .error = exception_message.value(),
-                        .details = DeadLetterElement::KafkaDetails{
+                        .details = DeadLetterQueueElement::KafkaDetails{
                             .topic_name = msg_info.currentTopic(),
                             .partition = msg_info.currentPartition(),
                             .offset = msg_info.currentPartition(),
@@ -929,7 +929,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
         else
         {
             // We came here in case of tombstone (or sometimes zero-length) messages, and it is not something abnormal
-            // TODO: it seems like in case of StreamingHandleErrorMode::STREAM or DEAD_LETTER
+            // TODO: it seems like in case of StreamingHandleErrorMode::STREAM or DEAD_LETTER_QUEUE
             //  we may need to process those differently
             //  currently we just skip them with note in logs.
             LOG_DEBUG(

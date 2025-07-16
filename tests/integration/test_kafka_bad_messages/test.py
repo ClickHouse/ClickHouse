@@ -4,7 +4,7 @@ import helpers.kafka.common as k
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/kafka.xml", "configs/dead_letter.xml"],
+    main_configs=["configs/kafka.xml", "configs/dead_letter_queue.xml"],
     with_kafka=True,
 )
 
@@ -33,14 +33,14 @@ def view_test(expected_num_messages, *_):
 
 
 # check_method for bad_messages_parsing_mode
-def dead_letter_test(expected_num_messages, topic_name):
+def dead_letter_queue_test(expected_num_messages, topic_name):
     # we have a problem:
     #  it make sense to flush logs when data already processed,
     #  but since nothing goes to target MV we don't know when it happens
     instance.query("SYSTEM FLUSH LOGS")
 
     rows = instance.query_with_retry(
-        f"SELECT count() FROM system.dead_letter WHERE kafka_topic_name = '{topic_name}'",
+        f"SELECT count() FROM system.dead_letter_queue WHERE kafka_topic_name = '{topic_name}'",
         retry_count=500,
         sleep_time=0.1,
         check_callback=lambda x: int(x) == expected_num_messages,
@@ -48,9 +48,9 @@ def dead_letter_test(expected_num_messages, topic_name):
     assert int(rows) == expected_num_messages
 
     result = instance.query(
-        f"SELECT * FROM system.dead_letter WHERE kafka_topic_name = '{topic_name}' FORMAT Vertical"
+        f"SELECT * FROM system.dead_letter_queue WHERE kafka_topic_name = '{topic_name}' FORMAT Vertical"
     )
-    logging.debug(f"system.dead_letter contains {result}")
+    logging.debug(f"system.dead_letter_queue contains {result}")
 
     # nothing goes to target table
     view_test(0)
@@ -210,12 +210,12 @@ def test_bad_messages_parsing_stream(kafka_cluster):
     )
 
 
-def test_bad_messages_parsing_dead_letter(kafka_cluster):
+def test_bad_messages_parsing_dead_letter_queue(kafka_cluster):
     bad_messages_parsing_mode(
         kafka_cluster,
-        "dead_letter",
+        "dead_letter_queue",
         "CREATE MATERIALIZED VIEW view Engine=Log AS SELECT key FROM kafka",
-        dead_letter_test,
+        dead_letter_queue_test,
     )
 
 

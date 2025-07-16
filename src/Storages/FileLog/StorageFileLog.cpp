@@ -888,8 +888,8 @@ void registerStorageFileLog(StorageFactory & factory)
             && !(*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_factor].value)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "poll_directory_watch_events_backoff_factor can not be 0");
 
-        if ((*filelog_settings)[FileLogSetting::handle_error_mode].changed && (*filelog_settings)[FileLogSetting::handle_error_mode].value == StreamingHandleErrorMode::DEAD_LETTER)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "DEAD_LETTER is not supported by the table engine");
+        if ((*filelog_settings)[FileLogSetting::handle_error_mode].changed && (*filelog_settings)[FileLogSetting::handle_error_mode].value == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "DEAD_LETTER_QUEUE is not supported by the table engine");
 
         if (args_count != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of StorageFileLog should be 2, path and format name");

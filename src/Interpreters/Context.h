@@ -132,7 +132,7 @@ class ObjectStorageQueueLog;
 class AsynchronousInsertLog;
 class BackupLog;
 class BlobStorageLog;
-class DeadLetter;
+class DeadLetterQueue;
 class IAsynchronousReader;
 class IOUringReader;
 struct MergeTreeSettings;
@@ -1346,7 +1346,7 @@ public:
     std::shared_ptr<BackupLog> getBackupLog() const;
     std::shared_ptr<BlobStorageLog> getBlobStorageLog() const;
     std::shared_ptr<QueryMetricLog> getQueryMetricLog() const;
-    std::shared_ptr<DeadLetter> getDeadLetter() const;
+    std::shared_ptr<DeadLetterQueue> getDeadLetterQueue() const;
 
     SystemLogs getSystemLogs() const;
 

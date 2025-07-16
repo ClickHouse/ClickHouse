@@ -23,7 +23,7 @@ instance = cluster.add_instance(
         "configs/rabbitmq.xml",
         "configs/macros.xml",
         "configs/named_collection.xml",
-        "configs/dead_letter.xml",
+        "configs/dead_letter_queue.xml",
     ],
     user_configs=["configs/users.xml"],
     with_rabbitmq=True,
@@ -3753,14 +3753,14 @@ def view_test(expected_num_messages, *_):
     assert int(result) == expected_num_messages
 
 
-def dead_letter_test(expected_num_messages, exchange_name):
-    result = instance.query(f"SELECT * FROM system.dead_letter FORMAT Vertical")
+def dead_letter_queue_test(expected_num_messages, exchange_name):
+    result = instance.query(f"SELECT * FROM system.dead_letter_queue FORMAT Vertical")
 
-    logging.debug(f"system.dead_letter content is {result}")
+    logging.debug(f"system.dead_letter_queue content is {result}")
 
     rows = int(
         instance.query(
-            f"SELECT count() FROM system.dead_letter WHERE rabbitmq_exchange_name = '{exchange_name}'"
+            f"SELECT count() FROM system.dead_letter_queue WHERE rabbitmq_exchange_name = '{exchange_name}'"
         )
     )
     assert rows == expected_num_messages
@@ -3890,12 +3890,12 @@ def test_rabbitmq_reject_broken_messages_stream(rabbitmq_cluster):
     )
 
 
-def test_rabbitmq_reject_broken_messages_dead_letter(rabbitmq_cluster):
+def test_rabbitmq_reject_broken_messages_dead_letter_queue(rabbitmq_cluster):
     rabbitmq_reject_broken_messages(
         rabbitmq_cluster,
-        "dead_letter",
+        "dead_letter_queue",
         "",
-        dead_letter_test,
+        dead_letter_queue_test,
         broken_messages_rejected = True,
     )
 

@@ -1,16 +1,16 @@
 ---
 description: 'System table containing information about messages
   received via a streaming engine and parsed with errors.'
-keywords: ['system table', 'dead_letter']
-slug: /operations/system-tables/dead_letter
-title: 'system.dead_letter'
+keywords: ['system table', 'dead_letter_queue']
+slug: /operations/system-tables/dead_letter_queue
+title: 'system.dead_letter_queue'
 ---
 
 Contains information about messages received via a streaming engine and parsed with errors. Currently implemented for Kafka and RabbitMQ.
 
-Logging is enabled by specifying `dead_letter` for the engine specific `handle_error_mode` setting.
+Logging is enabled by specifying `dead_letter_queue` for the engine specific `handle_error_mode` setting.
 
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [dead_letter](../../operations/server-configuration-parameters/settings.md#dead_letter) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](/sql-reference/statements/system#flush-logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [dead_letter_queue](../../operations/server-configuration-parameters/settings.md#dead_letter_queue) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](/sql-reference/statements/system#flush-logs) query.
 
 ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/overview.md#system-tables-introduction) for more details.
 
@@ -41,7 +41,7 @@ Columns:
 Query:
 
 ``` sql
-SELECT * FROM system.dead_letter LIMIT 1 \G;
+SELECT * FROM system.dead_letter_queue LIMIT 1 \G;
 ```
 
 Result:
@@ -62,7 +62,7 @@ Column 0,   name: key,   type: UInt64, ERROR: text "qwertyuiop" is not like UInt
 
 
 raw_message:                   qwertyuiop
-kafka_topic_name:              TSV_dead_letter_err_1746095689
+kafka_topic_name:              TSV_dead_letter_queue_err_1746095689
 kafka_partition:               0
 kafka_offset:                  0
 kafka_key:
@@ -88,7 +88,7 @@ Column 0,   name: key,   type: UInt64, ERROR: text "asdfghjkl" is not like UInt6
 
 
 raw_message:                   asdfghjkl
-kafka_topic_name:              TSV_dead_letter_err_1746095689
+kafka_topic_name:              TSV_dead_letter_queue_err_1746095689
 kafka_partition:               0
 kafka_offset:                  0
 kafka_key:
@@ -114,7 +114,7 @@ Column 0,   name: key,   type: UInt64, ERROR: text "zxcvbnm" is not like UInt64
 
 
 raw_message:                   zxcvbnm
-kafka_topic_name:              TSV_dead_letter_err_1746095689
+kafka_topic_name:              TSV_dead_letter_queue_err_1746095689
 kafka_partition:               0
 kafka_offset:                  0
 kafka_key:
@@ -124,7 +124,7 @@ rabbitmq_message_timestamp:    1970-01-01 00:00:00
 rabbitmq_message_redelivered:  0
 rabbitmq_message_delivery_tag: 0
 rabbitmq_channel_id:
- (test.py:78, dead_letter_test)
+ (test.py:78, dead_letter_queue_test)
 
 ```
 

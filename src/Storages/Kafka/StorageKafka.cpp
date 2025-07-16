@@ -192,7 +192,7 @@ StorageKafka::StorageKafka(
     kafka_settings->sanityCheck();
 
     if (auto mode = getStreamingHandleErrorMode();
-        mode == StreamingHandleErrorMode::STREAM || mode == StreamingHandleErrorMode::DEAD_LETTER)
+        mode == StreamingHandleErrorMode::STREAM || mode == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
     {
         (*kafka_settings)[KafkaSetting::input_format_allow_errors_num] = 0;
         (*kafka_settings)[KafkaSetting::input_format_allow_errors_ratio] = 0;

@@ -6,7 +6,7 @@
 #include <Formats/FormatFactory.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DeadLetter.h>
+#include <Interpreters/DeadLetterQueue.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <base/sleep.h>
 #include <Common/logger_useful.h>
@@ -189,7 +189,7 @@ Chunk RabbitMQSource::generateImpl()
                 }
                 return 1;
             }
-            case StreamingHandleErrorMode::DEAD_LETTER:
+            case StreamingHandleErrorMode::DEAD_LETTER_QUEUE:
             {
                 exception_message = e.message();
                 for (size_t i = 0; i < result_columns.size(); ++i)
@@ -281,17 +281,17 @@ Chunk RabbitMQSource::generateImpl()
                 const auto time_now = std::chrono::system_clock::now();
                 auto storage_id = storage.getStorageID();
 
-                auto dead_letter = context->getDeadLetter();
-                dead_letter->add(
-                    DeadLetterElement{
-                        .table_engine = DeadLetterElement::StreamType::RabbitMQ,
+                auto dead_letter_queue = context->getDeadLetterQueue();
+                dead_letter_queue->add(
+                    DeadLetterQueueElement{
+                        .table_engine = DeadLetterQueueElement::StreamType::RabbitMQ,
                         .event_time = timeInSeconds(time_now),
                         .event_time_microseconds = timeInMicroseconds(time_now),
                         .database = storage_id.database_name,
                         .table = storage_id.table_name,
                         .raw_message = message.message,
                         .error = exception_message.value(),
-                        .details = DeadLetterElement::RabbitMQDetails{
+                        .details = DeadLetterQueueElement::RabbitMQDetails{
                             .exchange_name = exchange_name,
                             .message_id = message.message_id,
                             .timestamp = message.timestamp,
