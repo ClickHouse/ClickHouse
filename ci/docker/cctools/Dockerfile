@@ -47,7 +47,7 @@ RUN apt-get update \
     && apt-get install --yes \
         libgmp-dev \
         libmpfr-dev \
-    && wget https://sourceware.org/pub/gdb/releases/gdb-$GDB_VERSION.tar.gz \
+    && wget --waitretry 5 --retry-connrefused --retry-on-host-error --retry-on-http-error 403 --tries 10 https://sourceware.org/pub/gdb/releases/gdb-$GDB_VERSION.tar.gz \
     && tar -xvf gdb-$GDB_VERSION.tar.gz \
     && cd gdb-$GDB_VERSION \
     && ./configure --prefix=/opt/gdb --with-separate-debug-dir=/usr/lib/debug \
