@@ -1,6 +1,8 @@
 #pragma once
 #include <Storages/VirtualColumnsDescription.h>
 
+#include <Core/ColumnNumbers.h>
+
 namespace DB
 {
 
@@ -69,6 +71,8 @@ struct StorageSnapshot
 
     /// Block with ordinary + materialized + aliases + virtuals + subcolumns.
     Block getSampleBlockForColumns(const Names & column_names) const;
+
+    ColumnNumbers getColumnNumbersByNames(const Names & column_names) const;
 
     ColumnsDescription getDescriptionForColumns(const Names & column_names) const;
 
