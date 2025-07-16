@@ -252,10 +252,6 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
             && name == IMergeTreeDataPart::METADATA_VERSION_FILE_NAME)
             continue;
 
-        if (client_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_COLUMNS_SUBSTREAMS
-            && name == IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME)
-            continue;
-
         files_to_replicate.insert(name);
     }
 
