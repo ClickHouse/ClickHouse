@@ -1,6 +1,12 @@
 #pragma once
 
 #include <base/types.h>
+#include <Disks/IDisk.h>
+#include <IO/ReadBuffer.h>
+#include <IO/WriteBuffer.h>
+#include <Core/Types_fwd.h>
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 
 #include <map>
 #include <optional>
@@ -57,6 +63,8 @@ struct MergeTreeDataPartChecksums
 
     bool remove(const String & file_name) { return files.erase(file_name); }
 
+    void addExistingFile(const MergeTreeDataPartChecksums & source, const String & file_from, const String & file_to);
+
     bool empty() const { return files.empty(); }
 
     /// Checks that the set of columns and their checksums are the same. If not, throws an exception.
@@ -89,6 +97,8 @@ struct MergeTreeDataPartChecksums
 
     UInt64 getTotalSizeOnDisk() const;
     UInt64 getTotalSizeUncompressedOnDisk() const;
+
+    Strings getFileNames() const;
 };
 
 /// A kind of MergeTreeDataPartChecksums intended to be stored in ZooKeeper (to save its RAM)
