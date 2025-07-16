@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include "gtest_disk.h"
+#include <Disks/tests/gtest_disk.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;

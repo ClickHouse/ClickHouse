@@ -13,7 +13,8 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Common/logger_useful.h>
-#include "Storages/ColumnsDescription.h"
+#include <Storages/ColumnsDescription.h>
+#include <Formats/FormatParserGroup.h>
 
 #include <memory>
 #include <string>
@@ -39,14 +40,12 @@ namespace DataLakeStorageSetting
 
 
 template <typename T>
-concept StorageConfiguration = std::derived_from<T, StorageObjectStorage::Configuration>;
+concept StorageConfiguration = std::derived_from<T, StorageObjectStorageConfiguration>;
 
 template <StorageConfiguration BaseStorageConfiguration, typename DataLakeMetadata>
-class DataLakeConfiguration : public BaseStorageConfiguration, public std::enable_shared_from_this<StorageObjectStorage::Configuration>
+class DataLakeConfiguration : public BaseStorageConfiguration, public std::enable_shared_from_this<StorageObjectStorageConfiguration>
 {
 public:
-    using Configuration = StorageObjectStorage::Configuration;
-
     explicit DataLakeConfiguration(DataLakeStorageSettingsPtr settings_) : settings(settings_) {}
 
     bool isDataLakeConfiguration() const override { return true; }
@@ -115,24 +114,6 @@ public:
         return current_metadata->getSchemaTransformer(local_context, data_path);
     }
 
-    bool hasPositionDeleteTransformer(const ObjectInfoPtr & object_info) const override
-    {
-        if (!current_metadata)
-            return false;
-        return current_metadata->hasPositionDeleteTransformer(object_info);
-    }
-
-    std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
-        const ObjectInfoPtr & object_info,
-        const Block & header,
-        const std::optional<FormatSettings> & format_settings,
-        ContextPtr context_) const override
-    {
-        if (!current_metadata)
-            return {};
-        return current_metadata->getPositionDeleteTransformer(object_info, header, format_settings, context_);
-    }
-
     bool hasExternalDynamicMetadata() override
     {
         assertInitialized();
@@ -184,6 +165,11 @@ public:
     {
         assertInitialized();
         current_metadata->modifyFormatSettings(settings_);
+    }
+
+    ColumnMapperPtr getColumnMapper() const override
+    {
+        return current_metadata->getColumnMapper();
     }
 
 private:

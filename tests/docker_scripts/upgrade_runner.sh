@@ -90,8 +90,8 @@ save_major_version 'old_version.native'
 # available for dump via clickhouse-local
 configure
 
-start
-stop
+start_server || (echo "Failed to start server" && exit 1)
+stop_server || (echo "Failed to stop server" && exit 1)
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
 
 # Start server from previous release
@@ -106,7 +106,7 @@ sudo sed -i "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default
 sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 
-start
+start_server || (echo "Failed to start server" && exit 1)
 
 clickhouse-client --query="SELECT 'Server version: ', version()"
 
@@ -127,7 +127,7 @@ timeout 10m clickhouse-client --query="SELECT 'Tables count:', count() FROM syst
 )
 
 # Use bigger timeout for previous version and disable additional hang check
-stop 300 false
+stop_server 300 false || (echo "Failed to stop server" && exit 1)
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
 
 # Install and start new server
@@ -260,7 +260,7 @@ fi
 sudo sed -i "s|>1<|>0<|g" /etc/clickhouse-server/config.d/lost_forever_check.xml \
 rm /etc/clickhouse-server/config.d/filesystem_caches_path.xml
 
-start 500
+start_server 500 || (echo "Failed to start server" && exit 1)
 clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
     || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
     && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(trim_server_logs application_errors.txt)" \
@@ -274,7 +274,7 @@ clickhouse-client --query="SELECT 'Server version: ', version()"
 # Let the server run for a while before checking log.
 sleep 60
 
-stop
+stop_server || (echo "Failed to stop server" && exit 1)
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.upgrade.log
 
 # Error messages (we should ignore some errors)

@@ -3,7 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/DateLUT.h>
-#include <DataTypes/DataTypeDateTime.h>
+#include <Core/Block.h>
 
 
 namespace DB
@@ -39,7 +39,7 @@ static GraphiteRollupSortedAlgorithm::ColumnsDefinition defineColumns(
 }
 
 GraphiteRollupSortedAlgorithm::GraphiteRollupSortedAlgorithm(
-    const Block & header_,
+    SharedHeader header_,
     size_t num_inputs,
     SortDescription description_,
     size_t max_block_size_rows_,
@@ -64,7 +64,7 @@ GraphiteRollupSortedAlgorithm::GraphiteRollupSortedAlgorithm(
     }
 
     graphite_rollup_merged_data.allocMemForAggregates(max_size_of_aggregate_state, max_alignment_of_aggregate_state);
-    columns_definition = defineColumns(header_, params);
+    columns_definition = defineColumns(*header_, params);
 }
 
 UInt32 GraphiteRollupSortedAlgorithm::selectPrecision(const Graphite::Retentions & retentions, time_t time) const
