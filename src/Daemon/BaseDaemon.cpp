@@ -49,6 +49,7 @@
 
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
+#include <Loggers/OwnSplitChannel.h>
 
 #include <Common/config_version.h>
 

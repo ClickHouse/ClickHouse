@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3283 
+personal_ws-1.1 en 3285 
 AArch
 ACLs
 ALTERs
@@ -28,6 +28,7 @@ Akka
 AlertManager
 Alexey
 AnyEvent
+Anthropic
 AppleClang
 Approximative
 ArrayJoin
@@ -308,6 +309,7 @@ Ethereum
 ExactEdgeLengthKm
 ExactEdgeLengthM
 ExactEdgeLengthRads
+Excel's
 ExecutablePool
 ExperimentalBadge
 ExtType
@@ -584,6 +586,7 @@ LogsLevel
 Logstash
 LookML
 LoongArch
+Lossy
 LowCardinality
 LpDistance
 LpNorm
@@ -622,6 +625,7 @@ MaxThreads
 Mbps
 McNeal
 Memcheck
+memcheck
 MemoryCode
 MemoryDataAndStack
 MemoryResident
@@ -788,6 +792,7 @@ OpenSSL
 OpenSUSE
 OpenSky
 OpenStack
+OpenAI
 OpenTelemetry
 OrDefault
 OrNull
@@ -806,8 +811,6 @@ PagerDuty
 ParallelFormattingOutputFormatThreads
 ParallelFormattingOutputFormatThreadsActive
 ParallelParsingInputFormat
-ParallelParsingInputFormatThreads
-ParallelParsingInputFormatThreadsActive
 ParallelReplicasMode
 ParquetCompression
 ParquetMetadata
@@ -907,6 +910,7 @@ RWLockWaitingWriters
 RabbitMQ
 Rabl
 RangeHashed
+Raphson
 RawBLOB
 RawSum
 RawWithNames
@@ -1211,6 +1215,8 @@ WriteBuffer
 WriteBuffers
 XCode
 XHTML
+XIRR
+XNPV
 XORs
 Xeon
 YAML
@@ -1486,6 +1492,8 @@ cardinalities
 cardinality
 cartesian
 caseWithExpression
+cashflow
+cashflows
 cassandra
 catboost
 catboostEvaluate
@@ -1835,6 +1843,10 @@ filesystemFree
 filesystemUnreserved
 filesystems
 finalizeAggregation
+financialInternalRateOfReturn
+financialInternalRateOfReturnExtended
+financialNetPresentValue
+financialNetPresentValueExtended
 fips
 firstLine
 firstSignficantSubdomain
@@ -2083,6 +2095,7 @@ isFinite
 isIPAddressInRange
 isIPv
 isInfinite
+isMergeTreePartCoveredBy
 isNaN
 isNotDistinctFrom
 isNotNull
@@ -2091,7 +2104,6 @@ isNullable
 isValidJSON
 isValidUTF
 isZeroOrNull
-isMergeTreePartCoveredBy
 iteratively
 jaccard
 jaccardIndex
@@ -2214,6 +2226,7 @@ loghouse
 london
 lookups
 loongarch
+lossy
 lowCardinalityIndices
 lowCardinalityKeys
 lowcardinality
@@ -2269,6 +2282,7 @@ mebibytes
 memtable
 memtables
 mergeTreeIndex
+mergeTreePartInfo
 mergeTreeProjection
 mergeable
 mergetree
@@ -2277,7 +2291,6 @@ metacharacters
 metasymbols
 metrica
 metroHash
-mergeTreePartInfo
 mfedotov
 mflix
 minMap
@@ -2520,6 +2533,8 @@ polygonsDistanceSpherical
 polygonsEqualsCartesian
 polygonsIntersectionCartesian
 polygonsIntersectionSpherical
+polygonsIntersectCartesian
+polygonsIntersectSpherical
 polygonsSymDifferenceCartesian
 polygonsSymDifferenceSpherical
 polygonsUnionCartesian

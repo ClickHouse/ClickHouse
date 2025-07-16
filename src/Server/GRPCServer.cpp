@@ -1,4 +1,4 @@
-#include "GRPCServer.h"
+#include <Server/GRPCServer.h>
 #include <limits>
 #include <memory>
 #include <Poco/Net/SocketAddress.h>
@@ -74,7 +74,7 @@ namespace Setting
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
-    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;

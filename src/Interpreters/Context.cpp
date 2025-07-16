@@ -39,6 +39,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
@@ -204,6 +205,14 @@ namespace CurrentMetrics
     extern const Metric IcebergCatalogThreads;
     extern const Metric IcebergCatalogThreadsActive;
     extern const Metric IcebergCatalogThreadsScheduled;
+    extern const Metric IndexMarkCacheBytes;
+    extern const Metric IndexMarkCacheFiles;
+    extern const Metric MarkCacheBytes;
+    extern const Metric MarkCacheFiles;
+    extern const Metric UncompressedCacheBytes;
+    extern const Metric UncompressedCacheCells;
+    extern const Metric IndexUncompressedCacheBytes;
+    extern const Metric IndexUncompressedCacheCells;
 }
 
 
@@ -792,13 +801,14 @@ struct ContextSharedPart : boost::noncopyable
         /// Waiting for current backups/restores to be finished. This must be done before `DatabaseCatalog::shutdown()`.
         SHUTDOWN(log, "backups worker", backups_worker, shutdown());
 
-        /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
-          *  Note that part changes at shutdown won't be logged to part log.
-          */
-        SHUTDOWN(log, "system logs", system_logs, flushAndShutdown());
+        LOG_TRACE(log, "Shutting down object storage queue streaming");
+        ObjectStorageQueueFactory::instance().shutdown();
 
         LOG_TRACE(log, "Shutting down database catalog");
-        DatabaseCatalog::shutdown();
+        DatabaseCatalog::shutdown([this]()
+        {
+            SHUTDOWN(log, "system logs", TSA_SUPPRESS_WARNING_FOR_READ(system_logs), flushAndShutdown());
+        });
 
         NamedCollectionFactory::instance().shutdown();
 
@@ -1127,6 +1137,7 @@ ContextMutablePtr Context::createGlobal(ContextSharedPart * shared_part)
     res->shared = shared_part;
     res->query_access_info = std::make_shared<QueryAccessInfo>();
     res->query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
+    res->async_read_counters = std::make_shared<AsyncReadCounters>();
     return res;
 }
 
@@ -3027,6 +3038,7 @@ void Context::makeQueryContext()
     local_write_query_throttler.reset();
     backups_query_throttler.reset();
     query_privileges_info = std::make_shared<QueryPrivilegesInfo>(*query_privileges_info);
+    async_read_counters = std::make_shared<AsyncReadCounters>();
 }
 
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
@@ -3373,7 +3385,7 @@ void Context::setUncompressedCache(const String & cache_policy, size_t max_size_
     if (shared->uncompressed_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Uncompressed cache has been already created.");
 
-    shared->uncompressed_cache = std::make_shared<UncompressedCache>(cache_policy, max_size_in_bytes, size_ratio);
+    shared->uncompressed_cache = std::make_shared<UncompressedCache>(cache_policy, CurrentMetrics::UncompressedCacheBytes, CurrentMetrics::UncompressedCacheCells, max_size_in_bytes, size_ratio);
 }
 
 void Context::updateUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
@@ -3440,7 +3452,7 @@ void Context::setMarkCache(const String & cache_policy, size_t max_cache_size_in
     if (shared->mark_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark cache has been already created.");
 
-    shared->mark_cache = std::make_shared<MarkCache>(cache_policy, max_cache_size_in_bytes, size_ratio);
+    shared->mark_cache = std::make_shared<MarkCache>(cache_policy, CurrentMetrics::MarkCacheBytes, CurrentMetrics::MarkCacheFiles, max_cache_size_in_bytes, size_ratio);
 }
 
 void Context::updateMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
@@ -3541,7 +3553,7 @@ void Context::setIndexUncompressedCache(const String & cache_policy, size_t max_
     if (shared->index_uncompressed_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index uncompressed cache has been already created.");
 
-    shared->index_uncompressed_cache = std::make_shared<UncompressedCache>(cache_policy, max_size_in_bytes, size_ratio);
+    shared->index_uncompressed_cache = std::make_shared<UncompressedCache>(cache_policy, CurrentMetrics::IndexUncompressedCacheBytes, CurrentMetrics::IndexUncompressedCacheCells, max_size_in_bytes, size_ratio);
 }
 
 void Context::updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
@@ -3577,7 +3589,7 @@ void Context::setIndexMarkCache(const String & cache_policy, size_t max_cache_si
     if (shared->index_mark_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index mark cache has been already created.");
 
-    shared->index_mark_cache = std::make_shared<MarkCache>(cache_policy, max_cache_size_in_bytes, size_ratio);
+    shared->index_mark_cache = std::make_shared<MarkCache>(cache_policy, CurrentMetrics::IndexMarkCacheBytes, CurrentMetrics::IndexMarkCacheFiles, max_cache_size_in_bytes, size_ratio);
 }
 
 void Context::updateIndexMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
@@ -5509,9 +5521,9 @@ size_t Context::getConfigReloaderInterval() const
     return shared->config_reload_interval_ms.load(std::memory_order_relaxed);
 }
 
-InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings, std::optional<size_t> max_parsing_threads) const
+InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings) const
 {
-    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings, max_parsing_threads);
+    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings);
 }
 
 OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const
@@ -6493,9 +6505,6 @@ WriteSettings Context::getWriteSettings() const
 
 std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
 {
-    std::lock_guard lock(mutex);
-    if (!async_read_counters)
-        async_read_counters = std::make_shared<AsyncReadCounters>();
     return async_read_counters;
 }
 

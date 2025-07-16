@@ -1,6 +1,7 @@
 #pragma once
 
-#include "config.h"
+#include <IO/ReadBufferFromFileBase.h>
+#include <config.h>
 
 #if USE_SSL
 
@@ -28,7 +29,7 @@ struct DiskEncryptedSettings
 };
 
 
-class DiskEncryptedTransaction : public IDiskTransaction
+class DiskEncryptedTransaction : public IDiskTransaction, public std::enable_shared_from_this<DiskEncryptedTransaction>
 {
 public:
     static String wrappedPath(const String disk_path, const String & path)
@@ -251,9 +252,37 @@ public:
         delegate_transaction->truncateFile(wrapped_path, target_size);
     }
 
+    std::vector<std::string> listUncommittedDirectoryInTransaction(const std::string & path) const override
+    {
+        auto wrapped_path = wrappedPath(path);
+        return delegate_transaction->listUncommittedDirectoryInTransaction(wrapped_path);
+    }
+
+    std::unique_ptr<ReadBufferFromFileBase> readUncommittedFileInTransaction(
+        const String & path,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override
+    {
+        auto wrapped_path = wrappedPath(path);
+        return delegate_transaction->readUncommittedFileInTransaction(wrapped_path, settings, read_hint, file_size);
+    }
+
+    bool isTransactional() const override
+    {
+        return delegate_transaction->isTransactional();
+    }
+
+    void validateTransaction(std::function<void (IDiskTransaction&)> check_function) override
+    {
+        auto wrapped = [tx = shared_from_this(), moved_func = std::move(check_function)] (IDiskTransaction&)
+        {
+            moved_func(*tx);
+        };
+        delegate_transaction->validateTransaction(std::move(wrapped));
+    }
 
 private:
-
     String wrappedPath(const String & path) const
     {
         return wrappedPath(disk_path, path);
