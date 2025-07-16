@@ -215,7 +215,7 @@ static size_t numLeftRowsForNextBlock(
             lhs = mid;
     }
 
-    return std::max<size_t>(lhs - next_row, 1);
+    return std::max<size_t>(rhs - next_row, 1);
 }
 
 HashJoinResult::HashJoinResult(
