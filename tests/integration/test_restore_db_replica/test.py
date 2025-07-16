@@ -5,6 +5,7 @@ import time
 import pytest
 
 from helpers.cluster import ClickHouseCluster, ClickHouseKiller
+from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 configs = ["configs/remote_servers.xml"]
@@ -392,12 +393,12 @@ def test_query_after_restore_db_replica(
         node_1.query(f"DROP TABLE {exclusive_database_name}.{exists_table_name} SYNC")
     node_1.query(f"DROP TABLE {exclusive_database_name}.{changed_table} SYNC")
 
-    assert ["0"] == node_1.query(
+    assert node_1.query(
         f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}'"
-    ).split()
-    assert ["0"] == node_2.query(
+    ) == TSV([0]) 
+    assert node_2.query(
         f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}'"
-    ).split()
+    ) == TSV([0]) 
 
     node_1.query(f"DROP DATABASE {exclusive_database_name} SYNC")
     node_2.query(f"DROP DATABASE {exclusive_database_name} SYNC")
@@ -465,12 +466,12 @@ def test_restore_db_replica_with_diffrent_table_metadata(
 
     node_1.start_clickhouse()
 
-    assert ["0"] == node_1.query(
+    assert node_1.query(
         f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}' AND table='{test_table_2}'"
-    ).split()
-    assert ["1"] == node_2.query(
+    ) == TSV([0]) 
+    assert node_2.query(
         f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}' AND table='{test_table_2}'"
-    ).split()
+    ) == TSV([1]) 
 
     nodes = [node_1, node_2]
     if restore_firstly_node_where_created:
@@ -483,49 +484,46 @@ def test_restore_db_replica_with_diffrent_table_metadata(
             look_behind_lines=1000,
         )
 
-    assert [f"{count_test_table_1}"] == node_1.query_with_retry(
+    assert node_1.query_with_retry(
         f"SELECT count(*) FROM {exclusive_database_name}.{test_table_1}"
-    ).split()
-    assert [f"{count_test_table_1}"] == node_2.query_with_retry(
+    ) == TSV([count_test_table_1]) 
+    assert node_2.query_with_retry(
         f"SELECT count(*) FROM {exclusive_database_name}.{test_table_1}"
-    ).split()
+    ) == TSV([count_test_table_1]) 
 
     expected_count = ["0"]
     if restore_firstly_node_where_created:
         expected_count = ["1"]
 
     assert (
-        expected_count
-        == node_1.query(
+        node_1.query(
             f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}' AND table='{test_table_2}'"
-        ).split()
+        ) == TSV([expected_count]) 
     )
     assert (
-        expected_count
-        == node_2.query(
+        node_2.query(
             f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}' AND table='{test_table_2}'"
-        ).split()
+        ) == TSV([expected_count]) 
     )
 
     if restore_firstly_node_where_created:
-        assert [f"{count_test_table_2}"] == node_1.query(
+        assert node_1.query(
             f"SELECT count(*) FROM {exclusive_database_name}.{test_table_2}"
-        ).split()
-        assert [f"{count_test_table_2}"] == node_2.query(
+        ) == TSV([count_test_table_2]) 
+        assert node_2.query(
             f"SELECT count(*) FROM {exclusive_database_name}.{test_table_2}"
-        ).split()
+        ) == TSV([count_test_table_2]) 
     else:
-        assert ["1"] == node_2.query(
+        assert node_2.query(
             f"SELECT count(*) FROM system.databases WHERE name='{exclusive_database_name}_broken_tables'"
-        ).split()
-        assert ["1"] == node_2.query(
+        )  == TSV([1]) 
+        assert node_2.query(
             f"SELECT count(*) FROM system.databases WHERE name='{exclusive_database_name}_broken_replicated_tables'"
-        ).split()
+        ) == TSV([1]) 
         assert (
-            []
-            == node_2.query(
+            node_2.query(
                 f"SELECT table FROM system.tables WHERE database='{exclusive_database_name}_broken_tables'"
-            ).split()
+            ) == TSV([]) 
         )
 
         detached_broken_tables = node_2.query(
@@ -535,9 +533,9 @@ def test_restore_db_replica_with_diffrent_table_metadata(
         assert len(detached_broken_tables) == 1
         assert detached_broken_tables[0].startswith(f"{test_table_2}_")
 
-        assert [f"{count_test_table_2}"] == node_2.query(
+        assert node_2.query(
             f"SELECT count(*) FROM {exclusive_database_name}_broken_replicated_tables.{detached_broken_tables[0]}"
-        ).split()
+        ) == TSV([count_test_table_2]) 
 
         node_2.query(f"DROP DATABASE {exclusive_database_name}_broken_tables SYNC")
         node_2.query(
@@ -547,12 +545,12 @@ def test_restore_db_replica_with_diffrent_table_metadata(
     node_1.query(f"DROP TABLE IF EXISTS {exclusive_database_name}.{test_table_1} SYNC")
     node_1.query(f"DROP TABLE IF EXISTS {exclusive_database_name}.{test_table_2} SYNC")
 
-    assert ["0"] == node_1.query(
+    assert node_1.query(
         f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}'"
-    ).split()
-    assert ["0"] == node_2.query(
+    ) == TSV([0]) 
+    assert node_2.query(
         f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}'"
-    ).split()
+    ) == TSV([0]) 
 
     node_1.query(f"DROP DATABASE {exclusive_database_name} SYNC")
     node_2.query(f"DROP DATABASE {exclusive_database_name} SYNC")
@@ -587,12 +585,12 @@ def test_failed_restore_db_replica_on_normal_replica(
 
     node_1.query(f"DROP TABLE IF EXISTS {exclusive_database_name}.{test_table} SYNC")
 
-    assert ["0"] == node_1.query(
+    assert node_1.query(
         f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}'"
-    ).split()
-    assert ["0"] == node_2.query(
+    ) == TSV([0]) 
+    assert node_2.query(
         f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}'"
-    ).split()
+    ) == TSV([0]) 
 
     node_1.query(f"DROP DATABASE {exclusive_database_name} SYNC")
     node_2.query(f"DROP DATABASE {exclusive_database_name} SYNC")
@@ -630,13 +628,13 @@ def test_restore_db_replica_on_cluster(
         look_behind_lines=1000,
     )
 
-    assert ["1"] == node_1.query(
+    assert node_1.query(
         f"SELECT count(*) FROM system.databases WHERE name='{exclusive_database_name}'"
-    ).split()
+    ) == TSV([1]) 
 
-    assert ["1"] == node_1.query(
+    assert node_1.query(
         f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}'"
-    ).split()
+    ) == TSV([1]) 
 
     check_contains_table(
         node_1, f"{exclusive_database_name}.{test_table_1}", count_test_table
