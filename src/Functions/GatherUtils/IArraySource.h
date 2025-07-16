@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnArray.h>
-#include <Functions/GatherUtils/ArraySourceVisitor.h>
+#include "ArraySourceVisitor.h"
 
 namespace DB
 {

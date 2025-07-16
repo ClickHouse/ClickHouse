@@ -5,7 +5,6 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/filesystemHelpers.h>
-#include <Core/Names.h>
 #include <Formats/MarkInCompressedFile.h>
 
 #include <Compression/CompressedReadBuffer.h>
@@ -45,9 +44,6 @@ class MergeTask;
 using MergeTaskPtr = std::shared_ptr<MergeTask>;
 class RowsSourcesTemporaryFile;
 
-class MergedPartOffsets;
-using MergedPartOffsetsPtr = std::shared_ptr<MergedPartOffsets>;
-
 /**
  * Overview of the merge algorithm
  *
@@ -72,7 +68,6 @@ using MergedPartOffsetsPtr = std::shared_ptr<MergedPartOffsets>;
 class MergeTask
 {
 public:
-    static constexpr auto TEMP_DIRECTORY_PREFIX = "tmp_merge_";
 
     MergeTask(
         FutureMergedMutatedPartPtr future_part_,
@@ -89,7 +84,6 @@ public:
         MergeTreeData::MergingParams merging_params_,
         bool need_prefix,
         IMergeTreeDataPart * parent_part_,
-        MergedPartOffsetsPtr merged_part_offsets_,
         String suffix_,
         MergeTreeTransactionPtr txn,
         MergeTreeData * data_,
@@ -114,7 +108,6 @@ public:
             global_ctx->deduplicate_by_columns = std::move(deduplicate_by_columns_);
             global_ctx->cleanup = std::move(cleanup_);
             global_ctx->parent_part = std::move(parent_part_);
-            global_ctx->merged_part_offsets = std::move(merged_part_offsets_);
             global_ctx->data = std::move(data_);
             global_ctx->mutator = std::move(mutator_);
             global_ctx->merges_blocker = std::move(merges_blocker_);
@@ -188,7 +181,6 @@ private:
         std::vector<AlterConversionsPtr> alter_conversions;
         /// This will be either nullptr or new_data_part, so raw pointer is ok.
         IMergeTreeDataPart * parent_part{nullptr};
-        MergedPartOffsetsPtr merged_part_offsets;
         ContextPtr context{nullptr};
         time_t time_of_merge{0};
         ReservationSharedPtr space_reservation{nullptr};
@@ -239,9 +231,6 @@ private:
         scope_guard temporary_directory_lock;
 
         UInt64 prev_elapsed_ms{0};
-
-        /// Current merge may or may not reduce number of rows. It's not known until the horizontal stage is finished.
-        bool merge_may_reduce_rows{false};
 
         // will throw an exception if merge was cancelled in any way.
         void checkOperationIsNotCanceled() const;
@@ -371,7 +360,6 @@ private:
         size_t max_delayed_streams = 0;
         bool use_prefetch = false;
         std::list<std::unique_ptr<MergedColumnOnlyOutputStream>> delayed_streams;
-        NameSet removed_files;
         size_t column_elems_written{0};
         QueryPipeline column_parts_pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;

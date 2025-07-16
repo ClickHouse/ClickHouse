@@ -24,7 +24,6 @@ namespace ErrorCodes
 }
 
 class IMetadataStorage;
-struct PartitionCommand;
 
 /// Return the result of operation to the caller.
 /// It is used in `IDiskObjectStorageOperation::finalize` after metadata transaction executed to make decision on blob removal.
@@ -160,11 +159,6 @@ public:
         throwNotImplemented();
     }
 
-    /// Get objects that are going to be created inside transaction if they exists
-    virtual std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string &) const = 0;
-
-    virtual std::vector<std::string> listUncommittedDirectory(const std::string &) const = 0;
-
     virtual ~IMetadataTransaction() = default;
 
 protected:
@@ -231,8 +225,6 @@ public:
         throwNotImplemented();
     }
 
-    virtual bool supportsPartitionCommand(const PartitionCommand & /* command */) const = 0;
-
     virtual std::vector<std::string> listDirectory(const std::string & path) const = 0;
 
     virtual DirectoryIteratorPtr iterateDirectory(const std::string & path) const = 0;
@@ -261,11 +253,10 @@ public:
         /// This method is overridden for specific metadata implementations in ClickHouse Cloud.
     }
 
-    /// If the state can be changed under the hood and become outdated in memory, perform a reload if necessary,
-    /// but don't do it more frequently than the specified parameter.
+    /// If the state can be changed under the hood and become outdated in memory, perform a reload if necessary.
     /// Note: for performance reasons, it's allowed to assume that only some subset of changes are possible
     /// (those that MergeTree tables can make).
-    virtual void refresh(UInt64 /* not_sooner_than_milliseconds */)
+    virtual void refresh()
     {
         /// The default no-op implementation when the state in memory cannot be out of sync of the actual state.
     }
@@ -289,11 +280,6 @@ public:
         if (existsFile(path))
             return getStorageObjects(path);
         return std::nullopt;
-    }
-
-    virtual bool isTransactional() const
-    {
-        return false;
     }
 
 protected:

@@ -19,7 +19,7 @@ By default, tables are created only on the current server. Distributed DDL queri
 
 ### With Explicit Schema {#with-explicit-schema}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [COMMENT 'comment for column'] [compression_codec] [TTL expr1],
@@ -42,7 +42,7 @@ Comments can be added for columns and for the table.
 
 ### With a Schema Similar to Other Table {#with-a-schema-similar-to-other-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 ```
 
@@ -50,20 +50,20 @@ Creates a table with the same structure as another table. You can specify a diff
 
 ### With a Schema and Data Cloned from Another Table {#with-a-schema-and-data-cloned-from-another-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name CLONE AS [db2.]name2 [ENGINE = engine]
 ```
 
 Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table. After the new table is created, all partitions from `db2.name2` are attached to it. In other words, the data of `db2.name2` is cloned into `db.table_name` upon creation. This query is equivalent to the following:
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine];
 ALTER TABLE [db.]table_name ATTACH PARTITION ALL FROM [db2].name2;
 ```
 
 ### From a Table Function {#from-a-table-function}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 ```
 
@@ -71,7 +71,7 @@ Creates a table with the same result as that of the [table function](/sql-refere
 
 ### From SELECT query {#from-select-query}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)] ENGINE = engine AS SELECT ...
 ```
 
@@ -107,7 +107,7 @@ In ClickHouse Cloud please split this into two steps:
 
 Query:
 
-```sql
+``` sql
 CREATE TABLE t1 (x String) ENGINE = Memory AS SELECT 1;
 SELECT x, toTypeName(x) FROM t1;
 ```
@@ -158,7 +158,7 @@ CREATE OR REPLACE TABLE test
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO test (id) VALUES (1);
+INSERT INTO test (id) Values (1);
 
 SELECT * FROM test;
 ┌─id─┬──────────updated_at─┬─updated_at_date─┐
@@ -186,7 +186,7 @@ CREATE OR REPLACE TABLE test
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO test VALUES (1);
+INSERT INTO test Values (1);
 
 SELECT * FROM test;
 ┌─id─┐
@@ -224,7 +224,7 @@ CREATE OR REPLACE TABLE test
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO test (id, unhexed) VALUES (1, '5a90b714');
+INSERT INTO test (id, unhexed) Values (1, '5a90b714');
 
 SELECT
     id,
@@ -283,7 +283,7 @@ You can define a [primary key](../../../engines/table-engines/mergetree-family/m
 
 - Inside the column list
 
-```sql
+``` sql
 CREATE TABLE db.table_name
 (
     name1 type1, name2 type2, ...,
@@ -294,7 +294,7 @@ ENGINE = engine;
 
 - Outside the column list
 
-```sql
+``` sql
 CREATE TABLE db.table_name
 (
     name1 type1, name2 type2, ...
@@ -313,7 +313,7 @@ Along with columns descriptions constraints could be defined:
 
 ### CONSTRAINT {#constraint}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
@@ -363,7 +363,7 @@ For `MergeTree`-engine family you can change the default compression method in t
 
 You can also define the compression method for each individual column in the `CREATE TABLE` query.
 
-```sql
+``` sql
 CREATE TABLE codec_example
 (
     dt Date CODEC(ZSTD),
@@ -381,7 +381,7 @@ Example: `value UInt64 CODEC(Default)` — the same as lack of codec specificati
 
 Also you can remove current CODEC from the column and use default compression from config.xml:
 
-```sql
+``` sql
 ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 ```
 
@@ -465,17 +465,13 @@ These codecs are designed to make compression more effective by exploiting speci
 
 `FPC(level, float_size)` - Repeatedly predicts the next floating point value in the sequence using the better of two predictors, then XORs the actual with the predicted value, and leading-zero compresses the result. Similar to Gorilla, this is efficient when storing a series of floating point values that change slowly. For 64-bit values (double), FPC is faster than Gorilla, for 32-bit values your mileage may vary. Possible `level` values: 1-28, the default value is 12.  Possible `float_size` values: 4, 8, the default value is `sizeof(type)` if type is Float. In all other cases, it's 4. For a detailed description of the algorithm see [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf).
 
-#### SZ3 {#sz3}
-
-`SZ3` or `SZ3(algorithm, error_bound_mode, error_bound)` - A lossy but error-bound codec ([SZ3 Lossy Compressor](https://szcompressor.org/)) for columns of type Float32, Float64, Array(Float32), or Array(Float64). If the column type is of array type, then all inserted arrays must have the same length. Supported values for 'algorithm' are `ALGO_LORENZO_REG`, `ALGO_INTERP_LORENZO` and `ALGO_INTERP`. Supported values for 'error_bound_mode' are `ABS`, `REL`, `PSNR` and `ABS_AND_REL`. Argument 'error_bound' is the maximum error and of type Float64.
-
 #### T64 {#t64}
 
 `T64` — Compression approach that crops unused high bits of values in integer data types (including `Enum`, `Date` and `DateTime`). At each step of its algorithm, codec takes a block of 64 values, puts them into 64x64 bit matrix, transposes it, crops the unused bits of values and returns the rest as a sequence. Unused bits are the bits, that do not differ between maximum and minimum values in the whole data part for which the compression is used.
 
 `DoubleDelta` and `Gorilla` codecs are used in Gorilla TSDB as the components of its compressing algorithm. Gorilla approach is effective in scenarios when there is a sequence of slowly changing values with their timestamps. Timestamps are effectively compressed by the `DoubleDelta` codec, and values are effectively compressed by the `Gorilla` codec. For example, to get an effectively stored table, you can create it in the following configuration:
 
-```sql
+``` sql
 CREATE TABLE codec_example
 (
     timestamp DateTime CODEC(DoubleDelta),
@@ -529,7 +525,7 @@ If compression needs to be applied, it must be explicitly specified. Otherwise, 
 ```sql
 CREATE TABLE mytable
 (
-    x String CODEC(Delta, LZ4, AES_128_GCM_SIV)
+    x String Codec(Delta, LZ4, AES_128_GCM_SIV)
 )
 ENGINE = MergeTree ORDER BY x;
 ```
@@ -551,7 +547,7 @@ ClickHouse supports temporary tables which have the following characteristics:
 
 To create a temporary table, use the following syntax:
 
-```sql
+``` sql
 CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -603,7 +599,7 @@ WHERE CounterID <12345;
 
 ### Syntax {#syntax}
 
-```sql
+``` sql
 {CREATE [OR REPLACE] | REPLACE} TABLE [db.]table_name
 ```
 
@@ -737,7 +733,7 @@ You can add a comment to the table when creating it.
 
 **Syntax**
 
-```sql
+``` sql
 CREATE TABLE db.table_name
 (
     name1 type1, name2 type2, ...
@@ -750,7 +746,7 @@ COMMENT 'Comment'
 
 Query:
 
-```sql
+``` sql
 CREATE TABLE t1 (x String) ENGINE = Memory COMMENT 'The temporary table';
 SELECT name, comment FROM system.tables WHERE name = 't1';
 ```

@@ -1,8 +1,10 @@
 #pragma once
 
-#include <Core/Field.h>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IParserBase.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 
 
 namespace DB

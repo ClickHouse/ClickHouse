@@ -44,7 +44,7 @@ public:
     explicit ConcurrentHashJoin(
         std::shared_ptr<TableJoin> table_join_,
         size_t slots_,
-        SharedHeader right_sample_block,
+        const Block & right_sample_block,
         const StatsCollectingParams & stats_collecting_params_,
         bool any_take_last_row_ = false);
 
@@ -70,17 +70,12 @@ public:
 
     bool isCloneSupported() const override
     {
-        return getTotals().empty() && getTotalRowCount() == 0;
+        return !getTotals() && getTotalRowCount() == 0;
     }
 
-    std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_, SharedHeader, SharedHeader right_sample_block_) const override
+    std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_, const Block &, const Block & right_sample_block_) const override
     {
         return std::make_shared<ConcurrentHashJoin>(table_join_, slots, right_sample_block_, stats_collecting_params);
-    }
-
-    std::shared_ptr<IJoin> cloneNoParallel(const std::shared_ptr<TableJoin> & table_join_, SharedHeader, SharedHeader right_sample_block_) const override
-    {
-        return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row);
     }
 
     void onBuildPhaseFinish() override;
@@ -95,7 +90,6 @@ public:
 private:
     std::shared_ptr<TableJoin> table_join;
     size_t slots;
-    bool any_take_last_row;
     std::unique_ptr<ThreadPool> pool;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
     bool build_phase_finished = false;

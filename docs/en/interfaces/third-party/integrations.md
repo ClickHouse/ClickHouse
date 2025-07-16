@@ -7,13 +7,13 @@ slug: /interfaces/third-party/integrations
 title: 'Integration Libraries from Third-party Developers'
 ---
 
-# Integration libraries from third-party developers
+# Integration Libraries from Third-party Developers
 
 :::note Disclaimer
 ClickHouse, Inc. does **not** maintain the tools and libraries listed below and haven't done extensive testing to ensure their quality.
 :::
 
-## Infrastructure products {#infrastructure-products}
+## Infrastructure Products {#infrastructure-products}
 
 - Relational database management systems
     - [MySQL](https://www.mysql.com)
@@ -81,7 +81,7 @@ ClickHouse, Inc. does **not** maintain the tools and libraries listed below and 
     - [MindsDB](https://mindsdb.com/)
         - [MindsDB](https://github.com/mindsdb/mindsdb) - Integrates with ClickHouse, making data from ClickHouse accessible to a diverse range of AI/ML models.
 
-## Programming language ecosystems {#programming-language-ecosystems}
+## Programming Language Ecosystems {#programming-language-ecosystems}
 
 - Python
     - [SQLAlchemy](https://www.sqlalchemy.org)
