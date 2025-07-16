@@ -83,6 +83,8 @@ public:
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
+    QueryPlanStepPtr clone() const override;
+
     void enableMemoryBoundMerging() { memory_bound_merging_of_aggregation_results_enabled = true; }
 
     /// AggregatingStep does not contain any ActionDAGs.
@@ -91,6 +93,7 @@ public:
 
     Aggregator::Params getAggregatorParameters() const { return params; }
     bool getFinal() const noexcept { return final; }
+    void setFinal(bool new_value);
     size_t getMaxBlockSize() const noexcept { return max_block_size; }
     size_t getMaxBlockSizeForAggregationInOrder() const noexcept { return aggregation_in_order_max_block_bytes; }
     size_t getMergeThreads() const noexcept { return merge_threads; }

@@ -353,6 +353,7 @@ QUOTE_EXCLUSIONS=(
     --exclude "$ROOT_PATH/utils/memcpy-bench/glibc/*"
 )
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | \
+  grep -vP $EXCLUDE |
   xargs grep -P '#include[\s]*(").*(")' "${QUOTE_EXCLUSIONS[@]}" | \
   grep -v -F -e \"config.h\" -e \"config_tools.h\" -e \"SQLGrammar.pb.h\" -e \"out.pb.h\" -e \"clickhouse_grpc.grpc.pb.h\" -e \"delta_kernel_ffi.hpp\" | \
   xargs -i echo "Found include with quotes in '{}'. Please use <> instead"
