@@ -26,6 +26,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
@@ -334,7 +335,7 @@ SinkToStoragePtr StorageObjectStorage::write(
             /* check_consistent_with_previous_metadata */true);
     }
 
-    const auto sample_block = metadata_snapshot->getSampleBlock();
+    const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
     const auto & settings = configuration->getQuerySettings(local_context);
 
     if (configuration->isArchive())

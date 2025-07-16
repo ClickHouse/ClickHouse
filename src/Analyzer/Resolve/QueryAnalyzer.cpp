@@ -63,6 +63,7 @@
 #include <Analyzer/Identifier.h>
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
 #include <Analyzer/RecursiveCTE.h>
+#include <Analyzer/QueryTreePassManager.h>
 
 #include <Analyzer/Resolve/CorrelatedColumnsCollector.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
@@ -94,6 +95,7 @@ namespace Setting
     extern const SettingsBool asterisk_include_materialized_columns;
     extern const SettingsString count_distinct_implementation;
     extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool enable_scopes_for_with_statement;
     extern const SettingsBool enable_order_by_all;
     extern const SettingsBool enable_positional_arguments;
     extern const SettingsBool enable_scalar_subquery_optimization;
@@ -682,7 +684,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         if (only_analyze)
         {
             /// If query is only analyzed, then constants are not correct.
-            scalar_block = interpreter->getSampleBlock();
+            scalar_block = *interpreter->getSampleBlock();
             for (auto & column : scalar_block)
             {
                 if (column.column->empty())
@@ -711,7 +713,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
             if (block.rows() == 0)
             {
-                auto types = interpreter->getSampleBlock().getDataTypes();
+                auto types = interpreter->getSampleBlock()->getDataTypes();
                 if (types.size() != 1)
                     types = {std::make_shared<DataTypeTuple>(types)};
 
@@ -5773,8 +5775,17 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     /// Initialize aliases in query node scope
     QueryExpressionsAliasVisitor visitor(scope.aliases);
 
-    if (query_node_typed.hasWith())
+    if (scope.context->getSettingsRef()[Setting::enable_scopes_for_with_statement])
+    {
         visitor.visit(query_node_typed.getWithNode());
+    }
+    else
+    {
+        QueryExpressionsAliasVisitor alias_collector(scope.global_with_aliases);
+        alias_collector.visit(query_node_typed.getWithNode());
+
+        scope.aliases = scope.global_with_aliases;
+    }
 
     if (!query_node_typed.getProjection().getNodes().empty())
         visitor.visit(query_node_typed.getProjectionNode());

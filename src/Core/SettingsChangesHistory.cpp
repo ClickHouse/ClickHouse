@@ -54,7 +54,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"min_joined_block_size_rows", 0, DEFAULT_BLOCK_SIZE, "New setting."},
             {"table_engine_read_through_distributed_cache", false, false, "New setting"},
             {"distributed_cache_alignment", 0, 0, "Rename of distributed_cache_read_alignment"},
+            {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             {"output_format_parquet_enum_as_byte_array", false, false, "Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM"},
+            {"distributed_plan_force_shuffle_aggregation", 0, 0, "New experimental setting"},
             {"optimize_const_array_and_tuple_to_scalar_size", -1, -1, "Enables conversion of a constant array or tuple to scalar"},
         });
         addSettingsChanges(settings_changes_history, "25.6",
@@ -81,6 +83,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_parallel_blocks_marshalling", "false", "true", "A new setting"},
             {"format_schema_source", "file", "file", "New setting"},
             {"format_schema_message_name", "", "", "New setting"},
+            {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.5",
@@ -124,6 +127,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_parquet_allow_geoparquet_parser", false, true, "A new setting to use geo columns in parquet file"},
             {"enable_url_encoding", true, false, "Changed existing setting's default value"},
             {"s3_slow_all_threads_after_network_error", false, true, "New setting"},
+            {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             /// Release closed. Please use 25.6
         });
         addSettingsChanges(settings_changes_history, "25.4",
@@ -153,7 +157,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_join_shard_by_pk_ranges", false, false, "New setting"},
             {"parallel_replicas_insert_select_local_pipeline", false, false, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"},
             {"parallel_hash_join_threshold", 0, 0, "New setting"},
-            {"function_date_trunc_return_type_behavior", 1, 0, "Change the result type for dateTrunc function for DateTime64/Date32 arguments to DateTime64/Date32 regardless of time unit to get correct result for negative values"}
+            {"function_date_trunc_return_type_behavior", 1, 0, "Change the result type for dateTrunc function for DateTime64/Date32 arguments to DateTime64/Date32 regardless of time unit to get correct result for negative values"},
+            {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             /// Release closed. Please use 25.5
         });
         addSettingsChanges(settings_changes_history, "25.3",

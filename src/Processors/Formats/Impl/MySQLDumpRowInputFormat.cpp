@@ -34,10 +34,10 @@ namespace
     };
 }
 
-MySQLDumpRowInputFormat::MySQLDumpRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
+MySQLDumpRowInputFormat::MySQLDumpRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_)
     , table_name(format_settings_.mysql_dump.table_name)
-    , types(header_.getDataTypes())
+    , types(header_->getDataTypes())
     , format_settings(format_settings_)
 {
     column_indexes_by_names = getNamesToIndexesMap(getPort().getHeader());
@@ -478,7 +478,7 @@ void registerInputFormatMySQLDump(FormatFactory & factory)
         const RowInputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<MySQLDumpRowInputFormat>(buf, header, params, settings);
+        return std::make_shared<MySQLDumpRowInputFormat>(buf, std::make_shared<const Block>(header), params, settings);
     });
 }
 
