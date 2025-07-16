@@ -306,7 +306,9 @@ void QueryOracle::dumpOracleIntermediateSteps(
     switch (strategy)
     {
         case DumpOracleStrategy::DUMP_TABLE: {
-            SQLQuery next1, next2, next3;
+            SQLQuery next1;
+            SQLQuery next2;
+            SQLQuery next3;
             const std::optional<String> & cluster = t.getCluster();
             const auto & t2
                 = test_content ? t : rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_to_test_format)).get();
@@ -338,7 +340,8 @@ void QueryOracle::dumpOracleIntermediateSteps(
         }
         break;
         case DumpOracleStrategy::REATTACH: {
-            SQLQuery next1, next2;
+            SQLQuery next1;
+            SQLQuery next2;
             const std::optional<String> & cluster = t.getCluster();
             Detach * det = next1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_detach();
             Attach * att = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_attach();
@@ -368,7 +371,8 @@ void QueryOracle::dumpOracleIntermediateSteps(
         }
         break;
         case DumpOracleStrategy::BACKUP_RESTORE: {
-            SQLQuery next1, next2;
+            SQLQuery next1;
+            SQLQuery next2;
             std::optional<String> cluster;
             BackupRestore * bac = next1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
             BackupRestore * res = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();

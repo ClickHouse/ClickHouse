@@ -68,7 +68,7 @@ public:
         RandomGenerator & rg,
         StatementGenerator & gen,
         const SQLTable & t,
-        const DumpOracleStrategy strategy,
+        DumpOracleStrategy strategy,
         bool test_content,
         std::vector<SQLQuery> & intermediate_queries);
 

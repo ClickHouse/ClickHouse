@@ -477,7 +477,7 @@ public:
     StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, bool scf, bool rs);
 
     void setBackupDestination(RandomGenerator & rg, BackupRestore * br);
-    std::optional<String> backupOrRestoreObject(BackupRestoreObject * bro, const SQLObject obj, const SQLBase & b);
+    std::optional<String> backupOrRestoreObject(BackupRestoreObject * bro, SQLObject obj, const SQLBase & b);
 
     void generateNextCreateTable(RandomGenerator & rg, bool in_parallel, CreateTable * ct);
     void generateNextCreateDatabase(RandomGenerator & rg, CreateDatabase * cd);
