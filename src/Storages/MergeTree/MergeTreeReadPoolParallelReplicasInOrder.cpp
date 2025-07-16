@@ -62,8 +62,7 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
     for (const auto & part : parts_ranges)
     {
         bool is_projection = part.data_part->isProjectionPart();
-        if (is_projection)
-            chassert(part.parent_part);
+        chassert(!is_projection || part.parent_part);
 
         auto info = is_projection ? part.parent_part->info : part.data_part->info;
         auto projection_name = is_projection ? part.data_part->name : "";
@@ -86,8 +85,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
             ErrorCodes::LOGICAL_ERROR, "Requested task with idx {}, but there are only {} parts", task_idx, per_part_infos.size());
 
     bool is_projection = per_part_infos[task_idx]->data_part->isProjectionPart();
-    if (is_projection)
-        chassert(per_part_infos[task_idx]->parent_part);
+    chassert(!is_projection || per_part_infos[task_idx]->parent_part);
 
     const auto & part_info = is_projection ? per_part_infos[task_idx]->parent_part->info : per_part_infos[task_idx]->data_part->info;
     const auto & projection_name = is_projection ? per_part_infos[task_idx]->data_part->name : "";

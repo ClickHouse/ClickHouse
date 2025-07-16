@@ -6501,7 +6501,7 @@ Build local plan for local replica
     DECLARE(Bool, parallel_replicas_index_analysis_only_on_coordinator, true, R"(
 Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
 )", BETA) \
-    DECLARE(Bool, parallel_replicas_support_projection, false, R"(
+    DECLARE(Bool, parallel_replicas_support_projection, true, R"(
 Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan.
 )", BETA) \
     DECLARE(Bool, parallel_replicas_only_with_analyzer, true, R"(

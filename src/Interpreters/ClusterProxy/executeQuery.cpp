@@ -72,8 +72,6 @@ namespace Setting
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool async_query_sending_for_remote;
-    extern const SettingsBool parallel_replicas_support_projection;
-    extern const SettingsBool optimize_aggregation_in_order;
 }
 
 namespace DistributedSetting

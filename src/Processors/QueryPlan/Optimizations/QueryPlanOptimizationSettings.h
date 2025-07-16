@@ -85,8 +85,8 @@ struct QueryPlanOptimizationSettings
     bool force_use_projection;
     String force_projection_name;
 
-    /// When optimizing projections for parallel replicas reading, the initiator and follower require different handling.
-    /// This parameter is used to distinguish between the initiator and the follower.
+    /// When optimizing projections for parallel replicas reading, the initiator and the remote replicas require different handling.
+    /// This parameter is used to distinguish between the initiator and the remote replicas.
     bool optimize_projection_on_parallel_replicas_initiator = false;
 
     /// If lazy materialization optimisation is enabled

@@ -16,6 +16,7 @@ struct LazilyReadInfo;
 using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
 
 class Pipe;
+class ParallelReadingExtension;
 
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
@@ -250,11 +251,9 @@ public:
 
     void setVectorSearchParameters(std::optional<VectorSearchParameters> && vector_search_parameters_) { vector_search_parameters = vector_search_parameters_; }
 
-    /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and these parameters must be forwarded to the new step.
     void cancelParallelReading();
-    std::optional<MergeTreeAllRangesCallback> getAllRangesCallback() { return all_ranges_callback; }
-    std::optional<MergeTreeReadTaskCallback> getReadTaskCallback() { return read_task_callback; }
-    std::optional<size_t> getNumberOfCurrentReplica() { return number_of_current_replica; }
+    /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and ParallelReadingExtension must be forwarded to the new step.
+    std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
 
 private:
     MergeTreeReaderSettings reader_settings;

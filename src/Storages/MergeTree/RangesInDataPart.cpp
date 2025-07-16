@@ -38,15 +38,7 @@ void RangesInDataPartDescription::serialize(WriteBuffer & out, UInt64 parallel_p
     writeVarUInt(rows, out);
 
     if (parallel_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PROJECTION)
-    {
-        if (!projection_name.empty())
-        {
-            writeBinary(static_cast<UInt8>(1), out);
-            writeBinary(projection_name, out);
-        }
-        else
-            writeBinary(static_cast<UInt8>(0), out);
-    }
+        writeBinary(projection_name, out);
 }
 
 String RangesInDataPartDescription::describe() const
@@ -71,14 +63,7 @@ void RangesInDataPartDescription::deserialize(ReadBuffer & in, UInt64 parallel_p
     readVarUInt(rows, in);
 
     if (parallel_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PROJECTION)
-    {
-        UInt8 have_projection_name = 0;
-        readBinary(have_projection_name, in);
-        if (have_projection_name)
-            readBinary(projection_name, in);
-        else
-            projection_name.clear();
-    }
+        readBinary(projection_name, in);
 }
 
 void RangesInDataPartsDescription::serialize(WriteBuffer & out, UInt64 parallel_protocol_version) const
@@ -139,20 +124,12 @@ RangesInDataPart::RangesInDataPart(
 
 RangesInDataPartDescription RangesInDataPart::getDescription() const
 {
-    if (!data_part->isProjectionPart())
-        return RangesInDataPartDescription{
-            .info = data_part->info,
-            .ranges = ranges,
-            .rows = getRowsCount(),
-            .projection_name = "",
-        };
-
-    chassert(parent_part);
+    chassert(!data_part->isProjectionPart() || parent_part);
     return RangesInDataPartDescription{
-        .info = parent_part->info,
+        .info = data_part->isProjectionPart() ? parent_part->info : data_part->info,
         .ranges = ranges,
         .rows = getRowsCount(),
-        .projection_name = data_part->name,
+        .projection_name = data_part->isProjectionPart() ? data_part->name : "",
     };
 }
 

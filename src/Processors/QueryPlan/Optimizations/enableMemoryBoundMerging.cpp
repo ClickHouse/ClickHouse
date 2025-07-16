@@ -1,3 +1,4 @@
+#include <Common/logger_useful.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -80,15 +81,19 @@ void enableMemoryBoundMerging(QueryPlan::Node & node)
         if (aggregating_step->memoryBoundMergingWillBeUsed())
         {
             /// When parallel_replicas_local_plan is enabled and the local plan has been optimized by a projection,
-            /// Setting remote replicas to enforce_aggregation_in_order may result in the local replica and remote replicas executing different CoordinationMode,
+            /// Using memory-bound merging may result in the local replica and remote replicas executing with different CoordinationMode-s.
             const auto * read_from_merge_tree_step = findReadingStep(union_node.children[0]);
-            bool is_local_plan_optimized_by_projection = read_from_merge_tree_step != nullptr
+            const bool is_local_plan_optimized_by_projection = read_from_merge_tree_step != nullptr
                 && read_from_merge_tree_step->isParallelReadingEnabled() && !async_reading_steps.empty()
                 && read_from_merge_tree_step->getAnalyzedResult() && read_from_merge_tree_step->getAnalyzedResult()->readFromProjection();
+            if (is_local_plan_optimized_by_projection)
+            {
+                LOG_DEBUG(getLogger("MemoryBoundMerging"), "Ignoring memory-bound merging for parallel replicas with projection-optimized local plan.");
+                return;
+            }
 
             sort_description = aggregating_step->getSortDescription();
-            if (!is_local_plan_optimized_by_projection)
-                enforce_aggregation_in_order = true;
+            enforce_aggregation_in_order = true;
         }
     }
     else if (auto * merging_aggeregated = typeid_cast<MergingAggregatedStep *>(local_plan))

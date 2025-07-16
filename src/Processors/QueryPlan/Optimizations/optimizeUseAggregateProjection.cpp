@@ -779,9 +779,7 @@ std::optional<String> optimizeUseAggregateProjections(
             max_added_blocks,
             best_candidate->merge_tree_projection_select_result_ptr,
             reading->isParallelReadingEnabled(),
-            reading->getAllRangesCallback(),
-            reading->getReadTaskCallback(),
-            reading->getNumberOfCurrentReplica());
+            reading->getParallelReadingExtension());
 
         if (!projection_reading)
         {
@@ -847,7 +845,7 @@ std::optional<String> optimizeUseAggregateProjections(
         Pipe pipe(std::make_shared<NullSource>(header));
         QueryPlanStepPtr null_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         projection_reading_node.step = std::move(null_reading);
-        LOG_DEBUG(logger, "parallel replicas follower skip reading from exact_count_projection");
+        LOG_DEBUG(logger, "Remote replicas skip reading from exact_count_projection");
     }
 
     if (has_parent_parts)
@@ -864,28 +862,26 @@ std::optional<String> optimizeUseAggregateProjections(
         ///  ReadFromMergeTree  ---is replaced by--->           ReadFromMergeTree (part)
         ///                                                     ReadFromPreparedSource
         /// -------------------------------------------------------------------------------------------
-        /// The coordinator cannot be shared between these two streams, so read projections are performed directly on the initial replica.
+        /// The coordinator does not support reading from two streams at the moment, so read projections are performed directly on the initial replica.
         if (best_candidate && reading->isParallelReadingEnabled() && optimize_projection_on_parallel_replicas_initiator)
         {
-            auto * read_from_projections = typeid_cast<ReadFromMergeTree *>(projection_reading_node.step.get());
-            if (read_from_projections)
+            if (auto * read_from_projections = typeid_cast<ReadFromMergeTree *>(projection_reading_node.step.get()))
             {
                 read_from_projections->cancelParallelReading();
-                LOG_DEBUG(logger, "parallel replicas initiator fall back to read projection locally");
+                LOG_DEBUG(logger, "Parallel replicas initiator falls back to reading projection locally");
             }
         }
 
         /// Only the initiator should read the projection to avoid potential data duplication.
         if (best_candidate && reading->isParallelReadingEnabled() && !optimize_projection_on_parallel_replicas_initiator)
         {
-            auto * read_from_projections = typeid_cast<ReadFromMergeTree *>(projection_reading_node.step.get());
-            if (read_from_projections)
+            if (auto * read_from_projections = typeid_cast<ReadFromMergeTree *>(projection_reading_node.step.get()))
             {
                 auto header = read_from_projections->getOutputHeader();
                 Pipe pipe(std::make_shared<NullSource>(header));
                 QueryPlanStepPtr null_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
                 projection_reading_node.step = std::move(null_reading);
-                LOG_DEBUG(logger, "parallel replicas follower skip reading from projection");
+                LOG_DEBUG(logger, "Remote replicas skip reading from projection");
             }
         }
 
@@ -905,7 +901,7 @@ std::optional<String> optimizeUseAggregateProjections(
             Pipe pipe(std::make_shared<NullSource>(header));
             QueryPlanStepPtr null_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
             projection_reading_node.step = std::move(null_reading);
-            LOG_DEBUG(logger, "parallel replicas follower skip reading from min_max_projection");
+            LOG_DEBUG(logger, "Remote replicas skip reading from min_max_projection");
         }
 
         /// Reading from projections has completely replaced reading from parts, disable parallel reading to avoid affecting the state of the coordinator.

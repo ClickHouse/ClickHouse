@@ -45,6 +45,9 @@ public:
     sendReadRequest(CoordinationMode mode, size_t min_number_of_marks, const RangesInDataPartsDescription & description) const;
 
     size_t getTotalNodesCount() const { return total_nodes_count; }
+    size_t getNumberOfCurrentReplica() const { return number_of_current_replica; }
+    MergeTreeAllRangesCallback getAllRangesCallback() const { return all_callback; }
+    MergeTreeReadTaskCallback getReadTaskCallback() const { return callback; }
 
 private:
     MergeTreeAllRangesCallback all_callback;

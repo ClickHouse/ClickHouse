@@ -2872,4 +2872,18 @@ void ReadFromMergeTree::cancelParallelReading()
         read_task_callback.reset();
 }
 
+std::shared_ptr<ParallelReadingExtension> ReadFromMergeTree::getParallelReadingExtension()
+{
+    if (!is_parallel_reading_from_replicas)
+        return nullptr;
+
+    chassert(all_ranges_callback.has_value() && read_task_callback.has_value());
+    const auto & client_info = context->getClientInfo();
+    return std::make_shared<ParallelReadingExtension>(
+        all_ranges_callback.value(),
+        read_task_callback.value(),
+        number_of_current_replica.value_or(client_info.number_of_current_replica),
+        context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount());
+}
+
 }

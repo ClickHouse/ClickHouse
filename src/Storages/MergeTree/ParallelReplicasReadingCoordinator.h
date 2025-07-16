@@ -39,7 +39,6 @@ public:
 
     void setReadCompletedCallback(ReadCompletedCallback callback);
 
-    size_t getReplicasCount() const { return replicas_count; }
 private:
     void initialize(CoordinationMode mode);
     bool isReadingCompleted() const;

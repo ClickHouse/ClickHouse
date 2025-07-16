@@ -243,9 +243,6 @@
 03040_recursive_cte_postgres_6
 03154_recursive_cte_distributed
 
-    https://github.com/ClickHouse/clickhouse-private/issues/14887
-    Projections
-
     WINDOW VIEW
 01047_window_view_parser_inner_table
 01048_window_view_parser

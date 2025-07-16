@@ -142,9 +142,9 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
         from->getInitialQueryId(),
         ExpressionActionsSettings(from),
         from->getPreparedSetsCache(),
-        (from->canUseParallelReplicasOnInitiator()
+        from->canUseParallelReplicasOnInitiator()
             && from->getSettingsRef()[Setting::parallel_replicas_local_plan]
-            && from->getSettingsRef()[Setting::parallel_replicas_support_projection]))
+            && from->getSettingsRef()[Setting::parallel_replicas_support_projection])
 {
 }
 
