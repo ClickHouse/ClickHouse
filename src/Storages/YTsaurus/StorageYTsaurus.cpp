@@ -61,12 +61,12 @@ Pipe StorageYTsaurus::read(
 {
     storage_snapshot->check(column_names);
 
-    Block sample_block;
+    BlockPtr sample_block = std::make_shared<Block>();
     ColumnsDescription columns_description = storage_snapshot->metadata->getColumns();
     for (const String & column_name : column_names)
     {
         auto column_data = columns_description.getPhysical(column_name);
-        sample_block.insert({ column_data.type, column_data.name });
+        sample_block->insert({ column_data.type, column_data.name });
     }
 
     YTsaurusClientPtr client(new YTsaurusClient(context, client_connection_info));

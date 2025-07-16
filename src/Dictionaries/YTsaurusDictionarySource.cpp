@@ -73,21 +73,21 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
         boost::split(configuration->http_proxy_urls, config.getString(config_prefix + ".http_proxy_urls"), [](char c) { return c == '|'; });
         configuration->cypress_path = config.getString(config_prefix + ".cypress_path");
         configuration->oauth_token = config.getString(config_prefix + ".oauth_token");
-        Block table_sample_block;
+        BlockPtr table_sample_block = std::make_shared<Block>();
         if (dict_struct.id)
         {
-            table_sample_block.insert(ColumnWithTypeAndName(dict_struct.id->type, dict_struct.id->name));
+            table_sample_block->insert(ColumnWithTypeAndName(dict_struct.id->type, dict_struct.id->name));
         }
         if (dict_struct.key)
         {
             for (const auto & attr : dict_struct.key.value())
             {
-                table_sample_block.insert(ColumnWithTypeAndName(attr.type, attr.name));
+                table_sample_block->insert(ColumnWithTypeAndName(attr.type, attr.name));
             }
         }
         for (const auto & attr : dict_struct.attributes)
         {
-            table_sample_block.insert(ColumnWithTypeAndName(attr.type, attr.name));
+            table_sample_block->insert(ColumnWithTypeAndName(attr.type, attr.name));
         }
 
         return std::make_unique<YTsarususDictionarySource>(context, dict_struct, std::move(configuration), std::move(sample_block), std::move(table_sample_block));
@@ -121,7 +121,7 @@ YTsarususDictionarySource::YTsarususDictionarySource(
     const DictionaryStructure & dict_struct_,
     std::shared_ptr<YTsaurusStorageConfiguration> configuration_,
     Block sample_block_,
-    Block table_sample_block_)
+    SharedHeader table_sample_block_)
     : context(context_)
     , dict_struct{dict_struct_}
     , configuration{configuration_}

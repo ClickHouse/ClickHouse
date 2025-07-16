@@ -47,6 +47,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"cluster_function_process_archive_on_multiple_nodes", true, true, "New setting"},
             {"enable_vector_similarity_index", false, false, "Added an alias for setting `allow_experimental_vector_similarity_index`"},
             {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
+            {"output_format_json_map_as_array_of_tuples", false, false, "New setting"},
+            {"input_format_json_map_as_array_of_tuples", false, false, "New setting"},
             {"parallel_distributed_insert_select", 0, 2, "Enable parallel distributed insert select by default"},
             {"write_through_distributed_cache_buffer_size", 0, 0, "New cloud setting"},
             {"min_joined_block_size_rows", 0, DEFAULT_BLOCK_SIZE, "New setting."},
@@ -55,6 +57,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_ytsaurus_table_function", false, false, "New setting."},
             {"allow_experimental_ytsaurus_dictionary_source", false, false, "New setting."},
             {"distributed_cache_alignment", 0, 0, "Rename of distributed_cache_read_alignment"},
+            {"output_format_parquet_enum_as_byte_array", false, false, "Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM"},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {

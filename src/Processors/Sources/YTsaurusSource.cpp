@@ -23,12 +23,12 @@ namespace YTsaurusSetting
 }
 
 YTsaurusTableSourceStaticTable::YTsaurusTableSourceStaticTable(
-    YTsaurusClientPtr client_, const YTsaurusTableSourceOptions & source_options_, const Block & sample_block_, const UInt64 & max_block_size_)
+    YTsaurusClientPtr client_, const YTsaurusTableSourceOptions & source_options_, const SharedHeader & sample_block_, const UInt64 & max_block_size_)
     : ISource(sample_block_), client(std::move(client_)), sample_block(sample_block_), max_block_size(max_block_size_)
 {
     read_buffer = client->readTable(source_options_.cypress_path);
     FormatSettings format_settings{.skip_unknown_fields = source_options_.settings[YTsaurusSetting::skip_unknown_columns]};
-    format_settings.json.read_named_tuples_as_objects = true;
+    format_settings.json.read_map_as_array_of_tuples = true;
 
     json_row_format = std::make_unique<JSONEachRowRowInputFormat>(
         *read_buffer.get(), sample_block, IRowInputFormat::Params({.max_block_size = max_block_size}), format_settings, false);
@@ -36,7 +36,7 @@ YTsaurusTableSourceStaticTable::YTsaurusTableSourceStaticTable(
 
 
 YTsaurusTableSourceDynamicTable::YTsaurusTableSourceDynamicTable(
-    YTsaurusClientPtr client_, const YTsaurusTableSourceOptions & source_options_, const Block & sample_block_, const UInt64 & max_block_size_)
+    YTsaurusClientPtr client_, const YTsaurusTableSourceOptions & source_options_, const SharedHeader & sample_block_, const UInt64 & max_block_size_)
     : ISource(sample_block_)
     , client(std::move(client_))
     , source_options(source_options_)
@@ -46,12 +46,12 @@ YTsaurusTableSourceDynamicTable::YTsaurusTableSourceDynamicTable(
     , use_lookups(!source_options.settings[YTsaurusSetting::force_read_table] && source_options.lookup_input_block)
 {
     read_buffer = (use_lookups) ? client->lookupRows(source_options.cypress_path, *source_options.lookup_input_block) : client->selectRows(source_options.cypress_path);
-    format_settings.json.read_named_tuples_as_objects = true;
+    format_settings.json.read_map_as_array_of_tuples = true;
     json_row_format = std::make_unique<JSONEachRowRowInputFormat>(
         *read_buffer.get(), sample_block, IRowInputFormat::Params({.max_block_size = max_block_size}), format_settings, false);
 }
 
-std::shared_ptr<ISource> YTsaurusSourceFactory::createSource(YTsaurusClientPtr client, const YTsaurusTableSourceOptions source_options, const Block & sample_block, const UInt64 max_block_size)
+std::shared_ptr<ISource> YTsaurusSourceFactory::createSource(YTsaurusClientPtr client, const YTsaurusTableSourceOptions source_options, const SharedHeader & sample_block, const UInt64 max_block_size)
 {
     if (source_options.cypress_path.empty())
     {

@@ -200,7 +200,7 @@ def test_yt_simple_table_function(started_cluster):
             "42",
             "Date",
             "1970-02-12",
-            True, # Will be set to False after bugfix
+            False,
             id="date"
         ),
         pytest.param(
@@ -232,7 +232,7 @@ def test_yt_simple_table_function(started_cluster):
             "42",
             "Date",
             "1970-02-12",
-            True, # Will be set to False after bugfix
+            False,
             id="date32"
         ),
         pytest.param(
@@ -277,6 +277,7 @@ def test_ytsaurus_primitive_types(
     try:
         yt_result = instance.query("SELECT a FROM yt_test")
         assert yt_result == f"{ch_data_expected}\n"
+        assert not expect_throw
     except:
         assert expect_throw
     finally:
@@ -330,8 +331,8 @@ def test_ytsaurus_primitive_types(
         pytest.param(
             "[{name = a; type_v3 = {type_name=dict; key=int64; value={type_name=optional;item=string;};};};]",
             "[[42, \"good\"], [1, \"bad\"]]",
-            "Array(Tuple(Int64, Nullable(String)))",
-            "[(42,'good'),(1,'bad')]",
+            "Map(Int64, Nullable(String))",
+            "{42:'good',1:'bad'}",
             False,
             id="dict",
         ),
@@ -381,7 +382,7 @@ def test_ytsaurus_primitive_types(
             "String",
             '{"a":"hello","38 parrots":[38]}',
             False,
-            id="Dict",
+            id="dict_any",
         ),
     ],
 )

@@ -94,7 +94,7 @@ DataTypePtr convertYTPrimitiveType(const String & data_type, bool type_v3)
     }
     else if (data_type == "date32")
     {
-        throw Exception(ErrorCodes::INCORRECT_DATA, "ClickHouse couldn't parse YT data type \"date32\"");
+        data_type_ptr = DataTypeFactory::instance().get("Date");
     }
     else if (data_type == "datetime64")
     {
@@ -110,7 +110,7 @@ DataTypePtr convertYTPrimitiveType(const String & data_type, bool type_v3)
     }
     else if (data_type == "date")
     {
-         throw Exception(ErrorCodes::INCORRECT_DATA, "ClickHouse couldn't parse YT data type \"date\"");
+        data_type_ptr = DataTypeFactory::instance().get("Date");
     }
     else if (data_type == "datetime")
     {
@@ -229,7 +229,7 @@ DataTypePtr convertYTDict(const Poco::JSON::Object::Ptr &json)
     auto key = convertYTItemType(json->get("key"));
     auto value = convertYTItemType(json->get("value"));
     DataTypes types = {key, value};
-    return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(types));
+    return std::make_shared<DataTypeMap>(key, value);
 }
 
 DataTypePtr convertYTVariant(const Poco::JSON::Object::Ptr &json)

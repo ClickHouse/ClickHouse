@@ -296,7 +296,7 @@ public:
 
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
     void setState(MergeTreeDataPartState new_state) const;
-    ALWAYS_INLINE MergeTreeDataPartState getState() const { return state.load(std::memory_order_relaxed); }
+    ALWAYS_INLINE MergeTreeDataPartState getState() const;
 
     static std::string_view stateString(MergeTreeDataPartState state);
     std::string_view stateString() const { return stateString(state.load(std::memory_order_relaxed)); }
@@ -764,6 +764,9 @@ private:
 
     void incrementStateMetric(MergeTreeDataPartState state) const;
     void decrementStateMetric(MergeTreeDataPartState state) const;
+
+    void incrementTypeMetric(MergeTreeDataPartType type) const;
+    void decrementTypeMetric(MergeTreeDataPartType type) const;
 
     void checkConsistencyBase() const;
 
