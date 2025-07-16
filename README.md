@@ -34,9 +34,9 @@ curl https://clickhouse.com/ | sh
 
 ## Monthly Release & Community Call
 
-ClickHouse **Release 25.6** is published!
+Join us for the [ClickHouse **25.7** Community Call](https://clickhouse.com/company/events/v25-7-community-release-call) happening on July 26. We'll introduce Lightweight Updates, AI for clickhouse-client and more!
 
-This release includes the new data type, a new type of MergeTree, tokenization for logs, functions for time series, the new monitoring UI, and many more. [Presentation](https://presentations.clickhouse.com/2025-release-25.6/), [Video](https://www.youtube.com/watch?v=_9IBOM3pR4U), [Changelog](https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md).
+ClickHouse **Release 25.6** is published! This release included a new data type, a new type of MergeTree, tokenization for logs, functions for time series, the new monitoring UI, and many more. [Presentation](https://presentations.clickhouse.com/2025-release-25.6/), [Video](https://www.youtube.com/watch?v=_9IBOM3pR4U), [Changelog](https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md).
 
 ## Upcoming Events
 
