@@ -824,7 +824,11 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtit
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
     const size_t left_block_rows = selector.size();
     if (need_filter)
+    {
         added_columns.filter = IColumn::Filter(left_block_rows, 0);
+        added_columns.new_selector = ScatteredBlock::Indexes::create();
+        added_columns.new_selector->reserve(left_block_rows);
+    }
 
     std::unique_ptr<Arena> pool;
 

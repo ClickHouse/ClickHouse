@@ -327,7 +327,10 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     {
         partial_filter.resize(num_lhs_rows);
         memcpySmallAllowReadWriteOverflow15(partial_filter.data(), filter.data() + next_row, num_lhs_rows);
-        partial_selector->insertRangeFrom(*new_selector, next_row, num_lhs_rows);
+        size_t i = 0;
+        while (i < new_selector->size() && (*new_selector)[i] < next_row + num_lhs_rows)
+            ++i;
+        partial_selector->insertRangeFrom(*new_selector, 0, i);
     }
 
     const auto row_ref_start = next_row_ref;
