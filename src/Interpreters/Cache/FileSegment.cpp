@@ -1,7 +1,6 @@
 #include <Interpreters/Cache/FileSegment.h>
 
 #include <filesystem>
-#include <system_error>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Cache/FileCache.h>
