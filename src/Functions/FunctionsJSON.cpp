@@ -1160,10 +1160,10 @@ Parses JSON and extracts a value of Int type using ASCII case-insensitive key ma
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-        
+
         factory.registerFunction<JSONOverloadResolver<NameJSONExtractIntCaseInsensitive, JSONExtractInt64Impl, true>>(documentation);
     }
-    
+
     // JSONExtractUIntCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
@@ -1184,10 +1184,10 @@ Parses JSON and extracts a value of UInt type using ASCII case-insensitive key m
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-        
+
         factory.registerFunction<JSONOverloadResolver<NameJSONExtractUIntCaseInsensitive, JSONExtractUInt64Impl, true>>(documentation);
     }
-    
+
     // JSONExtractFloatCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
@@ -1208,10 +1208,10 @@ Parses JSON and extracts a value of Float type using ASCII case-insensitive key 
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-        
+
         factory.registerFunction<JSONOverloadResolver<NameJSONExtractFloatCaseInsensitive, JSONExtractFloat64Impl, true>>(documentation);
     }
-    
+
     // JSONExtractBoolCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
@@ -1232,10 +1232,10 @@ Parses JSON and extracts a boolean value using ASCII case-insensitive key matchi
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-        
+
         factory.registerFunction<JSONOverloadResolver<NameJSONExtractBoolCaseInsensitive, JSONExtractBoolImpl, true>>(documentation);
     }
-    
+
     // JSONExtractStringCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
@@ -1257,10 +1257,10 @@ Parses JSON and extracts a string using ASCII case-insensitive key matching.
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-        
+
         factory.registerFunction<JSONOverloadResolver<NameJSONExtractStringCaseInsensitive, JSONExtractStringImpl, true>>(documentation);
     }
-    
+
     // JSONExtractCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
@@ -1283,10 +1283,10 @@ Parses JSON and extracts a value of the given ClickHouse data type using ASCII c
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-        
+
         factory.registerFunction<JSONOverloadResolver<NameJSONExtractCaseInsensitive, JSONExtractImpl, true>>(documentation);
     }
-    
+
     // JSONExtractKeysAndValuesCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
@@ -1308,10 +1308,10 @@ Parses key-value pairs from JSON using ASCII case-insensitive key matching when 
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-        
+
         factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysAndValuesCaseInsensitive, JSONExtractKeysAndValuesImpl, true>>(documentation);
     }
-    
+
     // JSONExtractRawCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
@@ -1332,10 +1332,10 @@ Returns part of the JSON as an unparsed string using ASCII case-insensitive key 
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-        
+
         factory.registerFunction<JSONOverloadResolver<NameJSONExtractRawCaseInsensitive, JSONExtractRawImpl, true>>(documentation);
     }
-    
+
     // JSONExtractArrayRawCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
@@ -1356,10 +1356,10 @@ Returns an array with elements of JSON array, each represented as unparsed strin
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-        
+
         factory.registerFunction<JSONOverloadResolver<NameJSONExtractArrayRawCaseInsensitive, JSONExtractArrayRawImpl, true>>(documentation);
     }
-    
+
     // JSONExtractKeysAndValuesRawCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
@@ -1380,10 +1380,10 @@ Extracts raw key-value pairs from JSON using ASCII case-insensitive key matching
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-        
+
         factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysAndValuesRawCaseInsensitive, JSONExtractKeysAndValuesRawImpl, true>>(documentation);
     }
-    
+
     // JSONExtractKeysCaseInsensitive
     {
         FunctionDocumentation::Description description = R"(
@@ -1405,7 +1405,7 @@ Parses a JSON string and extracts the keys using ASCII case-insensitive key matc
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-        
+
         factory.registerFunction<JSONOverloadResolver<NameJSONExtractKeysCaseInsensitive, JSONExtractKeysImpl, true>>(documentation);
     }
 }
