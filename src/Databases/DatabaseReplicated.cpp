@@ -10,6 +10,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseReplicatedWorker.h>
+#include <Databases/ReplicatedDatabaseStatus.h>
 #include <Databases/TablesDependencyGraph.h>
 #include <Databases/enableAllExperimentalSettings.h>
 #include <IO/ReadBufferFromFile.h>
@@ -182,6 +183,52 @@ DatabaseReplicated::DatabaseReplicated(
 String DatabaseReplicated::getFullReplicaName(const String & shard, const String & replica)
 {
     return shard + '|' + replica;
+}
+
+void DatabaseReplicated::getStatus(ReplicatedDatabaseStatus& response, const bool with_zk_fields) const
+{
+    LOG_DEBUG(log, "call DatabaseReplicated::getStatus");
+    auto zookeeper = getZooKeeper();
+    // const auto storage_settings_ptr = getSettings();
+
+    response.is_readonly = is_readonly;
+    response.is_session_expired = !zookeeper || zookeeper->expired();
+    response.replica_path = replica_path;
+    response.max_log_ptr = 0;
+    response.total_replicas = 0;
+
+    if (!with_zk_fields || response.is_session_expired)
+    {
+        return;
+    }
+    try
+    {
+        std::vector<std::string> paths;
+
+        paths.push_back(zookeeper_path + "/max_log_ptr");
+
+        auto get_result = zookeeper->tryGet(paths);
+        const auto & max_log_pointer_str = get_result[0].data;
+        if (get_result[0].error == Coordination::Error::ZNONODE)
+            throw zkutil::KeeperException(get_result[0].error);
+
+        response.max_log_ptr = max_log_pointer_str.empty() ? 0 : parse<UInt32>(max_log_pointer_str);
+        paths.clear();
+        
+        paths.push_back(fs::path(zookeeper_path) / "replicas");
+
+        auto children_result = zookeeper->getChildren(paths);
+        const auto & all_replicas = children_result[0].names;
+
+        response.total_replicas = UInt32(all_replicas.size());
+
+        paths.clear();
+    }
+    catch (const Coordination::Exception &)
+    {
+        response.zookeeper_exception = getCurrentExceptionMessage(false);
+    }
+
 }
 
 String DatabaseReplicated::getFullReplicaName() const

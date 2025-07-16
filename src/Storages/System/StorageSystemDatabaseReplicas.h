@@ -29,6 +29,9 @@ public:
         size_t num_streams) override;
 
     bool isSystemStorage() const override { return true; }
+
+private:
+    std::shared_ptr<StorageSystemDatabaseReplicasImpl> impl;
 };
 
 }
