@@ -101,23 +101,33 @@ static AzureBlobStorage::ConnectionParams getConnectionParams(
     const String & container_name,
     const std::optional<String> & account_name,
     const std::optional<String> & account_key,
+    const std::optional<String> & client_id,
+    const std::optional<String> & tenant_id,
     const ContextPtr & local_context)
 {
     AzureBlobStorage::ConnectionParams connection_params;
     auto request_settings = AzureBlobStorage::getRequestSettings(local_context->getSettingsRef());
 
-    if (account_name && account_key)
+    if (client_id && tenant_id)
+    {
+        connection_params.endpoint.storage_account_url = connection_url;
+        connection_params.endpoint.container_name = container_name;
+        Azure::Identity::WorkloadIdentityCredentialOptions options;
+        options.ClientId = *client_id;
+        options.TenantId = *tenant_id;
+        connection_params.auth_method = std::make_shared<Azure::Identity::WorkloadIdentityCredential>(options);
+    }
+    else if (account_name && account_key)
     {
         connection_params.endpoint.storage_account_url = connection_url;
         connection_params.endpoint.container_name = container_name;
         connection_params.auth_method = std::make_shared<Azure::Storage::StorageSharedKeyCredential>(*account_name, *account_key);
-        connection_params.client_options = AzureBlobStorage::getClientOptions(local_context, *request_settings, /*for_disk=*/ false);
     }
     else
     {
         AzureBlobStorage::processURL(connection_url, container_name, connection_params.endpoint, connection_params.auth_method);
-        connection_params.client_options = AzureBlobStorage::getClientOptions(local_context, *request_settings, /*for_disk=*/ false);
     }
+    connection_params.client_options = AzureBlobStorage::getClientOptions(*request_settings, /*for_disk=*/ false);
 
     return connection_params;
 }
@@ -130,6 +140,8 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
     String container_name;
     std::optional<String> account_name;
     std::optional<String> account_key;
+    std::optional<String> client_id;
+    std::optional<String> tenant_id;
 
     if (collection.has("connection_string"))
         connection_url = collection.get<String>("connection_string");
@@ -145,16 +157,89 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
     if (collection.has("account_key"))
         account_key = collection.get<String>("account_key");
 
+    if (collection.has("client_id"))
+        client_id = collection.get<String>("client_id");
+
+    if (collection.has("tenant_id"))
+        tenant_id = collection.get<String>("tenant_id");
+
     structure = collection.getOrDefault<String>("structure", "auto");
     format = collection.getOrDefault<String>("format", format);
     compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
 
     blobs_paths = {blob_path};
-    connection_params = getConnectionParams(connection_url, container_name, account_name, account_key, context);
+    connection_params = getConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
+}
+
+ASTPtr StorageAzureConfiguration::extractExtraCredentials(ASTs & args)
+{
+    for (size_t i = 0; i != args.size(); ++i)
+    {
+        const auto * ast_function = args[i]->as<ASTFunction>();
+        if (ast_function && ast_function->name == "extra_credentials")
+        {
+            auto credentials = args[i];
+            args.erase(args.begin() + i);
+            return credentials;
+        }
+    }
+    return nullptr;
+}
+
+bool StorageAzureConfiguration::collectCredentials(ASTPtr maybe_credentials, std::optional<String> & client_id, std::optional<String> & tenant_id, ContextPtr local_context)
+{
+    if (!maybe_credentials)
+        return false;
+
+    client_id = {};
+    tenant_id = {};
+
+    const auto * credentials_ast_function = maybe_credentials->as<ASTFunction>();
+    if (!credentials_ast_function || credentials_ast_function->name != "extra_credentials")
+        return false;
+
+    const auto * credentials_function_args_expr = assert_cast<const ASTExpressionList *>(credentials_ast_function->arguments.get());
+    auto credentials_function_args = credentials_function_args_expr->children;
+
+    for (auto & credential_arg : credentials_function_args)
+    {
+        const auto * credential_ast = credential_arg->as<ASTFunction>();
+        if (!credential_ast || credential_ast->name != "equals")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Credentials argument is incorrect");
+
+        auto * credential_args_expr = assert_cast<ASTExpressionList *>(credential_ast->arguments.get());
+        auto & credential_args = credential_args_expr->children;
+        if (credential_args.size() != 2)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Credentials argument is incorrect: expected 2 arguments, got {}",
+                credential_args.size());
+
+        credential_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(credential_args[0], local_context);
+        auto arg_name_value = credential_args[0]->as<ASTLiteral>()->value;
+        if (arg_name_value.getType() != Field::Types::Which::String)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected string as credential name");
+        auto arg_name = arg_name_value.safeGet<String>();
+
+        credential_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(credential_args[1], local_context);
+        auto arg_value = credential_args[1]->as<ASTLiteral>()->value;
+        if (arg_value.getType() != Field::Types::Which::String)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected string as credential value");
+        else if (arg_name == "client_id")
+            client_id = arg_value.safeGet<String>();
+        else if (arg_name == "tenant_id")
+            tenant_id = arg_value.safeGet<String>();
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid credential argument found: {}", arg_name);
+    }
+
+    return true;
 }
 
 void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
 {
+    auto extra_credentials = extractExtraCredentials(engine_args);
+
     if (engine_args.size() < 3 || engine_args.size() > getMaxNumberOfArguments(with_structure))
     {
         throw Exception(
@@ -176,6 +261,10 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
 
     std::optional<String> account_name;
     std::optional<String> account_key;
+    std::optional<String> client_id;
+    std::optional<String> tenant_id;
+
+    collectCredentials(extra_credentials, client_id, tenant_id, context);
 
     auto is_format_arg = [] (const std::string & s) -> bool
     {
@@ -275,7 +364,7 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
     }
 
     blobs_paths = {blob_path};
-    connection_params = getConnectionParams(connection_url, container_name, account_name, account_key, context);
+    connection_params = getConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
 }
 
 void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
