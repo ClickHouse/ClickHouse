@@ -111,7 +111,7 @@ select _path, * from azureBlobStorage(azure_conf2, storage_account_url = 'http:/
    └─────────────────────────────────────────────────────────────────────────────────┴────┴──────┴─────────┘
 ```
 
-## use_hive_partitioning setting {#use-hive-partitioning}
+## use_hive_partitioning setting {#hive-style-partitioning}
 
 This is a hint for ClickHouse to parse hive style partitioned files upon reading time. It has no effect on writing. For symmetrical reads and writes, use the `partition_strategy` argument.
 
