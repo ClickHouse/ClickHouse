@@ -80,6 +80,9 @@ $CLICKHOUSE_CLIENT --query "
 
     SELECT sleep(randConstant() / toUInt32(-1)) * 0.1 FORMAT Null;
 
+    ALTER TABLE t_rename_alter ADD COLUMN just_for_sync_alters_and_mutations SETTINGS alter_sync = 2;
+    ALTER TABLE t_rename_alter MODIFY COLUMN just_for_sync_alters_and_mutations = 43 SETTINGS mutations_sync = 2;
+
     OPTIMIZE TABLE t_rename_alter FINAL;
 " 2>/dev/null
 # Some concurrent alters may fail because of "Metadata on replica is not up to date with common metadata in Zookeeper"
