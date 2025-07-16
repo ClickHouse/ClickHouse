@@ -8,13 +8,19 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Arena.h>
+#include <Common/SipHash.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnsCommon.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
+#include <DataTypes/ObjectUtils.h>
 #include <base/sort.h>
+#include <city.h>
+
+using Hash = CityHash_v1_0_2::uint128;
+using HashState = SipHash;
 
 
 namespace DB
@@ -153,22 +159,32 @@ std::pair<String, DataTypePtr> ColumnTuple::getValueNameAndType(size_t n) const
 {
     const size_t tuple_size = columns.size();
 
-    String value_name {tuple_size > 1 ? "(" : "tuple("};
-
-    DataTypes element_types;
-    element_types.reserve(tuple_size);
-
-    for (size_t i = 0; i < tuple_size; ++i)
+    if (optimize_const_tuple_name_size < 0 || tuple_size <= optimize_const_tuple_name_size)
     {
-        const auto & [value, type] = columns[i]->getValueNameAndType(n);
-        element_types.push_back(type);
-        if (i > 0)
-            value_name += ", ";
-        value_name += value;
-    }
-    value_name += ")";
+        String value_name {tuple_size > 1 ? "(" : "tuple("};
 
-    return {value_name, std::make_shared<DataTypeTuple>(element_types)};
+        DataTypes element_types;
+        element_types.reserve(tuple_size);
+
+        for (size_t i = 0; i < tuple_size; ++i)
+        {
+            const auto & [value, type] = columns[i]->getValueNameAndType(n);
+            element_types.push_back(type);
+            if (i > 0)
+                value_name += ", ";
+            value_name += value;
+        }
+        value_name += ")";
+
+        return {value_name, std::make_shared<DataTypeTuple>(element_types)};
+    }
+
+    HashState h;
+    for (size_t i = 0; i < tuple_size; ++i)
+        columns[i]->updateHashWithValue(n, h);
+
+    auto p = getSipHash128AsPair(h);
+    return {fmt::format("{}_{}", p.high64, p.low64), getDataTypeByColumn(*this)};
 }
 
 bool ColumnTuple::isDefaultAt(size_t n) const

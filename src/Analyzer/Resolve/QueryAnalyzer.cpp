@@ -119,7 +119,7 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsString implicit_table_at_top_level;
-    extern const SettingsInt64 optimize_const_array_to_scalar_size;
+    extern const SettingsInt64 optimize_const_array_and_tuple_to_scalar_size;
 }
 
 
@@ -805,8 +805,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
 void QueryAnalyzer::convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, IdentifierResolveScope & scope) const
 {
-    auto max_array_size = scope.context->getSettingsRef()[Setting::optimize_const_array_to_scalar_size];
-    if (max_array_size < 0)
+    auto max_size = scope.context->getSettingsRef()[Setting::optimize_const_array_and_tuple_to_scalar_size];
+    if (max_size < 0)
         return;
 
     auto * constant_node = node->as<ConstantNode>();
@@ -815,7 +815,14 @@ void QueryAnalyzer::convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, Ide
 
     const auto * col_const = typeid_cast<const ColumnConst *>(constant_node->getColumn().get());
     const auto * col_array = typeid_cast<const ColumnArray *>(&col_const->getDataColumn());
-    if (!col_array || (max_array_size != 0 && col_array->getSize(0) <= static_cast<UInt64>(max_array_size)))
+    const auto * col_tuple = typeid_cast<const ColumnTuple *>(&col_const->getDataColumn());
+    if (!col_array && !col_tuple)
+        return;
+
+    if (col_array && (max_size != 0 && col_array->getSize(0) <= static_cast<UInt64>(max_size)))
+        return;
+
+    if (col_tuple && (max_size != 0 && col_tuple->tupleSize() <= static_cast<UInt64>(max_size)))
         return;
 
     // do not convert arguments of "in" functions
