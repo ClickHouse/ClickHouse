@@ -54,6 +54,15 @@ using CPULeaseAllocationPtr = std::shared_ptr<CPULeaseAllocation>;
  * in time, the thread is preempted and blocks until another slot is
  * granted or a timeout occurs, in which case the thread scales down.
  *
+ * Rationale:
+ * `CPULeaseAllocation` incapsulates logic of query threads cooperation to make decisions regarding preemption.
+ * As a group of threads, they have to:
+ *  - understand that there is not enough resource (CPU nanoseconds) for all thread and decide that preemption should be done;
+ *  - choose one specific thread that should be preempted (and maybe later downscaled);
+ *  - choose one specific preempted thread to be woken up when more resources become available.
+ * `CPULeaseAllocation` keeps lowest possible number of active threads and avoids situations
+ * when 10 threads are running with 10% CPU utilization each.
+ *
  * Implementation details:
  *  - Tracks leased and preempted threads using dynamic bitsets.
  *  - Sends and re‐enqueues ResourceRequest objects to the scheduler
@@ -79,7 +88,6 @@ using CPULeaseAllocationPtr = std::shared_ptr<CPULeaseAllocation>;
  *  - If consumed CPU exceeds granted and requests (not yet granted) CPU,
  *    the thread is preempted and waits for a slot to be granted.
  *  - Upon destruction, a pending request (if any) is cancelled.
- *
  */
 class CPULeaseAllocation final : public ISlotAllocation
 {
@@ -196,8 +204,6 @@ private:
 
     /// Configuration
     const SlotCount max_threads; /// Max number of threads (and allocated slots)
-    const ResourceLink master_link; /// Resource link to use for master thread resource requests
-    const ResourceLink worker_link; /// Resource link to use for worker threads resource requests
     const CPULeaseSettings settings;
     LoggerPtr log;
 
@@ -220,6 +226,8 @@ private:
     ///    - renew() returns false and thread should stop itself
     ///  * running -> released: lease destruction and release() of its acquired slot
     ///    - thread execution stop voluntary (query is done/aborted/canceled)
+    /// IMPORTANT: `CPULeaseAllocation` does not provide one-to-one a mapping between slots and threads because
+    /// IMPORTANT: a thread does not have an associated slot during preemption. On resuming, it gets a new slot.
     struct Threads
     {
         explicit Threads(size_t max_threads_)
@@ -244,15 +252,54 @@ private:
     ResourceCost requested_ns = 0; /// Consumption requested from the scheduler (requested <= consumed + quantum)
 
     /// Scheduling control (for interaction with resource scheduler)
-    using Requests = std::vector<Request>;
-    Requests requests; /// Circular buffer of requests per every slot
-    Requests::iterator head; /// Next request to be enqueued
-    Requests::iterator tail; /// Next request to be finished
-    bool enqueued = false; /// True if the next request is already enqueued to the scheduler
-    bool request_master_slot = true; /// The next request should use (true) master_link or (false) worker_link
+    /// A size-limited cyclic buffer of requests that are sent to the scheduler.
+    /// It may contain:
+    ///  - from 0 up to `max_threads` requests in "consuming" state (i.e. allocated by the scheduler);
+    ///  - 0 or 1 request in "enqueued" state (i.e. sent to the scheduler, but not yet granted);
+    /// RATIONALE:
+    /// The scheduler works with is a ResourceRequest. Old non-preemptive `CpuSlotsAllocation` has one-to-one mapping with a CPU slot.
+    /// But `CpuLeaseAllocation` interact with the scheduler more intensively. Every consumed quantum (10ms) is reported to the scheduler.
+    /// We want interaction to be as reactive as possible to minimize scheduling latencies.
+    /// So instead of having one request for every thread, we have a chain (cyclic buffer) of requests.
+    /// Newly granted requests are added to the `head`, while current consumption of ALL threads goes to the `tail` request.
+    /// Whenever the tail request exhausts its quantum, it is immediately communicated to the scheduler.
+    /// This allows unreported consumption to be limited by one quantum, which is important for scheduling latency and fairness.
+    /// Also, the described logic is required to avoid "bursts" when all quanta for all threads are exhausted simultaneously, and the query is stuck because it no longer has preallocated resources.
+    /// So, decoupling threads from resource requests is necessary to provide a stable, burst-less flow of requests from the query to the scheduler.
+    /// NOTE: The number of running threads may not be equal to the number of requests in "consuming" state,
+    /// because we allow a thread to run while corresponding request is enqueued, but not yet granted (see renew() method).
+    class RequestChain
+    {
+    public:
+        RequestChain(CPULeaseAllocation * lease, size_t max_threads_, ResourceLink master_link_, ResourceLink worker_link_);
+        void finish();
+        void granted();
+        bool enqueue(ResourceCost cost, ResourceCost requested_ns_);
+        void cancel(std::unique_lock<std::mutex> & lock);
+        void scheduled();
+        ResourceCost getMaxConsumed() const { return tail->max_consumed; }
+        bool hasEnqueued() const { return enqueued; }
+
+    private:
+        // Configuration
+        const ResourceLink master_link; /// Resource link to use for master thread resource requests
+        const ResourceLink worker_link; /// Resource link to use for worker threads resource requests
+
+        // Current state
+        using Requests = std::vector<Request>;
+        Requests requests; /// Circular buffer of requests per every slot
+        Requests::iterator head; /// Next request to be enqueued
+        Requests::iterator tail; /// Next request to be finished
+        bool enqueued = false; /// True if the next request is already enqueued to the scheduler
+        bool request_master_slot = true; /// The next request should use (true) master_link or (false) worker_link
+
+        // Cancellation of enqueued request
+        std::condition_variable cancel_cv;
+        bool wait_cancel = false;
+    } requests;
+
     std::exception_ptr exception; /// Exception from the scheduler
     bool shutdown = false; /// True if the destructor is called and we should stop scheduling
-    std::condition_variable shutdown_cv; /// Used to notify waiting destructor
 
     /// Introspection
     CurrentMetrics::Increment acquired_increment;
