@@ -35,8 +35,9 @@ public:
         if (!getSettings()[Setting::count_distinct_optimization])
             return;
 
-        if (getSettings()[Setting::optimize_distributed_group_by_sharding_key])
-            return;
+        /// TODO(amos): find a better way to resolve this setting confliction
+        // if (getSettings()[Setting::optimize_distributed_group_by_sharding_key])
+        //     return;
 
         auto * query_node = node->as<QueryNode>();
 
