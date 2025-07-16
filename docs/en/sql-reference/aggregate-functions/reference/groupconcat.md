@@ -15,8 +15,6 @@ Calculates a concatenated string from a group of strings, optionally separated b
 groupConcat[(delimiter [, limit])](expression);
 ```
 
-Alias: `group_concat`
-
 **Arguments**
 
 - `expression` — The expression or column name that outputs strings to be concatenated.

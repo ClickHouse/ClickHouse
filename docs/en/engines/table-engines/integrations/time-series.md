@@ -10,7 +10,7 @@ title: 'TimeSeries Engine'
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# TimeSeries engine
+# TimeSeries Engine
 
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>

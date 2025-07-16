@@ -455,16 +455,14 @@ void StorageMerge::read(
     size_t num_streams)
 {
     /// What will be result structure depending on query processed stage in source tables?
-    auto common_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, processed_stage);
+    Block common_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, processed_stage);
 
     if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer] && processed_stage == QueryProcessingStage::Complete)
     {
-        auto block = *common_header;
         /// Remove constants.
         /// For StorageDistributed some functions like `hostName` that are constants only for local queries.
-        for (auto & column : block)
+        for (auto & column : common_header)
             column.column = column.column->convertToFullColumnIfConst();
-        common_header = std::make_shared<const Block>(std::move(block));
     }
 
     auto step = std::make_unique<ReadFromMerge>(
@@ -486,7 +484,7 @@ ReadFromMerge::ReadFromMerge(
     const SelectQueryInfo & query_info_,
     const StorageSnapshotPtr & storage_snapshot_,
     const ContextPtr & context_,
-    SharedHeader common_header_,
+    Block common_header_,
     size_t max_block_size,
     size_t num_streams,
     StoragePtr storage,
@@ -494,7 +492,7 @@ ReadFromMerge::ReadFromMerge(
     : SourceStepWithFilter(common_header_, column_names_, query_info_, storage_snapshot_, context_)
     , required_max_block_size(max_block_size)
     , requested_num_streams(num_streams)
-    , common_header(common_header_)
+    , common_header(std::move(common_header_))
     , all_column_names(column_names_)
     , storage_merge(std::move(storage))
     , merge_storage_snapshot(storage_snapshot)
@@ -504,11 +502,11 @@ ReadFromMerge::ReadFromMerge(
 
 void ReadFromMerge::addFilter(FilterDAGInfo filter)
 {
-    output_header = std::make_shared<const Block>(FilterTransform::transformHeader(
+    output_header = FilterTransform::transformHeader(
             *output_header,
             &filter.actions,
             filter.column_name,
-            filter.do_remove_column));
+            filter.do_remove_column);
     pushed_down_filters.push_back(std::move(filter));
 }
 
@@ -518,7 +516,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
 
     if (selected_tables.empty())
     {
-        pipeline.init(Pipe(std::make_shared<NullSource>(output_header)));
+        pipeline.init(Pipe(std::make_shared<NullSource>(*output_header)));
         return;
     }
 
@@ -544,7 +542,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
 
     if (pipelines.empty())
     {
-        pipeline.init(Pipe(std::make_shared<NullSource>(output_header)));
+        pipeline.init(Pipe(std::make_shared<NullSource>(*output_header)));
         return;
     }
 
@@ -769,7 +767,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
                 /// Source tables could have different but convertible types, like numeric types of different width.
                 /// We must return streams with structure equals to structure of Merge table.
-                convertAndFilterSourceStream(*common_header, modified_query_info, nested_storage_snapshot, aliases, row_policy_data_opt, context, child, is_smallest_column_requested);
+                convertAndFilterSourceStream(common_header, modified_query_info, nested_storage_snapshot, aliases, row_policy_data_opt, context, child, is_smallest_column_requested);
 
                 for (const auto & filter_info : pushed_down_filters)
                 {
@@ -910,7 +908,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
 
     SelectQueryInfo modified_query_info = query_info;
 
-    modified_query_info.initial_storage_snapshot = merge_storage_snapshot;
+    modified_query_info.merge_storage_snapshot = merge_storage_snapshot;
 
     if (modified_query_info.planner_context)
         modified_query_info.planner_context = std::make_shared<PlannerContext>(modified_context, modified_query_info.planner_context);
@@ -1069,7 +1067,7 @@ void ReadFromMerge::addVirtualColumns(
 
     /// Add virtual columns if we don't already have them.
 
-    auto plan_header = child.plan.getCurrentHeader();
+    Block plan_header = child.plan.getCurrentHeader();
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
@@ -1078,8 +1076,8 @@ void ReadFromMerge::addVirtualColumns(
         String database_column = table_alias.empty() || processed_stage == QueryProcessingStage::FetchColumns ? "_database" : table_alias + "._database";
         String table_column = table_alias.empty() || processed_stage == QueryProcessingStage::FetchColumns ? "_table" : table_alias + "._table";
 
-        if (has_database_virtual_column && common_header->has(database_column)
-            && child.stage == QueryProcessingStage::FetchColumns && !plan_header->has(database_column))
+        if (has_database_virtual_column && common_header.has(database_column)
+            && child.stage == QueryProcessingStage::FetchColumns && !plan_header.has(database_column))
         {
             ColumnWithTypeAndName column;
             column.name = database_column;
@@ -1092,8 +1090,8 @@ void ReadFromMerge::addVirtualColumns(
             plan_header = child.plan.getCurrentHeader();
         }
 
-        if (has_table_virtual_column && common_header->has(table_column)
-            && child.stage == QueryProcessingStage::FetchColumns && !plan_header->has(table_column))
+        if (has_table_virtual_column && common_header.has(table_column)
+            && child.stage == QueryProcessingStage::FetchColumns && !plan_header.has(table_column))
         {
             ColumnWithTypeAndName column;
             column.name = table_column;
@@ -1108,7 +1106,7 @@ void ReadFromMerge::addVirtualColumns(
     }
     else
     {
-        if (has_database_virtual_column && common_header->has("_database") && !plan_header->has("_database"))
+        if (has_database_virtual_column && common_header.has("_database") && !plan_header.has("_database"))
         {
             ColumnWithTypeAndName column;
             column.name = "_database";
@@ -1121,7 +1119,7 @@ void ReadFromMerge::addVirtualColumns(
             plan_header = child.plan.getCurrentHeader();
         }
 
-        if (has_table_virtual_column && common_header->has("_table") && !plan_header->has("_table"))
+        if (has_table_virtual_column && common_header.has("_table") && !plan_header.has("_table"))
         {
             ColumnWithTypeAndName column;
             column.name = "_table";
@@ -1158,7 +1156,7 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
           * If you do not do this, different types (Const and non-Const) columns will be produced in different threads,
           * And this is not allowed, since all code is based on the assumption that in the block stream all types are the same.
           */
-        builder->addSimpleTransform([](const SharedHeader & stream_header) { return std::make_shared<MaterializingTransform>(stream_header); });
+        builder->addSimpleTransform([](const Block & stream_header) { return std::make_shared<MaterializingTransform>(stream_header); });
     }
 
     return builder;
@@ -1488,9 +1486,9 @@ void ReadFromMerge::convertAndFilterSourceStream(
     ChildPlan & child,
     bool is_smallest_column_requested)
 {
-    auto before_block_header = child.plan.getCurrentHeader();
+    Block before_block_header = child.plan.getCurrentHeader();
 
-    auto pipe_columns = before_block_header->getNamesAndTypesList();
+    auto pipe_columns = before_block_header.getNamesAndTypesList();
 
     if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
@@ -1547,7 +1545,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     /** Convert types of columns according to the resulting Merge table.
       * And convert column names to the expected ones.
        */
-    ColumnsWithTypeAndName current_step_columns = child.plan.getCurrentHeader()->getColumnsWithTypeAndName();
+    ColumnsWithTypeAndName current_step_columns = child.plan.getCurrentHeader().getColumnsWithTypeAndName();
     ColumnsWithTypeAndName converted_columns;
     size_t size = current_step_columns.size();
     converted_columns.reserve(current_step_columns.size());
@@ -1587,7 +1585,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     /// Add missing columns for the resulting Merge table.
     {
         auto adding_missing_defaults_dag = addMissingDefaults(
-            *child.plan.getCurrentHeader(),
+            child.plan.getCurrentHeader(),
             header.getNamesAndTypesList(),
             snapshot->getAllColumnsDescription(),
             local_context,

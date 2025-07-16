@@ -14,7 +14,6 @@
 
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
-#include <Analyzer/HashUtils.h>
 #include <Analyzer/WindowNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/InterpolateNode.h>
@@ -29,6 +28,7 @@
 #include <Planner/Utils.h>
 
 #include <Core/Settings.h>
+#include "Analyzer/HashUtils.h"
 
 namespace DB
 {
@@ -137,9 +137,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
     Names aggregation_keys;
 
     ActionsAndProjectInputsFlagPtr before_aggregation_actions = std::make_shared<ActionsAndProjectInputsFlag>();
-    /// Here it is OK to materialize const columns: if column is used in GROUP BY, it may be expected to become non-const
-    /// See https://github.com/ClickHouse/ClickHouse/issues/70655 for example
-    before_aggregation_actions->dag = ActionsDAG(input_columns, false);
+    before_aggregation_actions->dag = ActionsDAG(input_columns);
     before_aggregation_actions->dag.getOutputs().clear();
 
     std::unordered_set<std::string_view> before_aggregation_actions_output_node_names;
@@ -402,6 +400,7 @@ ProjectionAnalysisResult analyzeProjection(
         input_columns,
         planner_context,
         correlated_columns_set);
+    correlated_subtrees.assertEmpty("in projection list");
 
     auto projection_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     projection_actions->dag = std::move(projection_actions_dag);
@@ -437,7 +436,6 @@ ProjectionAnalysisResult analyzeProjection(
 
     ProjectionAnalysisResult result;
     result.projection_actions = std::move(projection_actions);
-    result.correlated_subtrees = std::move(correlated_subtrees);
     result.projection_column_names = std::move(projection_column_names);
     result.projection_column_names_with_display_aliases = std::move(projection_column_names_with_display_aliases);
 

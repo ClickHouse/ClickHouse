@@ -384,11 +384,6 @@ Aws::Auth::AWSCredentials AWSInstanceProfileCredentialsProvider::GetAWSCredentia
 {
     refreshIfExpired();
     Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
-    return GetAWSCredentialsImpl();
-}
-
-Aws::Auth::AWSCredentials AWSInstanceProfileCredentialsProvider::GetAWSCredentialsImpl()
-{
     auto profile_it = ec2_metadata_config_loader->GetProfiles().find(Aws::Config::INSTANCE_PROFILE_KEY);
 
     if (profile_it != ec2_metadata_config_loader->GetProfiles().end())
@@ -401,15 +396,9 @@ Aws::Auth::AWSCredentials AWSInstanceProfileCredentialsProvider::GetAWSCredentia
 
 void AWSInstanceProfileCredentialsProvider::Reload()
 {
-    LOG_INFO(logger, "Credentials have expired, attempting to repull from EC2 Metadata Service.");
-    auto old_credentials = GetAWSCredentialsImpl();
-
+    LOG_INFO(logger, "Credentials have expired attempting to repull from EC2 Metadata Service.");
     ec2_metadata_config_loader->Load();
     AWSCredentialsProvider::Reload();
-
-    auto new_credentials = GetAWSCredentialsImpl();
-    LOG_INFO(logger, "Got {}credentials from EC2 Metadata Service",
-             new_credentials.IsEmpty() ? "empty " : ((new_credentials == old_credentials) ? "same " : ""));
 }
 
 void AWSInstanceProfileCredentialsProvider::refreshIfExpired()
@@ -539,22 +528,18 @@ void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::Reload()
     Aws::Internal::STSCredentialsClient::STSAssumeRoleWithWebIdentityRequest request{session_name, role_arn, token};
 
     auto result = client->GetAssumeRoleWithWebIdentityCredentials(request);
-    AWSCredentialsProvider::Reload();
-
-    LOG_INFO(logger, "Got {}credentials from STS",
-             result.creds.IsEmpty() ? "empty " : ((result.creds == credentials) ? "same " : ""));
-
+    LOG_TRACE(logger, "Successfully retrieved credentials.");
     credentials = result.creds;
 }
 
 void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::refreshIfExpired()
 {
     Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
-    if (!IsSetNeedRefresh() && !areCredentialsEmptyOrExpired(credentials, expiration_window_seconds))
+    if (!areCredentialsEmptyOrExpired(credentials, expiration_window_seconds))
         return;
 
     guard.UpgradeToWriterLock();
-    if (!IsSetNeedRefresh() && !areCredentialsEmptyOrExpired(credentials, expiration_window_seconds)) // double-checked lock to avoid refreshing twice
+    if (!areCredentialsEmptyOrExpired(credentials, expiration_window_seconds)) // double-checked lock to avoid refreshing twice
         return;
 
     Reload();
@@ -628,11 +613,7 @@ void SSOCredentialsProvider::Reload()
 
     LOG_TRACE(logger, "Requesting credentials with AWS_ACCESS_KEY: {}", sso_account_id);
     auto result = client->GetSSOCredentials(request);
-    AWSCredentialsProvider::Reload();
-
-    LOG_INFO(logger, "Got {}credentials with AWS_ACCESS_KEY: {}",
-             result.creds.IsEmpty() ? "empty " : ((credentials == result.creds) ? "same " : ""),
-             result.creds.GetAWSAccessKeyId());
+    LOG_TRACE(logger, "Successfully retrieved credentials with AWS_ACCESS_KEY: {}", result.creds.GetAWSAccessKeyId());
 
     credentials = result.creds;
 }
@@ -640,12 +621,12 @@ void SSOCredentialsProvider::Reload()
 void SSOCredentialsProvider::refreshIfExpired()
 {
     Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
-    if (!IsSetNeedRefresh() && !areCredentialsEmptyOrExpired(credentials, expiration_window_seconds))
+    if (!areCredentialsEmptyOrExpired(credentials, expiration_window_seconds))
         return;
 
     guard.UpgradeToWriterLock();
 
-    if (!IsSetNeedRefresh() && !areCredentialsEmptyOrExpired(credentials, expiration_window_seconds)) // double-checked lock to avoid refreshing twice
+    if (!areCredentialsEmptyOrExpired(credentials, expiration_window_seconds)) // double-checked lock to avoid refreshing twice
         return;
 
     Reload();
@@ -731,7 +712,6 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.remote_host_filter,
                 configuration.s3_max_redirects,
                 configuration.s3_retry_attempts,
-                configuration.s3_slow_all_threads_after_network_error,
                 configuration.enable_s3_requests_logging,
                 configuration.for_disk_s3,
                 configuration.get_request_throttler,
@@ -747,7 +727,6 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.remote_host_filter,
                 configuration.s3_max_redirects,
                 configuration.s3_retry_attempts,
-                configuration.s3_slow_all_threads_after_network_error,
                 configuration.enable_s3_requests_logging,
                 configuration.for_disk_s3,
                 configuration.get_request_throttler,
@@ -798,7 +777,6 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.remote_host_filter,
                 configuration.s3_max_redirects,
                 configuration.s3_retry_attempts,
-                configuration.s3_slow_all_threads_after_network_error,
                 configuration.enable_s3_requests_logging,
                 configuration.for_disk_s3,
                 configuration.get_request_throttler,

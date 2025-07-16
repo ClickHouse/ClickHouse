@@ -30,11 +30,6 @@ bool MutationCommand::isBarrierCommand() const
     return type == RENAME_COLUMN;
 }
 
-bool MutationCommand::affectsAllColumns() const
-{
-    return type == DELETE || type == APPLY_DELETED_MASK;
-}
-
 std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command, bool parse_alter_commands)
 {
     if (command->type == ASTAlterCommand::DELETE)
@@ -72,15 +67,8 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         MutationCommand res;
         res.ast = command->ptr();
         res.type = APPLY_DELETED_MASK;
-        if (command->partition)
-            res.partition = command->partition->clone();
-        return res;
-    }
-    else if (command->type == ASTAlterCommand::APPLY_PATCHES)
-    {
-        MutationCommand res;
-        res.ast = command->ptr();
-        res.type = APPLY_PATCHES;
+        if (command->predicate)
+            res.predicate = command->predicate->clone();
         if (command->partition)
             res.partition = command->partition->clone();
         return res;
@@ -223,9 +211,6 @@ std::shared_ptr<ASTExpressionList> MutationCommands::ast(bool with_pure_metadata
     auto res = std::make_shared<ASTExpressionList>();
     for (const MutationCommand & command : *this)
     {
-        if (!command.ast)
-            continue;
-
         if (command.type != MutationCommand::ALTER_WITHOUT_MUTATION || with_pure_metadata_commands)
             res->children.push_back(command.ast->clone());
     }
@@ -259,8 +244,6 @@ void MutationCommands::readText(ReadBuffer & in)
 
 std::string MutationCommands::toString() const
 {
-    if (empty())
-        return "no commands";
     return ast()->formatWithSecretsOneLine();
 }
 
@@ -273,16 +256,6 @@ bool MutationCommands::hasNonEmptyMutationCommands() const
             return true;
     }
     return false;
-}
-
-bool MutationCommands::hasAnyUpdateCommand() const
-{
-    return std::ranges::any_of(*this, [](const auto & command) { return command.type == MutationCommand::Type::UPDATE; });
-}
-
-bool MutationCommands::hasOnlyUpdateCommands() const
-{
-    return std::ranges::all_of(*this, [](const auto & command) { return command.type == MutationCommand::Type::UPDATE; });
 }
 
 bool MutationCommands::containBarrierCommand() const

@@ -3,11 +3,9 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
-#include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
-#include <Core/Settings.h>
 
 namespace ProfileEvents
 {
@@ -17,11 +15,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsSeconds receive_timeout;
-}
 
 namespace MergeTreeSetting
 {
@@ -236,6 +229,9 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
     new_part = mutate_task->getFuture().get();
+    auto & data_part_storage = new_part->getDataPartStorage();
+    if (data_part_storage.hasActiveTransaction())
+        data_part_storage.precommitTransaction();
 
     storage.renameTempPartAndReplace(new_part, *transaction_ptr, /*rename_in_transaction=*/ true);
 
