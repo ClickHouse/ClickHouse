@@ -139,7 +139,7 @@ DDLWorker::DDLWorker(
     host_fqdn_id = Cluster::Address::toString(host_fqdn, context->getTCPPort());
 }
 
-void DDLWorker::startup()
+void DDLWorker::startWatching()
 {
     [[maybe_unused]] bool prev_stop_flag = stop_flag.exchange(false);
     chassert(prev_stop_flag);
@@ -147,7 +147,7 @@ void DDLWorker::startup()
     cleanup_thread = std::make_unique<ThreadFromGlobalPool>(&DDLWorker::runCleanupThread, this);
 }
 
-void DDLWorker::shutdown()
+void DDLWorker::stopWatching()
 {
     bool prev_stop_flag = stop_flag.exchange(true);
     if (!prev_stop_flag)
@@ -164,7 +164,7 @@ void DDLWorker::shutdown()
 
 DDLWorker::~DDLWorker()
 {
-    DDLWorker::shutdown();
+    DDLWorker::stopWatching();
 }
 
 
