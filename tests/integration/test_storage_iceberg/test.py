@@ -202,6 +202,7 @@ def get_creation_expression(
     allow_dynamic_metadata_for_data_lakes=False,
     use_version_hint=False,
     run_on_cluster=False,
+    object_storage_cluster=False,
     explicit_metadata_path="",
     **kwargs,
 ):
@@ -214,6 +215,9 @@ def get_creation_expression(
 
     if use_version_hint:
         settings_array.append("iceberg_use_version_hint = true")
+
+    if object_storage_cluster:
+        settings_array.append(f"object_storage_cluster = '{object_storage_cluster}'")
 
     if settings_array:
         settings_expression = " SETTINGS " + ",".join(settings_array)
@@ -313,10 +317,18 @@ def create_iceberg_table(
     table_name,
     cluster,
     format="Parquet",
+    object_storage_cluster=False,
     **kwargs,
 ):
     node.query(
-        get_creation_expression(storage_type, table_name, cluster, format, **kwargs)
+        get_creation_expression(
+            storage_type,
+            table_name,
+            cluster,
+            format,
+            object_storage_cluster=object_storage_cluster,
+            **kwargs,
+        )
     )
 
 
@@ -670,61 +682,81 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
         .split()
     )
 
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, object_storage_cluster='cluster_simple')
+    query_id_cluster_table_engine = str(uuid.uuid4())
+    select_cluster_table_engine = (
+        instance.query(
+            f"""
+            SELECT * FROM {TABLE_NAME}
+            """,
+            query_id=query_id_cluster_table_engine,
+        )
+        .strip()
+        .split()
+    )
+
+    # write 3 times
+    assert int(instance.query(f"SELECT count() FROM {table_function_expr_cluster}")) == 100 * 3
+
+    select_remote_cluster = (
+        instance.query(f"SELECT * FROM remote('node2',{table_function_expr_cluster})")
+        .strip()
+        .split()
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS `{TABLE_NAME}` SYNC")
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
+    query_id_pure_table_engine = str(uuid.uuid4())
+    select_pure_table_engine = (
+        instance.query(
+            f"""
+            SELECT * FROM {TABLE_NAME}
+            """,
+            query_id=query_id_pure_table_engine,
+        )
+        .strip()
+        .split()
+    )
+    query_id_pure_table_engine_cluster = str(uuid.uuid4())
+    select_pure_table_engine_cluster = (
+        instance.query(
+            f"""
+            SELECT * FROM {TABLE_NAME}
+            SETTINGS object_storage_cluster='cluster_simple'
+            """,
+            query_id=query_id_pure_table_engine_cluster,
+        )
+        .strip()
+        .split()
+    )
+
     # Simple size check
     assert len(select_regular) == 600
     assert len(select_cluster) == 600
     assert len(select_cluster_alt_syntax) == 600
+    assert len(select_cluster_table_engine) == 600
+    assert len(select_remote_cluster) == 600
+    assert len(select_pure_table_engine) == 600
+    assert len(select_pure_table_engine_cluster) == 600
 
     # Actual check
     assert select_cluster == select_regular
     assert select_cluster_alt_syntax == select_regular
+    assert select_cluster_table_engine == select_regular
+    assert select_remote_cluster == select_regular
+    assert select_pure_table_engine == select_regular
+    assert select_pure_table_engine_cluster == select_regular
 
     # Check query_log
     for replica in started_cluster.instances.values():
         replica.query("SYSTEM FLUSH LOGS")
 
-    for node_name, replica in started_cluster.instances.items():
-        cluster_secondary_queries = (
-            replica.query(
-                f"""
-                SELECT query, type, is_initial_query, read_rows, read_bytes FROM system.query_log
-                WHERE
-                    type = 'QueryStart'
-                    AND NOT is_initial_query
-                    AND initial_query_id='{query_id_cluster}'
-            """
-            )
-            .strip()
-            .split("\n")
-        )
+    count_secondary_subqueries(started_cluster, query_id_cluster, 1, "table function")
+    count_secondary_subqueries(started_cluster, query_id_cluster_alt_syntax, 1, "table function alt syntax")
+    count_secondary_subqueries(started_cluster, query_id_cluster_table_engine, 1, "cluster table engine")
+    count_secondary_subqueries(started_cluster, query_id_pure_table_engine, 0, "table engine")
+    count_secondary_subqueries(started_cluster, query_id_pure_table_engine_cluster, 1, "table engine with cluster setting")
 
-        logging.info(
-            f"[{node_name}] cluster_secondary_queries: {cluster_secondary_queries}"
-        )
-        assert len(cluster_secondary_queries) == 1
-
-    for node_name, replica in started_cluster.instances.items():
-        cluster_secondary_queries = (
-            replica.query(
-                f"""
-                SELECT query, type, is_initial_query, read_rows, read_bytes FROM system.query_log
-                WHERE
-                    type = 'QueryStart'
-                    AND NOT is_initial_query
-                    AND initial_query_id='{query_id_cluster_alt_syntax}'
-            """
-            )
-            .strip()
-            .split("\n")
-        )
-
-        logging.info(
-            f"[{node_name}] cluster_secondary_queries: {cluster_secondary_queries}"
-        )
-        assert len(cluster_secondary_queries) == 1
-
-    # write 3 times
-    assert int(instance.query(f"SELECT count() FROM {table_function_expr_cluster}")) == 100 * 3
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
