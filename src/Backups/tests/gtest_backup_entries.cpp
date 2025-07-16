@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <Common/JemallocNodumpSTLAllocator.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Backups/BackupEntryFromAppendOnlyFile.h>
 #include <Backups/BackupEntryFromImmutableFile.h>
@@ -34,7 +33,7 @@ protected:
         settings->disk_path = "encrypted/";
 
         settings->current_algorithm = FileEncryption::Algorithm::AES_128_CTR;
-        NoDumpString key = "1234567890123456";
+        String key = "1234567890123456";
         UInt128 fingerprint = FileEncryption::calculateKeyFingerprint(key);
         settings->all_keys[fingerprint] = key;
         settings->current_key = key;
