@@ -7,9 +7,8 @@ CREATE TABLE IF NOT EXISTS `aaatable` (
     `aaabaz`    UInt128
 ) ENGINE = Memory;
 
-SELECT DISTINCT lower(word) AS term
+SELECT DISTINCT lower(word) AS token
 FROM system.completions
-ORDER BY term
+ORDER BY token
 LIMIT 20
 FORMAT PrettyCompact;
-

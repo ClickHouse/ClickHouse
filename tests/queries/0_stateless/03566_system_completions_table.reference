@@ -1,4 +1,4 @@
-    ┌─term───────────────────────────┐
+    ┌─token──────────────────────────┐
  1. │ __actionname                   │
  2. │ __bitboolmaskand               │
  3. │ __bitboolmaskor                │

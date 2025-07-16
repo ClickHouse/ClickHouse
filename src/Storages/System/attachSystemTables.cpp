@@ -253,7 +253,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
 
     attach<StorageSystemLatencyBuckets>(context, system_database, "latency_buckets", "Contains buckets bounds used by latency log.");
     attach<StorageSystemCodecs>(context, system_database, "codecs", "Contains information about system codecs.");
-    attach<StorageSystemCompletions>(context, system_database, "completions", "Contains a list of completion terms.");
+    attach<StorageSystemCompletions>(context, system_database, "completions", "Contains a list of completion tokens.");
 }
 
 void attachSystemTablesAsync(ContextPtr context, IDatabase & system_database, AsynchronousMetrics & async_metrics)
