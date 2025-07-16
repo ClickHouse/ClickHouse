@@ -1,0 +1,100 @@
+#pragma once
+
+#include "config.h"
+
+#include <string>
+#include <memory>
+
+#if USE_JEMALLOC
+
+#include <limits>
+#include <new>
+
+#include <jemalloc/jemalloc.h>
+
+#include <Common/JemallocNodumpAllocatorImpl.h>
+
+
+namespace DB
+{
+
+template<typename T>
+class JemallocNodumpSTLAllocator
+{
+public:
+    using value_type = T;
+
+    JemallocNodumpSTLAllocator() noexcept = default;
+
+    template<typename U>
+    explicit JemallocNodumpSTLAllocator(const JemallocNodumpSTLAllocator<U> &) noexcept
+    {
+    }
+
+    T* allocate(std::size_t n)
+    {
+        static constexpr size_t element_size = sizeof(T);
+
+        if (n > std::numeric_limits<std::size_t>::max() / element_size)
+        {
+            throw std::bad_alloc();
+        }
+
+        const std::size_t bytes = n * element_size;
+        void * ptr = JemallocNodumpAllocatorImpl::instance().allocate(bytes);
+        if (!ptr)
+        {
+            throw std::bad_alloc();
+        }
+        return static_cast<T*>(ptr);
+    }
+
+    void deallocate(T* p, std::size_t /*n*/) noexcept
+    {
+        JemallocNodumpAllocatorImpl::instance().deallocate(p);
+    }
+};
+
+template<typename T, typename U>
+bool operator ==(const JemallocNodumpSTLAllocator<T> &, const JemallocNodumpSTLAllocator<U> &) noexcept
+{
+    return true;
+}
+
+template<typename T, typename U>
+bool operator !=(const JemallocNodumpSTLAllocator<T> & a, const JemallocNodumpSTLAllocator<U> & b) noexcept
+{
+    return !(a == b);
+}
+
+}
+#endif
+
+namespace DB
+{
+
+using NoDumpCharAllocator =
+#if USE_JEMALLOC
+    JemallocNodumpSTLAllocator<char>
+#else
+    std::allocator<char>
+#endif
+    ;
+
+/// Use for any sensitive data that needs to be excluded from core dumps.
+/// WARNING: Cannot be used for short strings due to Small String Optimization (SSO).
+using NoDumpString = std::basic_string<
+    char,
+    std::char_traits<char>,
+    NoDumpCharAllocator
+>;
+
+inline NoDumpString toNoDumpString(std::string s)
+{
+    return NoDumpString(
+        s,
+        NoDumpCharAllocator()
+    );
+}
+
+}

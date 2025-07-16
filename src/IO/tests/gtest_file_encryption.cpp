@@ -10,6 +10,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <Common/getRandomASCIIString.h>
+#include <Common/JemallocNodumpSTLAllocator.h>
 #include <filesystem>
 
 
@@ -79,7 +80,7 @@ INSTANTIATE_TEST_SUITE_P(All,
 struct CipherTestParam
 {
     const Algorithm algorithm;
-    const String key;
+    const NoDumpString key;
     const InitVector iv;
     const size_t offset;
     const String plaintext;
@@ -181,7 +182,7 @@ INSTANTIATE_TEST_SUITE_P(All,
         {
             // #2
             Algorithm::AES_128_CTR,
-            String{"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f", 16},
+            NoDumpString{"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f", 16},
             InitVector{},
             0,
             "abcd1234efgh5678ijkl",
@@ -223,7 +224,7 @@ TEST(FileEncryptionPositionUpdateTest, Decryption)
     if (std::filesystem::exists(tmp_path))
         std::filesystem::remove(tmp_path);
 
-    String key = "1234567812345678";
+    NoDumpString key = "1234567812345678";
     FileEncryption::Header header;
     header.algorithm = Algorithm::AES_128_CTR;
     header.key_fingerprint = calculateKeyFingerprint(key);
