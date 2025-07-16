@@ -24,7 +24,7 @@ public:
     using BasePolicy::cache;
 
     ObjectStorageListObjectsCachePolicy()
-        : BasePolicy(std::make_unique<NoCachePolicyUserQuota>())
+        : BasePolicy(CurrentMetrics::end(), CurrentMetrics::end(), std::make_unique<NoCachePolicyUserQuota>())
     {
     }
 
