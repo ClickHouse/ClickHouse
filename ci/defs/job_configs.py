@@ -1,4 +1,5 @@
 from praktika import Job
+from praktika.utils import Utils
 
 from ci.defs.defs import ArtifactNames, BuildTypes, JobNames, RunnerLabels
 
@@ -41,6 +42,12 @@ common_ft_job_config = Job.Config(
     result_name_for_cidb="Tests",
 )
 
+BINARY_DOCKER_COMMAND = (
+    "clickhouse/binary-builder+--network=host+"
+    f"--memory={Utils.physical_memory() * 95 // 100}+"
+    f"--memory-reservation={Utils.physical_memory() * 9 // 10}"
+)
+
 
 class JobConfigs:
     style_check = Job.Config(
@@ -79,7 +86,7 @@ class JobConfigs:
         runs_on=[],  # from parametrize()
         requires=[],
         command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
-        run_in_docker="clickhouse/binary-builder+--network=host",
+        run_in_docker=BINARY_DOCKER_COMMAND,
         timeout=3600 * 4,
         digest_config=build_digest_config,
     ).parametrize(
@@ -99,7 +106,7 @@ class JobConfigs:
         requires=[],
         command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
         # --network=host required for ec2 metadata http endpoint to work
-        run_in_docker="clickhouse/binary-builder+--network=host",
+        run_in_docker=BINARY_DOCKER_COMMAND,
         timeout=3600 * 2,
         digest_config=build_digest_config,
         post_hooks=[
@@ -187,7 +194,7 @@ class JobConfigs:
         requires=[],
         command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
         # --network=host required for ec2 metadata http endpoint to work
-        run_in_docker="clickhouse/binary-builder+--network=host",
+        run_in_docker=BINARY_DOCKER_COMMAND,
         timeout=3600 * 2,
         digest_config=build_digest_config,
         post_hooks=[
