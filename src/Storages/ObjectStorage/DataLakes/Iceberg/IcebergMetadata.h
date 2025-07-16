@@ -1,4 +1,5 @@
 #pragma once
+
 #include "config.h"
 
 #if USE_AVRO
@@ -17,6 +18,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
+#include <Formats/FormatParserGroup.h>
 
 #include <Common/SharedMutex.h>
 #include <tuple>
@@ -73,6 +75,8 @@ public:
     std::optional<size_t> totalRows(ContextPtr Local_context) const override;
     std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
 
+    ColumnMapperPtr getColumnMapper() const override { return column_mapper; }
+
 protected:
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
@@ -107,6 +111,8 @@ private:
 
     mutable std::optional<Strings> cached_unprunned_files_for_last_processed_snapshot TSA_GUARDED_BY(cached_unprunned_files_for_last_processed_snapshot_mutex);
     mutable std::mutex cached_unprunned_files_for_last_processed_snapshot_mutex;
+
+    ColumnMapperPtr column_mapper;
 
     void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object, bool metadata_file_changed) TSA_REQUIRES(mutex);
     Strings getDataFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const;
