@@ -116,7 +116,7 @@ DB::ReadBufferPtr YTsaurusClient::createQueryRWBuffer(const YTsaurusQueryPtr que
                 {"Content-Type", "application/json"},
                 {"Authorization", fmt::format("OAuth {}", connection_info.oauth_token)},
                 {"X-YT-Header-Format", "<format=text>yson"},
-                {"X-YT-Output-Format", "<uuid_mode=text_yql>json"}
+                {"X-YT-Output-Format", "<uuid_mode=text_yql;complex_type_mode=positional>json"}
             };
 
             LOG_TRACE(log, "URI {} , query type {}", uri.toString(), query->getQueryName());
@@ -183,7 +183,7 @@ Poco::JSON::Array::Ptr YTsaurusClient::getTableSchema(const String & cypress_pat
     return schema_json->get("$value").extract<Poco::JSON::Array::Ptr>();
 }
 
-bool YTsaurusClient::checkSchemaCompatibility(const String & table_path, const Block & sample_block)
+bool YTsaurusClient::checkSchemaCompatibility(const String & table_path, const SharedHeader & sample_block)
 {
     auto schema_json = getTableSchema(table_path);
     chassert(schema_json);
@@ -192,13 +192,13 @@ bool YTsaurusClient::checkSchemaCompatibility(const String & table_path, const B
         {
             const auto & yt_column_json = yt_column.extract<Poco::JSON::Object::Ptr>();
             auto yt_column_name = yt_column_json->getValue<String>("name");
-            if (!sample_block.has(yt_column_name))
+            if (!sample_block->has(yt_column_name))
             {
                 LOG_ERROR(log, "Table schema mismatch. No column {}", yt_column_name);
                 return false;
             }
 
-            const auto & column_type_ptr = sample_block.getByName(yt_column_name).type;
+            const auto & column_type_ptr = sample_block->getByName(yt_column_name).type;
 
             chassert(column_type_ptr != nullptr);
             auto data_type = convertYTSchema(yt_column_json);

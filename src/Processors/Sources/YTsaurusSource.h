@@ -25,7 +25,7 @@ class YTsaurusTableSourceStaticTable final : public ISource
 {
 public:
     YTsaurusTableSourceStaticTable(
-        YTsaurusClientPtr client_, const YTsaurusTableSourceOptions & source_options_, const Block & sample_block_, const UInt64 & max_block_size_);
+        YTsaurusClientPtr client_, const YTsaurusTableSourceOptions & source_options_, const SharedHeader & sample_block_, const UInt64 & max_block_size_);
     ~YTsaurusTableSourceStaticTable() override = default;
 
     String getName() const override { return "YTsaurusTableSourceStaticTable"; }
@@ -34,7 +34,7 @@ private:
     Chunk generate() override { return json_row_format->read(); }
 
     YTsaurusClientPtr client;
-    const Block sample_block;
+    const SharedHeader sample_block;
     UInt64 max_block_size;
     ReadBufferPtr read_buffer;
     std::unique_ptr<JSONEachRowRowInputFormat> json_row_format;
@@ -44,7 +44,7 @@ class YTsaurusTableSourceDynamicTable final : public ISource
 {
 public:
     YTsaurusTableSourceDynamicTable(
-        YTsaurusClientPtr client_, const YTsaurusTableSourceOptions & source_options_, const Block & sample_block_, const UInt64 & max_block_size_);
+        YTsaurusClientPtr client_, const YTsaurusTableSourceOptions & source_options_, const SharedHeader & sample_block_, const UInt64 & max_block_size_);
     ~YTsaurusTableSourceDynamicTable() override = default;
 
     String getName() const override { return "YTsaurusTableSourceDynamicTable"; }
@@ -54,7 +54,7 @@ private:
 
     YTsaurusClientPtr client;
     const YTsaurusTableSourceOptions & source_options;
-    const Block sample_block;
+    const SharedHeader sample_block;
     UInt64 max_block_size;
     FormatSettings format_settings;
     ReadBufferPtr read_buffer;
@@ -66,7 +66,7 @@ private:
 struct YTsaurusSourceFactory
 {
     static std::shared_ptr<ISource>
-    createSource(YTsaurusClientPtr client, YTsaurusTableSourceOptions source_options, const Block & sample_block, UInt64 max_block_size);
+    createSource(YTsaurusClientPtr client, YTsaurusTableSourceOptions source_options, const SharedHeader & sample_block, UInt64 max_block_size);
 };
 
 }

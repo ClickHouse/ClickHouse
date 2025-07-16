@@ -4,6 +4,7 @@
 #if USE_YTSAURUS
 
 #include <Core/YTsaurus/YTsaurusQueries.h>
+#include <Core/Block_fwd.h>
 #include <Poco/JSON/Object.h>
 #include <Storages/ColumnsDescription.h>
 #include <Core/Types.h>
@@ -61,7 +62,7 @@ public:
 
     Poco::JSON::Array::Ptr getTableSchema(const String & cypress_path);
 
-    bool checkSchemaCompatibility(const String & table_path, const Block & sample_block);
+    bool checkSchemaCompatibility(const String & table_path, const SharedHeader & sample_block);
 private:
     Poco::JSON::Object::Ptr getTableInfo(const String & cypress_path);
 
