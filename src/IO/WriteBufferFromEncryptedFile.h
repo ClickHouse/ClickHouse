@@ -4,7 +4,6 @@
 #include <Common/assert_cast.h>
 
 #if USE_SSL
-#include <Common/JemallocNodumpSTLAllocator.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/FileEncryptionCommon.h>
 #include <IO/WriteBufferDecorator.h>
@@ -21,7 +20,7 @@ public:
     WriteBufferFromEncryptedFile(
         size_t buffer_size_,
         std::unique_ptr<WriteBufferFromFileBase> out_,
-        const NoDumpString & key_,
+        const String & key_,
         const FileEncryption::Header & header_,
         size_t old_file_size = 0);
 

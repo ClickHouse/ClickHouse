@@ -12,7 +12,6 @@
 #include <Parsers/parseQuery.h>
 #include <base/sort.h>
 #include <boost/algorithm/hex.hpp>
-#include <Common/JemallocNodumpSTLAllocator.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -428,7 +427,7 @@ public:
     }
 
 private:
-    NoDumpString key;
+    std::string key;
     UInt128 key_fingerprint;
     FileEncryption::Algorithm algorithm;
 };

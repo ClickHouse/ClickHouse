@@ -10,7 +10,6 @@
 #include <boost/algorithm/hex.hpp>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <Common/JemallocNodumpSTLAllocator.h>
 
 namespace DB
 {
@@ -29,7 +28,7 @@ namespace
 
     constexpr Algorithm DEFAULT_ENCRYPTION_ALGORITHM = Algorithm::AES_128_CTR;
 
-    NoDumpString unhexKey(const NoDumpString & hex)
+    String unhexKey(const String & hex)
     {
         try
         {
@@ -43,20 +42,20 @@ namespace
 
     /// Reads encryption keys from the configuration.
     void getKeysFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
-                           std::map<UInt64, NoDumpString> & out_keys_by_id, std::vector<NoDumpString> & out_keys_without_id)
+                           std::map<UInt64, String> & out_keys_by_id, Strings & out_keys_without_id)
     {
         Strings config_keys;
         config.keys(config_prefix, config_keys);
 
         for (const std::string & config_key : config_keys)
         {
-            NoDumpString key;
+            String key;
             std::optional<UInt64> key_id;
 
             if ((config_key == "key") || config_key.starts_with("key["))
             {
                 String key_path = config_prefix + "." + config_key;
-                key = toNoDumpString(config.getString(key_path));
+                key = config.getString(key_path);
                 String key_id_path = key_path + "[@id]";
                 if (config.has(key_id_path))
                     key_id = config.getUInt64(key_id_path);
@@ -64,7 +63,7 @@ namespace
             else if ((config_key == "key_hex") || config_key.starts_with("key_hex["))
             {
                 String key_path = config_prefix + "." + config_key;
-                key = unhexKey(toNoDumpString(config.getString(key_path)));
+                key = unhexKey(config.getString(key_path));
                 String key_id_path = key_path + "[@id]";
                 if (config.has(key_id_path))
                     key_id = config.getUInt64(key_id_path);
@@ -94,8 +93,8 @@ namespace
     }
 
     /// Reads the current encryption key from the configuration.
-    NoDumpString getCurrentKeyFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
-                                   const std::map<UInt64, NoDumpString> & keys_by_id, const std::vector<NoDumpString> & keys_without_id)
+    String getCurrentKeyFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
+                                   const std::map<UInt64, String> & keys_by_id, const Strings & keys_without_id)
     {
         String key_path = config_prefix + ".current_key";
         String key_hex_path = config_prefix + ".current_key_hex";
@@ -104,7 +103,7 @@ namespace
         if (config.has(key_path) + config.has(key_hex_path) + config.has(key_id_path) > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The current key is specified multiple times");
 
-        auto check_current_key_found = [&](const NoDumpString & current_key_)
+        auto check_current_key_found = [&](const String & current_key_)
         {
             for (const auto & [_, key] : keys_by_id)
             {
@@ -121,13 +120,13 @@ namespace
 
         if (config.has(key_path))
         {
-            NoDumpString current_key = toNoDumpString(config.getString(key_path));
+            String current_key = config.getString(key_path);
             check_current_key_found(current_key);
             return current_key;
         }
         if (config.has(key_hex_path))
         {
-            NoDumpString current_key = unhexKey(toNoDumpString(config.getString(key_hex_path)));
+            String current_key = unhexKey(config.getString(key_hex_path));
             check_current_key_found(current_key);
             return current_key;
         }
@@ -189,8 +188,8 @@ namespace
         {
             auto res = std::make_unique<DiskEncryptedSettings>();
 
-            std::map<UInt64, NoDumpString> keys_by_id;
-            std::vector<NoDumpString> keys_without_id;
+            std::map<UInt64, String> keys_by_id;
+            Strings keys_without_id;
             getKeysFromConfig(config, config_prefix, keys_by_id, keys_without_id);
 
             for (const auto & [key_id, key] : keys_by_id)
@@ -210,7 +209,7 @@ namespace
                 res->all_keys[fingerprint] = key;
             }
 
-            NoDumpString current_key = getCurrentKeyFromConfig(config, config_prefix, keys_by_id, keys_without_id);
+            String current_key = getCurrentKeyFromConfig(config, config_prefix, keys_by_id, keys_without_id);
             res->current_key = current_key;
             res->current_key_fingerprint = calculateKeyFingerprint(current_key);
 
@@ -376,7 +375,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     }
     auto encryption_settings = current_settings.get();
     FileEncryption::Header header = readHeader(*buffer);
-    NoDumpString key = encryption_settings->findKeyByFingerprint(header.key_fingerprint, path);
+    String key = encryption_settings->findKeyByFingerprint(header.key_fingerprint, path);
     return std::make_unique<ReadBufferFromEncryptedFile>(path, settings.local_fs_buffer_size, std::move(buffer), key, header);
 }
 

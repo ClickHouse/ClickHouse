@@ -38,7 +38,7 @@ protected:
         local_disk.reset();
     }
 
-    DiskPtr makeEncryptedDisk(FileEncryption::Algorithm algorithm, const NoDumpString & key, DiskPtr non_encrypted_disk, const String & path = "")
+    DiskPtr makeEncryptedDisk(FileEncryption::Algorithm algorithm, const String & key, DiskPtr non_encrypted_disk, const String & path = "")
     {
         auto settings = std::make_unique<DiskEncryptedSettings>();
         settings->wrapped_disk = non_encrypted_disk;

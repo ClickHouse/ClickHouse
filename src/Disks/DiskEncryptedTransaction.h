@@ -5,7 +5,6 @@
 
 #if USE_SSL
 
-#include <Common/JemallocNodumpSTLAllocator.h>
 #include <Disks/IDiskTransaction.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFile.h>
@@ -20,13 +19,13 @@ struct DiskEncryptedSettings
 {
     DiskPtr wrapped_disk;
     String disk_path;
-    NoDumpString current_key;
+    String current_key;
     UInt128 current_key_fingerprint;
     FileEncryption::Algorithm current_algorithm;
-    std::unordered_map<UInt128 /* fingerprint */, NoDumpString /* key */> all_keys;
+    std::unordered_map<UInt128 /* fingerprint */, String /* key */> all_keys;
 
     /// Returns an encryption key found by its fingerprint.
-    NoDumpString findKeyByFingerprint(UInt128 key_fingerprint, const String & path_for_logs) const;
+    String findKeyByFingerprint(UInt128 key_fingerprint, const String & path_for_logs) const;
 };
 
 
