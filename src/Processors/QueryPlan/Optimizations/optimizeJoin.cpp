@@ -345,6 +345,8 @@ optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanO
     bool need_swap = false;
     auto lhs_estimation = estimateReadRowsCount(*node.children[0]);
     auto rhs_estimation = estimateReadRowsCount(*node.children[1]);
+    bool lhs_func_determined = false;
+    bool rhs_func_determined = false;
 
     /// Consider estimations from hash table sizes cache too
     if (const auto & hash_table_key_hashes = join_step->getHashTableKeyHashes();
@@ -356,9 +358,15 @@ optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanO
             optimization_settings.max_entries_for_hash_table_stats,
             optimization_settings.max_size_to_preallocate_for_joins};
         if (auto hint = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params.setKey(hash_table_key_hashes->key_hash_left)))
+        {
             lhs_estimation = std::min<size_t>(lhs_estimation.value_or(std::numeric_limits<size_t>::max()), hint->source_rows);
+            lhs_func_determined = hint->source_rows == hint->ht_size;
+        }
         if (auto hint = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params.setKey(hash_table_key_hashes->key_hash_right)))
+        {
             rhs_estimation = std::min<size_t>(rhs_estimation.value_or(std::numeric_limits<size_t>::max()), hint->source_rows);
+            rhs_func_determined = hint->source_rows == hint->ht_size;
+        }
     }
 
     LOG_TRACE(
@@ -378,16 +386,26 @@ optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanO
     }
 
     if (!need_swap)
+    {
+        if (rhs_func_determined && join_step->getJoinInfo().strictness == JoinStrictness::All)
+            join_step->getJoinInfo().strictness = JoinStrictness::RightAny;
         return rhs_estimation;
+    }
 
     /// fixme: USING clause handled specially in join algorithm, so swap breaks it
     /// fixme: Swapping for SEMI and ANTI joins should be alright, need to try to enable it and test
     const auto & join_info = join_step->getJoinInfo();
     if (join_info.expression.is_using || join_info.strictness != JoinStrictness::All)
+    {
+        if (lhs_func_determined && join_step->getJoinInfo().strictness == JoinStrictness::All)
+            join_step->getJoinInfo().strictness = JoinStrictness::RightAny;
         return rhs_estimation;
+    }
 
     join_step->setSwapInputs();
 
+    if (lhs_func_determined && join_step->getJoinInfo().strictness == JoinStrictness::All)
+        join_step->getJoinInfo().strictness = JoinStrictness::RightAny;
     return lhs_estimation;
 }
 
