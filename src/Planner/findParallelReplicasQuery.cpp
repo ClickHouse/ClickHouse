@@ -127,11 +127,10 @@ public:
         if (table_node || table_function_node)
         {
             const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
-            auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
-
             auto storage_dummy = std::make_shared<StorageDummy>(
                 storage_snapshot->storage.getStorageID(),
-                ColumnsDescription(storage_snapshot->getColumns(get_column_options)),
+                /// To preserve information about alias columns, column description must be extracted directly from storage metadata.
+                storage_snapshot->metadata->getColumns(),
                 storage_snapshot);
 
             auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), getContext());
