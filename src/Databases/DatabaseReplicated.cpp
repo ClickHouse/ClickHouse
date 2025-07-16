@@ -1990,6 +1990,21 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
     }
 }
 
+void DatabaseReplicated::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
+{
+    const auto is_initial_query = local_context->getZooKeeperMetadataTransaction()->isInitialQuery();
+    const auto is_alter_validated_by_engine = std::invoke(
+        [&]()
+        {
+            auto storage = tryGetTable(table_id.getTableName(), local_context);
+            if (!storage)
+                throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot find table {}", table_id.getNameForLogs());
+            const auto storage_name = storage->getName();
+            return storage->isMergeTree() && (storage_name.starts_with("Replicated") || storage_name.starts_with("Shared"));
+        });
+    const auto validate_new_create_query = is_initial_query && !is_alter_validated_by_engine;
+    doAlterTable(local_context, table_id, metadata, validate_new_create_query);
+}
 
 String DatabaseReplicated::readMetadataFile(const String & table_name) const
 {

@@ -11224,7 +11224,7 @@ void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(ASTP
         const auto table_metadata = ReplicatedMergeTreeTableMetadata(*this, current_metadata);
         auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, current_metadata->getColumns(), getStorageID().getNameForLogs(), getContext());
         auto adjusted_metadata = metadata_diff.getNewMetadata(columns_from_entry, getContext(), *current_metadata);
-        applyMetadataChangesToCreateQuery(create_query, adjusted_metadata, getContext());
+        applyMetadataChangesToCreateQuery(create_query, adjusted_metadata, getContext(), false);
     }
     catch (...)
     {
