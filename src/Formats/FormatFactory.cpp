@@ -591,7 +591,7 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
             return output_getter(output, sample, format_settings);
         };
 
-        ParallelFormattingOutputFormat::Params builder{buf, sample, formatter_creator, settings[Setting::max_threads]};
+        ParallelFormattingOutputFormat::Params builder{buf, std::make_shared<const Block>(sample), formatter_creator, settings[Setting::max_threads]};
 
         if (context->hasQueryContext() && settings[Setting::log_queries])
             context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
