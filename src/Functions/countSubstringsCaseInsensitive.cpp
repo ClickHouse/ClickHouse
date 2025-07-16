@@ -1,6 +1,6 @@
-#include <Functions/FunctionsStringSearch.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/CountSubstringsImpl.h>
+#include "FunctionsStringSearch.h"
+#include "FunctionFactory.h"
+#include "CountSubstringsImpl.h"
 
 
 namespace DB

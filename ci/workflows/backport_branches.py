@@ -52,7 +52,6 @@ workflow = Workflow.Config(
     enable_job_filtering_by_changes=True,
     enable_cache=True,
     enable_report=True,
-    enable_automerge=True,
     enable_cidb=True,
     enable_commit_status_on_failure=True,
     pre_hooks=[

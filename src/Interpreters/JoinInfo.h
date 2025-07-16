@@ -7,13 +7,12 @@
 #include <optional>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Core/Settings.h>
 
 #include <QueryPipeline/SizeLimits.h>
 
 namespace DB
 {
-
-struct Settings;
 
 enum class PredicateOperator : UInt8
 {
@@ -222,7 +221,6 @@ struct JoinSettings
     UInt64 default_max_bytes_in_join;
 
     UInt64 max_joined_block_size_rows;
-    UInt64 min_joined_block_size_rows;
     UInt64 min_joined_block_size_bytes;
 
     OverflowMode join_overflow_mode;

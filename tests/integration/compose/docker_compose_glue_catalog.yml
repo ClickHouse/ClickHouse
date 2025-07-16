@@ -1,6 +1,6 @@
 services:
   glue:
-    image: motoserver/moto:5.1.5
+    image: motoserver/moto
     ports:
       - 3000:3000
     environment:
@@ -23,8 +23,8 @@ services:
         aliases:
           - warehouse.minio
     ports:
-      - 9001
-      - 9000
+        - 9001:9001
+        - 9002:9000
     command: ["server", "/data", "--console-address", ":9001"]
   # TODO: move this code to cluster.py
   mc:

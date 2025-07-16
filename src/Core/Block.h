@@ -126,7 +126,8 @@ public:
     /// Approximate number of allocated bytes in memory - for profiling and limits.
     size_t allocatedBytes() const;
 
-    bool empty() const { return !columns(); }
+    explicit operator bool() const { return !!columns(); }
+    bool operator!() const { return !this->operator bool(); } /// NOLINT
 
     /** Get a list of column names separated by commas. */
     std::string dumpNames() const;
@@ -197,7 +198,7 @@ struct ExtraBlock
 {
     Block block;
 
-    bool empty() const { return block.empty(); }
+    bool empty() const { return !block; }
 };
 
 /// Compare number of columns, data types, column types, column names, and values of constant columns.

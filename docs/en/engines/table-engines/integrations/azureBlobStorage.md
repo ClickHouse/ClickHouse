@@ -6,11 +6,11 @@ slug: /engines/table-engines/integrations/azureBlobStorage
 title: 'AzureBlobStorage Table Engine'
 ---
 
-# AzureBlobStorage table engine
+# AzureBlobStorage Table Engine
 
 This engine provides an integration with [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) ecosystem.
 
-## Create table {#create-table}
+## Create Table {#create-table}
 
 ```sql
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)

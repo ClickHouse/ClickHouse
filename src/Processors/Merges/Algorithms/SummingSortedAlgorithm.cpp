@@ -231,8 +231,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     const Block & header,
     const SortDescription & description,
     const Names & column_names_to_sum,
-    const Names & partition_and_sorting_required_columns,
-    const String & sum_function_name)
+    const Names & partition_and_sorting_required_columns)
 {
     size_t num_columns = header.columns();
     SummingSortedAlgorithm::ColumnsDefinition def;
@@ -309,7 +308,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 }
                 else if (!is_agg_func)
                 {
-                    desc.init(sum_function_name.c_str(), {column.type});
+                    desc.init("sumWithOverflow", {column.type});
                 }
 
                 def.columns_to_aggregate.emplace_back(std::move(desc));
@@ -726,17 +725,16 @@ Chunk SummingSortedAlgorithm::SummingMergedData::pull()
 
 
 SummingSortedAlgorithm::SummingSortedAlgorithm(
-    SharedHeader header_,
+    const Block & header_,
     size_t num_inputs,
     SortDescription description_,
     const Names & column_names_to_sum,
     const Names & partition_and_sorting_required_columns,
     size_t max_block_size_rows,
-    size_t max_block_size_bytes,
-    const String & sum_function_name)
+    size_t max_block_size_bytes)
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, std::move(description_))
     , columns_definition(
-          defineColumns(*header_, description, column_names_to_sum, partition_and_sorting_required_columns, sum_function_name))
+          defineColumns(header_, description, column_names_to_sum, partition_and_sorting_required_columns))
     , merged_data(max_block_size_rows, max_block_size_bytes, columns_definition)
 {
 }
@@ -744,7 +742,7 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
 void SummingSortedAlgorithm::initialize(Inputs inputs)
 {
     removeConstAndSparse(inputs);
-    merged_data.initialize(*header, inputs);
+    merged_data.initialize(header, inputs);
 
     for (auto & input : inputs)
         if (input.chunk)

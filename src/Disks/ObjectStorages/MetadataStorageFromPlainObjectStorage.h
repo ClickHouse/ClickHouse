@@ -12,7 +12,6 @@
 #include <memory>
 #include <string>
 #include <unordered_set>
-#include <vector>
 #include <Poco/Timestamp.h>
 
 
@@ -48,7 +47,6 @@ protected:
 
     ObjectStoragePtr object_storage;
     const String storage_path_prefix;
-    const String storage_path_full;
 
     mutable std::optional<CacheBase<UInt128, ObjectMetadataEntry>> object_metadata_cache;
 
@@ -152,13 +150,7 @@ public:
 
     void moveFile(const std::string & path_from, const std::string & path_to) override;
 
-    void replaceFile(const std::string & path_from, const std::string & path_to) override;
-
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
-
-    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
-
-    std::vector<std::string> listUncommittedDirectory(const std::string & path) const override;
 
     void commit() override;
 

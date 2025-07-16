@@ -1,14 +1,13 @@
-#include <Columns/ColumnBLOB.h>
-#include <Columns/IColumn.h>
-#include <Compression/CompressionFactory.h>
-#include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <Compression/CompressionFactory.h>
+#include <Columns/IColumn.h>
+#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteHelpers.h>
-#include <base/EnumReflection.h>
 #include <Common/escapeForFileName.h>
-#include <Common/typeid_cast.h>
+#include <DataTypes/NestedUtils.h>
+#include <base/EnumReflection.h>
+
 
 namespace DB
 {
@@ -25,9 +24,6 @@ ISerialization::Kind ISerialization::getKind(const IColumn & column)
     if (column.isSparse())
         return Kind::SPARSE;
 
-    if (const auto * column_blob = typeid_cast<const ColumnBLOB *>(&column))
-        return column_blob->wrappedColumnIsSparse() ? Kind::DETACHED_OVER_SPARSE : Kind::DETACHED;
-
     return Kind::DEFAULT;
 }
 
@@ -39,10 +35,6 @@ String ISerialization::kindToString(Kind kind)
             return "Default";
         case Kind::SPARSE:
             return "Sparse";
-        case Kind::DETACHED:
-            return "Detached";
-        case Kind::DETACHED_OVER_SPARSE:
-            return "DetachedOverSparse";
     }
 }
 
@@ -50,12 +42,8 @@ ISerialization::Kind ISerialization::stringToKind(const String & str)
 {
     if (str == "Default")
         return Kind::DEFAULT;
-    else if (str == "Sparse")
+    if (str == "Sparse")
         return Kind::SPARSE;
-    else if (str == "Detached")
-        return Kind::DETACHED;
-    else if (str == "DetachedOverSparse")
-        return Kind::DETACHED_OVER_SPARSE;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind '{}'", str);
 }
 

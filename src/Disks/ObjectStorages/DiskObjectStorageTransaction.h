@@ -54,25 +54,27 @@ using DiskObjectStorageOperations = std::vector<DiskObjectStorageOperation>;
 struct DiskObjectStorageTransaction : public IDiskTransaction, std::enable_shared_from_this<DiskObjectStorageTransaction>
 {
 protected:
-    DiskObjectStorage & disk;
     IObjectStorage & object_storage;
     IMetadataStorage & metadata_storage;
 
     MetadataTransactionPtr metadata_transaction;
 
+    /// TODO we can get rid of this params
+    DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper;
+
     DiskObjectStorageOperations operations_to_execute;
 
     DiskObjectStorageTransaction(
-        DiskObjectStorage & disk_,
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
+        DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_,
         MetadataTransactionPtr metadata_transaction_);
 
 public:
     DiskObjectStorageTransaction(
-        DiskObjectStorage & disk_,
         IObjectStorage & object_storage_,
-        IMetadataStorage & metadata_storage_);
+        IMetadataStorage & metadata_storage_,
+        DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_);
 
     void commit() override;
     void undo() override;
@@ -123,28 +125,19 @@ public:
     void chmod(const String & path, mode_t mode) override;
     void setReadOnly(const std::string & path) override;
     void createHardLink(const std::string & src_path, const std::string & dst_path) override;
-
-    std::vector<std::string> listUncommittedDirectoryInTransaction(const std::string & path) const override;
-    std::unique_ptr<ReadBufferFromFileBase> readUncommittedFileInTransaction(
-        const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override;
-    bool isTransactional() const override;
-    void validateTransaction(std::function<void(IDiskTransaction&)> check_function) override;
 };
 
 struct MultipleDisksObjectStorageTransaction final : public DiskObjectStorageTransaction, std::enable_shared_from_this<MultipleDisksObjectStorageTransaction>
 {
-    IObjectStorage & destination_object_storage;
-    IMetadataStorage & destination_metadata_storage;
+    IObjectStorage& destination_object_storage;
+    IMetadataStorage& destination_metadata_storage;
 
     MultipleDisksObjectStorageTransaction(
-        DiskObjectStorage & disk_,
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
-        IObjectStorage & destination_object_storage,
-        IMetadataStorage & destination_metadata_storage);
+        IObjectStorage& destination_object_storage,
+        IMetadataStorage& destination_metadata_storage,
+        DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_);
 
     void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings &) override;
 };

@@ -8,7 +8,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Storages/StorageFactory.h>
 #include <base/defines.h>
 
@@ -21,9 +21,11 @@ struct ObjectStorageQueueSettings;
 class StorageObjectStorageQueue : public IStorage, WithContext
 {
 public:
+    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+
     StorageObjectStorageQueue(
         std::unique_ptr<ObjectStorageQueueSettings> queue_settings_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        ConfigurationPtr configuration_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -31,8 +33,7 @@ public:
         ContextPtr context_,
         std::optional<FormatSettings> format_settings_,
         ASTStorage * engine_args,
-        LoadingStrictnessLevel mode,
-        bool keep_data_in_keeper_);
+        LoadingStrictnessLevel mode);
 
     String getName() const override { return engine_name; }
 
@@ -55,8 +56,6 @@ public:
         ContextPtr local_context,
         AlterLockHolder & table_lock_holder) override;
 
-    void renameInMemory(const StorageID & new_table_id) override;
-
     const auto & getFormatName() const { return configuration->format; }
 
     const fs::path & getZooKeeperPath() const { return zk_path; }
@@ -71,17 +70,6 @@ public:
     /// Generate id for the S3(Azure/etc)Queue commit.
     /// Used for system.s3(azure/etc)_queue_log.
     static UInt64 generateCommitID();
-
-    static String chooseZooKeeperPath(
-        const ContextPtr & context_,
-        const StorageID & table_id,
-        const Settings & settings,
-        const ObjectStorageQueueSettings & queue_settings,
-        UUID database_uuid = UUIDHelpers::Nil);
-
-    static constexpr auto engine_names = {"S3Queue", "AzureQueue"};
-
-    void checkTableCanBeRenamed(const StorageID & new_name) const override;
 
 private:
     friend class ReadFromObjectStorageQueue;
@@ -105,7 +93,7 @@ private:
 
     std::unique_ptr<ObjectStorageQueueMetadata> temp_metadata;
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
-    StorageObjectStorageConfigurationPtr configuration;
+    ConfigurationPtr configuration;
     ObjectStoragePtr object_storage;
 
     const std::optional<FormatSettings> format_settings;
@@ -137,7 +125,6 @@ private:
     std::shared_ptr<ObjectStorageQueueSource> createSource(
         size_t processor_id,
         const ReadFromFormatInfo & info,
-        FormatParserGroupPtr parser_group,
         ProcessingProgressPtr progress_,
         std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
         size_t max_block_size,
@@ -160,9 +147,6 @@ private:
         time_t transaction_start_time,
         const std::string & exception_message = {},
         int error_code = 0) const;
-
-    const bool can_be_moved_between_databases;
-    const bool keep_data_in_keeper;
 };
 
 }

@@ -1,10 +1,9 @@
-#include <Core/Protocol.h>
+#include "Core/Protocol.h"
 #if defined(OS_LINUX)
 
 #include <Client/HedgedConnections.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
-#include <Core/ProtocolDefines.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 
