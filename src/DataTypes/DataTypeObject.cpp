@@ -516,10 +516,11 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
     return std::make_shared<DataTypeObject>(schema_format, std::move(typed_paths), std::move(paths_to_skip), std::move(path_regexps_to_skip), max_dynamic_paths, max_dynamic_types);
 }
 
-DataTypePtr DataTypeObject::getTypeOfSharedData()
+const DataTypePtr & DataTypeObject::getTypeOfSharedData()
 {
     /// Array(Tuple(String, String))
-    return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}, Names{"paths", "values"}));
+    thread_local static DataTypePtr type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}, Names{"paths", "values"}));
+    return type;
 }
 
 void DataTypeObject::updateHashImpl(SipHash & hash) const

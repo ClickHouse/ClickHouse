@@ -23,13 +23,13 @@ namespace
 
 const FormatSettings & getFormatSettings()
 {
-    static const FormatSettings settings;
+    static thread_local const FormatSettings settings;
     return settings;
 }
 
 const std::shared_ptr<SerializationDynamic> & getDynamicSerialization()
 {
-    static const std::shared_ptr<SerializationDynamic> dynamic_serialization = std::make_shared<SerializationDynamic>();
+    static thread_local const std::shared_ptr<SerializationDynamic> dynamic_serialization = std::make_shared<SerializationDynamic>();
     return dynamic_serialization;
 }
 
