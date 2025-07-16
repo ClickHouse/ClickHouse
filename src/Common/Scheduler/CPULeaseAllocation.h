@@ -139,7 +139,7 @@ private:
         CPULeaseAllocation * lease = nullptr;
         ResourceCost max_consumed = 0; /// Maximum consumption value for this request before it should be finished
         bool is_master_slot = false; /// (true) master or (false) worker slot
-        bool is_noncompeting = false;
+        bool is_noncompeting = false; /// Noncompeting slot has `ResourceLink::queue == nullptr` and is granted immediately w/o scheduling
     };
 
 public:
@@ -197,7 +197,8 @@ private:
     void consume(std::unique_lock<std::mutex> & lock, ResourceCost delta_ns);
 
     /// Enqueue a resource request to the scheduler if necessary.
-    void schedule(std::unique_lock<std::mutex> & lock);
+    /// Returns true if request is enqueued, false if it is noncompeting and should be granted immediately.
+    bool schedule(std::unique_lock<std::mutex> & lock);
 
     /// Thread stops and completely releases its lease.
     void release(Lease & lease);

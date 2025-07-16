@@ -202,7 +202,8 @@ CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink mast
     , lease_id(lease_counter.fetch_add(1, std::memory_order_relaxed))
 {
     std::unique_lock lock{mutex};
-    schedule(lock);
+    if (!schedule(lock))
+        grantImpl(lock);
 }
 
 CPULeaseAllocation::~CPULeaseAllocation()
@@ -388,22 +389,28 @@ void CPULeaseAllocation::grant()
 
 void CPULeaseAllocation::grantImpl(std::unique_lock<std::mutex> & lock)
 {
-    ++allocated;
-    ++granted;
-    if (granted > 0 && !shutdown)
-        acquirable.store(true, std::memory_order_relaxed);
-    LOG_EVENT(G);
-    requests.granted();
-    schedule(lock); // schedule the next request
+    // Cycle is required to deal with noncompeting requests, so the main case is a single iteration here
+    do
+    {
+        ++allocated;
+        ++granted;
+        if (granted > 0 && !shutdown)
+            acquirable.store(true, std::memory_order_relaxed);
+        LOG_EVENT(G);
+        requests.granted();
+    } while (!schedule(lock));
 
-    // Resume preempted thread if necessary
-    if (granted > 0)
+    // Resume preempted threads if necessary
+    while (granted > 0)
     {
         // We are trying to wake inactive thread with lowest thread number to increase utilization of lower threads
         if (size_t thread_num = threads.preempted.find_first(); thread_num != boost::dynamic_bitset<>::npos)
             resetPreempted(thread_num);
+        else
+            break; // No preempted threads, we are done
     }
-    // TODO(serxa): we should release granted but not acquired slots after some timeout, to avoid unnecessary overprovisioning
+
+    // TODO(serxa): we should release granted but not acquired slots after some timeout, to avoid unnecessary overprovisioning, but this requires modification of the PipelineExecutor as well
 }
 
 bool CPULeaseAllocation::renew(Lease & lease)
@@ -521,16 +528,19 @@ void CPULeaseAllocation::consume(std::unique_lock<std::mutex> & lock, ResourceCo
             acquirable.store(false, std::memory_order_relaxed);
         requests.finish();
         LOG_EVENT(C);
-        if (!requests.hasEnqueued())
-            schedule(lock); // In case if we renew the last slot, otherwise the next request is already scheduled
+        if (!requests.hasEnqueued()) // In case if we renew the last slot, otherwise the next request is already scheduled
+        {
+            if (!schedule(lock))
+                grantImpl(lock);
+        }
         // NOTE: we do not finish more than one request per one report to avoid stalling the pipeline for reports larger than quantum
     }
 }
 
-void CPULeaseAllocation::schedule(std::unique_lock<std::mutex> & lock)
+bool CPULeaseAllocation::schedule(std::unique_lock<std::mutex> &)
 {
     if (allocated == max_threads || shutdown)
-        return;
+        return true;
 
     ResourceCost cost = settings.quantum_ns + std::max<ResourceCost>(0, consumed_ns - requested_ns);
     requested_ns += cost;
@@ -539,11 +549,9 @@ void CPULeaseAllocation::schedule(std::unique_lock<std::mutex> & lock)
         scheduled_increment.add();
         wait_timer.emplace(CurrentThread::getProfileEvents().timer(ProfileEvents::ConcurrencyControlWaitMicroseconds));
         LOG_EVENT(E);
+        return true;
     }
-    else // noncompeting slot - provide immediately for free
-    {
-        grantImpl(lock);
-    }
+    return false; // Request is noncompeting and should be granted immediately
 }
 
 void CPULeaseAllocation::release(Lease & lease)
