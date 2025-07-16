@@ -6884,6 +6884,9 @@ Possible values:
     DECLARE(UInt64, distributed_plan_max_rows_to_broadcast, 20000, R"(
 Maximum rows to use broadcast join instead of shuffle join in distributed query plan.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
+Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
+)", EXPERIMENTAL) \
     \
     /** Experimental timeSeries* aggregate functions. */ \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_time_series_aggregate_functions, false, R"(
