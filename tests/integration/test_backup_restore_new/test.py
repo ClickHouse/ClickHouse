@@ -2053,6 +2053,7 @@ def test_required_privileges_with_partial_revokes():
 
 def test_rmv_no_definer():
     backup_name = new_backup_name()
+    instance.query("CREATE DATABASE test")
     instance.query("CREATE USER u1")
     instance.query("GRANT CURRENT GRANTS ON *.* TO u1")
     instance.query("CREATE TABLE test.src (x UInt64) ENGINE = MergeTree ORDER BY x")
