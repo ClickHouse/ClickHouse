@@ -27,10 +27,8 @@
 
 #if !CLICKHOUSE_CLOUD
 constexpr UInt64 default_min_bytes_for_wide_part = 10485760lu;
-constexpr bool default_allow_remote_fs_zero_copy_replication = false;
 #else
 constexpr UInt64 default_min_bytes_for_wide_part = 1024lu * 1024lu * 1024lu;
-constexpr bool default_allow_remote_fs_zero_copy_replication = true; /// TODO: Fix
 #endif
 
 namespace DB
@@ -1606,7 +1604,7 @@ namespace ErrorCodes
     DECLARE(UInt64, part_moves_between_shards_delay_seconds, 30, R"(
     Time to wait before/after moving parts between shards.
     )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_remote_fs_zero_copy_replication, default_allow_remote_fs_zero_copy_replication, R"(
+    DECLARE(Bool, allow_remote_fs_zero_copy_replication, false, R"(
     Don't use this setting in production, because it is not ready.
     )", BETA) \
     DECLARE(String, remote_fs_zero_copy_zookeeper_path, "/clickhouse/zero_copy", R"(

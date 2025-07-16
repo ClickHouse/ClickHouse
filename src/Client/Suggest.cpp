@@ -208,7 +208,7 @@ void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & t
 
 void Suggest::fillWordsFromBlock(const Block & block)
 {
-    if (!block)
+    if (block.empty())
         return;
 
     if (block.columns() != 1)

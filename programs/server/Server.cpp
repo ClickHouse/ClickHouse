@@ -330,6 +330,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
     extern const ServerSettingsFloat min_os_cpu_wait_time_ratio_to_drop_connection;
     extern const ServerSettingsFloat max_os_cpu_wait_time_ratio_to_drop_connection;
+    extern const ServerSettingsBool skip_binary_checksum_checks;
 }
 
 namespace ErrorCodes
@@ -1441,7 +1442,11 @@ try
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
 
-    if (!executable_path.empty())
+    if (server_settings[ServerSetting::skip_binary_checksum_checks])
+    {
+        LOG_WARNING(log, "Binary checksum checks disabled due to skip_binary_checksum_checks - not recommended for production deployments");
+    }
+    else if (!executable_path.empty())
     {
         /// Integrity check based on checksum of the executable code.
         /// Note: it is not intended to protect from malicious party,

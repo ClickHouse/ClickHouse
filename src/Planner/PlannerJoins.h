@@ -276,8 +276,8 @@ struct JoinAlgorithmSettings
 std::shared_ptr<IJoin> chooseJoinAlgorithm(
     std::shared_ptr<TableJoin> & table_join,
     const PreparedJoinStorage & right_table_expression,
-    const Block & left_table_expression_header,
-    const Block & right_table_expression_header,
+    SharedHeader left_table_expression_header,
+    SharedHeader right_table_expression_header,
     const JoinAlgorithmSettings & settings,
     UInt64 hash_table_key_hash,
     std::optional<UInt64> rhs_size_estimation);

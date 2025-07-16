@@ -733,7 +733,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     const StorageID & storage_id_,
     LoggerPtr log_,
     bool commit_once_processed_)
-    : ISource(read_from_format_info_.source_header)
+    : ISource(std::make_shared<const Block>(read_from_format_info_.source_header))
     , WithContext(context_)
     , name(std::move(name_))
     , processor_id(processor_id_)
