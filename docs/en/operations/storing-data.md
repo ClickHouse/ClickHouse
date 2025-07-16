@@ -6,42 +6,44 @@ slug: /operations/storing-data
 title: 'External disks for storing data'
 ---
 
-Data processed in ClickHouse is usually stored in the local file system of the 
+Data processed in ClickHouse is usually stored in the local file system of the
 machine on which ClickHouse server is running. That requires large-capacity disks,
 which can be expensive. To avoid storing data locally, various storage options are supported:
-1. [Amazon S3](https://aws.amazon.com/s3/) object storage.
-2. [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs).
-3. Unsupported: The Hadoop Distributed File System ([HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html))
+
+1.[Amazon S3](https://aws.amazon.com/s3/) object storage.
+2.[Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs).
+3.Unsupported: The Hadoop Distributed File System ([HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html))
 
 <br/>
 
-:::note 
-ClickHouse also has support for external table engines, which are different from 
-the external storage option described on this page, as they allow reading data 
-stored in some general file format (like Parquet). On this page we are describing 
+:::note
+ClickHouse also has support for external table engines, which are different from
+the external storage option described on this page, as they allow reading data
+stored in some general file format (like Parquet). On this page we are describing
 storage configuration for the ClickHouse `MergeTree` family or `Log` family tables.
 
-1. to work with data stored on `Amazon S3` disks, use the [S3](/engines/table-engines/integrations/s3.md) table engine.
-2. to work with data stored in Azure Blob Storage, use the [AzureBlobStorage](/engines/table-engines/integrations/azureBlobStorage.md) table engine.
-3. to work with data in the Hadoop Distributed File System (unsupported), use the [HDFS](/engines/table-engines/integrations/hdfs.md) table engine.
+1.to work with data stored on `Amazon S3` disks, use the [S3](/engines/table-engines/integrations/s3.md) table engine.
+2.to work with data stored in Azure Blob Storage, use the [AzureBlobStorage](/engines/table-engines/integrations/azureBlobStorage.md) table engine.
+3.to work with data in the Hadoop Distributed File System (unsupported), use the [HDFS](/engines/table-engines/integrations/hdfs.md) table engine.
+
 :::
 
 ## Configure external storage {#configuring-external-storage}
 
-[`MergeTree`](/engines/table-engines/mergetree-family/mergetree.md) and [`Log`](/engines/table-engines/log-family/log.md) 
+[`MergeTree`](/engines/table-engines/mergetree-family/mergetree.md) and [`Log`](/engines/table-engines/log-family/log.md)
 family table engines can store data to `S3`, `AzureBlobStorage`, `HDFS` (unsupported) using a disk with types `s3`,
 `azure_blob_storage`, `hdfs` (unsupported) respectively.
 
 Disk configuration requires:
 
-1. A `type` section, equal to one of `s3`, `azure_blob_storage`, `hdfs` (unsupported), `local_blob_storage`, `web`.
-2. Configuration of a specific external storage type.
+1.A `type` section, equal to one of `s3`, `azure_blob_storage`, `hdfs` (unsupported), `local_blob_storage`, `web`.
+2.Configuration of a specific external storage type.
 
 Starting from 24.1 clickhouse version, it is possible to use a new configuration option.
 It requires specifying:
 
-1. A `type` equal to `object_storage`
-2. `object_storage_type`, equal to one of `s3`, `azure_blob_storage` (or just `azure` from `24.3`), `hdfs` (unsupported), `local_blob_storage` (or just `local` from `24.3`), `web`.
+1.A `type` equal to `object_storage`
+2.`object_storage_type`, equal to one of `s3`, `azure_blob_storage` (or just `azure` from `24.3`), `hdfs` (unsupported), `local_blob_storage` (or just `local` from `24.3`), `web`.
 
 <br/>
 
@@ -155,7 +157,7 @@ add the following section to the configuration file:
 </clickhouse>
 ```
 
-If you want to configure a specific storage policy for a specific table, 
+If you want to configure a specific storage policy for a specific table,
 you can define it in settings while creating the table:
 
 ```sql
@@ -165,7 +167,7 @@ SETTINGS storage_policy = 's3';
 ```
 
 You can also use `disk` instead of `storage_policy`. In this case it is not necessary
-to have the `storage_policy` section in the configuration file, and a `disk` 
+to have the `storage_policy` section in the configuration file, and a `disk`
 section is enough.
 
 ```sql
@@ -177,7 +179,7 @@ SETTINGS disk = 's3';
 ## Dynamic Configuration {#dynamic-configuration}
 
 There is also a possibility to specify storage configuration without a predefined
-disk in configuration in a configuration file, but can be configured in the 
+disk in configuration in a configuration file, but can be configured in the
 `CREATE`/`ATTACH` query settings.
 
 The following example query builds on the above dynamic disk configuration and
@@ -250,13 +252,13 @@ In the settings highlighted below notice that the disk of `type=web` is nested w
 the disk of `type=cache`.
 
 :::note
-The example uses `type=web`, but any disk type can be configured as dynamic, 
-including local disk. Local disks require a path argument to be inside the 
-server config parameter `custom_local_disks_base_directory`, which has no 
+The example uses `type=web`, but any disk type can be configured as dynamic,
+including local disk. Local disks require a path argument to be inside the
+server config parameter `custom_local_disks_base_directory`, which has no
 default, so set that also when using local disk.
 :::
 
-A combination of config-based configuration and sql-defined configuration is 
+A combination of config-based configuration and sql-defined configuration is
 also possible:
 
 ```sql
@@ -354,16 +356,16 @@ Google Cloud Storage (GCS) is also supported using the type `s3`. See [GCS backe
 
 In `22.10` a new disk type `s3_plain` was introduced, which provides a write-once storage.
 Configuration parameters for it are the same as for the `s3` disk type.
-Unlike the `s3` disk type, it stores data as is. In other words, 
-instead of having randomly generated blob names, it uses normal file names 
-(the same way as ClickHouse stores files on local disk) and does not store any 
+Unlike the `s3` disk type, it stores data as is. In other words,
+instead of having randomly generated blob names, it uses normal file names
+(the same way as ClickHouse stores files on local disk) and does not store any
 metadata locally. For example, it is derived from data on `s3`.
 
-This disk type allows keeping a static version of the table, as it does not 
+This disk type allows keeping a static version of the table, as it does not
 allow executing merges on the existing data and does not allow inserting of new
 data. A use case for this disk type is to create backups on it, which can be done
-via `BACKUP TABLE data TO Disk('plain_disk_name', 'backup_name')`. Afterward, 
-you can do `RESTORE TABLE data AS data_restored FROM Disk('plain_disk_name', 'backup_name')` 
+via `BACKUP TABLE data TO Disk('plain_disk_name', 'backup_name')`. Afterward,
+you can do `RESTORE TABLE data AS data_restored FROM Disk('plain_disk_name', 'backup_name')`
 or use `ATTACH TABLE data (...) ENGINE = MergeTree() SETTINGS disk = 'plain_disk_name'`.
 
 Configuration:
@@ -394,15 +396,15 @@ Configuration:
 ### Using S3 Plain Rewritable Storage {#s3-plain-rewritable-storage}
 
 A new disk type `s3_plain_rewritable` was introduced in `24.4`.
-Similar to the `s3_plain` disk type, it does not require additional storage for 
+Similar to the `s3_plain` disk type, it does not require additional storage for
 metadata files. Instead, metadata is stored in S3.
-Unlike the `s3_plain` disk type, `s3_plain_rewritable` allows executing merges 
+Unlike the `s3_plain` disk type, `s3_plain_rewritable` allows executing merges
 and supports `INSERT` operations.
 [Mutations](/sql-reference/statements/alter#mutations) and replication of tables are not supported.
 
-A use case for this disk type is for non-replicated `MergeTree` tables. Although 
+A use case for this disk type is for non-replicated `MergeTree` tables. Although
 the `s3` disk type is suitable for non-replicated `MergeTree` tables, you may opt
-for the `s3_plain_rewritable` disk type if you do not require local metadata 
+for the `s3_plain_rewritable` disk type if you do not require local metadata
 for the table and are willing to accept a limited set of operations. This could
 be useful, for example, for system tables.
 
@@ -428,12 +430,12 @@ is equal to
 </s3_plain_rewritable>
 ```
 
-Starting from `24.5` it is possible to configure any object storage disk 
+Starting from `24.5` it is possible to configure any object storage disk
 (`s3`, `azure`, `local`) using the `plain_rewritable` metadata type.
 
 ### Using Azure Blob Storage {#azure-blob-storage}
 
-`MergeTree` family table engines can store data to [Azure Blob Storage](https://azure.microsoft.com/en-us/services/storage/blobs/) 
+`MergeTree` family table engines can store data to [Azure Blob Storage](https://azure.microsoft.com/en-us/services/storage/blobs/)
 using a disk with type `azure_blob_storage`.
 
 Configuration markup:
@@ -503,8 +505,9 @@ Zero-copy replication is disabled by default in ClickHouse version 22.8 and high
 ## Using HDFS storage (Unsupported) {#using-hdfs-storage-unsupported}
 
 In this sample configuration:
-- the disk is of type `hdfs` (unsupported)
-- the data is hosted at `hdfs://hdfs1:9000/clickhouse/`
+
+-the disk is of type `hdfs` (unsupported)
+-the data is hosted at `hdfs://hdfs1:9000/clickhouse/`
 
 By the way, HDFS is unsupported and therefore there might be issues when using it. Feel free to make a pull request with the fix if any issue arises.
 
@@ -699,7 +702,7 @@ These settings should be defined in the disk configuration section.
 | `skip_download_if_exceeds_query_cache`                        | Boolean | `true`                  | Controls behavior when `max_query_cache_size` is reached: <br/>- `true`: Stops downloading new data <br/>- `false`: Evicts old data to make space for new data |
 
 :::warning
-Cache configuration settings and cache query settings correspond to the latest ClickHouse version, 
+Cache configuration settings and cache query settings correspond to the latest ClickHouse version,
 for earlier versions something might not be supported.
 :::
 
@@ -718,7 +721,7 @@ This command is only supported when no `<cache_name>` is provided
 
 ##### `SHOW FILESYSTEM CACHES` {#show-filesystem-caches}
 
-Show a list of filesystem caches which were configured on the server. 
+Show a list of filesystem caches which were configured on the server.
 (For versions less than or equal to `22.8` the command is named `SHOW CACHES`)
 
 ```sql title="Query"
@@ -733,7 +736,7 @@ SHOW FILESYSTEM CACHES
 
 ##### `DESCRIBE FILESYSTEM CACHE '<cache_name>'` {#describe-filesystem-cache}
 
-Show cache configuration and some general statistics for a specific cache. 
+Show cache configuration and some general statistics for a specific cache.
 Cache name can be taken from `SHOW FILESYSTEM CACHES` command. (For versions less
 than or equal to `22.8` the command is named `DESCRIBE CACHE`)
 
@@ -756,24 +759,25 @@ DESCRIBE FILESYSTEM CACHE 's3_cache'
 
 ### Using static Web storage (read-only) {#web-storage}
 
-This is a read-only disk. Its data is only read and never modified. A new table 
-is loaded to this disk via `ATTACH TABLE` query (see example below). Local disk 
-is not actually used, each `SELECT` query will result in a `http` request to 
-fetch required data. All modification of the table data will result in an 
+This is a read-only disk. Its data is only read and never modified. A new table
+is loaded to this disk via `ATTACH TABLE` query (see example below). Local disk
+is not actually used, each `SELECT` query will result in a `http` request to
+fetch required data. All modification of the table data will result in an
 exception, i.e. the following types of queries are not allowed: [`CREATE TABLE`](/sql-reference/statements/create/table.md),
 [`ALTER TABLE`](/sql-reference/statements/alter/index.md), [`RENAME TABLE`](/sql-reference/statements/rename#rename-table),
 [`DETACH TABLE`](/sql-reference/statements/detach.md) and [`TRUNCATE TABLE`](/sql-reference/statements/truncate.md).
-Web storage can be used for read-only purposes. An example use is for hosting 
-sample data, or for migrating data. There is a tool `clickhouse-static-files-uploader`, 
-which prepares a data directory for a given table (`SELECT data_paths FROM system.tables WHERE name = 'table_name'`). 
-For each table you need, you get a directory of files. These files can be uploaded 
-to, for example, a web server with static files. After this preparation, 
+Web storage can be used for read-only purposes. An example use is for hosting
+sample data, or for migrating data. There is a tool `clickhouse-static-files-uploader`,
+which prepares a data directory for a given table (`SELECT data_paths FROM system.tables WHERE name = 'table_name'`).
+For each table you need, you get a directory of files. These files can be uploaded
+to, for example, a web server with static files. After this preparation,
 you can load this table into any ClickHouse server via `DiskWeb`.
 
 In this sample configuration:
-- the disk is of type `web`
-- the data is hosted at `http://nginx:80/test1/`
-- a cache on local storage is used
+
+-the disk is of type `web`
+-the data is hosted at `http://nginx:80/test1/`
+-a cache on local storage is used
 
 ```xml
 <clickhouse>
@@ -811,11 +815,11 @@ In this sample configuration:
 ```
 
 :::tip
-Storage can also be configured temporarily within a query, if a web dataset is 
-not expected to be used routinely, see [dynamic configuration](#dynamic-configuration) and skip 
+Storage can also be configured temporarily within a query, if a web dataset is
+not expected to be used routinely, see [dynamic configuration](#dynamic-configuration) and skip
 editing the configuration file.
 
-A [demo dataset](https://github.com/ClickHouse/web-tables-demo) is hosted in GitHub.  To prepare your own tables for web 
+A [demo dataset](https://github.com/ClickHouse/web-tables-demo) is hosted in GitHub.  To prepare your own tables for web
 storage see the tool [clickhouse-static-files-uploader](/operations/utilities/static-files-disk-uploader)
 :::
 
@@ -1046,7 +1050,6 @@ When loading files by `endpoint`, they must be loaded into `<endpoint>/store/` p
 If URL is not reachable on disk load when the server is starting up tables, then all errors are caught. If in this case there were errors, tables can be reloaded (become visible) via `DETACH TABLE table_name` -> `ATTACH TABLE table_name`. If metadata was successfully loaded at server startup, then tables are available straight away.
 
 Use [http_max_single_read_retries](/operations/storing-data#web-storage) setting to limit the maximum number of retries during a single HTTP read.
-
 
 ### Zero-copy Replication (not ready for production) {#zero-copy}
 

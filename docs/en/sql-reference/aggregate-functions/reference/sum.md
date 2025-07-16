@@ -16,11 +16,12 @@ sum(num)
 ```
 
 **Parameters**
-- `num`: Column of numeric values. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal*](../../data-types/decimal.md).
+
+-`num`: Column of numeric values. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal*](../../data-types/decimal.md).
 
 **Returned value**
 
-- The sum of the values. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal*](../../data-types/decimal.md).
+-The sum of the values. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal*](../../data-types/decimal.md).
 
 **Example**
 
@@ -46,7 +47,7 @@ INSERT INTO employees VALUES
     (71245, 'Anastasia Ivanovna', 89210);
 ```
 
-We query for the total amount of the employee salaries using the `sum` function. 
+We query for the total amount of the employee salaries using the `sum` function.
 
 Query:
 
@@ -55,7 +56,6 @@ SELECT sum(salary) FROM employees;
 ```
 
 Result:
-
 
 ```response
    ┌─sum(salary)─┐

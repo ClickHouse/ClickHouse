@@ -24,7 +24,7 @@ uniqThetaUnion(uniqThetaSketch,uniqThetaSketch)
 
 **Arguments**
 
-- `uniqThetaSketch` – uniqThetaSketch object.
+-`uniqThetaSketch` – uniqThetaSketch object.
 
 **Example**
 
@@ -50,7 +50,7 @@ uniqThetaIntersect(uniqThetaSketch,uniqThetaSketch)
 
 **Arguments**
 
-- `uniqThetaSketch` – uniqThetaSketch object.
+-`uniqThetaSketch` – uniqThetaSketch object.
 
 **Example**
 
@@ -76,7 +76,7 @@ uniqThetaNot(uniqThetaSketch,uniqThetaSketch)
 
 **Arguments**
 
-- `uniqThetaSketch` – uniqThetaSketch object.
+-`uniqThetaSketch` – uniqThetaSketch object.
 
 **Example**
 
@@ -94,7 +94,7 @@ FROM
 
 **See Also**
 
-- [uniqThetaSketch](/sql-reference/aggregate-functions/reference/uniqthetasketch)
+-[uniqThetaSketch](/sql-reference/aggregate-functions/reference/uniqthetasketch)
 
 <!-- 
 The inner content of the tags below are replaced at doc framework build time with 

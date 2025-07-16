@@ -18,12 +18,12 @@ covarSampStable(x, y)
 
 **Arguments**
 
-- `x` — first variable. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal](../../data-types/decimal.md).
-- `y` — second variable. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal](../../data-types/decimal.md).
+-`x` — first variable. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal](../../data-types/decimal.md).
+-`y` — second variable. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal](../../data-types/decimal.md).
 
 **Returned Value**
 
-- The sample covariance between `x` and `y`. For `n <= 1`, `inf` is returned. [Float64](../../data-types/float.md).
+-The sample covariance between `x` and `y`. For `n <= 1`, `inf` is returned. [Float64](../../data-types/float.md).
 
 **Example**
 

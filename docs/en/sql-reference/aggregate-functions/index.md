@@ -12,9 +12,8 @@ Aggregate functions work in the [normal](http://www.sql-tutorial.com/sql-aggrega
 
 ClickHouse also supports:
 
-- [Parametric aggregate functions](/sql-reference/aggregate-functions/parametric-functions), which accept other parameters in addition to columns.
-- [Combinators](/sql-reference/aggregate-functions/combinators), which change the behavior of aggregate functions.
-
+-[Parametric aggregate functions](/sql-reference/aggregate-functions/parametric-functions), which accept other parameters in addition to columns.
+-[Combinators](/sql-reference/aggregate-functions/combinators), which change the behavior of aggregate functions.
 
 ## NULL processing {#null-processing}
 

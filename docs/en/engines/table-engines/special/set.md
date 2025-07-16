@@ -34,7 +34,7 @@ Reduces the I/O overhead. Suitable for scenarios that pursue performance and do 
 
 Possible values:
 
-- 1 — Enabled.
-- 0 — Disabled.
+-1 — Enabled.
+-0 — Disabled.
 
 Default value: `1`.

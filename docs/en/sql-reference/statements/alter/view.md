@@ -171,17 +171,20 @@ CREATE MATERIALIZED VIEW mv (`a` UInt32) ENGINE = MergeTree ORDER BY a AS SELECT
 INSERT INTO src_table (a) VALUES (1), (2);
 SELECT * FROM mv;
 ```
+
 ```text
 ┌─a─┐
 │ 1 │
 │ 2 │
 └───┘
 ```
+
 ```sql
 ALTER TABLE mv MODIFY QUERY SELECT a * 2 as a FROM src_table;
 INSERT INTO src_table (a) VALUES (3), (4);
 SELECT * FROM mv;
 ```
+
 ```text
 ┌─a─┐
 │ 6 │

@@ -20,5 +20,5 @@ It only works for tables in the [`MergeTree`](../../../engines/table-engines/mer
 
 **See also**
 
-- [Lightweight deletes](/sql-reference/statements/delete)
-- [Heavyweight deletes](/sql-reference/statements/alter/delete.md)
+-[Lightweight deletes](/sql-reference/statements/delete)
+-[Heavyweight deletes](/sql-reference/statements/alter/delete.md)

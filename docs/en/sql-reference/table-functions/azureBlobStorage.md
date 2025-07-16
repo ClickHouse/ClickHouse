@@ -31,7 +31,7 @@ azureBlobStorage(- connection_string|storage_account_url, container_name, blobpa
 | `account_name`                             | if storage_account_url is used, then account name can be specified here                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `account_key`                              | if storage_account_url is used, then account key can be specified here                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `format`                                   | The [format](/sql-reference/formats) of the file.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `compression`                              | Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension. (same as setting to `auto`).                                                                                                                                                                                                                                                                                                                        | 
+| `compression`                              | Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension. (same as setting to `auto`).                                                                                                                                                                                                                                                                                                                        |
 | `structure`                                | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ## Returned value {#returned_value}
@@ -79,10 +79,10 @@ SELECT count(*) FROM azureBlobStorage('DefaultEndpointsProtocol=https;AccountNam
 
 ## Virtual Columns {#virtual-columns}
 
-- `_path` — Path to the file. Type: `LowCardinality(String)`.
-- `_file` — Name of the file. Type: `LowCardinality(String)`.
-- `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the file size is unknown, the value is `NULL`.
-- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
+-`_path` — Path to the file. Type: `LowCardinality(String)`.
+-`_file` — Name of the file. Type: `LowCardinality(String)`.
+-`_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the file size is unknown, the value is `NULL`.
+-`_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
 ## Hive-style partitioning {#hive-style-partitioning}
 
@@ -129,4 +129,5 @@ FROM azureBlobStorage('https://clickhousedocstest.blob.core.windows.net/?sp=r&st
 ```
 
 ## Related {#related}
-- [AzureBlobStorage Table Engine](engines/table-engines/integrations/azureBlobStorage.md)
+
+-[AzureBlobStorage Table Engine](engines/table-engines/integrations/azureBlobStorage.md)

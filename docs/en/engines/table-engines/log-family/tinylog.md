@@ -16,9 +16,9 @@ Queries are executed in a single stream. In other words, this engine is intended
 
 ## Characteristics {#characteristics}
 
-- **Simpler Structure**: Unlike the Log engine, TinyLog does not use mark files. This reduces complexity but also limits performance optimizations for large datasets.
-- **Single Stream Queries**: Queries on TinyLog tables are executed in a single stream, making it suitable for relatively small tables, typically up to 1,000,000 rows.
-- **Efficient for Small Table**: The simplicity of the TinyLog engine makes it advantageous when managing many small tables, as it requires fewer file operations compared to the Log engine.
+-**Simpler Structure**: Unlike the Log engine, TinyLog does not use mark files. This reduces complexity but also limits performance optimizations for large datasets.
+-**Single Stream Queries**: Queries on TinyLog tables are executed in a single stream, making it suitable for relatively small tables, typically up to 1,000,000 rows.
+-**Efficient for Small Table**: The simplicity of the TinyLog engine makes it advantageous when managing many small tables, as it requires fewer file operations compared to the Log engine.
 
 Unlike the Log engine, TinyLog does not use mark files. This reduces complexity but also limits performance optimizations for larger datasets.
 
@@ -41,7 +41,7 @@ The `TinyLog` engine stores all the columns in one file. For each `INSERT` query
 
 For each table ClickHouse writes the files:
 
-- `<column>.bin`: A data file for each column, containing the serialized and compressed data.
+-`<column>.bin`: A data file for each column, containing the serialized and compressed data.
 
 The `TinyLog` engine does not support the `ALTER UPDATE` and `ALTER DELETE` operations.
 

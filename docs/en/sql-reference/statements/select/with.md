@@ -29,6 +29,7 @@ WITH <identifier> AS <subquery expression>
 ### Example {#common-table-expressions-example}
 
 An example of when a subquery is re-executed:
+
 ```sql
 WITH cte_numbers AS
 (
@@ -42,6 +43,7 @@ SELECT
 FROM cte_numbers
 WHERE num IN (SELECT num FROM cte_numbers)
 ```
+
 If CTEs were to pass exactly the results and not just a piece of code, you would always see `1000000`
 
 However, due to the fact that we are referring `cte_numbers` twice, random numbers are generated each time and, accordingly, we see different random results, `280501, 392454, 261636, 196227` and so on...
@@ -187,10 +189,10 @@ Starting from version `24.8` the new analyzer has been fully promoted to product
 
 The general form of a recursive `WITH` query is always a non-recursive term, then `UNION ALL`, then a recursive term, where only the recursive term can contain a reference to the query's own output. Recursive CTE query is executed as follows:
 
-1. Evaluate the non-recursive term. Place result of non-recursive term query in a temporary working table.
-2. As long as the working table is not empty, repeat these steps:
-    1. Evaluate the recursive term, substituting the current contents of the working table for the recursive self-reference. Place result of recursive term query in a temporary intermediate table.
-    2. Replace the contents of the working table with the contents of the intermediate table, then empty the intermediate table.
+1.Evaluate the non-recursive term. Place result of non-recursive term query in a temporary working table.
+2.As long as the working table is not empty, repeat these steps:
+    1.Evaluate the recursive term, substituting the current contents of the working table for the recursive self-reference. Place result of recursive term query in a temporary intermediate table.
+    2.Replace the contents of the working table with the contents of the intermediate table, then empty the intermediate table.
 
 Recursive queries are typically used to work with hierarchical or tree-structured data. For example, we can write a query that performs tree traversal:
 
@@ -213,6 +215,7 @@ INSERT INTO tree VALUES (0, NULL, 'ROOT'), (1, 0, 'Child_1'), (2, 0, 'Child_2'),
 We can traverse those tree with such query:
 
 **Example:** Tree traversal
+
 ```sql
 WITH RECURSIVE search_tree AS (
     SELECT id, parent_id, data
@@ -240,6 +243,7 @@ SELECT * FROM search_tree;
 To create a depth-first order, we compute for each result row an array of rows that we have already visited:
 
 **Example:** Tree traversal depth-first order
+
 ```sql
 WITH RECURSIVE search_tree AS (
     SELECT id, parent_id, data, [t.id] AS path
@@ -265,6 +269,7 @@ SELECT * FROM search_tree ORDER BY path;
 To create a breadth-first order, standard approach is to add column that tracks the depth of the search:
 
 **Example:** Tree traversal breadth-first order
+
 ```sql
 WITH RECURSIVE search_tree AS (
     SELECT id, parent_id, data, [t.id] AS path, toUInt64(0) AS depth
@@ -306,6 +311,7 @@ INSERT INTO graph VALUES (1, 2, '1 -> 2'), (1, 3, '1 -> 3'), (2, 3, '2 -> 3'), (
 We can traverse that graph with such query:
 
 **Example:** Graph traversal without cycle detection
+
 ```sql
 WITH RECURSIVE search_graph AS (
     SELECT from, to, label FROM graph g
@@ -316,6 +322,7 @@ WITH RECURSIVE search_graph AS (
 )
 SELECT DISTINCT * FROM search_graph ORDER BY from;
 ```
+
 ```text
 ┌─from─┬─to─┬─label──┐
 │    1 │  4 │ 1 -> 4 │
@@ -348,6 +355,7 @@ Code: 306. DB::Exception: Received from localhost:9000. DB::Exception: Maximum r
 The standard method for handling cycles is to compute an array of the already visited nodes:
 
 **Example:** Graph traversal with cycle detection
+
 ```sql
 WITH RECURSIVE search_graph AS (
     SELECT from, to, label, false AS is_cycle, [tuple(g.from, g.to)] AS path FROM graph g
@@ -372,6 +380,7 @@ SELECT * FROM search_graph WHERE is_cycle ORDER BY from;
 It is also possible to use infinite recursive CTE queries if `LIMIT` is used in outer query:
 
 **Example:** Infinite recursive CTE query
+
 ```sql
 WITH RECURSIVE test_table AS (
     SELECT 1 AS number

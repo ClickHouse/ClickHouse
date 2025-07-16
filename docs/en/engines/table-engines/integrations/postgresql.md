@@ -32,19 +32,19 @@ See a detailed description of the [CREATE TABLE](/sql-reference/statements/creat
 
 The table structure can differ from the original PostgreSQL table structure:
 
-- Column names should be the same as in the original PostgreSQL table, but you can use just some of these columns and in any order.
-- Column types may differ from those in the original PostgreSQL table. ClickHouse tries to [cast](../../../engines/database-engines/postgresql.md#data_types-support) values to the ClickHouse data types.
-- The [external_table_functions_use_nulls](/operations/settings/settings#external_table_functions_use_nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
+-Column names should be the same as in the original PostgreSQL table, but you can use just some of these columns and in any order.
+-Column types may differ from those in the original PostgreSQL table. ClickHouse tries to [cast](../../../engines/database-engines/postgresql.md#data_types-support) values to the ClickHouse data types.
+-The [external_table_functions_use_nulls](/operations/settings/settings#external_table_functions_use_nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
 
 **Engine Parameters**
 
-- `host:port` — PostgreSQL server address.
-- `database` — Remote database name.
-- `table` — Remote table name.
-- `user` — PostgreSQL user.
-- `password` — User password.
-- `schema` — Non-default table schema. Optional.
-- `on_conflict` — Conflict resolution strategy. Example: `ON CONFLICT DO NOTHING`. Optional. Note: adding this option will make insertion less efficient.
+-`host:port` — PostgreSQL server address.
+-`database` — Remote database name.
+-`table` — Remote table name.
+-`user` — PostgreSQL user.
+-`password` — User password.
+-`schema` — Non-default table schema. Optional.
+-`on_conflict` — Conflict resolution strategy. Example: `ON CONFLICT DO NOTHING`. Optional. Note: adding this option will make insertion less efficient.
 
 [Named collections](/operations/named-collections.md) (available since version 21.11) are recommended for production environment. Here is an example:
 
@@ -61,6 +61,7 @@ The table structure can differ from the original PostgreSQL table structure:
 ```
 
 Some parameters can be overridden by key value arguments:
+
 ```sql
 SELECT * FROM postgresql(postgres_creds, table='table1');
 ```
@@ -218,10 +219,10 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 
 **See Also**
 
-- [The `postgresql` table function](../../../sql-reference/table-functions/postgresql.md)
-- [Using PostgreSQL as a dictionary source](/sql-reference/dictionaries#mysql)
+-[The `postgresql` table function](../../../sql-reference/table-functions/postgresql.md)
+-[Using PostgreSQL as a dictionary source](/sql-reference/dictionaries#mysql)
 
 ## Related content {#related-content}
 
-- Blog: [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
-- Blog: [ClickHouse and PostgreSQL - a Match Made in Data Heaven - part 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)
+-Blog: [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
+-Blog: [ClickHouse and PostgreSQL - a Match Made in Data Heaven - part 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

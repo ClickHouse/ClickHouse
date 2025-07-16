@@ -7,8 +7,9 @@ title: 'Projections'
 ---
 
 Projections store data in a format that optimizes query execution, this feature is useful for:
-- Running queries on a column that is not a part of the primary key
-- Pre-aggregating columns, it will reduce both computation and IO
+
+-Running queries on a column that is not a part of the primary key
+-Pre-aggregating columns, it will reduce both computation and IO
 
 You can define one or more projections for a table, and during the query analysis the projection with the least data to scan will be selected by ClickHouse without modifying the query provided by the user.
 
@@ -23,6 +24,7 @@ You can see more technical details about how projections work internally on this
 ## Example filtering without using primary keys {#example-filtering-without-using-primary-keys}
 
 Creating the table:
+
 ```sql
 CREATE TABLE visits_order
 (
@@ -34,7 +36,9 @@ CREATE TABLE visits_order
 ENGINE = MergeTree()
 PRIMARY KEY user_agent
 ```
+
 Using `ALTER TABLE`, we could add the Projection to an existing table:
+
 ```sql
 ALTER TABLE visits_order ADD PROJECTION user_name_projection (
 SELECT
@@ -44,7 +48,9 @@ ORDER BY user_name
 
 ALTER TABLE visits_order MATERIALIZE PROJECTION user_name_projection
 ```
+
 Inserting the data:
+
 ```sql
 INSERT INTO visits_order SELECT
     number,
@@ -56,6 +62,7 @@ FROM numbers(1, 100);
 
 The Projection will allow us to filter by `user_name` fast even if in the original Table `user_name` was not defined as a `PRIMARY_KEY`.
 At query time ClickHouse determined that less data will be processed if the projection is used, as the data is ordered by `user_name`.
+
 ```sql
 SELECT
     *
@@ -65,6 +72,7 @@ LIMIT 2
 ```
 
 To verify that a query is using the projection, we could review the `system.query_log` table. On the `projections` field we have the name of the projection used or empty if none has been used:
+
 ```sql
 SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
 ```
@@ -72,6 +80,7 @@ SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
 ## Example pre-aggregation query {#example-pre-aggregation-query}
 
 Creating the table with the Projection:
+
 ```sql
 CREATE TABLE visits
 (
@@ -90,7 +99,9 @@ CREATE TABLE visits
 ENGINE = MergeTree()
 ORDER BY user_agent
 ```
+
 Inserting the data:
+
 ```sql
 INSERT INTO visits SELECT
     number,
@@ -99,6 +110,7 @@ INSERT INTO visits SELECT
     'Android'
 FROM numbers(1, 100);
 ```
+
 ```sql
 INSERT INTO visits SELECT
     number,
@@ -107,7 +119,9 @@ INSERT INTO visits SELECT
    'IOS'
 FROM numbers(100, 500);
 ```
+
 We will execute a first query using `GROUP BY` using the field `user_agent`, this query will not use the projection defined as the pre-aggregation does not match.
+
 ```sql
 SELECT
     user_agent,
@@ -117,6 +131,7 @@ GROUP BY user_agent
 ```
 
 To use the projection we could execute queries that select part of, or all of the pre-aggregation and `GROUP BY` fields.
+
 ```sql
 SELECT
     user_agent
@@ -124,6 +139,7 @@ FROM visits
 WHERE user_id > 50 AND user_id < 150
 GROUP BY user_agent
 ```
+
 ```sql
 SELECT
     user_agent,
@@ -133,6 +149,7 @@ GROUP BY user_agent
 ```
 
 As mentioned before, we could review the `system.query_log` table. On the `projections` field we have the name of the projection used or empty if none has been used:
+
 ```sql
 SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
 ```
@@ -200,7 +217,6 @@ The following operations with [projections](/engines/table-engines/mergetree-fam
 ## CLEAR PROJECTION {#clear-projection}
 
 `ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN PARTITION partition_name]` - Deletes projection files from disk without removing description. Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
-
 
 The commands `ADD`, `DROP` and `CLEAR` are lightweight in a sense that they only change metadata or remove files.
 

@@ -34,6 +34,7 @@ As a result, when producing Avro from ClickHouse, we have to always include the 
 \**\* [Avro logical types](https://avro.apache.org/docs/current/spec.html#Logical+Types)
 
 Unsupported Avro logical data types:
-- `time-millis`
-- `time-micros`
-- `duration`
+
+-`time-millis`
+-`time-micros`
+-`duration`

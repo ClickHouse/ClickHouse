@@ -31,7 +31,7 @@ RENAME DATABASE atomic_database1 TO atomic_database2 [,...] [ON CLUSTER cluster]
 
 Renames one or more tables.
 
-Renaming tables is a light operation. If you pass a different database after `TO`, the table will be moved to this database. However, the directories with databases must reside in the same file system. Otherwise, an error is returned. 
+Renaming tables is a light operation. If you pass a different database after `TO`, the table will be moved to this database. However, the directories with databases must reside in the same file system. Otherwise, an error is returned.
 If you rename multiple tables in one query, the operation is not atomic. It may be partially executed, and queries in other sessions may get `Table ... does not exist ...` error.
 
 **Syntax**
@@ -47,6 +47,7 @@ RENAME TABLE table_A TO table_A_bak, table_B TO table_B_bak;
 ```
 
 And you can use a simpler sql:  
+
 ```sql
 RENAME table_A TO table_A_bak, table_B TO table_B_bak;
 ```
@@ -63,4 +64,4 @@ RENAME DICTIONARY [db0.]dict_A TO [db1.]dict_B [,...] [ON CLUSTER cluster]
 
 **See Also**
 
-- [Dictionaries](../../sql-reference/dictionaries/index.md)
+-[Dictionaries](../../sql-reference/dictionaries/index.md)

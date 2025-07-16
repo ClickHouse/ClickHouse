@@ -38,6 +38,7 @@ Workload scheduling using clickhouse configuration is deprecated. SQL syntax sho
 To enable IO scheduling for a specific disk, you have to specify `read_resource` and/or `write_resource` in storage configuration. It says ClickHouse what resource should be used for every read and write requests with given disk. Read and write resource can refer to the same resource name, which is useful for local SSDs or HDDs. Multiple different disks also can refer to the same resource, which is useful for remote disks: if you want to be able to allow fair division of network bandwidth between e.g. "production" and "development" workloads.
 
 Example:
+
 ```xml
 <clickhouse>
     <storage_configuration>
@@ -108,11 +109,12 @@ Workload scheduling using clickhouse configuration is deprecated. SQL syntax sho
 :::
 
 **Possible node types:**
-* `inflight_limit` (constraint) - blocks if either number of concurrent in-flight requests exceeds `max_requests`, or their total cost exceeds `max_cost`; must have a single child.
-* `bandwidth_limit` (constraint) - blocks if current bandwidth exceeds `max_speed` (0 means unlimited) or burst exceeds `max_burst` (by default equals `max_speed`); must have a single child.
-* `fair` (policy) - selects the next request to serve from one of its children nodes according to max-min fairness; children nodes can specify `weight` (default is 1).
-* `priority` (policy) - selects the next request to serve from one of its children nodes according to static priorities (lower value means higher priority); children nodes can specify `priority` (default is 0).
-* `fifo` (queue) - leaf of the hierarchy capable of holding requests that exceed resource capacity.
+
+*`inflight_limit` (constraint) - blocks if either number of concurrent in-flight requests exceeds `max_requests`, or their total cost exceeds `max_cost`; must have a single child.
+*`bandwidth_limit` (constraint) - blocks if current bandwidth exceeds `max_speed` (0 means unlimited) or burst exceeds `max_burst` (by default equals `max_speed`); must have a single child.
+*`fair` (policy) - selects the next request to serve from one of its children nodes according to max-min fairness; children nodes can specify `weight` (default is 1).
+*`priority` (policy) - selects the next request to serve from one of its children nodes according to static priorities (lower value means higher priority); children nodes can specify `priority` (default is 0).
+*`fifo` (queue) - leaf of the hierarchy capable of holding requests that exceed resource capacity.
 
 To be able to use the full capacity of the underlying resource, you should use `inflight_limit`. Note that a low number of `max_requests` or `max_cost` could lead to not full resource utilization, while too high numbers could lead to empty queues inside the scheduler, which in turn will result in policies being ignored (unfairness or ignoring of priorities) in the subtree. On the other hand, if you want to protect resources from too high utilization, you should use `bandwidth_limit`. It throttles when the amount of resource consumed in `duration` seconds exceeds `max_burst + max_speed * duration` bytes. Two `bandwidth_limit` nodes on the same resource could be used to limit peak bandwidth during short intervals and average bandwidth for longer ones.
 
@@ -166,6 +168,7 @@ Workload scheduling using clickhouse configuration is deprecated. SQL syntax sho
 Workload classifiers are used to define mapping from `workload` specified by a query into leaf-queues that should be used for specific resources. At the moment, workload classification is simple: only static mapping is available.
 
 Example:
+
 ```xml
 <clickhouse>
     <workload_classifiers>
@@ -200,13 +203,14 @@ CREATE WORKLOAD production IN all SETTINGS weight = 3
 The name of a leaf workload without children could be used in query settings `SETTINGS workload = 'name'`.
 
 To customize workload the following settings could be used:
-* `priority` - sibling workloads are served according to static priority values (lower value means higher priority).
-* `weight` - sibling workloads having the same static priority share resources according to weights.
-* `max_io_requests` - the limit on the number of concurrent IO requests in this workload.
-* `max_bytes_inflight` - the limit on the total inflight bytes for concurrent requests in this workload.
-* `max_bytes_per_second` - the limit on byte read or write rate of this workload.
-* `max_burst_bytes` - maximum number of bytes that could be processed by the workload without being throttled (for every resource independently).
-* `max_concurrent_threads` - the limit on the number of threads for queries in this workload.
+
+*`priority` - sibling workloads are served according to static priority values (lower value means higher priority).
+*`weight` - sibling workloads having the same static priority share resources according to weights.
+*`max_io_requests` - the limit on the number of concurrent IO requests in this workload.
+*`max_bytes_inflight` - the limit on the total inflight bytes for concurrent requests in this workload.
+*`max_bytes_per_second` - the limit on byte read or write rate of this workload.
+*`max_burst_bytes` - maximum number of bytes that could be processed by the workload without being throttled (for every resource independently).
+*`max_concurrent_threads` - the limit on the number of threads for queries in this workload.
 
 All limits specified through workload settings are independent for every resource. For example workload with `max_bytes_per_second = 10485760` will have 10 MB/s bandwidth limit for every read and write resource independently. If common limit for reading and writing is required, consider using the same resource for READ and WRITE access.
 
@@ -234,8 +238,9 @@ CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100
 When ClickHouse server executes many concurrent queries with [multiple threads](/operations/settings/settings.md#max_threads) and all CPU slots are in use the overload state is reached. In the overload state every released CPU slot is rescheduled to proper workload according to scheduling policies. For queries sharing the same workload, slots are allocated using round robin. For queries in separate workloads, slots are allocated according to weights, priorities, and limits specified for workloads.
 
 CPU time is consumed by threads when they are not blocked and work on CPU-intensive tasks. For scheduling purpose, two kinds of threads are distinguished:
-* Master thread — the first thread that starts working on a query or background activity like a merge or a mutation.
-* Worker thread — the additional threads that master can spawn to work on CPU-intensive tasks.
+
+*Master thread — the first thread that starts working on a query or background activity like a merge or a mutation.
+*Worker thread — the additional threads that master can spawn to work on CPU-intensive tasks.
 
 It may be desirable to use separate resources for master and worker threads to achieve better responsiveness. A high number of worker threads can easily monopolize CPU resource when high `max_threads` query setting values are used. Then incoming queries should block and wait a CPU slot for its master thread to start execution. To avoid this the following configuration could be used:
 
@@ -306,12 +311,13 @@ Do not set `throw_on_unknown_workload` to `true` unless `CREATE WORKLOAD default
 :::
 
 ## See also {#see-also}
- - [system.scheduler](/operations/system-tables/scheduler.md)
- - [system.workloads](/operations/system-tables/workloads.md)
- - [system.resources](/operations/system-tables/resources.md)
- - [merge_workload](/operations/settings/merge-tree-settings.md#merge_workload) merge tree setting
- - [merge_workload](/operations/server-configuration-parameters/settings.md#merge_workload) global server setting
- - [mutation_workload](/operations/settings/merge-tree-settings.md#mutation_workload) merge tree setting
- - [mutation_workload](/operations/server-configuration-parameters/settings.md#mutation_workload) global server setting
- - [workload_path](/operations/server-configuration-parameters/settings.md#workload_path) global server setting
- - [workload_zookeeper_path](/operations/server-configuration-parameters/settings.md#workload_zookeeper_path) global server setting
+
+*[system.scheduler](/operations/system-tables/scheduler.md)
+*[system.workloads](/operations/system-tables/workloads.md)
+*[system.resources](/operations/system-tables/resources.md)
+*[merge_workload](/operations/settings/merge-tree-settings.md#merge_workload) merge tree setting
+*[merge_workload](/operations/server-configuration-parameters/settings.md#merge_workload) global server setting
+*[mutation_workload](/operations/settings/merge-tree-settings.md#mutation_workload) merge tree setting
+*[mutation_workload](/operations/server-configuration-parameters/settings.md#mutation_workload) global server setting
+*[workload_path](/operations/server-configuration-parameters/settings.md#workload_path) global server setting
+*[workload_zookeeper_path](/operations/server-configuration-parameters/settings.md#workload_zookeeper_path) global server setting

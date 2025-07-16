@@ -31,8 +31,8 @@ ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name'))
 
 **Engine Parameters**
 
-- `database_name_inside_backup` — Name of the database inside the backup.
-- `backup_destination` — Backup destination.
+-`database_name_inside_backup` — Name of the database inside the backup.
+-`backup_destination` — Backup destination.
 
 ## Usage example {#usage-example}
 

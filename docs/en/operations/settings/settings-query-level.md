@@ -14,28 +14,29 @@ Settings are configured in layers, and each subsequent layer redefines the previ
 
 The order of priority for defining a setting is:
 
-1. Applying a setting to a user directly, or within a settings profile
+1.Applying a setting to a user directly, or within a settings profile
 
-    - SQL (recommended)
-    - adding one or more XML or YAML files to `/etc/clickhouse-server/users.d`
+    -SQL (recommended)
+    -adding one or more XML or YAML files to `/etc/clickhouse-server/users.d`
 
-2. Session settings
+2.Session settings
 
-    - Send `SET setting=value` from the ClickHouse Cloud SQL console or
+    -Send `SET setting=value` from the ClickHouse Cloud SQL console or
     `clickhouse client` in interactive mode. Similarly, you can use ClickHouse
     sessions in the HTTP protocol. To do this, you need to specify the
     `session_id` HTTP parameter.
 
-3. Query settings
+3.Query settings
 
-    - When starting `clickhouse client` in non-interactive mode, set the startup
+    -When starting `clickhouse client` in non-interactive mode, set the startup
     parameter `--setting=value`.
-    - When using the HTTP API, pass CGI parameters (`URL?setting_1=value&setting_2=value...`).
+    -When using the HTTP API, pass CGI parameters (`URL?setting_1=value&setting_2=value...`).
     - Define settings in the
+
+
     [SETTINGS](../../sql-reference/statements/select/index.md#settings-in-select-query)
     clause of the SELECT query. The setting value is applied only to that query
     and is reset to the default or previous value after the query is executed.
-
 
 ## Converting a setting to its default value {#converting-a-setting-to-its-default-value}
 
@@ -129,6 +130,7 @@ SHOW ACCESS
 │ ...                                                                                │
 └────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
 ### Using SQL to create a settings profile and assign to a user {#using-sql-to-create-a-settings-profile-and-assign-to-a-user}
 
 This creates the profile `log_ingest` with the setting `async_inset = 1`:
@@ -146,7 +148,6 @@ IDENTIFIED WITH sha256_hash BY '7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f2
 -- highlight-next-line
 SETTINGS PROFILE log_ingest
 ```
-
 
 ### Using XML to create a settings profile and user {#using-xml-to-create-a-settings-profile-and-user}
 
@@ -219,5 +220,5 @@ VALUES (...)
 
 ## See also {#see-also}
 
-- View the [Settings](/operations/settings/settings.md) page for a description of the ClickHouse settings.
-- [Global server settings](/operations/server-configuration-parameters/settings.md)
+-View the [Settings](/operations/settings/settings.md) page for a description of the ClickHouse settings.
+-[Global server settings](/operations/server-configuration-parameters/settings.md)

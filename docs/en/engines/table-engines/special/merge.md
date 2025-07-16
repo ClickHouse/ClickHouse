@@ -24,7 +24,7 @@ CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
 ### `db_name` {#db_name}
 
 `db_name` — Possible values:
-    - database name,
+    -database name,
     - constant expression that returns a string with a database name, for example, `currentDatabase()`,
     - `REGEXP(expression)`, where `expression` is a regular expression to match the DB names.
 
@@ -81,11 +81,11 @@ SELECT * FROM WatchLog;
 
 ## Virtual columns {#virtual-columns}
 
-- `_table` — Contains the name of the table from which data was read. Type: [String](../../../sql-reference/data-types/string.md).
+-`_table` — Contains the name of the table from which data was read. Type: [String](../../../sql-reference/data-types/string.md).
 
     You can set the constant conditions on `_table` in the `WHERE/PREWHERE` clause (for example, `WHERE _table='xyz'`). In this case the read operation is performed only for that tables where the condition on `_table` is satisfied, so the `_table` column acts as an index.
 
 **See Also**
 
-- [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
-- [merge](../../../sql-reference/table-functions/merge.md) table function
+-[Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
+-[merge](../../../sql-reference/table-functions/merge.md) table function

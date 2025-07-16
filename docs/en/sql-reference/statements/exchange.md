@@ -11,7 +11,7 @@ title: 'EXCHANGE Statement'
 Exchanges the names of two tables or dictionaries atomically.
 This task can also be accomplished with a [RENAME](./rename.md) query using a temporary name, but the operation is not atomic in that case.
 
-:::note    
+:::note
 The `EXCHANGE` query is supported by the [Atomic](../../engines/database-engines/atomic.md) database engine only.
 :::
 
@@ -43,4 +43,4 @@ EXCHANGE DICTIONARIES [db0.]dict_A AND [db1.]dict_B [ON CLUSTER cluster]
 
 **See Also**
 
-- [Dictionaries](../../sql-reference/dictionaries/index.md)
+-[Dictionaries](../../sql-reference/dictionaries/index.md)

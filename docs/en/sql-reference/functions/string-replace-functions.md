@@ -21,14 +21,14 @@ overlay(s, replace, offset[, length])
 
 **Parameters**
 
-- `s`: A string type [String](../data-types/string.md).
-- `replace`: A string type [String](../data-types/string.md).
-- `offset`: An integer type [Int](../data-types/int-uint.md) (1-based). If `offset` is negative, it is counted from the end of the string `s`.
-- `length`: Optional. An integer type [Int](../data-types/int-uint.md). `length` specifies the length of the snippet within the input string `s` to be replaced. If `length` is not specified, the number of bytes removed from `s` equals the length of `replace`; otherwise `length` bytes are removed.
+-`s`: A string type [String](../data-types/string.md).
+-`replace`: A string type [String](../data-types/string.md).
+-`offset`: An integer type [Int](../data-types/int-uint.md) (1-based). If `offset` is negative, it is counted from the end of the string `s`.
+-`length`: Optional. An integer type [Int](../data-types/int-uint.md). `length` specifies the length of the snippet within the input string `s` to be replaced. If `length` is not specified, the number of bytes removed from `s` equals the length of `replace`; otherwise `length` bytes are removed.
 
 **Returned value**
 
-- A [String](../data-types/string.md) data type value.
+-A [String](../data-types/string.md) data type value.
 
 **Example**
 
@@ -71,14 +71,14 @@ overlayUTF8(s, replace, offset[, length])
 
 **Parameters**
 
-- `s`: A string type [String](../data-types/string.md).
-- `replace`: A string type [String](../data-types/string.md).
-- `offset`: An integer type [Int](../data-types/int-uint.md) (1-based). If `offset` is negative, it is counted from the end of the input string `s`.
-- `length`: Optional. An integer type [Int](../data-types/int-uint.md). `length` specifies the length of the snippet within the input string `s` to be replaced. If `length` is not specified, the number of characters removed from `s` equals the length of `replace`; otherwise `length` characters are removed.
+-`s`: A string type [String](../data-types/string.md).
+-`replace`: A string type [String](../data-types/string.md).
+-`offset`: An integer type [Int](../data-types/int-uint.md) (1-based). If `offset` is negative, it is counted from the end of the input string `s`.
+-`length`: Optional. An integer type [Int](../data-types/int-uint.md). `length` specifies the length of the snippet within the input string `s` to be replaced. If `length` is not specified, the number of characters removed from `s` equals the length of `replace`; otherwise `length` characters are removed.
 
 **Returned value**
 
-- A [String](../data-types/string.md) data type value.
+-A [String](../data-types/string.md) data type value.
 
 **Example**
 
@@ -306,13 +306,13 @@ translateUTF8(s, from, to)
 
 **Parameters**
 
-- `s`: A string type [String](../data-types/string.md).
-- `from`: A string type [String](../data-types/string.md).
-- `to`: A string type [String](../data-types/string.md).
+-`s`: A string type [String](../data-types/string.md).
+-`from`: A string type [String](../data-types/string.md).
+-`to`: A string type [String](../data-types/string.md).
 
 **Returned value**
 
-- A [String](../data-types/string.md) data type value.
+-A [String](../data-types/string.md) data type value.
 
 **Examples**
 
@@ -345,7 +345,6 @@ Query:
 ```sql
 SELECT printf('%%%s %s %d', 'Hello', 'World', 2024);
 ```
-
 
 ```response
 ┌─printf('%%%s %s %d', 'Hello', 'World', 2024)─┐

@@ -20,7 +20,7 @@ Allows to connect to [SQLite](https://www.sqlite.org/index.html) database and pe
 
 **Engine Parameters**
 
-- `db_path` — Path to a file with SQLite database.
+-`db_path` — Path to a file with SQLite database.
 
 ## Data types support {#data_types-support}
 
@@ -65,6 +65,7 @@ SELECT * FROM sqlite_db.table1;
 │ line3 │    3 │
 └───────┴──────┘
 ```
+
 Inserting data into SQLite table from ClickHouse table:
 
 ```sql

@@ -8,7 +8,7 @@ title: 'exponentialTimeDecayedMax'
 
 ## exponentialTimeDecayedMax {#exponentialtimedecayedmax}
 
-Returns the maximum of the computed exponentially smoothed moving average at index `t` in time with that at `t-1`. 
+Returns the maximum of the computed exponentially smoothed moving average at index `t` in time with that at `t-1`.
 
 **Syntax**
 
@@ -18,16 +18,16 @@ exponentialTimeDecayedMax(x)(value, timeunit)
 
 **Arguments**
 
-- `value` — Value. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
-- `timeunit` — Timeunit. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md), [DateTime](../../data-types/datetime.md), [DateTime64](../../data-types/datetime64.md).
+-`value` — Value. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
+-`timeunit` — Timeunit. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md), [DateTime](../../data-types/datetime.md), [DateTime64](../../data-types/datetime64.md).
 
 **Parameters**
 
-- `x` — Half-life period. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
+-`x` — Half-life period. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
 
 **Returned values**
 
-- Returns the maximum of the exponentially smoothed weighted moving average at `t` and `t-1`. [Float64](../../data-types/float.md).
+-Returns the maximum of the exponentially smoothed weighted moving average at `t` and `t-1`. [Float64](../../data-types/float.md).
 
 **Example**
 

@@ -17,12 +17,12 @@ map(key1, value1[, key2, value2, ...])
 
 **Arguments**
 
-- `key_n` — The keys of the map entries. Any type supported as key type of [Map](../data-types/map.md).
-- `value_n` — The values of the map entries. Any type supported as value type of [Map](../data-types/map.md).
+-`key_n` — The keys of the map entries. Any type supported as key type of [Map](../data-types/map.md).
+-`value_n` — The values of the map entries. Any type supported as value type of [Map](../data-types/map.md).
 
 **Returned value**
 
-- A map containing `key:value` pairs. [Map(key, value)](../data-types/map.md).
+-A map containing `key:value` pairs. [Map(key, value)](../data-types/map.md).
 
 **Examples**
 
@@ -48,8 +48,9 @@ Creates a map from an array or map of keys and an array or map of values.
 
 The function is a convenient alternative to syntax `CAST([...], 'Map(key_type, value_type)')`.
 For example, instead of writing
-- `CAST((['aa', 'bb'], [4, 5]), 'Map(String, UInt32)')`, or
-- `CAST([('aa',4), ('bb',5)], 'Map(String, UInt32)')`
+
+-`CAST((['aa', 'bb'], [4, 5]), 'Map(String, UInt32)')`, or
+-`CAST([('aa',4), ('bb',5)], 'Map(String, UInt32)')`
 
 you can write `mapFromArrays(['aa', 'bb'], [4, 5])`.
 
@@ -63,12 +64,12 @@ Alias: `MAP_FROM_ARRAYS(keys, values)`
 
 **Arguments**
 
-- `keys` —  Array or map of keys to create the map from [Array](../data-types/array.md) or [Map](../data-types/map.md). If `keys` is an array, we accept `Array(Nullable(T))` or `Array(LowCardinality(Nullable(T)))` as its type as long as it doesn't contain NULL value.
-- `values`  - Array or map of values to create the map from [Array](../data-types/array.md) or [Map](../data-types/map.md).
+-`keys` —  Array or map of keys to create the map from [Array](../data-types/array.md) or [Map](../data-types/map.md). If `keys` is an array, we accept `Array(Nullable(T))` or `Array(LowCardinality(Nullable(T)))` as its type as long as it doesn't contain NULL value.
+-`values`  - Array or map of values to create the map from [Array](../data-types/array.md) or [Map](../data-types/map.md).
 
 **Returned value**
 
-- A map with keys and values constructed from the key array and value array/map.
+-A map with keys and values constructed from the key array and value array/map.
 
 **Example**
 
@@ -127,20 +128,21 @@ extractKeyValuePairs(data[, key_value_delimiter[, pair_delimiter[, quoting_chara
 ```
 
 Alias:
-- `str_to_map`
-- `mapFromString`
+
+-`str_to_map`
+-`mapFromString`
 
 **Arguments**
 
-- `data` - String to extract key-value pairs from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `key_value_delimiter` - Single character delimiting keys and values. Defaults to `:`. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `pair_delimiters` - Set of character delimiting pairs. Defaults to ` `, `,` and `;`. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `quoting_character` - Single character used as quoting character. Defaults to `"`. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `unexpected_quoting_character_strategy` - Strategy to handle quoting characters in unexpected places during `read_key` and `read_value` phase. Possible values: "invalid", "accept" and "promote". Invalid will discard key/value and transition back to `WAITING_KEY` state. Accept will treat it as a normal character. Promote will transition to `READ_QUOTED_{KEY/VALUE}` state and start from next character.
+-`data` - String to extract key-value pairs from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+-`key_value_delimiter` - Single character delimiting keys and values. Defaults to `:`. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+-`pair_delimiters` - Set of character delimiting pairs. Defaults to ` `, `,` and `;`. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+-`quoting_character` - Single character used as quoting character. Defaults to `"`. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+-`unexpected_quoting_character_strategy` - Strategy to handle quoting characters in unexpected places during `read_key` and `read_value` phase. Possible values: "invalid", "accept" and "promote". Invalid will discard key/value and transition back to `WAITING_KEY` state. Accept will treat it as a normal character. Promote will transition to `READ_QUOTED_{KEY/VALUE}` state and start from next character.
 
 **Returned values**
 
-- A of key-value pairs. Type: [Map(String, String)](../data-types/map.md) 
+-A of key-value pairs. Type: [Map(String, String)](../data-types/map.md)
 
 **Examples**
 
@@ -284,8 +286,9 @@ Non standard escape sequences are returned as it is (including the backslash) un
 
 This function will satisfy the use case where pre-escaping and post-escaping are not suitable. For instance, consider the following
 input string: `a: "aaaa\"bbb"`. The expected output is: `a: aaaa\"bbbb`.
-- Pre-escaping: Pre-escaping it will output: `a: "aaaa"bbb"` and `extractKeyValuePairs` will then output: `a: aaaa`
-- Post-escaping: `extractKeyValuePairs` will output `a: aaaa\` and post-escaping will keep it as it is.
+
+-Pre-escaping: Pre-escaping it will output: `a: "aaaa"bbb"` and `extractKeyValuePairs` will then output: `a: aaaa`
+-Post-escaping: `extractKeyValuePairs` will output `a: aaaa\` and post-escaping will keep it as it is.
 
 Leading escape sequences will be skipped in keys and will be considered invalid for values.
 
@@ -321,7 +324,7 @@ Arguments are [maps](../data-types/map.md) or [tuples](/sql-reference/data-types
 
 **Returned value**
 
-- Depending on the arguments returns one [map](../data-types/map.md) or [tuple](/sql-reference/data-types/tuple), where the first array contains the sorted keys and the second array contains values.
+-Depending on the arguments returns one [map](../data-types/map.md) or [tuple](/sql-reference/data-types/tuple), where the first array contains the sorted keys and the second array contains values.
 
 **Example**
 
@@ -369,7 +372,7 @@ Arguments are [maps](../data-types/map.md) or [tuples](/sql-reference/data-types
 
 **Returned value**
 
-- Depending on the arguments returns one [map](../data-types/map.md) or [tuple](/sql-reference/data-types/tuple), where the first array contains the sorted keys and the second array contains values.
+-Depending on the arguments returns one [map](../data-types/map.md) or [tuple](/sql-reference/data-types/tuple), where the first array contains the sorted keys and the second array contains values.
 
 **Example**
 
@@ -424,17 +427,17 @@ Arguments are [Maps](../data-types/map.md) or two [Arrays](/sql-reference/data-t
 
 Mapped arrays:
 
-- `map` — Map with integer keys. [Map](../data-types/map.md).
+-`map` — Map with integer keys. [Map](../data-types/map.md).
 
 or
 
-- `keys` — Array of keys. [Array](/sql-reference/data-types/array)([Int](/sql-reference/data-types/int-uint#integer-ranges)).
-- `values` — Array of values. [Array](/sql-reference/data-types/array)([Int](/sql-reference/data-types/int-uint#integer-ranges)).
-- `max` — Maximum key value. Optional. [Int8, Int16, Int32, Int64, Int128, Int256](/sql-reference/data-types/int-uint#integer-ranges).
+-`keys` — Array of keys. [Array](/sql-reference/data-types/array)([Int](/sql-reference/data-types/int-uint#integer-ranges)).
+-`values` — Array of values. [Array](/sql-reference/data-types/array)([Int](/sql-reference/data-types/int-uint#integer-ranges)).
+-`max` — Maximum key value. Optional. [Int8, Int16, Int32, Int64, Int128, Int256](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Returned value**
 
-- Depending on the arguments a [Map](../data-types/map.md) or a [Tuple](/sql-reference/data-types/tuple) of two [Arrays](/sql-reference/data-types/array): keys in sorted order, and values the corresponding keys.
+-Depending on the arguments a [Map](../data-types/map.md) or a [Tuple](/sql-reference/data-types/tuple) of two [Arrays](/sql-reference/data-types/array): keys in sorted order, and values the corresponding keys.
 
 **Example**
 
@@ -466,7 +469,6 @@ Result:
 └──────────────────────────────┴───────────────────────────────────┘
 ```
 
-
 ## mapKeys {#mapkeys}
 
 Returns the keys of a given map.
@@ -483,11 +485,11 @@ mapKeys(map)
 
 **Arguments**
 
-- `map` — Map. [Map](../data-types/map.md).
+-`map` — Map. [Map](../data-types/map.md).
 
 **Returned value**
 
-- Array containing all keys from the `map`. [Array](../data-types/array.md).
+-Array containing all keys from the `map`. [Array](../data-types/array.md).
 
 **Example**
 
@@ -524,12 +526,12 @@ Alias: `mapContainsKey(map, key)`
 
 **Arguments**
 
-- `map` — Map. [Map](../data-types/map.md).
-- `key` — Key. Type must match the key type of `map`.
+-`map` — Map. [Map](../data-types/map.md).
+-`key` — Key. Type must match the key type of `map`.
 
 **Returned value**
 
-- `1` if `map` contains `key`, `0` if not. [UInt8](../data-types/int-uint.md).
+-`1` if `map` contains `key`, `0` if not. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -553,7 +555,6 @@ Result:
 └────────────────────────┘
 ```
 
-
 ## mapContainsKeyLike {#mapcontainskeylike}
 
 **Syntax**
@@ -563,12 +564,13 @@ mapContainsKeyLike(map, pattern)
 ```
 
 **Arguments**
-- `map` — Map. [Map](../data-types/map.md).
-- `pattern`  - String pattern to match.
+
+-`map` — Map. [Map](../data-types/map.md).
+-`pattern`  - String pattern to match.
 
 **Returned value**
 
-- `1` if `map` contains `key` like specified pattern, `0` if not.
+-`1` if `map` contains `key` like specified pattern, `0` if not.
 
 **Example**
 
@@ -603,12 +605,12 @@ mapExtractKeyLike(map, pattern)
 
 **Arguments**
 
-- `map` — Map. [Map](../data-types/map.md).
-- `pattern`  - String pattern to match.
+-`map` — Map. [Map](../data-types/map.md).
+-`pattern`  - String pattern to match.
 
 **Returned value**
 
-- A map containing elements the key matching the specified pattern. If no elements match the pattern, an empty map is returned.
+-A map containing elements the key matching the specified pattern. If no elements match the pattern, an empty map is returned.
 
 **Example**
 
@@ -631,7 +633,6 @@ Result:
 └────────────────────────────┘
 ```
 
-
 ## mapValues {#mapvalues}
 
 Returns the values of a given map.
@@ -648,11 +649,11 @@ mapValues(map)
 
 **Arguments**
 
-- `map` — Map. [Map](../data-types/map.md).
+-`map` — Map. [Map](../data-types/map.md).
 
 **Returned value**
 
-- Array containing all the values from `map`. [Array](../data-types/array.md).
+-Array containing all the values from `map`. [Array](../data-types/array.md).
 
 **Example**
 
@@ -689,12 +690,12 @@ Alias: `mapContainsValue(map, value)`
 
 **Arguments**
 
-- `map` — Map. [Map](../data-types/map.md).
-- `value` — Value. Type must match the value type of `map`.
+-`map` — Map. [Map](../data-types/map.md).
+-`value` — Value. Type must match the value type of `map`.
 
 **Returned value**
 
-- `1` if `map` contains `value`, `0` if not. [UInt8](../data-types/int-uint.md).
+-`1` if `map` contains `value`, `0` if not. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -727,12 +728,13 @@ mapContainsValueLike(map, pattern)
 ```
 
 **Arguments**
-- `map` — Map. [Map](../data-types/map.md).
-- `pattern`  - String pattern to match.
+
+-`map` — Map. [Map](../data-types/map.md).
+-`pattern`  - String pattern to match.
 
 **Returned value**
 
-- `1` if `map` contains `value` like specified pattern, `0` if not.
+-`1` if `map` contains `value` like specified pattern, `0` if not.
 
 **Example**
 
@@ -767,12 +769,12 @@ mapExtractValueLike(map, pattern)
 
 **Arguments**
 
-- `map` — Map. [Map](../data-types/map.md).
-- `pattern`  - String pattern to match.
+-`map` — Map. [Map](../data-types/map.md).
+-`pattern`  - String pattern to match.
 
 **Returned value**
 
-- A map containing elements the value matching the specified pattern. If no elements match the pattern, an empty map is returned.
+-A map containing elements the value matching the specified pattern. If no elements match the pattern, an empty map is returned.
 
 **Example**
 
@@ -807,12 +809,12 @@ mapApply(func, map)
 
 **Arguments**
 
-- `func` — [Lambda function](/sql-reference/functions/overview#higher-order-functions).
-- `map` — [Map](../data-types/map.md).
+-`func` — [Lambda function](/sql-reference/functions/overview#higher-order-functions).
+-`map` — [Map](../data-types/map.md).
 
 **Returned value**
 
-- Returns a map obtained from the original map by application of `func(map1[i], ..., mapN[i])` for each element.
+-Returns a map obtained from the original map by application of `func(map1[i], ..., mapN[i])` for each element.
 
 **Example**
 
@@ -849,12 +851,12 @@ mapFilter(func, map)
 
 **Arguments**
 
-- `func`  - [Lambda function](/sql-reference/functions/overview#higher-order-functions).
-- `map` — [Map](../data-types/map.md).
+-`func`  - [Lambda function](/sql-reference/functions/overview#higher-order-functions).
+-`map` — [Map](../data-types/map.md).
 
 **Returned value**
 
-- Returns a map containing only the elements in `map` for which `func(map1[i], ..., mapN[i])` returns something other than 0.
+-Returns a map containing only the elements in `map` for which `func(map1[i], ..., mapN[i])` returns something other than 0.
 
 **Example**
 
@@ -889,12 +891,12 @@ mapUpdate(map1, map2)
 
 **Arguments**
 
-- `map1` [Map](../data-types/map.md).
-- `map2` [Map](../data-types/map.md).
+-`map1` [Map](../data-types/map.md).
+-`map2` [Map](../data-types/map.md).
 
 **Returned value**
 
-- Returns a map1 with values updated of values for the corresponding keys in map2.
+-Returns a map1 with values updated of values for the corresponding keys in map2.
 
 **Example**
 
@@ -925,11 +927,11 @@ mapConcat(maps)
 
 **Arguments**
 
--   `maps` – Arbitrarily many [Maps](../data-types/map.md).
+-`maps` – Arbitrarily many [Maps](../data-types/map.md).
 
 **Returned value**
 
-- Returns a map with concatenated maps passed as arguments.
+-Returns a map with concatenated maps passed as arguments.
 
 **Examples**
 
@@ -1038,11 +1040,11 @@ SELECT mapSort((k, v) -> v, map('key2', 2, 'key3', 1, 'key1', 3)) AS map;
 └──────────────────────────────┘
 ```
 
-For more details see the [reference](/sql-reference/functions/array-functions#arraySort) for `arraySort` function. 
+For more details see the [reference](/sql-reference/functions/array-functions#arraySort) for `arraySort` function.
 
 ## mapPartialSort {#mappartialsort}
 
-Sorts the elements of a map in ascending order with additional `limit` argument allowing partial sorting. 
+Sorts the elements of a map in ascending order with additional `limit` argument allowing partial sorting.
 If the `func` function is specified, the sorting order is determined by the result of the `func` function applied to the keys and values of the map.
 
 **Syntax**
@@ -1050,15 +1052,16 @@ If the `func` function is specified, the sorting order is determined by the resu
 ```sql
 mapPartialSort([func,] limit, map)
 ```
+
 **Arguments**
 
-- `func` – Optional function to apply to the keys and values of the map. [Lambda function](/sql-reference/functions/overview#higher-order-functions).
-- `limit` – Elements in range [1..limit] are sorted. [(U)Int](../data-types/int-uint.md).
-- `map` – Map to sort. [Map](../data-types/map.md).
+-`func` – Optional function to apply to the keys and values of the map. [Lambda function](/sql-reference/functions/overview#higher-order-functions).
+-`limit` – Elements in range [1..limit] are sorted. [(U)Int](../data-types/int-uint.md).
+-`map` – Map to sort. [Map](../data-types/map.md).
 
 **Returned value**
 
-- Partially sorted map. [Map](../data-types/map.md).
+-Partially sorted map. [Map](../data-types/map.md).
 
 **Example**
 
@@ -1111,15 +1114,16 @@ If the `func` function is specified, the sorting order is determined by the resu
 ```sql
 mapPartialReverseSort([func,] limit, map)
 ```
+
 **Arguments**
 
-- `func` – Optional function to apply to the keys and values of the map. [Lambda function](/sql-reference/functions/overview#higher-order-functions).
-- `limit` – Elements in range [1..limit] are sorted. [(U)Int](../data-types/int-uint.md).
-- `map` – Map to sort. [Map](../data-types/map.md).
+-`func` – Optional function to apply to the keys and values of the map. [Lambda function](/sql-reference/functions/overview#higher-order-functions).
+-`limit` – Elements in range [1..limit] are sorted. [(U)Int](../data-types/int-uint.md).
+-`map` – Map to sort. [Map](../data-types/map.md).
 
 **Returned value**
 
-- Partially sorted map. [Map](../data-types/map.md).
+-Partially sorted map. [Map](../data-types/map.md).
 
 **Example**
 

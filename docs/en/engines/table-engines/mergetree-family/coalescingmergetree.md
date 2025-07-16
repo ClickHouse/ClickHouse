@@ -64,7 +64,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 All of the parameters excepting `columns` have the same meaning as in `MergeTree`.
 
-- `columns` — tuple with names of columns values of which will be summed. Optional parameter. For a description, see the text above.
+-`columns` — tuple with names of columns values of which will be summed. Optional parameter. For a description, see the text above.
 
 </details>
 

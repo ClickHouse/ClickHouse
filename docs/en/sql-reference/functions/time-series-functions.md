@@ -22,16 +22,16 @@ seriesOutliersDetectTukey(series, min_percentile, max_percentile, K);
 
 **Arguments**
 
-- `series` - An array of numeric values.
-- `min_percentile` - The minimum percentile to be used to calculate inter-quantile range [(IQR)](https://en.wikipedia.org/wiki/Interquartile_range). The value must be in range [0.02,0.98]. The default is 0.25.
-- `max_percentile` - The maximum percentile to be used to calculate inter-quantile range (IQR). The value must be in range [0.02,0.98]. The default is 0.75.
-- `K` - Non-negative constant value to detect mild or stronger outliers. The default value is 1.5.
+-`series` - An array of numeric values.
+-`min_percentile` - The minimum percentile to be used to calculate inter-quantile range [(IQR)](https://en.wikipedia.org/wiki/Interquartile_range). The value must be in range [0.02,0.98]. The default is 0.25.
+-`max_percentile` - The maximum percentile to be used to calculate inter-quantile range (IQR). The value must be in range [0.02,0.98]. The default is 0.75.
+-`K` - Non-negative constant value to detect mild or stronger outliers. The default value is 1.5.
 
 At least four data points are required in `series` to detect outliers.
 
 **Returned value**
 
-- Returns an array of the same length as the input array where each value represents score of possible anomaly of corresponding element in the series. A non-zero score indicates a possible anomaly. [Array](../data-types/array.md).
+-Returns an array of the same length as the input array where each value represents score of possible anomaly of corresponding element in the series. A non-zero score indicates a possible anomaly. [Array](../data-types/array.md).
 
 **Examples**
 
@@ -75,11 +75,11 @@ seriesPeriodDetectFFT(series);
 
 **Arguments**
 
-- `series` - An array of numeric values
+-`series` - An array of numeric values
 
 **Returned value**
 
-- A real value equal to the period of series data. NaN when number of data points are less than four. [Float64](../data-types/float.md).
+-A real value equal to the period of series data. NaN when number of data points are less than four. [Float64](../data-types/float.md).
 
 **Examples**
 
@@ -111,7 +111,7 @@ Result:
 
 ## seriesDecomposeSTL {#seriesdecomposestl}
 
-Decomposes a series data using STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.wessa.net/download/stl.pdf) into a season, a trend and a residual component. 
+Decomposes a series data using STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.wessa.net/download/stl.pdf) into a season, a trend and a residual component.
 
 **Syntax**
 
@@ -121,14 +121,14 @@ seriesDecomposeSTL(series, period);
 
 **Arguments**
 
-- `series` - An array of numeric values
-- `period` - A positive integer
+-`series` - An array of numeric values
+-`period` - A positive integer
 
 The number of data points in `series` should be at least twice the value of `period`.
 
 **Returned value**
 
-- An array of four arrays where the first array include seasonal components, the second array - trend,
+-An array of four arrays where the first array include seasonal components, the second array - trend,
 the third array - residue component, and the fourth array - baseline(seasonal + trend) component. [Array](../data-types/array.md).
 
 **Examples**

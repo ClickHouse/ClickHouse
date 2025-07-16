@@ -31,9 +31,9 @@ In YAML configuration files, `clickhouse:` is optional, if absent the parser ins
 
 Two configuration files (usually the main configuration file and another configuration file from `config.d/`) are merged as follows:
 
-- If a node (i.e. a path leading to an element) appears in both files and does not have attributes `replace` or `remove`, it is included in the merged configuration file and children from both nodes are included and merged recursively.
-- If one of the two nodes contains the `replace` attribute, it is included in the merged configuration file but only children from the node with attribute `replace` are included.
-- If one of the two nodes contains the `remove` attribute, the node is not included in the merged configuration file (if it exists already, it is deleted).
+-If a node (i.e. a path leading to an element) appears in both files and does not have attributes `replace` or `remove`, it is included in the merged configuration file and children from both nodes are included and merged recursively.
+-If one of the two nodes contains the `replace` attribute, it is included in the merged configuration file but only children from the node with attribute `replace` are included.
+-If one of the two nodes contains the `remove` attribute, the node is not included in the merged configuration file (if it exists already, it is deleted).
 
 For example, given two configuration files:
 
@@ -167,8 +167,8 @@ Resulting in configuration:
 
 It is also possible to replace parts of the configuration by file contents. This can be done in two ways:
 
-- *Substituting Values*: If an element has the attribute `incl`, its value will be replaced by the content of the referenced file. By default, the path to the file with substitutions is `/etc/metrika.xml`. This can be changed in the [`include_from`](../operations/server-configuration-parameters/settings.md#include_from) element in the server config. The substitution values are specified in `/clickhouse/substitution_name` elements in this file. If a substitution specified in `incl` does not exist, it is recorded in the log. To prevent ClickHouse from logging missing substitutions, specify attribute `optional="true"` (for example, settings for [macros](../operations/server-configuration-parameters/settings.md#macros)).
-- *Substituting elements*: If you want to replace the entire element with a substitution, use `include` as the element name. The element name `include` can be combined with the attribute `from_zk = "/path/to/node"`. In this case, the element value is replaced by the contents of the ZooKeeper node at `/path/to/node`. This also works with you store an entire XML subtree as a Zookeeper node, it will be fully inserted into the source element.
+-*Substituting Values*: If an element has the attribute `incl`, its value will be replaced by the content of the referenced file. By default, the path to the file with substitutions is `/etc/metrika.xml`. This can be changed in the [`include_from`](../operations/server-configuration-parameters/settings.md#include_from) element in the server config. The substitution values are specified in `/clickhouse/substitution_name` elements in this file. If a substitution specified in `incl` does not exist, it is recorded in the log. To prevent ClickHouse from logging missing substitutions, specify attribute `optional="true"` (for example, settings for [macros](../operations/server-configuration-parameters/settings.md#macros)).
+-*Substituting elements*: If you want to replace the entire element with a substitution, use `include` as the element name. The element name `include` can be combined with the attribute `from_zk = "/path/to/node"`. In this case, the element value is replaced by the contents of the ZooKeeper node at `/path/to/node`. This also works with you store an entire XML subtree as a Zookeeper node, it will be fully inserted into the source element.
 
 An example of this is shown below:
 
@@ -322,7 +322,7 @@ Note that configuration files are first [merged](#merging) taking into account s
 For example, you can have a separate config file for each user like this:
 
 ```bash
-$ cat /etc/clickhouse-server/users.d/alice.xml
+cat /etc/clickhouse-server/users.d/alice.xml
 ```
 
 ```xml
@@ -344,7 +344,7 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 
 Here you can see the default config written in YAML: [`config.yaml.example`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.yaml.example).
 
-There are some differences between YAML and XML formats in terms of ClickHouse configurations. 
+There are some differences between YAML and XML formats in terms of ClickHouse configurations.
 Tips for writing configuration in YAML format are presented below.
 
 An XML tag with a text value is represented by a YAML key-value pair

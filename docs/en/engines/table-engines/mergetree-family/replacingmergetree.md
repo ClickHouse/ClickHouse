@@ -49,8 +49,8 @@ Uniqueness of rows is determined by the `ORDER BY` table section, not `PRIMARY K
 
 When merging, `ReplacingMergeTree` from all the rows with the same sorting key leaves only one:
 
-   - The last in the selection, if `ver` not set. A selection is a set of rows in a set of parts participating in the merge. The most recently created part (the last insert) will be the last one in the selection. Thus, after deduplication, the very last row from the most recent insert will remain for each unique sorting key.
-   - With the maximum version, if `ver` specified. If `ver` is the same for several rows, then it will use "if `ver` is not specified" rule for them, i.e. the most recent inserted row will remain.
+-The last in the selection, if `ver` not set. A selection is a set of rows in a set of parts participating in the merge. The most recently created part (the last insert) will be the last one in the selection. Thus, after deduplication, the very last row from the most recent insert will remain for each unique sorting key.
+-With the maximum version, if `ver` specified. If `ver` is the same for several rows, then it will use "if `ver` is not specified" rule for them, i.e. the most recent inserted row will remain.
 
 Example:
 
@@ -111,13 +111,15 @@ be safely inserted and the delete row will still be applied.
 
 To permanently drop such delete rows, enable the table setting `allow_experimental_replacing_merge_with_cleanup` and either:
 
-1. Set the table settings `enable_replacing_merge_with_cleanup_for_min_age_to_force_merge`, `min_age_to_force_merge_on_partition_only` and `min_age_to_force_merge_seconds`. If all parts in a partition are older than `min_age_to_force_merge_seconds`, ClickHouse will merge them
+1.Set the table settings `enable_replacing_merge_with_cleanup_for_min_age_to_force_merge`, `min_age_to_force_merge_on_partition_only` and `min_age_to_force_merge_seconds`. If all parts in a partition are older than `min_age_to_force_merge_seconds`, ClickHouse will merge them
 all into a single part and remove any delete rows.
 
 2. Manually run `OPTIMIZE TABLE table [PARTITION partition | PARTITION ID 'partition_id'] FINAL CLEANUP`.
+
 :::
 
 Example:
+
 ```sql
 -- with ver and is_deleted
 CREATE OR REPLACE TABLE myThirdReplacingMT
@@ -173,7 +175,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 All of the parameters excepting `ver` have the same meaning as in `MergeTree`.
 
-- `ver` - column with the version. Optional parameter. For a description, see the text above.
+-`ver` - column with the version. Optional parameter. For a description, see the text above.
 
 </details>
 
@@ -196,6 +198,7 @@ FROM numbers(1000000000)
 
 0 rows in set. Elapsed: 19.958 sec. Processed 1.00 billion rows, 8.00 GB (50.11 million rows/s., 400.84 MB/s.)
 ```
+
 Querying without `FINAL` produces an incorrect count (exact result will vary depending on merges):
 
 ```sql

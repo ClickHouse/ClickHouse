@@ -29,13 +29,14 @@ WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
 For more detail on window function syntax see: [Window Functions - Syntax](./index.md/#syntax).
 
 **Parameters**
-- `x` — Column name.
-- `offset` — Offset to apply. [(U)Int*](../data-types/int-uint.md). (Optional - `1` by default).
-- `default` — Value to return if calculated row exceeds the boundaries of the window frame. (Optional - default value of column type when omitted).
+
+-`x` — Column name.
+-`offset` — Offset to apply. [(U)Int*](../data-types/int-uint.md). (Optional - `1` by default).
+-`default` — Value to return if calculated row exceeds the boundaries of the window frame. (Optional - default value of column type when omitted).
 
 **Returned value**
 
-- Value evaluated at the row that is at a specified physical offset before the current row within the ordered frame.
+-Value evaluated at the row that is at a specified physical offset before the current row within the ordered frame.
 
 **Example**
 

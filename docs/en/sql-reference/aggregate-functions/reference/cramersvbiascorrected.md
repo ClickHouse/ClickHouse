@@ -17,12 +17,12 @@ cramersVBiasCorrected(column1, column2)
 
 **Parameters**
 
-- `column1`: first column to be compared.
-- `column2`: second column to be compared.
+-`column1`: first column to be compared.
+-`column2`: second column to be compared.
 
 **Returned value**
 
-- a value between 0 (corresponding to no association between the columns' values) to 1 (complete association).
+-a value between 0 (corresponding to no association between the columns' values) to 1 (complete association).
 
 Type: always [Float64](../../../sql-reference/data-types/float.md).
 

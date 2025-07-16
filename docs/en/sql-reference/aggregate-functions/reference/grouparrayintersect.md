@@ -18,11 +18,11 @@ groupArrayIntersect(x)
 
 **Arguments**
 
-- `x` — Argument (column name or expression).
+-`x` — Argument (column name or expression).
 
 **Returned values**
 
-- Array that contains elements that are in all arrays.
+-Array that contains elements that are in all arrays.
 
 Type: [Array](../../data-types/array.md).
 

@@ -24,15 +24,15 @@ Alias: `medianBFloat16`
 
 **Arguments**
 
-- `expr` — Column with numeric data. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md).
+-`expr` — Column with numeric data. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md).
 
 **Parameters**
 
-- `level` — Level of quantile. Optional. Possible values are in the range from 0 to 1. Default value: 0.5. [Float](../../../sql-reference/data-types/float.md).
+-`level` — Level of quantile. Optional. Possible values are in the range from 0 to 1. Default value: 0.5. [Float](../../../sql-reference/data-types/float.md).
 
 **Returned value**
 
-- Approximate quantile of the specified level.
+-Approximate quantile of the specified level.
 
 Type: [Float64](/sql-reference/data-types/float).
 
@@ -62,9 +62,10 @@ Result:
 │                         3 │                         1 │
 └───────────────────────────┴───────────────────────────┘
 ```
+
 Note that all floating point values in the example are truncated to 1.0 when converting to `bfloat16`.
 
 **See Also**
 
-- [median](/sql-reference/aggregate-functions/reference/median)
-- [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
+-[median](/sql-reference/aggregate-functions/reference/median)
+-[quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)

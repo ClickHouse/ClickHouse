@@ -14,11 +14,11 @@ You can install pre-built ClickHouse as described in [Quick Start](https://click
 
 ClickHouse can be build on the following platforms:
 
-- x86_64
-- AArch64
-- PowerPC 64 LE (experimental)
-- s390/x (experimental)
-- RISC-V 64 (experimental)
+-x86_64
+-AArch64
+-PowerPC 64 LE (experimental)
+-s390/x (experimental)
+-RISC-V 64 (experimental)
 
 ## Assumptions {#assumptions}
 
@@ -71,6 +71,7 @@ rustup toolchain install nightly-2025-07-07
 rustup default nightly-2025-07-07
 rustup component add rust-src
 ```
+
 ## Build ClickHouse {#build-clickhouse}
 
 We recommend to create a separate directory `build` inside `ClickHouse` which contains all build artifacts:
@@ -122,6 +123,7 @@ CMake provides shortcuts for above commands:
 cmake -S . -B build  # configure build, run from repository top-level directory
 cmake --build build  # compile
 ```
+
 :::
 
 ## Running the ClickHouse Executable {#running-the-clickhouse-executable}
@@ -208,6 +210,7 @@ You can run any build locally in an environment similar to CI using:
 ```bash
 python -m ci.praktika "BUILD_JOB_NAME"
 ```
+
 where BUILD_JOB_NAME is the job name as shown in the CI report, e.g., "Build (arm_release)", "Build (amd_debug)"
 
 This command pulls the appropriate Docker image `clickhouse/binary-builder` with all required dependencies,
@@ -216,5 +219,3 @@ and runs the build script inside it: `./ci/jobs/build_clickhouse.py`
 The build output will be placed in `./ci/tmp/`.
 
 It works on both AMD and ARM architectures and requires no additional dependencies other than Docker.
-
-

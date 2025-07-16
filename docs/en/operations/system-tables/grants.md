@@ -9,20 +9,21 @@ title: 'system.grants'
 Privileges granted to ClickHouse user accounts.
 
 Columns:
-- `user_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — User name.
 
-- `role_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Role assigned to user account.
+-`user_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — User name.
 
-- `access_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Access parameters for ClickHouse user account.
+-`role_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Role assigned to user account.
 
-- `database` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Name of a database.
+-`access_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Access parameters for ClickHouse user account.
 
-- `table` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Name of a table.
+-`database` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Name of a database.
 
-- `column` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Name of a column to which access is granted.
+-`table` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Name of a table.
 
-- `is_partial_revoke` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Logical value. It shows whether some privileges have been revoked. Possible values:
-- `0` — The row describes a grant.
-- `1` — The row describes a partial revoke.
+-`column` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Name of a column to which access is granted.
 
-- `grant_option` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Permission is granted `WITH GRANT OPTION`, see [GRANT](../../sql-reference/statements/grant.md#granting-privilege-syntax).
+-`is_partial_revoke` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Logical value. It shows whether some privileges have been revoked. Possible values:
+-`0` — The row describes a grant.
+-`1` — The row describes a partial revoke.
+
+-`grant_option` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Permission is granted `WITH GRANT OPTION`, see [GRANT](../../sql-reference/statements/grant.md#granting-privilege-syntax).

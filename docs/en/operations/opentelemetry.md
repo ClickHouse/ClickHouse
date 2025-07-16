@@ -19,9 +19,9 @@ If no parent trace context is supplied or the provided trace context does not co
 
 The trace context is propagated to downstream services in the following cases:
 
-* Queries to remote ClickHouse servers, such as when using [Distributed](../engines/table-engines/special/distributed.md) table engine.
+*Queries to remote ClickHouse servers, such as when using [Distributed](../engines/table-engines/special/distributed.md) table engine.
 
-* [url](../sql-reference/table-functions/url.md) table function. Trace context information is sent in HTTP headers.
+*[url](../sql-reference/table-functions/url.md) table function. Trace context information is sent in HTTP headers.
 
 ## Tracing the ClickHouse Itself {#tracing-the-clickhouse-itself}
 
@@ -66,4 +66,4 @@ In case of any errors, the part of the log data for which the error has occurred
 
 ## Related content {#related-content}
 
-- Blog: [Building an Observability Solution with ClickHouse - Part 2 - Traces](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)
+*Blog: [Building an Observability Solution with ClickHouse - Part 2 - Traces](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)

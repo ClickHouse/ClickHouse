@@ -19,7 +19,7 @@ null('structure')
 
 ## Argument {#argument}
 
-- `structure` — A list of columns and column types. [String](../../sql-reference/data-types/string.md).
+-`structure` — A list of columns and column types. [String](../../sql-reference/data-types/string.md).
 
 ## Returned value {#returned_value}
 
@@ -32,6 +32,7 @@ Query with the `null` function:
 ```sql
 INSERT INTO function null('x UInt64') SELECT * FROM numbers_mt(1000000000);
 ```
+
 can replace three queries:
 
 ```sql
@@ -42,4 +43,4 @@ DROP TABLE IF EXISTS t;
 
 ## Related {#related}
 
-- [Null table engine](../../engines/table-engines/special/null.md)
+-[Null table engine](../../engines/table-engines/special/null.md)

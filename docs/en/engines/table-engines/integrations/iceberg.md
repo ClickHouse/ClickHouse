@@ -9,7 +9,7 @@ title: 'Iceberg Table Engine'
 
 # Iceberg table engine {#iceberg-table-engine}
 
-:::warning 
+:::warning
 We recommend using the [Iceberg Table Function](/sql-reference/table-functions/iceberg.md) for working with Iceberg data in ClickHouse. The Iceberg Table Function currently provides sufficient functionality, offering a partial read-only interface for Iceberg tables.
 
 The Iceberg Table Engine is available but may have limitations. ClickHouse wasn't originally designed to support tables with externally changing schemas, which can affect the functionality of the Iceberg Table Engine. As a result, some features that work with regular tables may be unavailable or may not function correctly, especially when using the old analyzer.
@@ -74,10 +74,12 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 Table engine `Iceberg` is an alias to `IcebergS3` now.
 
 ## Schema evolution {#schema-evolution}
+
 At the moment, with the help of CH, you can read iceberg tables, the schema of which has changed over time. We currently support reading tables where columns have been added and removed, and their order has changed. You can also change a column where a value is required to one where NULL is allowed. Additionally, we support permitted type casting for simple types, namely:  
-* int -> long
-* float -> double
-* decimal(P, S) -> decimal(P', S) where P' > P. 
+
+*int -> long
+*float -> double
+*decimal(P, S) -> decimal(P', S) where P' > P.
 
 Currently, it is not possible to change nested structures or the types of elements within arrays and maps.
 
@@ -85,14 +87,14 @@ To read a table where the schema has changed after its creation with dynamic sch
 
 ## Partition pruning {#partition-pruning}
 
-ClickHouse supports partition pruning during SELECT queries for Iceberg tables, which helps optimize query performance by skipping irrelevant data files. To enable partition pruning, set `use_iceberg_partition_pruning = 1`. For more information about iceberg partition pruning address https://iceberg.apache.org/spec/#partitioning
-
+ClickHouse supports partition pruning during SELECT queries for Iceberg tables, which helps optimize query performance by skipping irrelevant data files. To enable partition pruning, set `use_iceberg_partition_pruning = 1`. For more information about iceberg partition pruning address <https://iceberg.apache.org/spec/#partitioning>
 
 ## Time travel {#time-travel}
 
 ClickHouse supports time travel for Iceberg tables, allowing you to query historical data with a specific timestamp or snapshot ID.
 
 ### Basic usage {#basic-usage}
+
  ```sql
  SELECT * FROM example_table ORDER BY 1 
  SETTINGS iceberg_timestamp_ms = 1714636800000
@@ -107,11 +109,11 @@ Note: You cannot specify both `iceberg_timestamp_ms` and `iceberg_snapshot_id` p
 
 ### Important considerations {#important-considerations}
 
-- **Snapshots** are typically created when:
-    - New data is written to the table
-    - Some kind of data compaction is performed
+***Snapshots** are typically created when:
+*New data is written to the table
+*Some kind of data compaction is performed
 
-- **Schema changes typically don't create snapshots** - This leads to important behaviors when using time travel with tables that have undergone schema evolution.
+***Schema changes typically don't create snapshots** - This leads to important behaviors when using time travel with tables that have undergone schema evolution.
 
 ### Example scenarios {#example-scenarios}
 
@@ -176,14 +178,12 @@ Consider this sequence of operations:
 
 Query results at different timestamps:
 
-- At ts1 & ts2: Only the original two columns appear
-- At ts3: All three columns appear, with NULL for the price of the first row
+*At ts1 & ts2: Only the original two columns appear
+*At ts3: All three columns appear, with NULL for the price of the first row
 
 #### Scenario 2: Historical vs. current schema differences {#scenario-2}
 
-
 A time travel query at a current moment might show a different schema than the current table:
-
 
 ```sql
 -- Create a table
@@ -244,40 +244,40 @@ The second one is that while doing time travel you can't get state of table befo
   SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finises with error: Cannot find a snapshot older than ts.
 ```
 
-
 In Clickhouse the behavior is consistent with Spark. You can mentally replace Spark Select queries with Clickhouse Select queries and it will work the same way.
 
 ## Metadata file resolution {#metadata-file-resolution}
+
 When using the `Iceberg` table engine in ClickHouse, the system needs to locate the correct metadata.json file that describes the Iceberg table structure. Here's how this resolution process works:
 
 ### Candidates search {#candidate-search}
 
-1. **Direct Path Specification**:
-   * If you set `iceberg_metadata_file_path`, the system will use this exact path by combining it with the Iceberg table directory path.
-   * When this setting is provided, all other resolution settings are ignored.
+1.**Direct Path Specification**:
+*If you set `iceberg_metadata_file_path`, the system will use this exact path by combining it with the Iceberg table directory path.
+*When this setting is provided, all other resolution settings are ignored.
 
-2. **Table UUID Matching**:
-   * If `iceberg_metadata_table_uuid` is specified, the system will:
-     * Look only at `.metadata.json` files in the `metadata` directory
-     * Filter for files containing a `table-uuid` field matching your specified UUID (case-insensitive)
+2.**Table UUID Matching**:
+*If `iceberg_metadata_table_uuid` is specified, the system will:
+    *Look only at `.metadata.json` files in the `metadata` directory
+    *Filter for files containing a `table-uuid` field matching your specified UUID (case-insensitive)
 
-3. **Default Search**:
-   * If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
+3.**Default Search**:
+*If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
 
 ### Selecting the most recent file {#most-recent-file}
 
 After identifying candidate files using the above rules, the system determines which one is the most recent:
 
-* If `iceberg_recent_metadata_file_by_last_updated_ms_field` is enabled:
-  * The file with the largest `last-updated-ms` value is selected
+*If `iceberg_recent_metadata_file_by_last_updated_ms_field` is enabled:
+*The file with the largest `last-updated-ms` value is selected
 
-* Otherwise:
-  * The file with the highest version number is selected
-  * (Version appears as `V` in filenames formatted as `V.metadata.json` or `V-uuid.metadata.json`)
+*Otherwise:
+*The file with the highest version number is selected
+*(Version appears as `V` in filenames formatted as `V.metadata.json` or `V-uuid.metadata.json`)
 
 **Note**: All mentioned settings are engine-level settings and must be specified during table creation as shown below:
 
-```sql 
+```sql
 CREATE TABLE example_table ENGINE = Iceberg(
     's3://bucket/path/to/iceberg_table'
 ) SETTINGS iceberg_metadata_table_uuid = '6f6f6407-c6a5-465f-a808-ea8900e35a38';
@@ -295,4 +295,4 @@ CREATE TABLE example_table ENGINE = Iceberg(
 
 ## See also {#see-also}
 
-- [iceberg table function](/sql-reference/table-functions/iceberg.md)
+*[iceberg table function](/sql-reference/table-functions/iceberg.md)

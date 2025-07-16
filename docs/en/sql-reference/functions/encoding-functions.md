@@ -19,11 +19,11 @@ char(number_1, [number_2, ..., number_n]);
 
 **Arguments**
 
-- `number_1, number_2, ..., number_n` — Numerical arguments interpreted as integers. Types: [Int](../data-types/int-uint.md), [Float](../data-types/float.md).
+-`number_1, number_2, ..., number_n` — Numerical arguments interpreted as integers. Types: [Int](../data-types/int-uint.md), [Float](../data-types/float.md).
 
 **Returned value**
 
-- a string of given bytes. [String](../data-types/string.md).
+-a string of given bytes. [String](../data-types/string.md).
 
 **Example**
 
@@ -97,11 +97,11 @@ Values of [UUID](../data-types/uuid.md) type are encoded as big-endian order str
 
 **Arguments**
 
-- `arg` — A value to convert to hexadecimal. Types: [String](../data-types/string.md), [UInt](../data-types/int-uint.md), [Float](../data-types/float.md), [Decimal](../data-types/decimal.md), [Date](../data-types/date.md) or [DateTime](../data-types/datetime.md).
+-`arg` — A value to convert to hexadecimal. Types: [String](../data-types/string.md), [UInt](../data-types/int-uint.md), [Float](../data-types/float.md), [Decimal](../data-types/decimal.md), [Date](../data-types/date.md) or [DateTime](../data-types/datetime.md).
 
 **Returned value**
 
-- A string with the hexadecimal representation of the argument. [String](../data-types/string.md).
+-A string with the hexadecimal representation of the argument. [String](../data-types/string.md).
 
 **Examples**
 
@@ -161,7 +161,6 @@ Result:
 └──────────────────────────────────┘
 ```
 
-
 ## unhex {#unhex}
 
 Performs the opposite operation of [hex](#hex). It interprets each pair of hexadecimal digits (in the argument) as a number and converts it to the byte represented by the number. The return value is a binary string (BLOB).
@@ -182,22 +181,24 @@ unhex(arg)
 
 **Arguments**
 
-- `arg` — A string containing any number of hexadecimal digits. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md).
+-`arg` — A string containing any number of hexadecimal digits. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md).
 
 Supports both uppercase and lowercase letters `A-F`. The number of hexadecimal digits does not have to be even. If it is odd, the last digit is interpreted as the least significant half of the `00-0F` byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn't thrown). For a numeric argument the inverse of hex(N) is not performed by unhex().
 
 **Returned value**
 
-- A binary string (BLOB). [String](../data-types/string.md).
+-A binary string (BLOB). [String](../data-types/string.md).
 
 **Example**
 
 Query:
+
 ```sql
 SELECT unhex('303132'), UNHEX('4D7953514C');
 ```
 
 Result:
+
 ```text
 ┌─unhex('303132')─┬─unhex('4D7953514C')─┐
 │ 012             │ MySQL               │
@@ -242,11 +243,11 @@ Values of [UUID](../data-types/uuid.md) type are encoded as big-endian order str
 
 **Arguments**
 
-- `arg` — A value to convert to binary. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md), [UInt](../data-types/int-uint.md), [Float](../data-types/float.md), [Decimal](../data-types/decimal.md), [Date](../data-types/date.md), or [DateTime](../data-types/datetime.md).
+-`arg` — A value to convert to binary. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md), [UInt](../data-types/int-uint.md), [Float](../data-types/float.md), [Decimal](../data-types/decimal.md), [Date](../data-types/date.md), or [DateTime](../data-types/datetime.md).
 
 **Returned value**
 
-- A string with the binary representation of the argument. [String](../data-types/string.md).
+-A string with the binary representation of the argument. [String](../data-types/string.md).
 
 **Examples**
 
@@ -308,7 +309,6 @@ Result:
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-
 ## unbin {#unbin}
 
 Interprets each pair of binary digits (in the argument) as a number and converts it to the byte represented by the number. The functions performs the opposite operation to [bin](#bin).
@@ -331,11 +331,11 @@ Supports binary digits `0` and `1`. The number of binary digits does not have to
 
 **Arguments**
 
-- `arg` — A string containing any number of binary digits. [String](../data-types/string.md).
+-`arg` — A string containing any number of binary digits. [String](../data-types/string.md).
 
 **Returned value**
 
-- A binary string (BLOB). [String](../data-types/string.md).
+-A binary string (BLOB). [String](../data-types/string.md).
 
 **Examples**
 
@@ -387,11 +387,11 @@ bitPositionsToArray(arg)
 
 **Arguments**
 
-- `arg` — Integer value. [Int/UInt](../data-types/int-uint.md).
+-`arg` — Integer value. [Int/UInt](../data-types/int-uint.md).
 
 **Returned value**
 
-- An array containing a list of positions of bits that equal `1`, in ascending order. [Array](../data-types/array.md)([UInt64](../data-types/int-uint.md)).
+-An array containing a list of positions of bits that equal `1`, in ascending order. [Array](../data-types/array.md)([UInt64](../data-types/int-uint.md)).
 
 **Example**
 
@@ -428,8 +428,9 @@ Result:
 Calculates the Morton encoding (ZCurve) for a list of unsigned integers.
 
 The function has two modes of operation:
-- Simple
-- Expanded
+
+-Simple
+-Expanded
 
 ### Simple mode {#simple-mode}
 
@@ -443,11 +444,11 @@ mortonEncode(args)
 
 **Parameters**
 
-- `args`: up to 8 [unsigned integers](../data-types/int-uint.md) or columns of the aforementioned type.
+-`args`: up to 8 [unsigned integers](../data-types/int-uint.md) or columns of the aforementioned type.
 
 **Returned value**
 
-- A UInt64 code. [UInt64](../data-types/int-uint.md)
+-A UInt64 code. [UInt64](../data-types/int-uint.md)
 
 **Example**
 
@@ -456,6 +457,7 @@ Query:
 ```sql
 SELECT mortonEncode(1, 2, 3);
 ```
+
 Result:
 
 ```response
@@ -480,15 +482,15 @@ mortonEncode(range_mask, args)
 ```
 
 **Parameters**
-- `range_mask`: 1-8.
-- `args`: up to 8 [unsigned integers](../data-types/int-uint.md) or columns of the aforementioned type.
+
+-`range_mask`: 1-8.
+-`args`: up to 8 [unsigned integers](../data-types/int-uint.md) or columns of the aforementioned type.
 
 Note: when using columns for `args` the provided `range_mask` tuple should still be a constant.
 
 **Returned value**
 
-- A UInt64 code. [UInt64](../data-types/int-uint.md)
-
+-A UInt64 code. [UInt64](../data-types/int-uint.md)
 
 **Example**
 
@@ -564,6 +566,7 @@ ENGINE=MergeTree()
 ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 insert into morton_numbers (*) values(1,2,3,4,5,6,7,8);
 ```
+
 Use column names instead of constants as function arguments to `mortonEncode`
 
 Query:
@@ -587,8 +590,9 @@ Please note that you can fit only so many bits of information into Morton code a
 Decodes a Morton encoding (ZCurve) into the corresponding unsigned integer tuple.
 
 As with the `mortonEncode` function, this function has two modes of operation:
-- Simple
-- Expanded
+
+-Simple
+-Expanded
 
 ### Simple mode {#simple-mode-1}
 
@@ -601,12 +605,13 @@ mortonDecode(tuple_size, code)
 ```
 
 **Parameters**
-- `tuple_size`: integer value no more than 8.
-- `code`: [UInt64](../data-types/int-uint.md) code.
+
+-`tuple_size`: integer value no more than 8.
+-`code`: [UInt64](../data-types/int-uint.md) code.
 
 **Returned value**
 
-- [tuple](../data-types/tuple.md) of the specified size. [UInt64](../data-types/int-uint.md)
+-[tuple](../data-types/tuple.md) of the specified size. [UInt64](../data-types/int-uint.md)
 
 **Example**
 
@@ -673,6 +678,7 @@ You can also use column names in the function.
 First create the table and insert some data.
 
 Query:
+
 ```sql
 CREATE TABLE morton_numbers(
     n1 UInt32,
@@ -688,6 +694,7 @@ ENGINE=MergeTree()
 ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 insert into morton_numbers (*) values(1,2,3,4,5,6,7,8);
 ```
+
 Use column names instead of constants as function arguments to `mortonDecode`
 
 Query:
@@ -707,8 +714,9 @@ Result:
 Calculates code for Hilbert Curve for a list of unsigned integers.
 
 The function has two modes of operation:
-- Simple
-- Expanded
+
+-Simple
+-Expanded
 
 ### Simple mode {#simple-mode-2}
 
@@ -722,11 +730,11 @@ hilbertEncode(args)
 
 **Parameters**
 
-- `args`: up to 2 [unsigned integers](../../sql-reference/data-types/int-uint.md) or columns of the aforementioned type.
+-`args`: up to 2 [unsigned integers](../../sql-reference/data-types/int-uint.md) or columns of the aforementioned type.
 
 **Returned value**
 
-- A UInt64 code
+-A UInt64 code
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md)
 
@@ -737,6 +745,7 @@ Query:
 ```sql
 SELECT hilbertEncode(3, 4);
 ```
+
 Result:
 
 ```response
@@ -756,17 +765,17 @@ hilbertEncode(range_mask, args)
 ```
 
 **Parameters**
-- `range_mask`: ([tuple](../../sql-reference/data-types/tuple.md))
-- `args`: up to 2 [unsigned integers](../../sql-reference/data-types/int-uint.md) or columns of the aforementioned type.
+
+-`range_mask`: ([tuple](../../sql-reference/data-types/tuple.md))
+-`args`: up to 2 [unsigned integers](../../sql-reference/data-types/int-uint.md) or columns of the aforementioned type.
 
 Note: when using columns for `args` the provided `range_mask` tuple should still be a constant.
 
 **Returned value**
 
-- A UInt64 code
+-A UInt64 code
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md)
-
 
 **Example**
 
@@ -836,6 +845,7 @@ ENGINE=MergeTree()
 ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 insert into hilbert_numbers (*) values(1,2);
 ```
+
 Use column names instead of constants as function arguments to `hilbertEncode`
 
 Query:
@@ -859,8 +869,9 @@ Please note that you can fit only so many bits of information into Hilbert code 
 Decodes a Hilbert curve index back into a tuple of unsigned integers, representing coordinates in multi-dimensional space.
 
 As with the `hilbertEncode` function, this function has two modes of operation:
-- Simple
-- Expanded
+
+-Simple
+-Expanded
 
 ### Simple mode {#simple-mode-3}
 
@@ -873,12 +884,13 @@ hilbertDecode(tuple_size, code)
 ```
 
 **Parameters**
-- `tuple_size`: integer value no more than 2.
-- `code`: [UInt64](../../sql-reference/data-types/int-uint.md) code.
+
+-`tuple_size`: integer value no more than 2.
+-`code`: [UInt64](../../sql-reference/data-types/int-uint.md) code.
 
 **Returned value**
 
-- [tuple](../../sql-reference/data-types/tuple.md) of the specified size.
+-[tuple](../../sql-reference/data-types/tuple.md) of the specified size.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md)
 
@@ -944,6 +956,7 @@ The function accepts a column of codes as a second argument:
 First create the table and insert some data.
 
 Query:
+
 ```sql
 CREATE TABLE hilbert_numbers(
     n1 UInt32,
@@ -953,6 +966,7 @@ ENGINE=MergeTree()
 ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 insert into hilbert_numbers (*) values(1,2);
 ```
+
 Use column names instead of constants as function arguments to `hilbertDecode`
 
 Query:
@@ -979,9 +993,9 @@ bech32Encode(hrp, data[, witver])
 
 **Parameters**
 
-- `hrp` — String of 1 - 83 lowercase characters specifying the "human-readable part" of the code. Usually 'bc' or 'tb'. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `data` — String of binary data to encode. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `witver` - Witness version. Optional, default = 1. An [UInt*](../data-types/int-uint.md) specifying the version of the algorithm to run. 0 for Bech32 and 1 or greater for Bech32m.
+-`hrp` — String of 1 - 83 lowercase characters specifying the "human-readable part" of the code. Usually 'bc' or 'tb'. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+-`data` — String of binary data to encode. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+-`witver` - Witness version. Optional, default = 1. An [UInt*](../data-types/int-uint.md) specifying the version of the algorithm to run. 0 for Bech32 and 1 or greater for Bech32m.
 
 :::note
 When using the [FixedString](../data-types/fixedstring.md) data type, if a value does not fully fill the row it is padded with null characters.
@@ -991,7 +1005,7 @@ For this reason it is not recommended to use the [FixedString](../data-types/fix
 
 **Returned value**
 
-- A Bech32 address string, consisting of the human-readable part, a separator character which is always '1', and a data part. The length of the string will never exceed 90 characters. If the algorithm cannot generate a valid address from the input, it will return an empty string.
+-A Bech32 address string, consisting of the human-readable part, a separator character which is always '1', and a data part. The length of the string will never exceed 90 characters. If the algorithm cannot generate a valid address from the input, it will return an empty string.
 
 Type: [String](../data-types/string.md).
 
@@ -1051,7 +1065,7 @@ bech32Decode(address)
 
 **Parameters**
 
-- `address` — Bech32 string to decode. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+-`address` — Bech32 string to decode. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 :::note
 Unlike the encode function, `Bech32Decode` will automatically handle padded [FixedStrings](../data-types/fixedstring.md).
@@ -1059,7 +1073,7 @@ Unlike the encode function, `Bech32Decode` will automatically handle padded [Fix
 
 **Returned value**
 
-- A tuple consisting of the (hrp, data) that was used to encode the string. The data is in binary format.
+-A tuple consisting of the (hrp, data) that was used to encode the string. The data is in binary format.
 
 Type: ([String](../data-types/string.md), [String](../data-types/string.md)).
 

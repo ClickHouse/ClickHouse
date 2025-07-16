@@ -25,13 +25,13 @@ We recommend using the `N < 10` value; performance is reduced with large `N` val
 
 **Parameters**
 
-- `N` — The number of elements to return. Optional. Default value: 10.
-- `load_factor` — Defines, how many cells reserved for values. If uniq(column) > N * load_factor, result of topK function will be approximate. Optional. Default value: 3.
-- `counts` — Defines, should result contain approximate count and error value.
- 
+-`N` — The number of elements to return. Optional. Default value: 10.
+-`load_factor` — Defines, how many cells reserved for values. If uniq(column) > N * load_factor, result of topK function will be approximate. Optional. Default value: 3.
+-`counts` — Defines, should result contain approximate count and error value.
+
 **Arguments**
 
-- `column` — The value to calculate frequency.
+-`column` — The value to calculate frequency.
 
 **Example**
 
@@ -50,6 +50,6 @@ FROM ontime
 
 **See Also**
 
-- [topKWeighted](../../../sql-reference/aggregate-functions/reference/topkweighted.md)
-- [approx_top_k](../../../sql-reference/aggregate-functions/reference/approxtopk.md)
-- [approx_top_sum](../../../sql-reference/aggregate-functions/reference/approxtopsum.md)
+-[topKWeighted](../../../sql-reference/aggregate-functions/reference/topkweighted.md)
+-[approx_top_k](../../../sql-reference/aggregate-functions/reference/approxtopk.md)
+-[approx_top_sum](../../../sql-reference/aggregate-functions/reference/approxtopsum.md)

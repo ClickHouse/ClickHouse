@@ -11,10 +11,10 @@ This table is only useful for C++ experts and ClickHouse engineers.
 
 Columns:
 
-- `symbol` ([String](../../sql-reference/data-types/string.md)) — Symbol name in the binary. It is mangled. You can apply `demangle(symbol)` to obtain a readable name.
-- `address_begin` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Start address of the symbol in the binary.
-- `address_end` ([UInt64](../../sql-reference/data-types/int-uint.md)) — End address of the symbol in the binary.
-- `name` ([String](../../sql-reference/data-types/string.md)) — Alias for `event`.
+-`symbol` ([String](../../sql-reference/data-types/string.md)) — Symbol name in the binary. It is mangled. You can apply `demangle(symbol)` to obtain a readable name.
+-`address_begin` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Start address of the symbol in the binary.
+-`address_end` ([UInt64](../../sql-reference/data-types/int-uint.md)) — End address of the symbol in the binary.
+-`name` ([String](../../sql-reference/data-types/string.md)) — Alias for `event`.
 
 **Example**
 

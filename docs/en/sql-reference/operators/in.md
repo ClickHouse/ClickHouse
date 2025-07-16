@@ -24,11 +24,11 @@ Don't list too many values explicitly (i.e. millions). If a data set is large, 
 
 The right side of the operator can be a set of constant expressions, a set of tuples with constant expressions (shown in the examples above), or the name of a database table or `SELECT` subquery in brackets.
 
-ClickHouse allows types to differ in the left and the right parts of the `IN` subquery. 
-In this case, it converts the right side value to the type of the left side, as 
-if the [accurateCastOrNull](/sql-reference/functions/type-conversion-functions#accuratecastornullx-t) function were applied to the right side. 
+ClickHouse allows types to differ in the left and the right parts of the `IN` subquery.
+In this case, it converts the right side value to the type of the left side, as
+if the [accurateCastOrNull](/sql-reference/functions/type-conversion-functions#accuratecastornullx-t) function were applied to the right side.
 
-This means that the data type becomes [Nullable](../../sql-reference/data-types/nullable.md), and if the conversion 
+This means that the data type becomes [Nullable](../../sql-reference/data-types/nullable.md), and if the conversion
 cannot be performed, it returns [NULL](/operations/settings/formats#input_format_null_as_default).
 
 **Example**
@@ -132,7 +132,7 @@ FROM t_null
 
 There are two options for `IN` operators with subqueries (similar to `JOIN` operators): normal `IN` / `JOIN` and `GLOBAL IN` / `GLOBAL JOIN`. They differ in how they are run for distributed query processing.
 
-:::note    
+:::note
 Remember that the algorithms described below may work differently depending on the [settings](../../operations/settings/settings.md) `distributed_product_mode` setting.
 :::
 
@@ -168,7 +168,7 @@ Now let's examine a query with `IN`:
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
 ```
 
-- Calculation of the intersection of audiences of two sites.
+-Calculation of the intersection of audiences of two sites.
 
 This query will be sent to all remote servers as
 
@@ -222,24 +222,24 @@ The temporary table `_data1` will be sent to every remote server with the query 
 
 This is more optimal than using the normal `IN`. However, keep the following points in mind:
 
-1.  When creating a temporary table, data is not made unique. To reduce the volume of data transmitted over the network, specify DISTINCT in the subquery. (You do not need to do this for a normal `IN`.)
-2.  The temporary table will be sent to all the remote servers. Transmission does not account for network topology. For example, if 10 remote servers reside in a datacenter that is very remote in relation to the requestor server, the data will be sent 10 times over the channel to the remote datacenter. Try to avoid large data sets when using `GLOBAL IN`.
-3.  When transmitting data to remote servers, restrictions on network bandwidth are not configurable. You might overload the network.
-4.  Try to distribute data across servers so that you do not need to use `GLOBAL IN` on a regular basis.
-5.  If you need to use `GLOBAL IN` often, plan the location of the ClickHouse cluster so that a single group of replicas resides in no more than one data center with a fast network between them, so that a query can be processed entirely within a single data center.
+1.When creating a temporary table, data is not made unique. To reduce the volume of data transmitted over the network, specify DISTINCT in the subquery. (You do not need to do this for a normal `IN`.)
+2.The temporary table will be sent to all the remote servers. Transmission does not account for network topology. For example, if 10 remote servers reside in a datacenter that is very remote in relation to the requestor server, the data will be sent 10 times over the channel to the remote datacenter. Try to avoid large data sets when using `GLOBAL IN`.
+3.When transmitting data to remote servers, restrictions on network bandwidth are not configurable. You might overload the network.
+4.Try to distribute data across servers so that you do not need to use `GLOBAL IN` on a regular basis.
+5.If you need to use `GLOBAL IN` often, plan the location of the ClickHouse cluster so that a single group of replicas resides in no more than one data center with a fast network between them, so that a query can be processed entirely within a single data center.
 
 It also makes sense to specify a local table in the `GLOBAL IN` clause, in case this local table is only available on the requestor server and you want to use data from it on remote servers.
 
 ### Distributed Subqueries and max_rows_in_set {#distributed-subqueries-and-max_rows_in_set}
 
-You can use [`max_rows_in_set`](/operations/settings/settings#max_rows_in_set) and [`max_bytes_in_set`](/operations/settings/settings#max_bytes_in_set) to control how much data is transferred during distributed queries. 
+You can use [`max_rows_in_set`](/operations/settings/settings#max_rows_in_set) and [`max_bytes_in_set`](/operations/settings/settings#max_bytes_in_set) to control how much data is transferred during distributed queries.
 
 This is specially important if the `GLOBAL IN` query returns a large amount of data. Consider the following SQL:
 
 ```sql
 SELECT * FROM table1 WHERE col1 GLOBAL IN (SELECT col1 FROM table2 WHERE <some_predicate>)
 ```
- 
+
 If `some_predicate` is not selective enough, it will return a large amount of data and cause performance issues. In such cases, it is wise to limit the data transfer over the network. Also, note that [`set_overflow_mode`](/operations/settings/settings#set_overflow_mode) is set to `throw` (by default) meaning that an exception is raised when these thresholds are met.
 
 ### Distributed Subqueries and max_parallel_replicas {#distributed-subqueries-and-max_parallel_replicas}

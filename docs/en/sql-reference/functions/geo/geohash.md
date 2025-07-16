@@ -23,18 +23,20 @@ geohashEncode(longitude, latitude, [precision])
 
 **Input values**
 
-- `longitude` — Longitude part of the coordinate you want to encode. Floating in range`[-180°, 180°]`. [Float](../../data-types/float.md). 
-- `latitude` — Latitude part of the coordinate you want to encode. Floating in range `[-90°, 90°]`. [Float](../../data-types/float.md).
-- `precision` (optional) — Length of the resulting encoded string. Defaults to `12`. Integer in the range `[1, 12]`. [Int8](../../data-types/int-uint.md).
+-`longitude` — Longitude part of the coordinate you want to encode. Floating in range`[-180°, 180°]`. [Float](../../data-types/float.md).
+-`latitude` — Latitude part of the coordinate you want to encode. Floating in range `[-90°, 90°]`. [Float](../../data-types/float.md).
+-`precision` (optional) — Length of the resulting encoded string. Defaults to `12`. Integer in the range `[1, 12]`. [Int8](../../data-types/int-uint.md).
 
 :::note
-- All coordinate parameters must be of the same type: either `Float32` or `Float64`.
-- For the `precision` parameter, any value less than `1` or greater than `12` is silently converted to `12`.
+
+-All coordinate parameters must be of the same type: either `Float32` or `Float64`.
+-For the `precision` parameter, any value less than `1` or greater than `12` is silently converted to `12`.
+
 :::
 
 **Returned values**
 
-- Alphanumeric string of the encoded coordinate (modified version of the base32-encoding alphabet is used). [String](../../data-types/string.md).
+-Alphanumeric string of the encoded coordinate (modified version of the base32-encoding alphabet is used). [String](../../data-types/string.md).
 
 **Example**
 
@@ -64,11 +66,11 @@ geohashDecode(hash_str)
 
 **Input values**
 
-- `hash_str` — Geohash-encoded string.
+-`hash_str` — Geohash-encoded string.
 
 **Returned values**
 
-- Tuple `(longitude, latitude)` of `Float64` values of longitude and latitude. [Tuple](../../data-types/tuple.md)([Float64](../../data-types/float.md))
+-Tuple `(longitude, latitude)` of `Float64` values of longitude and latitude. [Tuple](../../data-types/tuple.md)([Float64](../../data-types/float.md))
 
 **Example**
 
@@ -94,22 +96,22 @@ geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precisi
 
 **Arguments**
 
-- `longitude_min` — Minimum longitude. Range: `[-180°, 180°]`. [Float](../../data-types/float.md).
-- `latitude_min` — Minimum latitude. Range: `[-90°, 90°]`. [Float](../../data-types/float.md).
-- `longitude_max` — Maximum longitude. Range: `[-180°, 180°]`. [Float](../../data-types/float.md).
-- `latitude_max` — Maximum latitude. Range: `[-90°, 90°]`. [Float](../../data-types/float.md).
-- `precision` — Geohash precision. Range: `[1, 12]`. [UInt8](../../data-types/int-uint.md).
+-`longitude_min` — Minimum longitude. Range: `[-180°, 180°]`. [Float](../../data-types/float.md).
+-`latitude_min` — Minimum latitude. Range: `[-90°, 90°]`. [Float](../../data-types/float.md).
+-`longitude_max` — Maximum longitude. Range: `[-180°, 180°]`. [Float](../../data-types/float.md).
+-`latitude_max` — Maximum latitude. Range: `[-90°, 90°]`. [Float](../../data-types/float.md).
+-`precision` — Geohash precision. Range: `[1, 12]`. [UInt8](../../data-types/int-uint.md).
 
-:::note    
+:::note
 All coordinate parameters must be of the same type: either `Float32` or `Float64`.
 :::
 
 **Returned values**
 
-- Array of precision-long strings of geohash-boxes covering provided area, you should not rely on order of items. [Array](../../data-types/array.md)([String](../../data-types/string.md)).
-- `[]` - Empty array if minimum latitude and longitude values aren't less than corresponding maximum values.
+-Array of precision-long strings of geohash-boxes covering provided area, you should not rely on order of items. [Array](../../data-types/array.md)([String](../../data-types/string.md)).
+-`[]` - Empty array if minimum latitude and longitude values aren't less than corresponding maximum values.
 
-:::note    
+:::note
 Function throws an exception if resulting array is over 10'000'000 items long.
 :::
 

@@ -50,9 +50,9 @@ To get a list of settings, configured for the table, use `system.azure_queue_set
 
 `SELECT` is not particularly useful for streaming import (except for debugging), because each file can be imported only once. It is more practical to create real-time threads using [materialized views](../../../sql-reference/statements/create/view.md). To do this:
 
-1.  Use the engine to create a table for consuming from specified path in S3 and consider it a data stream.
-2.  Create a table with the desired structure.
-3.  Create a materialized view that converts data from the engine and puts it into a previously created table.
+1.Use the engine to create a table for consuming from specified path in S3 and consider it a data stream.
+2.Create a table with the desired structure.
+3.Create a materialized view that converts data from the engine and puts it into a previously created table.
 
 When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the background.
 
@@ -75,8 +75,8 @@ SELECT * FROM stats ORDER BY key;
 
 ## Virtual columns {#virtual-columns}
 
-- `_path` — Path to the file.
-- `_file` — Name of the file.
+-`_path` — Path to the file.
+-`_file` — Name of the file.
 
 For more information about virtual columns see [here](../../../engines/table-engines/index.md#table_engines-virtual_columns).
 
@@ -86,8 +86,8 @@ Enable logging for the table via the table setting `enable_logging_to_queue_log=
 
 Introspection capabilities are the same as the [S3Queue table engine](/engines/table-engines/integrations/s3queue#introspection) with several distinct differences:
 
-1. Use the `system.azure_queue` for the in-memory state of the queue for server versions >= 25.1. For older versions use the `system.s3queue` (it would contain information for `azure` tables as well).
-2. Enable the `system.azure_queue_log` via the main ClickHouse configuration e.g.
+1.Use the `system.azure_queue` for the in-memory state of the queue for server versions >= 25.1. For older versions use the `system.s3queue` (it would contain information for `azure` tables as well).
+2.Enable the `system.azure_queue_log` via the main ClickHouse configuration e.g.
 
   ```xml
   <azure_queue_log>

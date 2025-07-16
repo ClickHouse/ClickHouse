@@ -8,6 +8,7 @@ title: 'Optional secured communication between ClickHouse and Zookeeper'
 ---
 
 # Optional secured communication between ClickHouse and Zookeeper
+
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_automated.md';
 
 <SelfManaged />

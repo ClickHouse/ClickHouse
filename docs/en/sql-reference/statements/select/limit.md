@@ -15,7 +15,7 @@ title: 'LIMIT Clause'
 
 If there is no [ORDER BY](../../../sql-reference/statements/select/order-by.md) clause that explicitly sorts results, the choice of rows for the result may be arbitrary and non-deterministic.
 
-:::note    
+:::note
 The number of rows in the result set can also depend on the [limit](../../../operations/settings/settings.md#limit) setting.
 :::
 

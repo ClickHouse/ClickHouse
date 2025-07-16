@@ -11,7 +11,6 @@ The `INTERSECT` clause returns only those rows that result from both the first a
 
 Multiple `INTERSECT` statements are executed left to right if parentheses are not specified. The `INTERSECT` operator has a higher priority than the `UNION` and `EXCEPT` clauses.
 
-
 ```sql
 SELECT column1 [, column2 ]
 FROM table1
@@ -24,6 +23,7 @@ FROM table2
 [WHERE condition]
 
 ```
+
 The condition could be any expression based on your requirements.
 
 ## Examples {#examples}
@@ -152,8 +152,7 @@ Result:
 └─────────────┘
 ```
 
-
 **See Also**
 
-- [UNION](/sql-reference/statements/select/union)
-- [EXCEPT](/sql-reference/statements/select/except)
+-[UNION](/sql-reference/statements/select/union)
+-[EXCEPT](/sql-reference/statements/select/except)

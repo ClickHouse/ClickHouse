@@ -21,7 +21,7 @@ generateUUIDv4([expr])
 
 **Arguments**
 
-- `expr` — An arbitrary [expression](/sql-reference/syntax#expressions) used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID. Optional.
+-`expr` — An arbitrary [expression](/sql-reference/syntax#expressions) used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID. Optional.
 
 **Returned value**
 
@@ -93,7 +93,7 @@ generateUUIDv7([expr])
 
 **Arguments**
 
-- `expr` — An arbitrary [expression](/sql-reference/syntax#expressions) used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID. Optional.
+-`expr` — An arbitrary [expression](/sql-reference/syntax#expressions) used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID. Optional.
 
 **Returned value**
 
@@ -145,11 +145,11 @@ The function also works for [Arrays](/sql-reference/functions/array-functions#em
 
 **Arguments**
 
-- `x` — A UUID. [UUID](../data-types/uuid.md).
+-`x` — A UUID. [UUID](../data-types/uuid.md).
 
 **Returned value**
 
-- Returns `1` for an empty UUID or `0` for a non-empty UUID. [UInt8](../data-types/int-uint.md).
+-Returns `1` for an empty UUID or `0` for a non-empty UUID. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -185,11 +185,11 @@ The function also works for [Arrays](/sql-reference/functions/array-functions#no
 
 **Arguments**
 
-- `x` — A UUID. [UUID](../data-types/uuid.md).
+-`x` — A UUID. [UUID](../data-types/uuid.md).
 
 **Returned value**
 
-- Returns `1` for a non-empty UUID or `0` for an empty UUID. [UInt8](../data-types/int-uint.md).
+-Returns `1` for a non-empty UUID or `0` for an empty UUID. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -239,8 +239,8 @@ Result:
 
 **Arguments**
 
-- `string` — String of 36 characters or FixedString(36). [String](../syntax.md#string).
-- `default` — UUID to be used as the default if the first argument cannot be converted to a UUID type. [UUID](../data-types/uuid.md).
+-`string` — String of 36 characters or FixedString(36). [String](../syntax.md#string).
+-`default` — UUID to be used as the default if the first argument cannot be converted to a UUID type. [UUID](../data-types/uuid.md).
 
 **Returned value**
 
@@ -348,8 +348,8 @@ UUIDStringToNum(string[, variant = 1])
 
 **Arguments**
 
-- `string` — A [String](/sql-reference/data-types/string) of 36 characters or [FixedString](/sql-reference/data-types/string)
-- `variant` — Integer, representing a variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.
+-`string` — A [String](/sql-reference/data-types/string) of 36 characters or [FixedString](/sql-reference/data-types/string)
+-`variant` — Integer, representing a variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.
 
 **Returned value**
 
@@ -397,8 +397,8 @@ UUIDNumToString(binary[, variant = 1])
 
 **Arguments**
 
-- `binary` — [FixedString(16)](../data-types/fixedstring.md) as a binary representation of a UUID.
-- `variant` — Integer, representing a variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.
+-`binary` — [FixedString(16)](../data-types/fixedstring.md) as a binary representation of a UUID.
+-`variant` — Integer, representing a variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.
 
 **Returned value**
 
@@ -446,8 +446,8 @@ UUIDToNum(uuid[, variant = 1])
 
 **Arguments**
 
-- `uuid` — [UUID](../data-types/uuid.md).
-- `variant` — Integer, representing a variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.
+-`uuid` — [UUID](../data-types/uuid.md).
+-`variant` — Integer, representing a variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.
 
 **Returned value**
 
@@ -495,12 +495,12 @@ UUIDv7ToDateTime(uuid[, timezone])
 
 **Arguments**
 
-- `uuid` — [UUID](../data-types/uuid.md) of version 7.
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional). [String](../data-types/string.md).
+-`uuid` — [UUID](../data-types/uuid.md) of version 7.
+-`timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional). [String](../data-types/string.md).
 
 **Returned value**
 
-- Timestamp with milliseconds precision. If the UUID is not a valid version 7 UUID, it returns 1970-01-01 00:00:00.000. [DateTime64(3)](../data-types/datetime64.md).
+-Timestamp with milliseconds precision. If the UUID is not a valid version 7 UUID, it returns 1970-01-01 00:00:00.000. [DateTime64(3)](../data-types/datetime64.md).
 
 **Usage examples**
 
@@ -540,7 +540,7 @@ serverUUID()
 
 **Returned value**
 
-- The UUID of the server. [UUID](../data-types/uuid.md).
+-The UUID of the server. [UUID](../data-types/uuid.md).
 
 ## generateSnowflakeID {#generatesnowflakeid}
 
@@ -575,8 +575,8 @@ generateSnowflakeID([expr, [machine_id]])
 
 **Arguments**
 
-- `expr` — An arbitrary [expression](/sql-reference/syntax#expressions) used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned Snowflake ID. Optional.
-- `machine_id` — A machine ID, the lowest 10 bits are used. [Int64](../data-types/int-uint.md). Optional.
+-`expr` — An arbitrary [expression](/sql-reference/syntax#expressions) used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned Snowflake ID. Optional.
+-`machine_id` — A machine ID, the lowest 10 bits are used. [Int64](../data-types/int-uint.md). Optional.
 
 **Returned value**
 
@@ -641,12 +641,12 @@ snowflakeToDateTime(value[, time_zone])
 
 **Arguments**
 
-- `value` — Snowflake ID. [Int64](../data-types/int-uint.md).
-- `time_zone` — [Timezone](/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
+-`value` — Snowflake ID. [Int64](../data-types/int-uint.md).
+-`time_zone` — [Timezone](/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
 
 **Returned value**
 
-- The timestamp component of `value` as a [DateTime](../data-types/datetime.md) value.
+-The timestamp component of `value` as a [DateTime](../data-types/datetime.md) value.
 
 **Example**
 
@@ -684,12 +684,12 @@ snowflakeToDateTime64(value[, time_zone])
 
 **Arguments**
 
-- `value` — Snowflake ID. [Int64](../data-types/int-uint.md).
-- `time_zone` — [Timezone](/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
+-`value` — Snowflake ID. [Int64](../data-types/int-uint.md).
+-`time_zone` — [Timezone](/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
 
 **Returned value**
 
-- The timestamp component of `value` as a [DateTime64](../data-types/datetime64.md) with scale = 3, i.e. millisecond precision.
+-The timestamp component of `value` as a [DateTime64](../data-types/datetime64.md) with scale = 3, i.e. millisecond precision.
 
 **Example**
 
@@ -727,11 +727,11 @@ dateTimeToSnowflake(value)
 
 **Arguments**
 
-- `value` — Date with time. [DateTime](../data-types/datetime.md).
+-`value` — Date with time. [DateTime](../data-types/datetime.md).
 
 **Returned value**
 
-- Input value converted to the [Int64](../data-types/int-uint.md) data type as the first Snowflake ID at that time.
+-Input value converted to the [Int64](../data-types/int-uint.md) data type as the first Snowflake ID at that time.
 
 **Example**
 
@@ -768,11 +768,11 @@ dateTime64ToSnowflake(value)
 
 **Arguments**
 
-- `value` — Date with time. [DateTime64](../data-types/datetime64.md).
+-`value` — Date with time. [DateTime64](../data-types/datetime64.md).
 
 **Returned value**
 
-- Input value converted to the [Int64](../data-types/int-uint.md) data type as the first Snowflake ID at that time.
+-Input value converted to the [Int64](../data-types/int-uint.md) data type as the first Snowflake ID at that time.
 
 **Example**
 
@@ -802,13 +802,13 @@ snowflakeIDToDateTime(value[, epoch[, time_zone]])
 
 **Arguments**
 
-- `value` — Snowflake ID. [UInt64](../data-types/int-uint.md).
-- `epoch` - Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657. Optional. [UInt*](../data-types/int-uint.md).
-- `time_zone` — [Timezone](/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
+-`value` — Snowflake ID. [UInt64](../data-types/int-uint.md).
+-`epoch` - Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657. Optional. [UInt*](../data-types/int-uint.md).
+-`time_zone` — [Timezone](/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
 
 **Returned value**
 
-- The timestamp component of `value` as a [DateTime](../data-types/datetime.md) value.
+-The timestamp component of `value` as a [DateTime](../data-types/datetime.md) value.
 
 **Example**
 
@@ -838,13 +838,13 @@ snowflakeIDToDateTime64(value[, epoch[, time_zone]])
 
 **Arguments**
 
-- `value` — Snowflake ID. [UInt64](../data-types/int-uint.md).
-- `epoch` - Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657. Optional. [UInt*](../data-types/int-uint.md).
-- `time_zone` — [Timezone](/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
+-`value` — Snowflake ID. [UInt64](../data-types/int-uint.md).
+-`epoch` - Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657. Optional. [UInt*](../data-types/int-uint.md).
+-`time_zone` — [Timezone](/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
 
 **Returned value**
 
-- The timestamp component of `value` as a [DateTime64](../data-types/datetime64.md) with scale = 3, i.e. millisecond precision.
+-The timestamp component of `value` as a [DateTime64](../data-types/datetime64.md) with scale = 3, i.e. millisecond precision.
 
 **Example**
 
@@ -874,12 +874,12 @@ dateTimeToSnowflakeID(value[, epoch])
 
 **Arguments**
 
-- `value` — Date with time. [DateTime](../data-types/datetime.md).
-- `epoch` - Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657. Optional. [UInt*](../data-types/int-uint.md).
+-`value` — Date with time. [DateTime](../data-types/datetime.md).
+-`epoch` - Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657. Optional. [UInt*](../data-types/int-uint.md).
 
 **Returned value**
 
-- Input value converted to [UInt64](../data-types/int-uint.md) as the first Snowflake ID at that time.
+-Input value converted to [UInt64](../data-types/int-uint.md) as the first Snowflake ID at that time.
 
 **Example**
 
@@ -909,12 +909,12 @@ dateTime64ToSnowflakeID(value[, epoch])
 
 **Arguments**
 
-- `value` — Date with time. [DateTime64](../data-types/datetime64.md).
-- `epoch` - Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657. Optional. [UInt*](../data-types/int-uint.md).
+-`value` — Date with time. [DateTime64](../data-types/datetime64.md).
+-`epoch` - Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657. Optional. [UInt*](../data-types/int-uint.md).
 
 **Returned value**
 
-- Input value converted to [UInt64](../data-types/int-uint.md) as the first Snowflake ID at that time.
+-Input value converted to [UInt64](../data-types/int-uint.md) as the first Snowflake ID at that time.
 
 **Example**
 
@@ -934,7 +934,7 @@ Result:
 
 ## See also {#see-also}
 
-- [dictGetUUID](/sql-reference/functions/ext-dict-functions#other-functions)
+-[dictGetUUID](/sql-reference/functions/ext-dict-functions#other-functions)
 
 <!-- 
 The inner content of the tags below are replaced at doc framework build time with 

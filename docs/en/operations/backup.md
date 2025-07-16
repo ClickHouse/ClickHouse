@@ -8,10 +8,10 @@ title: 'Backup and restore'
 
 # Backup and restore
 
-- [Backup to a local disk](#backup-to-a-local-disk)
-- [Configuring backup/restore to use an S3 endpoint](#configuring-backuprestore-to-use-an-s3-endpoint)
-- [Backup/restore using an S3 disk](#backuprestore-using-an-s3-disk)
-- [Alternatives](#alternatives)
+-[Backup to a local disk](#backup-to-a-local-disk)
+-[Configuring backup/restore to use an S3 endpoint](#configuring-backuprestore-to-use-an-s3-endpoint)
+-[Backup/restore using an S3 disk](#backuprestore-using-an-s3-disk)
+-[Alternatives](#alternatives)
 
 ## Command summary {#command-summary}
 
@@ -78,43 +78,49 @@ In the examples below you will see the backup destination specified like `Disk('
 Backups can be either full or incremental, and can include tables (including materialized views, projections, and dictionaries), and databases.  Backups can be synchronous (default) or asynchronous.  They can be compressed.  Backups can be password protected.
 
 The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a destination (or source), options and settings:
-- The destination for the backup, or the source for the restore.  This is based on the disk defined earlier.  For example `Disk('backups', 'filename.zip')`
-- ASYNC: backup or restore asynchronously
-- PARTITIONS: a list of partitions to restore
-- SETTINGS:
-    - `id`: id of backup or restore operation, randomly generated UUID is used, if not specified manually. If there is already running operation with the same `id` exception is thrown.
-    - [`compression_method`](/sql-reference/statements/create/table#column_compression_codec) and compression_level
-    - `password` for the file on disk
-    - `base_backup`: the destination of the previous backup of this source.  For example, `Disk('backups', '1.zip')`
-    - `use_same_s3_credentials_for_base_backup`: whether base backup to S3 should inherit credentials from the query. Only works with `S3`.
-    - `use_same_password_for_base_backup`: whether base backup archive should inherit the password from the query.
-    - `structure_only`: if enabled, allows to only backup or restore the CREATE statements without the data of tables
-    - `storage_policy`: storage policy for the tables being restored. See [Using Multiple Block Devices for Data Storage](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes). This setting is only applicable to the `RESTORE` command. The specified storage policy applies only to tables with an engine from the `MergeTree` family.
-    - `s3_storage_class`: the storage class used for S3 backup. For example, `STANDARD`
-    - `azure_attempt_to_create_container`: when using Azure Blob Storage, whether the specified container will try to be created if it doesn't exist. Default: true.
-    - [core settings](/operations/settings/settings) can be used here too
+
+-The destination for the backup, or the source for the restore.  This is based on the disk defined earlier.  For example `Disk('backups', 'filename.zip')`
+-ASYNC: backup or restore asynchronously
+-PARTITIONS: a list of partitions to restore
+-SETTINGS:
+-`id`: id of backup or restore operation, randomly generated UUID is used, if not specified manually. If there is already running operation with the same `id` exception is thrown.
+-[`compression_method`](/sql-reference/statements/create/table#column_compression_codec) and compression_level
+-`password` for the file on disk
+-`base_backup`: the destination of the previous backup of this source.  For example, `Disk('backups', '1.zip')`
+-`use_same_s3_credentials_for_base_backup`: whether base backup to S3 should inherit credentials from the query. Only works with `S3`.
+-`use_same_password_for_base_backup`: whether base backup archive should inherit the password from the query.
+-`structure_only`: if enabled, allows to only backup or restore the CREATE statements without the data of tables
+-`storage_policy`: storage policy for the tables being restored. See [Using Multiple Block Devices for Data Storage](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes). This setting is only applicable to the `RESTORE` command. The specified storage policy applies only to tables with an engine from the `MergeTree` family.
+-`s3_storage_class`: the storage class used for S3 backup. For example, `STANDARD`
+-`azure_attempt_to_create_container`: when using Azure Blob Storage, whether the specified container will try to be created if it doesn't exist. Default: true.
+-[core settings](/operations/settings/settings) can be used here too
 
 ### Usage examples {#usage-examples}
 
 Backup and then restore a table:
+
 ```sql
 BACKUP TABLE test.table TO Disk('backups', '1.zip')
 ```
 
 Corresponding restore:
+
 ```sql
 RESTORE TABLE test.table FROM Disk('backups', '1.zip')
 ```
 
 :::note
 The above RESTORE would fail if the table `test.table` contains data, you would have to drop the table in order to test the RESTORE, or use the setting `allow_non_empty_tables=true`:
+
 ```sql
 RESTORE TABLE test.table FROM Disk('backups', '1.zip')
 SETTINGS allow_non_empty_tables=true
 ```
+
 :::
 
 Tables can be restored, or backed up, with new names:
+
 ```sql
 RESTORE TABLE test.table AS test.table2 FROM Disk('backups', '1.zip')
 ```
@@ -131,12 +137,14 @@ Incremental backups depend on the base backup.  The base backup must be kept ava
 :::
 
 Incrementally store new data. The setting `base_backup` causes data since a previous backup to `Disk('backups', 'd.zip')` to be stored to `Disk('backups', 'incremental-a.zip')`:
+
 ```sql
 BACKUP TABLE test.table TO Disk('backups', 'incremental-a.zip')
   SETTINGS base_backup = Disk('backups', 'd.zip')
 ```
 
 Restore all data from the incremental backup and the base_backup into a new table `test.table2`:
+
 ```sql
 RESTORE TABLE test.table AS test.table2
   FROM Disk('backups', 'incremental-a.zip');
@@ -145,6 +153,7 @@ RESTORE TABLE test.table AS test.table2
 ### Assign a password to the backup {#assign-a-password-to-the-backup}
 
 Backups written to disk can have a password applied to the file:
+
 ```sql
 BACKUP TABLE test.table
   TO Disk('backups', 'password-protected.zip')
@@ -152,6 +161,7 @@ BACKUP TABLE test.table
 ```
 
 Restore:
+
 ```sql
 RESTORE TABLE test.table
   FROM Disk('backups', 'password-protected.zip')
@@ -161,6 +171,7 @@ RESTORE TABLE test.table
 ### Compression settings {#compression-settings}
 
 If you would like to specify the compression method or level:
+
 ```sql
 BACKUP TABLE test.table
   TO Disk('backups', 'filename.zip')
@@ -168,7 +179,9 @@ BACKUP TABLE test.table
 ```
 
 ### Restore specific partitions {#restore-specific-partitions}
+
 If specific partitions associated with a table need to be restored these can be specified.  To restore partitions 1 and 4 from backup:
+
 ```sql
 RESTORE TABLE test.table PARTITIONS '2', '3'
   FROM Disk('backups', 'filename.zip')
@@ -179,29 +192,33 @@ RESTORE TABLE test.table PARTITIONS '2', '3'
 Backups can also be stored as tar archives. The functionality is the same as for zip, except that a password is not supported.
 
 Write a backup as a tar:
+
 ```sql
 BACKUP TABLE test.table TO Disk('backups', '1.tar')
 ```
 
 Corresponding restore:
+
 ```sql
 RESTORE TABLE test.table FROM Disk('backups', '1.tar')
 ```
 
 To change the compression method, the correct file suffix should be appended to the backup name. I.E to compress the tar archive using gzip:
+
 ```sql
 BACKUP TABLE test.table TO Disk('backups', '1.tar.gz')
 ```
 
 The supported compression file suffixes are `tar.gz`, `.tgz` `tar.bz2`, `tar.lzma`, `.tar.zst`, `.tzst` and `.tar.xz`.
 
-
 ### Check the status of backups {#check-the-status-of-backups}
 
 The backup command returns an `id` and `status`, and that `id` can be used to get the status of the backup.  This is very useful to check the progress of long ASYNC backups.  The example below shows a failure that happened when trying to overwrite an existing backup file:
+
 ```sql
 BACKUP TABLE helloworld.my_first_table TO Disk('backups', '1.zip') ASYNC
 ```
+
 ```response
 ┌─id───────────────────────────────────┬─status──────────┐
 │ 7678b0b3-f519-4e6e-811f-5a0781a4eb52 │ CREATING_BACKUP │
@@ -217,6 +234,7 @@ FROM system.backups
 WHERE id='7678b0b3-f519-4e6e-811f-5a0781a4eb52'
 FORMAT Vertical
 ```
+
 ```response
 Row 1:
 ──────
@@ -236,6 +254,7 @@ end_time:          2022-08-30 09:21:46
 ```
 
 Along with `system.backups` table, all backup and restore operations are also tracked in the system log table [backup_log](../operations/system-tables/backup_log.md):
+
 ```sql
 SELECT *
 FROM system.backup_log
@@ -243,6 +262,7 @@ WHERE id = '7678b0b3-f519-4e6e-811f-5a0781a4eb52'
 ORDER BY event_time_microseconds ASC
 FORMAT Vertical
 ```
+
 ```response
 Row 1:
 ──────
@@ -287,11 +307,12 @@ bytes_read:              0
 ## Configuring BACKUP/RESTORE to use an S3 Endpoint {#configuring-backuprestore-to-use-an-s3-endpoint}
 
 To write backups to an S3 bucket you need three pieces of information:
-- S3 endpoint,
+
+-S3 endpoint,
   for example `https://mars-doc-test.s3.amazonaws.com/backup-S3/`
-- Access key ID,
+-Access key ID,
   for example `ABC123`
-- Secret access key,
+-Secret access key,
   for example `Abc+123`
 
 :::note
@@ -345,9 +366,11 @@ INSERT INTO data SELECT *
 FROM generateRandom('key Int, value String, array Array(String)')
 LIMIT 100
 ```
+
 ### Take an incremental backup {#take-an-incremental-backup}
 
 This backup command is similar to the base backup, but adds `SETTINGS base_backup` and the location of the base backup.  Note that the destination for the incremental backup is not the same directory as the base, it is the same endpoint with a different target directory within the bucket.  The base backup is in `my_backup`, and the incremental will be written to `my_incremental`:
+
 ```sql
 BACKUP TABLE data TO S3('https://mars-doc-test.s3.amazonaws.com/backup-S3/my_incremental', 'ABC123', 'Abc+123') SETTINGS base_backup = S3('https://mars-doc-test.s3.amazonaws.com/backup-S3/my_backup', 'ABC123', 'Abc+123')
 ```
@@ -357,9 +380,11 @@ BACKUP TABLE data TO S3('https://mars-doc-test.s3.amazonaws.com/backup-S3/my_inc
 │ f6cd3900-850f-41c9-94f1-0c4df33ea528 │ BACKUP_CREATED │
 └──────────────────────────────────────┴────────────────┘
 ```
+
 ### Restore from the incremental backup {#restore-from-the-incremental-backup}
 
 This command restores the incremental backup into a new table, `data3`.  Note that when an incremental backup is restored, the base backup is also included.  Specify only the incremental backup when restoring:
+
 ```sql
 RESTORE TABLE data AS data3 FROM S3('https://mars-doc-test.s3.amazonaws.com/backup-S3/my_incremental', 'ABC123', 'Abc+123')
 ```
@@ -373,10 +398,12 @@ RESTORE TABLE data AS data3 FROM S3('https://mars-doc-test.s3.amazonaws.com/back
 ### Verify the count {#verify-the-count}
 
 There were two inserts into the original table `data`, one with 1,000 rows and one with 100 rows, for a total of 1,100. Verify that the restored table has 1,100 rows:
+
 ```sql
 SELECT count()
 FROM data3
 ```
+
 ```response
 ┌─count()─┐
 │    1100 │
@@ -384,7 +411,9 @@ FROM data3
 ```
 
 ### Verify the content {#verify-the-content}
+
 This compares the content of the original table, `data` with the restored table `data3`:
+
 ```sql
 SELECT throwIf((
         SELECT groupArray(tuple(*))
@@ -394,6 +423,7 @@ SELECT throwIf((
         FROM data3
     ), 'Data does not match after BACKUP/RESTORE')
 ```
+
 ## BACKUP/RESTORE using an S3 disk {#backuprestore-using-an-s3-disk}
 
 It is also possible to `BACKUP`/`RESTORE` to S3 by configuring an S3 disk in the ClickHouse storage configuration.  Configure the disk like this by adding a file to `/etc/clickhouse-server/config.d`:
@@ -435,8 +465,10 @@ RESTORE TABLE data AS data_restored FROM Disk('s3_plain', 'cloud_backup');
 
 :::note
 But keep in mind that:
-- This disk should not be used for `MergeTree` itself, only for `BACKUP`/`RESTORE`
-- If your tables are backed by S3 storage and types of the disks are different, it doesn't use `CopyObject` calls to copy parts to the destination bucket, instead, it downloads and uploads them, which is very inefficient. Prefer to use `BACKUP ... TO S3(<endpoint>)` syntax for this use-case.
+
+-This disk should not be used for `MergeTree` itself, only for `BACKUP`/`RESTORE`
+-If your tables are backed by S3 storage and types of the disks are different, it doesn't use `CopyObject` calls to copy parts to the destination bucket, instead, it downloads and uploads them, which is very inefficient. Prefer to use `BACKUP ... TO S3(<endpoint>)` syntax for this use-case.
+
 :::
 
 ## Using named collections {#using-named-collections}
@@ -485,11 +517,12 @@ When these settings are false on a cluster, only 1 backup/restore is allowed to 
 ## Configuring BACKUP/RESTORE to use an AzureBlobStorage Endpoint {#configuring-backuprestore-to-use-an-azureblobstorage-endpoint}
 
 To write backups to an AzureBlobStorage container you need the following pieces of information:
-- AzureBlobStorage endpoint connection string / url,
-- Container,
-- Path,
-- Account name (if url is specified)
-- Account Key (if url is specified)
+
+-AzureBlobStorage endpoint connection string / url,
+-Container,
+-Path,
+-Account name (if url is specified)
+-Account Key (if url is specified)
 
 The destination for a backup will be specified like this:
 

@@ -16,18 +16,18 @@ This table does not exist if ZooKeeper is not configured. The 'system.zookeeper_
 
 Columns:
 
--   `name` ([String](../../sql-reference/data-types/string.md)) — ZooKeeper cluster's name.
--   `host` ([String](../../sql-reference/data-types/string.md)) — The hostname/IP of the ZooKeeper node that ClickHouse connected to.
--   `port` ([UIn16](../../sql-reference/data-types/int-uint.md)) — The port of the ZooKeeper node that ClickHouse connected to.
--   `index` ([Nullable(UInt8)](../../sql-reference/data-types/int-uint.md)) — The index of the ZooKeeper node that ClickHouse connected to. The index is from ZooKeeper config. If not connected, this column is NULL.
--   `connected_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — When the connection was established
--   `session_uptime_elapsed_seconds` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Seconds elapsed since the connection was established.
--   `is_expired` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Is the current connection expired.
--   `keeper_api_version` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Keeper API version.
--   `client_id` ([Int64](../../sql-reference/data-types/int-uint.md)) — Session id of the connection.
--   `xid` ([Int64](../../sql-reference/data-types/int-uint.md)) — XID of the current session.
--   `enabled_feature_flags` ([Array(Enum16)](../../sql-reference/data-types/array.md)) — Feature flags which are enabled. Only applicable to ClickHouse Keeper. Possible values are `FILTERED_LIST`, `MULTI_READ`, `CHECK_NOT_EXISTS`, `CREATE_IF_NOT_EXISTS`, `REMOVE_RECURSIVE`.
--   `availability_zone` ([String](../../sql-reference/data-types/string.md)) — Availability zone.
+-`name` ([String](../../sql-reference/data-types/string.md)) — ZooKeeper cluster's name.
+-`host` ([String](../../sql-reference/data-types/string.md)) — The hostname/IP of the ZooKeeper node that ClickHouse connected to.
+-`port` ([UIn16](../../sql-reference/data-types/int-uint.md)) — The port of the ZooKeeper node that ClickHouse connected to.
+-`index` ([Nullable(UInt8)](../../sql-reference/data-types/int-uint.md)) — The index of the ZooKeeper node that ClickHouse connected to. The index is from ZooKeeper config. If not connected, this column is NULL.
+-`connected_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — When the connection was established
+-`session_uptime_elapsed_seconds` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Seconds elapsed since the connection was established.
+-`is_expired` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Is the current connection expired.
+-`keeper_api_version` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Keeper API version.
+-`client_id` ([Int64](../../sql-reference/data-types/int-uint.md)) — Session id of the connection.
+-`xid` ([Int64](../../sql-reference/data-types/int-uint.md)) — XID of the current session.
+-`enabled_feature_flags` ([Array(Enum16)](../../sql-reference/data-types/array.md)) — Feature flags which are enabled. Only applicable to ClickHouse Keeper. Possible values are `FILTERED_LIST`, `MULTI_READ`, `CHECK_NOT_EXISTS`, `CREATE_IF_NOT_EXISTS`, `REMOVE_RECURSIVE`.
+-`availability_zone` ([String](../../sql-reference/data-types/string.md)) — Availability zone.
 
 Example:
 

@@ -40,6 +40,6 @@ create_query: CREATE WORKLOAD `all`
 
 Columns:
 
-- `name` (`String`) - Workload name.
-- `parent` (`String`) - Parent workload name.
-- `create_query` (`String`) - The definition of the workload.
+-`name` (`String`) - Workload name.
+-`parent` (`String`) - Parent workload name.
+-`create_query` (`String`) - The definition of the workload.

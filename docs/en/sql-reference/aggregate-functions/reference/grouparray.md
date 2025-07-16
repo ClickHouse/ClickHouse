@@ -48,4 +48,4 @@ Result:
 
 The groupArray function will remove ᴺᵁᴸᴸ value based on the above results.
 
-- Alias: `array_agg`.
+-Alias: `array_agg`.

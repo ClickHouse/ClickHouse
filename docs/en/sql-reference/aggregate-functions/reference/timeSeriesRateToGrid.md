@@ -8,14 +8,16 @@ title: 'timeSeriesRateToGrid'
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like rate](https://prometheus.io/docs/prometheus/latest/querying/functions/#rate) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `rate` are considered within the specified time window.
 
 Parameters:
-- `start timestamp` - specifies start of the grid
-- `end timestamp` - specifies end of the grid
-- `grid step` - specifies step of the grid in seconds
-- `staleness` - specified the maximum "staleness" in seconds of the considered samples
+
+-`start timestamp` - specifies start of the grid
+-`end timestamp` - specifies end of the grid
+-`grid step` - specifies step of the grid in seconds
+-`staleness` - specified the maximum "staleness" in seconds of the considered samples
 
 Arguments:
-- `timestamp` - timestamp of the sample
-- `value` - value of the time series corresponding to the `timestamp`
+
+-`timestamp` - timestamp of the sample
+-`value` - value of the time series corresponding to the `timestamp`
 
 Return value:
 `rate` values on the specified grid as an `Array(Nullable(Float64))`. The returned array contains one value for each time grid point. The value is NULL if there are not enough samples within the window to calculate the rate value for a particular grid point.

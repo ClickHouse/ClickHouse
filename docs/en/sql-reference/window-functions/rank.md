@@ -27,7 +27,7 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 **Returned value**
 
-- A number for the current row within its partition, including gaps. [UInt64](../data-types/int-uint.md).
+-A number for the current row within its partition, including gaps. [UInt64](../data-types/int-uint.md).
 
 **Example**
 

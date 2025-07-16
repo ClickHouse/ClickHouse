@@ -14,7 +14,6 @@ ClickHouse provides a native command-line client for executing SQL queries direc
 
 The client provides real-time feedback on query execution with a progress bar and the number of rows read, bytes processed and query execution time. It supports both [command-line options](#command-line-options) and [configuration files](#configuration_files).
 
-
 ## Install {#install}
 
 To download ClickHouse, run:
@@ -24,6 +23,7 @@ curl https://clickhouse.com/ | sh
 ```
 
 To also install it, run:
+
 ```bash
 sudo ./clickhouse install
 ```
@@ -31,7 +31,6 @@ sudo ./clickhouse install
 See [Install ClickHouse](../getting-started/install/install.mdx) for more installation options.
 
 Different client and server versions are compatible with one another, but some features may not be available in older clients. We recommend using the same version for client and server.
-
 
 ## Run {#run}
 
@@ -67,7 +66,6 @@ Specify additional connection details as necessary:
 
 For a complete list of command-line options, see [Command Line Options](#command-line-options).
 
-
 ### Connecting to ClickHouse Cloud {#connecting-cloud}
 
 The details for your ClickHouse Cloud service are available in the ClickHouse Cloud console. Select the service that you want to connect to and click **Connect**:
@@ -86,12 +84,12 @@ Choose **Native**, and the details are shown with an example `clickhouse-client`
   alt="ClickHouse Cloud Native TCP connection details"
 />
 
-
 ### Storing connections in a configuration file {#connection-credentials}
 
 You can store connection details for one or more ClickHouse servers in a [configuration file](#configuration_files).
 
 The format looks like this:
+
 ```xml
 <config>
     <connections_credentials>
@@ -139,7 +137,7 @@ $ echo "SELECT avg(number) FROM numbers(10)" | clickhouse-client
 Inserting data:
 
 ```bash
-$ echo "Hello\nGoodbye" | clickhouse-client --query "INSERT INTO messages FORMAT CSV"
+echo "Hello\nGoodbye" | clickhouse-client --query "INSERT INTO messages FORMAT CSV"
 ```
 
 When `--query` is specified, any input is appended to the request after a line feed.
@@ -175,7 +173,6 @@ _EOF
 cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 ```
 
-
 ## Notes {#notes}
 
 In interactive mode, the default output format is `PrettyCompact`. You can change the format in the `FORMAT` clause of the query or by specifying the `--format` command-line option. To use the Vertical format, you can use `--vertical` or specify `\G` at the end of the query. In this format, each value is printed on a separate line, which is convenient for wide tables.
@@ -192,27 +189,27 @@ To exit the client, press `Ctrl+D`, or enter one of the following instead of a q
 
 When processing a query, the client shows:
 
-1.  Progress, which is updated no more than 10 times per second by default. For quick queries, the progress might not have time to be displayed.
-2.  The formatted query after parsing, for debugging.
-3.  The result in the specified format.
-4.  The number of lines in the result, the time passed, and the average speed of query processing. All data amounts refer to uncompressed data.
+1.Progress, which is updated no more than 10 times per second by default. For quick queries, the progress might not have time to be displayed.
+2.The formatted query after parsing, for debugging.
+3.The result in the specified format.
+4.The number of lines in the result, the time passed, and the average speed of query processing. All data amounts refer to uncompressed data.
 
 You can cancel a long query by pressing `Ctrl+C`. However, you will still need to wait for a little for the server to abort the request. It is not possible to cancel a query at certain stages. If you do not wait and press `Ctrl+C` a second time, the client will exit.
 
 ClickHouse Client allows passing external data (external temporary tables) for querying. For more information, see the section [External data for query processing](../engines/table-engines/special/external-data.md).
-
 
 ## Queries with parameters {#cli-queries-with-parameters}
 
 You can specify parameters in a query and pass values to it with command-line options. This avoids formatting a query with specific dynamic values on the client side. For example:
 
 ```bash
-$ clickhouse-client --param_parName="[1, 2]" --query "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
+clickhouse-client --param_parName="[1, 2]" --query "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
 ```
 
 It is also possible to set parameters from within an interactive session:
+
 ```bash
-$ clickhouse-client --query "SET param_parName='[1, 2]'; SELECT {parName:Array(UInt16)}"
+clickhouse-client --query "SET param_parName='[1, 2]'; SELECT {parName:Array(UInt16)}"
 ```
 
 ### Query syntax {#cli-queries-with-parameters-syntax}
@@ -223,8 +220,8 @@ In the query, place the values that you want to fill using command-line paramete
 {<name>:<data type>}
 ```
 
-- `name` — Placeholder identifier. The corresponding command-line option is `--param_<name> = value`.
-- `data type` — [Data type](../sql-reference/data-types/index.md) of the parameter. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use other [integer](../sql-reference/data-types/int-uint.md) types). It is also possible to pass the table name, database name, and column names as parameters, in that case you would need to use `Identifier` as the data type.
+-`name` — Placeholder identifier. The corresponding command-line option is `--param_<name> = value`.
+-`data type` — [Data type](../sql-reference/data-types/index.md) of the parameter. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use other [integer](../sql-reference/data-types/int-uint.md) types). It is also possible to pass the table name, database name, and column names as parameters, in that case you would need to use `Identifier` as the data type.
 
 ### Examples {#cli-queries-with-parameters-examples}
 
@@ -235,7 +232,6 @@ $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" \
 $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="number" --param_alias="top_ten" \
     --query "SELECT {col:Identifier} as {alias:Identifier} FROM {db:Identifier}.{tbl:Identifier} LIMIT 10"
 ```
-
 
 ## AI-powered SQL generation {#ai-sql-generation}
 
@@ -250,9 +246,10 @@ To use AI SQL generation, prefix your natural language query with `??`:
 ```
 
 The AI will:
-1. Explore your database schema automatically
-2. Generate appropriate SQL based on the discovered tables and columns
-3. Execute the generated query immediately
+
+1.Explore your database schema automatically
+2.Generate appropriate SQL based on the discovered tables and columns
+3.Execute the generated query immediately
 
 ### Example {#ai-sql-generation-example}
 
@@ -334,56 +331,54 @@ ai:
 
 ### Parameters {#ai-sql-generation-parameters}
 
-- `enable_schema_access` - Allow AI to explore database schemas (default: `true`)
-- `temperature` - Controls randomness in generation, 0.0 = deterministic (default: `0.0`)
-- `max_tokens` - Maximum response length (default: `1000`)
-- `timeout_seconds` - Request timeout (default: `30`)
-- `max_steps` - Maximum tool-calling steps for schema exploration (default: `10`)
-- `system_prompt` - Custom instructions for the AI (optional)
+-`enable_schema_access` - Allow AI to explore database schemas (default: `true`)
+-`temperature` - Controls randomness in generation, 0.0 = deterministic (default: `0.0`)
+-`max_tokens` - Maximum response length (default: `1000`)
+-`timeout_seconds` - Request timeout (default: `30`)
+-`max_steps` - Maximum tool-calling steps for schema exploration (default: `10`)
+-`system_prompt` - Custom instructions for the AI (optional)
 
 ### How it works {#ai-sql-generation-how-it-works}
 
 The AI SQL generator uses a multi-step process:
 
-1. **Schema Discovery**: The AI uses built-in tools to explore your database:
-   - Lists available databases
-   - Discovers tables within relevant databases
-   - Examines table structures via `CREATE TABLE` statements
+1.**Schema Discovery**: The AI uses built-in tools to explore your database:
+-Lists available databases
+-Discovers tables within relevant databases
+-Examines table structures via `CREATE TABLE` statements
 
-2. **Query Generation**: Based on the discovered schema, the AI generates SQL that:
-   - Matches your natural language intent
-   - Uses correct table and column names
-   - Applies appropriate joins and aggregations
+2.**Query Generation**: Based on the discovered schema, the AI generates SQL that:
+-Matches your natural language intent
+-Uses correct table and column names
+-Applies appropriate joins and aggregations
 
-3. **Execution**: The generated SQL is automatically executed and results are displayed
+3.**Execution**: The generated SQL is automatically executed and results are displayed
 
 ### Limitations {#ai-sql-generation-limitations}
 
-- Requires an active internet connection
-- API usage is subject to rate limits and costs from the AI provider
-- Complex queries may require multiple refinements
-- The AI has read-only access to schema information, not actual data
+-Requires an active internet connection
+-API usage is subject to rate limits and costs from the AI provider
+-Complex queries may require multiple refinements
+-The AI has read-only access to schema information, not actual data
 
 ### Security {#ai-sql-generation-security}
 
-- API keys are never sent to ClickHouse servers
-- The AI only sees schema information (table/column names and types), not actual data
-- All generated queries respect your existing database permissions
-
+-API keys are never sent to ClickHouse servers
+-The AI only sees schema information (table/column names and types), not actual data
+-All generated queries respect your existing database permissions
 
 ## Aliases {#cli_aliases}
 
-- `\l` - SHOW DATABASES
-- `\d` - SHOW TABLES
-- `\c <DATABASE>` - USE DATABASE
-- `.` - repeat the last query
-
+-`\l` - SHOW DATABASES
+-`\d` - SHOW TABLES
+-`\c <DATABASE>` - USE DATABASE
+-`.` - repeat the last query
 
 ## Keyboard shortcuts {#keyboard_shortcuts}
 
-- `Alt (Option) + Shift + e` - open editor with the current query. It is possible to specify the editor to use with the environment variable `EDITOR`. By default, `vim` is used.
-- `Alt (Option) + #` - comment line.
-- `Ctrl + r` - fuzzy history search.
+-`Alt (Option) + Shift + e` - open editor with the current query. It is possible to specify the editor to use with the environment variable `EDITOR`. By default, `vim` is used.
+-`Alt (Option) + #` - comment line.
+-`Ctrl + r` - fuzzy history search.
 
 The full list with all available keyboard shortcuts is available at [replxx](https://github.com/AmokHuginnsson/replxx/blob/1f149bf/src/replxx_impl.cxx#L262).
 
@@ -392,7 +387,6 @@ To configure the correct work of the meta key (Option) on MacOS:
 
 iTerm2: Go to Preferences -> Profile -> Keys -> Left Option key and click Esc+
 :::
-
 
 ## Connection string {#connection_string}
 
@@ -404,11 +398,11 @@ clickhouse:[//[user[:password]@][hosts_and_ports]][/database][?query_parameters]
 
 **Components**
 
-- `user` - (optional) Database username. Default: `default`.
-- `password` - (optional) Database user password. If `:` is specified and the password is blank, the client will prompt for the user's password.
-- `hosts_and_ports` - (optional) List of hosts and optional ports `host[:port] [, host:[port]], ...`. Default: `localhost:9000`.
-- `database` - (optional) Database name. Default: `default`.
-- `query_parameters` - (optional) List of key-value pairs `param1=value1[,&param2=value2], ...`. For some parameters, no value is required. Parameter names and values are case-sensitive.
+-`user` - (optional) Database username. Default: `default`.
+-`password` - (optional) Database user password. If `:` is specified and the password is blank, the client will prompt for the user's password.
+-`hosts_and_ports` - (optional) List of hosts and optional ports `host[:port] [, host:[port]], ...`. Default: `localhost:9000`.
+-`database` - (optional) Database name. Default: `default`.
+-`query_parameters` - (optional) List of key-value pairs `param1=value1[,&param2=value2], ...`. For some parameters, no value is required. Parameter names and values are case-sensitive.
 
 If the username, password or database was specified in the connection string, it cannot be specified using `--user`, `--password` or `--database` (and vice versa).
 
@@ -424,7 +418,7 @@ The connection string must be specified as the first argument of `clickHouse-cli
 
 The following keys are allowed for `query_parameters`:
 
-- `secure` or shorthanded `s`. If specified, the client will connect to the server over a secure connection (TLS). See `--secure` in the [command-line options](#command-line-options).
+-`secure` or shorthanded `s`. If specified, the client will connect to the server over a secure connection (TLS). See `--secure` in the [command-line options](#command-line-options).
 
 **Percent encoding**
 
@@ -510,7 +504,6 @@ Connect to one of two hosts: `192.168.1.15`, `192.168.1.25`.
 clickhouse-client clickhouse://192.168.1.15,192.168.1.25
 ```
 
-
 ## Query ID format {#query-id-format}
 
 In interactive mode ClickHouse Client shows the query ID for every query. By default, the ID is formatted like this:
@@ -538,12 +531,11 @@ With the configuration above, the ID of a query is shown in the following format
 speedscope:http://speedscope-host/#profileURL=qp%3Fid%3Dc8ecc783-e753-4b38-97f1-42cddfb98b7d
 ```
 
-
 ## Configuration files {#configuration_files}
 
 ClickHouse Client uses the first existing file of the following:
 
-- A file that is defined with the `-c [ -C, --config, --config-file ]` parameter.
+-A file that is defined with the `-c [ -C, --config, --config-file ]` parameter.
 - `./clickhouse-client.[xml|yaml|yml]`
 - `~/.clickhouse-client/config.[xml|yaml|yml]`
 - `/etc/clickhouse-client/config.[xml|yaml|yml]`
@@ -575,7 +567,6 @@ openSSL:
   client:
     caConfig: '/etc/ssl/cert.pem'
 ```
-
 
 ## Command-line options {#command-line-options}
 
@@ -690,6 +681,7 @@ Substitution value for a parameter of a [query with parameters](#cli-queries-wit
 The query to run in batch mode. Can be specified multiple times (`--query "SELECT 1" --query "SELECT 2"`) or once with multiple semicolon-separated queries (`--query "SELECT 1; SELECT 2;"`). In the latter case, `INSERT` queries with formats other than `VALUES` must be separated by empty lines.
 
 A single query can also be specified without a parameter:
+
 ```bash
 $ clickhouse-client "SELECT 1"
 1
@@ -710,8 +702,9 @@ If specified, allow multiline queries (do not send the query on Enter). Queries 
 ### Query settings {#command-line-options-query-settings}
 
 Query settings can be specified as command-line options in the client, for example:
+
 ```bash
-$ clickhouse-client --max_threads 1
+clickhouse-client --max_threads 1
 ```
 
 See [Settings](../operations/settings/settings.md) for a list of settings.
@@ -751,9 +744,10 @@ Print hardware utilization information in progress bar.
 If specified, print memory usage to `stderr` in non-interactive mode.
 
 Possible values:
-- `none` - do not print memory usage
-- `default` - print number of bytes
-- `readable` - print memory usage in human-readable format
+
+-`none` - do not print memory usage
+-`default` - print number of bytes
+-`readable` - print memory usage in human-readable format
 
 **`--print-profile-events`**
 
@@ -764,8 +758,9 @@ Print `ProfileEvents` packets.
 Print progress of query execution.
 
 Possible values:
+
 - `tty|on|1|true|yes` - outputs to the terminal in interactive mode
-- `err` - outputs to `stderr` in non-interactive mode
+-`err` - outputs to `stderr` in non-interactive mode
 - `off|0|false|no` - disables progress printing
 
 Default value: `tty` in interactive mode, `off` in non-interactive (batch) mode.
@@ -775,8 +770,9 @@ Default value: `tty` in interactive mode, `off` in non-interactive (batch) mode.
 Print a progress table with changing metrics during query execution.
 
 Possible values:
+
 - `tty|on|1|true|yes` - outputs to the terminal in interactive mode
-- `err` - outputs to `stderr` non-interactive mode
+-`err` - outputs to `stderr` non-interactive mode
 - `off|0|false|no` - disables the progress table
 
 Default value: `tty` in interactive mode, `off` in non-interactive (batch) mode.

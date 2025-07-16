@@ -18,18 +18,18 @@ estimateCompressionRatio(codec, block_size_bytes)(column)
 
 **Arguments**
 
-- `column` - Column of any type
+-`column` - Column of any type
 
 **Parameters**
 
-- `codec` - [String](../../../sql-reference/data-types/string.md) containing a [compression codec](/sql-reference/statements/create/table#column_compression_codec) or multiple comma-separated codecs in a single string.
-- `block_size_bytes` - Block size of compressed data. This is similar to setting both [`max_compress_block_size`](../../../operations/settings/merge-tree-settings.md#max_compress_block_size) and [`min_compress_block_size`](../../../operations/settings/merge-tree-settings.md#min_compress_block_size). The default value is 1 MiB (1048576 bytes).
+-`codec` - [String](../../../sql-reference/data-types/string.md) containing a [compression codec](/sql-reference/statements/create/table#column_compression_codec) or multiple comma-separated codecs in a single string.
+-`block_size_bytes` - Block size of compressed data. This is similar to setting both [`max_compress_block_size`](../../../operations/settings/merge-tree-settings.md#max_compress_block_size) and [`min_compress_block_size`](../../../operations/settings/merge-tree-settings.md#min_compress_block_size). The default value is 1 MiB (1048576 bytes).
 
 Both parameters are optional.
 
 **Returned values**
 
-- Returns an estimate compression ratio for the given column.
+-Returns an estimate compression ratio for the given column.
 
 Type: [Float64](/sql-reference/data-types/float).
 
@@ -83,4 +83,3 @@ SELECT estimateCompressionRatio('T64, ZSTD')(number) AS estimate FROM compressio
 │ 143.60078980434392 │
 └────────────────────┘
 ```
-

@@ -49,20 +49,20 @@ ORDER BY key
 
 `tokenizer` specifies the tokenizer:
 
-- `default` set the tokenizer to "tokens('default')", i.e. split strings along non-alphanumeric characters.
-- `ngram` set the tokenizer to "tokens('ngram')". i.e. split strings into equally large n-grams.
-- `split` set the tokenizer to "tokens('split')", i.e. split strings along certain user-defined separator strings.
-- `no_op` set the tokenizer to "tokens('no_op')", i.e. no tokenization takes place (every row value is a token).
+-`default` set the tokenizer to "tokens('default')", i.e. split strings along non-alphanumeric characters.
+-`ngram` set the tokenizer to "tokens('ngram')". i.e. split strings into equally large n-grams.
+-`split` set the tokenizer to "tokens('split')", i.e. split strings along certain user-defined separator strings.
+-`no_op` set the tokenizer to "tokens('no_op')", i.e. no tokenization takes place (every row value is a token).
 
 The ngram size for the `ngram` tokenizer can be specified via the optional `ngram_size` parameter:
 
-- `ngram_size = N`: with `N` between 2 and 8 sets the tokenizer to "tokens('ngram', N)".
-- If unspecified: Use a default ngram size which is 3.
+-`ngram_size = N`: with `N` between 2 and 8 sets the tokenizer to "tokens('ngram', N)".
+-If unspecified: Use a default ngram size which is 3.
 
 The separators for the `split` tokenizer can be specified via the optional `separators` parameter:
 
-- `separators = []`: A list of strings, e.g. `separators = [', ', '; ', '\n', '\\']`.
-- If not specified: Use a default separator which is a space (`[' ']`).
+-`separators = []`: A list of strings, e.g. `separators = [', ', '; ', '\n', '\\']`.
+-If not specified: Use a default separator which is a space (`[' ']`).
 
 Unlike other skipping indexes, text indexes have a default index GRANULARITY of 64.
 This value has been chosen empirically and it provides good performance for most use cases.
@@ -77,9 +77,9 @@ For example, with separators = `['%21', '%']` string `%21abc` would be tokenized
 The maximum rows per postings list can be specified via the optional `max_rows_per_postings_list` parameter.
 The parameter can be used to control postings list sizes to avoid generating huge postings list files.
 
-- `max_rows_per_postings_list = 0`: No limitation of maximum rows per postings list.
-- `max_rows_per_postings_list = M`: with `M` should be at least 8192.
-- If not specified: Use a default maximum rows which is 64K.
+-`max_rows_per_postings_list = 0`: No limitation of maximum rows per postings list.
+-`max_rows_per_postings_list = M`: with `M` should be at least 8192.
+-If not specified: Use a default maximum rows which is 64K.
 
 Being a type of skipping index, text indexes can be dropped or added to a column after table creation:
 
@@ -327,5 +327,5 @@ For example, filter predicate `WHERE s LIKE '%little%' OR s LIKE '%big%'` can be
 
 ## Related content {#related-content}
 
-- Blog: [Introducing Inverted Indices in ClickHouse](https://clickhouse.com/blog/clickhouse-search-with-inverted-indices)
-- Video: [Full-Text Indices: Design and Experiments](https://www.youtube.com/watch?v=O_MnyUkrIq8)
+-Blog: [Introducing Inverted Indices in ClickHouse](https://clickhouse.com/blog/clickhouse-search-with-inverted-indices)
+-Video: [Full-Text Indices: Design and Experiments](https://www.youtube.com/watch?v=O_MnyUkrIq8)

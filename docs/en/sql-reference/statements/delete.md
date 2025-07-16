@@ -50,10 +50,10 @@ By default, `DELETE` does not work for tables with projections. This is because 
 
 The following can also negatively impact lightweight `DELETE` performance:
 
-- A heavy `WHERE` condition in a `DELETE` query.
-- If the mutations queue is filled with many other mutations, this can possibly lead to performance issues as all mutations on a table are executed sequentially.
-- The affected table has a very large number of data parts.
-- Having a lot of data in compact parts. In a Compact part, all columns are stored in one file.
+-A heavy `WHERE` condition in a `DELETE` query.
+-If the mutations queue is filled with many other mutations, this can possibly lead to performance issues as all mutations on a table are executed sequentially.
+-The affected table has a very large number of data parts.
+-Having a lot of data in compact parts. In a Compact part, all columns are stored in one file.
 
 ## Delete permissions {#delete-permissions}
 
@@ -65,32 +65,34 @@ GRANT ALTER DELETE ON db.table to username;
 
 ## How lightweight DELETEs work internally in ClickHouse {#how-lightweight-deletes-work-internally-in-clickhouse}
 
-1. **A "mask" is applied to affected rows**
+1.**A "mask" is applied to affected rows**
 
    When a `DELETE FROM table ...` query is executed, ClickHouse saves a mask where each row is marked as either "existing" or as "deleted". Those "deleted" rows are omitted for subsequent queries. However, rows are actually only removed later by subsequent merges. Writing this mask is much more lightweight than what is done by an `ALTER TABLE ... DELETE` query.
 
    The mask is implemented as a hidden `_row_exists` system column that stores `True` for all visible rows and `False` for deleted ones. This column is only present in a part if some rows in the part were deleted. This column does not exist when a part has all values equal to `True`.
 
-2. **`SELECT` queries are transformed to include the mask**
+2.**`SELECT` queries are transformed to include the mask**
 
    When a masked column is used in a query, the `SELECT ... FROM table WHERE condition` query internally is extended by the predicate on `_row_exists` and is transformed to:
+
    ```sql
    SELECT ... FROM table PREWHERE _row_exists WHERE condition
    ```
+
    At execution time, the column `_row_exists` is read to determine which rows should not be returned. If there are many deleted rows, ClickHouse can determine which granules can be fully skipped when reading the rest of the columns.
 
-3. **`DELETE` queries are transformed to `ALTER TABLE ... UPDATE` queries**
+3.**`DELETE` queries are transformed to `ALTER TABLE ... UPDATE` queries**
 
    The `DELETE FROM table WHERE condition` is translated into an `ALTER TABLE table UPDATE _row_exists = 0 WHERE condition` mutation.
 
    Internally, this mutation is executed in two steps:
 
-   1. A `SELECT count() FROM table WHERE condition` command is executed for each individual part to determine if the part is affected.
+1.A `SELECT count() FROM table WHERE condition` command is executed for each individual part to determine if the part is affected.
 
-   2. Based on the commands above, affected parts are then mutated, and hardlinks are created for unaffected parts. In the case of wide parts, the `_row_exists` column for each row is updated, and all other columns' files are hardlinked. For compact parts, all columns are re-written because they are all stored together in one file.
+2.Based on the commands above, affected parts are then mutated, and hardlinks are created for unaffected parts. In the case of wide parts, the `_row_exists` column for each row is updated, and all other columns' files are hardlinked. For compact parts, all columns are re-written because they are all stored together in one file.
 
    From the steps above, we can see that lightweight `DELETE` using the masking technique improves performance over traditional `ALTER TABLE ... DELETE` because it does not re-write all the columns' files for affected parts.
 
 ## Related content {#related-content}
 
-- Blog: [Handling Updates and Deletes in ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
+-Blog: [Handling Updates and Deletes in ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

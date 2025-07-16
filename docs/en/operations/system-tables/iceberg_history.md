@@ -11,14 +11,14 @@ This system table contain the snapshot history of Iceberg tables existing in Cli
 
 Columns:
 
-- `database` ([String](../../sql-reference/data-types/string.md)) — The name of the database the table is in.
+-`database` ([String](../../sql-reference/data-types/string.md)) — The name of the database the table is in.
 
-- `table` ([String](../../sql-reference/data-types/string.md)) — Table name.
+-`table` ([String](../../sql-reference/data-types/string.md)) — Table name.
 
-- `made_current_at` ([DateTime](../../sql-reference/data-types/uuid.md)) — Time when the snapshot was made current snapshot.
+-`made_current_at` ([DateTime](../../sql-reference/data-types/uuid.md)) — Time when the snapshot was made current snapshot.
 
-- `snapshot_id` ([Int64](../../sql-reference/data-types/int-uint.md)) — Snapshot id.
+-`snapshot_id` ([Int64](../../sql-reference/data-types/int-uint.md)) — Snapshot id.
 
-- `parent_id` ([Int64](../../sql-reference/data-types/int-uint.md)) - Snapshot id of the parent snapshot.
+-`parent_id` ([Int64](../../sql-reference/data-types/int-uint.md)) - Snapshot id of the parent snapshot.
 
-- `is_current_ancestor` ([Bool](../../sql-reference/data-types/boolean.md)) - Flag that indicates whether this snapshot is an ancestor of the current snapshot.
+-`is_current_ancestor` ([Bool](../../sql-reference/data-types/boolean.md)) - Flag that indicates whether this snapshot is an ancestor of the current snapshot.

@@ -31,16 +31,16 @@ See the detailed description of the [CREATE TABLE](/sql-reference/statements/cre
 
 The `Log` engine efficiently stores data by writing each column to its own file.  For every table, the Log engine writes the following files to the specified storage path:
 
-- `<column>.bin`: A data file for each column, containing the serialized and compressed data.
+-`<column>.bin`: A data file for each column, containing the serialized and compressed data.
 `__marks.mrk`: A marks file, storing offsets and row counts for each data block inserted. Marks are used to facilitate efficient query execution by allowing the engine to skip irrelevant data blocks during reads.
 
 ### Writing process {#writing-process}
 
 When data is written to a `Log` table:
 
-1.    Data is serialized and compressed into blocks.
-2.    For each column, the compressed data is appended to its respective `<column>.bin` file.
-3.    Corresponding entries are added to the `__marks.mrk` file to record the offset and row count of the newly inserted data.
+1.Data is serialized and compressed into blocks.
+2.For each column, the compressed data is appended to its respective `<column>.bin` file.
+3.Corresponding entries are added to the `__marks.mrk` file to record the offset and row count of the newly inserted data.
 
 ## Reading the data {#table_engines-log-reading-the-data}
 

@@ -10,15 +10,15 @@ title: 'SHOW Statements'
 
 `SHOW CREATE (TABLE|DATABASE|USER)` hides secrets unless the following settings are turned on:
 
-- [`display_secrets_in_show_and_select`](../../operations/server-configuration-parameters/settings/#display_secrets_in_show_and_select) (server setting)
-- [`format_display_secrets_in_show_and_select` ](../../operations/settings/formats/#format_display_secrets_in_show_and_select) (format setting)  
+-[`display_secrets_in_show_and_select`](../../operations/server-configuration-parameters/settings/#display_secrets_in_show_and_select) (server setting)
+-[`format_display_secrets_in_show_and_select`](../../operations/settings/formats/#format_display_secrets_in_show_and_select) (format setting)  
 
 Additionally, the user should have the [`displaySecretsInShowAndSelect`](grant.md/#displaysecretsinshowandselect) privilege.
 :::
 
 ## SHOW CREATE TABLE | DICTIONARY | VIEW | DATABASE {#show-create-table--dictionary--view--database}
 
-These statements return a single column of type String, 
+These statements return a single column of type String,
 containing the `CREATE` query used for creating the specified object.
 
 ### Syntax {#syntax}
@@ -105,7 +105,7 @@ SHOW DATABASES LIMIT 2
 
 ### See also {#see-also}
 
-- [`CREATE DATABASE`](/sql-reference/statements/create/database)
+-[`CREATE DATABASE`](/sql-reference/statements/create/database)
 
 ## SHOW TABLES {#show-tables}
 
@@ -182,8 +182,8 @@ SHOW TABLES FROM system LIMIT 2
 
 ### See also {#see-also-1}
 
-- [`Create Tables`](/sql-reference/statements/create/table)
-- [`SHOW CREATE TABLE`](#show-create-table--dictionary--view--database)
+-[`Create Tables`](/sql-reference/statements/create/table)
+-[`SHOW CREATE TABLE`](#show-create-table--dictionary--view--database)
 
 ## SHOW COLUMNS {#show_columns}
 
@@ -196,8 +196,8 @@ SHOW [EXTENDED] [FULL] COLUMNS {FROM | IN} <table> [{FROM | IN} <db>] [{[NOT] {L
 OUTFILE <filename>] [FORMAT <format>]
 ```
 
-The database and table name can be specified in abbreviated form as `<db>.<table>`, 
-meaning that `FROM tab FROM db` and `FROM db.tab` are equivalent. 
+The database and table name can be specified in abbreviated form as `<db>.<table>`,
+meaning that `FROM tab FROM db` and `FROM db.tab` are equivalent.
 If no database is specified, the query returns the list of columns from the current database.
 
 There are also two optional keywords: `EXTENDED` and `FULL`. The `EXTENDED` keyword currently has no effect,
@@ -235,7 +235,7 @@ SHOW COLUMNS FROM 'orders' LIKE 'delivery_%'
 
 ### See also {#see-also-2}
 
-- [`system.columns`](../../operations/system-tables/columns.md)
+-[`system.columns`](../../operations/system-tables/columns.md)
 
 ## SHOW DICTIONARIES {#show-dictionaries}
 
@@ -330,8 +330,8 @@ SHOW INDEX FROM 'tbl'
 
 ### See also {#see-also-3}
 
-- [`system.tables`](../../operations/system-tables/tables.md)
-- [`system.data_skipping_indices`](../../operations/system-tables/data_skipping_indices.md)
+-[`system.tables`](../../operations/system-tables/tables.md)
+-[`system.data_skipping_indices`](../../operations/system-tables/data_skipping_indices.md)
 
 ## SHOW PROCESSLIST {#show-processlist}
 
@@ -349,8 +349,9 @@ The `SELECT * FROM system.processes` query returns data about all the current qu
 Execute in the console:
 
 ```bash
-$ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
+watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 ```
+
 :::
 
 ## SHOW GRANTS {#show-grants}
@@ -421,7 +422,7 @@ SHOW CREATE [SETTINGS] PROFILE name1 [, name2 ...]
 
 ## SHOW USERS {#show-users}
 
-The `SHOW USERS` statement returns a list of [user account](../../guides/sre/user-management/index.md#user-account-management) names. 
+The `SHOW USERS` statement returns a list of [user account](../../guides/sre/user-management/index.md#user-account-management) names.
 To view user accounts parameters, see the system table [`system.users`](/operations/system-tables/users).
 
 ### Syntax {#syntax-13}
@@ -432,8 +433,8 @@ SHOW USERS
 
 ## SHOW ROLES {#show-roles}
 
-The `SHOW ROLES` statement returns a list of [roles](../../guides/sre/user-management/index.md#role-management). 
-To view other parameters, 
+The `SHOW ROLES` statement returns a list of [roles](../../guides/sre/user-management/index.md#role-management).
+To view other parameters,
 see system tables [`system.roles`](/operations/system-tables/roles) and [`system.role_grants`](/operations/system-tables/role-grants).
 
 ### Syntax {#syntax-14}
@@ -441,9 +442,10 @@ see system tables [`system.roles`](/operations/system-tables/roles) and [`system
 ```sql title="Syntax"
 SHOW [CURRENT|ENABLED] ROLES
 ```
+
 ## SHOW PROFILES {#show-profiles}
 
-The `SHOW PROFILES` statement returns a list of [setting profiles](../../guides/sre/user-management/index.md#settings-profiles-management). 
+The `SHOW PROFILES` statement returns a list of [setting profiles](../../guides/sre/user-management/index.md#settings-profiles-management).
 To view user accounts parameters, see system table [`settings_profiles`](/operations/system-tables/settings_profiles).
 
 ### Syntax {#syntax-15}
@@ -454,7 +456,7 @@ SHOW [SETTINGS] PROFILES
 
 ## SHOW POLICIES {#show-policies}
 
-The `SHOW POLICIES` statement returns a list of [row policies](../../guides/sre/user-management/index.md#row-policy-management) for the specified table. 
+The `SHOW POLICIES` statement returns a list of [row policies](../../guides/sre/user-management/index.md#row-policy-management) for the specified table.
 To view user accounts parameters, see system table [`system.row_policies`](/operations/system-tables/row_policies).
 
 ### Syntax {#syntax-16}
@@ -465,7 +467,7 @@ SHOW [ROW] POLICIES [ON [db.]table]
 
 ## SHOW QUOTAS {#show-quotas}
 
-The `SHOW QUOTAS` statement returns a list of [quotas](../../guides/sre/user-management/index.md#quotas-management). 
+The `SHOW QUOTAS` statement returns a list of [quotas](../../guides/sre/user-management/index.md#quotas-management).
 To view quotas parameters, see the system table [`system.quotas`](/operations/system-tables/quotas).
 
 ### Syntax {#syntax-17}
@@ -476,7 +478,7 @@ SHOW QUOTAS
 
 ## SHOW QUOTA {#show-quota}
 
-The `SHOW QUOTA` statement returns a [quota](../../operations/quotas.md) consumption for all users or for current user. 
+The `SHOW QUOTA` statement returns a [quota](../../operations/quotas.md) consumption for all users or for current user.
 To view other parameters, see system tables [`system.quotas_usage`](/operations/system-tables/quotas_usage) and [`system.quota_usage`](/operations/system-tables/quota_usage).
 
 ### Syntax {#syntax-18}
@@ -484,6 +486,7 @@ To view other parameters, see system tables [`system.quotas_usage`](/operations/
 ```sql title="Syntax"
 SHOW [CURRENT] QUOTA
 ```
+
 ## SHOW ACCESS {#show-access}
 
 The `SHOW ACCESS` statement shows all [users](../../guides/sre/user-management/index.md#user-account-management), [roles](../../guides/sre/user-management/index.md#role-management), [profiles](../../guides/sre/user-management/index.md#settings-profiles-management), etc. and all their [grants](../../sql-reference/statements/grant.md#privileges).
@@ -496,7 +499,7 @@ SHOW ACCESS
 
 ## SHOW CLUSTER(S) {#show-clusters}
 
-The `SHOW CLUSTER(S)` statement returns a list of clusters. 
+The `SHOW CLUSTER(S)` statement returns a list of clusters.
 All available clusters are listed in the [`system.clusters`](../../operations/system-tables/clusters.md) table.
 
 :::note
@@ -554,7 +557,7 @@ port:                    9000
 
 ## SHOW SETTINGS {#show-settings}
 
-The `SHOW SETTINGS` statement returns a list of system settings and their values. 
+The `SHOW SETTINGS` statement returns a list of system settings and their values.
 It selects data from the [`system.settings`](../../operations/system-tables/settings.md) table.
 
 ### Syntax {#syntax-21}
@@ -621,7 +624,7 @@ SHOW SETTING <name>
 
 ### See also {#see-also-4}
 
-- [`system.settings`](../../operations/system-tables/settings.md) table
+-[`system.settings`](../../operations/system-tables/settings.md) table
 
 ## SHOW FILESYSTEM CACHES {#show-filesystem-caches}
 
@@ -639,11 +642,11 @@ SHOW FILESYSTEM CACHES
 
 ### See also {#see-also-5}
 
-- [`system.settings`](../../operations/system-tables/settings.md) table
+-[`system.settings`](../../operations/system-tables/settings.md) table
 
 ## SHOW ENGINES {#show-engines}
 
-The `SHOW ENGINES` statement outputs the content of the [`system.table_engines`](../../operations/system-tables/table_engines.md) table, 
+The `SHOW ENGINES` statement outputs the content of the [`system.table_engines`](../../operations/system-tables/table_engines.md) table,
 that contains description of table engines supported by server and their feature support information.
 
 ### Syntax {#syntax-23}
@@ -654,7 +657,7 @@ SHOW ENGINES [INTO OUTFILE filename] [FORMAT format]
 
 ### See also {#see-also-6}
 
-- [system.table_engines](../../operations/system-tables/table_engines.md) table
+-[system.table_engines](../../operations/system-tables/table_engines.md) table
 
 ## SHOW FUNCTIONS {#show-functions}
 
@@ -670,11 +673,11 @@ If either `LIKE` or `ILIKE` clause is specified, the query returns a list of sys
 
 ### See Also {#see-also-7}
 
-- [`system.functions`](../../operations/system-tables/functions.md) table
+-[`system.functions`](../../operations/system-tables/functions.md) table
 
 ## SHOW MERGES {#show-merges}
 
-The `SHOW MERGES` statement returns a list of merges. 
+The `SHOW MERGES` statement returns a list of merges.
 All merges are listed in the [`system.merges`](../../operations/system-tables/merges.md) table:
 
 | Column              | Description                                                |
@@ -687,7 +690,6 @@ All merges are listed in the [`system.merges`](../../operations/system-tables/me
 | `is_mutation`       | 1 if this process is a part mutation.                      |
 | `size_compressed`   | The total size of the compressed data of the merged parts. |
 | `memory_usage`      | Memory consumption of the merge process.                   |
-
 
 ### Syntax {#syntax-25}
 
@@ -716,4 +718,3 @@ SHOW MERGES LIKE 'your_t%' LIMIT 1;
 │ your_table │ default  │              0.14 │    0.36 │    73.01 │           0 │        5.40 MiB │    10.25 MiB │
 └────────────┴──────────┴───────────────────┴─────────┴──────────┴─────────────┴─────────────────┴──────────────┘
 ```
-

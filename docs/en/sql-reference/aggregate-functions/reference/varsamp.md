@@ -19,12 +19,11 @@ Alias: `VAR_SAMP`.
 
 **Parameters**
 
-- `x`: The population for which you want to calculate the sample variance. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal*](../../data-types/decimal.md).
+-`x`: The population for which you want to calculate the sample variance. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal*](../../data-types/decimal.md).
 
 **Returned value**
 
-
-- Returns the sample variance of the input data set `x`. [Float64](../../data-types/float.md).
+-Returns the sample variance of the input data set `x`. [Float64](../../data-types/float.md).
 
 **Implementation details**
 
@@ -36,9 +35,9 @@ $$
 
 Where:
 
-- `x` is each individual data point in the data set.
-- `mean(x)` is the arithmetic mean of the data set.
-- `n` is the number of data points in the data set.
+-`x` is each individual data point in the data set.
+-`mean(x)` is the arithmetic mean of the data set.
+-`n` is the number of data points in the data set.
 
 The function assumes that the input data set represents a sample from a larger population. If you want to calculate the variance of the entire population (when you have the complete data set), you should use [`varPop`](../reference/varpop.md) instead.
 

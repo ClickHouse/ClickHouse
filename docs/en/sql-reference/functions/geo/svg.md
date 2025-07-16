@@ -19,15 +19,15 @@ Aliases: `SVG`, `svg`
 
 **Parameters**
 
-- `geometry` — Geo data. [Geo](../../data-types/geo).
-- `style` — Optional style name. [String](../../data-types/string).
+-`geometry` — Geo data. [Geo](../../data-types/geo).
+-`style` — Optional style name. [String](../../data-types/string).
 
 **Returned value**
 
-- The SVG representation of the geometry. [String](../../data-types/string).
-  - SVG circle
-  - SVG polygon
-  - SVG path
+-The SVG representation of the geometry. [String](../../data-types/string).
+-SVG circle
+-SVG polygon
+-SVG path
 
 **Examples**
 
@@ -72,4 +72,3 @@ Result:
 ```response
 <g fill-rule="evenodd"><path d="M 0,0 L 0,10 L 10,10 L 10,0 L 0,0M 4,4 L 5,4 L 5,5 L 4,5 L 4,4 z " style=""/></g>
 ```
-

@@ -36,6 +36,7 @@ If you are using the MongoDB Atlas cloud offering please add these options:
 ```ini
 'connectTimeoutMS=10000&ssl=true&authSource=admin'
 ```
+
 :::
 
 You can also connect by URI:
@@ -99,5 +100,5 @@ SELECT * FROM mongodb(
 
 ## Related {#related}
 
-- [The `MongoDB` table engine](engines/table-engines/integrations/mongodb.md)
-- [Using MongoDB as a dictionary source](sql-reference/dictionaries/index.md#mongodb)
+-[The `MongoDB` table engine](engines/table-engines/integrations/mongodb.md)
+-[Using MongoDB as a dictionary source](sql-reference/dictionaries/index.md#mongodb)

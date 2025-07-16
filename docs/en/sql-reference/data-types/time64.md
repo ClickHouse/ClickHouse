@@ -30,7 +30,7 @@ The number of digits after the decimal point depends on the precision parameter.
 
 ## Examples {#examples}
 
-1. Creating a table with `Time64`-type column and inserting data into it:
+1.Creating a table with `Time64`-type column and inserting data into it:
 
 ``` sql
 CREATE TABLE t64
@@ -58,7 +58,7 @@ SELECT * FROM t64;
    └───────────────┴──────────┘
 ```
 
-2. Filtering on `Time64` values
+2.Filtering on `Time64` values
 
 ``` sql
 SELECT * FROM t64 WHERE timestamp = toTime64('100:00:00', 3);
@@ -85,7 +85,7 @@ SELECT * FROM t64 WHERE timestamp = toTime64(154600.123, 3);
 Contrary to inserting, the `toTime64` function will treat all values as the decimal variant, so precision needs to
 be given after the decimal point.
 
-3. Getting a time zone for a `Time64`-type value:
+3.Getting a time zone for a `Time64`-type value:
 
 ``` sql
 SELECT toTime64(now(), 3) AS column, toTypeName(column) AS x;
@@ -97,16 +97,15 @@ SELECT toTime64(now(), 3) AS column, toTypeName(column) AS x;
    └───────────────┴───────────┘
 ```
 
-
 **See Also**
 
-- [Type conversion functions](../../sql-reference/functions/type-conversion-functions.md)
-- [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
-- [The `date_time_input_format` setting](../../operations/settings/settings-formats.md#date_time_input_format)
-- [The `date_time_output_format` setting](../../operations/settings/settings-formats.md#date_time_output_format)
-- [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#timezone)
-- [The `session_timezone` setting](../../operations/settings/settings.md#session_timezone)
-- [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-for-working-with-dates-and-times)
-- [`Date` data type](../../sql-reference/data-types/date.md)
-- [`Time` data type](../../sql-reference/data-types/time.md)
-- [`DateTime` data type](../../sql-reference/data-types/datetime.md)
+-[Type conversion functions](../../sql-reference/functions/type-conversion-functions.md)
+-[Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
+-[The `date_time_input_format` setting](../../operations/settings/settings-formats.md#date_time_input_format)
+-[The `date_time_output_format` setting](../../operations/settings/settings-formats.md#date_time_output_format)
+-[The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#timezone)
+-[The `session_timezone` setting](../../operations/settings/settings.md#session_timezone)
+-[Operators for working with dates and times](../../sql-reference/operators/index.md#operators-for-working-with-dates-and-times)
+-[`Date` data type](../../sql-reference/data-types/date.md)
+-[`Time` data type](../../sql-reference/data-types/time.md)
+-[`DateTime` data type](../../sql-reference/data-types/datetime.md)

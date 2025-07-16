@@ -10,10 +10,11 @@ Python module to help analyzing backups made by the [BACKUP](/operations/backup)
 The main motivation was to allows getting some information from a backup without actually restoring it.
 
 This module provides functions to
-- enumerate files contained in a backup
-- read files from a backup
-- get useful information in readable form about databases, tables, parts contained in a backup
-- check integrity of a backup
+
+-enumerate files contained in a backup
+-read files from a backup
+-get useful information in readable form about databases, tables, parts contained in a backup
+-check integrity of a backup
 
 ## Example: {#example}
 

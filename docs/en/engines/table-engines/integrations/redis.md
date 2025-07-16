@@ -24,11 +24,11 @@ PRIMARY KEY(primary_key_name);
 
 **Engine Parameters**
 
-- `host:port` — Redis server address, you can ignore port and default Redis port 6379 will be used.
-- `db_index` — Redis db index range from 0 to 15, default is 0.
-- `password` — User password, default is blank string.
-- `pool_size` — Redis max connection pool size, default is 16.
-- `primary_key_name` - any column name in the column list.
+-`host:port` — Redis server address, you can ignore port and default Redis port 6379 will be used.
+-`db_index` — Redis db index range from 0 to 15, default is 0.
+-`password` — User password, default is blank string.
+-`pool_size` — Redis max connection pool size, default is 16.
+-`primary_key_name` - any column name in the column list.
 
 :::note Serialization
 `PRIMARY KEY` supports only one column. The primary key will be serialized in binary as a Redis key.
@@ -152,5 +152,6 @@ SELECT * FROM redis_table JOIN merge_tree_table ON merge_tree_table.key=redis_ta
 ## Limitations {#limitations}
 
 Redis engine also supports scanning queries, such as `where k > xx`, but it has some limitations:
-1. Scanning query may produce some duplicated keys in a very rare case when it is rehashing. See details in [Redis Scan](https://github.com/redis/redis/blob/e4d183afd33e0b2e6e8d1c79a832f678a04a7886/src/dict.c#L1186-L1269).
-2. During the scanning, keys could be created and deleted, so the resulting dataset can not represent a valid point in time.
+
+1.Scanning query may produce some duplicated keys in a very rare case when it is rehashing. See details in [Redis Scan](https://github.com/redis/redis/blob/e4d183afd33e0b2e6e8d1c79a832f678a04a7886/src/dict.c#L1186-L1269).
+2.During the scanning, keys could be created and deleted, so the resulting dataset can not represent a valid point in time.

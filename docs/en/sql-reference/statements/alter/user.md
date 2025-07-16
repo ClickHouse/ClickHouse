@@ -33,10 +33,10 @@ To use `ALTER USER` you must have the [ALTER USER](../../../sql-reference/statem
 
 Specifies users or roles which are allowed to receive [privileges](../../../sql-reference/statements/grant.md#privileges) from this user on the condition this user has also all required access granted with [GRANT OPTION](../../../sql-reference/statements/grant.md#granting-privilege-syntax). Options of the `GRANTEES` clause:
 
-- `user` — Specifies a user this user can grant privileges to.
-- `role` — Specifies a role this user can grant privileges to.
-- `ANY` — This user can grant privileges to anyone. It's the default setting.
-- `NONE` — This user can grant privileges to none.
+-`user` — Specifies a user this user can grant privileges to.
+-`role` — Specifies a role this user can grant privileges to.
+-`ANY` — This user can grant privileges to anyone. It's the default setting.
+-`NONE` — This user can grant privileges to none.
 
 You can exclude any user or role by using the `EXCEPT` expression. For example, `ALTER USER user1 GRANTEES ANY EXCEPT user2`. It means if `user1` has some privileges granted with `GRANT OPTION` it will be able to grant those privileges to anyone except `user2`.
 
@@ -77,8 +77,9 @@ ALTER USER user1 ADD IDENTIFIED WITH plaintext_password by '1', bcrypt_password 
 ```
 
 Notes:
-1. Older versions of ClickHouse might not support the syntax of multiple authentication methods. Therefore, if the ClickHouse server contains such users and is downgraded to a version that does not support it, such users will become unusable and some user related operations will be broken. In order to downgrade gracefully, one must set all users to contain a single authentication method prior to downgrading. Alternatively, if the server was downgraded without the proper procedure, the faulty users should be dropped.
-2. `no_password` can not co-exist with other authentication methods for security reasons.
+
+1.Older versions of ClickHouse might not support the syntax of multiple authentication methods. Therefore, if the ClickHouse server contains such users and is downgraded to a version that does not support it, such users will become unusable and some user related operations will be broken. In order to downgrade gracefully, one must set all users to contain a single authentication method prior to downgrading. Alternatively, if the server was downgraded without the proper procedure, the faulty users should be dropped.
+2.`no_password` can not co-exist with other authentication methods for security reasons.
 Because of that, it is not possible to `ADD` a `no_password` authentication method. The below query will throw an error:
 
 ```sql
@@ -94,6 +95,7 @@ ALTER USER user1 IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '
 ```
 
 Reset authentication methods and keep the most recent added one:
+
 ```sql
 ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
 ```
@@ -105,7 +107,7 @@ The `VALID UNTIL` clause can only be specified along with an authentication meth
 
 Examples:
 
-- `ALTER USER name1 VALID UNTIL '2025-01-01'`
-- `ALTER USER name1 VALID UNTIL '2025-01-01 12:00:00 UTC'`
-- `ALTER USER name1 VALID UNTIL 'infinity'`
-- `ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL'2025-01-01''`
+-`ALTER USER name1 VALID UNTIL '2025-01-01'`
+-`ALTER USER name1 VALID UNTIL '2025-01-01 12:00:00 UTC'`
+-`ALTER USER name1 VALID UNTIL 'infinity'`
+-`ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL'2025-01-01''`

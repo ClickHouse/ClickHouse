@@ -24,9 +24,11 @@ Replication is implemented with PostgreSQL Logical Replication Protocol, which d
 
 :::note
 This database engine is experimental. To use it, set `allow_experimental_database_materialized_postgresql` to 1 in your configuration files or by using the `SET` command:
+
 ```sql
 SET allow_experimental_database_materialized_postgresql=1
 ```
+
 :::
 
 ## Creating a database {#creating-a-database}
@@ -38,10 +40,10 @@ ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password') [SE
 
 **Engine Parameters**
 
-- `host:port` — PostgreSQL server endpoint.
-- `database` — PostgreSQL database name.
-- `user` — PostgreSQL user.
-- `password` — User password.
+-`host:port` — PostgreSQL server endpoint.
+-`database` — PostgreSQL database name.
+-`user` — PostgreSQL user.
+-`password` — User password.
 
 ## Example of use {#example-of-use}
 
@@ -82,7 +84,7 @@ DETACH TABLE postgres_database.table_to_remove PERMANENTLY;
 
 PostgreSQL [schema](https://www.postgresql.org/docs/9.1/ddl-schemas.html) can be configured in 3 ways (starting from version 21.12).
 
-1. One schema for one `MaterializedPostgreSQL` database engine. Requires to use setting `materialized_postgresql_schema`.
+1.One schema for one `MaterializedPostgreSQL` database engine. Requires to use setting `materialized_postgresql_schema`.
 Tables are accessed via table name only:
 
 ```sql
@@ -93,7 +95,7 @@ SETTINGS materialized_postgresql_schema = 'postgres_schema';
 SELECT * FROM postgres_database.table1;
 ```
 
-2. Any number of schemas with specified set of tables for one `MaterializedPostgreSQL` database engine. Requires to use setting `materialized_postgresql_tables_list`. Each table is written along with its schema.
+2.Any number of schemas with specified set of tables for one `MaterializedPostgreSQL` database engine. Requires to use setting `materialized_postgresql_tables_list`. Each table is written along with its schema.
 Tables are accessed via schema name and table name at the same time:
 
 ```sql
@@ -111,7 +113,7 @@ Requires `materialized_postgresql_tables_list_with_schema = 1`.
 
 Warning: for this case dots in table name are not allowed.
 
-3. Any number of schemas with full set of tables for one `MaterializedPostgreSQL` database engine. Requires to use setting `materialized_postgresql_schema_list`.
+3.Any number of schemas with full set of tables for one `MaterializedPostgreSQL` database engine. Requires to use setting `materialized_postgresql_schema_list`.
 
 ```sql
 CREATE DATABASE database1
@@ -125,16 +127,15 @@ SELECT * FROM database1.`schema2.table2`;
 
 Warning: for this case dots in table name are not allowed.
 
-
 ## Requirements {#requirements}
 
-1. The [wal_level](https://www.postgresql.org/docs/current/runtime-config-wal.html) setting must have a value `logical` and `max_replication_slots` parameter must have a value at least `2` in the PostgreSQL config file.
+1.The [wal_level](https://www.postgresql.org/docs/current/runtime-config-wal.html) setting must have a value `logical` and `max_replication_slots` parameter must have a value at least `2` in the PostgreSQL config file.
 
-2. Each replicated table must have one of the following [replica identity](https://www.postgresql.org/docs/10/sql-altertable.html#SQL-CREATETABLE-REPLICA-IDENTITY):
+2.Each replicated table must have one of the following [replica identity](https://www.postgresql.org/docs/10/sql-altertable.html#SQL-CREATETABLE-REPLICA-IDENTITY):
 
-- primary key (by default)
+-primary key (by default)
 
-- index
+-index
 
 ```bash
 postgres# CREATE TABLE postgres_table (a Integer NOT NULL, b Integer, c Integer NOT NULL, d Integer, e Integer NOT NULL);
@@ -191,6 +192,8 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 
     - Positive integer.
 
+
+
     Default value: `65536`.
 
 ### `materialized_postgresql_replication_slot` {#materialized-postgresql-replication-slot}
@@ -232,7 +235,7 @@ Please note that this should be used only if it is actually needed. If there is 
 
 **Example (from [@bchrobot](https://github.com/bchrobot))**
 
-1. Configure replication slot in PostgreSQL.
+1.Configure replication slot in PostgreSQL.
 
     ```yaml
     apiVersion: "acid.zalan.do/v1"
@@ -252,14 +255,14 @@ Please note that this should be used only if it is actually needed. If there is 
             plugin: pgoutput
     ```
 
-2. Wait for replication slot to be ready, then begin a transaction and export the transaction snapshot identifier:
+2.Wait for replication slot to be ready, then begin a transaction and export the transaction snapshot identifier:
 
     ```sql
     BEGIN;
     SELECT pg_export_snapshot();
     ```
 
-3. In ClickHouse create database:
+3.In ClickHouse create database:
 
     ```sql
     CREATE DATABASE demodb
@@ -270,7 +273,7 @@ Please note that this should be used only if it is actually needed. If there is 
       materialized_postgresql_tables_list = 'table1,table2,table3';
     ```
 
-4. End the PostgreSQL transaction once replication to ClickHouse DB is confirmed. Verify that replication continues after failover:
+4.End the PostgreSQL transaction once replication to ClickHouse DB is confirmed. Verify that replication continues after failover:
 
     ```bash
     kubectl exec acid-demo-cluster-0 -c postgres -- su postgres -c 'patronictl failover --candidate acid-demo-cluster-1 --force'
@@ -278,20 +281,20 @@ Please note that this should be used only if it is actually needed. If there is 
 
 ### Required permissions {#required-permissions}
 
-1. [CREATE PUBLICATION](https://postgrespro.ru/docs/postgresql/14/sql-createpublication) -- create query privilege.
+1.[CREATE PUBLICATION](https://postgrespro.ru/docs/postgresql/14/sql-createpublication) -- create query privilege.
 
-2. [CREATE_REPLICATION_SLOT](https://postgrespro.ru/docs/postgrespro/10/protocol-replication#PROTOCOL-REPLICATION-CREATE-SLOT) -- replication privilege.
+2.[CREATE_REPLICATION_SLOT](https://postgrespro.ru/docs/postgrespro/10/protocol-replication#PROTOCOL-REPLICATION-CREATE-SLOT) -- replication privilege.
 
-3. [pg_drop_replication_slot](https://postgrespro.ru/docs/postgrespro/9.5/functions-admin#functions-replication) -- replication privilege or superuser.
+3.[pg_drop_replication_slot](https://postgrespro.ru/docs/postgrespro/9.5/functions-admin#functions-replication) -- replication privilege or superuser.
 
-4. [DROP PUBLICATION](https://postgrespro.ru/docs/postgresql/10/sql-droppublication) -- owner of publication (`username` in MaterializedPostgreSQL engine itself).
+4.[DROP PUBLICATION](https://postgrespro.ru/docs/postgresql/10/sql-droppublication) -- owner of publication (`username` in MaterializedPostgreSQL engine itself).
 
 It is possible to avoid executing `2` and `3` commands and having those permissions. Use settings `materialized_postgresql_replication_slot` and `materialized_postgresql_snapshot`. But with much care.
 
 Access to tables:
 
-1. pg_publication
+1.pg_publication
 
-2. pg_replication_slots
+2.pg_replication_slots
 
-3. pg_publication_tables
+3.pg_publication_tables

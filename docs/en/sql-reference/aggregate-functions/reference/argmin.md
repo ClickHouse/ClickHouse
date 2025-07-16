@@ -20,12 +20,12 @@ argMin(arg, val)
 
 **Arguments**
 
-- `arg` — Argument.
-- `val` — Value.
+-`arg` — Argument.
+-`val` — Value.
 
 **Returned value**
 
-- `arg` value that corresponds to minimum `val` value.
+-`arg` value that corresponds to minimum `val` value.
 
 Type: matches `arg` type.
 
@@ -115,4 +115,4 @@ SELECT argMin(a, tuple(b)) FROM test;
 
 **See also**
 
-- [Tuple](/sql-reference/data-types/tuple.md)
+-[Tuple](/sql-reference/data-types/tuple.md)

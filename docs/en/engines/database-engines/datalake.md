@@ -16,10 +16,10 @@ your existing data lake infrastructure.
 
 The `DataLakeCatalog` engine supports the following data catalogs:
 
-- **AWS Glue Catalog** - For Iceberg tables in AWS environments
-- **Databricks Unity Catalog** - For Delta Lake and Iceberg tables
-- **Hive Metastore** - Traditional Hadoop ecosystem catalog
-- **REST Catalogs** - Any catalog supporting the Iceberg REST specification
+-**AWS Glue Catalog** - For Iceberg tables in AWS environments
+-**Databricks Unity Catalog** - For Delta Lake and Iceberg tables
+-**Hive Metastore** - Traditional Hadoop ecosystem catalog
+-**REST Catalogs** - Any catalog supporting the Iceberg REST specification
 
 ## Creating a database {#creating-a-database}
 
@@ -62,5 +62,5 @@ The following settings are supported:
 
 See below pages for examples of using the `DataLakeCatalog` engine:
 
-* [Unity Catalog](/use-cases/data-lake/unity-catalog)
-* [Glue Catalog](/use-cases/data-lake/glue-catalog)
+-[Unity Catalog](/use-cases/data-lake/unity-catalog)
+-[Glue Catalog](/use-cases/data-lake/glue-catalog)

@@ -25,6 +25,7 @@ cluster(['cluster_name', db, table, sharding_key])
 clusterAllReplicas(['cluster_name', db.table, sharding_key])
 clusterAllReplicas(['cluster_name', db, table, sharding_key])
 ```
+
 ## Arguments {#arguments}
 
 | Arguments                   | Type                                                                                                                                              |
@@ -53,13 +54,13 @@ Using the `cluster` and `clusterAllReplicas` table functions are less efficient 
 
 The `cluster` and `clusterAllReplicas` table functions can be useful in the following cases:
 
-- Accessing a specific cluster for data comparison, debugging, and testing.
-- Queries to various ClickHouse clusters and replicas for research purposes.
-- Infrequent distributed requests that are made manually.
+-Accessing a specific cluster for data comparison, debugging, and testing.
+-Queries to various ClickHouse clusters and replicas for research purposes.
+-Infrequent distributed requests that are made manually.
 
 Connection settings like `host`, `port`, `user`, `password`, `compression`, `secure` are taken from `<remote_servers>` config section. See details in [Distributed engine](../../engines/table-engines/special/distributed.md).
 
 ## Related {#related}
 
-- [skip_unavailable_shards](../../operations/settings/settings.md#skip_unavailable_shards)
-- [load_balancing](../../operations/settings/settings.md#load_balancing)
+-[skip_unavailable_shards](../../operations/settings/settings.md#skip_unavailable_shards)
+-[load_balancing](../../operations/settings/settings.md#load_balancing)

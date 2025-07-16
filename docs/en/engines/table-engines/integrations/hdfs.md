@@ -26,12 +26,12 @@ ENGINE = HDFS(URI, format)
 
 **Engine Parameters**
 
-- `URI` - whole file URI in HDFS. The path part of `URI` may contain globs. In this case the table would be readonly.
-- `format` - specifies one of the available file formats. To perform
+-`URI` - whole file URI in HDFS. The path part of `URI` may contain globs. In this case the table would be readonly.
+-`format` - specifies one of the available file formats. To perform
 `SELECT` queries, the format must be supported for input, and to perform
 `INSERT` queries – for output. The available formats are listed in the
 [Formats](/sql-reference/formats#formats-overview) section.
-- [PARTITION BY expr]
+-[PARTITION BY expr]
 
 ### PARTITION BY {#partition-by}
 
@@ -68,11 +68,11 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 ## Implementation details {#implementation-details}
 
-- Reads and writes can be parallel.
-- Not supported:
-    - `ALTER` and `SELECT...SAMPLE` operations.
-    - Indexes.
-    - [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not recommended.
+-Reads and writes can be parallel.
+-Not supported:
+-`ALTER` and `SELECT...SAMPLE` operations.
+-Indexes.
+-[Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not recommended.
 
   :::note Zero-copy replication is not ready for production
   Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
@@ -82,25 +82,25 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 Multiple path components can have globs. For being processed file should exists and matches to the whole path pattern. Listing of files determines during `SELECT` (not at `CREATE` moment).
 
-- `*` — Substitutes any number of any characters except `/` including empty string.
-- `?` — Substitutes any single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
-- `{N..M}` — Substitutes any number in range from N to M including both borders.
+-`*` — Substitutes any number of any characters except `/` including empty string.
+-`?` — Substitutes any single character.
+-`{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
+-`{N..M}` — Substitutes any number in range from N to M including both borders.
 
 Constructions with `{}` are similar to the [remote](../../../sql-reference/table-functions/remote.md) table function.
 
 **Example**
 
-1.  Suppose we have several files in TSV format with the following URIs on HDFS:
+1.Suppose we have several files in TSV format with the following URIs on HDFS:
 
-    - 'hdfs://hdfs1:9000/some_dir/some_file_1'
-    - 'hdfs://hdfs1:9000/some_dir/some_file_2'
-    - 'hdfs://hdfs1:9000/some_dir/some_file_3'
-    - 'hdfs://hdfs1:9000/another_dir/some_file_1'
-    - 'hdfs://hdfs1:9000/another_dir/some_file_2'
-    - 'hdfs://hdfs1:9000/another_dir/some_file_3'
+    -'hdfs://hdfs1:9000/some_dir/some_file_1'
+    -'hdfs://hdfs1:9000/some_dir/some_file_2'
+    -'hdfs://hdfs1:9000/some_dir/some_file_3'
+    -'hdfs://hdfs1:9000/another_dir/some_file_1'
+    -'hdfs://hdfs1:9000/another_dir/some_file_2'
+    -'hdfs://hdfs1:9000/another_dir/some_file_3'
 
-1.  There are several ways to make a table consisting of all six files:
+1.There are several ways to make a table consisting of all six files:
 
 <!-- -->
 
@@ -131,6 +131,7 @@ Create table with files named `file000`, `file001`, ... , `file999`:
 ```sql
 CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV')
 ```
+
 ## Configuration {#configuration}
 
 Similar to GraphiteMergeTree, the HDFS engine supports extended configuration using the ClickHouse config file. There are two configuration keys that you can use: global (`hdfs`) and user-level (`hdfs_*`). The global configuration is applied first, and then the user-level configuration is applied (if it exists).
@@ -153,7 +154,6 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 
 #### Supported by libhdfs3 {#supported-by-libhdfs3}
 
-
 | **parameter**                                         | **default value**       |
 | -                                                  | -                    |
 | rpc\_client\_connect\_tcpnodelay                      | true                    |
@@ -173,7 +173,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 | input\_connect\_timeout                               | 600 * 1000              |
 | input\_read\_timeout                                  | 3600 * 1000             |
 | input\_write\_timeout                                 | 3600 * 1000             |
-| input\_localread\_default\_buffersize                 | 1 * 1024 * 1024         |
+| input\_localread\_default\_buffersize                 | 1 *1024* 1024         |
 | dfs\_prefetchsize                                     | 10                      |
 | input\_read\_getblockinfo\_retry                      | 3                       |
 | input\_localread\_blockinfo\_cachesize                | 1000                    |
@@ -191,16 +191,14 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 | dfs\_client\_read\_shortcircuit\_streams\_cache\_size | 256                     |
 | dfs\_client\_socketcache\_expiryMsec                  | 3000                    |
 | dfs\_client\_socketcache\_capacity                    | 16                      |
-| dfs\_default\_blocksize                               | 64 * 1024 * 1024        |
+| dfs\_default\_blocksize                               | 64 *1024* 1024        |
 | dfs\_default\_uri                                     | "hdfs://localhost:9000" |
 | hadoop\_security\_authentication                      | "simple"                |
 | hadoop\_security\_kerberos\_ticket\_cache\_path       | ""                      |
 | dfs\_client\_log\_severity                            | "INFO"                  |
 | dfs\_domain\_socket\_path                             | ""                      |
 
-
 [HDFS Configuration Reference](https://hawq.apache.org/docs/userguide/2.3.0.0-incubating/reference/HDFSConfigurationParameterReference.html) might explain some parameters.
-
 
 #### ClickHouse extras {#clickhouse-extras}
 
@@ -211,7 +209,8 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 |libhdfs3\_conf                                         | ""                      |
 
 ### Limitations {#limitations}
-* `hadoop_security_kerberos_ticket_cache_path` and `libhdfs3_conf` can be global only, not user specific
+
+-`hadoop_security_kerberos_ticket_cache_path` and `libhdfs3_conf` can be global only, not user specific
 
 ## Kerberos support {#kerberos-support}
 
@@ -222,12 +221,13 @@ datanode communications are not secured by SASL (`HADOOP_SECURE_DN_USER` is a re
 security approach). Use `tests/integration/test_storage_kerberized_hdfs/hdfs_configs/bootstrap.sh` for reference.
 
 If `hadoop_kerberos_keytab`, `hadoop_kerberos_principal` or `hadoop_security_kerberos_ticket_cache_path` are specified, Kerberos authentication will be used. `hadoop_kerberos_keytab` and `hadoop_kerberos_principal` are mandatory in this case.
+
 ## HDFS Namenode HA support {#namenode-ha}
 
 libhdfs3 support HDFS namenode HA.
 
-- Copy `hdfs-site.xml` from an HDFS node to `/etc/clickhouse-server/`.
-- Add following piece to ClickHouse config file:
+-Copy `hdfs-site.xml` from an HDFS node to `/etc/clickhouse-server/`.
+-Add following piece to ClickHouse config file:
 
 ```xml
   <hdfs>
@@ -235,22 +235,21 @@ libhdfs3 support HDFS namenode HA.
   </hdfs>
 ```
 
-- Then use `dfs.nameservices` tag value of `hdfs-site.xml` as the namenode address in the HDFS URI. For example, replace `hdfs://appadmin@192.168.101.11:8020/abc/` with `hdfs://appadmin@my_nameservice/abc/`.
-
+-Then use `dfs.nameservices` tag value of `hdfs-site.xml` as the namenode address in the HDFS URI. For example, replace `hdfs://appadmin@192.168.101.11:8020/abc/` with `hdfs://appadmin@my_nameservice/abc/`.
 
 ## Virtual columns {#virtual-columns}
 
-- `_path` — Path to the file. Type: `LowCardinality(String)`.
-- `_file` — Name of the file. Type: `LowCardinality(String)`.
-- `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
-- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
+-`_path` — Path to the file. Type: `LowCardinality(String)`.
+-`_file` — Name of the file. Type: `LowCardinality(String)`.
+-`_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
+-`_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
 ## Storage settings {#storage-settings}
 
-- [hdfs_truncate_on_insert](/operations/settings/settings.md#hdfs_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
-- [hdfs_create_new_file_on_insert](/operations/settings/settings.md#hdfs_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
-- [hdfs_skip_empty_files](/operations/settings/settings.md#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+-[hdfs_truncate_on_insert](/operations/settings/settings.md#hdfs_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
+-[hdfs_create_new_file_on_insert](/operations/settings/settings.md#hdfs_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
+-[hdfs_skip_empty_files](/operations/settings/settings.md#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
 
 **See Also**
 
-- [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
+-[Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)

@@ -22,25 +22,26 @@ splitByChar(separator, s[, max_substrings]))
 
 **Arguments**
 
-- `separator` — The separator must be a single-byte character. [String](../data-types/string.md).
-- `s` — The string to split. [String](../data-types/string.md).
-- `max_substrings` — An optional `Int64` defaulting to 0. If `max_substrings` > 0, the returned array will contain at most `max_substrings` substrings, otherwise the function will return as many substrings as possible.
+-`separator` — The separator must be a single-byte character. [String](../data-types/string.md).
+-`s` — The string to split. [String](../data-types/string.md).
+-`max_substrings` — An optional `Int64` defaulting to 0. If `max_substrings` > 0, the returned array will contain at most `max_substrings` substrings, otherwise the function will return as many substrings as possible.
 
 **Returned value(s)**
 
-- An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
+-An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
  Empty substrings may be selected when:
 
-- A separator occurs at the beginning or end of the string;
-- There are multiple consecutive separators;
-- The original string `s` is empty.
+-A separator occurs at the beginning or end of the string;
+-There are multiple consecutive separators;
+-The original string `s` is empty.
 
 :::note
 The behavior of parameter `max_substrings` changed starting with ClickHouse v22.11. In versions older than that, `max_substrings > 0` meant that `max_substring`-many splits were performed and that the remainder of the string was returned as the final element of the list.
 For example,
-- in v22.10: `SELECT splitByChar('=', 'a=b=c=d', 2);` returned `['a','b','c=d']`
-- in v22.11: `SELECT splitByChar('=', 'a=b=c=d', 2);` returned `['a','b']`
+
+-in v22.10: `SELECT splitByChar('=', 'a=b=c=d', 2);` returned `['a','b','c=d']`
+-in v22.11: `SELECT splitByChar('=', 'a=b=c=d', 2);` returned `['a','b']`
 
 A behavior similar to ClickHouse pre-v22.11 can be achieved by setting
 [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string)
@@ -73,19 +74,19 @@ splitByString(separator, s[, max_substrings]))
 
 **Arguments**
 
-- `separator` — The separator. [String](../data-types/string.md).
-- `s` — The string to split. [String](../data-types/string.md).
-- `max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
+-`separator` — The separator. [String](../data-types/string.md).
+-`s` — The string to split. [String](../data-types/string.md).
+-`max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
 
 **Returned value(s)**
 
-- An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
+-An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 Empty substrings may be selected when:
 
-- A non-empty separator occurs at the beginning or end of the string;
-- There are multiple consecutive non-empty separators;
-- The original string `s` is empty while the separator is not empty.
+-A non-empty separator occurs at the beginning or end of the string;
+-There are multiple consecutive non-empty separators;
+-The original string `s` is empty while the separator is not empty.
 
 :::note
 Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
@@ -129,21 +130,19 @@ splitByRegexp(regexp, s[, max_substrings]))
 
 **Arguments**
 
-- `regexp` — Regular expression. Constant. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `s` — The string to split. [String](../data-types/string.md).
-- `max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
-
+-`regexp` — Regular expression. Constant. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+-`s` — The string to split. [String](../data-types/string.md).
+-`max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
 
 **Returned value(s)**
 
-- An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
-
+-An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 Empty substrings may be selected when:
 
-- A non-empty regular expression match occurs at the beginning or end of the string;
-- There are multiple consecutive non-empty regular expression matches;
-- The original string `s` is empty while the regular expression is not empty.
+-A non-empty regular expression match occurs at the beginning or end of the string;
+-There are multiple consecutive non-empty regular expression matches;
+-The original string `s` is empty while the regular expression is not empty.
 
 :::note
 Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
@@ -177,7 +176,7 @@ Result:
 
 ## splitByWhitespace {#splitbywhitespace}
 
-Splits a string into substrings separated by whitespace characters. 
+Splits a string into substrings separated by whitespace characters.
 Returns an array of selected substrings.
 
 **Syntax**
@@ -188,14 +187,13 @@ splitByWhitespace(s[, max_substrings]))
 
 **Arguments**
 
-- `s` — The string to split. [String](../data-types/string.md).
-- `max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
-
+-`s` — The string to split. [String](../data-types/string.md).
+-`max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
 
 **Returned value(s)**
 
-- An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
- 
+-An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
+
 :::note
 Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
 :::
@@ -216,7 +214,7 @@ Result:
 
 ## splitByNonAlpha {#splitbynonalpha}
 
-Splits a string into substrings separated by whitespace and punctuation characters. 
+Splits a string into substrings separated by whitespace and punctuation characters.
 Returns an array of selected substrings.
 
 **Syntax**
@@ -227,13 +225,12 @@ splitByNonAlpha(s[, max_substrings]))
 
 **Arguments**
 
-- `s` — The string to split. [String](../data-types/string.md).
-- `max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
-
+-`s` — The string to split. [String](../data-types/string.md).
+-`max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
 
 **Returned value(s)**
 
-- An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
+-An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 :::note
 Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
@@ -290,12 +287,12 @@ Alias: `splitByAlpha`
 
 **Arguments**
 
-- `s` — The string to split. [String](../data-types/string.md).
-- `max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
+-`s` — The string to split. [String](../data-types/string.md).
+-`max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
 
 **Returned value(s)**
 
-- An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
+-An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 :::note
 Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
@@ -325,12 +322,12 @@ extractAllGroups(text, regexp)
 
 **Arguments**
 
-- `text` — [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `regexp` — Regular expression. Constant. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+-`text` — [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+-`regexp` — Regular expression. Constant. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned values**
 
-- If the function finds at least one matching group, it returns `Array(Array(String))` column, clustered by group_id (1 to N, where N is number of capturing groups in `regexp`). If there is no matching group, it returns an empty array. [Array](../data-types/array.md).
+-If the function finds at least one matching group, it returns `Array(Array(String))` column, clustered by group_id (1 to N, where N is number of capturing groups in `regexp`). If there is no matching group, it returns an empty array. [Array](../data-types/array.md).
 
 **Example**
 
@@ -358,12 +355,12 @@ ngrams(string, ngramsize)
 
 **Arguments**
 
-- `string` — String. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `ngramsize` — The size of an n-gram. [UInt](../data-types/int-uint.md).
+-`string` — String. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+-`ngramsize` — The size of an n-gram. [UInt](../data-types/int-uint.md).
 
 **Returned values**
 
-- Array with n-grams. [Array](../data-types/array.md)([String](../data-types/string.md)).
+-Array with n-grams. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 **Example**
 
@@ -386,10 +383,10 @@ The default tokenizer uses non-alphanumeric ASCII characters as separators.
 
 **Arguments**
 
-- `value` — The input string. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `tokenizer` — The tokenizer to use. Valid arguments are `default`, `ngram`, `split`, and `no_op`. Optional, if not set explicitly, defaults to `default`. [const String](../data-types/string.md)
-- `ngrams` — Only relevant if argument `tokenizer` is `ngram`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`. [UInt8](../data-types/int-uint.md).
-- `separators` — Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`. [Array(String)](../data-types/array.md).
+-`value` — The input string. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+-`tokenizer` — The tokenizer to use. Valid arguments are `default`, `ngram`, `split`, and `no_op`. Optional, if not set explicitly, defaults to `default`. [const String](../data-types/string.md)
+-`ngrams` — Only relevant if argument `tokenizer` is `ngram`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`. [UInt8](../data-types/int-uint.md).
+-`separators` — Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`. [Array(String)](../data-types/array.md).
 
 :::note
 In case of the `split` tokenizer: if the tokens do not form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), you likely want that the matching prefers longer separators first.
@@ -399,7 +396,7 @@ For example, with separators = `['%21', '%']` string `%21abc` would be tokenized
 
 **Returned value**
 
-- The resulting array of tokens from input string. [Array](../data-types/array.md).
+-The resulting array of tokens from input string. [Array](../data-types/array.md).
 
 **Example**
 

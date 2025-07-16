@@ -21,7 +21,7 @@ If the [optimize_move_to_prewhere](../../../operations/settings/settings.md#opti
 
 If query has [FINAL](/sql-reference/statements/select/from#final-modifier) modifier, the `PREWHERE` optimization is not always correct. It is enabled only if both settings [optimize_move_to_prewhere](../../../operations/settings/settings.md#optimize_move_to_prewhere) and [optimize_move_to_prewhere_if_final](../../../operations/settings/settings.md#optimize_move_to_prewhere_if_final) are turned on.
 
-:::note    
+:::note
 The `PREWHERE` section is executed before `FINAL`, so the results of `FROM ... FINAL` queries may be skewed when using `PREWHERE` with fields not in the `ORDER BY` section of a table.
 :::
 

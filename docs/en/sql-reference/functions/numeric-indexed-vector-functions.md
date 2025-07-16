@@ -15,12 +15,12 @@ In the BSI (Bit-Sliced Index) storage method, the data is stored in [Bit-Sliced 
 
 A vector contains indices and their corresponding values. The following are some characteristics and constraints of this data structure in BSI storage mode:
 
-- The index type can be one of `UInt8`, `UInt16`, or `UInt32`. **Note:** Considering the performance of 64-bit implementation of Roaring Bitmap, BSI format does not support `UInt64`/`Int64`.
-- The value type can be one of `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Float32`, or `Float64`. **Note:** The value type does not automatically expand. For example, if you use `UInt8` as the value type, any sum that exceeds the capacity of `UInt8` will result in an overflow rather than being promoted to a higher type; similarly, operations on integers will yield integer results (e.g., division will not automatically convert to a floating-point result). Therefore, it is important to plan and design the value type ahead of time. In real-world scenarios, floating-point types (`Float32`/`Float64`) are commonly used.
-- Only two vectors with the same index type and value type can perform operations.
-- The underlying storage uses Bit-Sliced Index, with bitmap storing indexes. Roaring Bitmap is used as the specific implementation of bitmap. A best practice is to concentrate the index in several Roaring Bitmap containers as much as possible to maximize compression and query performance.
-- The Bit-Sliced Index mechanism converts value into binary. For floating-point types, the conversion uses fixed-point representation, which may lead to precision loss. The precision can be adjusted by customizing the number of bits used for the fractional part, default is 24 bits, which is sufficient for most scenarios. You can customize the number of integer bits and fractional bits when constructing NumericIndexedVector using aggregate function groupNumericIndexedVector with `-State`.
-- There are three cases for indices: non-zero value, zero value and non-existent. In NumericIndexedVector, only non-zero value and zero value will be stored. In addition, in pointwise operations between two NumericIndexedVectors, the value of non-existent index will be treated as 0. In the division scenario, the result is zero when the divisor is zero.
+-The index type can be one of `UInt8`, `UInt16`, or `UInt32`. **Note:** Considering the performance of 64-bit implementation of Roaring Bitmap, BSI format does not support `UInt64`/`Int64`.
+-The value type can be one of `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Float32`, or `Float64`. **Note:** The value type does not automatically expand. For example, if you use `UInt8` as the value type, any sum that exceeds the capacity of `UInt8` will result in an overflow rather than being promoted to a higher type; similarly, operations on integers will yield integer results (e.g., division will not automatically convert to a floating-point result). Therefore, it is important to plan and design the value type ahead of time. In real-world scenarios, floating-point types (`Float32`/`Float64`) are commonly used.
+-Only two vectors with the same index type and value type can perform operations.
+-The underlying storage uses Bit-Sliced Index, with bitmap storing indexes. Roaring Bitmap is used as the specific implementation of bitmap. A best practice is to concentrate the index in several Roaring Bitmap containers as much as possible to maximize compression and query performance.
+-The Bit-Sliced Index mechanism converts value into binary. For floating-point types, the conversion uses fixed-point representation, which may lead to precision loss. The precision can be adjusted by customizing the number of bits used for the fractional part, default is 24 bits, which is sufficient for most scenarios. You can customize the number of integer bits and fractional bits when constructing NumericIndexedVector using aggregate function groupNumericIndexedVector with `-State`.
+-There are three cases for indices: non-zero value, zero value and non-existent. In NumericIndexedVector, only non-zero value and zero value will be stored. In addition, in pointwise operations between two NumericIndexedVectors, the value of non-existent index will be treated as 0. In the division scenario, the result is zero when the divisor is zero.
 
 # Create a numericIndexedVector object
 
@@ -39,12 +39,12 @@ groupNumericIndexedVectorState(type, integer_bit_num, fraction_bit_num)(col1, co
 
 **Parameters**
 
-- `type`: String, optional. Specifies the storage format. Currently, only `'BSI'` is supported.
-- `integer_bit_num`: `UInt32`, optional. Effective under the `'BSI'` storage format, this parameter indicates the number of bits used for the integer part. When the index type is an integer type, the default value corresponds to the number of bits used to store the index. For example, if the index type is UInt16, the default `integer_bit_num` is 16. For Float32 and Float64 index types, the default value of integer_bit_num is 40, so the integer part of the data that can be represented is in the range `[-2^39, 2^39 - 1]`. The legal range is `[0, 64]`. 
-- `fraction_bit_num`: `UInt32`, optional. Effective under the `'BSI'` storage format, this parameter indicates the number of bits used for the fractional part. When the value type is an integer, the default value is 0; when the value type is Float32 or Float64 types, the default value is 24. The valid range is `[0, 24]`. 
-- There is also a constraint that the valid range of integer_bit_num + fraction_bit_num is [0, 64].
-- `col1`: The index column. Supported types: `UInt8`/`UInt16`/`UInt32`/`Int8`/`Int16`/`Int32`.
-- `col2`: The value column. Supported types: `Int8`/`Int16`/`Int32`/`Int64`/`UInt8`/`UInt16`/`UInt32`/`UInt64`/`Float32`/`Float64`.
+-`type`: String, optional. Specifies the storage format. Currently, only `'BSI'` is supported.
+-`integer_bit_num`: `UInt32`, optional. Effective under the `'BSI'` storage format, this parameter indicates the number of bits used for the integer part. When the index type is an integer type, the default value corresponds to the number of bits used to store the index. For example, if the index type is UInt16, the default `integer_bit_num` is 16. For Float32 and Float64 index types, the default value of integer_bit_num is 40, so the integer part of the data that can be represented is in the range `[-2^39, 2^39 - 1]`. The legal range is `[0, 64]`.
+-`fraction_bit_num`: `UInt32`, optional. Effective under the `'BSI'` storage format, this parameter indicates the number of bits used for the fractional part. When the value type is an integer, the default value is 0; when the value type is Float32 or Float64 types, the default value is 24. The valid range is `[0, 24]`.
+-There is also a constraint that the valid range of integer_bit_num + fraction_bit_num is [0, 64].
+-`col1`: The index column. Supported types: `UInt8`/`UInt16`/`UInt32`/`Int8`/`Int16`/`Int32`.
+-`col2`: The value column. Supported types: `Int8`/`Int16`/`Int32`/`Int64`/`UInt8`/`UInt16`/`UInt32`/`UInt64`/`Float32`/`Float64`.
 
 **Return value**
 
@@ -97,7 +97,7 @@ numericIndexedVectorBuild(map)
 
 Arguments
 
-- `map` – A mapping from index to value.
+-`map` – A mapping from index to value.
 
 Example
 
@@ -125,7 +125,7 @@ numericIndexedVectorToMap(numericIndexedVector)
 
 Arguments
 
-- `numericIndexedVector` – A NumericIndexedVector object.
+-`numericIndexedVector` – A NumericIndexedVector object.
 
 Example
 
@@ -153,7 +153,7 @@ numericIndexedVectorCardinality(numericIndexedVector)
 
 Arguments
 
-- `numericIndexedVector` – A NumericIndexedVector object.
+-`numericIndexedVector` – A NumericIndexedVector object.
 
 Example
 
@@ -181,7 +181,7 @@ numericIndexedVectorAllValueSum(numericIndexedVector)
 
 Arguments
 
-- `numericIndexedVector` – A NumericIndexedVector object.
+-`numericIndexedVector` – A NumericIndexedVector object.
 
 Example
 
@@ -197,7 +197,6 @@ Result
 └─────┘
 ```
 
-
 # numericIndexedVectorGetValue
 
 Retrieves the value corresponding to a specified index.
@@ -210,8 +209,8 @@ numericIndexedVectorGetValue(numericIndexedVector, index)
 
 Arguments
 
-- `numericIndexedVector` – A NumericIndexedVector object.
-- `index` – The index for which value is to be retrieved.
+-`numericIndexedVector` – A NumericIndexedVector object.
+-`index` – The index for which value is to be retrieved.
 
 Example
 
@@ -239,13 +238,14 @@ numericIndexedVectorShortDebugString(numericIndexedVector)
 
 Arguments
 
-- `numericIndexedVector` – A NumericIndexedVector object.
+-`numericIndexedVector` – A NumericIndexedVector object.
 
 Example
 
 ```sql
 SELECT numericIndexedVectorShortDebugString(numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30]))) AS res\G;
 ```
+
 Result
 
 ```text
@@ -254,22 +254,22 @@ Row 1:
 res: {"vector_type":"BSI","index_type":"char8_t","value_type":"char8_t","integer_bit_num":8,"fraction_bit_num":0,"zero_indexes_info":{"cardinality":"0"},"non_zero_indexes_info":{"total_cardinality":"3","all_value_sum":60,"number_of_bitmaps":"8","bitmap_info":{"cardinality":{"0":"0","1":"2","2":"2","3":"2","4":"2","5":"0","6":"0","7":"0"}}}}
 ```
 
-- `vector_type`: Storage type of the vector, currently only `BSI` is supported.
-- `index_type`: Type of the index.
-- `value_type`: Type of the value.
+-`vector_type`: Storage type of the vector, currently only `BSI` is supported.
+-`index_type`: Type of the index.
+-`value_type`: Type of the value.
 
 The following information is valid in BSI vector type.
 
-- `integer_bit_num`: Number of bits used for the integer part.
-- `fraction_bit_num`: Number of bits used for the fractional part.
-- `zero_indexes info`: Information of indexes with value equal to 0
-    - `cardinality`: The number of indexes with value equal to 0.
-- `non_zero_indexes info`: Information of indexes with value not equal to 0
-    - `total_cardinality`: Number of indexes with value not equal to 0.
-    - `all value sum`: Sum of all values.
-    - `number_of_bitmaps`: Number of bitmaps used by this indexes which value not equal 0.
-    - `bitmap_info`: Information of each bitmap
-        - `cardinality`: Number of indexes in each bitmap.
+-`integer_bit_num`: Number of bits used for the integer part.
+-`fraction_bit_num`: Number of bits used for the fractional part.
+-`zero_indexes info`: Information of indexes with value equal to 0
+-`cardinality`: The number of indexes with value equal to 0.
+-`non_zero_indexes info`: Information of indexes with value not equal to 0
+-`total_cardinality`: Number of indexes with value not equal to 0.
+-`all value sum`: Sum of all values.
+-`number_of_bitmaps`: Number of bitmaps used by this indexes which value not equal 0.
+-`bitmap_info`: Information of each bitmap
+    -`cardinality`: Number of indexes in each bitmap.
 
 # numericIndexedVectorPointwiseAdd
 
@@ -283,8 +283,8 @@ numericIndexedVectorPointwiseAdd(numericIndexedVector, numericIndexedVector | nu
 
 Arguments
 
-- `numericIndexedVector` – A NumericIndexedVector object.
-- `numeric` - A numeric constant.
+-`numericIndexedVector` – A NumericIndexedVector object.
+-`numeric` - A numeric constant.
 
 Example
 
@@ -317,8 +317,8 @@ numericIndexedVectorPointwiseSubtract(numericIndexedVector, numericIndexedVector
 
 Arguments
 
-- `numericIndexedVector` – A NumericIndexedVector object.
-- `numeric` - A numeric constant.
+-`numericIndexedVector` – A NumericIndexedVector object.
+-`numeric` - A numeric constant.
 
 Example
 
@@ -351,8 +351,8 @@ numericIndexedVectorPointwiseMultiply(numericIndexedVector, numericIndexedVector
 
 Arguments
 
-- `numericIndexedVector` – A NumericIndexedVector object.
-- `numeric` - A numeric constant.
+-`numericIndexedVector` – A NumericIndexedVector object.
+-`numeric` - A numeric constant.
 
 Example
 
@@ -385,8 +385,8 @@ numericIndexedVectorPointwiseDivide(numericIndexedVector, numericIndexedVector |
 
 Arguments
 
-- `numericIndexedVector` – A NumericIndexedVector object.
-- `numeric` - A numeric constant.
+-`numericIndexedVector` – A NumericIndexedVector object.
+-`numeric` - A numeric constant.
 
 Example
 
@@ -419,8 +419,8 @@ numericIndexedVectorPointwiseEqual(numericIndexedVector, numericIndexedVector | 
 
 Arguments
 
-- `numericIndexedVector` – A NumericIndexedVector object.
-- `numeric` - A numeric constant.
+-`numericIndexedVector` – A NumericIndexedVector object.
+-`numeric` - A numeric constant.
 
 Example
 
@@ -453,8 +453,8 @@ numericIndexedVectorPointwiseNotEqual(numericIndexedVector, numericIndexedVector
 
 Arguments
 
-- `numericIndexedVector` – A NumericIndexedVector object.
-- `numeric` - A numeric constant.
+-`numericIndexedVector` – A NumericIndexedVector object.
+-`numeric` - A numeric constant.
 
 Example
 
@@ -487,8 +487,8 @@ numericIndexedVectorPointwiseLess(numericIndexedVector, numericIndexedVector | n
 
 Arguments
 
-- `numericIndexedVector` – A NumericIndexedVector object.
-- `numeric` - A numeric constant.
+-`numericIndexedVector` – A NumericIndexedVector object.
+-`numeric` - A numeric constant.
 
 Example
 
@@ -521,8 +521,8 @@ numericIndexedVectorPointwiseLessEqual(numericIndexedVector, numericIndexedVecto
 
 Arguments
 
-- `numericIndexedVector` – A NumericIndexedVector object.
-- `numeric` - A numeric constant.
+-`numericIndexedVector` – A NumericIndexedVector object.
+-`numeric` - A numeric constant.
 
 Example
 
@@ -555,8 +555,8 @@ numericIndexedVectorPointwiseGreater(numericIndexedVector, numericIndexedVector 
 
 Arguments
 
-- `numericIndexedVector` – A NumericIndexedVector object.
-- `numeric` - A numeric constant.
+-`numericIndexedVector` – A NumericIndexedVector object.
+-`numeric` - A numeric constant.
 
 Example
 
@@ -589,8 +589,8 @@ numericIndexedVectorPointwiseGreaterEqual(numericIndexedVector, numericIndexedVe
 
 Arguments
 
-- `numericIndexedVector` – A NumericIndexedVector object.
-- `numeric` - A numeric constant.
+-`numericIndexedVector` – A NumericIndexedVector object.
+-`numeric` - A numeric constant.
 
 Example
 

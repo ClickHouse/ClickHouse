@@ -17,11 +17,11 @@ distinctDynamicTypes(dynamic)
 
 **Arguments**
 
-- `dynamic` — [Dynamic](../../data-types/dynamic.md) column.
+-`dynamic` — [Dynamic](../../data-types/dynamic.md) column.
 
 **Returned Value**
 
-- The sorted list of data type names [Array(String)](../../data-types/array.md).
+-The sorted list of data type names [Array(String)](../../data-types/array.md).
 
 **Example**
 

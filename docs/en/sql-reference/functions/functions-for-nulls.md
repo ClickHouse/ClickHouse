@@ -23,12 +23,12 @@ Alias: `ISNULL`.
 
 **Arguments**
 
-- `x` — A value of non-compound data type.
+-`x` — A value of non-compound data type.
 
 **Returned value**
 
-- `1` if `x` is `NULL`.
-- `0` if `x` is not `NULL`.
+-`1` if `x` is `NULL`.
+-`0` if `x` is not `NULL`.
 
 **Example**
 
@@ -67,12 +67,12 @@ isNullable(x)
 
 **Arguments**
 
-- `x` — column.
+-`x` — column.
 
 **Returned value**
 
-- `1` if `x` allows `NULL` values. [UInt8](../data-types/int-uint.md).
-- `0` if `x` does not allow `NULL` values. [UInt8](../data-types/int-uint.md).
+-`1` if `x` allows `NULL` values. [UInt8](../data-types/int-uint.md).
+-`0` if `x` does not allow `NULL` values. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -106,12 +106,12 @@ isNotNull(x)
 
 **Arguments:**
 
-- `x` — A value of non-compound data type.
+-`x` — A value of non-compound data type.
 
 **Returned value**
 
-- `1` if `x` is not `NULL`.
-- `0` if `x` is `NULL`.
+-`1` if `x` is not `NULL`.
+-`0` if `x` is `NULL`.
 
 **Example**
 
@@ -156,13 +156,13 @@ isNotDistinctFrom(x, y)
 
 **Arguments**
 
-- `x` — first JOIN key.
-- `y` — second JOIN key.
+-`x` — first JOIN key.
+-`y` — second JOIN key.
 
 **Returned value**
 
-- `true` when `x` and `y` are both `NULL`.
-- `false` otherwise.
+-`true` when `x` and `y` are both `NULL`.
+-`false` otherwise.
 
 **Example**
 
@@ -178,12 +178,12 @@ isZeroOrNull(x)
 
 **Arguments:**
 
-- `x` — A value of non-compound data type.
+-`x` — A value of non-compound data type.
 
 **Returned value**
 
-- `1` if `x` is 0 (zero) or `NULL`.
-- `0` else.
+-`1` if `x` is 0 (zero) or `NULL`.
+-`0` else.
 
 **Example**
 
@@ -222,12 +222,12 @@ coalesce(x,...)
 
 **Arguments:**
 
-- Any number of parameters of non-compound type. All parameters must be of mutually compatible data types.
+-Any number of parameters of non-compound type. All parameters must be of mutually compatible data types.
 
 **Returned values**
 
-- The first non-`NULL` argument
-- `NULL`, if all arguments are `NULL`.
+-The first non-`NULL` argument
+-`NULL`, if all arguments are `NULL`.
 
 **Example**
 
@@ -265,13 +265,13 @@ ifNull(x, alt)
 
 **Arguments:**
 
-- `x` — The value to check for `NULL`.
-- `alt` — The value that the function returns if `x` is `NULL`.
+-`x` — The value to check for `NULL`.
+-`alt` — The value that the function returns if `x` is `NULL`.
 
 **Returned values**
 
-- `x` if `x` is not `NULL`.
-- `alt` if `x` is `NULL`.
+-`x` if `x` is not `NULL`.
+-`alt` if `x` is `NULL`.
 
 **Example**
 
@@ -317,8 +317,8 @@ nullIf(x, y)
 
 **Returned values**
 
-- `NULL` if the arguments are equal.
-- `x` if the arguments are not equal.
+-`NULL` if the arguments are equal.
+-`x` if the arguments are not equal.
 
 **Example**
 
@@ -360,12 +360,12 @@ assumeNotNull(x)
 
 **Arguments:**
 
-- `x` — The original value.
+-`x` — The original value.
 
 **Returned values**
 
-- The input value as non-`Nullable` type, if it is not `NULL`.
-- An arbitrary value, if the input value is `NULL`.
+-The input value as non-`Nullable` type, if it is not `NULL`.
+-An arbitrary value, if the input value is `NULL`.
 
 **Example**
 
@@ -419,11 +419,11 @@ toNullable(x)
 
 **Arguments:**
 
-- `x` — A value of non-compound type.
+-`x` — A value of non-compound type.
 
 **Returned value**
 
-- The input value but of `Nullable` type.
+-The input value but of `Nullable` type.
 
 **Example**
 

@@ -45,6 +45,7 @@ This command is a shortcut of:
 ```
 
 ClickHouse knows the file uses a tab-separated format from filename extension. If you need to explicitly specify the format, simply add one of the [many ClickHouse input formats](../../interfaces/formats.md):
+
 ```bash
 ./clickhouse local -q "SELECT * FROM file('reviews.tsv', 'TabSeparated')"
 ```
@@ -174,26 +175,25 @@ NORTHWOOD    THREE RIVERS    184    731609    ███████████�
 When you are ready to insert your files into ClickHouse, startup a ClickHouse server and insert the results of your `file` and `s3` table functions into a `MergeTree` table. View the [Quick Start](/get-started/quick-start) for more details.
 :::
 
-
 ## Format Conversions {#format-conversions}
 
 You can use `clickhouse-local` for converting data between different formats. Example:
 
 ```bash
-$ clickhouse-local --input-format JSONLines --output-format CSV --query "SELECT * FROM table" < data.json > data.csv
+clickhouse-local --input-format JSONLines --output-format CSV --query "SELECT * FROM table" < data.json > data.csv
 ```
 
-Formats are auto-detected from file extensions: 
+Formats are auto-detected from file extensions:
 
 ```bash
-$ clickhouse-local --query "SELECT * FROM table" < data.json > data.csv
+clickhouse-local --query "SELECT * FROM table" < data.json > data.csv
 ```
 
 As a shortcut, you can write it using the `--copy` argument:
-```bash
-$ clickhouse-local --copy < data.json > data.csv
-```
 
+```bash
+clickhouse-local --copy < data.json > data.csv
+```
 
 ## Usage {#usage}
 
@@ -202,13 +202,13 @@ By default `clickhouse-local` has access to data of a ClickHouse server on the s
 Basic usage (Linux):
 
 ```bash
-$ clickhouse-local --structure "table_structure" --input-format "format_of_incoming_data" --query "query"
+clickhouse-local --structure "table_structure" --input-format "format_of_incoming_data" --query "query"
 ```
 
 Basic usage (Mac):
 
 ```bash
-$ ./clickhouse local --structure "table_structure" --input-format "format_of_incoming_data" --query "query"
+./clickhouse local --structure "table_structure" --input-format "format_of_incoming_data" --query "query"
 ```
 
 :::note
@@ -217,29 +217,28 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 
 Arguments:
 
-- `-S`, `--structure` — table structure for input data.
-- `--input-format` — input format, `TSV` by default.
-- `-F`, `--file` — path to data, `stdin` by default.
-- `-q`, `--query` — queries to execute with `;` as delimiter. `--query` can be specified multiple times, e.g. `--query "SELECT 1" --query "SELECT 2"`. Cannot be used simultaneously with `--queries-file`.
-- `--queries-file` - file path with queries to execute. `--queries-file` can be specified multiple times, e.g. `--query queries1.sql --query queries2.sql`. Cannot be used simultaneously with `--query`.
-- `--multiquery, -n` – If specified, multiple queries separated by semicolons can be listed after the `--query` option. For convenience, it is also possible to omit `--query` and pass the queries directly after `--multiquery`.
-- `-N`, `--table` — table name where to put output data, `table` by default.
-- `-f`, `--format`, `--output-format` — output format, `TSV` by default.
-- `-d`, `--database` — default database, `_local` by default.
-- `--stacktrace` — whether to dump debug output in case of exception.
-- `--echo` — print query before execution.
-- `--verbose` — more details on query execution.
-- `--logger.console` — Log to console.
-- `--logger.log` — Log file name.
-- `--logger.level` — Log level.
-- `--ignore-error` — do not stop processing if a query failed.
-- `-c`, `--config-file` — path to configuration file in same format as for ClickHouse server, by default the configuration empty.
-- `--no-system-tables` — do not attach system tables.
-- `--help` — arguments references for `clickhouse-local`.
-- `-V`, `--version` — print version information and exit.
+-`-S`, `--structure` — table structure for input data.
+-`--input-format` — input format, `TSV` by default.
+-`-F`, `--file` — path to data, `stdin` by default.
+-`-q`, `--query` — queries to execute with `;` as delimiter. `--query` can be specified multiple times, e.g. `--query "SELECT 1" --query "SELECT 2"`. Cannot be used simultaneously with `--queries-file`.
+-`--queries-file` - file path with queries to execute. `--queries-file` can be specified multiple times, e.g. `--query queries1.sql --query queries2.sql`. Cannot be used simultaneously with `--query`.
+-`--multiquery, -n` – If specified, multiple queries separated by semicolons can be listed after the `--query` option. For convenience, it is also possible to omit `--query` and pass the queries directly after `--multiquery`.
+-`-N`, `--table` — table name where to put output data, `table` by default.
+-`-f`, `--format`, `--output-format` — output format, `TSV` by default.
+-`-d`, `--database` — default database, `_local` by default.
+-`--stacktrace` — whether to dump debug output in case of exception.
+-`--echo` — print query before execution.
+-`--verbose` — more details on query execution.
+-`--logger.console` — Log to console.
+-`--logger.log` — Log file name.
+-`--logger.level` — Log level.
+-`--ignore-error` — do not stop processing if a query failed.
+-`-c`, `--config-file` — path to configuration file in same format as for ClickHouse server, by default the configuration empty.
+-`--no-system-tables` — do not attach system tables.
+-`--help` — arguments references for `clickhouse-local`.
+-`-V`, `--version` — print version information and exit.
 
 Also, there are arguments for each ClickHouse configuration variable which are more commonly used instead of `--config-file`.
-
 
 ## Examples {#examples}
 
@@ -305,7 +304,7 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 
 ## Related Content {#related-content-1}
 
-- [Extracting, converting, and querying data in local files using clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)
-- [Getting Data Into ClickHouse - Part 1](https://clickhouse.com/blog/getting-data-into-clickhouse-part-1)
-- [Exploring massive, real-world data sets: 100+ Years of Weather Records in ClickHouse](https://clickhouse.com/blog/real-world-data-noaa-climate-data)
-- Blog: [Extracting, Converting, and Querying Data in Local Files using clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)
+-[Extracting, converting, and querying data in local files using clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)
+-[Getting Data Into ClickHouse - Part 1](https://clickhouse.com/blog/getting-data-into-clickhouse-part-1)
+-[Exploring massive, real-world data sets: 100+ Years of Weather Records in ClickHouse](https://clickhouse.com/blog/real-world-data-noaa-climate-data)
+-Blog: [Extracting, Converting, and Querying Data in Local Files using clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)

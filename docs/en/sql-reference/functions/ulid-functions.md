@@ -19,7 +19,7 @@ generateULID([x])
 
 **Arguments**
 
-- `x` — [Expression](/sql-reference/syntax#expressions) resulting in any of the [supported data types](/sql-reference/data-types). The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in one query. Optional parameter.
+-`x` — [Expression](/sql-reference/syntax#expressions) resulting in any of the [supported data types](/sql-reference/data-types). The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in one query. Optional parameter.
 
 **Returned value**
 
@@ -61,12 +61,12 @@ ULIDStringToDateTime(ulid[, timezone])
 
 **Arguments**
 
-- `ulid` — Input ULID. [String](../data-types/string.md) or [FixedString(26)](../data-types/fixedstring.md).
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional). [String](../data-types/string.md).
+-`ulid` — Input ULID. [String](../data-types/string.md) or [FixedString(26)](../data-types/fixedstring.md).
+-`timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional). [String](../data-types/string.md).
 
 **Returned value**
 
-- Timestamp with milliseconds precision. [DateTime64(3)](../data-types/datetime64.md).
+-Timestamp with milliseconds precision. [DateTime64(3)](../data-types/datetime64.md).
 
 **Usage example**
 
@@ -82,7 +82,7 @@ SELECT ULIDStringToDateTime('01GNB2S2FGN2P93QPXDNB4EN2R')
 
 ## See Also {#see-also}
 
-- [UUID](../../sql-reference/functions/uuid-functions.md)
+-[UUID](../../sql-reference/functions/uuid-functions.md)
 
 <!-- 
 The inner content of the tags below are replaced at doc framework build time with 

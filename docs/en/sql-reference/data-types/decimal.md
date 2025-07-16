@@ -14,24 +14,25 @@ Signed fixed-point numbers that keep precision during add, subtract and multiply
 
 ## Parameters {#parameters}
 
-- P - precision. Valid range: \[ 1 : 76 \]. Determines how many decimal digits number can have (including fraction). By default, the precision is 10.
-- S - scale. Valid range: \[ 0 : P \]. Determines how many decimal digits fraction can have.
+-P - precision. Valid range: \[ 1 : 76 \]. Determines how many decimal digits number can have (including fraction). By default, the precision is 10.
+-S - scale. Valid range: \[ 0 : P \]. Determines how many decimal digits fraction can have.
 
 Decimal(P) is equivalent to Decimal(P, 0). Similarly, the syntax Decimal is equivalent to Decimal(10, 0).
 
 Depending on P parameter value Decimal(P, S) is a synonym for:
-- P from \[ 1 : 9 \] - for Decimal32(S)
-- P from \[ 10 : 18 \] - for Decimal64(S)
-- P from \[ 19 : 38 \] - for Decimal128(S)
-- P from \[ 39 : 76 \] - for Decimal256(S)
+
+-P from \[ 1 : 9 \] - for Decimal32(S)
+-P from \[ 10 : 18 \] - for Decimal64(S)
+-P from \[ 19 : 38 \] - for Decimal128(S)
+-P from \[ 39 : 76 \] - for Decimal256(S)
 
 ## Decimal Value Ranges {#decimal-value-ranges}
 
-- Decimal(P, S) - ( -1 \* 10^(P - S), 1 \* 10^(P - S) )
-- Decimal32(S) - ( -1 \* 10^(9 - S), 1 \* 10^(9 - S) )
-- Decimal64(S) - ( -1 \* 10^(18 - S), 1 \* 10^(18 - S) )
-- Decimal128(S) - ( -1 \* 10^(38 - S), 1 \* 10^(38 - S) )
-- Decimal256(S) - ( -1 \* 10^(76 - S), 1 \* 10^(76 - S) )
+-Decimal(P, S) - ( -1 \* 10^(P - S), 1 \* 10^(P - S) )
+-Decimal32(S) - ( -1 \* 10^(9 - S), 1 \* 10^(9 - S) )
+-Decimal64(S) - ( -1 \* 10^(18 - S), 1 \* 10^(18 - S) )
+-Decimal128(S) - ( -1 \* 10^(38 - S), 1 \* 10^(38 - S) )
+-Decimal256(S) - ( -1 \* 10^(76 - S), 1 \* 10^(76 - S) )
 
 For example, Decimal32(4) can contain numbers from -99999.9999 to 99999.9999 with 0.0001 step.
 
@@ -45,16 +46,16 @@ Because modern CPUs do not support 128-bit and 256-bit integers natively, operat
 
 Binary operations on Decimal result in wider result type (with any order of arguments).
 
-- `Decimal64(S1) <op> Decimal32(S2) -> Decimal64(S)`
-- `Decimal128(S1) <op> Decimal32(S2) -> Decimal128(S)`
-- `Decimal128(S1) <op> Decimal64(S2) -> Decimal128(S)`
+-`Decimal64(S1) <op> Decimal32(S2) -> Decimal64(S)`
+-`Decimal128(S1) <op> Decimal32(S2) -> Decimal128(S)`
+-`Decimal128(S1) <op> Decimal64(S2) -> Decimal128(S)`
 - `Decimal256(S1) <op> Decimal<32|64|128>(S2) -> Decimal256(S)`
 
 Rules for scale:
 
-- add, subtract: S = max(S1, S2).
-- multiply: S = S1 + S2.
-- divide: S = S1.
+-add, subtract: S = max(S1, S2).
+-multiply: S = S1 + S2.
+-divide: S = S1.
 
 For similar operations between Decimal and integers, the result is Decimal of the same size as an argument.
 
@@ -120,5 +121,6 @@ DB::Exception: Can't compare.
 ```
 
 **See also**
-- [isDecimalOverflow](/sql-reference/functions/other-functions#isdecimaloverflow)
-- [countDigits](/sql-reference/functions/other-functions#countdigits)
+
+-[isDecimalOverflow](/sql-reference/functions/other-functions#isdecimaloverflow)
+-[countDigits](/sql-reference/functions/other-functions#countdigits)

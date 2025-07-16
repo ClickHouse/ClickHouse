@@ -15,23 +15,23 @@ It differs from the [sumMap](../reference/summap.md) function in that it does su
 
 **Syntax**
 
-- `sumMapWithOverflow(key <Array>, value <Array>)` [Array type](../../data-types/array.md).
-- `sumMapWithOverflow(Tuple(key <Array>, value <Array>))` [Tuple type](../../data-types/tuple.md).
+-`sumMapWithOverflow(key <Array>, value <Array>)` [Array type](../../data-types/array.md).
+-`sumMapWithOverflow(Tuple(key <Array>, value <Array>))` [Tuple type](../../data-types/tuple.md).
 
-**Arguments** 
+**Arguments**
 
-- `key`: [Array](../../data-types/array.md) of keys.
-- `value`: [Array](../../data-types/array.md) of values.
+-`key`: [Array](../../data-types/array.md) of keys.
+-`value`: [Array](../../data-types/array.md) of values.
 
 Passing a tuple of key and value arrays is a synonym to passing separately an array of keys and an array of values.
 
-:::note 
+:::note
 The number of elements in `key` and `value` must be the same for each row that is totaled.
 :::
 
-**Returned Value** 
+**Returned Value**
 
-- Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
+-Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
 
 **Example**
 
@@ -50,6 +50,7 @@ CREATE TABLE sum_map(
     statusMapTuple Tuple(Array(Int8), Array(Int8))
 ) ENGINE = Log;
 ```
+
 ```sql
 INSERT INTO sum_map VALUES
     ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10], ([1, 2, 3], [10, 10, 10])),
@@ -59,7 +60,7 @@ INSERT INTO sum_map VALUES
 ```
 
 If we query the table using the `sumMap`, `sumMapWithOverflow` with the array type syntax, and `toTypeName` functions then we can see that
-for the `sumMapWithOverflow` function, the data type of the summed values array is the same as the argument type, both `UInt8` (i.e. summation was done with overflow). For `sumMap` the data type of the summed values arrays has changed from `UInt8` to `UInt64` such that overflow does not occur. 
+for the `sumMapWithOverflow` function, the data type of the summed values array is the same as the argument type, both `UInt8` (i.e. summation was done with overflow). For `sumMap` the data type of the summed values arrays has changed from `UInt8` to `UInt64` such that overflow does not occur.
 
 Query:
 
@@ -93,5 +94,5 @@ Result:
 ```
 
 **See Also**
-    
-- [sumMap](../reference/summap.md)
+
+-[sumMap](../reference/summap.md)

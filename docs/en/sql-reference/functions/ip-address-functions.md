@@ -148,11 +148,11 @@ IPv6StringToNum(string)
 
 **Argument**
 
-- `string` — IP address. [String](../data-types/string.md).
+-`string` — IP address. [String](../data-types/string.md).
 
 **Returned value**
 
-- IPv6 address in binary format. [FixedString(16)](../data-types/fixedstring.md).
+-IPv6 address in binary format. [FixedString(16)](../data-types/fixedstring.md).
 
 **Example**
 
@@ -174,7 +174,7 @@ Result:
 
 **See Also**
 
-- [cutIPv6](#cutipv6x-bytestocutforipv6-bytestocutforipv4).
+-[cutIPv6](#cutipv6x-bytestocutforipv6-bytestocutforipv4).
 
 ## IPv6StringToNumOrDefault(s) {#ipv6stringtonumordefaults}
 
@@ -258,11 +258,11 @@ toIPv4(x)
 
 **Arguments**
 
-- `x` — IPv4 address. [`String`](../data-types/string.md), [`UInt8/16/32`](../data-types/int-uint.md).
+-`x` — IPv4 address. [`String`](../data-types/string.md), [`UInt8/16/32`](../data-types/int-uint.md).
 
 **Returned value**
 
-- IPv4 address. [IPv4](../data-types/ipv4.md).
+-IPv4 address. [IPv4](../data-types/ipv4.md).
 
 **Examples**
 
@@ -298,7 +298,6 @@ Result:
 └───────────────────────────────────┴──────────────────────────┘
 ```
 
-
 Query:
 
 ```sql
@@ -325,12 +324,12 @@ toIPv4OrDefault(string[, default])
 
 **Arguments**
 
-- `value` — IP address. [String](../data-types/string.md).
-- `default` (optional) — The value to return if `string` has an invalid format. [IPv4](../data-types/ipv4.md).
+-`value` — IP address. [String](../data-types/string.md).
+-`default` (optional) — The value to return if `string` has an invalid format. [IPv4](../data-types/ipv4.md).
 
 **Returned value**
 
-- `string` converted to the current IPv4 address. [String](../data-types/string.md).
+-`string` converted to the current IPv4 address. [String](../data-types/string.md).
 
 **Example**
 
@@ -366,11 +365,11 @@ toIPv4OrNull(string)
 
 **Arguments**
 
-- `string` — IP address. [String](../data-types/string.md).
+-`string` — IP address. [String](../data-types/string.md).
 
 **Returned value**
 
-- `string` converted to the current IPv4 address, or null if `string` is an invalid address. [String](../data-types/string.md).
+-`string` converted to the current IPv4 address, or null if `string` is an invalid address. [String](../data-types/string.md).
 
 **Example**
 
@@ -401,11 +400,11 @@ toIPv4OrZero(string)
 
 **Arguments**
 
-- `string` — IP address. [String](../data-types/string.md).
+-`string` — IP address. [String](../data-types/string.md).
 
 **Returned value**
 
-- `string` converted to the current IPv4 address, or `0.0.0.0` if `string` is an invalid address. [String](../data-types/string.md).
+-`string` converted to the current IPv4 address, or `0.0.0.0` if `string` is an invalid address. [String](../data-types/string.md).
 
 **Example**
 
@@ -440,11 +439,11 @@ toIPv6(UInt128)
 
 **Argument**
 
-- `x` — IP address. [`String`](../data-types/string.md) or [`UInt128`](../data-types/int-uint.md).
+-`x` — IP address. [`String`](../data-types/string.md) or [`UInt128`](../data-types/int-uint.md).
 
 **Returned value**
 
-- IP address. [IPv6](../data-types/ipv6.md).
+-IP address. [IPv6](../data-types/ipv6.md).
 
 **Examples**
 
@@ -491,12 +490,12 @@ toIPv6OrDefault(string[, default])
 
 **Argument**
 
-- `string` — IP address. [String](../data-types/string.md).
-- `default` (optional) — The value to return if `string` has an invalid format. [IPv6](../data-types/ipv6.md).
+-`string` — IP address. [String](../data-types/string.md).
+-`default` (optional) — The value to return if `string` has an invalid format. [IPv6](../data-types/ipv6.md).
 
 **Returned value**
 
-- IPv6 address [IPv6](../data-types/ipv6.md), otherwise `::` or the provided optional default if `string` has an invalid format.
+-IPv6 address [IPv6](../data-types/ipv6.md), otherwise `::` or the provided optional default if `string` has an invalid format.
 
 **Example**
 
@@ -532,11 +531,11 @@ toIPv6OrNull(string)
 
 **Argument**
 
-- `string` — IP address. [String](../data-types/string.md).
+-`string` — IP address. [String](../data-types/string.md).
 
 **Returned value**
 
-- IP address. [IPv6](../data-types/ipv6.md), or null if `string` is not a valid format.
+-IP address. [IPv6](../data-types/ipv6.md), or null if `string` is not a valid format.
 
 **Example**
 
@@ -567,11 +566,11 @@ toIPv6OrZero(string)
 
 **Argument**
 
-- `string` — IP address. [String](../data-types/string.md).
+-`string` — IP address. [String](../data-types/string.md).
 
 **Returned value**
 
-- IP address. [IPv6](../data-types/ipv6.md), or `::` if `string` is not a valid format.
+-IP address. [IPv6](../data-types/ipv6.md), or `::` if `string` is not a valid format.
 
 **Example**
 
@@ -610,11 +609,11 @@ isIPv4String(string)
 
 **Arguments**
 
-- `string` — IP address. [String](../data-types/string.md).
+-`string` — IP address. [String](../data-types/string.md).
 
 **Returned value**
 
-- `1` if `string` is IPv4 address, `0` otherwise. [UInt8](../data-types/int-uint.md).
+-`1` if `string` is IPv4 address, `0` otherwise. [UInt8](../data-types/int-uint.md).
 
 **Examples**
 
@@ -646,11 +645,11 @@ isIPv6String(string)
 
 **Arguments**
 
-- `string` — IP address. [String](../data-types/string.md).
+-`string` — IP address. [String](../data-types/string.md).
 
 **Returned value**
 
-- `1` if `string` is IPv6 address, `0` otherwise. [UInt8](../data-types/int-uint.md).
+-`1` if `string` is IPv6 address, `0` otherwise. [UInt8](../data-types/int-uint.md).
 
 **Examples**
 
@@ -685,12 +684,12 @@ This function accepts both IPv4 and IPv6 addresses (and networks) represented as
 
 **Arguments**
 
-- `address` — An IPv4 or IPv6 address. [String](../data-types/string.md), [IPv4](../data-types/ipv4.md), [IPv6](../data-types/ipv6.md), `Nullable(String)`, `Nullable(IPv4)` and `Nullable(IPv6)`.
-- `prefix` — An IPv4 or IPv6 network prefix in CIDR. [String](../data-types/string.md).
+-`address` — An IPv4 or IPv6 address. [String](../data-types/string.md), [IPv4](../data-types/ipv4.md), [IPv6](../data-types/ipv6.md), `Nullable(String)`, `Nullable(IPv4)` and `Nullable(IPv6)`.
+-`prefix` — An IPv4 or IPv6 network prefix in CIDR. [String](../data-types/string.md).
 
 **Returned value**
 
-- `1` or `0`. [UInt8](../data-types/int-uint.md).
+-`1` or `0`. [UInt8](../data-types/int-uint.md).
 
 **Example**
 

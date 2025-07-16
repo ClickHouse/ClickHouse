@@ -21,11 +21,11 @@ deltaSum(value)
 
 **Arguments**
 
-- `value` — Input values, must be [Integer](../../data-types/int-uint.md) or [Float](../../data-types/float.md) type.
+-`value` — Input values, must be [Integer](../../data-types/int-uint.md) or [Float](../../data-types/float.md) type.
 
 **Returned value**
 
-- A gained arithmetic difference of the `Integer` or `Float` type.
+-A gained arithmetic difference of the `Integer` or `Float` type.
 
 **Examples**
 
@@ -73,4 +73,4 @@ Result:
 
 ## See Also {#see-also}
 
-- [runningDifference](/sql-reference/functions/other-functions#runningDifference)
+-[runningDifference](/sql-reference/functions/other-functions#runningDifference)

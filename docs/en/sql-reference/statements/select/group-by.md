@@ -9,9 +9,9 @@ title: 'GROUP BY Clause'
 
 `GROUP BY` clause switches the `SELECT` query into an aggregation mode, which works as follows:
 
-- `GROUP BY` clause contains a list of expressions (or a single expression, which is considered to be the list of length one). This list acts as a "grouping key", while each individual expression will be referred to as a "key expression".
-- All the expressions in the [SELECT](/sql-reference/statements/select/index.md), [HAVING](/sql-reference/statements/select/having.md), and [ORDER BY](/sql-reference/statements/select/order-by.md) clauses **must** be calculated based on key expressions **or** on [aggregate functions](../../../sql-reference/aggregate-functions/index.md) over non-key expressions (including plain columns). In other words, each column selected from the table must be used either in a key expression or inside an aggregate function, but not both.
-- Result of aggregating `SELECT` query will contain as many rows as there were unique values of "grouping key" in source table. Usually, this significantly reduces the row count, often by orders of magnitude, but not necessarily: row count stays the same if all "grouping key" values were distinct.
+-`GROUP BY` clause contains a list of expressions (or a single expression, which is considered to be the list of length one). This list acts as a "grouping key", while each individual expression will be referred to as a "key expression".
+-All the expressions in the [SELECT](/sql-reference/statements/select/index.md), [HAVING](/sql-reference/statements/select/having.md), and [ORDER BY](/sql-reference/statements/select/order-by.md) clauses **must** be calculated based on key expressions **or** on [aggregate functions](../../../sql-reference/aggregate-functions/index.md) over non-key expressions (including plain columns). In other words, each column selected from the table must be used either in a key expression or inside an aggregate function, but not both.
+-Result of aggregating `SELECT` query will contain as many rows as there were unique values of "grouping key" in source table. Usually, this significantly reduces the row count, often by orders of magnitude, but not necessarily: row count stays the same if all "grouping key" values were distinct.
 
 When you want to group data in the table by column numbers instead of column names, enable the setting [enable_positional_arguments](/operations/settings/settings#enable_positional_arguments).
 
@@ -83,12 +83,13 @@ Query:
 ```sql
 SELECT year, month, day, count(*) FROM t GROUP BY ROLLUP(year, month, day);
 ```
+
 As `GROUP BY` section has three key expressions, the result contains four tables with subtotals "rolled up" from right to left:
 
-- `GROUP BY year, month, day`;
-- `GROUP BY year, month` (and `day` column is filled with zeros);
-- `GROUP BY year` (now `month, day` columns are both filled with zeros);
-- and totals (and all three key expression columns are zeros).
+-`GROUP BY year, month, day`;
+-`GROUP BY year, month` (and `day` column is filled with zeros);
+-`GROUP BY year` (now `month, day` columns are both filled with zeros);
+-and totals (and all three key expression columns are zeros).
 
 ```text
 ┌─year─┬─month─┬─day─┬─count()─┐
@@ -112,14 +113,16 @@ As `GROUP BY` section has three key expressions, the result contains four tables
 │    0 │     0 │   0 │       6 │
 └──────┴───────┴─────┴─────────┘
 ```
+
 The same query also can be written using `WITH` keyword.
+
 ```sql
 SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
 ```
 
 **See also**
 
-- [group_by_use_nulls](/operations/settings/settings.md#group_by_use_nulls) setting for SQL standard compatibility.
+-[group_by_use_nulls](/operations/settings/settings.md#group_by_use_nulls) setting for SQL standard compatibility.
 
 ## CUBE Modifier {#cube-modifier}
 
@@ -154,14 +157,14 @@ SELECT year, month, day, count(*) FROM t GROUP BY CUBE(year, month, day);
 
 As `GROUP BY` section has three key expressions, the result contains eight tables with subtotals for all key expression combinations:
 
-- `GROUP BY year, month, day`
-- `GROUP BY year, month`
-- `GROUP BY year, day`
-- `GROUP BY year`
-- `GROUP BY month, day`
-- `GROUP BY month`
-- `GROUP BY day`
-- and totals.
+-`GROUP BY year, month, day`
+-`GROUP BY year, month`
+-`GROUP BY year, day`
+-`GROUP BY year`
+-`GROUP BY month, day`
+-`GROUP BY month`
+-`GROUP BY day`
+-and totals.
 
 Columns, excluded from `GROUP BY`, are filled with zeros.
 
@@ -207,14 +210,16 @@ Columns, excluded from `GROUP BY`, are filled with zeros.
 │    0 │     0 │   0 │       6 │
 └──────┴───────┴─────┴─────────┘
 ```
+
 The same query also can be written using `WITH` keyword.
+
 ```sql
 SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 ```
 
 **See also**
 
-- [group_by_use_nulls](/operations/settings/settings.md#group_by_use_nulls) setting for SQL standard compatibility.
+-[group_by_use_nulls](/operations/settings/settings.md#group_by_use_nulls) setting for SQL standard compatibility.
 
 ## WITH TOTALS Modifier {#with-totals-modifier}
 
@@ -222,11 +227,11 @@ If the `WITH TOTALS` modifier is specified, another row will be calculated. This
 
 This extra row is only produced in `JSON*`, `TabSeparated*`, and `Pretty*` formats, separately from the other rows:
 
-- In `XML` and `JSON*` formats, this row is output as a separate 'totals' field.
-- In `TabSeparated*`, `CSV*` and `Vertical` formats, the row comes after the main result, preceded by an empty row (after the other data).
-- In `Pretty*` formats, the row is output as a separate table after the main result.
-- In `Template` format, the row is output according to specified template.
-- In the other formats it is not available.
+-In `XML` and `JSON*` formats, this row is output as a separate 'totals' field.
+-In `TabSeparated*`, `CSV*` and `Vertical` formats, the row comes after the main result, preceded by an empty row (after the other data).
+-In `Pretty*` formats, the row is output as a separate table after the main result.
+-In `Template` format, the row is output according to specified template.
+-In the other formats it is not available.
 
 :::note
 totals is output in the results of `SELECT` queries, and is not output in `INSERT INTO ... SELECT`.
@@ -362,7 +367,7 @@ GROUPING SETS
 
 **See also**
 
-- [group_by_use_nulls](/operations/settings/settings.md#group_by_use_nulls) setting for SQL standard compatibility.
+-[group_by_use_nulls](/operations/settings/settings.md#group_by_use_nulls) setting for SQL standard compatibility.
 
 ## Implementation Details {#implementation-details}
 

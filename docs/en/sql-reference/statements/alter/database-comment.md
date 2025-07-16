@@ -11,7 +11,7 @@ keywords: ['ALTER DATABASE', 'MODIFY COMMENT']
 # ALTER DATABASE ... MODIFY COMMENT
 
 Adds, modifies, or removes a database comment, regardless of whether it was set
-before or not. The comment change is reflected in both [`system.databases`](/operations/system-tables/databases.md) 
+before or not. The comment change is reflected in both [`system.databases`](/operations/system-tables/databases.md)
 and the `SHOW CREATE DATABASE` query.
 
 ## Syntax {#syntax}
@@ -72,5 +72,5 @@ WHERE  name = 'database_with_comment';
 
 ## Related content {#related-content}
 
-- [`COMMENT`](/sql-reference/statements/create/table#comment-clause) clause
-- [`ALTER TABLE ... MODIFY COMMENT`](./comment.md)
+-[`COMMENT`](/sql-reference/statements/create/table#comment-clause) clause
+-[`ALTER TABLE ... MODIFY COMMENT`](./comment.md)

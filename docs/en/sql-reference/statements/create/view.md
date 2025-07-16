@@ -52,6 +52,7 @@ Parameterized views are similar to normal views, but can be created with paramet
 ```sql
 CREATE VIEW view AS SELECT * FROM TABLE WHERE Column1={column1:datatype1} and Column2={column2:datatype2} ...
 ```
+
 The above creates a view for table which can be used as table function by substituting parameters as shown below.
 
 ```sql
@@ -95,8 +96,9 @@ If you specify `POPULATE`, the existing table data is inserted into the view whe
 
 :::note
 Given that `POPULATE` works like `CREATE TABLE ... AS SELECT ...` it has limitations:
-- It is not supported with Replicated database
-- It is not supported in ClickHouse cloud
+
+-It is not supported with Replicated database
+-It is not supported in ClickHouse cloud
 
 Instead a separate `INSERT ... SELECT` can be used.
 :::
@@ -131,17 +133,20 @@ Thus, it is required to have `GRANT ALLOW SQL SECURITY NONE TO <user>` in order 
 :::
 
 If `DEFINER`/`SQL SECURITY` aren't specified, the default values are used:
-- `SQL SECURITY`: `INVOKER` for normal views and `DEFINER` for materialized views ([configurable by settings](../../../operations/settings/settings.md#default_normal_view_sql_security))
-- `DEFINER`: `CURRENT_USER` ([configurable by settings](../../../operations/settings/settings.md#default_view_definer))
+
+-`SQL SECURITY`: `INVOKER` for normal views and `DEFINER` for materialized views ([configurable by settings](../../../operations/settings/settings.md#default_normal_view_sql_security))
+-`DEFINER`: `CURRENT_USER` ([configurable by settings](../../../operations/settings/settings.md#default_view_definer))
 
 If a view is attached without `DEFINER`/`SQL SECURITY` specified, the default value is `SQL SECURITY NONE` for the materialized view and `SQL SECURITY INVOKER` for the normal view.
 
 To change SQL security for an existing view, use
+
 ```sql
 ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
 ```
 
 ### Examples {#examples}
+
 ```sql
 CREATE VIEW test_view
 DEFINER = alice SQL SECURITY DEFINER
@@ -177,18 +182,22 @@ REFRESH EVERY|AFTER interval [OFFSET interval]
 AS SELECT ...
 [COMMENT 'comment']
 ```
+
 where `interval` is a sequence of simple intervals:
+
 ```sql
 number SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR
 ```
 
 Periodically runs the corresponding query and stores its result in a table.
- * If the query says `APPEND`, each refresh inserts rows into the table without deleting existing rows. The insert is not atomic, just like a regular INSERT SELECT.
- * Otherwise each refresh atomically replaces the table's previous contents.
+
+-If the query says `APPEND`, each refresh inserts rows into the table without deleting existing rows. The insert is not atomic, just like a regular INSERT SELECT.
+-Otherwise each refresh atomically replaces the table's previous contents.
 
 Differences from regular non-refreshable materialized views:
- * No insert trigger. I.e. when new data is inserted into the table specified in SELECT, it's *not* automatically pushed to the refreshable materialized view. The periodic refresh runs the entire query.
- * No restrictions on the SELECT query. Table functions (e.g. `url()`), views, UNION, JOIN, are all allowed.
+
+-No insert trigger. I.e. when new data is inserted into the table specified in SELECT, it's *not* automatically pushed to the refreshable materialized view. The periodic refresh runs the entire query.
+-No restrictions on the SELECT query. Table functions (e.g. `url()`), views, UNION, JOIN, are all allowed.
 
 :::note
 The settings in the `REFRESH ... SETTINGS` part of the query are refresh settings (e.g. `refresh_retries`), distinct from regular settings (e.g. `max_threads`). Regular settings can be specified using `SETTINGS` at the end of the query.
@@ -197,6 +206,7 @@ The settings in the `REFRESH ... SETTINGS` part of the query are refresh setting
 ### Refresh Schedule {#refresh-schedule}
 
 Example refresh schedules:
+
 ```sql
 REFRESH EVERY 1 DAY -- every day, at midnight (UTC)
 REFRESH EVERY 1 MONTH -- on 1st day of every month, at midnight
@@ -212,6 +222,7 @@ REFRESH EVERY 5 MONTHS -- every 5 months, different months each year (as 12 is n
 ```
 
 `RANDOMIZE FOR` randomly adjusts the time of each refresh, e.g.:
+
 ```sql
 REFRESH EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 1 HOUR -- every day at random time between 01:30 and 02:30
 ```
@@ -233,36 +244,43 @@ The coordination is done through Keeper. The znode path is determined by [defaul
 ### Dependencies {#refresh-dependencies}
 
 `DEPENDS ON` synchronizes refreshes of different tables. By way of example, suppose there's a chain of two refreshable materialized views:
+
 ```sql
 CREATE MATERIALIZED VIEW source REFRESH EVERY 1 DAY AS SELECT * FROM url(...)
 CREATE MATERIALIZED VIEW destination REFRESH EVERY 1 DAY AS SELECT ... FROM source
 ```
+
 Without `DEPENDS ON`, both views will start a refresh at midnight, and `destination` typically will see yesterday's data in `source`. If we add dependency:
+
 ```sql
 CREATE MATERIALIZED VIEW destination REFRESH EVERY 1 DAY DEPENDS ON source AS SELECT ... FROM source
 ```
+
 then `destination`'s refresh will start only after `source`'s refresh finished for that day, so `destination` will be based on fresh data.
 
 Alternatively, the same result can be achieved with:
+
 ```sql
 CREATE MATERIALIZED VIEW destination REFRESH AFTER 1 HOUR DEPENDS ON source AS SELECT ... FROM source
 ```
+
 where `1 HOUR` can be any duration less than `source`'s refresh period. The dependent table won't be refreshed more frequently than any of its dependencies. This is a valid way to set up a chain of refreshable views without specifying the real refresh period more than once.
 
 A few more examples:
- * `REFRESH EVERY 1 DAY OFFSET 10 MINUTE` (`destination`) depends on `REFRESH EVERY 1 DAY` (`source`)<br/>
+
+-`REFRESH EVERY 1 DAY OFFSET 10 MINUTE` (`destination`) depends on `REFRESH EVERY 1 DAY` (`source`)<br/>
    If `source` refresh takes more than 10 minutes, `destination` will wait for it.
- * `REFRESH EVERY 1 DAY OFFSET 1 HOUR` depends on `REFRESH EVERY 1 DAY OFFSET 23 HOUR`<br/>
+-`REFRESH EVERY 1 DAY OFFSET 1 HOUR` depends on `REFRESH EVERY 1 DAY OFFSET 23 HOUR`<br/>
    Similar to the above, even though the corresponding refreshes happen on different calendar days.
    `destination`'s refresh on day X+1 will wait for `source`'s refresh on day X (if it takes more than 2 hours).
- * `REFRESH EVERY 2 HOUR` depends on `REFRESH EVERY 1 HOUR`<br/>
+-`REFRESH EVERY 2 HOUR` depends on `REFRESH EVERY 1 HOUR`<br/>
    The 2 HOUR refresh happens after the 1 HOUR refresh for every other hour, e.g. after the midnight
    refresh, then after the 2am refresh, etc.
- * `REFRESH EVERY 1 MINUTE` depends on `REFRESH EVERY 2 HOUR`<br/>
+-`REFRESH EVERY 1 MINUTE` depends on `REFRESH EVERY 2 HOUR`<br/>
    `REFRESH AFTER 1 MINUTE` depends on `REFRESH EVERY 2 HOUR`<br/>
    `REFRESH AFTER 1 MINUTE` depends on `REFRESH AFTER 2 HOUR`<br/>
    `destination` is refreshed once after every `source` refresh, i.e. every 2 hours. The `1 MINUTE` is effectively ignored.
- * `REFRESH AFTER 1 HOUR` depends on `REFRESH AFTER 1 HOUR`<br/>
+-`REFRESH AFTER 1 HOUR` depends on `REFRESH AFTER 1 HOUR`<br/>
    Currently this is not recommended.
 
 :::note
@@ -272,13 +290,15 @@ A few more examples:
 ### Settings {#settings}
 
 Available refresh settings:
- * `refresh_retries` - How many times to retry if refresh query fails with an exception. If all retries fail, skip to the next scheduled refresh time. 0 means no retries, -1 means infinite retries. Default: 0.
- * `refresh_retry_initial_backoff_ms` - Delay before the first retry, if `refresh_retries` is not zero. Each subsequent retry doubles the delay, up to `refresh_retry_max_backoff_ms`. Default: 100 ms.
- * `refresh_retry_max_backoff_ms` - Limit on the exponential growth of delay between refresh attempts. Default: 60000 ms (1 minute).
+
+-`refresh_retries` - How many times to retry if refresh query fails with an exception. If all retries fail, skip to the next scheduled refresh time. 0 means no retries, -1 means infinite retries. Default: 0.
+-`refresh_retry_initial_backoff_ms` - Delay before the first retry, if `refresh_retries` is not zero. Each subsequent retry doubles the delay, up to `refresh_retry_max_backoff_ms`. Default: 100 ms.
+-`refresh_retry_max_backoff_ms` - Limit on the exponential growth of delay between refresh attempts. Default: 60000 ms (1 minute).
 
 ### Changing Refresh Parameters {#changing-refresh-parameters}
 
 To change refresh parameters:
+
 ```sql
 ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPENDS ON ...] [SETTINGS ...]
 ```
@@ -296,7 +316,7 @@ To manually stop, start, trigger, or cancel refreshes use [`SYSTEM STOP|START|RE
 To wait for a refresh to complete, use [`SYSTEM WAIT VIEW`](../system.md#refreshable-materialized-views). In particular, useful for waiting for initial refresh after creating a view.
 
 :::note
-Fun fact: the refresh query is allowed to read from the view that's being refreshed, seeing pre-refresh version of the data. This means you can implement Conway's game of life: https://pastila.nl/?00021a4b/d6156ff819c83d490ad2dcec05676865#O0LGWTO7maUQIA4AcGUtlA==
+Fun fact: the refresh query is allowed to read from the view that's being refreshed, seeing pre-refresh version of the data. This means you can implement Conway's game of life: <https://pastila.nl/?00021a4b/d6156ff819c83d490ad2dcec05676865#O0LGWTO7maUQIA4AcGUtlA==>
 :::
 
 ## Window View {#window-view}
@@ -339,9 +359,9 @@ CREATE WINDOW VIEW wv AS SELECT count(number), tumbleStart(w_id) as w_start from
 
 Window view provides three watermark strategies:
 
-* `STRICTLY_ASCENDING`: Emits a watermark of the maximum observed timestamp so far. Rows that have a timestamp smaller to the max timestamp are not late.
-* `ASCENDING`: Emits a watermark of the maximum observed timestamp so far minus 1. Rows that have a timestamp equal and smaller to the max timestamp are not late.
-* `BOUNDED`: WATERMARK=INTERVAL. Emits watermarks, which are the maximum observed timestamp minus the specified delay.
+-`STRICTLY_ASCENDING`: Emits a watermark of the maximum observed timestamp so far. Rows that have a timestamp smaller to the max timestamp are not late.
+-`ASCENDING`: Emits a watermark of the maximum observed timestamp so far minus 1. Rows that have a timestamp equal and smaller to the max timestamp are not late.
+-`BOUNDED`: WATERMARK=INTERVAL. Emits watermarks, which are the maximum observed timestamp minus the specified delay.
 
 The following queries are examples of creating a window view with `WATERMARK`:
 
@@ -376,9 +396,9 @@ WATCH [db.]window_view
 
 ### Settings {#settings-1}
 
-- `window_view_clean_interval`: The clean interval of window view in seconds to free outdated data. The system will retain the windows that have not been fully triggered according to the system time or `WATERMARK` configuration, and the other data will be deleted.
-- `window_view_heartbeat_interval`: The heartbeat interval in seconds to indicate the watch query is alive.
-- `wait_for_window_view_fire_signal_timeout`: Timeout for waiting for window view fire signal in event time processing.
+-`window_view_clean_interval`: The clean interval of window view in seconds to free outdated data. The system will retain the windows that have not been fully triggered according to the system time or `WATERMARK` configuration, and the other data will be deleted.
+-`window_view_heartbeat_interval`: The heartbeat interval in seconds to indicate the watch query is alive.
+-`wait_for_window_view_fire_signal_timeout`: Timeout for waiting for window view fire signal in event time processing.
 
 ### Example {#example}
 
@@ -426,10 +446,10 @@ Additional examples can be found among stateful tests of ClickHouse (they are na
 
 The window view is useful in the following scenarios:
 
-* **Monitoring**: Aggregate and calculate the metrics logs by time, and output the results to a target table. The dashboard can use the target table as a source table.
-* **Analyzing**: Automatically aggregate and preprocess data in the time window. This can be useful when analyzing a large number of logs. The preprocessing eliminates repeated calculations in multiple queries and reduces query latency.
+-**Monitoring**: Aggregate and calculate the metrics logs by time, and output the results to a target table. The dashboard can use the target table as a source table.
+-**Analyzing**: Automatically aggregate and preprocess data in the time window. This can be useful when analyzing a large number of logs. The preprocessing eliminates repeated calculations in multiple queries and reduces query latency.
 
 ## Related Content {#related-content}
 
-- Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
-- Blog: [Building an Observability Solution with ClickHouse - Part 2 - Traces](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)
+-Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
+-Blog: [Building an Observability Solution with ClickHouse - Part 2 - Traces](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)

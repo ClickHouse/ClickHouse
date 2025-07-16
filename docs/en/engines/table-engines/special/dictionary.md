@@ -100,4 +100,4 @@ SELECT * FROM products LIMIT 1;
 
 **See Also**
 
-- [Dictionary function](/sql-reference/table-functions/dictionary)
+-[Dictionary function](/sql-reference/table-functions/dictionary)

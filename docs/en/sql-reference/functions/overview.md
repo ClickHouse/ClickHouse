@@ -12,7 +12,7 @@ There are at least\* two types of functions - regular functions (they are just c
 
 In this section we discuss regular functions. For aggregate functions, see the section "Aggregate functions".
 
-:::note 
+:::note
 There is a third type of function that the ['arrayJoin' function](../functions/array-join.md) belongs to. And [table functions](../table-functions/index.md) can also be mentioned separately.
 :::
 
@@ -41,8 +41,8 @@ Functions can be implemented in different ways for constant and non-constant arg
 
 Functions have the following behaviors:
 
-- If at least one of the arguments of the function is `NULL`, the function result is also `NULL`.
-- Special behavior that is specified individually in the description of each function. In the ClickHouse source code, these functions have `UseDefaultImplementationForNulls=false`.
+-If at least one of the arguments of the function is `NULL`, the function result is also `NULL`.
+-Special behavior that is specified individually in the description of each function. In the ClickHouse source code, these functions have `UseDefaultImplementationForNulls=false`.
 
 ## Constancy {#constancy}
 

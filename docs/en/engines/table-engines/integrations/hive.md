@@ -15,11 +15,11 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 The Hive engine allows you to perform `SELECT` queries on HDFS Hive table. Currently, it supports input formats as below:
 
-- Text: only supports simple scalar column types except `binary`
+-Text: only supports simple scalar column types except `binary`
 
-- ORC: support simple scalar columns types except `char`; only support complex types like `array`
+-ORC: support simple scalar columns types except `char`; only support complex types like `array`
 
-- Parquet: support all simple scalar columns types; only support complex types like `array`
+-Parquet: support all simple scalar columns types; only support complex types like `array`
 
 ## Creating a table {#creating-a-table}
 
@@ -32,20 +32,22 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = Hive('thrift://host:port', 'database', 'table');
 PARTITION BY expr
 ```
+
 See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
 
 The table structure can differ from the original Hive table structure:
-- Column names should be the same as in the original Hive table, but you can use just some of these columns and in any order, also you can use some alias columns calculated from other columns.
-- Column types should be the same from those in the original Hive table.
-- Partition by expression should be consistent with the original Hive table, and columns in partition by expression should be in the table structure.
+
+-Column names should be the same as in the original Hive table, but you can use just some of these columns and in any order, also you can use some alias columns calculated from other columns.
+-Column types should be the same from those in the original Hive table.
+-Partition by expression should be consistent with the original Hive table, and columns in partition by expression should be in the table structure.
 
 **Engine Parameters**
 
-- `thrift://host:port` — Hive Metastore address
+-`thrift://host:port` — Hive Metastore address
 
-- `database` — Remote database name.
+-`database` — Remote database name.
 
-- `table` — Remote table name.
+-`table` — Remote table name.
 
 ## Usage example {#usage-example}
 
@@ -54,6 +56,7 @@ The table structure can differ from the original Hive table structure:
 We strongly advice you to enable local cache for remote filesystems. Benchmark shows that its almost 2x faster with cache.
 
 Before using cache, add it to `config.xml`
+
 ```xml
 <local_cache_for_remote_fs>
     <enable>true</enable>
@@ -63,10 +66,10 @@ Before using cache, add it to `config.xml`
 </local_cache_for_remote_fs>
 ```
 
-- enable: ClickHouse will maintain local cache for remote filesystem(HDFS) after startup if true.
-- root_dir: Required. The root directory to store local cache files for remote filesystem.
-- limit_size: Required. The maximum size(in bytes) of local cache files.
-- bytes_read_before_flush: Control bytes before flush to local filesystem when downloading file from remote filesystem. The default value is 1MB.
+-enable: ClickHouse will maintain local cache for remote filesystem(HDFS) after startup if true.
+-root_dir: Required. The root directory to store local cache files for remote filesystem.
+-limit_size: Required. The maximum size(in bytes) of local cache files.
+-bytes_read_before_flush: Control bytes before flush to local filesystem when downloading file from remote filesystem. The default value is 1MB.
 
 ### Query Hive table with ORC input format  {#query-hive-table-with-orc-input-format}
 
@@ -121,6 +124,7 @@ Time taken: 0.295 seconds, Fetched: 1 row(s)
 #### Create Table in ClickHouse  {#create-table-in-clickhouse}
 
 Table in ClickHouse, retrieving data from the Hive table created above:
+
 ```sql
 CREATE TABLE test.test_orc
 (
@@ -244,6 +248,7 @@ Time taken: 0.766 seconds, Fetched: 1 row(s)
 #### Create Table in ClickHouse {#create-table-in-clickhouse-1}
 
 Table in ClickHouse, retrieving data from the Hive table created above:
+
 ```sql
 CREATE TABLE test.test_parquet
 (
@@ -367,6 +372,7 @@ Time taken: 0.624 seconds, Fetched: 1 row(s)
 #### Create Table in ClickHouse {#create-table-in-clickhouse-2}
 
 Table in ClickHouse, retrieving data from the Hive table created above:
+
 ```sql
 CREATE TABLE test.test_text
 (

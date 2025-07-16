@@ -18,9 +18,9 @@ maxIntersectionsPosition(start_column, end_column)
 
 **Arguments**
 
-- `start_column` – the numeric column that represents the start of each interval. If `start_column` is `NULL` or 0 then the interval will be skipped.
+-`start_column` – the numeric column that represents the start of each interval. If `start_column` is `NULL` or 0 then the interval will be skipped.
 
-- `end_column` - the numeric column that represents the end of each interval. If `end_column` is `NULL` or 0 then the interval will be skipped.
+-`end_column` - the numeric column that represents the end of each interval. If `end_column` is `NULL` or 0 then the interval will be skipped.
 
 **Returned value**
 
@@ -59,6 +59,7 @@ SELECT maxIntersectionsPosition(start, end) FROM my_events;
 ```
 
 Response:
+
 ```response
 2
 ```

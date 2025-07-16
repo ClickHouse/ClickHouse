@@ -20,8 +20,8 @@ CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(..
 
 If the `db_name` database already exists, then ClickHouse does not create a new database and:
 
-- Doesn't throw an exception if clause is specified.
-- Throws an exception if clause isn't specified.
+-Doesn't throw an exception if clause is specified.
+-Throws an exception if clause isn't specified.
 
 ### ON CLUSTER {#on-cluster}
 

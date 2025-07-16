@@ -23,12 +23,12 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 
 **Engine Parameters**
 
-- `host:port` — PostgreSQL server address.
-- `database` — Remote database name.
-- `user` — PostgreSQL user.
-- `password` — User password.
-- `schema` — PostgreSQL schema.
-- `use_table_cache` —  Defines if the database table structure is cached or not. Optional. Default value: `0`.
+-`host:port` — PostgreSQL server address.
+-`database` — Remote database name.
+-`user` — PostgreSQL user.
+-`password` — User password.
+-`schema` — PostgreSQL schema.
+-`use_table_cache` —  Defines if the database table structure is cached or not. Optional. Default value: `0`.
 
 ## Data types support {#data_types-support}
 
@@ -47,7 +47,6 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 | TEXT, CHAR       | [String](../../sql-reference/data-types/string.md)           |
 | INTEGER          | Nullable([Int32](../../sql-reference/data-types/int-uint.md))|
 | ARRAY            | [Array](../../sql-reference/data-types/array.md)             |
-
 
 ## Examples of use {#examples-of-use}
 
@@ -117,6 +116,7 @@ As the `use_table_cache` parameter was set to `1` when the database was created,
 ```sql
 DESCRIBE TABLE test_database.test_table;
 ```
+
 ```text
 ┌─name───┬─type──────────────┐
 │ id     │ Nullable(Integer) │
@@ -131,6 +131,7 @@ DETACH TABLE test_database.test_table;
 ATTACH TABLE test_database.test_table;
 DESCRIBE TABLE test_database.test_table;
 ```
+
 ```text
 ┌─name───┬─type──────────────┐
 │ id     │ Nullable(Integer) │
@@ -141,5 +142,5 @@ DESCRIBE TABLE test_database.test_table;
 
 ## Related content {#related-content}
 
-- Blog: [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
-- Blog: [ClickHouse and PostgreSQL - a Match Made in Data Heaven - part 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)
+-Blog: [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
+-Blog: [ClickHouse and PostgreSQL - a Match Made in Data Heaven - part 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

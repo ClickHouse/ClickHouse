@@ -18,12 +18,12 @@ sqlite('db_path', 'table_name')
 
 ## Arguments {#arguments}
 
-- `db_path` — Path to a file with an SQLite database. [String](../../sql-reference/data-types/string.md).
-- `table_name` — Name of a table in the SQLite database. [String](../../sql-reference/data-types/string.md).
+-`db_path` — Path to a file with an SQLite database. [String](../../sql-reference/data-types/string.md).
+-`table_name` — Name of a table in the SQLite database. [String](../../sql-reference/data-types/string.md).
 
 ## Returned value {#returned_value}
 
-- A table object with the same columns as in the original `SQLite` table.
+-A table object with the same columns as in the original `SQLite` table.
 
 ## Example {#example}
 
@@ -45,4 +45,4 @@ Result:
 
 ## Related {#related}
 
-- [SQLite](../../engines/table-engines/integrations/sqlite.md) table engine
+-[SQLite](../../engines/table-engines/integrations/sqlite.md) table engine

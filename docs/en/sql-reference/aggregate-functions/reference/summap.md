@@ -13,25 +13,25 @@ Totals a `value` array according to the keys specified in the `key` array. Retur
 
 **Syntax**
 
-- `sumMap(key <Array>, value <Array>)` [Array type](../../data-types/array.md).
-- `sumMap(Tuple(key <Array>, value <Array>))` [Tuple type](../../data-types/tuple.md).
+-`sumMap(key <Array>, value <Array>)` [Array type](../../data-types/array.md).
+-`sumMap(Tuple(key <Array>, value <Array>))` [Tuple type](../../data-types/tuple.md).
 
 Alias: `sumMappedArrays`.
 
-**Arguments** 
+**Arguments**
 
-- `key`: [Array](../../data-types/array.md) of keys.
-- `value`: [Array](../../data-types/array.md) of values.
+-`key`: [Array](../../data-types/array.md) of keys.
+-`value`: [Array](../../data-types/array.md) of values.
 
 Passing a tuple of key and value arrays is a synonym to passing separately an array of keys and an array of values.
 
-:::note 
+:::note
 The number of elements in `key` and `value` must be the same for each row that is totaled.
 :::
 
-**Returned Value** 
+**Returned Value**
 
-- Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
+-Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
 
 **Example**
 
@@ -50,6 +50,7 @@ CREATE TABLE sum_map(
     statusMapTuple Tuple(Array(Int32), Array(Int32))
 ) ENGINE = Log;
 ```
+
 ```sql
 INSERT INTO sum_map VALUES
     ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10], ([1, 2, 3], [10, 10, 10])),
@@ -82,5 +83,5 @@ Result:
 
 **See Also**
 
-- [Map combinator for Map datatype](../combinators.md#-map)
-- [sumMapWithOverflow](../reference/summapwithoverflow.md)
+-[Map combinator for Map datatype](../combinators.md#-map)
+-[sumMapWithOverflow](../reference/summapwithoverflow.md)

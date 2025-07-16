@@ -14,9 +14,9 @@ title: 'Proxy Servers from Third-party Developers'
 
 Features:
 
-- Per-user routing and response caching.
-- Flexible limits.
-- Automatic SSL certificate renewal.
+-Per-user routing and response caching.
+-Flexible limits.
+-Automatic SSL certificate renewal.
 
 Implemented in Go.
 
@@ -26,9 +26,9 @@ Implemented in Go.
 
 Features:
 
-- In-memory and on-disk data buffering.
-- Per-table routing.
-- Load-balancing and health checking.
+-In-memory and on-disk data buffering.
+-Per-table routing.
+-Load-balancing and health checking.
 
 Implemented in Go.
 
@@ -38,8 +38,8 @@ Implemented in Go.
 
 Features:
 
-- Group requests and send by threshold or interval.
-- Multiple remote servers.
-- Basic authentication.
+-Group requests and send by threshold or interval.
+-Multiple remote servers.
+-Basic authentication.
 
 Implemented in Go.

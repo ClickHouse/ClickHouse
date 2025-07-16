@@ -58,11 +58,11 @@ Union
 
 ## EXPLAIN Types {#explain-types}
 
-- `AST` — Abstract syntax tree.
-- `SYNTAX` — Query text after AST-level optimizations.
-- `QUERY TREE` — Query tree after Query Tree level optimizations.
-- `PLAN` — Query execution plan.
-- `PIPELINE` — Query execution pipeline.
+-`AST` — Abstract syntax tree.
+-`SYNTAX` — Query text after AST-level optimizations.
+-`QUERY TREE` — Query tree after Query Tree level optimizations.
+-`PLAN` — Query execution plan.
+-`PIPELINE` — Query execution pipeline.
 
 ### EXPLAIN AST {#explain-ast}
 
@@ -106,9 +106,9 @@ It's done by parsing the query, constructing query AST and query tree, optionall
 
 Settings:
 
-- `oneline` – Print the query in one line. Default: `0`.
-- `run_query_tree_passes` – Run query tree passes before dumping the query tree. Default: `0`.
-- `query_tree_passes` – If `run_query_tree_passes` is set, specifies how many passes to run. Without specifying `query_tree_passes` it runs all the passes.
+-`oneline` – Print the query in one line. Default: `0`.
+-`run_query_tree_passes` – Run query tree passes before dumping the query tree. Default: `0`.
+-`query_tree_passes` – If `run_query_tree_passes` is set, specifies how many passes to run. Without specifying `query_tree_passes` it runs all the passes.
 
 Examples:
 
@@ -146,13 +146,14 @@ ALL INNER JOIN system.numbers AS __table3 ON __table2.number = __table3.number
 
 Settings:
 
-- `run_passes` — Run all query tree passes before dumping the query tree. Default: `1`.
-- `dump_passes` — Dump information about used passes before dumping the query tree. Default: `0`.
-- `passes` — Specifies how many passes to run. If set to `-1`, runs all the passes. Default: `-1`.
-- `dump_tree` — Display the query tree. Default: `1`.
-- `dump_ast` — Display the query AST generated from the query tree. Default: `0`.
+-`run_passes` — Run all query tree passes before dumping the query tree. Default: `1`.
+-`dump_passes` — Dump information about used passes before dumping the query tree. Default: `0`.
+-`passes` — Specifies how many passes to run. If set to `-1`, runs all the passes. Default: `-1`.
+-`dump_tree` — Display the query tree. Default: `1`.
+-`dump_ast` — Display the query AST generated from the query tree. Default: `0`.
 
 Example:
+
 ```sql
 EXPLAIN QUERY TREE SELECT id, value FROM test_table;
 ```
@@ -176,12 +177,12 @@ Dump query plan steps.
 
 Settings:
 
-- `header` — Prints output header for step. Default: 0.
-- `description` — Prints step description. Default: 1.
-- `indexes` — Shows used indexes, the number of filtered parts and the number of filtered granules for every index applied. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
-- `projections` — Shows all analyzed projections and their effect on part-level filtering based on projection primary key conditions. For each projection, this section includes statistics such as the number of parts, rows, marks, and ranges that were evaluated using the projection's primary key. It also shows how many data parts were skipped due to this filtering, without reading from the projection itself. Whether a projection was actually used for reading or only analyzed for filtering can be determined by the `description` field. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
-- `actions` — Prints detailed information about step actions. Default: 0.
-- `json` — Prints query plan steps as a row in [JSON](../../interfaces/formats.md#json) format. Default: 0. It is recommended to use [TSVRaw](../../interfaces/formats.md#tabseparatedraw) format to avoid unnecessary escaping.
+-`header` — Prints output header for step. Default: 0.
+-`description` — Prints step description. Default: 1.
+-`indexes` — Shows used indexes, the number of filtered parts and the number of filtered granules for every index applied. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
+-`projections` — Shows all analyzed projections and their effect on part-level filtering based on projection primary key conditions. For each projection, this section includes statistics such as the number of parts, rows, marks, and ranges that were evaluated using the projection's primary key. It also shows how many data parts were skipped due to this filtering, without reading from the projection itself. Whether a projection was actually used for reading or only analyzed for filtering can be determined by the `description` field. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
+-`actions` — Prints detailed information about step actions. Default: 0.
+-`json` — Prints query plan steps as a row in [JSON](../../interfaces/formats.md#json) format. Default: 0. It is recommended to use [TSVRaw](../../interfaces/formats.md#tabseparatedraw) format to avoid unnecessary escaping.
 
 When `json=1` step names will contain an additional suffix with unique step identifier.
 
@@ -298,12 +299,12 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 
 With `indexes` = 1, the `Indexes` key is added. It contains an array of used indexes. Each index is described as JSON with `Type` key (a string `MinMax`, `Partition`, `PrimaryKey` or `Skip`) and optional keys:
 
-- `Name` — The index name (currently only used for `Skip` indexes).
-- `Keys` — The array of columns used by the index.
-- `Condition` —  The used condition.
-- `Description` — The index description (currently only used for `Skip` indexes).
-- `Parts` — The number of parts before/after the index is applied.
-- `Granules` — The number of granules before/after the index is applied.
+-`Name` — The index name (currently only used for `Skip` indexes).
+-`Keys` — The array of columns used by the index.
+-`Condition` —  The used condition.
+-`Description` — The index description (currently only used for `Skip` indexes).
+-`Parts` — The number of parts before/after the index is applied.
+-`Granules` — The number of granules before/after the index is applied.
 
 Example:
 
@@ -351,14 +352,14 @@ Example:
 
 With `projections` = 1, the `Projections` key is added. It contains an array of analyzed projections. Each projection is described as JSON with following keys:
 
-- `Name` — The projection name.
-- `Condition` —  The used projection primary key condition.
-- `Description` — The description of how the projection is used (e.g. part-level filtering).
-- `Selected Parts` — Number of parts selected by the projection.
-- `Selected Marks` — Number of marks selected.
-- `Selected Ranges` — Number of ranges selected.
-- `Selected Rows` — Number of rows selected.
-- `Filtered Parts` — Number of parts skipped due to part-level filtering.
+-`Name` — The projection name.
+-`Condition` —  The used projection primary key condition.
+-`Description` — The description of how the projection is used (e.g. part-level filtering).
+-`Selected Parts` — Number of parts selected by the projection.
+-`Selected Marks` — Number of marks selected.
+-`Selected Ranges` — Number of ranges selected.
+-`Selected Rows` — Number of rows selected.
+-`Filtered Parts` — Number of parts skipped due to part-level filtering.
 
 Example:
 
@@ -453,9 +454,9 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
 
 Settings:
 
-- `header` — Prints header for each output port. Default: 0.
-- `graph` — Prints a graph described in the [DOT](https://en.wikipedia.org/wiki/DOT_(graph_description_language)) graph description language. Default: 0.
-- `compact` — Prints graph in compact mode if `graph` setting is enabled. Default: 1.
+-`header` — Prints header for each output port. Default: 0.
+-`graph` — Prints a graph described in the [DOT](https://en.wikipedia.org/wiki/DOT_(graph_description_language)) graph description language. Default: 0.
+-`compact` — Prints graph in compact mode if `graph` setting is enabled. Default: 1.
 
 When `compact=0` and `graph=1` processor names will contain an additional suffix with unique processor identifier.
 
@@ -480,9 +481,10 @@ ExpressionTransform
             (ReadFromStorage)
             NumbersRange × 2 0 → 1
 ```
+
 ### EXPLAIN ESTIMATE {#explain-estimate}
 
-Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](/engines/table-engines/mergetree-family/mergetree) family. 
+Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](/engines/table-engines/mergetree-family/mergetree) family.
 
 **Example**
 

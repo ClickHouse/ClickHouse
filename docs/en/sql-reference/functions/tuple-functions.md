@@ -50,11 +50,11 @@ You can use the `EXCEPT` expression to skip columns as a result of the query.
 
 **Arguments**
 
-- `x` — A `tuple` function, column, or tuple of elements. [Tuple](../data-types/tuple.md).
+-`x` — A `tuple` function, column, or tuple of elements. [Tuple](../data-types/tuple.md).
 
 **Returned value**
 
-- None.
+-None.
 
 **Examples**
 
@@ -112,7 +112,7 @@ Result:
 
 **See Also**
 
-- [Tuple](../data-types/tuple.md)
+-[Tuple](../data-types/tuple.md)
 
 ## tupleHammingDistance {#tuplehammingdistance}
 
@@ -126,14 +126,14 @@ tupleHammingDistance(tuple1, tuple2)
 
 **Arguments**
 
-- `tuple1` — First tuple. [Tuple](../data-types/tuple.md).
-- `tuple2` — Second tuple. [Tuple](../data-types/tuple.md).
+-`tuple1` — First tuple. [Tuple](../data-types/tuple.md).
+-`tuple2` — Second tuple. [Tuple](../data-types/tuple.md).
 
 Tuples should have the same type of the elements.
 
 **Returned value**
 
-- The Hamming distance.
+-The Hamming distance.
 
 :::note
 The result type is calculated the same way it is for [Arithmetic functions](../../sql-reference/functions/arithmetic-functions.md), based on the number of elements in the input tuples.
@@ -153,7 +153,6 @@ SELECT
 │ UInt8 │ UInt16 │ UInt32 │ UInt64 │ UInt64 │
 └───────┴────────┴────────┴────────┴────────┘
 ```
-
 
 **Examples**
 
@@ -199,11 +198,11 @@ tupleToNameValuePairs(tuple)
 
 **Arguments**
 
-- `tuple` — Named tuple. [Tuple](../data-types/tuple.md) with any types of values.
+-`tuple` — Named tuple. [Tuple](../data-types/tuple.md) with any types of values.
 
 **Returned value**
 
-- An array with (name, value) pairs. [Array](../data-types/array.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md), ...)).
+-An array with (name, value) pairs. [Array](../data-types/array.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md), ...)).
 
 **Example**
 
@@ -272,11 +271,11 @@ tupleNames(tuple)
 
 **Arguments**
 
-- `tuple` — Named tuple. [Tuple](../../sql-reference/data-types/tuple.md) with any types of values.
+-`tuple` — Named tuple. [Tuple](../../sql-reference/data-types/tuple.md) with any types of values.
 
 **Returned value**
 
-- An array with strings.
+-An array with strings.
 
 Type: [Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md), ...)).
 
@@ -328,12 +327,12 @@ Alias: `vectorSum`.
 
 **Arguments**
 
-- `tuple1` — First tuple. [Tuple](../data-types/tuple.md).
-- `tuple2` — Second tuple. [Tuple](../data-types/tuple.md).
+-`tuple1` — First tuple. [Tuple](../data-types/tuple.md).
+-`tuple2` — Second tuple. [Tuple](../data-types/tuple.md).
 
 **Returned value**
 
-- Tuple with the sum. [Tuple](../data-types/tuple.md).
+-Tuple with the sum. [Tuple](../data-types/tuple.md).
 
 **Example**
 
@@ -365,12 +364,12 @@ Alias: `vectorDifference`.
 
 **Arguments**
 
-- `tuple1` — First tuple. [Tuple](../data-types/tuple.md).
-- `tuple2` — Second tuple. [Tuple](../data-types/tuple.md).
+-`tuple1` — First tuple. [Tuple](../data-types/tuple.md).
+-`tuple2` — Second tuple. [Tuple](../data-types/tuple.md).
 
 **Returned value**
 
-- Tuple with the result of subtraction. [Tuple](../data-types/tuple.md).
+-Tuple with the result of subtraction. [Tuple](../data-types/tuple.md).
 
 **Example**
 
@@ -400,12 +399,12 @@ tupleMultiply(tuple1, tuple2)
 
 **Arguments**
 
-- `tuple1` — First tuple. [Tuple](../data-types/tuple.md).
-- `tuple2` — Second tuple. [Tuple](../data-types/tuple.md).
+-`tuple1` — First tuple. [Tuple](../data-types/tuple.md).
+-`tuple2` — Second tuple. [Tuple](../data-types/tuple.md).
 
 **Returned value**
 
-- Tuple with the multiplication. [Tuple](../data-types/tuple.md).
+-Tuple with the multiplication. [Tuple](../data-types/tuple.md).
 
 **Example**
 
@@ -435,12 +434,12 @@ tupleDivide(tuple1, tuple2)
 
 **Arguments**
 
-- `tuple1` — First tuple. [Tuple](../data-types/tuple.md).
-- `tuple2` — Second tuple. [Tuple](../data-types/tuple.md).
+-`tuple1` — First tuple. [Tuple](../data-types/tuple.md).
+-`tuple2` — Second tuple. [Tuple](../data-types/tuple.md).
 
 **Returned value**
 
-- Tuple with the result of division. [Tuple](../data-types/tuple.md).
+-Tuple with the result of division. [Tuple](../data-types/tuple.md).
 
 **Example**
 
@@ -470,11 +469,11 @@ tupleNegate(tuple)
 
 **Arguments**
 
-- `tuple` — [Tuple](../data-types/tuple.md).
+-`tuple` — [Tuple](../data-types/tuple.md).
 
 **Returned value**
 
-- Tuple with the result of negation. [Tuple](../data-types/tuple.md).
+-Tuple with the result of negation. [Tuple](../data-types/tuple.md).
 
 **Example**
 
@@ -504,12 +503,12 @@ tupleMultiplyByNumber(tuple, number)
 
 **Arguments**
 
-- `tuple` — [Tuple](../data-types/tuple.md).
-- `number` — Multiplier. [Int/UInt](../data-types/int-uint.md), [Float](../data-types/float.md) or [Decimal](../data-types/decimal.md).
+-`tuple` — [Tuple](../data-types/tuple.md).
+-`number` — Multiplier. [Int/UInt](../data-types/int-uint.md), [Float](../data-types/float.md) or [Decimal](../data-types/decimal.md).
 
 **Returned value**
 
-- Tuple with multiplied values. [Tuple](../data-types/tuple.md).
+-Tuple with multiplied values. [Tuple](../data-types/tuple.md).
 
 **Example**
 
@@ -539,12 +538,12 @@ tupleDivideByNumber(tuple, number)
 
 **Arguments**
 
-- `tuple` — [Tuple](../data-types/tuple.md).
-- `number` — Divider. [Int/UInt](../data-types/int-uint.md), [Float](../data-types/float.md) or [Decimal](../data-types/decimal.md).
+-`tuple` — [Tuple](../data-types/tuple.md).
+-`number` — Divider. [Int/UInt](../data-types/int-uint.md), [Float](../data-types/float.md) or [Decimal](../data-types/decimal.md).
 
 **Returned value**
 
-- Tuple with divided values. [Tuple](../data-types/tuple.md).
+-Tuple with divided values. [Tuple](../data-types/tuple.md).
 
 **Example**
 
@@ -572,7 +571,7 @@ tupleConcat(tuples)
 
 **Arguments**
 
-- `tuples` – Arbitrary number of arguments of [Tuple](../data-types/tuple.md) type.
+-`tuples` – Arbitrary number of arguments of [Tuple](../data-types/tuple.md) type.
 
 **Example**
 
@@ -598,17 +597,17 @@ tupleIntDiv(tuple_num, tuple_div)
 
 **Parameters**
 
-- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
-- `tuple_div`: Tuple of divisor values. [Tuple](../data-types/tuple) of numeric type.
+-`tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+-`tuple_div`: Tuple of divisor values. [Tuple](../data-types/tuple) of numeric type.
 
 **Returned value**
 
-- Tuple of the quotients of `tuple_num` and `tuple_div`. [Tuple](../data-types/tuple) of integer values.
+-Tuple of the quotients of `tuple_num` and `tuple_div`. [Tuple](../data-types/tuple) of integer values.
 
 **Implementation details**
 
-- If either `tuple_num` or `tuple_div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
-- An error will be thrown for division by 0. 
+-If either `tuple_num` or `tuple_div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
+-An error will be thrown for division by 0.
 
 **Examples**
 
@@ -642,7 +641,7 @@ Result:
 
 ## tupleIntDivOrZero {#tupleintdivorzero}
 
-Like [tupleIntDiv](#tupleintdiv) it does integer division of a tuple of numerators and a tuple of denominators, and returns a tuple of the quotients. It does not throw an error for 0 divisors, but rather returns the quotient as 0. 
+Like [tupleIntDiv](#tupleintdiv) it does integer division of a tuple of numerators and a tuple of denominators, and returns a tuple of the quotients. It does not throw an error for 0 divisors, but rather returns the quotient as 0.
 
 **Syntax**
 
@@ -650,17 +649,17 @@ Like [tupleIntDiv](#tupleintdiv) it does integer division of a tuple of numerato
 tupleIntDivOrZero(tuple_num, tuple_div)
 ```
 
-- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
-- `tuple_div`: Tuple of divisor values. [Tuple](../data-types/tuple) of numeric type.
+-`tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+-`tuple_div`: Tuple of divisor values. [Tuple](../data-types/tuple) of numeric type.
 
 **Returned value**
 
-- Tuple of the quotients of `tuple_num` and `tuple_div`. [Tuple](../data-types/tuple) of integer values.
-- Returns 0 for quotients where the divisor is 0.
+-Tuple of the quotients of `tuple_num` and `tuple_div`. [Tuple](../data-types/tuple) of integer values.
+-Returns 0 for quotients where the divisor is 0.
 
 **Implementation details**
 
-- If either `tuple_num` or `tuple_div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor as in [tupleIntDiv](#tupleintdiv).
+-If either `tuple_num` or `tuple_div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor as in [tupleIntDiv](#tupleintdiv).
 
 **Examples**
 
@@ -690,17 +689,17 @@ tupleIntDivByNumber(tuple_num, div)
 
 **Parameters**
 
-- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
-- `div`: The divisor value. [Numeric](../data-types/int-uint.md) type.
+-`tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+-`div`: The divisor value. [Numeric](../data-types/int-uint.md) type.
 
 **Returned value**
 
-- Tuple of the quotients of `tuple_num` and `div`. [Tuple](../data-types/tuple) of integer values.
+-Tuple of the quotients of `tuple_num` and `div`. [Tuple](../data-types/tuple) of integer values.
 
 **Implementation details**
 
-- If either `tuple_num` or `div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
-- An error will be thrown for division by 0. 
+-If either `tuple_num` or `div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
+-An error will be thrown for division by 0.
 
 **Examples**
 
@@ -744,17 +743,17 @@ tupleIntDivOrZeroByNumber(tuple_num, div)
 
 **Parameters**
 
-- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
-- `div`: The divisor value. [Numeric](../data-types/int-uint.md) type.
+-`tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+-`div`: The divisor value. [Numeric](../data-types/int-uint.md) type.
 
 **Returned value**
 
-- Tuple of the quotients of `tuple_num` and `div`. [Tuple](../data-types/tuple) of integer values.
-- Returns 0 for quotients where the divisor is 0.
+-Tuple of the quotients of `tuple_num` and `div`. [Tuple](../data-types/tuple) of integer values.
+-Returns 0 for quotients where the divisor is 0.
 
 **Implementation details**
 
-- If either `tuple_num` or `div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor as in [tupleIntDivByNumber](#tupleintdivbynumber).
+-If either `tuple_num` or `div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor as in [tupleIntDivByNumber](#tupleintdivbynumber).
 
 **Examples**
 
@@ -798,13 +797,13 @@ tupleModulo(tuple_num, tuple_mod)
 
 **Parameters**
 
-- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
-- `tuple_div`: Tuple of modulus values. [Tuple](../data-types/tuple) of numeric type.
+-`tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+-`tuple_div`: Tuple of modulus values. [Tuple](../data-types/tuple) of numeric type.
 
 **Returned value**
 
-- Tuple of the remainders of division of `tuple_num` and `tuple_div`. [Tuple](../data-types/tuple) of non-zero integer values.
-- An error is thrown for division by zero.
+-Tuple of the remainders of division of `tuple_num` and `tuple_div`. [Tuple](../data-types/tuple) of non-zero integer values.
+-An error is thrown for division by zero.
 
 **Examples**
 
@@ -834,13 +833,13 @@ tupleModuloByNumber(tuple_num, div)
 
 **Parameters**
 
-- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
-- `div`: The divisor value. [Numeric](../data-types/int-uint.md) type.
+-`tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+-`div`: The divisor value. [Numeric](../data-types/int-uint.md) type.
 
 **Returned value**
 
-- Tuple of the remainders of division of `tuple_num` and `div`. [Tuple](../data-types/tuple) of non-zero integer values.
-- An error is thrown for division by zero.
+-Tuple of the remainders of division of `tuple_num` and `div`. [Tuple](../data-types/tuple) of non-zero integer values.
+-An error is thrown for division by zero.
 
 **Examples**
 
@@ -870,11 +869,11 @@ flattenTuple(input)
 
 **Parameters**
 
-- `input`: Nested named tuple to flatten. [Tuple](../data-types/tuple).
+-`input`: Nested named tuple to flatten. [Tuple](../data-types/tuple).
 
 **Returned value**
 
-- `output` tuple whose elements are paths from the original `input`. [Tuple](../data-types/tuple).
+-`output` tuple whose elements are paths from the original `input`. [Tuple](../data-types/tuple).
 
 **Example**
 

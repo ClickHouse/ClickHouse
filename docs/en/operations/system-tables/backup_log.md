@@ -16,43 +16,46 @@ Contains logging entries with information about `BACKUP` and `RESTORE` operation
 
 Columns:
 
-- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
-- `event_date` ([Date](../../sql-reference/data-types/date.md)) — Date of the entry.
-- `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time of the entry.
-- `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Time of the entry with microseconds precision.
-- `id` ([String](../../sql-reference/data-types/string.md)) — Identifier of the backup or restore operation.
-- `name` ([String](../../sql-reference/data-types/string.md)) — Name of the backup storage (the contents of the `FROM` or `TO` clause).
-- `status` ([Enum8](../../sql-reference/data-types/enum.md)) — Operation status. Possible values:
-    - `'CREATING_BACKUP'`
-    - `'BACKUP_CREATED'`
-    - `'BACKUP_FAILED'`
-    - `'RESTORING'`
-    - `'RESTORED'`
-    - `'RESTORE_FAILED'`
-- `error` ([String](../../sql-reference/data-types/string.md)) — Error message of the failed operation (empty string for successful operations).
-- `start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time of the operation.
-- `end_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — End time of the operation.
-- `num_files` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of files stored in the backup.
-- `total_size` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Total size of files stored in the backup.
-- `num_entries` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of entries in the backup, i.e. the number of files inside the folder if the backup is stored as a folder, or the number of files inside the archive if the backup is stored as an archive. It is not the same as `num_files` if it's an incremental backup or if it contains empty files or duplicates. The following is always true: `num_entries <= num_files`.
-- `uncompressed_size` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Uncompressed size of the backup.
-- `compressed_size` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Compressed size of the backup. If the backup is not stored as an archive it equals to `uncompressed_size`.
-- `files_read` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of files read during the restore operation.
-- `bytes_read` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Total size of files read during the restore operation.
+-`hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
+-`event_date` ([Date](../../sql-reference/data-types/date.md)) — Date of the entry.
+-`event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time of the entry.
+-`event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Time of the entry with microseconds precision.
+-`id` ([String](../../sql-reference/data-types/string.md)) — Identifier of the backup or restore operation.
+-`name` ([String](../../sql-reference/data-types/string.md)) — Name of the backup storage (the contents of the `FROM` or `TO` clause).
+-`status` ([Enum8](../../sql-reference/data-types/enum.md)) — Operation status. Possible values:
+-`'CREATING_BACKUP'`
+-`'BACKUP_CREATED'`
+-`'BACKUP_FAILED'`
+-`'RESTORING'`
+-`'RESTORED'`
+-`'RESTORE_FAILED'`
+-`error` ([String](../../sql-reference/data-types/string.md)) — Error message of the failed operation (empty string for successful operations).
+-`start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time of the operation.
+-`end_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — End time of the operation.
+-`num_files` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of files stored in the backup.
+-`total_size` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Total size of files stored in the backup.
+-`num_entries` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of entries in the backup, i.e. the number of files inside the folder if the backup is stored as a folder, or the number of files inside the archive if the backup is stored as an archive. It is not the same as `num_files` if it's an incremental backup or if it contains empty files or duplicates. The following is always true: `num_entries <= num_files`.
+-`uncompressed_size` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Uncompressed size of the backup.
+-`compressed_size` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Compressed size of the backup. If the backup is not stored as an archive it equals to `uncompressed_size`.
+-`files_read` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of files read during the restore operation.
+-`bytes_read` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Total size of files read during the restore operation.
 
 **Example**
 
 ```sql
 BACKUP TABLE test_db.my_table TO Disk('backups_disk', '1.zip')
 ```
+
 ```response
 ┌─id───────────────────────────────────┬─status─────────┐
 │ e5b74ecb-f6f1-426a-80be-872f90043885 │ BACKUP_CREATED │
 └──────────────────────────────────────┴────────────────┘
 ```
+
 ```sql
 SELECT * FROM system.backup_log WHERE id = 'e5b74ecb-f6f1-426a-80be-872f90043885' ORDER BY event_date, event_time_microseconds \G
 ```
+
 ```response
 Row 1:
 ──────
@@ -93,17 +96,21 @@ compressed_size:         3525068304
 files_read:              0
 bytes_read:              0
 ```
+
 ```sql
 RESTORE TABLE test_db.my_table FROM Disk('backups_disk', '1.zip')
 ```
+
 ```response
 ┌─id───────────────────────────────────┬─status───┐
 │ cdf1f731-52ef-42da-bc65-2e1bfcd4ce90 │ RESTORED │
 └──────────────────────────────────────┴──────────┘
 ```
+
 ```sql
 SELECT * FROM system.backup_log WHERE id = 'cdf1f731-52ef-42da-bc65-2e1bfcd4ce90' ORDER BY event_date, event_time_microseconds \G
 ```
+
 ```response
 Row 1:
 ──────
@@ -149,6 +156,7 @@ This is essentially the same information that is written in the system table `sy
 ```sql
 SELECT * FROM system.backups ORDER BY start_time
 ```
+
 ```response
 ┌─id───────────────────────────────────┬─name──────────────────────────┬─status─────────┬─error─┬──────────start_time─┬────────────end_time─┬─num_files─┬─total_size─┬─num_entries─┬─uncompressed_size─┬─compressed_size─┬─files_read─┬─bytes_read─┐
 │ e5b74ecb-f6f1-426a-80be-872f90043885 │ Disk('backups_disk', '1.zip') │ BACKUP_CREATED │       │ 2023-08-19 11:05:21 │ 2023-08-19 11:08:56 │        57 │ 4290364870 │          46 │        4290362365 │      3525068304 │          0 │          0 │
@@ -158,4 +166,4 @@ SELECT * FROM system.backups ORDER BY start_time
 
 **See Also**
 
-- [Backup and Restore](../../operations/backup.md)
+-[Backup and Restore](../../operations/backup.md)

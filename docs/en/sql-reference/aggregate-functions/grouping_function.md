@@ -10,9 +10,10 @@ title: 'GROUPING'
 
 [ROLLUP](../statements/select/group-by.md/#rollup-modifier) and [CUBE](../statements/select/group-by.md/#cube-modifier) are modifiers to GROUP BY. Both of these calculate subtotals. ROLLUP takes an ordered list of columns, for example `(day, month, year)`, and calculates subtotals at each level of the aggregation and then a grand total. CUBE calculates subtotals across all possible combinations of the columns specified. GROUPING identifies which rows returned by ROLLUP or CUBE are superaggregates, and which are rows that would be returned by an unmodified GROUP BY.
 
-The GROUPING function takes multiple columns as an argument, and returns a bitmask. 
-- `1` indicates that a row returned by a `ROLLUP` or `CUBE` modifier to `GROUP BY` is a subtotal
-- `0` indicates that a row returned by a `ROLLUP` or `CUBE` is a row that is not a subtotal
+The GROUPING function takes multiple columns as an argument, and returns a bitmask.
+
+-`1` indicates that a row returned by a `ROLLUP` or `CUBE` modifier to `GROUP BY` is a subtotal
+-`0` indicates that a row returned by a `ROLLUP` or `CUBE` is a row that is not a subtotal
 
 ## GROUPING SETS {#grouping-sets}
 
@@ -51,6 +52,7 @@ SELECT
 FROM
     servers;
 ```
+
 ```response
 ┌─datacenter──┬─distro─┬─version────┬─quantity─┐
 │ Schenectady │ Arch   │ 2020.05.01 │       10 │
@@ -70,7 +72,8 @@ FROM
 
 ### Simple queries {#simple-queries}
 
-Get the count of servers in each data center by distribution: 
+Get the count of servers in each data center by distribution:
+
 ```sql
 SELECT
     datacenter,
@@ -82,6 +85,7 @@ GROUP BY
     datacenter,
     distro;
 ```
+
 ```response
 ┌─datacenter──┬─distro─┬─qty─┐
 │ Schenectady │ RHEL   │ 140 │
@@ -102,6 +106,7 @@ FROM
 GROUP BY
     datacenter;
 ```
+
 ```response
 ┌─datacenter──┬─qty─┐
 │ Westport    │ 215 │
@@ -110,7 +115,6 @@ GROUP BY
 
 2 rows in set. Elapsed: 0.277 sec. 
 ```
-
 
 ```sql
 SELECT
@@ -132,13 +136,13 @@ GROUP BY
 2 rows in set. Elapsed: 0.352 sec. 
 ```
 
-
 ```sql
 SELECT
     SUM(quantity) qty
 FROM
     servers;
 ```
+
 ```response
 ┌─qty─┐
 │ 445 │
@@ -150,6 +154,7 @@ FROM
 ### Comparing multiple GROUP BY statements with GROUPING SETS {#comparing-multiple-group-by-statements-with-grouping-sets}
 
 Breaking down the data without CUBE, ROLLUP, or GROUPING SETS:
+
 ```sql
 SELECT
     datacenter,
@@ -186,6 +191,7 @@ SELECT
 FROM
     servers;
 ```
+
 ```response
 ┌─datacenter─┬─distro─┬─qty─┐
 │ ᴺᵁᴸᴸ       │ ᴺᵁᴸᴸ   │ 445 │
@@ -209,6 +215,7 @@ FROM
 ```
 
 Getting the same information using GROUPING SETS:
+
 ```sql
 SELECT
     datacenter,
@@ -224,6 +231,7 @@ GROUP BY
         ()
     )
 ```
+
 ```response
 ┌─datacenter──┬─distro─┬─qty─┐
 │ Schenectady │ RHEL   │ 140 │
@@ -248,7 +256,7 @@ GROUP BY
 
 ### Comparing CUBE with GROUPING SETS {#comparing-cube-with-grouping-sets}
 
-The CUBE in the next query, `CUBE(datacenter,distro,version)` provides a hierarchy that may not make sense.  It does not make sense to look at Version across the two distributions (as Arch and RHEL do not have the same release cycle or version naming standards).  The GROUPING SETS example following this one is more appropriate as it groups `distro` and `version` in the same set. 
+The CUBE in the next query, `CUBE(datacenter,distro,version)` provides a hierarchy that may not make sense.  It does not make sense to look at Version across the two distributions (as Arch and RHEL do not have the same release cycle or version naming standards).  The GROUPING SETS example following this one is more appropriate as it groups `distro` and `version` in the same set.
 
 ```sql
 SELECT
@@ -264,6 +272,7 @@ ORDER BY
    datacenter,
    distro;
 ```
+
 ```response
 ┌─datacenter──┬─distro─┬─version────┬─sum(quantity)─┐
 │             │        │ 7          │           160 │
@@ -309,6 +318,7 @@ ORDER BY
 
 39 rows in set. Elapsed: 0.355 sec. 
 ```
+
 :::note
 Version in the above example may not make sense when it is not associated with a distro, if we were tracking the kernel version it might make sense because the kernel version can be associated with either distro.  Using GROUPING SETS, as in the next example, may be a better choice.
 :::
@@ -325,6 +335,7 @@ GROUP BY
         (datacenter, distro, version),
         (datacenter, distro))
 ```
+
 ```response
 ┌─datacenter──┬─distro─┬─version────┬─sum(quantity)─┐
 │ Westport    │ RHEL   │ 9          │            70 │

@@ -17,7 +17,7 @@ If a setting with the specified name does not exist, then the query raises an ex
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY|RESET SETTING ...
 ```
 
-:::note    
+:::note
 These queries can be applied to [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) tables only.
 :::
 
@@ -60,4 +60,4 @@ ALTER TABLE example_table RESET SETTING max_part_loading_threads;
 
 **See Also**
 
-- [MergeTree settings](../../../operations/settings/merge-tree-settings.md)
+-[MergeTree settings](../../../operations/settings/merge-tree-settings.md)

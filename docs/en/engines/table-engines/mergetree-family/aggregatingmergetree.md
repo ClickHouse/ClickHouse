@@ -22,8 +22,8 @@ You can see an example of how to use the AggregatingMergeTree and Aggregate func
 
 The engine processes all columns with the following types:
 
-- [`AggregateFunction`](../../../sql-reference/data-types/aggregatefunction.md)
-- [`SimpleAggregateFunction`](../../../sql-reference/data-types/simpleaggregatefunction.md)
+-[`AggregateFunction`](../../../sql-reference/data-types/aggregatefunction.md)
+-[`SimpleAggregateFunction`](../../../sql-reference/data-types/simpleaggregatefunction.md)
 
 It is appropriate to use `AggregatingMergeTree` if it reduces the number of rows by orders.
 
@@ -96,7 +96,7 @@ CREATE TABLE test.visits
 ) ENGINE = MergeTree ORDER BY (StartDate, CounterID);
 ```
 
-Next, you need an `AggregatingMergeTree` table that will store `AggregationFunction`s that keep track of the total number of visits and the number of unique users. 
+Next, you need an `AggregatingMergeTree` table that will store `AggregationFunction`s that keep track of the total number of visits and the number of unique users.
 
 Create an `AggregatingMergeTree` materialized view that watches the `test.visits` table, and uses the [`AggregateFunction`](/sql-reference/data-types/aggregatefunction) type:
 
@@ -167,9 +167,9 @@ Run the `SELECT` query again, which will return the following output:
 ```
 
 In some cases, you might want to avoid pre-aggregating rows at insert time to shift the cost of aggregation from insert time
-to merge time. Ordinarily, it is necessary to include the columns which are not part of the aggregation in the `GROUP BY` 
-clause of the materialized view definition to avoid an error. However, you can make use of the [`initializeAggregation`](/sql-reference/functions/other-functions#initializeaggregation) 
-function with setting `optimize_on_insert = 0` (it is turned on by default) to achieve this. Use of `GROUP BY` 
+to merge time. Ordinarily, it is necessary to include the columns which are not part of the aggregation in the `GROUP BY`
+clause of the materialized view definition to avoid an error. However, you can make use of the [`initializeAggregation`](/sql-reference/functions/other-functions#initializeaggregation)
+function with setting `optimize_on_insert = 0` (it is turned on by default) to achieve this. Use of `GROUP BY`
 is no longer required in this case:
 
 ```sql
@@ -190,4 +190,4 @@ Each source row produces one row in the materialized view, and the actual aggreg
 
 ## Related content {#related-content}
 
-- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
+-Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

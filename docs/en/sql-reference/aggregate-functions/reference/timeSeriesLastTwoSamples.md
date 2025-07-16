@@ -8,8 +8,9 @@ title: 'timeSeriesLastTwoSamples'
 Aggregate function that takes time series data as pairs of timestamps and values and stores only at most 2 recent samples.
 
 Arguments:
-- `timestamp` - timestamp of the sample
-- `value` - value of the time series corresponding to the `timestamp`
+
+-`timestamp` - timestamp of the sample
+-`value` - value of the time series corresponding to the `timestamp`
 Also it is possible to pass multiple samples of timestamps and values as Arrays of equal size.
 
 Return value:
@@ -56,6 +57,7 @@ ORDER BY metric_id, grid_timestamp;
 ```
 
 Insert some test data and read the data between '2024-12-12 12:00:12' and '2024-12-12 12:00:30'
+
 ```sql
 -- Insert some data
 INSERT INTO t_raw_timeseries(metric_id, timestamp, value) SELECT number%10 AS metric_id, '2024-12-12 12:00:00'::DateTime64(3, 'UTC') + interval ((number/10)%100)*900 millisecond as timestamp, number%3+number%29 AS value FROM numbers(1000);
@@ -92,6 +94,7 @@ ORDER BY metric_id, timestamp;
 ```
 
 Query last 2 sample for timestamps '2024-12-12 12:00:15' and '2024-12-12 12:00:30':
+
 ```sql
 -- Check re-sampled data
 SELECT metric_id, grid_timestamp, (finalizeAggregation(samples).1 as timestamp, finalizeAggregation(samples).2 as value) 

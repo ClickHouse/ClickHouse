@@ -45,6 +45,7 @@ Setting [max_threads](../../operations/settings/settings.md#max_threads) control
 ## Comparison with UNION {#comparison-with-union}
 
 The `PARALLEL WITH` clause is a bit similar to [UNION](select/union.md), which also executes its operands in parallel. However there are some differences:
-- `PARALLEL WITH` doesn't return any results from executing its operands, it can only rethrow an exception from them if any;
-- `PARALLEL WITH` doesn't require its operands to have the same set of result columns;
-- `PARALLEL WITH` can execute any statements (not just `SELECT`).
+
+-`PARALLEL WITH` doesn't return any results from executing its operands, it can only rethrow an exception from them if any;
+-`PARALLEL WITH` doesn't require its operands to have the same set of result columns;
+-`PARALLEL WITH` can execute any statements (not just `SELECT`).

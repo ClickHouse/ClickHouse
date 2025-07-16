@@ -17,21 +17,20 @@ Currently, Kerberos can only be used as an external authenticator for existing u
 
 For this approach, Kerberos must be configured in the system and must be enabled in ClickHouse config.
 
-
 ## Enabling Kerberos in ClickHouse {#enabling-kerberos-in-clickhouse}
 
 To enable Kerberos, one should include `kerberos` section in `config.xml`. This section may contain additional parameters.
 
 #### Parameters {#parameters}
 
-- `principal` - canonical service principal name that will be acquired and used when accepting security contexts.
-    - This parameter is optional, if omitted, the default principal will be used.
+-`principal` - canonical service principal name that will be acquired and used when accepting security contexts.
+-This parameter is optional, if omitted, the default principal will be used.
 
-- `realm` - a realm, that will be used to restrict authentication to only those requests whose initiator's realm matches it.
-    - This parameter is optional, if omitted, no additional filtering by realm will be applied.
+-`realm` - a realm, that will be used to restrict authentication to only those requests whose initiator's realm matches it.
+-This parameter is optional, if omitted, no additional filtering by realm will be applied.
 
-- `keytab` - path to service keytab file.
-    - This parameter is optional, if omitted, path to service keytab file must be set in `KRB5_KTNAME` environment variable.
+-`keytab` - path to service keytab file.
+-This parameter is optional, if omitted, path to service keytab file must be set in `KRB5_KTNAME` environment variable.
 
 Example (goes into `config.xml`):
 
@@ -78,7 +77,7 @@ Kerberos can be used as a method for verifying the identity of locally defined u
 
 Kerberos principal name format usually follows this pattern:
 
-- *primary/instance@REALM*
+-*primary/instance@REALM*
 
 The */instance* part may occur zero or more times. **The *primary* part of the canonical principal name of the initiator is expected to match the kerberized user name for authentication to succeed**.
 
@@ -88,8 +87,8 @@ In order to enable Kerberos authentication for the user, specify `kerberos` sect
 
 Parameters:
 
-- `realm` - a realm that will be used to restrict authentication to only those requests whose initiator's realm matches it.
-    - This parameter is optional, if omitted, no additional filtering by realm will be applied.
+-`realm` - a realm that will be used to restrict authentication to only those requests whose initiator's realm matches it.
+-This parameter is optional, if omitted, no additional filtering by realm will be applied.
 
 Example (goes into `users.xml`):
 

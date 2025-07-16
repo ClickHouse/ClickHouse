@@ -53,26 +53,26 @@ LIMIT 2
 
 Paths may use globbing. Files must match the whole path pattern, not only the suffix or prefix.
 
-- `*` — Represents arbitrarily many characters except `/` but including the empty string.
-- `**` — Represents all files inside a folder recursively.
-- `?` — Represents an arbitrary single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. The strings can contain the `/` symbol.
-- `{N..M}` — Represents any number `>= N` and `<= M`.
+-`*` — Represents arbitrarily many characters except `/` but including the empty string.
+-`**` — Represents all files inside a folder recursively.
+-`?` — Represents an arbitrary single character.
+-`{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. The strings can contain the `/` symbol.
+-`{N..M}` — Represents any number `>= N` and `<= M`.
 
 Constructions with `{}` are similar to the [remote](remote.md) and [file](file.md) table functions.
 
 **Example**
 
-1.  Suppose that we have several files with following URIs on HDFS:
+1.Suppose that we have several files with following URIs on HDFS:
 
-- 'hdfs://hdfs1:9000/some_dir/some_file_1'
-- 'hdfs://hdfs1:9000/some_dir/some_file_2'
-- 'hdfs://hdfs1:9000/some_dir/some_file_3'
-- 'hdfs://hdfs1:9000/another_dir/some_file_1'
-- 'hdfs://hdfs1:9000/another_dir/some_file_2'
-- 'hdfs://hdfs1:9000/another_dir/some_file_3'
+-'hdfs://hdfs1:9000/some_dir/some_file_1'
+-'hdfs://hdfs1:9000/some_dir/some_file_2'
+-'hdfs://hdfs1:9000/some_dir/some_file_3'
+-'hdfs://hdfs1:9000/another_dir/some_file_1'
+-'hdfs://hdfs1:9000/another_dir/some_file_2'
+-'hdfs://hdfs1:9000/another_dir/some_file_3'
 
-2.  Query the amount of rows in these files:
+2.Query the amount of rows in these files:
 
 <!-- -->
 
@@ -81,7 +81,7 @@ SELECT count(*)
 FROM hdfs('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV', 'name String, value UInt32')
 ```
 
-3.  Query the amount of rows in all files of these two directories:
+3.Query the amount of rows in all files of these two directories:
 
 <!-- -->
 
@@ -105,10 +105,10 @@ FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name Strin
 
 ## Virtual Columns {#virtual-columns}
 
-- `_path` — Path to the file. Type: `LowCardinality(String)`.
-- `_file` — Name of the file. Type: `LowCardinality(String)`.
-- `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
-- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
+-`_path` — Path to the file. Type: `LowCardinality(String)`.
+-`_file` — Name of the file. Type: `LowCardinality(String)`.
+-`_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
+-`_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
 ## Hive-style partitioning {#hive-style-partitioning}
 
@@ -124,10 +124,10 @@ SELECT * FROM HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parque
 
 ## Storage Settings {#storage-settings}
 
-- [hdfs_truncate_on_insert](operations/settings/settings.md#hdfs_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
-- [hdfs_create_new_file_on_insert](operations/settings/settings.md#hdfs_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
-- [hdfs_skip_empty_files](operations/settings/settings.md#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+-[hdfs_truncate_on_insert](operations/settings/settings.md#hdfs_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
+-[hdfs_create_new_file_on_insert](operations/settings/settings.md#hdfs_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
+-[hdfs_skip_empty_files](operations/settings/settings.md#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
 
 ## Related {#related}
 
-- [Virtual columns](../../engines/table-engines/index.md#table_engines-virtual_columns)
+-[Virtual columns](../../engines/table-engines/index.md#table_engines-virtual_columns)

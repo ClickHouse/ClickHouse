@@ -43,7 +43,7 @@ Ensure that unixODBC and MySQL Connector are installed.
 By default (if installed from packages), ClickHouse starts as user `clickhouse`. Thus you need to create and configure this user in the MySQL server.
 
 ```bash
-$ sudo mysql
+sudo mysql
 ```
 
 ```sql
@@ -111,5 +111,5 @@ SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
 
 ## Related {#see-also}
 
-- [ODBC dictionaries](/sql-reference/dictionaries#dbms)
-- [ODBC table engine](/engines/table-engines/integrations/odbc).
+-[ODBC dictionaries](/sql-reference/dictionaries#dbms)
+-[ODBC table engine](/engines/table-engines/integrations/odbc).

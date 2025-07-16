@@ -15,7 +15,9 @@ Calculates the maximum from `value` array according to the keys specified in the
 ```sql
 maxMap(key, value)
 ```
+
 or
+
 ```sql
 maxMap(Tuple(key, value))
 ```
@@ -23,18 +25,20 @@ maxMap(Tuple(key, value))
 Alias: `maxMappedArrays`
 
 :::note
-- Passing a tuple of keys and value arrays is identical to passing two arrays of keys and values.
-- The number of elements in `key` and `value` must be the same for each row that is totaled.
+
+-Passing a tuple of keys and value arrays is identical to passing two arrays of keys and values.
+-The number of elements in `key` and `value` must be the same for each row that is totaled.
+
 :::
 
 **Parameters**
 
-- `key` — Array of keys. [Array](../../data-types/array.md).
-- `value` — Array of values. [Array](../../data-types/array.md).
+-`key` — Array of keys. [Array](../../data-types/array.md).
+-`value` — Array of values. [Array](../../data-types/array.md).
 
 **Returned value**
 
-- Returns a tuple of two arrays: keys in sorted order, and values calculated for the corresponding keys. [Tuple](../../data-types/tuple.md)([Array](../../data-types/array.md), [Array](../../data-types/array.md)).
+-Returns a tuple of two arrays: keys in sorted order, and values calculated for the corresponding keys. [Tuple](../../data-types/tuple.md)([Array](../../data-types/array.md), [Array](../../data-types/array.md)).
 
 **Example**
 

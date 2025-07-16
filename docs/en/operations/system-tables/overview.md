@@ -11,15 +11,15 @@ title: 'System Tables Overview'
 
 System tables provide information about:
 
-- Server states, processes, and environment.
-- Server's internal processes.
-- Options used when the ClickHouse binary was built.
+-Server states, processes, and environment.
+-Server's internal processes.
+-Options used when the ClickHouse binary was built.
 
 System tables:
 
-- Located in the `system` database.
-- Available only for reading data.
-- Can't be dropped or altered, but can be detached.
+-Located in the `system` database.
+-Available only for reading data.
+-Can't be dropped or altered, but can be detached.
 
 Most of the system tables store their data in RAM. A ClickHouse server creates such system tables at the start.
 
@@ -27,12 +27,12 @@ Unlike other system tables, the system log tables [metric_log](../../operations/
 
 System log tables can be customized by creating a config file with the same name as the table under `/etc/clickhouse-server/config.d/`, or setting corresponding elements in `/etc/clickhouse-server/config.xml`. Elements can be customized are:
 
-- `database`: database the system log table belongs to. This option is deprecated now. All system log tables are under database `system`.
-- `table`: table to insert data.
-- `partition_by`: specify [PARTITION BY](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) expression.
-- `ttl`: specify table [TTL](../../sql-reference/statements/alter/ttl.md) expression.
-- `flush_interval_milliseconds`: interval of flushing data to disk.
-- `engine`: provide full engine expression (starting with `ENGINE =` ) with parameters. This option conflicts with `partition_by` and `ttl`. If set together, the server will raise an exception and exit.
+-`database`: database the system log table belongs to. This option is deprecated now. All system log tables are under database `system`.
+-`table`: table to insert data.
+-`partition_by`: specify [PARTITION BY](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) expression.
+-`ttl`: specify table [TTL](../../sql-reference/statements/alter/ttl.md) expression.
+-`flush_interval_milliseconds`: interval of flushing data to disk.
+-`engine`: provide full engine expression (starting with `ENGINE =` ) with parameters. This option conflicts with `partition_by` and `ttl`. If set together, the server will raise an exception and exit.
 
 An example:
 
@@ -61,8 +61,8 @@ By default, table growth is unlimited. To control a size of a table, you can use
 
 For collecting system metrics ClickHouse server uses:
 
-- `CAP_NET_ADMIN` capability.
-- [procfs](https://en.wikipedia.org/wiki/Procfs) (only in Linux).
+-`CAP_NET_ADMIN` capability.
+-[procfs](https://en.wikipedia.org/wiki/Procfs) (only in Linux).
 
 **procfs**
 
@@ -70,13 +70,13 @@ If ClickHouse server does not have `CAP_NET_ADMIN` capability, it tries to fall 
 
 If procfs is supported and enabled on the system, ClickHouse server collects these metrics:
 
-- `OSCPUVirtualTimeMicroseconds`
-- `OSCPUWaitMicroseconds`
-- `OSIOWaitMicroseconds`
-- `OSReadChars`
-- `OSWriteChars`
-- `OSReadBytes`
-- `OSWriteBytes`
+-`OSCPUVirtualTimeMicroseconds`
+-`OSCPUWaitMicroseconds`
+-`OSIOWaitMicroseconds`
+-`OSReadChars`
+-`OSWriteChars`
+-`OSReadBytes`
+-`OSWriteBytes`
 
 :::note
 `OSIOWaitMicroseconds` is disabled by default in Linux kernels starting from 5.14.x.
@@ -86,7 +86,6 @@ You can enable it using `sudo sysctl kernel.task_delayacct=1` or by creating a `
 ## System tables in ClickHouse Cloud {#system-tables-in-clickhouse-cloud}
 
 In ClickHouse Cloud, system tables provide critical insights into the state and performance of the service, just as they do in self-managed deployments. Some system tables operate at the cluster-wide level, especially those that derive their data from Keeper nodes, which manage distributed metadata. These tables reflect the collective state of the cluster and should be consistent when queried on individual nodes. For example, the [`parts`](/operations/system-tables/parts) should be consistent irrespective of the node it is queried from:
-
 
 ```sql
 SELECT hostname(), count()
@@ -116,9 +115,9 @@ Conversely, other system tables are node-specific e.g. in-memory or persisting t
 
 In general, the following rules can be applied when determining if a system table is node-specific:
 
-- System tables with a `_log` suffix.
-- System tables that expose metrics e.g. `metrics`, `asynchronous_metrics`, `events`.
-- System tables that expose ongoing processes e.g. `processes`, `merges`.
+-System tables with a `_log` suffix.
+-System tables that expose metrics e.g. `metrics`, `asynchronous_metrics`, `events`.
+-System tables that expose ongoing processes e.g. `processes`, `merges`.
 
 Additionally, new versions of system tables may be created as a result of upgrades or changes to their schema. These versions are named using a numerical suffix.
 
@@ -182,7 +181,7 @@ Importantly, these tables are still **local to each node**.
 
 ### Querying across nodes {#querying-across-nodes}
 
-To comprehensively view the entire cluster, users can leverage the [`clusterAllReplicas`](/sql-reference/table-functions/cluster) function in combination with the `merge` function. The `clusterAllReplicas` function allows querying system tables across all replicas within the "default" cluster, consolidating node-specific data into a unified result. When combined with the `merge` function this can be used to target all system data for a specific table in a cluster. 
+To comprehensively view the entire cluster, users can leverage the [`clusterAllReplicas`](/sql-reference/table-functions/cluster) function in combination with the `merge` function. The `clusterAllReplicas` function allows querying system tables across all replicas within the "default" cluster, consolidating node-specific data into a unified result. When combined with the `merge` function this can be used to target all system data for a specific table in a cluster.
 
 This approach is particularly valuable for monitoring and debugging cluster-wide operations, ensuring users can effectively analyze the health and performance of their ClickHouse Cloud deployment.
 
@@ -245,6 +244,6 @@ GROUP BY host SETTINGS skip_unavailable_shards = 1
 
 ## Related content {#related-content}
 
-- Blog: [System Tables and a window into the internals of ClickHouse](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables)
-- Blog: [Essential monitoring queries - part 1 - INSERT queries](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)
-- Blog: [Essential monitoring queries - part 2 - SELECT queries](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse)
+-Blog: [System Tables and a window into the internals of ClickHouse](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables)
+-Blog: [Essential monitoring queries - part 1 - INSERT queries](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)
+-Blog: [Essential monitoring queries - part 2 - SELECT queries](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse)

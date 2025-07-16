@@ -23,12 +23,11 @@ stddevPop(x)
 
 **Parameters**
 
-- `x`: Population of values to find the standard deviation of. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal*](../../data-types/decimal.md).
+-`x`: Population of values to find the standard deviation of. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal*](../../data-types/decimal.md).
 
 **Returned value**
 
-- Square root of standard deviation of `x`. [Float64](../../data-types/float.md).
-
+-Square root of standard deviation of `x`. [Float64](../../data-types/float.md).
 
 **Example**
 

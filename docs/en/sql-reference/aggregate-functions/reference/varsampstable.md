@@ -21,11 +21,11 @@ Alias: `VAR_SAMP_STABLE`
 
 **Parameters**
 
-- `x`: The population for which you want to calculate the sample variance. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal*](../../data-types/decimal.md).
+-`x`: The population for which you want to calculate the sample variance. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal*](../../data-types/decimal.md).
 
 **Returned value**
 
-- Returns the sample variance of the input data set. [Float64](../../data-types/float.md).
+-Returns the sample variance of the input data set. [Float64](../../data-types/float.md).
 
 **Implementation details**
 
@@ -36,9 +36,10 @@ $$
 $$
 
 Where:
-- `x` is each individual data point in the data set.
-- `mean(x)` is the arithmetic mean of the data set.
-- `n` is the number of data points in the data set.
+
+-`x` is each individual data point in the data set.
+-`mean(x)` is the arithmetic mean of the data set.
+-`n` is the number of data points in the data set.
 
 **Example**
 

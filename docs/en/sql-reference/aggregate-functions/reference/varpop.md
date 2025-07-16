@@ -23,11 +23,11 @@ Alias: `VAR_POP`.
 
 **Parameters**
 
-- `x`: Population of values to find the population variance of. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal*](../../data-types/decimal.md).
+-`x`: Population of values to find the population variance of. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal*](../../data-types/decimal.md).
 
 **Returned value**
 
-- Returns the population variance of `x`. [`Float64`](../../data-types/float.md).
+-Returns the population variance of `x`. [`Float64`](../../data-types/float.md).
 
 **Example**
 

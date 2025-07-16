@@ -8,7 +8,6 @@ title: 'Time Window Functions'
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-
 # Time window functions
 
 <ExperimentalBadge/>
@@ -27,13 +26,14 @@ tumble(time_attr, interval [, timezone])
 ```
 
 **Arguments**
-- `time_attr` — Date and time. [DateTime](../data-types/datetime.md).
-- `interval` — Window interval in [Interval](../data-types/special-data-types/interval.md).
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
+
+-`time_attr` — Date and time. [DateTime](../data-types/datetime.md).
+-`interval` — Window interval in [Interval](../data-types/special-data-types/interval.md).
+-`timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
 
 **Returned values**
 
-- The inclusive lower and exclusive upper bound of the corresponding tumbling window. [Tuple](../data-types/tuple.md)([DateTime](../data-types/datetime.md), [DateTime](../data-types/datetime.md)).
+-The inclusive lower and exclusive upper bound of the corresponding tumbling window. [Tuple](../data-types/tuple.md)([DateTime](../data-types/datetime.md), [DateTime](../data-types/datetime.md)).
 
 **Example**
 
@@ -63,13 +63,13 @@ tumbleStart(time_attr, interval [, timezone]);
 
 **Arguments**
 
-- `time_attr` — Date and time. [DateTime](../data-types/datetime.md).
-- `interval` — Window interval in [Interval](../data-types/special-data-types/interval.md).
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
+-`time_attr` — Date and time. [DateTime](../data-types/datetime.md).
+-`interval` — Window interval in [Interval](../data-types/special-data-types/interval.md).
+-`timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
 
 **Returned values**
 
-- The inclusive lower bound of the corresponding tumbling window. [DateTime](../data-types/datetime.md), [Tuple](../data-types/tuple.md) or [UInt32](../data-types/int-uint.md).
+-The inclusive lower bound of the corresponding tumbling window. [DateTime](../data-types/datetime.md), [Tuple](../data-types/tuple.md) or [UInt32](../data-types/int-uint.md).
 
 **Example**
 
@@ -99,13 +99,13 @@ tumbleEnd(time_attr, interval [, timezone]);
 
 **Arguments**
 
-- `time_attr` — Date and time. [DateTime](../data-types/datetime.md).
-- `interval` — Window interval in [Interval](../data-types/special-data-types/interval.md).
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
+-`time_attr` — Date and time. [DateTime](../data-types/datetime.md).
+-`interval` — Window interval in [Interval](../data-types/special-data-types/interval.md).
+-`timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
 
 **Returned values**
 
-- The inclusive lower bound of the corresponding tumbling window. [DateTime](../data-types/datetime.md), [Tuple](../data-types/tuple.md) or [UInt32](../data-types/int-uint.md).
+-The inclusive lower bound of the corresponding tumbling window. [DateTime](../data-types/datetime.md), [Tuple](../data-types/tuple.md) or [UInt32](../data-types/int-uint.md).
 
 **Example**
 
@@ -133,14 +133,14 @@ hop(time_attr, hop_interval, window_interval [, timezone])
 
 **Arguments**
 
-- `time_attr` — Date and time. [DateTime](../data-types/datetime.md).
-- `hop_interval` — Positive Hop interval. [Interval](../data-types/special-data-types/interval.md).
-- `window_interval` — Positive Window interval. [Interval](../data-types/special-data-types/interval.md).
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
+-`time_attr` — Date and time. [DateTime](../data-types/datetime.md).
+-`hop_interval` — Positive Hop interval. [Interval](../data-types/special-data-types/interval.md).
+-`window_interval` — Positive Window interval. [Interval](../data-types/special-data-types/interval.md).
+-`timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
 
 **Returned values**
 
-- The inclusive lower and exclusive upper bound of the corresponding hopping window. [Tuple](../data-types/tuple.md)([DateTime](../data-types/datetime.md), [DateTime](../data-types/datetime.md))`.
+-The inclusive lower and exclusive upper bound of the corresponding hopping window. [Tuple](../data-types/tuple.md)([DateTime](../data-types/datetime.md), [DateTime](../data-types/datetime.md))`.
 
 :::note
 Since one record can be assigned to multiple hop windows, the function only returns the bound of the **first** window when hop function is used **without** `WINDOW VIEW`.
@@ -171,16 +171,17 @@ Returns the inclusive lower bound of the corresponding [hopping window](#hop).
 ```sql
 hopStart(time_attr, hop_interval, window_interval [, timezone]);
 ```
+
 **Arguments**
 
-- `time_attr` — Date and time. [DateTime](../data-types/datetime.md).
-- `hop_interval` — Positive Hop interval. [Interval](../data-types/special-data-types/interval.md).
-- `window_interval` — Positive Window interval. [Interval](../data-types/special-data-types/interval.md).
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
+-`time_attr` — Date and time. [DateTime](../data-types/datetime.md).
+-`hop_interval` — Positive Hop interval. [Interval](../data-types/special-data-types/interval.md).
+-`window_interval` — Positive Window interval. [Interval](../data-types/special-data-types/interval.md).
+-`timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
 
 **Returned values**
 
-- The inclusive lower bound of the corresponding hopping window. [DateTime](../data-types/datetime.md), [Tuple](../data-types/tuple.md) or [UInt32](../data-types/int-uint.md).
+-The inclusive lower bound of the corresponding hopping window. [DateTime](../data-types/datetime.md), [Tuple](../data-types/tuple.md) or [UInt32](../data-types/int-uint.md).
 
 :::note
 Since one record can be assigned to multiple hop windows, the function only returns the bound of the **first** window when hop function is used **without** `WINDOW VIEW`.
@@ -211,16 +212,17 @@ Returns the exclusive upper bound of the corresponding [hopping window](#hop).
 ```sql
 hopEnd(time_attr, hop_interval, window_interval [, timezone]);
 ```
+
 **Arguments**
 
-- `time_attr` — Date and time. [DateTime](../data-types/datetime.md).
-- `hop_interval` — Positive Hop interval. [Interval](../data-types/special-data-types/interval.md).
-- `window_interval` — Positive Window interval. [Interval](../data-types/special-data-types/interval.md).
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
+-`time_attr` — Date and time. [DateTime](../data-types/datetime.md).
+-`hop_interval` — Positive Hop interval. [Interval](../data-types/special-data-types/interval.md).
+-`window_interval` — Positive Window interval. [Interval](../data-types/special-data-types/interval.md).
+-`timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
 
 **Returned values**
 
-- The exclusive upper bound of the corresponding hopping window. [DateTime](../data-types/datetime.md), [Tuple](../data-types/tuple.md) or [UInt32](../data-types/int-uint.md).
+-The exclusive upper bound of the corresponding hopping window. [DateTime](../data-types/datetime.md), [Tuple](../data-types/tuple.md) or [UInt32](../data-types/int-uint.md).
 
 :::note
 Since one record can be assigned to multiple hop windows, the function only returns the bound of the **first** window when hop function is used **without** `WINDOW VIEW`.
@@ -245,7 +247,7 @@ Result:
 
 ## Related content {#related-content}
 
-- Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
+-Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 
 <!-- 
 The inner content of the tags below are replaced at doc framework build time with 

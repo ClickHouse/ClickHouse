@@ -11,12 +11,14 @@ Aggregate function that calculates the slope between the leftmost and rightmost 
 Example:
 
 Sample data:
+
 ```sql
 SELECT
     number,
     number * 1.5
 FROM numbers(10)
 ```
+
 ```response
 ┌─number─┬─multiply(number, 1.5)─┐
 │      0 │                     0 │
@@ -38,9 +40,9 @@ The boundingRatio() function returns the slope of the line between the leftmost 
 SELECT boundingRatio(number, number * 1.5)
 FROM numbers(10)
 ```
+
 ```response
 ┌─boundingRatio(number, multiply(number, 1.5))─┐
 │                                          1.5 │
 └──────────────────────────────────────────────┘
 ```
-

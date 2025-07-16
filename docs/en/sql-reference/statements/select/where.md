@@ -13,7 +13,7 @@ If there is a `WHERE` clause, it must contain an expression with the `UInt8` typ
 
 `WHERE` expression is evaluated on the ability to use indexes and partition pruning, if the underlying table engine supports that.
 
-:::note    
+:::note
 There is a filtering optimization called [PREWHERE](../../../sql-reference/statements/select/prewhere.md).
 :::
 

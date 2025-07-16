@@ -15,8 +15,8 @@ simpleLinearRegression(x, y)
 
 Parameters:
 
-- `x` — Column with explanatory variable values.
-- `y` — Column with dependent variable values.
+-`x` — Column with explanatory variable values.
+-`y` — Column with dependent variable values.
 
 Returned values:
 

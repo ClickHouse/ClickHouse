@@ -15,12 +15,12 @@ Depending on the type of the queries, this can dramatically reduce latency and r
 
 Query caches can generally be viewed as transactionally consistent or inconsistent.
 
-- In transactionally consistent caches, the database invalidates (discards) cached query results if the result of the `SELECT` query changes
+-In transactionally consistent caches, the database invalidates (discards) cached query results if the result of the `SELECT` query changes
   or potentially changes. In ClickHouse, operations which change the data include inserts/updates/deletes in/of/from tables or collapsing
   merges. Transactionally consistent caching is especially suitable for OLTP databases, for example
   [MySQL](https://dev.mysql.com/doc/refman/5.6/en/query-cache.html) (which removed query cache after v8.0) and
   [Oracle](https://docs.oracle.com/database/121/TGDBA/tune_result_cache.htm).
-- In transactionally inconsistent caches, slight inaccuracies in query results are accepted under the assumption that all cache entries are
+-In transactionally inconsistent caches, slight inaccuracies in query results are accepted under the assumption that all cache entries are
   assigned a validity period after which they expire (e.g. 1 minute) and that the underlying data changes only little during this period.
   This approach is overall more suitable for OLAP databases. As an example where transactionally inconsistent caching is sufficient,
   consider an hourly sales report in a reporting tool which is simultaneously accessed by multiple users. Sales data changes typically
@@ -180,20 +180,21 @@ result blocks. While this behavior is a good default, it can be suppressed using
 [query_cache_squash_partial_results](/operations/settings/settings#query_cache_squash_partial_results).
 
 Also, results of queries with non-deterministic functions are not cached by default. Such functions include
-- functions for accessing dictionaries: [`dictGet()`](/sql-reference/functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull) etc.
-- [user-defined functions](../sql-reference/statements/create/function.md) without tag `<deterministic>true</deterministic>` in their XML
+
+-functions for accessing dictionaries: [`dictGet()`](/sql-reference/functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull) etc.
+-[user-defined functions](../sql-reference/statements/create/function.md) without tag `<deterministic>true</deterministic>` in their XML
   definition,
-- functions which return the current date or time: [`now()`](../sql-reference/functions/date-time-functions.md#now),
+-functions which return the current date or time: [`now()`](../sql-reference/functions/date-time-functions.md#now),
   [`today()`](../sql-reference/functions/date-time-functions.md#today),
   [`yesterday()`](../sql-reference/functions/date-time-functions.md#yesterday) etc.,
-- functions which return random values: [`randomString()`](../sql-reference/functions/random-functions.md#randomString),
+-functions which return random values: [`randomString()`](../sql-reference/functions/random-functions.md#randomString),
   [`fuzzBits()`](../sql-reference/functions/random-functions.md#fuzzBits) etc.,
-- functions whose result depends on the size and order or the internal chunks used for query processing:
+-functions whose result depends on the size and order or the internal chunks used for query processing:
   [`nowInBlock()`](../sql-reference/functions/date-time-functions.md#nowInBlock) etc.,
   [`rowNumberInBlock()`](../sql-reference/functions/other-functions.md#rowNumberInBlock),
   [`runningDifference()`](../sql-reference/functions/other-functions.md#runningDifference),
   [`blockSize()`](../sql-reference/functions/other-functions.md#blockSize) etc.,
-- functions which depend on the environment: [`currentUser()`](../sql-reference/functions/other-functions.md#currentUser),
+-functions which depend on the environment: [`currentUser()`](../sql-reference/functions/other-functions.md#currentUser),
   [`queryID()`](/sql-reference/functions/other-functions#queryid),
   [`getMacro()`](../sql-reference/functions/other-functions.md#getMacro) etc.
 
@@ -211,4 +212,4 @@ be marked accessible by other users (i.e. shared) by supplying setting
 
 ## Related content {#related-content}
 
-- Blog: [Introducing the ClickHouse Query Cache](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)
+-Blog: [Introducing the ClickHouse Query Cache](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)

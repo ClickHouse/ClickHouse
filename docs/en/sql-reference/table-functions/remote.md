@@ -48,11 +48,11 @@ As table functions `remote` and `remoteSecure` re-establish the connection for e
 
 The `remote` table function can be useful in the following cases:
 
-- One-time data migration from one system to another
-- Accessing a specific server for data comparison, debugging, and testing, i.e. ad-hoc connections.
-- Queries between various ClickHouse clusters for research purposes.
-- Infrequent distributed requests that are made manually.
-- Distributed requests where the set of servers is re-defined each time.
+-One-time data migration from one system to another
+-Accessing a specific server for data comparison, debugging, and testing, i.e. ad-hoc connections.
+-Queries between various ClickHouse clusters for research purposes.
+-Infrequent distributed requests that are made manually.
+-Distributed requests where the set of servers is re-defined each time.
 
 ### Addresses {#addresses}
 
@@ -104,7 +104,7 @@ This example uses one table from a sample dataset.  The database is `imdb`, and 
 
 #### On the source ClickHouse system (the system that currently hosts the data) {#on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data}
 
-- Verify the source database and table name (`imdb.actors`)
+-Verify the source database and table name (`imdb.actors`)
 
   ```sql
   show databases
@@ -114,7 +114,7 @@ This example uses one table from a sample dataset.  The database is `imdb`, and 
   show tables in imdb
   ```
 
-- Get the CREATE TABLE statement from the source:
+-Get the CREATE TABLE statement from the source:
 
 ```sql
   SELECT create_table_query
@@ -135,13 +135,13 @@ This example uses one table from a sample dataset.  The database is `imdb`, and 
 
 #### On the destination ClickHouse system {#on-the-destination-clickhouse-system}
 
-- Create the destination database:
+-Create the destination database:
 
   ```sql
   CREATE DATABASE imdb
   ```
 
-- Using the CREATE TABLE statement from the source, create the destination:
+-Using the CREATE TABLE statement from the source, create the destination:
 
   ```sql
   CREATE TABLE imdb.actors (`id` UInt32,
@@ -168,9 +168,9 @@ Patterns in curly brackets `{ }` are used to generate a set of shards and to spe
 
 The following pattern types are supported.
 
-- `{a,b,c}` - Represents any of alternative strings `a`, `b` or `c`. The pattern is replaced with `a` in the first shard address and replaced with `b` in the second shard address and so on. For instance, `example0{1,2}-1` generates addresses `example01-1` and `example02-1`.
-- `{N..M}` - A range of numbers. This pattern generates shard addresses with incrementing indices from `N` to (and including) `M`. For instance, `example0{1..2}-1` generates `example01-1` and `example02-1`.
-- `{0n..0m}` - A range of numbers with leading zeroes. This pattern preserves leading zeroes in indices. For instance, `example{01..03}-1` generates `example01-1`, `example02-1` and `example03-1`.
+-`{a,b,c}` - Represents any of alternative strings `a`, `b` or `c`. The pattern is replaced with `a` in the first shard address and replaced with `b` in the second shard address and so on. For instance, `example0{1,2}-1` generates addresses `example01-1` and `example02-1`.
+-`{N..M}` - A range of numbers. This pattern generates shard addresses with incrementing indices from `N` to (and including) `M`. For instance, `example0{1..2}-1` generates `example01-1` and `example02-1`.
+-`{0n..0m}` - A range of numbers with leading zeroes. This pattern preserves leading zeroes in indices. For instance, `example{01..03}-1` generates `example01-1`, `example02-1` and `example03-1`.
 - `{a|b}` - Any number of variants separated by a `|`. The pattern specifies replicas. For instance, `example01-{1|2}` generates replicas `example01-1` and `example01-2`.
 
 The query will be sent to the first healthy replica. However, for `remote` the replicas are iterated in the order currently set in the [load_balancing](../../operations/settings/settings.md#load_balancing) setting.

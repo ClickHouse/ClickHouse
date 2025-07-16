@@ -9,9 +9,9 @@ title: 'FROM Clause'
 
 The `FROM` clause specifies the source to read data from:
 
-- [Table](../../../engines/table-engines/index.md)
-- [Subquery](../../../sql-reference/statements/select/index.md) 
-- [Table function](/sql-reference/table-functions)
+-[Table](../../../engines/table-engines/index.md)
+-[Subquery](../../../sql-reference/statements/select/index.md)
+-[Table function](/sql-reference/table-functions)
 
 [JOIN](../../../sql-reference/statements/select/join.md) and [ARRAY JOIN](../../../sql-reference/statements/select/array-join.md) clauses may also be used to extend the functionality of the `FROM` clause.
 
@@ -31,11 +31,12 @@ SELECT *
 When `FINAL` is specified, ClickHouse fully merges the data before returning the result. This also performs all data transformations that happen during merges for the given table engine.
 
 It is applicable when selecting data from tables using the following table engines:
-- `ReplacingMergeTree`
-- `SummingMergeTree`
-- `AggregatingMergeTree`
-- `CollapsingMergeTree`
-- `VersionedCollapsingMergeTree`
+
+-`ReplacingMergeTree`
+-`SummingMergeTree`
+-`AggregatingMergeTree`
+-`CollapsingMergeTree`
+-`VersionedCollapsingMergeTree`
 
 `SELECT` queries with `FINAL` are executed in parallel. The [max_final_threads](/operations/settings/settings#max_final_threads) setting limits the number of threads used.
 
@@ -43,8 +44,8 @@ It is applicable when selecting data from tables using the following table engin
 
 Queries that use `FINAL` execute slightly slower than similar queries that do not use `FINAL` because:
 
-- Data is merged during query execution.
-- Queries with `FINAL` may read primary key columns in addition to the columns specified in the query.
+-Data is merged during query execution.
+-Queries with `FINAL` may read primary key columns in addition to the columns specified in the query.
 
 `FINAL` requires additional compute and memory resources because the processing that normally would occur at merge time must occur in memory at the time of the query. However, using FINAL is sometimes necessary in order to produce accurate results (as data may not yet be fully merged). It is less expensive than running `OPTIMIZE` to force a merge.
 

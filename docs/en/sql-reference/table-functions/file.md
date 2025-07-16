@@ -119,6 +119,7 @@ INSERT INTO FUNCTION
 file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 VALUES (1, 2, 3), (3, 2, 1);
 ```
+
 ```sql
 SELECT * FROM
 file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
@@ -143,11 +144,11 @@ Paths may use globbing. Files must match the whole path pattern, not only the su
 directory and does not use globs, a `*` will be implicitly added to the path so
 all the files in the directory are selected.
 
-- `*` — Represents arbitrarily many characters except `/` but including the empty string.
-- `?` — Represents an arbitrary single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. The strings can contain the `/` symbol.
-- `{N..M}` — Represents any number `>= N` and `<= M`.
-- `**` - Represents all files inside a folder recursively.
+-`*` — Represents arbitrarily many characters except `/` but including the empty string.
+-`?` — Represents an arbitrary single character.
+-`{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. The strings can contain the `/` symbol.
+-`{N..M}` — Represents any number `>= N` and `<= M`.
+-`**` - Represents all files inside a folder recursively.
 
 Constructions with `{}` are similar to the [remote](remote.md) and [hdfs](hdfs.md) table functions.
 
@@ -157,12 +158,12 @@ Constructions with `{}` are similar to the [remote](remote.md) and [hdfs](hdfs.m
 
 Suppose there are these files with the following relative paths:
 
-- `some_dir/some_file_1`
-- `some_dir/some_file_2`
-- `some_dir/some_file_3`
-- `another_dir/some_file_1`
-- `another_dir/some_file_2`
-- `another_dir/some_file_3`
+-`some_dir/some_file_1`
+-`some_dir/some_file_2`
+-`some_dir/some_file_3`
+-`another_dir/some_file_1`
+-`another_dir/some_file_2`
+-`another_dir/some_file_3`
 
 Query the total number of rows in all files:
 
@@ -212,10 +213,10 @@ SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt3
 
 ## Virtual Columns {#virtual-columns}
 
-- `_path` — Path to the file. Type: `LowCardinality(String)`.
-- `_file` — Name of the file. Type: `LowCardinality(String)`.
-- `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the file size is unknown, the value is `NULL`.
-- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
+-`_path` — Path to the file. Type: `LowCardinality(String)`.
+-`_file` — Name of the file. Type: `LowCardinality(String)`.
+-`_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the file size is unknown, the value is `NULL`.
+-`_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
 ## Hive-style partitioning {#hive-style-partitioning}
 
@@ -241,5 +242,5 @@ SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE _date > 
 
 ## Related {#related}
 
-- [Virtual columns](engines/table-engines/index.md#table_engines-virtual_columns)
-- [Rename files after processing](operations/settings/settings.md#rename_files_after_processing)
+-[Virtual columns](engines/table-engines/index.md#table_engines-virtual_columns)
+-[Rename files after processing](operations/settings/settings.md#rename_files_after_processing)

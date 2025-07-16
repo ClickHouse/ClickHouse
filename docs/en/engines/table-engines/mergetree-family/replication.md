@@ -23,17 +23,18 @@ with:
 ```sql
 ENGINE = ReplicatedMergeTree
 ```
+
 :::
 
 Replication is only supported for tables in the MergeTree family:
 
-- ReplicatedMergeTree
-- ReplicatedSummingMergeTree
-- ReplicatedReplacingMergeTree
-- ReplicatedAggregatingMergeTree
-- ReplicatedCollapsingMergeTree
-- ReplicatedVersionedCollapsingMergeTree
-- ReplicatedGraphiteMergeTree
+-ReplicatedMergeTree
+-ReplicatedSummingMergeTree
+-ReplicatedReplacingMergeTree
+-ReplicatedAggregatingMergeTree
+-ReplicatedCollapsingMergeTree
+-ReplicatedVersionedCollapsingMergeTree
+-ReplicatedGraphiteMergeTree
 
 Replication works at the level of an individual table, not the entire server. A server can store both replicated and non-replicated tables at the same time.
 
@@ -43,9 +44,9 @@ Compressed data for `INSERT` and `ALTER` queries is replicated (for more informa
 
 `CREATE`, `DROP`, `ATTACH`, `DETACH` and `RENAME` queries are executed on a single server and are not replicated:
 
-- The `CREATE TABLE` query creates a new replicatable table on the server where the query is run. If this table already exists on other servers, it adds a new replica.
-- The `DROP TABLE` query deletes the replica located on the server where the query is run.
-- The `RENAME` query renames the table on one of the replicas. In other words, replicated tables can have different names on different replicas.
+-The `CREATE TABLE` query creates a new replicatable table on the server where the query is run. If this table already exists on other servers, it adds a new replica.
+-The `DROP TABLE` query deletes the replica located on the server where the query is run.
+-The `RENAME` query renames the table on one of the replicas. In other words, replicated tables can have different names on different replicas.
 
 ClickHouse uses [ClickHouse Keeper](/guides/sre/keeper/index.md) for storing replicas meta information. It is possible to use ZooKeeper version 3.4.5 or newer, but ClickHouse Keeper is recommended.
 
@@ -110,6 +111,7 @@ ReplicatedMergeTree engine as follows:
 ```sql
 CREATE TABLE table_name ( ... ) ENGINE = ReplicatedMergeTree('zookeeper_name_configured_in_auxiliary_zookeepers:path', 'replica_name') ...
 ```
+
 You can specify any existing ZooKeeper cluster and the system will use a directory on it for its own data (the directory is specified when creating a replicatable table).
 
 If ZooKeeper is not set in the config file, you can't create replicated tables, and any existing replicated tables will be read-only.
@@ -154,7 +156,6 @@ Avoid using `ReplicatedMergeTree` or specifying replication parameters, as repli
 | `zoo_path`      | The path to the table in ClickHouse Keeper.                                  |
 | `replica_name`  | The replica name in ClickHouse Keeper.                                       |
 | `other_parameters` | Parameters of an engine used for creating the replicated version, for example, version in `ReplacingMergeTree`. |
-
 
 Example:
 
@@ -275,10 +276,10 @@ Then restart the server. On start, the server deletes these flags and starts rec
 
 If all data and metadata disappeared from one of the servers, follow these steps for recovery:
 
-1.  Install ClickHouse on the server. Define substitutions correctly in the config file that contains the shard identifier and replicas, if you use them.
-2.  If you had unreplicated tables that must be manually duplicated on the servers, copy their data from a replica (in the directory `/var/lib/clickhouse/data/db_name/table_name/`).
-3.  Copy table definitions located in `/var/lib/clickhouse/metadata/` from a replica. If a shard or replica identifier is defined explicitly in the table definitions, correct it so that it corresponds to this replica. (Alternatively, start the server and make all the `ATTACH TABLE` queries that should have been in the .sql files in `/var/lib/clickhouse/metadata/`.)
-4.  To start recovery, create the ClickHouse Keeper node `/path_to_table/replica_name/flags/force_restore_data` with any content, or run the command to restore all replicated tables: `sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data`
+1.Install ClickHouse on the server. Define substitutions correctly in the config file that contains the shard identifier and replicas, if you use them.
+2.If you had unreplicated tables that must be manually duplicated on the servers, copy their data from a replica (in the directory `/var/lib/clickhouse/data/db_name/table_name/`).
+3.Copy table definitions located in `/var/lib/clickhouse/metadata/` from a replica. If a shard or replica identifier is defined explicitly in the table definitions, correct it so that it corresponds to this replica. (Alternatively, start the server and make all the `ATTACH TABLE` queries that should have been in the .sql files in `/var/lib/clickhouse/metadata/`.)
+4.To start recovery, create the ClickHouse Keeper node `/path_to_table/replica_name/flags/force_restore_data` with any content, or run the command to restore all replicated tables: `sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data`
 
 Then start the server (restart, if it is already running). Data will be downloaded from replicas.
 
@@ -326,8 +327,8 @@ Another way to do this involves server restart. Create a MergeTree table with a 
 
 If you want to get rid of a `ReplicatedMergeTree` table without launching the server:
 
-- Delete the corresponding `.sql` file in the metadata directory (`/var/lib/clickhouse/metadata/`).
-- Delete the corresponding path in ClickHouse Keeper (`/path_to_table/replica_name`).
+-Delete the corresponding `.sql` file in the metadata directory (`/var/lib/clickhouse/metadata/`).
+-Delete the corresponding path in ClickHouse Keeper (`/path_to_table/replica_name`).
 
 After this, you can launch the server, create a `MergeTree` table, move the data to its directory, and then restart the server.
 
@@ -337,8 +338,8 @@ If the data in ClickHouse Keeper was lost or damaged, you can save data by movin
 
 **See Also**
 
-- [background_schedule_pool_size](/operations/server-configuration-parameters/settings.md/#background_schedule_pool_size)
-- [background_fetches_pool_size](/operations/server-configuration-parameters/settings.md/#background_fetches_pool_size)
-- [execute_merges_on_single_replica_time_threshold](/operations/settings/merge-tree-settings#execute_merges_on_single_replica_time_threshold)
-- [max_replicated_fetches_network_bandwidth](/operations/settings/merge-tree-settings.md/#max_replicated_fetches_network_bandwidth)
-- [max_replicated_sends_network_bandwidth](/operations/settings/merge-tree-settings.md/#max_replicated_sends_network_bandwidth)
+-[background_schedule_pool_size](/operations/server-configuration-parameters/settings.md/#background_schedule_pool_size)
+-[background_fetches_pool_size](/operations/server-configuration-parameters/settings.md/#background_fetches_pool_size)
+-[execute_merges_on_single_replica_time_threshold](/operations/settings/merge-tree-settings#execute_merges_on_single_replica_time_threshold)
+-[max_replicated_fetches_network_bandwidth](/operations/settings/merge-tree-settings.md/#max_replicated_fetches_network_bandwidth)
+-[max_replicated_sends_network_bandwidth](/operations/settings/merge-tree-settings.md/#max_replicated_sends_network_bandwidth)

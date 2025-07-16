@@ -28,21 +28,21 @@ Despite the name, *Log table engines are not meant for the storage of log data. 
 
 Engines:
 
-- Store data on a disk.
+-Store data on a disk.
 
-- Append data to the end of file when writing.
+-Append data to the end of file when writing.
 
-- Support locks for concurrent data access.
+-Support locks for concurrent data access.
 
     During `INSERT` queries, the table is locked, and other queries for reading and writing data both wait for the table to unlock. If there are no data writing queries, any number of data reading queries can be performed concurrently.
 
-- Do not support [mutations](/sql-reference/statements/alter#mutations).
+-Do not support [mutations](/sql-reference/statements/alter#mutations).
 
-- Do not support indexes.
+-Do not support indexes.
 
     This means that `SELECT` queries for ranges of data are not efficient.
 
-- Do not write data atomically.
+-Do not write data atomically.
 
     You can get a table with corrupted data if something breaks the write operation, for example, abnormal server shutdown.
 

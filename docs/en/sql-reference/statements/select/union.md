@@ -83,5 +83,5 @@ Queries that are parts of `UNION/UNION ALL/UNION DISTINCT` can be run simultaneo
 
 **See Also**
 
-- [insert_null_as_default](../../../operations/settings/settings.md#insert_null_as_default) setting.
-- [union_default_mode](/operations/settings/settings#union_default_mode) setting.
+-[insert_null_as_default](../../../operations/settings/settings.md#insert_null_as_default) setting.
+-[union_default_mode](/operations/settings/settings#union_default_mode) setting.

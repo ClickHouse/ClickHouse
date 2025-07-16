@@ -55,6 +55,7 @@ Run `OPTIMIZE` to force `TTL` cleanup:
 OPTIMIZE TABLE table_with_ttl FINAL;
 SELECT * FROM table_with_ttl FORMAT PrettyCompact;
 ```
+
 Second row was deleted from table.
 
 ```text
@@ -88,5 +89,5 @@ The `TTL` is no longer there, so the second row is not deleted:
 
 **See Also**
 
-- More about the [TTL-expression](../../../sql-reference/statements/create/table.md#ttl-expression).
-- Modify column [with TTL](/sql-reference/statements/alter/ttl).
+-More about the [TTL-expression](../../../sql-reference/statements/create/table.md#ttl-expression).
+-Modify column [with TTL](/sql-reference/statements/alter/ttl).

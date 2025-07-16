@@ -83,7 +83,8 @@ There can be other clauses after the `ENGINE` clause in the query. See detailed 
 
 :::tip
 In ClickHouse Cloud please split this into two steps:
-1. Create the table structure
+
+1.Create the table structure
 
   ```sql
   CREATE TABLE t1
@@ -94,7 +95,7 @@ In ClickHouse Cloud please split this into two steps:
   SELECT ...
   ```
 
-2. Populate the table
+2.Populate the table
 
   ```sql
   INSERT INTO t1
@@ -281,7 +282,7 @@ SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
 
 You can define a [primary key](../../../engines/table-engines/mergetree-family/mergetree.md#primary-keys-and-indexes-in-queries) when creating a table. Primary key can be specified in two ways:
 
-- Inside the column list
+-Inside the column list
 
 ```sql
 CREATE TABLE db.table_name
@@ -292,7 +293,7 @@ CREATE TABLE db.table_name
 ENGINE = engine;
 ```
 
-- Outside the column list
+-Outside the column list
 
 ```sql
 CREATE TABLE db.table_name
@@ -357,7 +358,7 @@ Defines storage time for values. Can be specified only for MergeTree-family tabl
 
 ## Column Compression Codecs {#column_compression_codec}
 
-By default, ClickHouse applies `lz4` compression in the self-managed version, and `zstd` in ClickHouse Cloud. 
+By default, ClickHouse applies `lz4` compression in the self-managed version, and `zstd` in ClickHouse Cloud.
 
 For `MergeTree`-engine family you can change the default compression method in the [compression](/operations/server-configuration-parameters/settings#compression) section of a server configuration.
 
@@ -393,10 +394,10 @@ You can't decompress ClickHouse database files with external utilities like `lz4
 
 Compression is supported for the following table engines:
 
-- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) family. Supports column compression codecs and selecting the default compression method by [compression](/operations/server-configuration-parameters/settings#compression) settings.
-- [Log](../../../engines/table-engines/log-family/index.md) family. Uses the `lz4` compression method by default and supports column compression codecs.
-- [Set](../../../engines/table-engines/special/set.md). Only supported the default compression.
-- [Join](../../../engines/table-engines/special/join.md). Only supported the default compression.
+-[MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) family. Supports column compression codecs and selecting the default compression method by [compression](/operations/server-configuration-parameters/settings#compression) settings.
+-[Log](../../../engines/table-engines/log-family/index.md) family. Uses the `lz4` compression method by default and supports column compression codecs.
+-[Set](../../../engines/table-engines/special/set.md). Only supported the default compression.
+-[Join](../../../engines/table-engines/special/join.md). Only supported the default compression.
 
 ClickHouse supports general purpose codecs and specialized codecs.
 
@@ -426,9 +427,9 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 
 `ZSTD_QAT[(level)]` — [ZSTD compression algorithm](https://en.wikipedia.org/wiki/Zstandard) with configurable level, implemented by [Intel® QATlib](https://github.com/intel/qatlib) and [Intel® QAT ZSTD Plugin](https://github.com/intel/QAT-ZSTD-Plugin). Possible levels: \[1, 12\]. Default level: 1. Recommended level range: \[6, 12\]. Some limitations apply:
 
-- ZSTD_QAT is disabled by default and can only be used after enabling configuration setting [enable_zstd_qat_codec](../../../operations/settings/settings.md#enable_zstd_qat_codec).
-- For compression, ZSTD_QAT tries to use an Intel® QAT offloading device ([QuickAssist Technology](https://www.intel.com/content/www/us/en/developer/topic-technology/open/quick-assist-technology/overview.html)). If no such device was found, it will fallback to ZSTD compression in software.
-- Decompression is always performed in software.
+-ZSTD_QAT is disabled by default and can only be used after enabling configuration setting [enable_zstd_qat_codec](../../../operations/settings/settings.md#enable_zstd_qat_codec).
+-For compression, ZSTD_QAT tries to use an Intel® QAT offloading device ([QuickAssist Technology](https://www.intel.com/content/www/us/en/developer/topic-technology/open/quick-assist-technology/overview.html)). If no such device was found, it will fallback to ZSTD compression in software.
+-Decompression is always performed in software.
 
 #### DEFLATE_QPL {#deflate_qpl}
 
@@ -436,10 +437,10 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 
 `DEFLATE_QPL` — [Deflate compression algorithm](https://github.com/intel/qpl) implemented by Intel® Query Processing Library. Some limitations apply:
 
-- DEFLATE_QPL is disabled by default and can only be used after enabling configuration setting [enable_deflate_qpl_codec](../../../operations/settings/settings.md#enable_deflate_qpl_codec).
-- DEFLATE_QPL requires a ClickHouse build compiled with SSE 4.2 instructions (by default, this is the case). Refer to [Build Clickhouse with DEFLATE_QPL](/development/building_and_benchmarking_deflate_qpl) for more details.
-- DEFLATE_QPL works best if the system has a Intel® IAA (In-Memory Analytics Accelerator) offloading device. Refer to [Accelerator Configuration](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#accelerator-configuration) and [Benchmark with DEFLATE_QPL](/development/building_and_benchmarking_deflate_qpl) for more details.
-- DEFLATE_QPL-compressed data can only be transferred between ClickHouse nodes compiled with SSE 4.2 enabled.
+-DEFLATE_QPL is disabled by default and can only be used after enabling configuration setting [enable_deflate_qpl_codec](../../../operations/settings/settings.md#enable_deflate_qpl_codec).
+-DEFLATE_QPL requires a ClickHouse build compiled with SSE 4.2 instructions (by default, this is the case). Refer to [Build Clickhouse with DEFLATE_QPL](/development/building_and_benchmarking_deflate_qpl) for more details.
+-DEFLATE_QPL works best if the system has a Intel® IAA (In-Memory Analytics Accelerator) offloading device. Refer to [Accelerator Configuration](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#accelerator-configuration) and [Benchmark with DEFLATE_QPL](/development/building_and_benchmarking_deflate_qpl) for more details.
+-DEFLATE_QPL-compressed data can only be transferred between ClickHouse nodes compiled with SSE 4.2 enabled.
 
 ### Specialized Codecs {#specialized-codecs}
 
@@ -490,11 +491,9 @@ These codecs don't actually compress data, but instead encrypt data on disk. The
 
 Encryption codecs:
 
-
 #### AES_128_GCM_SIV {#aes_128_gcm_siv}
 
 `CODEC('AES-128-GCM-SIV')` — Encrypts data with AES-128 in [RFC 8452](https://tools.ietf.org/html/rfc8452) GCM-SIV mode.
-
 
 #### AES-256-GCM-SIV {#aes-256-gcm-siv}
 
@@ -542,12 +541,12 @@ Please note that temporary tables are not replicated. As a result, there is no g
 
 ClickHouse supports temporary tables which have the following characteristics:
 
-- Temporary tables disappear when the session ends, including if the connection is lost.
-- A temporary table uses the Memory table engine when engine is not specified and it may use any table engine except Replicated and `KeeperMap` engines.
-- The DB can't be specified for a temporary table. It is created outside of databases.
-- Impossible to create a temporary table with distributed DDL query on all cluster servers (by using `ON CLUSTER`): this table exists only in the current session.
-- If a temporary table has the same name as another one and a query specifies the table name without specifying the DB, the temporary table will be used.
-- For distributed query processing, temporary tables with Memory engine used in a query are passed to remote servers.
+-Temporary tables disappear when the session ends, including if the connection is lost.
+-A temporary table uses the Memory table engine when engine is not specified and it may use any table engine except Replicated and `KeeperMap` engines.
+-The DB can't be specified for a temporary table. It is created outside of databases.
+-Impossible to create a temporary table with distributed DDL query on all cluster servers (by using `ON CLUSTER`): this table exists only in the current session.
+-If a temporary table has the same name as another one and a query specifies the table name without specifying the DB, the temporary table will be used.
+-For distributed query processing, temporary tables with Memory engine used in a query are passed to remote servers.
 
 To create a temporary table, use the following syntax:
 
@@ -569,13 +568,13 @@ It's possible to use tables with [ENGINE = Memory](../../../engines/table-engine
 The `REPLACE` statement allows you to update a table [atomically](/concepts/glossary#atomicity).
 
 :::note
-This statement is supported for the [`Atomic`](../../../engines/database-engines/atomic.md) and [`Replicated`](../../../engines/database-engines/replicated.md) database engines, 
+This statement is supported for the [`Atomic`](../../../engines/database-engines/atomic.md) and [`Replicated`](../../../engines/database-engines/replicated.md) database engines,
 which are the default database engines for ClickHouse and ClickHouse Cloud respectively.
 :::
 
-Ordinarily, if you need to delete some data from a table, 
-you can create a new table and fill it with a `SELECT` statement that does not retrieve unwanted data, 
-then drop the old table and rename the new one. 
+Ordinarily, if you need to delete some data from a table,
+you can create a new table and fill it with a `SELECT` statement that does not retrieve unwanted data,
+then drop the old table and rename the new one.
 This approach is demonstrated in the example below:
 
 ```sql
@@ -674,10 +673,11 @@ SELECT * FROM base.t1;
 │ 3 │
 └───┘
 ```  
+
 </TabItem>
 <TabItem value="cloud_replace_example" label="Cloud">
 
-Consider the following table on ClickHouse Cloud: 
+Consider the following table on ClickHouse Cloud:
 
 ```sql
 CREATE DATABASE base;
@@ -727,7 +727,8 @@ INSERT INTO base.t1 VALUES (3);
 SELECT * FROM base.t1;
 
 3
-```    
+```
+
 </TabItem>
 </Tabs>
 
@@ -763,8 +764,7 @@ Result:
 └──────┴─────────────────────┘
 ```
 
-
 ## Related content {#related-content}
 
-- Blog: [Optimizing ClickHouse with Schemas and Codecs](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
-- Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
+-Blog: [Optimizing ClickHouse with Schemas and Codecs](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
+-Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

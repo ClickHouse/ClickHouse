@@ -8,7 +8,7 @@ title: 'Variant(T1, T2, ...)'
 
 # Variant(T1, T2, ...)
 
-This type represents a union of other data types. Type `Variant(T1, T2, ..., TN)` means that each row of this type 
+This type represents a union of other data types. Type `Variant(T1, T2, ..., TN)` means that each row of this type
 has a value of either type `T1` or `T2` or ... or `TN` or none of them (`NULL` value).
 
 The order of nested types doesn't matter: Variant(T1, T2) = Variant(T2, T1).
@@ -117,7 +117,7 @@ this subcolumn will have type `Nullable(T2)` if `T2` can be inside `Nullable` an
 be the same size as original `Variant` column and will contain `NULL` values (or empty values if `T2` cannot be inside `Nullable`)
 in all rows in which original `Variant` column doesn't have type `T2`.
 
-Variant subcolumns can be also read using function `variantElement(variant_column, type_name)`. 
+Variant subcolumns can be also read using function `variantElement(variant_column, type_name)`.
 
 Examples:
 
@@ -254,6 +254,7 @@ SELECT toTypeName(variant) AS type_name, [1,2,3]::Array(UInt64)::Variant(UInt64,
 ```
 
 Note: converting from `String` type is always performed through parsing, if you need to convert `String` column to `String` variant of a `Variant` without parsing, you can do the following:
+
 ```sql
 SELECT '[1, 2, 3]'::Variant(String)::Variant(String, Array(UInt64), UInt64) as variant, variantType(variant) as variant_type
 ```
@@ -300,7 +301,6 @@ SELECT v::Variant(UInt64, String, Array(UInt64)) FROM test;
 └───────────────────────────────────────────────────┘
 ```
 
-
 ## Reading Variant type from the data {#reading-variant-type-from-the-data}
 
 All text formats (TSV, CSV, CustomSeparated, Values, JSONEachRow, etc) supports reading `Variant` type. During data parsing ClickHouse tries to insert value into most appropriate variant type.
@@ -334,16 +334,17 @@ $$)
 └─────────────────────┴───────────────┴──────┴───────┴─────────────────────┴─────────┘
 ```
 
-
 ## Comparing values of Variant type {#comparing-values-of-variant-data}
 
 Values of a `Variant` type can be compared only with values with the same `Variant` type.
 
 The result of operator `<` for values `v1` with underlying type `T1` and `v2` with underlying type `T2`  of a type `Variant(..., T1, ... T2, ...)` is defined as follows:
-- If `T1 = T2 = T`, the result will be `v1.T < v2.T` (underlying values will be compared).
-- If `T1 != T2`, the result will be `T1 < T2` (type names will be compared).
+
+-If `T1 = T2 = T`, the result will be `v1.T < v2.T` (underlying values will be compared).
+-If `T1 != T2`, the result will be `T1 < T2` (type names will be compared).
 
 Examples:
+
 ```sql
 CREATE TABLE test (v1 Variant(String, UInt64, Array(UInt32)), v2 Variant(String, UInt64, Array(UInt32))) ENGINE=Memory;
 INSERT INTO test VALUES (42, 42), (42, 43), (42, 'abc'), (42, [1, 2, 3]), (42, []), (42, NULL);
@@ -382,7 +383,7 @@ SELECT v1, variantType(v1) AS v1_type, v2, variantType(v2) AS v2_type, v1 = v2, 
 
 If you need to find the row with specific `Variant` value, you can do one of the following:
 
-- Cast value to the corresponding `Variant` type:
+-Cast value to the corresponding `Variant` type:
 
 ```sql
 SELECT * FROM test WHERE v2 == [1,2,3]::Array(UInt32)::Variant(String, UInt64, Array(UInt32));
@@ -394,7 +395,7 @@ SELECT * FROM test WHERE v2 == [1,2,3]::Array(UInt32)::Variant(String, UInt64, A
 └────┴─────────┘
 ```
 
-- Compare `Variant` subcolumn with required type:
+-Compare `Variant` subcolumn with required type:
 
 ```sql
 SELECT * FROM test WHERE v2.`Array(UInt32)` == [1,2,3] -- or using variantElement(v2, 'Array(UInt32)')

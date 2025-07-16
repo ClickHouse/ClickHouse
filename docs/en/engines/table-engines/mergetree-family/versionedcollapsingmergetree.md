@@ -11,8 +11,8 @@ title: 'VersionedCollapsingMergeTree'
 
 This engine:
 
-- Allows quick writing of object states that are continually changing.
-- Deletes old object states in the background. This significantly reduces the volume of storage.
+-Allows quick writing of object states that are continually changing.
+-Deletes old object states in the background. This significantly reduces the volume of storage.
 
 See the section [Collapsing](#table_engines_versionedcollapsingmergetree) for details.
 
@@ -69,11 +69,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 All of the parameters except `sign` and `version` have the same meaning as in `MergeTree`.
 
-- `sign` — Name of the column with the type of row: `1` is a "state" row, `-1` is a "cancel" row.
+-`sign` — Name of the column with the type of row: `1` is a "state" row, `-1` is a "cancel" row.
 
     Column Data Type — `Int8`.
 
-- `version` — Name of the column with the version of the object state.
+-`version` — Name of the column with the version of the object state.
 
     The column data type should be `UInt*`.
 
@@ -123,9 +123,9 @@ To find out why we need two rows for each change, see [Algorithm](#table_engines
 
 **Notes on Usage**
 
-1.  The program that writes the data should remember the state of an object to be able to cancel it. "Cancel" string should contain copies of the primary key fields and the version of the "state" string and the opposite `Sign`. It increases the initial size of storage but allows to write the data quickly.
-2.  Long growing arrays in columns reduce the efficiency of the engine due to the load for writing. The more straightforward the data, the better the efficiency.
-3.  `SELECT` results depend strongly on the consistency of the history of object changes. Be accurate when preparing data for inserting. You can get unpredictable results with inconsistent data, such as negative values for non-negative metrics like session depth.
+1.The program that writes the data should remember the state of an object to be able to cancel it. "Cancel" string should contain copies of the primary key fields and the version of the "state" string and the opposite `Sign`. It increases the initial size of storage but allows to write the data quickly.
+2.Long growing arrays in columns reduce the efficiency of the engine due to the load for writing. The more straightforward the data, the better the efficiency.
+3.`SELECT` results depend strongly on the consistency of the history of object changes. Be accurate when preparing data for inserting. You can get unpredictable results with inconsistent data, such as negative values for non-negative metrics like session depth.
 
 ### Algorithm {#table_engines-versionedcollapsingmergetree-algorithm}
 
