@@ -5,17 +5,17 @@ namespace DB
 {
 
 /// After visitor is applied, ASTSelectIntersectExcept always has two child nodes.
-IntersectOrExceptTransform::IntersectOrExceptTransform(const Block & header_, Operator operator_)
+IntersectOrExceptTransform::IntersectOrExceptTransform(SharedHeader header_, Operator operator_)
     : IProcessor(InputPorts(2, header_), {header_})
     , current_operator(operator_)
 {
-    const Names & columns = header_.getNames();
-    size_t num_columns = columns.empty() ? header_.columns() : columns.size();
+    const Names & columns = header_->getNames();
+    size_t num_columns = columns.empty() ? header_->columns() : columns.size();
 
     key_columns_pos.reserve(columns.size());
     for (size_t i = 0; i < num_columns; ++i)
     {
-        auto pos = columns.empty() ? i : header_.getPositionByName(columns[i]);
+        auto pos = columns.empty() ? i : header_->getPositionByName(columns[i]);
         key_columns_pos.emplace_back(pos);
     }
 }

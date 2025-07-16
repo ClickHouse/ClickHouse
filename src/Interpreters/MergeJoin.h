@@ -20,7 +20,7 @@ enum class JoinTableSide : uint8_t;
 class MergeJoin : public IJoin
 {
 public:
-    MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block);
+    MergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block);
 
     std::string getName() const override { return "PartialMergeJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }

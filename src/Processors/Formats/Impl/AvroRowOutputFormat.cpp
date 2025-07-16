@@ -561,10 +561,10 @@ static avro::Codec getCodec(const std::string & codec_name)
 }
 
 AvroRowOutputFormat::AvroRowOutputFormat(
-    WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
+    WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
     : IRowOutputFormat(header_, out_)
     , settings(settings_)
-    , serializer(header_.getColumnsWithTypeAndName(), std::make_unique<AvroSerializerTraits>(settings), settings)
+    , serializer(header_->getColumnsWithTypeAndName(), std::make_unique<AvroSerializerTraits>(settings), settings)
 {
 }
 
@@ -618,7 +618,7 @@ void registerOutputFormatAvro(FormatFactory & factory)
         const Block & sample,
         const FormatSettings & settings)
     {
-        return std::make_shared<AvroRowOutputFormat>(buf, sample, settings);
+        return std::make_shared<AvroRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });
     factory.markFormatHasNoAppendSupport("Avro");
     factory.markOutputFormatNotTTYFriendly("Avro");
