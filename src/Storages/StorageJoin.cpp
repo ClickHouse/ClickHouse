@@ -84,7 +84,7 @@ StorageJoin::StorageJoin(
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Key column ({}) does not exist in table declaration.", key);
 
     table_join = std::make_shared<TableJoin>(limits, use_nulls, kind, strictness, key_names);
-    join = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);
+    join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
     restore();
     optimizeUnlocked();
 }
@@ -166,7 +166,7 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     disk->createDirectories(fs::path(path) / "tmp/");
 
     increment = 0;
-    join = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);
+    join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
 }
 
 void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
@@ -188,9 +188,9 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
 
     auto backup_buf = disk->writeFile(path + tmp_backup_file_name);
     auto compressed_backup_buf = CompressedWriteBuffer(*backup_buf);
-    auto backup_stream = NativeWriter(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock());
+    auto backup_stream = NativeWriter(compressed_backup_buf, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()));
 
-    auto new_data = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);
+    auto new_data = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
 
     // New scope controls lifetime of pipeline.
     {
@@ -301,7 +301,7 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     Block right_sample_block;
     for (const auto & name : required_columns_names)
         right_sample_block.insert(getRightSampleBlock().getByName(name));
-    HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, right_sample_block);
+    HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, std::make_shared<const Block>(std::move(right_sample_block)));
 
     RWLockImpl::LockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, query_id, acquire_timeout);
     join_clone->setLock(holder);
@@ -549,7 +549,7 @@ size_t rawSize(const StringRef & t)
 class JoinSource : public ISource
 {
 public:
-    JoinSource(HashJoinPtr join_, TableLockHolder lock_holder_, UInt64 max_block_size_, Block sample_block_)
+    JoinSource(HashJoinPtr join_, TableLockHolder lock_holder_, UInt64 max_block_size_, SharedHeader sample_block_)
         : ISource(sample_block_)
         , join(join_)
         , lock_holder(lock_holder_)
@@ -559,13 +559,13 @@ public:
         if (!join->getTableJoin().oneDisjunct())
             throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "StorageJoin does not support OR for keys in JOIN ON section");
 
-        column_indices.resize(sample_block.columns());
+        column_indices.resize(sample_block->columns());
 
         auto & saved_block = join->getJoinedData()->sample_block;
 
-        for (size_t i = 0; i < sample_block.columns(); ++i)
+        for (size_t i = 0; i < sample_block->columns(); ++i)
         {
-            auto & [_, type, name] = sample_block.getByPosition(i);
+            const auto & [_, type, name] = sample_block->getByPosition(i);
             if (join->right_table_keys.has(name))
             {
                 key_pos = i;
@@ -607,7 +607,7 @@ private:
     TableLockHolder lock_holder;
 
     UInt64 max_block_size;
-    Block sample_block;
+    SharedHeader sample_block;
     Block restored_block; /// sample_block with parent column types
 
     ColumnNumbers column_indices;
@@ -648,7 +648,7 @@ private:
         for (size_t i = 0; i < columns.size(); ++i)
         {
             const auto & src = restored_block.getByPosition(i);
-            const auto & dst = sample_block.getByPosition(i);
+            const auto & dst = sample_block->getByPosition(i);
 
             if (!src.type->equals(*dst.type))
             {
@@ -760,7 +760,7 @@ Pipe StorageJoin::read(
 {
     storage_snapshot->check(column_names);
 
-    Block source_sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
+    auto source_sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
     RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
     return Pipe(std::make_shared<JoinSource>(join, std::move(holder), max_block_size, source_sample_block));
 }

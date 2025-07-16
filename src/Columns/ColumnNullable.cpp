@@ -85,7 +85,7 @@ void ColumnNullable::updateHashFast(SipHash & hash) const
 MutableColumnPtr ColumnNullable::cloneResized(size_t new_size) const
 {
     MutableColumnPtr new_nested_col = getNestedColumn().cloneResized(new_size);
-    auto new_null_map = ColumnUInt8::create();
+    auto new_null_map = ColumnUInt8::create(new_size);
 
     if (new_size > 0)
     {

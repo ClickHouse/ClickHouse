@@ -76,7 +76,7 @@ ParallelReplicasReadingCoordinatorPtr dropReadFromRemoteInPlan(QueryPlan & query
 /// (currently SELECT, DESCRIBE).
 void executeQuery(
     QueryPlan & query_plan,
-    const Block & header,
+    SharedHeader header,
     QueryProcessingStage::Enum processed_stage,
     const StorageID & main_table,
     const ASTPtr & table_func_ptr,
@@ -99,7 +99,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
     const StorageID & storage_id,
-    const Block & header,
+    SharedHeader header,
     QueryProcessingStage::Enum processed_stage,
     const ASTPtr & query_ast,
     ContextPtr context,
@@ -131,7 +131,7 @@ void executeQueryWithParallelReplicasCustomKey(
     const ColumnsDescription & columns,
     const StorageSnapshotPtr & snapshot,
     QueryProcessingStage::Enum processed_stage,
-    const Block & header,
+    SharedHeader header,
     ContextPtr context);
 
 void executeQueryWithParallelReplicasCustomKey(

@@ -6,7 +6,7 @@
 
 namespace DB
 {
-ScatterByPartitionTransform::ScatterByPartitionTransform(Block header, size_t output_size_, ColumnNumbers key_columns_)
+ScatterByPartitionTransform::ScatterByPartitionTransform(SharedHeader header, size_t output_size_, ColumnNumbers key_columns_)
     : IProcessor(InputPorts{header}, OutputPorts{output_size_, header})
     , output_size(output_size_)
     , key_columns(std::move(key_columns_))
