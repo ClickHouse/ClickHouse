@@ -475,7 +475,7 @@ std::pair<Poco::JSON::Object::Ptr, String> MetadataGenerator::generateNextMetada
 }
 
 ChunkPartitioner::ChunkPartitioner(
-    Poco::JSON::Array::Ptr partition_specification, Poco::JSON::Object::Ptr schema, ContextPtr context, const Block & sample_block_)
+    Poco::JSON::Array::Ptr partition_specification, Poco::JSON::Object::Ptr schema, ContextPtr context, SharedHeader sample_block_)
     : sample_block(sample_block_)
 {
     std::unordered_map<Int32, String> id_to_column;
@@ -523,11 +523,11 @@ std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>>
 ChunkPartitioner::partitionChunk(const Chunk & chunk)
 {
     std::unordered_map<String, ColumnWithTypeAndName> name_to_column;
-    for (size_t i = 0; i < sample_block.columns(); ++i)
+    for (size_t i = 0; i < sample_block->columns(); ++i)
     {
         auto column_ptr = chunk.getColumns()[i];
-        auto column_name = sample_block.getNames()[i];
-        name_to_column[column_name] = ColumnWithTypeAndName(column_ptr, sample_block.getDataTypes()[i], column_name);
+        auto column_name = sample_block->getNames()[i];
+        name_to_column[column_name] = ColumnWithTypeAndName(column_ptr, sample_block->getDataTypes()[i], column_name);
     }
 
     std::vector<ChunkPartitioner::PartitionKey> transform_results(chunk.getNumRows());
@@ -593,7 +593,7 @@ IcebergStorageSink::IcebergStorageSink(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
     const std::optional<FormatSettings> & format_settings_,
-    const Block & sample_block_,
+    SharedHeader sample_block_,
     ContextPtr context_)
     : SinkToStorage(sample_block_)
     , sample_block(sample_block_)
@@ -667,7 +667,7 @@ void IcebergStorageSink::consume(Chunk & chunk)
                 format_settings->parquet.filter_push_down = true;
             }
             writers[partition_key] = FormatFactory::instance().getOutputFormatParallelIfPossible(
-                configuration->format, *write_buffers[partition_key], sample_block, context, format_settings);
+                configuration->format, *write_buffers[partition_key], *sample_block, context, format_settings);
         }
 
         writers[partition_key]->write(getHeader().cloneWithColumns(part_chunk.getColumns()));

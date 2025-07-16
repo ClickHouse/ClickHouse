@@ -97,7 +97,7 @@ class ChunkPartitioner
 {
 public:
     explicit ChunkPartitioner(
-        Poco::JSON::Array::Ptr partition_specification, Poco::JSON::Object::Ptr schema, ContextPtr context, const Block & sample_block_);
+        Poco::JSON::Array::Ptr partition_specification, Poco::JSON::Object::Ptr schema, ContextPtr context, SharedHeader sample_block_);
 
     using PartitionKey = Row;
     struct PartitionKeyHasher
@@ -112,7 +112,7 @@ public:
     const std::vector<String> & getColumns() const { return columns_to_apply; }
 
 private:
-    Block sample_block;
+    SharedHeader sample_block;
 
     std::vector<FunctionOverloadResolverPtr> functions;
     std::vector<std::optional<size_t>> function_params;
@@ -126,7 +126,7 @@ public:
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration_,
         const std::optional<FormatSettings> & format_settings_,
-        const Block & sample_block_,
+        SharedHeader sample_block_,
         ContextPtr context_);
 
     ~IcebergStorageSink() override = default;
@@ -138,7 +138,7 @@ public:
     void onFinish() override;
 
 private:
-    const Block sample_block;
+    SharedHeader sample_block;
     std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> write_buffers;
     std::unordered_map<ChunkPartitioner::PartitionKey, OutputFormatPtr, ChunkPartitioner::PartitionKeyHasher> writers;
     std::unordered_map<ChunkPartitioner::PartitionKey, String, ChunkPartitioner::PartitionKeyHasher> data_filenames;
