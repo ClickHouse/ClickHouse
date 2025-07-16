@@ -1154,8 +1154,8 @@ Parses JSON and extracts a value of Int type using ASCII case-insensitive key ma
             {"Int64"}
         };
         FunctionDocumentation::Examples examples = {
-            {"basic", "SELECT JSONExtractIntCaseInsensitive('{\"Value\": 123}', 'value')", "123"},
-            {"nested", "SELECT JSONExtractIntCaseInsensitive('{\"DATA\": {\"COUNT\": 42}}', 'data', 'Count')", "42"}
+            {"basic", R"(SELECT JSONExtractIntCaseInsensitive('{"Value": 123}', 'value'))", "123"},
+            {"nested", R"(SELECT JSONExtractIntCaseInsensitive('{"DATA": {"COUNT": 42}}', 'data', 'Count'))", "42"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
@@ -1179,7 +1179,7 @@ Parses JSON and extracts a value of UInt type using ASCII case-insensitive key m
             {"UInt64"}
         };
         FunctionDocumentation::Examples examples = {
-            {"basic", "SELECT JSONExtractUIntCaseInsensitive('{\"COUNT\": 789}', 'count')", "789"}
+            {"basic", R"(SELECT JSONExtractUIntCaseInsensitive('{"COUNT": 789}', 'count'))", "789"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
@@ -1203,7 +1203,7 @@ Parses JSON and extracts a value of Float type using ASCII case-insensitive key 
             {"Float64"}
         };
         FunctionDocumentation::Examples examples = {
-            {"basic", "SELECT JSONExtractFloatCaseInsensitive('{\"Price\": 12.34}', 'PRICE')", "12.34"}
+            {"basic", R"(SELECT JSONExtractFloatCaseInsensitive('{"Price": 12.34}', 'PRICE'))", "12.34"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
@@ -1227,7 +1227,7 @@ Parses JSON and extracts a boolean value using ASCII case-insensitive key matchi
             {"UInt8"}
         };
         FunctionDocumentation::Examples examples = {
-            {"basic", "SELECT JSONExtractBoolCaseInsensitive('{\"IsActive\": true}', 'isactive')", "1"}
+            {"basic", R"(SELECT JSONExtractBoolCaseInsensitive('{"IsActive": true}', 'isactive'))", "1"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
@@ -1251,8 +1251,8 @@ Parses JSON and extracts a string using ASCII case-insensitive key matching.
             {"String"}
         };
         FunctionDocumentation::Examples examples = {
-            {"basic", "SELECT JSONExtractStringCaseInsensitive('{\"ABC\": \"def\"}', 'abc')", "def"},
-            {"nested", "SELECT JSONExtractStringCaseInsensitive('{\"User\": {\"Name\": \"John\"}}', 'user', 'name')", "John"}
+            {"basic", R"(SELECT JSONExtractStringCaseInsensitive('{"ABC": "def"}', 'abc'))", "def"},
+            {"nested", R"(SELECT JSONExtractStringCaseInsensitive('{"User": {"Name": "John"}}', 'user', 'name'))", "John"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
@@ -1277,8 +1277,8 @@ Parses JSON and extracts a value of the given ClickHouse data type using ASCII c
             {}
         };
         FunctionDocumentation::Examples examples = {
-            {"int_type", "SELECT JSONExtractCaseInsensitive('{\"Number\": 123}', 'number', 'Int32')", "123"},
-            {"array_type", "SELECT JSONExtractCaseInsensitive('{\"List\": [1, 2, 3]}', 'list', 'Array(Int32)')", "[1,2,3]"}
+            {"int_type", R"(SELECT JSONExtractCaseInsensitive('{"Number": 123}', 'number', 'Int32'))", "123"},
+            {"array_type", R"(SELECT JSONExtractCaseInsensitive('{"List": [1, 2, 3]}', 'list', 'Array(Int32)'))", "[1,2,3]"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
@@ -1303,7 +1303,7 @@ Parses key-value pairs from JSON using ASCII case-insensitive key matching when 
             {"Array(Tuple(String, T))"}
         };
         FunctionDocumentation::Examples examples = {
-            {"basic", "SELECT JSONExtractKeysAndValuesCaseInsensitive('{\"Name\": \"Alice\", \"AGE\": 30}', 'String')", "[('Name','Alice'),('AGE','30')]"}
+            {"basic", R"(SELECT JSONExtractKeysAndValuesCaseInsensitive('{"Name": "Alice", "AGE": 30}', 'String'))", "[('Name','Alice'),('AGE','30')]"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
@@ -1327,7 +1327,7 @@ Returns part of the JSON as an unparsed string using ASCII case-insensitive key 
             {"String"}
         };
         FunctionDocumentation::Examples examples = {
-            {"object", "SELECT JSONExtractRawCaseInsensitive('{\"Object\": {\"key\": \"value\"}}', 'OBJECT')", "{\"key\":\"value\"}"}
+            {"object", R"(SELECT JSONExtractRawCaseInsensitive('{"Object": {"key": "value"}}', 'OBJECT'))", R"({"key":"value"})"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
@@ -1351,7 +1351,7 @@ Returns an array with elements of JSON array, each represented as unparsed strin
             {"Array(String)"}
         };
         FunctionDocumentation::Examples examples = {
-            {"basic", "SELECT JSONExtractArrayRawCaseInsensitive('{\"Items\": [1, 2, 3]}', 'ITEMS')", "['1','2','3']"}
+            {"basic", R"(SELECT JSONExtractArrayRawCaseInsensitive('{"Items": [1, 2, 3]}', 'ITEMS'))", "['1','2','3']"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
@@ -1375,7 +1375,7 @@ Extracts raw key-value pairs from JSON using ASCII case-insensitive key matching
             {"Array(Tuple(String, String))"}
         };
         FunctionDocumentation::Examples examples = {
-            {"basic", "SELECT JSONExtractKeysAndValuesRawCaseInsensitive('{\"Name\": \"Alice\", \"AGE\": 30}')", "[('Name','\"Alice\"'),('AGE','30')]"}
+            {"basic", R"(SELECT JSONExtractKeysAndValuesRawCaseInsensitive('{"Name": "Alice", "AGE": 30}'))", "[('Name','\"Alice\"'),('AGE','30')]"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
@@ -1399,8 +1399,8 @@ Parses a JSON string and extracts the keys using ASCII case-insensitive key matc
             {"Array(String)"}
         };
         FunctionDocumentation::Examples examples = {
-            {"basic", "SELECT JSONExtractKeysCaseInsensitive('{\"Name\": \"Alice\", \"AGE\": 30}')", "['Name','AGE']"},
-            {"nested", "SELECT JSONExtractKeysCaseInsensitive('{\"User\": {\"name\": \"John\", \"AGE\": 25}}', 'user')", "['name','AGE']"}
+            {"basic", R"(SELECT JSONExtractKeysCaseInsensitive('{"Name": "Alice", "AGE": 30}'))", "['Name','AGE']"},
+            {"nested", R"(SELECT JSONExtractKeysCaseInsensitive('{"User": {"name": "John", "AGE": 25}}', 'user'))", "['name','AGE']"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
