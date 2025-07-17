@@ -21,6 +21,7 @@ def main():
                 ch.install()
                 and ch.clickbench_config_tweaks()
                 and ch.fuzzer_config_tweaks()
+                and ch.start_log_exports(check_start_time=stop_watch.start_time)
             )
 
         results.append(
