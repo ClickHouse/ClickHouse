@@ -11,13 +11,13 @@ arraySort(used_table_functions)
 ['numbers']
 
 arraySort(used_functions)
-['CAST','CRC32','addDays','array','arrayFlatten','modulo','plus','pow','round','substring','tanh','toDate','toDayOfYear','toTypeName','toWeek']
+['CAST','CRC32','__getScalar','addDays','array','arrayFlatten','modulo','plus','pow','round','substring','tanh','toDate','toDayOfYear','toTypeName','toWeek']
 
 used_functions
 ['repeat']
 
 arraySort(used_data_type_families)
-['Int32','Nullable(String)','String','UInt8']
+['Int32','Nullable(String)','String']
 
 used_database_engines
 ['Atomic']

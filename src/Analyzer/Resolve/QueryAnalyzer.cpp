@@ -868,7 +868,7 @@ void QueryAnalyzer::convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, Ide
 
     if (scope.expressions_in_resolve_process_stack.size() > 1)
     {
-        const auto & parent_node = scope.expressions_in_resolve_process_stack[-1];
+        const auto & parent_node = scope.expressions_in_resolve_process_stack.getRoot();
         if (auto * parent_function = parent_node->as<FunctionNode>())
         {
             // do not convert arguments of "in" functions
