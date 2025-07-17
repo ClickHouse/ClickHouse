@@ -226,10 +226,7 @@ Converts a [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Varian
         FunctionDocumentation::Syntax syntax_fromModifiedJulianDay = R"(
 fromModifiedJulianDay(day)
     )";
-        FunctionDocumentation::Arguments arguments_fromModifiedJulianDay =
-        {
-            {"day", "Modified Julian Day number.", {"(U)Int*"}}
-        };
+        FunctionDocumentation::Arguments arguments_fromModifiedJulianDay = {{"day", "Modified Julian Day number.", {"(U)Int*"}}};
         FunctionDocumentation::ReturnedValue returned_value_fromModifiedJulianDay = {"Returns date in text form.", {"String"}};
         FunctionDocumentation::Examples examples_fromModifiedJulianDay =
         {
@@ -254,9 +251,7 @@ Similar to [`fromModifiedJulianDay()`](#frommodifiedjulianday), but instead of r
         FunctionDocumentation::Syntax syntax_fromModifiedJulianDayOrNull = R"(
 fromModifiedJulianDayOrNull(day)
     )";
-        FunctionDocumentation::Arguments arguments_fromModifiedJulianDayOrNull = {
-            {"day", "Modified Julian Day number.", {"(U)Int*"}}
-        };
+        FunctionDocumentation::Arguments arguments_fromModifiedJulianDayOrNull = {{"day", "Modified Julian Day number.", {"(U)Int*"}}};
         FunctionDocumentation::ReturnedValue returned_value_fromModifiedJulianDayOrNull = {"Returns date in text form for valid `day` argument, otherwise `null`.", {"Nullable(String)"}};
         FunctionDocumentation::Examples examples_fromModifiedJulianDayOrNull =
         {
