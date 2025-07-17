@@ -398,7 +398,7 @@ std::optional<String> optimizeUseNormalProjections(
     {
         /// Reading from projections has completely replaced reading from parts, disable parallel reading to avoid affecting the state of the coordinator.
         if (reading->isParallelReadingEnabled())
-            reading->cancelParallelReading();
+            reading->detachParallelReadingExtension();
 
         /// All parts are taken from projection
         iter->node->children[iter->next_child - 1] = next_node;
@@ -422,7 +422,7 @@ std::optional<String> optimizeUseNormalProjections(
         {
             if (auto * read_from_projections = typeid_cast<ReadFromMergeTree *>(projection_reading_node.step.get()))
             {
-                read_from_projections->cancelParallelReading();
+                read_from_projections->detachParallelReadingExtension();
                 LOG_DEBUG(logger, "Parallel replicas initiator falls back to reading projection locally");
             }
         }

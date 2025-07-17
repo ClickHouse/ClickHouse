@@ -251,8 +251,9 @@ public:
 
     void setVectorSearchParameters(std::optional<VectorSearchParameters> && vector_search_parameters_) { vector_search_parameters = vector_search_parameters_; }
 
-    void cancelParallelReading();
-    /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and ParallelReadingExtension must be forwarded to the new step.
+    /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and the ParallelReadingExtension must be forwarded to the new step.
+    /// Meanwhile, the ParallelReadingExtension originally in ReadFromMergeTree might be detached.
+    void detachParallelReadingExtension();
     std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
 
 private:
