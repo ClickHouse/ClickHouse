@@ -1885,6 +1885,9 @@ private:
     createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
 
     bool isReadonlySetting(const std::string & setting_name) const;
+
+    void calculateColumnAndSecondaryIndexSizesIfNeededWithPartsLocked() const;
+    void calculateColumnAndSecondaryIndexSizesIfNeededWithPartsCopy(const DataParts & parts) const;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.
