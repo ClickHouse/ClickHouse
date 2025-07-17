@@ -1110,7 +1110,7 @@ void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & 
 
     const auto & offsets  = typeid_cast<const ColumnUInt64&>(*part_offsets_auto_column).getData();
     size_t j = 0;
-    for (size_t i = 0; i < result.numReadRows(); ++i)
+    for (size_t i = 0; i < part_offsets_auto_column->size(); ++i)
     {
         while (j < row_offsets_from_index.size() && offsets[i] > row_offsets_from_index[j])
             j++;
