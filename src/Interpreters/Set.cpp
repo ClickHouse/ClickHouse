@@ -437,7 +437,38 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         }
         else
         {
-            result = castColumnAccurate(column_to_cast, data_types[i], cast_cache.get());
+            /// Special case when transform_null_in = true and type of column is Nullable but type of this key in Set is not Nullable.
+            /// For example: SELECT NULL::Nullable(String) IN (SELECT 'abc') SETTINGS transform_null_in = 1;
+            /// In this case we cannot just cast Nullable column to non-nullable type because it will fail if column contains nulls.
+            /// We should cast nested column and remember the null map to use negative value on rows with null (as key column is not
+            /// Nullable, Set cannot contain nulls for this column anyhow).
+            if (transform_null_in && column_to_cast.type->isNullable() && !data_types[i]->isNullable())
+            {
+                auto nested_type = assert_cast<const DataTypeNullable &>(*column_to_cast.type).getNestedType();
+                const auto & column_nullable = assert_cast<const ColumnNullable &>(*column_to_cast.column);
+                result = castColumnAccurate(ColumnWithTypeAndName(column_nullable.getNestedColumnPtr(), nested_type, column_to_cast.name), data_types[i], cast_cache.get());
+                if (!null_map_holder)
+                {
+                    null_map_holder = column_nullable.getNullMapColumnPtr();
+                }
+                else
+                {
+                    MutableColumnPtr mutable_null_map_holder = IColumn::mutate(std::move(null_map_holder));
+
+                    PaddedPODArray<UInt8> & mutable_null_map = assert_cast<ColumnUInt8 &>(*mutable_null_map_holder).getData();
+                    const PaddedPODArray<UInt8> & other_null_map = column_nullable.getNullMapData();
+                    for (size_t j = 0, size = mutable_null_map.size(); j < size; ++j)
+                        mutable_null_map[j] |= other_null_map[j];
+
+                    null_map_holder = std::move(mutable_null_map_holder);
+                }
+
+                null_map = &assert_cast<const ColumnUInt8 &>(*null_map_holder).getData();
+            }
+            else
+            {
+                result = castColumnAccurate(column_to_cast, data_types[i], cast_cache.get());
+            }
         }
 
         // If the original column is DateTime64, check for sub-second precision

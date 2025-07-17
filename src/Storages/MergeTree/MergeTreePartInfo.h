@@ -25,11 +25,15 @@ public:
     {
         /// Regular data part. Created on inserts, merges and mutations.
         Regular,
+        /// Patch data part. Created on lightweight updates. Contains only subset of
+        /// columns updated in query and extra system columns (see PatchPartsInfo.h).
+        /// Can be applied to regular data parts on reading to get the latest state of data.
+        Patch,
     };
 
-    static Kind getKind(const String & /*partition_id*/)
+    static Kind getKind(const String & partition_id)
     {
-        return Kind::Regular;
+        return partition_id.starts_with(PATCH_PART_PREFIX) ? Kind::Patch : Kind::Regular;
     }
 
 private:
@@ -56,7 +60,8 @@ public:
     {
     }
 
-    Kind getKind() const { return kind; }
+    Kind getKind() const { return kind;}
+    bool isPatch() const { return kind == Kind::Patch; }
 
     void setPartitionId(const String & new_partition_id)
     {
@@ -65,6 +70,7 @@ public:
     }
 
     const String & getPartitionId() const { return partition_id; }
+    String getOriginalPartitionId() const;
 
     auto toTuple() const { return std::tie(kind, partition_id, min_block, max_block, level, mutation); }
     auto operator<=>(const MergeTreePartInfo & rhs) const { return toTuple() <=> rhs.toTuple();}
@@ -151,7 +157,10 @@ public:
 
     static constexpr UInt32 MAX_LEVEL = 999999999;
     static constexpr UInt32 MAX_BLOCK_NUMBER = 999999999;
-
+    static constexpr std::string_view PATCH_PART_PREFIX = "patch-";
+    /// The full prefix of patch part is "patch-<hash>-".
+    /// The size of hash is 32 chars plus 1 char for extra dash.
+    static constexpr UInt64 PATCH_PART_PREFIX_SIZE = PATCH_PART_PREFIX.size() + 32 + 1;
     static constexpr UInt32 LEGACY_MAX_LEVEL = std::numeric_limits<decltype(level)>::max();
 };
 

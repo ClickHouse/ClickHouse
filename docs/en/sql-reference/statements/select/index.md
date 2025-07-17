@@ -179,9 +179,9 @@ You can use the following modifiers in `SELECT` queries.
 
 | Modifier                            | Description                                                                                                                                                                                                                                                                                                                                                                              |
 |-------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [`APPLY`](../apply_modifier.md)     | Allows you to invoke some function for each row returned by an outer table expression of a query.                                                                                                                                                                                                                                                                                        |
-| [`EXCEPT`](../except_modifier.md)   | Specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the output.                                                                                                                                                                                                                                                            |
-| [`REPLACE`](../replace_modifier.md) | Specifies one or more [expression aliases](/sql-reference/syntax#expression-aliases). Each alias must match a column name from the `SELECT *` statement. In the output column list, the column that matches the alias is replaced by the expression in that `REPLACE`. This modifier does not change the names or order of columns. However, it can change the value and the value type. |
+| [`APPLY`](./apply_modifier.md)     | Allows you to invoke some function for each row returned by an outer table expression of a query.                                                                                                                                                                                                                                                                                        |
+| [`EXCEPT`](./except_modifier.md)   | Specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the output.                                                                                                                                                                                                                                                            |
+| [`REPLACE`](./replace_modifier.md) | Specifies one or more [expression aliases](/sql-reference/syntax#expression-aliases). Each alias must match a column name from the `SELECT *` statement. In the output column list, the column that matches the alias is replaced by the expression in that `REPLACE`. This modifier does not change the names or order of columns. However, it can change the value and the value type. |
 
 ### Modifier Combinations {#modifier-combinations}
 
@@ -192,7 +192,7 @@ You can use each modifier separately or combine them.
 Using the same modifier multiple times.
 
 ```sql
-SELECT COLUMNS('[jk]') APPLY(toString) APPLY(length) APPLY(max) from columns_transformers;
+SELECT COLUMNS('[jk]') APPLY(toString) APPLY(length) APPLY(max) FROM columns_transformers;
 ```
 
 ```response

@@ -173,8 +173,8 @@ REGISTER_FUNCTION(ArrayZip)
 {
     FunctionDocumentation::Description description = "Combines multiple arrays into a single array. The resulting array contains the corresponding elements of the source arrays grouped into tuples in the listed order of arguments.";
     FunctionDocumentation::Syntax syntax = "arrayZip(arr1, arr2, ... , arrN)";
-    FunctionDocumentation::Arguments argument = {{"arr1, arr2, ... , arrN", "N arrays to combine into a single array. [`Array(T)`](/sql-reference/data-types/array)"}};
-    FunctionDocumentation::ReturnedValue returned_value = "Returns an array with elements from the source arrays grouped in tuples. Data types in the tuple are the same as types of the input arrays and in the same order as arrays are passed. [`Array(T)`](/sql-reference/data-types/array)([`Tuple`](/sql-reference/data-types/tuple)).";
+    FunctionDocumentation::Arguments argument = {{"arr1, arr2, ... , arrN", "N arrays to combine into a single array.", {"Array(T)"}}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array with elements from the source arrays grouped in tuples. Data types in the tuple are the same as types of the input arrays and in the same order as arrays are passed", {"Array(T)"}};
     FunctionDocumentation::Examples example = {{"Usage example", "SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);", "[('a', 5), ('b', 2), ('c', 1)]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
@@ -184,8 +184,8 @@ REGISTER_FUNCTION(ArrayZip)
 
     FunctionDocumentation::Description description_unaligned = "Combines multiple arrays into a single array, allowing for unaligned arrays (arrays of differing lengths). The resulting array contains the corresponding elements of the source arrays grouped into tuples in the listed order of arguments.";
     FunctionDocumentation::Syntax syntax_unaligned = "arrayZipUnaligned(arr1, arr2, ..., arrN)";
-    FunctionDocumentation::Arguments argument_unaligned = {{"arr1, arr2, ..., arrN", "N arrays to combine into a single array. [`Array(T)`](/sql-reference/data-types/array)."}};
-    FunctionDocumentation::ReturnedValue returned_value_unaligned = "Returns an array with elements from the source arrays grouped in tuples. Data types in the tuple are the same as types of the input arrays and in the same order as arrays are passed. [`Array(T)`](/sql-reference/data-types/array)([`Tuple(T1, T2, ...)`](/sql-reference/data-types/tuple)).";
+    FunctionDocumentation::Arguments argument_unaligned = {{"arr1, arr2, ..., arrN", "N arrays to combine into a single array.", {"Array(T)"}}};
+    FunctionDocumentation::ReturnedValue returned_value_unaligned = {"Returns an array with elements from the source arrays grouped in tuples. Data types in the tuple are the same as types of the input arrays and in the same order as arrays are passed.", {"Array(T)", "Tuple(T1, T2, ...)"}};
     FunctionDocumentation::Examples example_unaligned = {{"Usage example", "SELECT arrayZipUnaligned(['a'], [1, 2, 3]);", "[('a', 1),(NULL, 2),(NULL, 3)]"}};
     FunctionDocumentation::IntroducedIn introduced_in_unaligned = {20, 1};
     FunctionDocumentation::Category category_unaligned = FunctionDocumentation::Category::Array;

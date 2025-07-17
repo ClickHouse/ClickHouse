@@ -43,6 +43,7 @@
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
 #include <Common/ProfileEvents.h>
+#include <Common/quoteString.h>
 
 #include <memory>
 
@@ -123,7 +124,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         /// we can create a temporary pipeline and get the header.
         if (query.select && table_function_ptr->needStructureHint())
         {
-            Block header_block;
+            SharedHeader header_block;
             auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 
             if (current_context->getSettingsRef()[Setting::allow_experimental_analyzer])
@@ -140,10 +141,10 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
                 InterpreterSelectWithUnionQuery interpreter_select{
                     query.select, current_context, select_query_options};
                 auto tmp_pipeline = interpreter_select.buildQueryPipeline();
-                header_block = tmp_pipeline.getHeader();
+                header_block = tmp_pipeline.getSharedHeader();
             }
 
-            ColumnsDescription structure_hint{header_block.getNamesAndTypesList()};
+            ColumnsDescription structure_hint{header_block->getNamesAndTypesList()};
             table_function_ptr->setStructureHint(structure_hint);
         }
 
@@ -410,12 +411,12 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
             ActionsDAG::MatchColumnsMode::Position);
     auto actions = std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings(getContext(), CompileExpressions::yes));
 
-    pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
     {
         return std::make_shared<ExpressionTransform>(in_header, actions);
     });
 
-    pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
     {
         auto context_ptr = getContext();
         auto counting = std::make_shared<CountingTransform>(in_header, context_ptr->getQuota());
@@ -430,7 +431,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     if (shouldAddSquashingForStorage(table, getContext()) && !no_squash && !async_insert)
     {
         pipeline.addSimpleTransform(
-            [&](const Block & in_header) -> ProcessorPtr
+            [&](const SharedHeader & in_header) -> ProcessorPtr
             {
                 return std::make_shared<PlanSquashingTransform>(
                     in_header,
@@ -439,26 +440,26 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
             });
     }
 
-    pipeline.addSimpleTransform([&](const Block &in_header) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const SharedHeader &in_header) -> ProcessorPtr
     {
         return std::make_shared<DeduplicationToken::AddTokenInfoTransform>(in_header);
     });
 
     if (!settings[Setting::insert_deduplication_token].value.empty())
     {
-        pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
+        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
         {
             return std::make_shared<DeduplicationToken::SetUserTokenTransform>(settings[Setting::insert_deduplication_token].value, in_header);
         });
 
-        pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
+        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
         {
             return std::make_shared<DeduplicationToken::SetSourceBlockNumberTransform>(in_header);
         });
     }
 
     auto insert_dependencies = InsertDependenciesBuilder::create(
-        table, query_ptr, query_sample_block,
+        table, query_ptr, std::make_shared<const Block>(std::move(query_sample_block)),
         async_insert, /*skip_destination_table*/ no_destination,
         getContext());
 
@@ -480,7 +481,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     if (shouldAddSquashingForStorage(table, getContext()) && !no_squash && !async_insert)
     {
         pipeline.addSimpleTransform(
-            [&](const Block & in_header) -> ProcessorPtr
+            [&](const SharedHeader & in_header) -> ProcessorPtr
             {
                 return std::make_shared<ApplySquashingTransform>(in_header);
             });
@@ -494,7 +495,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     pipeline.setMaxThreads(max_threads);
 
-    pipeline.setSinks([&](const Block & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
+    pipeline.setSinks([&](const SharedHeader & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
     {
         return std::make_shared<EmptySink>(cur_header);
     });
@@ -604,6 +605,10 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     if (settings[Setting::parallel_distributed_insert_select] != 2)
         return {};
 
+    // NOTE: should we limit it more here?
+    if (auto storage = getTable(query); storage->isMergeTree() && !storage->supportsReplication())
+        return {};
+
     const auto & select_query = query.select->as<ASTSelectWithUnionQuery &>();
     const auto & selects = select_query.list_of_selects->children;
     if (selects.size() > 1)
@@ -635,7 +640,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     const Settings & settings = getContext()->getSettingsRef();
 
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
-    auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, getContext(), no_destination, allow_materialized);
+    auto query_sample_block = std::make_shared<const Block>(getSampleBlock(query, table, metadata_snapshot, getContext(), no_destination, allow_materialized));
 
     // when insert is initiated from FileLog or similar storages
     // they are allowed to expose its virtuals columns to the dependent views
@@ -648,29 +653,29 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     if (!settings[Setting::insert_deduplication_token].value.empty())
     {
-        chain.addSource(std::make_shared<DeduplicationToken::SetSourceBlockNumberTransform>(chain.getInputHeader()));
+        chain.addSource(std::make_shared<DeduplicationToken::SetSourceBlockNumberTransform>(chain.getInputSharedHeader()));
         chain.addSource(std::make_shared<DeduplicationToken::SetUserTokenTransform>(
-            settings[Setting::insert_deduplication_token].value, chain.getInputHeader()));
+            settings[Setting::insert_deduplication_token].value, chain.getInputSharedHeader()));
     }
 
-    chain.addSource(std::make_shared<DeduplicationToken::AddTokenInfoTransform>(chain.getInputHeader()));
+    chain.addSource(std::make_shared<DeduplicationToken::AddTokenInfoTransform>(chain.getInputSharedHeader()));
 
     if (shouldAddSquashingForStorage(table, getContext()) && !no_squash && !async_insert)
     {
         bool table_prefers_large_blocks = table->prefersLargeBlocks();
 
-        auto applying = std::make_shared<ApplySquashingTransform>(chain.getInputHeader());
+        auto applying = std::make_shared<ApplySquashingTransform>(chain.getInputSharedHeader());
         chain.addSource(std::move(applying));
 
         auto planing = std::make_shared<PlanSquashingTransform>(
-            chain.getInputHeader(),
+            chain.getInputSharedHeader(),
             table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
             table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL);
         chain.addSource(std::move(planing));
     }
 
     auto context_ptr = getContext();
-    auto counting = std::make_shared<CountingTransform>(chain.getInputHeader(), context_ptr->getQuota());
+    auto counting = std::make_shared<CountingTransform>(chain.getInputSharedHeader(), context_ptr->getQuota());
     counting->setProcessListElement(context_ptr->getProcessListElement());
     counting->setProgressCallback(context_ptr->getProgressCallback());
     chain.addSource(std::move(counting));
@@ -682,7 +687,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     if (query.hasInlinedData() && !async_insert)
     {
-        auto format = getInputFormatFromASTInsertQuery(query_ptr, true, query_sample_block, getContext(), nullptr);
+        auto format = getInputFormatFromASTInsertQuery(query_ptr, true, *query_sample_block, getContext(), nullptr);
 
         for (auto & buffer : owned_buffers)
             format->addBuffer(std::move(buffer));
@@ -779,8 +784,8 @@ void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, Cont
     const auto & insert_table = context_->getInsertionTable();
     if (!insert_table.empty())
     {
-        elem.query_databases.insert(insert_table.getDatabaseName());
-        elem.query_tables.insert(insert_table.getFullNameNotQuoted());
+        elem.query_databases.insert(backQuoteIfNeed(insert_table.getDatabaseName()));
+        elem.query_tables.insert(insert_table.getFullTableName());
     }
 }
 

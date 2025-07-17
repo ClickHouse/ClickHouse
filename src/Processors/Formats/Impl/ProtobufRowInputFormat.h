@@ -31,7 +31,7 @@ class ProtobufRowInputFormat final : public IRowInputFormat
 public:
     ProtobufRowInputFormat(
         ReadBuffer & in_,
-        const Block & header_,
+        SharedHeader header_,
         const Params & params_,
         const ProtobufSchemaInfo & schema_info_,
         bool with_length_delimiter_,
@@ -41,7 +41,6 @@ public:
     String getName() const override { return "ProtobufRowInputFormat"; }
 
     void setReadBuffer(ReadBuffer & in_) override;
-    void resetParser() override;
 
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & row_read_extension) override;
@@ -52,6 +51,7 @@ private:
     size_t countRows(size_t max_block_size) override;
 
     void createReaderAndSerializer();
+    void destroyReaderAndSerializer();
 
     std::unique_ptr<ProtobufReader> reader;
     std::vector<size_t> missing_column_indices;

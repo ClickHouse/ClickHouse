@@ -113,14 +113,14 @@ SELECT toStartOfYear(toDateTime(1419800400), 'Pacific/Pitcairn');
 SELECT toStartOfYear(toDate(16433), 'Asia/Istanbul'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT toStartOfYear(toDate(16433));
 
-/* toTime */
+/* toTimeWithFixedDate */
 
-SELECT 'toTime';
-SELECT toString(toTime(toDateTime(1420102800), 'Asia/Istanbul'), 'Asia/Istanbul'), toString(toTime(toDateTime(1428310800), 'Asia/Istanbul'), 'Asia/Istanbul');
-SELECT toString(toTime(toDateTime(1420102800), 'Europe/Paris'), 'Europe/Paris'), toString(toTime(toDateTime(1428310800), 'Europe/Paris'), 'Europe/Paris');
-SELECT toString(toTime(toDateTime(1420102800), 'Europe/London'), 'Europe/London'), toString(toTime(toDateTime(1428310800), 'Europe/London'), 'Europe/London');
-SELECT toString(toTime(toDateTime(1420102800), 'Asia/Tokyo'), 'Asia/Tokyo'), toString(toTime(toDateTime(1428310800), 'Asia/Tokyo'), 'Asia/Tokyo');
-SELECT toString(toTime(toDateTime(1420102800), 'Pacific/Pitcairn'), 'Pacific/Pitcairn'), toString(toTime(toDateTime(1428310800), 'Pacific/Pitcairn'), 'Pacific/Pitcairn');
+SELECT 'toTimeWithFixedDate';
+SELECT toString(toTimeWithFixedDate(toDateTime(1420102800), 'Asia/Istanbul'), 'Asia/Istanbul'), toString(toTimeWithFixedDate(toDateTime(1428310800), 'Asia/Istanbul'), 'Asia/Istanbul');
+SELECT toString(toTimeWithFixedDate(toDateTime(1420102800), 'Europe/Paris'), 'Europe/Paris'), toString(toTimeWithFixedDate(toDateTime(1428310800), 'Europe/Paris'), 'Europe/Paris');
+SELECT toString(toTimeWithFixedDate(toDateTime(1420102800), 'Europe/London'), 'Europe/London'), toString(toTimeWithFixedDate(toDateTime(1428310800), 'Europe/London'), 'Europe/London');
+SELECT toString(toTimeWithFixedDate(toDateTime(1420102800), 'Asia/Tokyo'), 'Asia/Tokyo'), toString(toTimeWithFixedDate(toDateTime(1428310800), 'Asia/Tokyo'), 'Asia/Tokyo');
+SELECT toString(toTimeWithFixedDate(toDateTime(1420102800), 'Pacific/Pitcairn'), 'Pacific/Pitcairn'), toString(toTimeWithFixedDate(toDateTime(1428310800), 'Pacific/Pitcairn'), 'Pacific/Pitcairn');
 
 /* toYear */
 

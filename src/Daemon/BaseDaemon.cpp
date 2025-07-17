@@ -49,6 +49,7 @@
 
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
+#include <Loggers/OwnSplitChannel.h>
 
 #include <Common/config_version.h>
 
@@ -144,7 +145,7 @@ BaseDaemon::~BaseDaemon()
         tryLogCurrentException(&logger());
     }
 
-    disableLogging();
+    stopLogging();
 }
 
 
@@ -418,14 +419,14 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
         && CrashWriter::initialized())
     {
         LOG_DEBUG(&logger(), "Sending logical errors is enabled");
-        Exception::callback = [](const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
+        Exception::callback = [](std::string_view format_string, int code, bool remote, const Exception::FramePointers & trace)
         {
             if (!remote && code == ErrorCodes::LOGICAL_ERROR)
             {
                 CrashWriter::FramePointers frame_pointers;
                 for (size_t i = 0; i < trace.size(); ++i)
                     frame_pointers[i] = trace[i];
-                CrashWriter::onException(code, msg, frame_pointers, /* offset= */ 0, trace.size());
+                CrashWriter::onException(code, format_string, frame_pointers, /* offset= */ 0, trace.size());
             }
         };
     }
@@ -561,7 +562,14 @@ void BaseDaemon::setupWatchdog()
         Poco::Pipe notify_sync;
 
         static pid_t pid = -1;
+        /// Temporarily close the logging thread and open it in each process later
+        auto * async_channel = dynamic_cast<OwnAsyncSplitChannel *>(logger().getChannel());
+        if (async_channel)
+            async_channel->close();
         pid = fork();
+
+        if (async_channel)
+            async_channel->open();
 
         if (-1 == pid)
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot fork");
@@ -624,7 +632,12 @@ void BaseDaemon::setupWatchdog()
 
         /// Concurrent writing logs to the same file from two threads is questionable on its own,
         /// but rotating them from two threads is disastrous.
-        if (auto * channel = dynamic_cast<OwnSplitChannel *>(logger().getChannel()))
+        if (async_channel)
+        {
+            async_channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATION, "never");
+            async_channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATEONOPEN, "false");
+        }
+        else if (auto * channel = dynamic_cast<OwnSplitChannel *>(logger().getChannel()))
         {
             channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATION, "never");
             channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATEONOPEN, "false");
