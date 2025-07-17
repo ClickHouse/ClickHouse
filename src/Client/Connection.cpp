@@ -1017,7 +1017,7 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         else
             maybe_compressed_out = out;
 
-        block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, block.cloneEmpty(), format_settings);
+        block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, std::make_shared<const Block>(block.cloneEmpty()), format_settings);
     }
 
     if (scalar)
@@ -1031,7 +1031,7 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
     block_out->write(block);
     if (maybe_compressed_out != out)
         maybe_compressed_out->next();
-    if (!block)
+    if (block.empty())
         out->finishChunk();
     out->next();
 
@@ -1142,7 +1142,7 @@ class ExternalTableDataSink : public ISink
 public:
     using OnCancell = std::function<void()>;
 
-    ExternalTableDataSink(Block header, Connection & connection_, ExternalTableData & table_data_, OnCancell callback)
+    ExternalTableDataSink(SharedHeader header, Connection & connection_, ExternalTableData & table_data_, OnCancell callback)
             : ISink(std::move(header)), connection(connection_), table_data(table_data_),
               on_cancell(std::move(callback))
     {}
@@ -1201,8 +1201,8 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         QueryPipelineBuilder pipeline = std::move(*elem->pipe);
         elem->pipe.reset();
         pipeline.resize(1);
-        auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getHeader(), *this, *elem, std::move(on_cancel));
-        pipeline.setSinks([&](const Block &, QueryPipelineBuilder::StreamType type) -> ProcessorPtr
+        auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getSharedHeader(), *this, *elem, std::move(on_cancel));
+        pipeline.setSinks([&](const SharedHeader &, QueryPipelineBuilder::StreamType type) -> ProcessorPtr
         {
             if (type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;

@@ -136,6 +136,12 @@
     M(LocalReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_local_read_bandwidth_for_server' throttling.", ValueType::Microseconds) \
     M(LocalWriteThrottlerBytes, "Bytes passed through 'max_local_write_bandwidth_for_server' throttler.", ValueType::Bytes) \
     M(LocalWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_local_write_bandwidth_for_server' throttling.", ValueType::Microseconds) \
+    M(BackupThrottlerBytes, "Bytes passed through 'max_backup_bandwidth_for_server' throttler.", ValueType::Bytes) \
+    M(BackupThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_backup_bandwidth_for_server' throttling.", ValueType::Microseconds) \
+    M(MergesThrottlerBytes, "Bytes passed through 'max_merges_bandwidth_for_server' throttler.", ValueType::Bytes) \
+    M(MergesThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_merges_bandwidth_for_server' throttling.", ValueType::Microseconds) \
+    M(MutationsThrottlerBytes, "Bytes passed through 'max_mutations_bandwidth_for_server' throttler.", ValueType::Bytes) \
+    M(MutationsThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_mutations_bandwidth_for_server' throttling.", ValueType::Microseconds) \
     M(QueryRemoteReadThrottlerBytes, "Bytes passed through 'max_remote_read_network_bandwidth' throttler.", ValueType::Bytes) \
     M(QueryRemoteReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_read_network_bandwidth' throttling.", ValueType::Microseconds) \
     M(QueryRemoteWriteThrottlerBytes, "Bytes passed through 'max_remote_write_network_bandwidth' throttler.", ValueType::Bytes) \
@@ -144,6 +150,8 @@
     M(QueryLocalReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_local_read_bandwidth' throttling.", ValueType::Microseconds) \
     M(QueryLocalWriteThrottlerBytes, "Bytes passed through 'max_local_write_bandwidth' throttler.", ValueType::Bytes) \
     M(QueryLocalWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_local_write_bandwidth' throttling.", ValueType::Microseconds) \
+    M(QueryBackupThrottlerBytes, "Bytes passed through 'max_backup_bandwidth' throttler.", ValueType::Bytes) \
+    M(QueryBackupThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_backup_bandwidth' throttling.", ValueType::Microseconds) \
     M(ThrottlerSleepMicroseconds, "Total time a query was sleeping to conform all throttling settings.", ValueType::Microseconds) \
     M(ReadTasksWithAppliedPatches, "Total number of read tasks for which there was any patch part applied", ValueType::Number) \
     M(PatchesAppliedInAllReadTasks, "Total number of applied patch parts among all read tasks", ValueType::Number) \
@@ -156,6 +164,8 @@
     M(AnalyzePatchRangesMicroseconds, "Total time spent analyzing index of patch parts", ValueType::Number) \
     M(ReadTasksWithAppliedMutationsOnFly, "Total number of read tasks for which there was any mutation applied on fly", ValueType::Number) \
     M(MutationsAppliedOnFlyInAllReadTasks, "Total number of applied mutations on-fly among all read tasks", ValueType::Number) \
+    M(PatchesAcquireLockTries, "Total number of tries to acquire lock for executing lightweight updates", ValueType::Number) \
+    M(PatchesAcquireLockMicroseconds, "Total number of microseconds spent to acquire lock for executing lightweight updates", ValueType::Number) \
     \
     M(SchedulerIOReadRequests, "Resource requests passed through scheduler for IO reads.", ValueType::Number) \
     M(SchedulerIOReadBytes, "Bytes passed through scheduler for IO reads.", ValueType::Bytes) \
@@ -897,6 +907,8 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheServerNewS3CachedClients, "Distributed Cache server event. The number of new cached s3 clients", ValueType::Number) \
     M(DistrCacheServerReusedS3CachedClients, "Distributed Cache server event. The number of reused cached s3 clients", ValueType::Number) \
     M(DistrCacheServerCredentialsRefresh, "Distributed Cache server event. The number of expired credentials were refreshed", ValueType::Number) \
+    M(DistrCacheServerCachedReadBufferCacheHits, "Distributed Cache server event. The number of times distributed cache hit the cache while reading from filesystem cache", ValueType::Number) \
+    M(DistrCacheServerCachedReadBufferCacheMisses, "Distributed Cache server event. The number of times distributed cache missed the cache while reading from filesystem cache", ValueType::Number) \
     \
     M(LogTest, "Number of log messages with level Test", ValueType::Number) \
     M(LogTrace, "Number of log messages with level Trace", ValueType::Number) \
