@@ -954,7 +954,7 @@ def test_partition_columns(started_cluster, use_delta_kernel, cluster):
     query_id = f"query_with_filter_{TABLE_NAME}"
     result = int(
         instance.query(
-            f"""SELECT count() FROM {table_function} WHERE c == toDateTime('2000/01/05')
+            f"""SELECT count() FROM {table_function} WHERE b == 'test2'
             """,
             query_id=query_id,
         )
@@ -2085,7 +2085,6 @@ deltaLakeCluster(cluster_old,
     )
 
 
-
 def test_partition_columns_3(started_cluster):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -2138,4 +2137,155 @@ def test_partition_columns_3(started_cluster):
         "8\tname_8\t32\tUS\t2025\n"
         "9\tname_9\t32\tUS\t2025"
         == instance.query(f"SELECT * FROM {table_function} ORDER BY all").strip()
+    )
+
+
+def test_delta_kernel_internal_pruning(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_partition_columns")
+    result_file = f"{TABLE_NAME}"
+    partition_columns = ["b", "c", "d", "e", "f", "g"]
+
+    delta_table = (
+        DeltaTable.create(spark)
+        .tableName(TABLE_NAME)
+        .location(f"/{result_file}")
+        .addColumn("a", "INT")
+        .addColumn("b", "STRING")
+        .addColumn("c", "DATE")
+        .addColumn("d", "INT")
+        .addColumn("e", "TIMESTAMP")
+        .addColumn("f", "BOOLEAN")
+        .addColumn("g", "DECIMAL(10,2)")
+        .addColumn("h", "BOOLEAN")
+        .partitionedBy(partition_columns)
+        .execute()
+    )
+    num_rows = 9
+
+    schema = StructType(
+        [
+            StructField("a", IntegerType()),
+            StructField("b", StringType()),
+            StructField("c", DateType()),
+            StructField("d", IntegerType()),
+            StructField("e", TimestampType()),
+            StructField("f", BooleanType()),
+            StructField("g", DecimalType(10, 2)),
+            StructField("h", BooleanType()),
+        ]
+    )
+
+    now = datetime.now()
+    for i in range(1, num_rows + 1):
+        data = [
+            (
+                i,
+                "test" + str(i % 3),
+                datetime.strptime(f"2000-01-0{i}", "%Y-%m-%d"),
+                i % 2,
+                (
+                    now
+                    if i % 2 == 0
+                    else datetime.strptime(
+                        f"2012-01-0{i} 12:34:56.789123", "%Y-%m-%d %H:%M:%S.%f"
+                    )
+                ),
+                True if i % 2 == 0 else False,
+                Decimal(f"{i * 1.11:.2f}"),
+                False if i % 2 == 0 else True,
+            )
+        ]
+        df = spark.createDataFrame(data=data, schema=schema)
+        df.printSchema()
+        df.write.mode("append").format("delta").partitionBy(partition_columns).save(
+            f"/{TABLE_NAME}"
+        )
+
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) > 0
+    print(f"Uploaded files: {files}")
+
+    cluster = False
+    if cluster:
+        table_function = f"deltaLakeCluster(cluster, 'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+    else:
+        table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+
+    result = instance.query(f"describe table {table_function}").strip()
+    assert (
+        result == "a\tNullable(Int32)\t\t\t\t\t\n"
+        "b\tNullable(String)\t\t\t\t\t\n"
+        "c\tNullable(Date32)\t\t\t\t\t\n"
+        "d\tNullable(Int32)\t\t\t\t\t\n"
+        "e\tNullable(DateTime64(6))\t\t\t\t\t\n"
+        "f\tNullable(Bool)\t\t\t\t\t\n"
+        "g\tNullable(Decimal(10, 2))\t\t\t\t\t\n"
+        "h\tNullable(Bool)"
+    )
+
+    result = int(instance.query(f"SELECT count() FROM {table_function}"))
+    assert result == num_rows
+
+    expected_output = f"""1	test1	2000-01-01	1	2012-01-01 12:34:56.789123	false	1.11	true
+2	test2	2000-01-02	0	{now}	true	2.22	false
+3	test0	2000-01-03	1	2012-01-03 12:34:56.789123	false	3.33	true
+4	test1	2000-01-04	0	{now}	true	4.44	false
+5	test2	2000-01-05	1	2012-01-05 12:34:56.789123	false	5.55	true
+6	test0	2000-01-06	0	{now}	true	6.66	false
+7	test1	2000-01-07	1	2012-01-07 12:34:56.789123	false	7.77	true
+8	test2	2000-01-08	0	{now}	true	8.88	false
+9	test0	2000-01-09	1	2012-01-09 12:34:56.789123	false	9.99	true"""
+
+    assert (
+        expected_output
+        == instance.query(f"SELECT * FROM {table_function} ORDER BY a").strip()
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_1"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE 'test2' == b
+            """,
+            query_id=query_id,
+        )
+    )
+    assert result == 3
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 3 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 3 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_2"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE 'test2' == b AND d == 1
+            """,
+            query_id=query_id,
+        )
+    )
+    assert result == 1
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test5%'"
+        )
     )

@@ -281,6 +281,32 @@ Chunk StorageObjectStorageSource::generate()
 #if USE_PARQUET && USE_AWS_S3
             if (chunk_size && chunk.hasColumns())
             {
+                LOG_TEST(log, "Metadata: {}", bool(object_info->data_lake_metadata));
+                if (object_info->data_lake_metadata)
+                {
+                    LOG_TEST(log, "Partition values: {}", object_info->data_lake_metadata->partition_values.size());
+                    for (const auto & [name_and_type, value] : object_info->data_lake_metadata->partition_values)
+                    {
+                        if (!read_from_format_info.source_header.has(name_and_type.name))
+                        {
+                            LOG_TEST(log, "No partition column in source header: {}", name_and_type.name);
+                            continue;
+                        }
+
+                        LOG_TEST(log, "Adding partition column {}", name_and_type.name);
+                        const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
+                        auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
+
+                        /// This column is filled with default value now, remove it.
+                        chunk.erase(column_pos);
+
+                        /// Add correct values.
+                        if (column_pos < chunk.getNumColumns())
+                            chunk.addColumn(column_pos, std::move(partition_column));
+                        else
+                            chunk.addColumn(std::move(partition_column));
+                    }
+                }
                 /// Old delta lake code which needs to be deprecated in favour of DeltaLakeMetadataDeltaKernel.
                 if (dynamic_cast<const DeltaLakeMetadata *>(configuration.get()))
                 {

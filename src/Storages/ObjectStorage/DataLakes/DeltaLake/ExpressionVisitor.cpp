@@ -151,7 +151,7 @@ public:
         /// Finalize the result in result_dag with requested schema.
         for (const auto & node : nodes)
         {
-            LOG_TEST(log, "Node type: {}, result name: {}", node->type, node->result_name);
+            //LOG_TEST(log, "Node type: {}, result name: {}", node->type, node->result_name);
 
             /// During parsing we assigned temporary const_{i} names
             /// to constant expressions,
@@ -183,9 +183,9 @@ public:
                 column_with_type_and_name = DB::ColumnWithTypeAndName(node->column, node->result_type, node->result_name);
             }
 
-            LOG_TEST(
-                log, "Added output: {}, type: {}",
-                column_with_type_and_name.name, column_with_type_and_name.type->getTypeId());
+            //LOG_TEST(
+            //    log, "Added output: {}, type: {}",
+            //    column_with_type_and_name.name, column_with_type_and_name.type->getTypeId());
 
             result_columns.push_back(column_with_type_and_name);
             ++schema_it;
@@ -237,7 +237,7 @@ public:
         const auto & node = dag->addColumn(std::move(column));
 
         node_lists[list_id].push_back(&node);
-        LOG_TEST(log, "Added list id {}", list_id);
+        //LOG_TEST(log, "Added list id {}", list_id);
     }
 
     /// Add identifier (column name) node to the list by `list_id`.
@@ -266,7 +266,7 @@ public:
         const auto & node = dag->addInput(std::move(column));
 
         node_lists[list_id].push_back(&node);
-        LOG_TEST(log, "Added list id {}", list_id);
+        //LOG_TEST(log, "Added list id {}", list_id);
     }
 
     /// Add function node to the list by `list_id`.
@@ -286,10 +286,10 @@ public:
         const auto & node = dag->addFunction(function, std::move(it->second), {});
 
         node_lists.erase(child_list_id);
-        LOG_TEST(log, "Removed list id {}", child_list_id);
+        //LOG_TEST(log, "Removed list id {}", child_list_id);
 
         node_lists[list_id].push_back(&node);
-        LOG_TEST(log, "Added list id {}", list_id);
+        //LOG_TEST(log, "Added list id {}", list_id);
     }
 
     /// Once a list by id `list_id` is fully formed
@@ -331,7 +331,7 @@ public:
         }
 
         node_lists.erase(it);
-        LOG_TEST(log, "Removed list id {}", list_id);
+        //LOG_TEST(log, "Removed list id {}", list_id);
 
         return std::pair(values, types);
     }
@@ -479,10 +479,10 @@ private:
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
-            LOG_TEST(
-                state->logger(),
-                "List id: {}, child list id: {}, type: Function {}",
-                sibling_list_id, child_list_id, Func::name);
+            //LOG_TEST(
+            //    state->logger(),
+            //    "List id: {}, child list id: {}, type: Function {}",
+            //    sibling_list_id, child_list_id, Func::name);
 
             DB::FunctionOverloadResolverPtr function = DB::FunctionFactory::instance().get(Func::name, state->getContext());
             state->addFunction(sibling_list_id, child_list_id, std::move(function));
@@ -495,7 +495,7 @@ private:
         visitorImpl(*state, [&]()
         {
             const auto name_str = KernelUtils::fromDeltaString(name);
-            LOG_TEST(state->logger(), "List id: {}, name: {}, type: Column", sibling_list_id, name_str);
+            //LOG_TEST(state->logger(), "List id: {}, name: {}, type: Column", sibling_list_id, name_str);
 
             state->addIdentifier(sibling_list_id, name_str);
         });
@@ -509,10 +509,10 @@ private:
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
-            LOG_TEST(
-                state->logger(),
-                "List id: {}, child list id: {}, type: StructExpression",
-                sibling_list_id, child_list_id);
+            //LOG_TEST(
+            //    state->logger(),
+            //    "List id: {}, child list id: {}, type: StructExpression",
+            //    sibling_list_id, child_list_id);
 
 
             DB::FunctionOverloadResolverPtr function =
@@ -529,7 +529,7 @@ private:
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
-            LOG_TEST(state->logger(), "List id: {}, type: {}", sibling_list_id, DataType::type_id);
+            //LOG_TEST(state->logger(), "List id: {}, type: {}", sibling_list_id, DataType::type_id);
             state->addLiteral(sibling_list_id, value, std::make_shared<DataType>());
         });
     }
@@ -579,7 +579,7 @@ private:
                 state->addLiteral(sibling_list_id, value, std::make_shared<DB::DataTypeDecimal128>(precision, scale));
             }
 
-            LOG_TEST(state->logger(), "List id: {}, type: Decimal", sibling_list_id);
+            //LOG_TEST(state->logger(), "List id: {}, type: Decimal", sibling_list_id);
         });
     }
 
@@ -588,7 +588,7 @@ private:
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
-            LOG_TEST(state->logger(), "List id: {}, type: Date", sibling_list_id);
+            //LOG_TEST(state->logger(), "List id: {}, type: Date", sibling_list_id);
 
             const ExtendedDayNum daynum{value};
             state->addLiteral(sibling_list_id, value, std::make_shared<DB::DataTypeDate32>());
@@ -600,7 +600,7 @@ private:
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
-            LOG_TEST(state->logger(), "List id: {}, type: Timestamp", sibling_list_id);
+            //LOG_TEST(state->logger(), "List id: {}, type: Timestamp", sibling_list_id);
 
             const auto datetime_value = DB::DecimalField<DB::Decimal64>(value, 6);
             state->addLiteral(sibling_list_id, datetime_value, std::make_shared<DB::DataTypeDateTime64>(6));
@@ -612,7 +612,7 @@ private:
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
-            LOG_TEST(state->logger(), "List id: {}, type: TimestampNtz", sibling_list_id);
+            //LOG_TEST(state->logger(), "List id: {}, type: TimestampNtz", sibling_list_id);
 
             const auto datetime_value = DB::DecimalField<DB::Decimal64>(value, 6);
             state->addLiteral(sibling_list_id, datetime_value, std::make_shared<DB::DataTypeDateTime64>(6));
@@ -625,7 +625,7 @@ private:
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
-            LOG_TEST(state->logger(), "List id: {}, type: Binary", sibling_list_id);
+            //LOG_TEST(state->logger(), "List id: {}, type: Binary", sibling_list_id);
 
             std::string value(reinterpret_cast<const char *>(buffer), len);
             state->addLiteral(sibling_list_id, value, std::make_shared<DB::DataTypeFixedString>(len));
@@ -637,7 +637,7 @@ private:
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
-            LOG_TEST(state->logger(), "List id: {}, type: Null", sibling_list_id);
+            //LOG_TEST(state->logger(), "List id: {}, type: Null", sibling_list_id);
             state->addLiteral(
                 sibling_list_id,
                 DB::Null(),
@@ -650,7 +650,7 @@ private:
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
-            LOG_TEST(state->logger(), "List id: {}, child list id: {}, type: Array", sibling_list_id, child_list_id);
+            //LOG_TEST(state->logger(), "List id: {}, child list id: {}, type: Array", sibling_list_id, child_list_id);
 
             auto [values, types] = state->extractLiteralList<DB::Array>(child_list_id);
             state->addLiteral(
@@ -663,16 +663,16 @@ private:
     static void visitStructLiteral(
         void * data,
         uintptr_t sibling_list_id,
-        uintptr_t child_field_list_id,
+        uintptr_t /*child_field_list_id*/,
         uintptr_t child_value_list_id)
     {
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
-            LOG_TEST(
-                state->logger(),
-                "List id: {}, child field list id: {}, child value list id: {}, type: Struct",
-                sibling_list_id, child_field_list_id, child_value_list_id);
+            //LOG_TEST(
+            //    state->logger(),
+            //    "List id: {}, child field list id: {}, child value list id: {}, type: Struct",
+            //    sibling_list_id, child_field_list_id, child_value_list_id);
 
             auto [values, types] = state->extractLiteralList<DB::Tuple>(child_value_list_id);
             state->addLiteral(sibling_list_id, values, std::make_shared<DB::DataTypeTuple>(types));
@@ -688,10 +688,10 @@ private:
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
-            LOG_TEST(
-                state->logger(),
-                "List id: {}, key list id: {}, value list id: {}, type: Map",
-                sibling_list_id, key_list_id, value_list_id);
+            //LOG_TEST(
+            //    state->logger(),
+            //    "List id: {}, key list id: {}, value list id: {}, type: Map",
+            //    sibling_list_id, key_list_id, value_list_id);
 
             auto [keys, key_types] = state->extractLiteralList<DB::Tuple>(key_list_id);
             chassert(keys.size() == key_types.size());

@@ -24,6 +24,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/PartitionPruner.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ExpressionVisitor.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
 #include <delta_kernel_ffi.hpp>
 #include <fmt/ranges.h>
 
@@ -93,12 +94,6 @@ public:
         , callback(callback_)
         , list_batch_size(list_batch_size_)
         , log(log_)
-        , thread([&, thread_group = DB::CurrentThread::getGroup()] {
-            /// Attach to current query thread group, to be able to
-            /// have query id in logs and metrics from scanDataFunc.
-            DB::ThreadGroupSwitcher switcher(thread_group, "TableSnapshot");
-            scanDataFunc();
-        })
     {
         if (filter_dag_)
         {
@@ -108,6 +103,8 @@ public:
                 partition_columns_,
                 physical_names_map_,
                 DB::Context::getGlobalContextInstance());
+
+            predicate = getEnginePredicate(*filter_dag_, scan_exception);
 
             LOG_TEST(log, "Using filter expression");
         }
@@ -124,19 +121,31 @@ public:
             for (auto & name : partition_columns)
                 name = getPhysicalName(name, physical_names_map_);
         }
+
+        thread = std::make_unique<ThreadFromGlobalPool>(
+            [&, thread_group = DB::CurrentThread::getGroup()]
+            {
+                /// Attach to current query thread group, to be able to
+                /// have query id in logs and metrics from scanDataFunc.
+                DB::ThreadGroupSwitcher switcher(thread_group, "TableSnapshot");
+                scanDataFunc();
+            });
     }
 
     ~Iterator() override
     {
         shutdown.store(true);
         schedule_next_batch_cv.notify_one();
-        if (thread.joinable())
-            thread.join();
+        if (thread && thread->joinable())
+            thread->join();
     }
 
     void initScanState()
     {
-        scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(), engine.get(), /* predicate */{}), "scan");
+        scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(),
+                                                   engine.get(),
+                                                   predicate ? predicate.get() : nullptr),
+                                         "scan");
         scan_data_iterator = KernelUtils::unwrapResult(
             ffi::scan_metadata_iter_init(engine.get(), scan.get()),
             "scan_metadata_iter_init");
@@ -169,8 +178,10 @@ public:
                 {
                     std::lock_guard lock(next_mutex);
                     iterator_finished = true;
+                    LOG_TEST(log, "Set finished");
                 }
                 data_files_cv.notify_all();
+                LOG_TEST(log, "Notified");
                 return;
             }
         }
@@ -190,18 +201,21 @@ public:
             DB::ObjectInfoPtr object;
             {
                 std::unique_lock lock(next_mutex);
-                if (!iterator_finished && data_files.empty())
+                if (!iterator_finished && data_files.empty() && !shutdown)
                 {
                     LOG_TEST(log, "Waiting for next data file");
                     schedule_next_batch_cv.notify_one();
-                    data_files_cv.wait(lock, [&]() { return !data_files.empty() || iterator_finished; });
+                    data_files_cv.wait(lock, [&]() { return !data_files.empty() || iterator_finished || shutdown.load(); });
                 }
 
                 if (scan_exception)
                     std::rethrow_exception(scan_exception);
 
-                if (data_files.empty())
+                if (data_files.empty() || shutdown)
+                {
+                    LOG_TEST(log, "Data files: {}", data_files.size());
                     return nullptr;
+                }
 
                 LOG_TEST(log, "Current data files: {}", data_files.size());
 
@@ -219,6 +233,13 @@ public:
                 LOG_TEST(log, "Skipping file {} according to partition pruning", object->getPath());
                 continue;
             }
+
+            //if (object->data_lake_metadata->transformm)
+            //{
+            //    LOG_TRACE(log, "Parsing transform");
+            //    auto parsed_transform = visitScanCallbackExpression(object->data_lake_metadata->transformm, expression_schema);
+            //    LOG_TRACE(log, "Parsed transform: {}", parsed_transform->dumpNames());
+            //}
 
             object->metadata = object_storage->getObjectMetadata(object->getPath());
 
@@ -260,6 +281,7 @@ public:
                 /// We cannot allow to throw exceptions from ScanCallback,
                 /// otherwise delta-kernel will panic and call terminate.
                 context->scan_exception = std::current_exception();
+                context->shutdown = true;
             }
         }
     }
@@ -271,16 +293,54 @@ public:
         const ffi::Stats * stats,
         const ffi::DvInfo * /* dv_info */,
         const ffi::Expression * transform,
-        const struct ffi::CStringMap * /* deprecated */)
+        const struct ffi::CStringMap * partition_map)
     {
         auto * context = static_cast<TableSnapshot::Iterator *>(engine_context);
+        if (context->shutdown)
+        {
+            context->data_files_cv.notify_all();
+            return;
+        }
+
         std::string full_path = fs::path(context->data_prefix) / DB::unescapeForFileName(KernelUtils::fromDeltaString(path));
         auto object = std::make_shared<DB::ObjectInfo>(std::move(full_path));
+
+        std::vector<std::pair<DB::NameAndTypePair, DB::Field>> partition_values;
+        for (const auto & partition_column : context->partition_columns)
+        {
+            std::string * value = static_cast<std::string *>(ffi::get_from_string_map(
+                partition_map,
+                KernelUtils::toDeltaString(partition_column),
+                KernelUtils::allocateString));
+
+            SCOPE_EXIT({ delete value; });
+
+            if (value)
+            {
+                auto name_and_type = context->expression_schema.tryGetByName(partition_column);
+                if (!name_and_type)
+                {
+                    throw DB::Exception(
+                        DB::ErrorCodes::LOGICAL_ERROR,
+                        "Cannot find column `{}` in schema, there are only columns: `{}`",
+                        partition_column, fmt::join(context->expression_schema.getNames(), ", "));
+                }
+                partition_values.emplace_back(
+                    name_and_type.value(),
+                    DB::parseFieldFromString(*value, name_and_type->type));
+            }
+        }
+
+        object->data_lake_metadata = DB::DataLakeObjectMetadata{};
+        object->data_lake_metadata->partition_values = partition_values;
+        if (transform)
+            object->data_lake_metadata->transformm = transform;
 
         if (transform && !context->partition_columns.empty())
         {
             auto parsed_transform = visitScanCallbackExpression(transform, context->expression_schema);
-            object->data_lake_metadata = DB::DataLakeObjectMetadata{ .transform = parsed_transform };
+            //object->data_lake_metadata = DB::DataLakeObjectMetadata{ .transform = parsed_transform };
+            object->data_lake_metadata->transform = parsed_transform;
 
             LOG_TEST(
                 context->log,
@@ -289,10 +349,20 @@ public:
                 parsed_transform->dumpNames());
         }
         else
+        {
             LOG_TEST(
                 context->log,
                 "Scanned file: {}, size: {}, num records: {}",
                 object->getPath(), size, stats ? DB::toString(stats->num_records) : "Unknown");
+        }
+
+        //if (context->pruner.has_value() && context->pruner->canBePruned(*object))
+        //{
+        //    ProfileEvents::increment(ProfileEvents::DeltaLakePartitionPrunedFiles);
+
+        //    LOG_TEST(context->log, "Skipping * file {} according to partition pruning", object->getPath());
+        //    return;
+        //}
 
         {
             std::lock_guard lock(context->next_mutex);
@@ -308,6 +378,7 @@ private:
     const KernelExternEngine & engine;
     const KernelSnapshot & snapshot;
     KernelScan & scan;
+    std::unique_ptr<ffi::EnginePredicate> predicate;
     KernelScanDataIterator scan_data_iterator;
     std::optional<PartitionPruner> pruner;
 
@@ -338,7 +409,7 @@ private:
     std::mutex next_mutex;
 
     /// A thread for async data scanning.
-    ThreadFromGlobalPool thread;
+    std::unique_ptr<ThreadFromGlobalPool> thread;
 };
 
 
