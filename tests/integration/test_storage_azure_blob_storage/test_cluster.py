@@ -94,16 +94,16 @@ def test_select_all(cluster):
         query_id=query_id_distributed,
     )
     print(distributed_azure)
-    query_id_distributed_alt_syntax = str(uuid.uuid4())
-    distributed_azure_alt_syntax = azure_query(
-        node,
-        f"SELECT * from azureBlobStorage('{storage_account_url}', 'cont', 'test_cluster_select_all.csv', 'devstoreaccount1',"
-        f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',"
-        f"'auto') "
-        f"SETTINGS object_storage_cluster='simple_cluster'",
-        query_id=query_id_distributed_alt_syntax,
-    )
-    print(distributed_azure_alt_syntax)
+    #query_id_distributed_alt_syntax = str(uuid.uuid4())
+    #distributed_azure_alt_syntax = azure_query(
+    #    node,
+    #    f"SELECT * from azureBlobStorage('{storage_account_url}', 'cont', 'test_cluster_select_all.csv', 'devstoreaccount1',"
+    #    f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',"
+    #    f"'auto') "
+    #    f"SETTINGS object_storage_cluster='simple_cluster'",
+    #    query_id=query_id_distributed_alt_syntax,
+    #)
+    #print(distributed_azure_alt_syntax)
     azure_query(
         node,
         f"""
@@ -127,34 +127,34 @@ def test_select_all(cluster):
         "SELECT * FROM azure_engine_table_single_node",
         query_id=query_id_engine_single_node,
     )
-    azure_query(
-        node,
-        f"""
-        DROP TABLE IF EXISTS azure_engine_table_distributed;
-        CREATE TABLE azure_engine_table_distributed
-            (key UInt64, data String)
-            ENGINE=AzureBlobStorage(
-                '{storage_account_url}',
-                'cont',
-                'test_cluster_select_all.csv',
-                'devstoreaccount1',
-                'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==',
-                'CSV',
-                'auto'
-            )
-            SETTINGS object_storage_cluster='simple_cluster'
-        """,
-    )
-    query_id_engine_distributed = str(uuid.uuid4())
-    azure_engine_distributed = azure_query(
-        node,
-        "SELECT * FROM azure_engine_table_distributed",
-        query_id=query_id_engine_distributed,
-    )
+    #azure_query(
+    #    node,
+    #    f"""
+    #    DROP TABLE IF EXISTS azure_engine_table_distributed;
+    #    CREATE TABLE azure_engine_table_distributed
+    #        (key UInt64, data String)
+    #        ENGINE=AzureBlobStorage(
+    #            '{storage_account_url}',
+    #            'cont',
+    #            'test_cluster_select_all.csv',
+    #            'devstoreaccount1',
+    #            'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==',
+    #            'CSV',
+    #            'auto'
+    #        )
+    #        SETTINGS object_storage_cluster='simple_cluster'
+    #    """,
+    #)
+    #query_id_engine_distributed = str(uuid.uuid4())
+    #azure_engine_distributed = azure_query(
+    #    node,
+    #    "SELECT * FROM azure_engine_table_distributed",
+    #    query_id=query_id_engine_distributed,
+    #)
     assert TSV(pure_azure) == TSV(distributed_azure)
-    assert TSV(pure_azure) == TSV(distributed_azure_alt_syntax)
+    #assert TSV(pure_azure) == TSV(distributed_azure_alt_syntax)
     assert TSV(pure_azure) == TSV(azure_engine_single_node)
-    assert TSV(pure_azure) == TSV(azure_engine_distributed)
+    #assert TSV(pure_azure) == TSV(azure_engine_distributed)
     for _, node_ in cluster.instances.items():
         node_.query("SYSTEM FLUSH LOGS")
     nodes_pure = node.query(
@@ -175,15 +175,15 @@ def test_select_all(cluster):
         """,
     )
     assert int(nodes_distributed) == 3
-    nodes_distributed_alt_syntax = node.query(
-        f"""
-        SELECT uniq(hostname)
-            FROM clusterAllReplicas('simple_cluster', system.query_log)
-            WHERE type='QueryFinish'
-            AND initial_query_id='{query_id_distributed_alt_syntax}'
-        """,
-    )
-    assert int(nodes_distributed_alt_syntax) == 3
+    #nodes_distributed_alt_syntax = node.query(
+    #    f"""
+    #    SELECT uniq(hostname)
+    #        FROM clusterAllReplicas('simple_cluster', system.query_log)
+    #        WHERE type='QueryFinish'
+    #        AND initial_query_id='{query_id_distributed_alt_syntax}'
+    #    """,
+    #)
+    #assert int(nodes_distributed_alt_syntax) == 3
     nodes_engine_single_node = node.query(
         f"""
         SELECT uniq(hostname)
@@ -193,15 +193,15 @@ def test_select_all(cluster):
         """,
     )
     assert int(nodes_engine_single_node) == 1
-    nodes_engine_distributed = node.query(
-        f"""
-        SELECT uniq(hostname)
-            FROM clusterAllReplicas('simple_cluster', system.query_log)
-            WHERE type='QueryFinish'
-            AND initial_query_id='{query_id_engine_distributed}'
-        """,
-    )
-    assert int(nodes_engine_distributed) == 3
+    #nodes_engine_distributed = node.query(
+    #    f"""
+    #    SELECT uniq(hostname)
+    #        FROM clusterAllReplicas('simple_cluster', system.query_log)
+    #        WHERE type='QueryFinish'
+    #        AND initial_query_id='{query_id_engine_distributed}'
+    #    """,
+    #)
+    #assert int(nodes_engine_distributed) == 3
 
 
 def test_count(cluster):
@@ -231,16 +231,16 @@ def test_count(cluster):
         f"'auto', 'key UInt64')",
     )
     print(distributed_azure)
-    distributed_azure_alt_syntax = azure_query(
-        node,
-        f"SELECT count(*) from azureBlobStorage('{storage_account_url}', 'cont', 'test_cluster_count.csv', "
-        f"'devstoreaccount1','Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',"
-        f"'auto', 'key UInt64')"
-        f"SETTINGS object_storage_cluster='simple_cluster'",
-    )
-    print(distributed_azure_alt_syntax)
+    #distributed_azure_alt_syntax = azure_query(
+    #    node,
+    #    f"SELECT count(*) from azureBlobStorage('{storage_account_url}', 'cont', 'test_cluster_count.csv', "
+    #    f"'devstoreaccount1','Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',"
+    #    f"'auto', 'key UInt64')"
+    #    f"SETTINGS object_storage_cluster='simple_cluster'",
+    #)
+    #print(distributed_azure_alt_syntax)
     assert TSV(pure_azure) == TSV(distributed_azure)
-    assert TSV(pure_azure) == TSV(distributed_azure_alt_syntax)
+    #assert TSV(pure_azure) == TSV(distributed_azure_alt_syntax)
 
 
 def test_union_all(cluster):

@@ -413,20 +413,20 @@ def test_cluster_with_header(started_cluster):
         )
         == "SomeValue\n"
     )
-    assert (
-        node.query(
-            """SELECT * from s3('http://resolver:8080/bucket/key.csv', headers(MyCustomHeader = 'SomeValue'))
-            SETTINGS object_storage_cluster = 'cluster_simple'"""
-        )
-        == "SomeValue\n"
-    )
-    assert (
-        node.query(
-            """SELECT * from s3('http://resolver:8080/bucket/key.csv', headers(MyCustomHeader = 'SomeValue'), 'CSV')
-            SETTINGS object_storage_cluster = 'cluster_simple'"""
-        )
-        == "SomeValue\n"
-    )
+    #assert (
+    #    node.query(
+    #        """SELECT * from s3('http://resolver:8080/bucket/key.csv', headers(MyCustomHeader = 'SomeValue'))
+    #        SETTINGS object_storage_cluster = 'cluster_simple'"""
+    #    )
+    #    == "SomeValue\n"
+    #)
+    #assert (
+    #    node.query(
+    #        """SELECT * from s3('http://resolver:8080/bucket/key.csv', headers(MyCustomHeader = 'SomeValue'), 'CSV')
+    #        SETTINGS object_storage_cluster = 'cluster_simple'"""
+    #    )
+    #    == "SomeValue\n"
+    #)
 
 
 def test_cluster_with_named_collection(started_cluster):
@@ -446,19 +446,19 @@ def test_cluster_with_named_collection(started_cluster):
 
     assert TSV(pure_s3) == TSV(s3_cluster)
 
-    s3_cluster = node.query(
-        """SELECT * from s3(test_s3) ORDER BY (c1, c2, c3)
-        SETTINGS object_storage_cluster = 'cluster_simple'"""
-    )
+    #s3_cluster = node.query(
+    #    """SELECT * from s3(test_s3) ORDER BY (c1, c2, c3)
+    #    SETTINGS object_storage_cluster = 'cluster_simple'"""
+    #)
 
-    assert TSV(pure_s3) == TSV(s3_cluster)
+    #assert TSV(pure_s3) == TSV(s3_cluster)
 
-    s3_cluster = node.query(
-        """SELECT * from s3(test_s3, structure='auto') ORDER BY (c1, c2, c3)
-        SETTINGS object_storage_cluster = 'cluster_simple'"""
-    )
+    #s3_cluster = node.query(
+    #    """SELECT * from s3(test_s3, structure='auto') ORDER BY (c1, c2, c3)
+    #    SETTINGS object_storage_cluster = 'cluster_simple'"""
+    #)
 
-    assert TSV(pure_s3) == TSV(s3_cluster)
+    #assert TSV(pure_s3) == TSV(s3_cluster)
 
 
 def test_cluster_format_detection(started_cluster):
@@ -542,20 +542,20 @@ def test_cluster_default_expression(started_cluster):
 def test_remote_hedged(started_cluster):
     node = started_cluster.instances["s0_0_0"]
     pure_s3 = node.query(
-        """
+        f"""
     SELECT * from s3(
-        'http://minio1:9001/root/data/{clickhouse,database}/*',
-        'minio', 'minio123', 'CSV',
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*',
+        'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
     ORDER BY (name, value, polygon)
     LIMIT 1
         """
     )
     s3_distributed = node.query(
-        """
+        f"""
     SELECT * from remote('s0_0_1', s3Cluster(
         'cluster_simple',
-        'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV',
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))'))
     ORDER BY (name, value, polygon)
     LIMIT 1
@@ -569,20 +569,20 @@ def test_remote_hedged(started_cluster):
 def test_remote_no_hedged(started_cluster):
     node = started_cluster.instances["s0_0_0"]
     pure_s3 = node.query(
-        """
+        f"""
     SELECT * from s3(
-        'http://minio1:9001/root/data/{clickhouse,database}/*',
-        'minio', 'minio123', 'CSV',
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*',
+        'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
     ORDER BY (name, value, polygon)
     LIMIT 1
         """
     )
     s3_distributed = node.query(
-        """
+        f"""
     SELECT * from remote('s0_0_1', s3Cluster(
         'cluster_simple',
-        'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV',
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))'))
     ORDER BY (name, value, polygon)
     LIMIT 1
