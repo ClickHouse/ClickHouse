@@ -52,7 +52,7 @@ $CLICKHOUSE_LOCAL --query "
         )) AND (name NOT IN (
             SELECT arrayJoin(tupleElement(changes, 'name'))
             FROM system.settings_changes
-            WHERE type = 'Session' AND splitByChar('.', version)[1]::UInt64 > 25 OR (splitByChar('.', version)[1]::UInt64 == 25 AND splitByChar('.', version)[2]::UInt64 > 6)
+            WHERE type = 'Session' AND splitByChar('.', version)[1]::UInt64 > 25 OR (splitByChar('.', version)[1]::UInt64 == 25 AND splitByChar('.', version)[2]::UInt64 > 7)
         ))
         UNION ALL
         (
@@ -64,7 +64,7 @@ $CLICKHOUSE_LOCAL --query "
             )) AND (name NOT IN (
                 SELECT arrayJoin(tupleElement(changes, 'name'))
                 FROM system.settings_changes
-                WHERE type = 'MergeTree' AND splitByChar('.', version)[1]::UInt64 > 25 OR (splitByChar('.', version)[1]::UInt64 == 25 AND splitByChar('.', version)[2]::UInt64 > 6)
+                WHERE type = 'MergeTree' AND splitByChar('.', version)[1]::UInt64 > 25 OR (splitByChar('.', version)[1]::UInt64 == 25 AND splitByChar('.', version)[2]::UInt64 > 7)
             ))
         )
         UNION ALL
@@ -75,7 +75,7 @@ $CLICKHOUSE_LOCAL --query "
             WHERE (new_settings.default != old_settings.default) AND (name NOT IN (
                 SELECT arrayJoin(tupleElement(changes, 'name'))
                 FROM system.settings_changes
-                WHERE type = 'Session' AND splitByChar('.', version)[1]::UInt64 > 25 OR (splitByChar('.', version)[1]::UInt64 == 25 AND splitByChar('.', version)[2]::UInt64 > 6)
+                WHERE type = 'Session' AND splitByChar('.', version)[1]::UInt64 > 25 OR (splitByChar('.', version)[1]::UInt64 == 25 AND splitByChar('.', version)[2]::UInt64 > 7)
             )) AND ${IGNORE_SETTINGS_FOR_SANITIZERS}
         )
         UNION ALL
@@ -86,7 +86,7 @@ $CLICKHOUSE_LOCAL --query "
             WHERE (new_merge_tree_settings.default != old_merge_tree_settings.default) AND (name NOT IN (
                 SELECT arrayJoin(tupleElement(changes, 'name'))
                 FROM system.settings_changes
-                WHERE type = 'MergeTree' AND splitByChar('.', version)[1]::UInt64 > 25 OR (splitByChar('.', version)[1]::UInt64 == 25 AND splitByChar('.', version)[2]::UInt64 > 6)
+                WHERE type = 'MergeTree' AND splitByChar('.', version)[1]::UInt64 > 25 OR (splitByChar('.', version)[1]::UInt64 == 25 AND splitByChar('.', version)[2]::UInt64 > 7)
             )) AND ${IGNORED_MERGETREE_SETTINGS_FOR_CLOUD}
         )
     )
