@@ -3,7 +3,6 @@
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/Serializations/DeserializationTask.h>
 #include <DataTypes/Serializations/SerializationObjectHelpers.h>
-#include <DataTypes/DataTypesBinaryEncoding.h>
 
 #include <Columns/ColumnObject.h>
 #include <DataTypes/DataTypeObject.h>
