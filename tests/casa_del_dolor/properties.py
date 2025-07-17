@@ -881,7 +881,9 @@ class SharedCatalogPropertiesGroup(PropertiesGroup):
         }
         remote_servers = top_root.find("remote_servers")
         if remote_servers is not None:
-            number_clusters = len(list(remote_servers))
+            number_clusters = len(
+                [c for c in remote_servers if "remove" not in c.attrib]
+            )
         if number_clusters > 0 and random.randint(1, 100) <= 75:
             cluster_name_choices = [f"cluster{i}" for i in range(0, number_clusters)]
             if remote_servers is None or remote_servers.find("default") is None:

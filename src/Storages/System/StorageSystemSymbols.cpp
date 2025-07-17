@@ -49,7 +49,7 @@ public:
         std::vector<UInt8> columns_mask_,
         Block header,
         UInt64 max_block_size_)
-        : ISource(std::move(header))
+        : ISource(std::make_shared<const Block>(std::move(header)))
         , it(begin_), end(end_), columns_mask(std::move(columns_mask_)), max_block_size(max_block_size_)
     {
     }

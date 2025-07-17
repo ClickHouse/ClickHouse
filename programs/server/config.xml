@@ -79,7 +79,7 @@
         For example, to change DATE_TIME to MY_DATE_TIME, you can do like:
             <date_time>MY_DATE_TIME</date_time>
             <date_time_utc>MY_UTC_DATE_TIME</date_time_utc>
-        b) You can stop unwanted log properties to appear in logs. To do so, you can simply comment out (recommended)
+        b) You can stop unwanted log properties from appearing in logs. To do so, you can simply comment out (recommended)
         that property from this file.
         For example, if you do not want your log to print query_id, you can comment out only <query_id> tag.
         However, if you comment out all the tags under <names>, the program will print default values for as
@@ -134,7 +134,7 @@
         </header>
     </http_options_response>
 
-    <!-- It is the name that will be shown in the clickhouse-client.
+    <!-- The name that will be shown in the clickhouse-client.
          By default, anything with "production" will be highlighted in red in query prompt.
     -->
     <!--display_name>production</display_name-->
@@ -181,18 +181,18 @@
 
     <!-- HTTP API with TLS (HTTPS).
          You have to configure certificate to enable this interface.
-         See the openSSL section below.
+         See the OpenSSL section below.
     -->
     <!-- <https_port>8443</https_port> -->
 
     <!-- Native interface with TLS.
          You have to configure certificate to enable this interface.
-         See the openSSL section below.
+         See the OpenSSL section below.
     -->
     <!-- <tcp_port_secure>9440</tcp_port_secure> -->
 
     <!-- Native interface wrapped with PROXYv1 protocol
-         PROXYv1 header sent for every connection.
+         PROXYv1 header is sent for every connection.
          ClickHouse will extract information about proxy-forwarded client address from the header.
     -->
     <!-- <tcp_with_proxy_port>9011</tcp_with_proxy_port> -->
@@ -208,7 +208,7 @@
 
     <!-- Port for communication between replicas with TLS.
          You have to configure certificate to enable this interface.
-         See the openSSL section below.
+         See the OpenSSL section below.
          See also 'interserver_http_credentials'.
       -->
     <!-- <interserver_https_port>9010</interserver_https_port> -->
@@ -236,14 +236,14 @@
         <!-- <host_ecdsa_key>path_to_the_ssh_key</host_ecdsa_key> -->
         <!-- <host_ed25519_key>path_to_the_ssh_key</host_ed25519_key> -->
 
-        <!-- Unlocks the possibility to pass the client options as an environment
-             variables in a form of: ssh -o SetEnv="key1=value1 key2=value2".
+        <!-- Unlocks the possibility to pass the client options as environment
+             variables in the form of: ssh -o SetEnv="key1=value1 key2=value2".
              This is considered unsafe and should be used with caution.
         -->
         <!-- <enable_client_options_passing>false</enable_client_options_passing>-->
     </ssh_server>
 
-    <!-- You can specify credentials for authenthication between replicas.
+    <!-- You can specify credentials for authentication between replicas.
          This is required when interserver_https_port is accessible from untrusted networks,
          and also recommended to avoid SSRF attacks from possibly compromised services in your network.
       -->
@@ -255,7 +255,7 @@
     <!-- Listen specified address.
          Use :: (wildcard IPv6 address), if you want to accept connections both with IPv4 and IPv6 from everywhere.
          Notes:
-         If you open connections from wildcard address, make sure that at least one of the following measures applied:
+         If you open connections from wildcard address, make sure that at least one of the following measures is applied:
          - server is protected by firewall and not accessible from untrusted networks;
          - all users are restricted to subset of network addresses (see users.xml);
          - all users have strong passwords, only secure (TLS) interfaces are accessible, or connections are only made via TLS interfaces.
@@ -583,7 +583,7 @@
       -->
     <default_password_type>sha256_password</default_password_type>
 
-    <!-- Work factor for bcrypt_password authentication type-->
+    <!-- Work factor for bcrypt_password authentication type -->
     <bcrypt_workfactor>12</bcrypt_workfactor>
 
     <!-- Complexity requirements for user passwords.
@@ -1144,7 +1144,7 @@
 
         <!-- Interval of flushing data. -->
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <!-- Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk. -->
+        <!-- Maximum size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk. -->
         <max_size_rows>1048576</max_size_rows>
         <!-- Pre-allocated size in lines for the logs. -->
         <reserved_size_rows>8192</reserved_size_rows>
@@ -1257,7 +1257,7 @@
         <flush_on_crash>false</flush_on_crash>
     </error_log>
 
-    <!-- Query metric log contains rows Contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk
+    <!-- Query metric log contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk
     every "collect_interval_milliseconds" interval-->
     <query_metric_log>
         <database>system</database>
@@ -1461,7 +1461,7 @@
      If not specified they will be stored locally. -->
     <!-- <user_defined_zookeeper_path>/clickhouse/user_defined</user_defined_zookeeper_path> -->
 
-    <!-- Path in ZooKeeper to store workload and resource created by the command CREATE WORKLOAD and CREATE REESOURCE.
+    <!-- Path in ZooKeeper to store workload and resource created by the command CREATE WORKLOAD and CREATE RESOURCE.
      If not specified they will be stored locally. -->
     <!-- <workload_zookeeper_path>/clickhouse/workload/definitions.sql</workload_zookeeper_path> -->
 
@@ -1496,9 +1496,9 @@
         <!-- aes_128_gcm_siv -->
             <!-- Example of getting hex key from env -->
             <!-- the code should use this key and throw an exception if its length is not 16 bytes -->
-            <!--key_hex from_env="..."></key_hex -->
+            <!-- key_hex from_env="..."></key_hex -->
 
-            <!-- Example of multiple hex keys. They can be imported from env or be written down in config-->
+            <!-- Example of multiple hex keys. They can be imported from env or be written down in config -->
             <!-- the code should use these keys and throw an exception if their length is not 16 bytes -->
             <!-- key_hex id="0">...</key_hex -->
             <!-- key_hex id="1" from_env=".."></key_hex -->
@@ -1528,7 +1528,7 @@
         <!-- Settings from this profile will be used to execute DDL queries -->
         <!-- <profile>default</profile> -->
 
-        <!-- Controls how much ON CLUSTER queries can be run simultaneously. -->
+        <!-- Controls how many ON CLUSTER queries can be run simultaneously. -->
         <!-- <pool_size>1</pool_size> -->
 
         <!--
@@ -1649,7 +1649,7 @@
             url - to match request URL, you can use 'regex:' prefix to use regex match(optional)
             empty_query_string - check that there is no query string in the URL
             methods - to match request method, you can use commas to separate multiple method matches(optional)
-            headers - to match request headers, match each child element(child element name is header name), you can use 'regex:' prefix to use regex match(optional)
+            headers - to match request headers, match each child element (child element name is header name), you can use 'regex:' prefix to use regex match(optional)
 
         handler is request handler
             type - supported types: static, dynamic_query_handler, predefined_query_handler, redirect
@@ -1657,7 +1657,7 @@
             query_param_name - use with dynamic_query_handler type, extracts and executes the value corresponding to the <query_param_name> value in HTTP request params
             status - use with static type, response status code
             content_type - use with static type, response content-type
-            response_content - use with static type, Response content sent to client, when using the prefix 'file://' or 'config://', find the content from the file or configuration send to client.
+            response_content - use with static type, response content sent to client, when using the prefix 'file://' or 'config://', find the content from the file or configuration send to client.
             url - a location for redirect
 
         Along with a list of rules, you can specify <defaults/> which means - enable all the default handlers.
@@ -1748,8 +1748,8 @@
     <!-- <kafka> -->
         <!-- Global configuration properties -->
         <!--
-        NOTE: statistics should be consumed, otherwise it creates too much
-              entries in the queue, that leads to memory leak and slow shutdown.
+        NOTE: statistics should be consumed, otherwise it creates too many
+              entries in the queue that leads to memory leak and slow shutdown.
         default value: 0
         <statistics_interval_ms>3000</statistics_interval_ms>
         -->
@@ -1809,4 +1809,11 @@
 
     <!-- If set true ClickHouse will wait for running queries finish before shutdown. -->
     <!-- <shutdown_wait_unfinished_queries>false</shutdown_wait_unfinished_queries> -->
+
+    <!-- Disables the checksum of the clickhouse-server binary when performing integrity checks.
+        Not recommended in production environments, but there may be legitimate use-cases, such as
+        when instrumenting ClickHouse via eBPF probes.
+
+    <skip_binary_checksum_checks>false</skip_binary_checksum_checks>
+    -->
 </clickhouse>

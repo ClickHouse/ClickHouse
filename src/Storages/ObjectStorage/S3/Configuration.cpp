@@ -97,7 +97,7 @@ void StorageS3Configuration::check(ContextPtr context) const
     validateNamespace(url.bucket);
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url.uri);
     context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers_from_ast);
-    Configuration::check(context);
+    StorageObjectStorageConfiguration::check(context);
 }
 
 void StorageS3Configuration::validateNamespace(const String & name) const
@@ -105,10 +105,10 @@ void StorageS3Configuration::validateNamespace(const String & name) const
     S3::URI::validateBucket(name, {});
 }
 
-StorageObjectStorage::QuerySettings StorageS3Configuration::getQuerySettings(const ContextPtr & context) const
+StorageObjectStorageQuerySettings StorageS3Configuration::getQuerySettings(const ContextPtr & context) const
 {
     const auto & settings = context->getSettingsRef();
-    return StorageObjectStorage::QuerySettings{
+    return StorageObjectStorageQuerySettings{
         .truncate_on_insert = settings[Setting::s3_truncate_on_insert],
         .create_new_file_on_insert = settings[Setting::s3_create_new_file_on_insert],
         .schema_inference_use_cache = settings[Setting::schema_inference_use_cache_for_s3],

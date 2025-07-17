@@ -493,7 +493,7 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
         LOG_TRACE(log, "{}: Pulled block with {} columns and {} rows",
                   time_series_storage_id.getNameForLogs(), block.columns(), block.rows());
 
-        if (block)
+        if (!block.empty())
             convertBlockToProtobuf(std::move(block), out_time_series, time_series_storage_id, time_series_settings);
     }
 

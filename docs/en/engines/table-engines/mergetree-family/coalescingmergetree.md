@@ -5,6 +5,8 @@ sidebar_label: 'CoalescingMergeTree'
 sidebar_position: 50
 slug: /engines/table-engines/mergetree-family/coalescingmergetree
 title: 'CoalescingMergeTree'
+keywords: ['CoalescingMergeTree']
+show_related_blogs: true
 ---
 
 # CoalescingMergeTree
@@ -13,7 +15,7 @@ The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/ver
 
 We recommend using the engine together with `MergeTree`. Store complete data in `MergeTree` table, and use `CoalescingMergeTree` for aggregated data storing, for example, when preparing reports. Such an approach will prevent you from losing valuable data due to an incorrectly composed primary key.
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -32,7 +34,7 @@ For a description of request parameters, see [request description](../../../sql-
 
 ### Parameters of CoalescingMergeTree {#parameters-of-coalescingmergetree}
 
-#### columns {#columns}
+#### Columns {#columns}
 
 `columns` - a tuple with the names of columns where values will be united. Optional parameter.
     The columns must be of a numeric type and must not be in the partition or sorting key.
@@ -66,7 +68,7 @@ All of the parameters excepting `columns` have the same meaning as in `MergeTree
 
 </details>
 
-## Usage Example {#usage-example}
+## Usage example {#usage-example}
 
 Consider the following table:
 

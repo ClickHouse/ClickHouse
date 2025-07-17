@@ -1,17 +1,17 @@
 ---
 description: 'Guide to using and configuring the query cache feature in ClickHouse'
-sidebar_label: 'Query Cache'
+sidebar_label: 'Query cache'
 sidebar_position: 65
 slug: /operations/query-cache
-title: 'Query Cache'
+title: 'Query cache'
 ---
 
-# Query Cache
+# Query cache
 
 The query cache allows to compute `SELECT` queries just once and to serve further executions of the same query directly from the cache.
 Depending on the type of the queries, this can dramatically reduce latency and resource consumption of the ClickHouse server.
 
-## Background, Design and Limitations {#background-design-and-limitations}
+## Background, design and limitations {#background-design-and-limitations}
 
 Query caches can generally be viewed as transactionally consistent or inconsistent.
 
@@ -32,7 +32,7 @@ Transactionally inconsistent caching is traditionally provided by client tools o
 configuration is often duplicated. With ClickHouse's query cache, the caching logic moves to the server side. This reduces maintenance
 effort and avoids redundancy.
 
-## Configuration Settings and Usage {#configuration-settings-and-usage}
+## Configuration settings and usage {#configuration-settings-and-usage}
 
 :::note
 In ClickHouse Cloud, you must use [query level settings](/operations/settings/query-level) to edit query cache settings. Editing [config level settings](/operations/configuration-files) is currently not supported.
@@ -209,6 +209,6 @@ row policy on a table by running the same query as another user B for whom no su
 be marked accessible by other users (i.e. shared) by supplying setting
 [query_cache_share_between_users](/operations/settings/settings#query_cache_share_between_users).
 
-## Related Content {#related-content}
+## Related content {#related-content}
 
 - Blog: [Introducing the ClickHouse Query Cache](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)

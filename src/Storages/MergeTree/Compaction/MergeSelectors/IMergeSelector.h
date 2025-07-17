@@ -22,14 +22,20 @@ class IMergeSelector
 {
 public:
     using RangeFilter = std::function<bool(PartsRangeView)>;
+    using MergeSizes = std::span<const size_t>;
 
     /** Function could be called at any frequency and it must decide, should you do any merge at all.
       * If better not to do any merge, it returns empty result.
+      *
+      * @param parts_ranges Initial parts ranges returned from parts collector.
+      * @param max_merge_sizes Requested sizes for merges.
+      * @param range_filter Additional constraints on returned ranges.
+      * @return Selected ranges up to max_merge_sizes.size() but may be less if some of them did not fit into merge sizes.
       */
-    virtual PartsRange select(
+    virtual PartsRanges select(
         const PartsRanges & parts_ranges,
-        size_t max_total_size_to_merge,
-        RangeFilter range_filter) const = 0;
+        const MergeSizes & max_merge_sizes,
+        const RangeFilter & range_filter) const = 0;
 
     virtual ~IMergeSelector() = default;
 };
