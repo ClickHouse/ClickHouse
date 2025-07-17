@@ -56,6 +56,20 @@ public:
     using Info = FileSegmentInfo;
     using QueueEntryType = FileCacheQueueEntryType;
 
+    /// A hint for what size to use in methods like `getSize()`.
+    /// By default, the DEFAULT kind should be used,
+    /// but a specific kind (aligned/non-aligned) of size might be requested explicitly in case of assertions.
+    enum SizeAlignment
+    {
+        /// Use the default size alignment,
+        /// which is chosen according to `use_real_cache_size` cache setting.
+        DEFAULT_ALIGNMENT,
+        /// Use aligned size.
+        ALIGNED,
+        /// Use non-aligned size.
+        NOT_ALIGNED
+    };
+
     FileSegment(
         const Key & key_,
         size_t offset_,
@@ -142,6 +156,8 @@ public:
     size_t getDownloadedSize() const;
 
     size_t getReservedSize() const;
+
+    size_t getSize(SizeAlignment alignment = SizeAlignment::DEFAULT_ALIGNMENT) const;
 
     /// Now detached status can be used in the following cases:
     /// 1. there is only 1 remaining file segment holder
@@ -272,8 +288,8 @@ private:
     LocalCacheWriterPtr cache_writer;
 
     /// downloaded_size should always be less or equal to reserved_size
-    std::atomic<size_t> downloaded_size = 0;
-    std::atomic<size_t> reserved_size = 0;
+    std::atomic<size_t> downloaded_size = 0; /// Contains non-aligned size
+    std::atomic<size_t> reserved_size = 0; /// Contains non-aligned size
     mutable std::mutex write_mutex;
 
     mutable FileSegmentGuard segment_guard;

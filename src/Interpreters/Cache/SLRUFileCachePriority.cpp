@@ -360,7 +360,7 @@ void SLRUFileCachePriority::downgrade(IteratorPtr iterator, const CachePriorityG
                         candidate_it->getEntry()->toString());
     }
 
-    const size_t entry_size = candidate_it->getEntry()->size;
+    const size_t entry_size = candidate_it->getEntry()->getSize();
     if (!probationary_queue.canFit(entry_size, 1, lock))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -400,7 +400,7 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
 
     /// Entry is in probationary queue.
     /// We need to move it to protected queue.
-    if (entry->size > protected_queue.getSizeLimit(lock))
+    if (entry->getSize() > protected_queue.getSizeLimit(lock))
     {
         /// Entry size is bigger than the whole protected queue limit.
         /// This is only possible if protected_queue_size_limit is less than max_file_segment_size,
@@ -422,7 +422,7 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
         /// queue to probationary queue.
         ///
         if (!collectCandidatesForEvictionInProtected(
-                entry->size, /* elements */1, stat, eviction_candidates, nullptr, FileCache::getInternalUser().user_id, lock))
+                entry->getSize(), /* elements */1, stat, eviction_candidates, nullptr, FileCache::getInternalUser().user_id, lock))
         {
             /// "downgrade" candidates cannot be moved to probationary queue,
             /// so entry cannot be moved to protected queue as well.
