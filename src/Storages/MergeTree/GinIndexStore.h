@@ -64,11 +64,17 @@ public:
     static GinIndexPostingsListPtr deserialize(ReadBuffer & buffer);
 
 private:
-    static constexpr int MIN_SIZE_FOR_ROARING_ENCODING = 16;
+    static constexpr size_t MIN_SIZE_FOR_ROARING_ENCODING = 16;
 
     static constexpr size_t ROARING_ENCODING_COMPRESSION_CARDINALITY_THRESHOLD = 5000;
 
-    roaring::Roaring rowid_bitmap;
+    static constexpr size_t ARRAY_CONTAINER_MASK = 0x1;
+
+    static constexpr size_t ROARING_CONTAINER_MASK = 0x0;
+    static constexpr size_t ROARING_COMPRESSED_MASK = 0x1;
+    static constexpr size_t ROARING_UNCOMPRESSED_MASK = 0x0;
+
+    roaring::Roaring rowids;
 };
 
 using GinIndexPostingsBuilderPtr = std::shared_ptr<GinIndexPostingsBuilder>;
