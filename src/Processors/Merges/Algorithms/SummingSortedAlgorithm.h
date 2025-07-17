@@ -26,7 +26,8 @@ public:
         size_t max_block_size_rows,
         size_t max_block_size_bytes,
         const String & sum_function_name,
-        bool remove_default_values);
+        bool remove_default_values,
+        bool aggregate_all_columns);
 
     const char * getName() const override { return "SummingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
