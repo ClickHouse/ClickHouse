@@ -866,9 +866,9 @@ void QueryAnalyzer::convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, Ide
     if (col_tuple && (max_size != 0 && col_tuple->tupleSize() <= static_cast<UInt64>(max_size)))
         return;
 
-    if (scope.expressions_in_resolve_process_stack.size() > 1)
+    for (int stack_size = scope.expressions_in_resolve_process_stack.size(), i = 1; i < stack_size; ++i)
     {
-        const auto & parent_node = scope.expressions_in_resolve_process_stack.getRoot();
+        const auto & parent_node = scope.expressions_in_resolve_process_stack[-i];
         if (auto * parent_function = parent_node->as<FunctionNode>())
         {
             // do not convert arguments of "in" functions
