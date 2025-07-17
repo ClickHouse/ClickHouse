@@ -41,7 +41,15 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.8",
         {
-
+            {"azure_max_redirects", 10, 10, "New setting"},
+            {"azure_max_get_rps", 0, 0, "New setting"},
+            {"azure_max_get_burst", 0, 0, "New setting"},
+            {"azure_max_put_rps", 0, 0, "New setting"},
+            {"azure_max_put_burst", 0, 0, "New setting"},
+            {"azure_use_adaptive_timeouts", true, true, "New setting"},
+            {"azure_request_timeout_ms", 30000, 30000, "New setting"},
+            {"azure_connect_timeout_ms", 1000, 1000, "New setting"},
+            {"azure_sdk_use_native_client", false, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
@@ -57,15 +65,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_distributed_insert_select", 0, 2, "Enable parallel distributed insert select by default"},
             {"write_through_distributed_cache_buffer_size", 0, 0, "New cloud setting"},
             {"min_joined_block_size_rows", 0, DEFAULT_BLOCK_SIZE, "New setting."},
-            {"azure_max_redirects", 10, 10, "New setting"},
-            {"azure_max_get_rps", 0, 0, "New setting"},
-            {"azure_max_get_burst", 0, 0, "New setting"},
-            {"azure_max_put_rps", 0, 0, "New setting"},
-            {"azure_max_put_burst", 0, 0, "New setting"},
-            {"azure_use_adaptive_timeouts", true, true, "New setting"},
-            {"azure_request_timeout_ms", 30000, 30000, "New setting"},
-            {"azure_connect_timeout_ms", 1000, 1000, "New setting"},
-            {"azure_sdk_use_native_client", false, true, "New setting"},
             {"table_engine_read_through_distributed_cache", false, false, "New setting"},
             {"distributed_cache_alignment", 0, 0, "Rename of distributed_cache_read_alignment"},
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
