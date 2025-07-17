@@ -1,6 +1,6 @@
 #pragma once
 
-#include "MaterializedPostgreSQLConsumer.h"
+#include <Storages/PostgreSQL/MaterializedPostgreSQLConsumer.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/PostgreSQL/Utils.h>

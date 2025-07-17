@@ -27,7 +27,7 @@ class CollapsingSortedAlgorithm final : public IMergingAlgorithmWithSharedChunks
 {
 public:
     CollapsingSortedAlgorithm(
-        const Block & header,
+        SharedHeader header,
         size_t num_inputs,
         SortDescription description_,
         const String & sign_column,

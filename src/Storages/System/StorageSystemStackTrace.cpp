@@ -280,8 +280,8 @@ class StackTraceSource : public ISource
 public:
     StackTraceSource(
         const Names & column_names,
-        Block header_,
-        std::optional<ActionsDAG> filter_dag_,
+        SharedHeader header_,
+        std::shared_ptr<const ActionsDAG> filter_dag_,
         ContextPtr context_,
         UInt64 max_block_size_,
         LoggerPtr log_)
@@ -310,7 +310,7 @@ public:
 protected:
     Chunk generate() override
     {
-        MutableColumns res_columns = header.cloneEmptyColumns();
+        MutableColumns res_columns = header->cloneEmptyColumns();
 
         ColumnPtr thread_ids;
         {
@@ -426,8 +426,8 @@ protected:
 
 private:
     ContextPtr context;
-    Block header;
-    const std::optional<ActionsDAG> filter_dag;
+    SharedHeader header;
+    const std::shared_ptr<const ActionsDAG> filter_dag;
     const ActionsDAG::Node * predicate;
 
     const size_t max_block_size;
@@ -475,7 +475,7 @@ public:
         Pipe pipe(std::make_shared<StackTraceSource>(
             column_names,
             getOutputHeader(),
-            std::move(filter_actions_dag),
+            filter_actions_dag,
             context,
             max_block_size,
             log));
@@ -490,7 +490,7 @@ public:
         Block sample_block,
         size_t max_block_size_,
         LoggerPtr log_)
-        : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(std::make_shared<const Block>(std::move(sample_block)), column_names_, query_info_, storage_snapshot_, context_)
         , column_names(column_names_)
         , max_block_size(max_block_size_)
         , log(log_)

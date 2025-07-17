@@ -112,17 +112,15 @@ DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type)
 
 struct DeltaLakeMetadataImpl
 {
-    using ConfigurationObserverPtr = DeltaLakeMetadata::ConfigurationObserverPtr;
-
     ObjectStoragePtr object_storage;
-    ConfigurationObserverPtr configuration;
+    StorageObjectStorageConfigurationWeakPtr configuration;
     ContextPtr context;
 
     /**
      * Useful links:
      *  - https://github.com/delta-io/delta/blob/master/PROTOCOL.md#data-files
      */
-    DeltaLakeMetadataImpl(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_)
+    DeltaLakeMetadataImpl(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_)
         : object_storage(object_storage_), configuration(configuration_), context(context_)
     {
     }
@@ -507,6 +505,7 @@ struct DeltaLakeMetadataImpl
         ArrowColumnToCHColumn column_reader(
             header, "Parquet",
             format_settings,
+            std::nullopt,
             format_settings.parquet.allow_missing_columns,
             /* null_as_default */true,
             format_settings.date_time_overflow_behavior,
@@ -604,7 +603,7 @@ struct DeltaLakeMetadataImpl
     LoggerPtr log = getLogger("DeltaLakeMetadataParser");
 };
 
-DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_)
+DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_)
 {
     auto impl = DeltaLakeMetadataImpl(object_storage_, configuration_, context_);
     auto result = impl.processMetadataFiles();
@@ -619,7 +618,7 @@ DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, Configura
 
 DataLakeMetadataPtr DeltaLakeMetadata::create(
     ObjectStoragePtr object_storage,
-    ConfigurationObserverPtr configuration,
+    StorageObjectStorageConfigurationWeakPtr configuration,
     ContextPtr local_context)
 {
 #if USE_DELTA_KERNEL_RS

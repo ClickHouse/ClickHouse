@@ -21,7 +21,7 @@ The return type can be configured by setting [`enable_extended_results_for_datet
 toStartOfDay(datetime)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"datetime", "A date or date with time to convert.", {"Date", "DateTime"}}
+        {"datetime", "A date or date with time to round.", {"Date", "DateTime"}}
     };
     FunctionDocumentation::ReturnedValue returned_value =
         {"Returns the date with time rounded down to the start of the day.", {"Date", "DateTime", "Date32", "DateTime64"}};

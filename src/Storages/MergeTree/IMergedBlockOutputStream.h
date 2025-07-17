@@ -48,7 +48,7 @@ public:
 protected:
     /// Remove all columns marked expired in data_part. Also, clears checksums
     /// and columns array. Return set of removed files names.
-    NameSet removeEmptyColumnsFromPart(
+    NameSet removeExpiredColumnsFromPart(
         const MergeTreeDataPartPtr & data_part,
         NamesAndTypesList & columns,
         SerializationInfoByName & serialization_infos,
