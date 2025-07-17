@@ -149,7 +149,7 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
         LOG_INFO(
             getLogger("DiskCache"),
             "Registered cached disk (`{}`) with structure: {}",
-            name, assert_cast<DiskObjectStorage *>(disk_object_storage.get())->getStructure());
+            name, dynamic_cast<DiskObjectStorage *>(disk_object_storage.get())->getStructure());
 
         return disk_object_storage;
     };
