@@ -42,6 +42,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.8",
         {
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
+            {"s3_retry_scale_factor", 0, 25, "New setting."},
+            {"s3_retry_max_delay_ms", 0, 90000, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
