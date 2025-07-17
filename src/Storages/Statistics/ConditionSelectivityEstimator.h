@@ -70,10 +70,6 @@ private:
 
     struct ColumnEstimator
     {
-        /// We store the part_name and part_statistics.
-        /// then simply get selectivity for every part_statistics and combine them.
-        /// std::map<String, ColumnStatisticsPartPtr> part_statistics;
-
         ColumnStatisticsPtr stats;
 
         void addStatistics(ColumnStatisticsPtr other_stats);

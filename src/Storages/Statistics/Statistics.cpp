@@ -77,9 +77,9 @@ void ColumnStatistics::merge(const ColumnStatisticsPtr & other)
     rows += other->rows;
     for (const auto & stat_it : stats)
     {
-        if (other->stats.contains(stat_it.first))
+        if (auto it = other->stats.find(stat_it.first); it != other->stats.end())
         {
-            stat_it.second->merge(other->stats.at(stat_it.first));
+            stat_it.second->merge(it->second);
         }
     }
     for (const auto & stat_it : other->stats)
@@ -202,7 +202,8 @@ UInt64 ColumnStatistics::estimateCardinality() const
     {
         return stats.at(StatisticsType::Uniq)->estimateCardinality();
     }
-    return UInt64(rows * rows * ConditionSelectivityEstimator::default_cardinality_ratio);
+    /// if we don't have uniq statistics, we use a mock one, assuming there are 90% different unique values.
+    return UInt64(rows * ConditionSelectivityEstimator::default_cardinality_ratio);
 }
 
 /// -------------------------------------

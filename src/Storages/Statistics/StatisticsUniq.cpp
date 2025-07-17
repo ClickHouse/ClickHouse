@@ -52,7 +52,6 @@ void StatisticsUniq::deserialize(ReadBuffer & buf)
 }
 
 UInt64 StatisticsUniq::estimateCardinality() const
-
 {
     auto column = DataTypeUInt64().createColumn();
     collector->insertResultInto(data, *column, nullptr);
