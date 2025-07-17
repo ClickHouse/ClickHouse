@@ -115,7 +115,7 @@ Defines the resolution of the given [H3](https://h3geo.org/docs/core-library/h3I
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category}; 
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3GetResolution>(documentation);
 }
 
