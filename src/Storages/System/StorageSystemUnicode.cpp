@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Poco/String.h>
+#include <Poco/UTF8Encoding.h>
 #include <unicode/errorcode.h>
 #include <unicode/umachine.h>
 #include <unicode/uniset.h>
@@ -33,6 +34,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNICODE_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -158,7 +160,7 @@ Block StorageSystemUnicode::getFilterSampleBlock() const
     };
 }
 
-static ColumnPtr getFilteredCodePoints(const ActionsDAG::Node * predicate, ContextPtr context)
+static Block getFilteredCodePoints(const ActionsDAG::Node * predicate, ContextPtr context)
 {
     icu::UnicodeSet all_assigned;
     UErrorCode status = U_ZERO_ERROR;
@@ -166,19 +168,20 @@ static ColumnPtr getFilteredCodePoints(const ActionsDAG::Node * predicate, Conte
     if (U_FAILURE(status))
         throw Exception(ErrorCodes::UNICODE_ERROR, "Cannot obtain the list of assigned code points");
 
+    auto code_point_column = ColumnString::create();
+    auto code_point_value_column = ColumnInt32::create();
+
+    uint8_t buf[4]{};
+    Poco::UTF8Encoding encoding;
     icu::UnicodeSetIterator iter(all_assigned);
-
-    MutableColumnPtr code_point_column = ColumnString::create();
-    MutableColumnPtr code_point_value_column = ColumnInt32::create();
-
     while (iter.next())
     {
         UChar32 code = iter.getCodepoint();
-        icu::UnicodeString u_value(code);
-        String value;
-        u_value.toUTF8String(value);
-        code_point_column->insert(value);
-        code_point_value_column->insert(code);
+        int res = encoding.convert(code, buf, 4);
+        if (!res || res > 4)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert code point {} to UTF-8", code);
+        code_point_column->insertData(reinterpret_cast<const char *>(buf), res);
+        code_point_value_column->getData().push_back(code);
     }
 
     Block filter_block
@@ -188,7 +191,7 @@ static ColumnPtr getFilteredCodePoints(const ActionsDAG::Node * predicate, Conte
     };
 
     VirtualColumnUtils::filterBlockWithPredicate(predicate, filter_block, context);
-    return filter_block.getByPosition(1).column; // Return code_point_value column
+    return filter_block;
 }
 
 void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
@@ -201,20 +204,19 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr con
     auto prop_names = getPropNames();
 
     // Get filtered code points based on predicate
-    ColumnPtr filtered_code_points_ptr = getFilteredCodePoints(predicate, context);
-    const ColumnInt32::Container & filtered_code_points = assert_cast<const ColumnInt32 &>(*filtered_code_points_ptr).getData();
-    size_t num_filtered_code_points = filtered_code_points.size();
+    Block filtered_block = getFilteredCodePoints(predicate, context);
+    size_t num_filtered_code_points = filtered_block.rows();
+
+    res_columns[0] = IColumn::mutate(std::move(filtered_block.getByPosition(0).column));
+    res_columns[1] = IColumn::mutate(std::move(filtered_block.getByPosition(1).column));
+
+    const ColumnInt32::Container & filtered_code_points = assert_cast<const ColumnInt32 &>(*res_columns[0]).getData();
 
     for (size_t i = 0; i < num_filtered_code_points; ++i)
     {
+        size_t column_index = 2;
         UChar32 code = filtered_code_points[i];
-        size_t column_index = 0;
 
-        icu::UnicodeString u_value(code);
-        String value;
-        u_value.toUTF8String(value);
-        assert_cast<ColumnString &>(*res_columns[column_index++]).insert(value);
-        assert_cast<ColumnInt32 &>(*res_columns[column_index++]).insert(code);
         // Unicode string notation
         assert_cast<ColumnString &>(*res_columns[column_index++]).insert(fmt::format("U+{:04X}", code));
         size_t prop_index = 0;
