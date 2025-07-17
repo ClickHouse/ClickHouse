@@ -906,6 +906,16 @@ When enabled, values of complex data types like Tuple/Array/Map in JSON output f
 
 Enabled by default.
 )", 0) \
+    DECLARE(Bool, output_format_json_map_as_array_of_tuples, false, R"(
+Serialize maps columns as JSON arrays of tuples.
+
+Disabled by default.
+)", 0) \
+    DECLARE(Bool, input_format_json_map_as_array_of_tuples, false, R"(
+Deserialize maps columns as JSON arrays of tuples.
+
+Disabled by default.
+)", 0) \
     \
     DECLARE(String, format_json_object_each_row_column_for_object_name, "", R"(
 The name of column that will be used for storing/writing object names in [JSONObjectEachRow](/interfaces/formats/JSONObjectEachRow) format.
@@ -1041,6 +1051,9 @@ Write DateTime values as raw unix timestamp (read back as UInt32), instead of co
 )", 0) \
     DECLARE(UInt64, output_format_parquet_max_dictionary_size, 1024 * 1024, R"(
 If dictionary size grows bigger than this many bytes, switch to encoding without dictionary. Set to 0 to disable dictionary encoding.
+)", 0) \
+    DECLARE(Bool, output_format_parquet_enum_as_byte_array, false, R"(
+Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM
 )", 0) \
     DECLARE(String, output_format_avro_codec, "", R"(
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.

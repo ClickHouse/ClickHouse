@@ -508,6 +508,7 @@ struct DeltaLakeMetadataImpl
         ArrowColumnToCHColumn column_reader(
             header, "Parquet",
             format_settings,
+            std::nullopt,
             format_settings.parquet.allow_missing_columns,
             /* null_as_default */true,
             format_settings.date_time_overflow_behavior,

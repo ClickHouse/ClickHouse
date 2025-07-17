@@ -23,7 +23,7 @@ Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
 
 ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
     ReadBuffer & buf,
-    const Block & header_,
+    SharedHeader header_,
     const FormatSettings & format_settings_,
     FormatParserGroupPtr parser_group_,
     size_t min_bytes_for_seek)

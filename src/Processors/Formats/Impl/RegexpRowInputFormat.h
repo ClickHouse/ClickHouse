@@ -49,14 +49,14 @@ private:
 class RegexpRowInputFormat final : public IRowInputFormat
 {
 public:
-    RegexpRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_);
+    RegexpRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "RegexpRowInputFormat"; }
     void setReadBuffer(ReadBuffer & in_) override;
     void resetReadBuffer() override;
 
 private:
-    RegexpRowInputFormat(std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, Params params_, const FormatSettings & format_settings_);
+    RegexpRowInputFormat(std::unique_ptr<PeekableReadBuffer> buf_, SharedHeader header_, Params params_, const FormatSettings & format_settings_);
 
     using EscapingRule = FormatSettings::EscapingRule;
 

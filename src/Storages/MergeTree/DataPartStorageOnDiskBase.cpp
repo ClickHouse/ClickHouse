@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Interpreters/Context.h>
@@ -655,6 +656,9 @@ void DataPartStorageOnDiskBase::rename(
     }
 
     String from = getRelativePath();
+
+    if (log)
+        LOG_TEST(log, "Renaming part {} to {}", from, to);
 
     /// Why?
     executeWriteOperation([&](auto & disk)

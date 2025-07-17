@@ -16,6 +16,24 @@ using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 
 using FormatParserGroupPtr = std::shared_ptr<FormatParserGroup>;
 
+/// Some formats needs to custom mapping between columns in file and clickhouse columns.
+class ColumnMapper
+{
+public:
+    /// clickhouse_column_name -> field_id
+    void setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_);
+
+    /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
+    std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> makeMapping(
+        const Block & header,
+        const std::unordered_map<Int64, String> & format_encoding);
+
+private:
+    std::unordered_map<String, Int64> storage_encoding;
+};
+
+using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;
+
 /// When reading many files in one query, e.g. `SELECT ... FROM file('part{00..99}.parquet')`,
 /// we want the file readers to share some resource limits, e.g. number of threads.
 /// They may also want to share some data structures to avoid initializing multiple copies,
@@ -51,6 +69,8 @@ struct FormatParserGroup
 
     /// IInputFormat implementation may put arbitrary state here.
     std::shared_ptr<void> opaque;
+
+    ColumnMapperPtr column_mapper;
 
 private:
     /// For lazily initializing the fields above.

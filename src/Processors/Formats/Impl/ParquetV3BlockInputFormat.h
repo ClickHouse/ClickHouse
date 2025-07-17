@@ -15,7 +15,7 @@ class ParquetV3BlockInputFormat : public IInputFormat
 public:
     ParquetV3BlockInputFormat(
         ReadBuffer & buf,
-        const Block & header,
+        SharedHeader header_,
         const FormatSettings & format_settings,
         FormatParserGroupPtr parser_group_,
         size_t min_bytes_for_seek);

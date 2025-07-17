@@ -793,6 +793,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          },
          {},
          false)},
+    {"output_format_parquet_enum_as_byte_array", CHSetting(trueOrFalse, {}, false)},
     {"output_format_parquet_datetime_as_uint32", trueOrFalseSettingNoOracle},
     {"output_format_parquet_max_dictionary_size",
      CHSetting(

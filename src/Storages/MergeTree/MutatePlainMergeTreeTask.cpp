@@ -4,6 +4,8 @@
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/Context.h>
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
 #include <Core/Settings.h>
@@ -102,9 +104,6 @@ bool MutatePlainMergeTreeTask::executeStep()
                     return true;
 
                 new_part = mutate_task->getFuture().get();
-                auto & data_part_storage = new_part->getDataPartStorage();
-                if (data_part_storage.hasActiveTransaction())
-                    data_part_storage.precommitTransaction();
 
                 MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
                 /// FIXME Transactions: it's too optimistic, better to lock parts before starting transaction

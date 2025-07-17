@@ -1,3 +1,4 @@
+#include <memory>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 #if USE_PARQUET
@@ -569,7 +570,7 @@ const parquet::ColumnDescriptor * getColumnDescriptorIfBloomFilterIsPresent(
 
 ParquetBlockInputFormat::ParquetBlockInputFormat(
     ReadBuffer & buf,
-    const Block & header_,
+    SharedHeader header_,
     const FormatSettings & format_settings_,
     FormatParserGroupPtr parser_group_,
     size_t min_bytes_for_seek_)
@@ -632,7 +633,22 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         format_settings.parquet.case_insensitive_column_matching,
         format_settings.parquet.allow_missing_columns);
 
-    auto index_mapping = field_util.findRequiredIndices(getPort().getHeader(), *schema, *metadata);
+    std::optional<std::unordered_map<String, String>> clickhouse_to_parquet_names;
+    if (parser_group && parser_group->column_mapper)
+    {
+        auto header = getPort().getHeader();
+        const auto & group_node = metadata->schema()->group_node();
+
+        std::unordered_map<Int64, String> parquet_field_ids;
+        parquet_names_to_clickhouse = std::unordered_map<String, String>{};
+        for (int i = 0; i < group_node->field_count(); ++i)
+            parquet_field_ids[group_node->field(i)->field_id()] = group_node->field(i)->name();
+
+        auto result = parser_group->column_mapper->makeMapping(header, parquet_field_ids);
+        clickhouse_to_parquet_names = std::move(result.first);
+        parquet_names_to_clickhouse = std::move(result.second);
+    }
+    auto index_mapping = field_util.findRequiredIndices(getPort().getHeader(), *schema, *metadata, clickhouse_to_parquet_names);
 
     for (const auto & [clickhouse_header_index, parquet_indexes] : index_mapping)
     {
@@ -841,7 +857,8 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
             reader_properties,
             arrow_file,
             format_settings,
-            row_group_batch.row_groups_idxs);
+            row_group_batch.row_groups_idxs,
+            column_indices);
     }
     else
     {
@@ -868,6 +885,7 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
             getPort().getHeader(),
             "Parquet",
             format_settings,
+            parquet_names_to_clickhouse,
             format_settings.parquet.allow_missing_columns,
             format_settings.null_as_default,
             format_settings.date_time_overflow_behavior,
@@ -1259,7 +1277,7 @@ void registerInputFormatParquet(FormatFactory & factory)
                 {
                     return std::make_shared<ParquetBlockInputFormat>(
                         buf,
-                        sample,
+                        std::make_shared<const Block>(sample),
                         settings,
                         std::move(parser_group),
                         min_bytes_for_seek);

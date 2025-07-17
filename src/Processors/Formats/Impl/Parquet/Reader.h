@@ -26,6 +26,7 @@ namespace DB::Parquet
 {
 
 // TODO [parquet]:
+//  * column_mapper
 //  * check fields for false sharing, add cacheline padding as needed
 //  * make sure userspace page cache read buffer supports readBigAt
 //  * allow_geoparquet_parser
