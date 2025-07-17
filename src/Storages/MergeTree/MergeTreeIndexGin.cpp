@@ -562,24 +562,17 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
         out.function = RPNElement::FUNCTION_MATCH;
 
         const auto & value = const_value.safeGet<String>();
-        String required_substring;
-        bool dummy_is_trivial;
-        bool dummy_has_capture;
-        bool dummy_required_substring_is_prefix;
-        std::vector<String> alternatives;
-        OptimizedRegularExpression::analyze(
-            value, required_substring, dummy_is_trivial, dummy_has_capture, dummy_required_substring_is_prefix, alternatives);
-
-        if (required_substring.empty() && alternatives.empty())
+        RegexpAnalysisResult result = OptimizedRegularExpression::analyze(value);
+        if (result.required_substring.empty() && result.alternatives.empty())
             return false;
 
         /// out.set_gin_filters means alternatives exist
         /// out.gin_filter means required_substring exists
-        if (!alternatives.empty())
+        if (!result.alternatives.empty())
         {
             std::vector<GinFilters> gin_filters;
             gin_filters.emplace_back();
-            for (const auto & alternative : alternatives)
+            for (const auto & alternative : result.alternatives)
             {
                 gin_filters.back().emplace_back(gin_filter_params);
                 token_extractor->substringToGinFilter(alternative.data(), alternative.size(), gin_filters.back().back(), false, false);
@@ -589,7 +582,8 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
         else
         {
             out.gin_filter = std::make_unique<GinFilter>(gin_filter_params);
-            token_extractor->substringToGinFilter(required_substring.data(), required_substring.size(), *out.gin_filter, false, false);
+            token_extractor->substringToGinFilter(
+                result.required_substring.data(), result.required_substring.size(), *out.gin_filter, false, false);
         }
 
         return true;

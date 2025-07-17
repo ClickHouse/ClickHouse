@@ -464,41 +464,37 @@ finish:
 }
 }
 
-void OptimizedRegularExpression::analyze(
-    std::string_view regexp_,
-    std::string & required_substring,
-    bool & is_trivial,
-    bool & has_capture,
-    bool & required_substring_is_prefix,
-    std::vector<std::string> & alternatives)
+RegexpAnalysisResult OptimizedRegularExpression::analyze(std::string_view regexp_)
 try
 {
+    RegexpAnalysisResult r;
     Literals alternative_literals;
     Literal required_literal;
-    analyzeImpl(regexp_, regexp_.data(), required_literal, is_trivial, has_capture, alternative_literals); // NOLINT
-    required_substring = std::move(required_literal.literal);
-    required_substring_is_prefix = required_literal.prefix;
+    analyzeImpl(regexp_, regexp_.data(), required_literal, r.is_trivial, r.has_capture, alternative_literals); // NOLINT
+    r.required_substring = std::move(required_literal.literal);
+    r.required_substring_is_prefix = required_literal.prefix;
     for (auto & lit : alternative_literals)
-        alternatives.push_back(std::move(lit.literal));
+        r.alternatives.push_back(std::move(lit.literal));
+    return r;
 }
 catch (...)
 {
-    required_substring = "";
-    is_trivial = false;
-    required_substring_is_prefix = false;
-    alternatives.clear();
-    LOG_ERROR(getLogger("OptimizeRegularExpression"), "Analyze RegularExpression failed, got error: {}", DB::getCurrentExceptionMessage(false));
+    LOG_ERROR(
+        getLogger("OptimizeRegularExpression"), "Analyze RegularExpression failed, got error: {}", DB::getCurrentExceptionMessage(false));
+    return {};
 }
 
 OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regexp_, int options)
 {
-    std::vector<std::string> alternatives_dummy; /// this vector extracts patterns a,b,c from pattern (a|b|c). for now it's not used.
-    analyze(regexp_, required_substring, is_trivial, has_capture, required_substring_is_prefix, alternatives_dummy);
-
     /// Just three following options are supported
     if (options & (~(RE_CASELESS | RE_NO_CAPTURE | RE_DOT_NL)))
         throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "OptimizedRegularExpression: Unsupported option.");
 
+    RegexpAnalysisResult result = analyze(regexp_);
+    required_substring = result.required_substring;
+    is_trivial = result.is_trivial;
+    has_capture = result.has_capture;
+    required_substring_is_prefix = result.required_substring_is_prefix;
     is_case_insensitive = options & RE_CASELESS;
     bool is_no_capture = options & RE_NO_CAPTURE;
     bool is_dot_nl = options & RE_DOT_NL;
@@ -557,10 +553,10 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
 }
 
 OptimizedRegularExpression::OptimizedRegularExpression(OptimizedRegularExpression && rhs) noexcept
-    : is_trivial(rhs.is_trivial)
+    : required_substring(std::move(rhs.required_substring))
+    , is_trivial(rhs.is_trivial)
     , required_substring_is_prefix(rhs.required_substring_is_prefix)
     , is_case_insensitive(rhs.is_case_insensitive)
-    , required_substring(std::move(rhs.required_substring))
     , re2(std::move(rhs.re2))
     , number_of_subpatterns(rhs.number_of_subpatterns)
 {
