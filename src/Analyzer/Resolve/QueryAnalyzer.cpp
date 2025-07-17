@@ -871,8 +871,8 @@ void QueryAnalyzer::convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, Ide
         const auto & parent_node = scope.expressions_in_resolve_process_stack[-i];
         if (auto * parent_function = parent_node->as<FunctionNode>())
         {
-            // do not convert arguments of "in"  and "arrayJoin" functions
-            if (isNameOfInFunction(parent_function->getFunctionName()) || parent_function->getFunctionName() == "arrayJoin")
+            // do not convert second argument of "in" functions
+            if (isNameOfInFunction(parent_function->getFunctionName()) && isNodeInSubtree(source_expression.get(), parent_function->getArguments().getNodes()[1].get()))
                 return;
             // do not convert functions' parameters
             if (isNodeInSubtree(source_expression.get(), parent_function->getParametersNode().get()))
