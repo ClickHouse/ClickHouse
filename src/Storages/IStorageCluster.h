@@ -100,5 +100,4 @@ private:
     ContextPtr updateSettings(const Settings & settings);
 };
 
-
 }
