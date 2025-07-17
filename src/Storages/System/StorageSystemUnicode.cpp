@@ -196,29 +196,84 @@ static Block getFilteredCodePoints(const ActionsDAG::Node * predicate, ContextPt
 
 void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
 {
-    // Common buffers/err_code used for ICU API calls
+    /// Common buffers/err_code used for ICU API calls
     UChar buffer[32];
     char char_name_buffer[100];
     UErrorCode err_code;
 
     auto prop_names = getPropNames();
 
-    // Get filtered code points based on predicate
+    /// Get filtered code points based on the predicate.
     Block filtered_block = getFilteredCodePoints(predicate, context);
     size_t num_filtered_code_points = filtered_block.rows();
 
     res_columns[0] = IColumn::mutate(std::move(filtered_block.getByPosition(0).column));
     res_columns[1] = IColumn::mutate(std::move(filtered_block.getByPosition(1).column));
 
-    const ColumnInt32::Container & filtered_code_points = assert_cast<const ColumnInt32 &>(*res_columns[0]).getData();
+    const ColumnInt32::Container & filtered_code_points = assert_cast<const ColumnInt32 &>(*res_columns[1]).getData();
 
     for (size_t i = 0; i < num_filtered_code_points; ++i)
     {
         size_t column_index = 2;
         UChar32 code = filtered_code_points[i];
 
-        // Unicode string notation
-        assert_cast<ColumnString &>(*res_columns[column_index++]).insert(fmt::format("U+{:04X}", code));
+        /// U+XXXX notation
+        ColumnString & col_notation = assert_cast<ColumnString &>(*res_columns[column_index++]);
+        ColumnString::Offsets & col_notation_offsets = col_notation.getOffsets();
+        ColumnString::Chars & col_notation_chars = col_notation.getChars();
+        ColumnString::Offset offset = col_notation_offsets.back();
+        if (code <= 0xFFFF)
+        {
+            col_notation_chars.resize(offset + 7);
+            col_notation_chars[offset] = 'U';
+            ++offset;
+            col_notation_chars[offset] = '+';
+            ++offset;
+            writeHexByteUppercase(code >> 8, &col_notation_chars[offset]);
+            offset += 2;
+            writeHexByteUppercase(code & 0xFF, &col_notation_chars[offset]);
+            offset += 2;
+            col_notation_chars[offset] = 0;
+            ++offset;
+            col_notation_offsets.push_back(offset);
+        }
+        else if (code <= 0xFFFFF)
+        {
+            col_notation_chars.resize(offset + 8);
+            col_notation_chars[offset] = 'U';
+            ++offset;
+            col_notation_chars[offset] = '+';
+            ++offset;
+            col_notation_chars[offset] = hexDigitUppercase(code >> 16);
+            ++offset;
+            writeHexByteUppercase((code >> 8) & 0xFF, &col_notation_chars[offset]);
+            offset += 2;
+            writeHexByteUppercase(code & 0xFF, &col_notation_chars[offset]);
+            offset += 2;
+            col_notation_chars[offset] = 0;
+            ++offset;
+            col_notation_offsets.push_back(offset);
+        }
+        else if (code <= 0x10FFFF)
+        {
+            col_notation_chars.resize(offset + 9);
+            col_notation_chars[offset] = 'U';
+            ++offset;
+            col_notation_chars[offset] = '+';
+            ++offset;
+            writeHexByteUppercase(code >> 16, &col_notation_chars[offset]);
+            offset += 2;
+            writeHexByteUppercase((code >> 8) & 0xFF, &col_notation_chars[offset]);
+            offset += 2;
+            writeHexByteUppercase(code & 0xFF, &col_notation_chars[offset]);
+            offset += 2;
+            col_notation_chars[offset] = 0;
+            ++offset;
+            col_notation_offsets.push_back(offset);
+        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Code point {} is outside of the Unicode range", code);
+
         size_t prop_index = 0;
         while (prop_index < prop_names.size())
         {
