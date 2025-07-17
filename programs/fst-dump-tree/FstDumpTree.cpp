@@ -25,15 +25,6 @@
 
 namespace
 {
-    constexpr const std::string_view GIN_SEGMENT_ID_FILE_TYPE = ".gin_sid";
-    constexpr const std::string_view GIN_SEGMENT_METADATA_FILE_TYPE = ".gin_seg";
-    constexpr const std::string_view GIN_DICTIONARY_FILE_TYPE = ".gin_dict";
-    constexpr const std::string_view GIN_POSTINGS_FILE_TYPE = ".gin_post";
-    constexpr const std::string_view GIN_FILTER_FILE_TYPE = ".gin_filter";
-}
-
-namespace
-{
 std::pair<UInt64, UInt64> readNextStateIdAndArcOutput(DB::ReadBuffer & read_buffer)
 {
     UInt64 next_state_id = 0;
@@ -109,31 +100,31 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
         for (const auto & dir_entry : std::filesystem::directory_iterator(input_path))
         {
             const auto& path_as_string = dir_entry.path().string();
-            if (path_as_string.ends_with(GIN_SEGMENT_ID_FILE_TYPE))
+            if (path_as_string.ends_with(DB::GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE))
             {
                 if (segment_id_read_buffer != nullptr)
                     printAndExit("Segment id file are already initialized at '{}', trying to initialized again at '{}'", segment_id_read_buffer->getFileName(), path_as_string);
                 segment_id_read_buffer = std::make_unique<DB::ReadBufferFromFile>(dir_entry.path().string());
             }
-            if (path_as_string.ends_with(GIN_SEGMENT_METADATA_FILE_TYPE))
+            if (path_as_string.ends_with(DB::GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE))
             {
                 if (segment_metadata_read_buffer != nullptr)
                     printAndExit("Segment metadata file are already initialized at '{}', trying to initialized again at '{}'", segment_metadata_read_buffer->getFileName(), path_as_string);
                 segment_metadata_read_buffer = std::make_unique<DB::ReadBufferFromFile>(dir_entry.path().string());
             }
-            if (path_as_string.ends_with(GIN_DICTIONARY_FILE_TYPE))
+            if (path_as_string.ends_with(DB::GinIndexStore::GIN_DICTIONARY_FILE_TYPE))
             {
                 if (dictionary_read_buffer != nullptr)
                     printAndExit("Segment dictionary file are already initialized at '{}', trying to initialized again at '{}'", dictionary_read_buffer->getFileName(), path_as_string);
                 dictionary_read_buffer = std::make_unique<DB::ReadBufferFromFile>(dir_entry.path().string());
             }
-            if (path_as_string.ends_with(GIN_POSTINGS_FILE_TYPE))
+            if (path_as_string.ends_with(DB::GinIndexStore::GIN_POSTINGS_FILE_TYPE))
             {
                 if (postings_read_buffer != nullptr)
                     printAndExit("Segment postings file are already initialized at '{}', trying to initialized again at '{}'", postings_read_buffer->getFileName(), path_as_string);
                 postings_read_buffer = std::make_unique<DB::ReadBufferFromFile>(dir_entry.path().string());
             }
-            if (path_as_string.ends_with(GIN_FILTER_FILE_TYPE))
+            if (path_as_string.ends_with(DB::GinIndexStore::GIN_FILTER_FILE_TYPE))
             {
                 if (filter_read_buffer != nullptr)
                     printAndExit("Segment filter file are already initialized at '{}', trying to initialized again at '{}'", filter_read_buffer->getFileName(), path_as_string);
