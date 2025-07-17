@@ -4,9 +4,6 @@
 #include <IO/WriteBufferDecorator.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Port.h>
-#include <Common/Logger.h>
-#include <Common/StackTrace.h>
-#include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
 #include <base/sleep.h>
 
