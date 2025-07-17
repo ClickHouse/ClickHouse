@@ -235,5 +235,7 @@
     contrib-SHA3IUF = { url = "github:brainhub/SHA3IUF/fc8504750a5c2174a1874094dd05e6a0d8797753"; flake = false; };
     contrib-chdig = { url = "github:azat/chdig/b176fa241d4b0cd58aecd17eece111e376567e6c"; flake = false; };
     contrib-ai-sdk-cpp = { url = "github:ClickHouse/ai-sdk-cpp/77f13e60ca3603c675e5184bf508b1c5f353aeb3"; flake = false; };
+    contrib-nlohmann-json = { url = "github:nlohmann/json/55f93686c01528224f448c19128836e7df245f72"; flake = false; };
+    contrib-crc32c = { url = "github:google/crc32c/02e65f4fd3065d27b2e29324800ca6d04df16126"; flake = false; };
   };
 }

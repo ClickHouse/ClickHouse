@@ -3,7 +3,9 @@
 #include <DataTypes/ObjectUtils.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
-#include <IO/WriteBufferFromString.h>
+#include <Common/logger_useful.h>
+#include <Common/escapeForFileName.h>
+#include <Core/Settings.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Columns/ColumnsNumber.h>
@@ -31,22 +33,12 @@
 #include <Storages/MergeTree/MergeTreeIndexGin.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/ProfileEventsScope.h>
-#include <Core/Settings.h>
-#include <Core/Names.h>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Common/Logger.h>
-#include <Common/logger_useful.h>
-#include <Common/escapeForFileName.h>
-#include <Core/NamesAndTypes.h>
 
-#include <algorithm>
-#include <cstdint>
-#include <vector>
 
 namespace ProfileEvents
 {
@@ -102,7 +94,6 @@ enum class ExecuteTTLType : uint8_t
     NORMAL = 1,
     RECALCULATE= 2,
 };
-
 
 namespace MutationHelpers
 {
@@ -210,8 +201,8 @@ static void splitAndModifyMutationCommands(
                 }
             }
             else if (command.type == MutationCommand::Type::DROP_INDEX
-                    || command.type == MutationCommand::Type::DROP_PROJECTION
-                    || command.type == MutationCommand::Type::DROP_STATISTICS)
+                     || command.type == MutationCommand::Type::DROP_PROJECTION
+                     || command.type == MutationCommand::Type::DROP_STATISTICS)
             {
                 for_file_renames.push_back(command);
             }
@@ -239,15 +230,15 @@ static void splitAndModifyMutationCommands(
         /// It's important because required renames depend not only on part's data version (i.e. mutation version)
         /// but also on part's metadata version. Why we have such logic only for renames? Because all other types of alter
         /// can be deduced based on difference between part's schema and table schema.
-        for (const auto & item : alter_conversions->getRenameMap())
+        for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
         {
-            if (part_columns.has(item.rename_from))
+            if (part_columns.has(rename_from))
             {
                 /// Actual rename
                 for_interpreter.push_back(
                 {
                     .type = MutationCommand::Type::READ_COLUMN,
-                    .column_name = item.rename_to,
+                    .column_name = rename_to,
                 });
 
                 /// Not needed for compact parts (not executed), added here only to produce correct
@@ -255,11 +246,11 @@ static void splitAndModifyMutationCommands(
                 for_file_renames.push_back(
                 {
                      .type = MutationCommand::Type::RENAME_COLUMN,
-                     .column_name = item.rename_from,
-                     .rename_to = item.rename_to
+                     .column_name = rename_from,
+                     .rename_to = rename_to
                 });
 
-                part_columns.rename(item.rename_from, item.rename_to);
+                part_columns.rename(rename_from, rename_to);
             }
         }
 
@@ -295,7 +286,6 @@ static void splitAndModifyMutationCommands(
                                         part->storage.getStorageID().getNameForLogs(), table_metadata_version);
                 }
 
-
                 for_interpreter.emplace_back(
                     MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
             }
@@ -313,15 +303,6 @@ static void splitAndModifyMutationCommands(
     }
     else
     {
-        /// We don't add renames from commands, instead we take them from rename_map.
-        /// It's important because required renames depend not only on part's data version (i.e. mutation version)
-        /// but also on part's metadata version. Why we have such logic only for renames? Because all other types of alter
-        /// can be deduced based on difference between part's schema and table schema.
-
-        /// Action in alter_conversions has higher priority than action in commands, put it first
-        for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
-            for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
-
         for (const auto & command : commands)
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
@@ -344,8 +325,8 @@ static void splitAndModifyMutationCommands(
                 for_interpreter.push_back(command);
             }
             else if (command.type == MutationCommand::Type::DROP_INDEX
-                    || command.type == MutationCommand::Type::DROP_PROJECTION
-                    || command.type == MutationCommand::Type::DROP_STATISTICS)
+                     || command.type == MutationCommand::Type::DROP_PROJECTION
+                     || command.type == MutationCommand::Type::DROP_STATISTICS)
             {
                 for_file_renames.push_back(command);
             }
@@ -366,25 +347,17 @@ static void splitAndModifyMutationCommands(
                 for_file_renames.push_back(command);
             }
         }
-    }
 
-    Strings renames = [&]()
-    {
-        Strings result;
-        for (const auto & command : for_file_renames)
+        /// We don't add renames from commands, instead we take them from rename_map.
+        /// It's important because required renames depend not only on part's data version (i.e. mutation version)
+        /// but also on part's metadata version. Why we have such logic only for renames? Because all other types of alter
+        /// can be deduced based on difference between part's schema and table schema.
+
+        for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
         {
-            if (command.type == MutationCommand::Type::RENAME_COLUMN || command.type == MutationCommand::Type::DROP_COLUMN)
-            {
-                result.push_back(fmt::format("{} -> {}", command.column_name, command.rename_to));
-            }
+            for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
         }
-        return result;
-    }();
-
-    LOG_TEST(getLogger("splitAndModifyMutationCommands"),
-        "resulting files for rename: {}",
-        fmt::join(renames, ", "));
-
+    }
 }
 
 static void addRenamedColumnToColumnsSubstreams(
@@ -725,8 +698,8 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
         /// MutationsInterpreter which knows about skip indices and stream 'in' already has
         /// all required columns.
         /// TODO move this logic to single place.
-        builder.addTransform(std::make_shared<ExpressionTransform>(builder.getHeader(), indices_recalc_expr));
-        builder.addTransform(std::make_shared<MaterializingTransform>(builder.getHeader()));
+        builder.addTransform(std::make_shared<ExpressionTransform>(builder.getSharedHeader(), indices_recalc_expr));
+        builder.addTransform(std::make_shared<MaterializingTransform>(builder.getSharedHeader()));
     }
     return indices_to_recalc;
 }
@@ -1333,7 +1306,7 @@ void PartMergerWriter::prepare()
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
         // We split the materialization into multiple stages similar to the process of INSERT SELECT query.
-        projection_squashes.emplace_back(ctx->updated_header, settings[Setting::min_insert_block_size_rows], settings[Setting::min_insert_block_size_bytes]);
+        projection_squashes.emplace_back(std::make_shared<const Block>(ctx->updated_header), settings[Setting::min_insert_block_size_rows], settings[Setting::min_insert_block_size_bytes]);
     }
 
     existing_rows_count = 0;
@@ -1393,7 +1366,7 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
     const auto & projection = *ctx->projections_to_build[projection_idx];
     const auto & projection_plan = projection_squashes[projection_idx];
 
-    auto result = projection_plan.getHeader().cloneWithColumns(chunk.detachColumns());
+    auto result = projection_plan.getHeader()->cloneWithColumns(chunk.detachColumns());
 
     auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
         *ctx->data,
@@ -1476,13 +1449,10 @@ class MutateAllPartColumnsTask : public IExecutableTask
 {
 public:
 
-    explicit MutateAllPartColumnsTask(MutationContextPtr ctx_)
-        : ctx(ctx_)
-    {
-    }
+    explicit MutateAllPartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_) {}
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    StorageID getStorageID() const override { return ctx->data->getStorageID(); }
+    StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     Priority getPriority() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     String getQueryId() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
@@ -1715,23 +1685,23 @@ private:
                 indices_expression_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag));
 
             builder->addTransform(std::make_shared<ExpressionTransform>(
-                builder->getHeader(), std::make_shared<ExpressionActions>(std::move(indices_expression_dag))));
+                builder->getSharedHeader(), std::make_shared<ExpressionActions>(std::move(indices_expression_dag))));
 
-            builder->addTransform(std::make_shared<MaterializingTransform>(builder->getHeader()));
+            builder->addTransform(std::make_shared<MaterializingTransform>(builder->getSharedHeader()));
         }
 
         PreparedSets::Subqueries subqueries;
 
         if (ctx->execute_ttl_type == ExecuteTTLType::NORMAL)
         {
-            auto transform = std::make_shared<TTLTransform>(ctx->context, builder->getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
+            auto transform = std::make_shared<TTLTransform>(ctx->context, builder->getSharedHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
             subqueries = transform->getSubqueries();
             builder->addTransform(std::move(transform));
         }
 
         if (ctx->execute_ttl_type == ExecuteTTLType::RECALCULATE)
         {
-            auto transform = std::make_shared<TTLCalcTransform>(ctx->context, builder->getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
+            auto transform = std::make_shared<TTLCalcTransform>(ctx->context, builder->getSharedHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
             subqueries = transform->getSubqueries();
             builder->addTransform(std::move(transform));
         }
@@ -1824,10 +1794,7 @@ private:
 class MutateSomePartColumnsTask : public IExecutableTask
 {
 public:
-    explicit MutateSomePartColumnsTask(MutationContextPtr ctx_)
-        : ctx(ctx_)
-    {
-    }
+    explicit MutateSomePartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_) {}
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
@@ -1894,13 +1861,10 @@ private:
         auto settings = ctx->source_part->storage.getSettings();
 
         NameSet hardlinked_files;
-        NameSet renamed_droped_files;
 
         /// NOTE: Renames must be done in order
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
         {
-            renamed_droped_files.insert(rename_from);
-
             if (rename_to.empty()) /// It's DROP COLUMN
             {
                 /// pass
@@ -1910,22 +1874,24 @@ private:
                 ctx->new_data_part->getDataPartStorage().createHardLinkFrom(
                     ctx->source_part->getDataPartStorage(), rename_from, rename_to);
                 hardlinked_files.insert(rename_from);
-
-                ctx->new_data_part->checksums.addExistingFile(ctx->source_part->checksums, rename_from, rename_to);
             }
         }
-
         /// Create hardlinks for unchanged files
         for (auto it = ctx->source_part->getDataPartStorage().iterate(); it->isValid(); it->next())
         {
-            const String & file_name = it->name();
-
-            if (ctx->files_to_skip.contains(file_name))
+            if (ctx->files_to_skip.contains(it->name()))
                 continue;
 
-            if (renamed_droped_files.contains(file_name))
+            String file_name = it->name();
+
+            auto rename_it = std::find_if(ctx->files_to_rename.begin(), ctx->files_to_rename.end(), [&file_name](const auto & rename_pair)
             {
-                /// Already renamed or dropped
+                return rename_pair.first == file_name;
+            });
+
+            if (rename_it != ctx->files_to_rename.end())
+            {
+                /// RENAMEs and DROPs already processed
                 continue;
             }
 
@@ -1945,8 +1911,6 @@ private:
 
                     hardlinked_files.insert(it->name());
                 }
-
-                ctx->new_data_part->checksums.addExistingFile(ctx->source_part->checksums, it->name(), it->name());
             }
             else if (!endsWith(it->name(), ".tmp_proj")) // ignore projection tmp merge dir
             {
@@ -1973,8 +1937,6 @@ private:
                         hardlinked_files.insert(file_name_with_projection_prefix);
                     }
                 }
-
-                ctx->new_data_part->checksums.addExistingFile(ctx->source_part->checksums, it->name(), it->name());
             }
         }
 
@@ -1987,6 +1949,8 @@ private:
 
         (*ctx->mutate_entry)->columns_written = ctx->storage_columns.size() - ctx->updated_header.columns();
 
+        ctx->new_data_part->checksums = ctx->source_part->checksums;
+
         ctx->compression_codec = ctx->source_part->default_codec;
 
         if (ctx->mutating_pipeline_builder.initialized())
@@ -1996,14 +1960,14 @@ private:
 
             if (ctx->execute_ttl_type == ExecuteTTLType::NORMAL)
             {
-                auto transform = std::make_shared<TTLTransform>(ctx->context, builder->getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
+                auto transform = std::make_shared<TTLTransform>(ctx->context, builder->getSharedHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
                 subqueries = transform->getSubqueries();
                 builder->addTransform(std::move(transform));
             }
 
             if (ctx->execute_ttl_type == ExecuteTTLType::RECALCULATE)
             {
-                auto transform = std::make_shared<TTLCalcTransform>(ctx->context, builder->getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
+                auto transform = std::make_shared<TTLCalcTransform>(ctx->context, builder->getSharedHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
                 subqueries = transform->getSubqueries();
                 builder->addTransform(std::move(transform));
             }
@@ -2033,75 +1997,46 @@ private:
         }
     }
 
+
     void finalize()
     {
-        NameSet files_to_remove_after_finish;
-
         if (ctx->mutating_executor)
         {
             ctx->mutating_executor.reset();
             ctx->mutating_pipeline.reset();
 
+            auto changed_checksums =
+                static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->fillChecksums(
+                    ctx->new_data_part, ctx->new_data_part->checksums);
+            ctx->new_data_part->checksums.add(std::move(changed_checksums));
+
+            auto new_columns_substreams = ctx->new_data_part->getColumnsSubstreams();
+            if (!new_columns_substreams.empty())
             {
-                auto only_outputstream = static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out);
-
-                auto [changed_checksums, removed_files] = only_outputstream->fillChecksums(ctx->new_data_part, ctx->new_data_part->checksums);
-                files_to_remove_after_finish = std::move(removed_files);
-                LOG_TEST(ctx->log, "MutateSomePartColumnsTask: removed_files {} for part {}",
-                    fmt::join(files_to_remove_after_finish, ", "), ctx->new_data_part->name);
-
-                auto new_columns_substreams = ctx->new_data_part->getColumnsSubstreams();
-                if (!new_columns_substreams.empty())
-                {
-                    auto changed_columns_substreams = only_outputstream->getColumnsSubstreams();
-                    new_columns_substreams = ColumnsSubstreams::merge(changed_columns_substreams, ctx->new_data_part->getColumnsSubstreams(), ctx->new_data_part->getColumns().getNames());
-                    ctx->new_data_part->setColumnsSubstreams(new_columns_substreams);
-                }
-                only_outputstream->finish(ctx->need_sync);
-                ctx->new_data_part->checksums.add(std::move(changed_checksums));
+                auto changed_columns_substreams = static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->getColumnsSubstreams();
+                new_columns_substreams = ColumnsSubstreams::merge(changed_columns_substreams, ctx->new_data_part->getColumnsSubstreams(), ctx->new_data_part->getColumns().getNames());
+                ctx->new_data_part->setColumnsSubstreams(new_columns_substreams);
             }
+
+            static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->finish(ctx->need_sync);
 
             ctx->out.reset();
         }
 
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
         {
-            if (rename_to.empty())
-                continue;
-            if (!ctx->new_data_part->checksums.files.contains(rename_to))
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "File {} is not present in checksums of part {}, but it should have ben renamed from {}",
-                    rename_to, ctx->new_data_part->name, rename_from);
-        }
-
-        constexpr std::string proj_suffix = ".proj";
-
-        // checksums should not contain records with not existed projections
-        // this might be not a proper fix
-        // it is better to remove projection close to the place where the decision to remove them is made
-        NameSet active_projections;
-        for (const auto & ptr : ctx->projections_to_recalc)
-            active_projections.insert(ptr->name + proj_suffix);
-
-        for (const auto & ptr : ctx->projections_to_build)
-            active_projections.insert(ptr->name + proj_suffix);
-
-        for (const auto & name : ctx->files_to_skip)
-        {
-            if (name.ends_with(proj_suffix) && !active_projections.contains(name) && ctx->new_data_part->checksums.has(name))
+            if (rename_to.empty() && ctx->new_data_part->checksums.files.contains(rename_from))
             {
-                ctx->new_data_part->checksums.remove(name);
+                ctx->new_data_part->checksums.files.erase(rename_from);
+            }
+            else if (ctx->new_data_part->checksums.files.contains(rename_from))
+            {
+                ctx->new_data_part->checksums.files[rename_to] = ctx->new_data_part->checksums.files[rename_from];
+                ctx->new_data_part->checksums.files.erase(rename_from);
             }
         }
 
         MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context, ctx->metadata_snapshot, ctx->need_sync);
-
-        // We have to remove files after `ctx->out.finish()` called.
-        // Otherwise new files are not visible because they have not been written yet as a result remove becomes no op
-        for (const String & removed_file : files_to_remove_after_finish)
-        {
-            ctx->new_data_part->getDataPartStorage().removeFile(removed_file);
-        }
     }
 
     enum class State : uint8_t
@@ -2135,14 +2070,12 @@ public:
         std::unique_ptr<IExecutableTask> executable_task_,
         MutationContextPtr ctx_
         )
-        : executable_task(std::move(executable_task_)), ctx(ctx_)
-    {
-    }
+        : executable_task(std::move(executable_task_)), ctx(ctx_) {}
 
-    void onCompleted() override { executable_task->onCompleted(); }
-    StorageID getStorageID() const override { return executable_task->getStorageID(); }
-    Priority getPriority() const override { return executable_task->getPriority(); }
-    String getQueryId() const override { return executable_task->getQueryId(); }
+    void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    Priority getPriority() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    String getQueryId() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
     bool executeStep() override
     {

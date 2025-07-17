@@ -293,11 +293,11 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
 
         for (const auto & input_column : input_header.getColumnsWithTypeAndName())
         {
-            if (!join_header.has(input_column.name))
+            if (!join_header->has(input_column.name))
                 continue;
 
             /// Skip if type is changed. Push down expression expect equal types.
-            if (!input_column.type->equals(*join_header.getByName(input_column.name).type))
+            if (!input_column.type->equals(*join_header->getByName(input_column.name).type))
                 continue;
 
             available_input_columns_for_filter.push_back(input_column.name);
@@ -306,8 +306,8 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
         return available_input_columns_for_filter;
     };
 
-    auto left_stream_available_columns = get_available_columns(left_stream_header);
-    auto right_stream_available_columns = get_available_columns(right_stream_header);
+    auto left_stream_available_columns = get_available_columns(*left_stream_header);
+    auto right_stream_available_columns = get_available_columns(*right_stream_header);
 
     auto & filter_dag = filter_step->getExpression();
     auto [equality_predicates, trivial_filter] = extractActionsForJoinCondition(
