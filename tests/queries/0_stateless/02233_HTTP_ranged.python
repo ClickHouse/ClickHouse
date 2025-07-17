@@ -275,7 +275,8 @@ def run_test(allow_range, settings, check_retries=False):
 def main():
     t, httpd = start_server()
 
-    settings = {"max_download_buffer_size": 20}
+    settings = {"max_threads": 1}
+    settings["max_download_buffer_size"] = 20
 
     # Test Accept-Ranges=False
     run_test(allow_range=False, settings=settings)
@@ -283,7 +284,7 @@ def main():
     run_test(allow_range=True, settings=settings)
 
     # Test Accept-Ranges=True, parallel download is used
-    settings = {"max_download_buffer_size": 10}
+    settings["max_download_buffer_size"] = 10
     run_test(allow_range=True, settings=settings)
 
     # Test Accept-Ranges=True, parallel download is not used,
