@@ -53,8 +53,6 @@ public:
 class GinIndexPostingsBuilder
 {
 public:
-    explicit GinIndexPostingsBuilder(UInt64 limit);
-
     /// Check whether a row_id is already added
     bool contains(UInt32 row_id) const;
 
@@ -68,32 +66,17 @@ public:
     static GinIndexPostingsListPtr deserialize(ReadBuffer & buffer);
 
 private:
-    constexpr static int MIN_SIZE_FOR_ROARING_ENCODING = 16;
+    static constexpr size_t MIN_SIZE_FOR_ROARING_ENCODING = 16;
 
-    /// When the list length is no greater than MIN_SIZE_FOR_ROARING_ENCODING, array 'rowid_lst' is used
-    /// As a special case, rowid_lst[0] == CONTAINS_ALL encodes that all rowids are set.
-    std::array<UInt32, MIN_SIZE_FOR_ROARING_ENCODING> rowid_lst;
+    static constexpr size_t ROARING_ENCODING_COMPRESSION_CARDINALITY_THRESHOLD = 5000;
 
-    /// When the list length is greater than MIN_SIZE_FOR_ROARING_ENCODING, roaring bitmap 'rowid_bitmap' is used
-    roaring::Roaring rowid_bitmap;
+    static constexpr size_t ARRAY_CONTAINER_MASK = 0x1;
 
-    /// rowid_lst_length stores the number of row IDs in 'rowid_lst' array, can also be a flag(0xFF) indicating that roaring bitmap is used
-    UInt8 rowid_lst_length = 0;
+    static constexpr size_t ROARING_CONTAINER_MASK = 0x0;
+    static constexpr size_t ROARING_COMPRESSED_MASK = 0x1;
+    static constexpr size_t ROARING_UNCOMPRESSED_MASK = 0x0;
 
-    /// Indicates that all rowids are contained, see 'rowid_lst'
-    static constexpr UInt32 CONTAINS_ALL = std::numeric_limits<UInt32>::max();
-
-    /// Indicates that roaring bitmap is used, see 'rowid_lst_length'.
-    static constexpr UInt8 USES_BIT_MAP = 0xFF;
-
-    /// Clear the postings list and reset it with MATCHALL flags when the size of the postings list is beyond the limit
-    UInt64 size_limit;
-
-    /// Check whether the builder is using roaring bitmap
-    bool useRoaring() const { return rowid_lst_length == USES_BIT_MAP; }
-
-    /// Check whether the postings list has been flagged to contain all row ids
-    bool containsAllRows() const { return rowid_lst[0] == CONTAINS_ALL; }
+    roaring::Roaring rowids;
 };
 
 using GinIndexPostingsBuilderPtr = std::shared_ptr<GinIndexPostingsBuilder>;
