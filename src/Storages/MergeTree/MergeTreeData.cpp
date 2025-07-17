@@ -5871,7 +5871,8 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesIfNeeded(DataPartsLock 
         DataParts data_parts;
         {
             auto parts_lock = lockParts();
-            data_parts = getDataParts({DataPartState::Active}, {DataPartKind::Regular});
+            auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
+            data_parts.insert(committed_parts_range.begin(), committed_parts_range.end());
         }
 
         for (const auto & part : data_parts)
