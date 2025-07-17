@@ -863,12 +863,18 @@ void QueryAnalyzer::convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, Ide
     if (col_tuple && (max_size != 0 && col_tuple->tupleSize() <= static_cast<UInt64>(max_size)))
         return;
 
-    // do not convert arguments of "in" functions
     if (scope.expressions_in_resolve_process_stack.size() > 1)
     {
         const auto & parent_node = scope.expressions_in_resolve_process_stack[-1];
-        if (auto * parent_function = parent_node->as<FunctionNode>(); parent_function && isNameOfInFunction(parent_function->getFunctionName()))
-            return;
+        if (auto * parent_function = parent_node->as<FunctionNode>())
+        {
+            // do not convert arguments of "in" functions
+            if (isNameOfInFunction(parent_function->getFunctionName()))
+                return;
+            // do not convert functions' parameters
+            if (isNodeInSubtree(source_expression.get(), parent_function->getParametersNode().get()))
+                return;
+        }
     }
 
 
