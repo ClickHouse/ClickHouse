@@ -29,7 +29,7 @@ public:
         std::shared_ptr<const Blocks> data_,
         std::shared_ptr<std::atomic<size_t>> parallel_execution_index_,
         InitializerFunc initializer_func_ = {})
-        : ISource(storage_snapshot->getSampleBlockForColumns(column_names_))
+        : ISource(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names_)))
         , requested_column_names_and_types(storage_snapshot->getColumnsByNames(
               GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withExtendedObjects(), column_names_))
         , data(data_)
@@ -110,7 +110,7 @@ ReadFromMemoryStorageStep::ReadFromMemoryStorageStep(
     const size_t num_streams_,
     const bool delay_read_for_global_sub_queries_)
     : SourceStepWithFilter(
-        storage_snapshot_->getSampleBlockForColumns(columns_to_read_),
+        std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns_to_read_)),
         columns_to_read_,
         query_info_,
         storage_snapshot_,
@@ -128,8 +128,7 @@ void ReadFromMemoryStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     if (pipe.empty())
     {
-        assert(output_header != std::nullopt);
-        pipe = Pipe(std::make_shared<NullSource>(*output_header));
+        pipe = Pipe(std::make_shared<NullSource>(output_header));
     }
 
     pipeline.init(std::move(pipe));

@@ -35,7 +35,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     }
 }
 
-NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
+NameSet IMergedBlockOutputStream::removeExpiredColumnsFromPart(
     const MergeTreeDataPartPtr & data_part,
     NamesAndTypesList & columns,
     SerializationInfoByName & serialization_infos,
