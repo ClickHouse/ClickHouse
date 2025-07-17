@@ -50,7 +50,7 @@ void GinFilter::add(const char * data, size_t len, UInt32 rowID, GinIndexStorePt
     }
     else
     {
-        auto builder = std::make_shared<GinIndexPostingsBuilder>(params.max_rows_per_postings_list);
+        auto builder = std::make_shared<GinIndexPostingsBuilder>();
         builder->add(rowID);
 
         store->setPostingsBuilder(term, builder);
