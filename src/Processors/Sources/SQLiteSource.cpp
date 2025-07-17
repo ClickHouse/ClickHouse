@@ -1,4 +1,4 @@
-#include "SQLiteSource.h"
+#include <Processors/Sources/SQLiteSource.h>
 
 #if USE_SQLITE
 #include <base/range.h>
@@ -27,7 +27,7 @@ SQLiteSource::SQLiteSource(
     const String & query_str_,
     const Block & sample_block,
     const UInt64 max_block_size_)
-    : ISource(sample_block.cloneEmpty())
+    : ISource(std::make_shared<const Block>(sample_block.cloneEmpty()))
     , query_str(query_str_)
     , max_block_size(max_block_size_)
     , sqlite_db(std::move(sqlite_db_))

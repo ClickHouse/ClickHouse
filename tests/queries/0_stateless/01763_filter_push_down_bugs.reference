@@ -9,7 +9,7 @@ String1_0	String2_0	String3_0	String4_0	1
 Expression ((Projection + Before ORDER BY))
   Filter (WHERE)
     Join (JOIN FillRightFirst)
-      Expression
+      Expression ((WHERE + Before JOIN))
         ReadFromMergeTree (default.t1)
         Indexes:
           PrimaryKey
@@ -29,7 +29,7 @@ Expression ((Projection + Before ORDER BY))
 Expression ((Project names + Projection))
   Filter (WHERE)
     Join (JOIN FillRightFirst)
-      Expression
+      Expression ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.t1)
         Indexes:
           PrimaryKey

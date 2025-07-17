@@ -26,6 +26,11 @@ TEST(OptimizeRE, analyze)
     };
     test_f("abc", "abc", {}, true, false, true);
     test_f("c([^k]*)de", "", {}, false, true, false);
+    test_f("a|XYZ", "", {"a", "XYZ"});
+    test_f("XYZ|a", "", {"XYZ", "a"});
+    test_f("[Ff]|XYZ", "", {"", "XYZ"});
+    test_f("XYZ|[Ff]", "", {"XYZ", ""});
+    test_f("XYZ|ABC|[Ff]", "", {"XYZ", "ABC", ""});
     test_f("(?-s)bob", "bob", {}, false, true, true);
     test_f("(?s)bob", "bob", {}, false, true, true);
     test_f("(?ssss", "");

@@ -31,7 +31,7 @@ REGISTER_FUNCTION(VisitParamExtractString)
         .syntax = "simpleJSONExtractString(json, field_name)",
         .arguments
         = {{"json", "The JSON in which the field is searched for.", {"String"}},
-           {"field_name", "The name of the field to search for.", {"String literal"}}},
+           {"field_name", "The name of the field to search for.", {"const String"}}},
         .returned_value = {R"(
 Returns the value of a field as a String, including separators.
 The value is unescaped.

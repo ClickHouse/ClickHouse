@@ -1,12 +1,11 @@
 ---
 description: 'Documentation for Introspection Functions'
 sidebar_label: 'Introspection'
-sidebar_position: 100
 slug: /sql-reference/functions/introspection
 title: 'Introspection Functions'
 ---
 
-# Introspection Functions
+# Introspection functions
 
 You can use functions described in this chapter to introspect [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) and [DWARF](https://en.wikipedia.org/wiki/DWARF) for query profiling.
 
@@ -160,7 +159,7 @@ Applying the function to the whole stack trace:
 
 ```sql
 SELECT
-    ta, addressToLineWithInlines(arrayJoin(trace) as ta)
+    ta, addressToLineWithInlines(arrayJoin(trace) AS ta)
 FROM system.trace_log
 WHERE
     query_id = '5e173544-2020-45de-b645-5deebe2aae54';

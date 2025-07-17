@@ -32,6 +32,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/thread_local_rng.h>
 #include <Common/formatReadable.h>
+#include <Common/ThrottlerArray.h>
 #include <Core/Settings.h>
 
 #include <boost/range/adaptor/map.hpp>
@@ -131,8 +132,8 @@ namespace
     ReadSettings getReadSettingsForBackup(const ContextPtr & context, const BackupSettings & backup_settings)
     {
         auto read_settings = context->getReadSettings();
-        read_settings.remote_throttler = context->getBackupsThrottler();
-        read_settings.local_throttler = context->getBackupsThrottler();
+        addThrottler(read_settings.remote_throttler, context->getBackupsThrottler());
+        addThrottler(read_settings.local_throttler, context->getBackupsThrottler());
         read_settings.enable_filesystem_cache = backup_settings.read_from_filesystem_cache;
         read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = backup_settings.read_from_filesystem_cache;
         return read_settings;
@@ -148,8 +149,8 @@ namespace
     ReadSettings getReadSettingsForRestore(const ContextPtr & context)
     {
         auto read_settings = context->getReadSettings();
-        read_settings.remote_throttler = context->getBackupsThrottler();
-        read_settings.local_throttler = context->getBackupsThrottler();
+        addThrottler(read_settings.remote_throttler, context->getBackupsThrottler());
+        addThrottler(read_settings.local_throttler, context->getBackupsThrottler());
         read_settings.enable_filesystem_cache = false;
         read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
         return read_settings;

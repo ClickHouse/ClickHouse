@@ -60,7 +60,7 @@ Pipe StorageValues::read(
         dag.getOutputs().swap(outputs);
         auto expression = std::make_shared<ExpressionActions>(std::move(dag));
 
-        prepared_pipe.addSimpleTransform([&](const Block & header)
+        prepared_pipe.addSimpleTransform([&](const SharedHeader & header)
         {
             return std::make_shared<ExpressionTransform>(header, expression);
         });
@@ -74,7 +74,7 @@ Pipe StorageValues::read(
         block.insert(res_block.getColumnOrSubcolumnByName(name));
 
     Chunk chunk(block.getColumns(), block.rows());
-    return Pipe(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), std::move(chunk)));
+    return Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(block.cloneEmpty()), std::move(chunk)));
 }
 
 }
