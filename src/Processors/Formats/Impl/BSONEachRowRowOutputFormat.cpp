@@ -47,7 +47,7 @@ static String toValidUTF8String(const String & name, const FormatSettings & sett
 }
 
 BSONEachRowRowOutputFormat::BSONEachRowRowOutputFormat(
-    WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
+    WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
     : IRowOutputFormat(header_, out_), settings(settings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
@@ -543,7 +543,7 @@ void registerOutputFormatBSONEachRow(FormatFactory & factory)
     factory.registerOutputFormat(
         "BSONEachRow",
         [](WriteBuffer & buf, const Block & sample, const FormatSettings & _format_settings)
-        { return std::make_shared<BSONEachRowRowOutputFormat>(buf, sample, _format_settings); });
+        { return std::make_shared<BSONEachRowRowOutputFormat>(buf, std::make_shared<const Block>(sample), _format_settings); });
     factory.markOutputFormatSupportsParallelFormatting("BSONEachRow");
     factory.markOutputFormatNotTTYFriendly("BSONEachRow");
     factory.setContentType("BSONEachRow", "application/octet-stream");
