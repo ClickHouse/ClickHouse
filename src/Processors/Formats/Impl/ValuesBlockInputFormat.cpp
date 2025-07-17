@@ -41,7 +41,7 @@ namespace ErrorCodes
 
 ValuesBlockInputFormat::ValuesBlockInputFormat(
     ReadBuffer & in_,
-    const Block & header_,
+    SharedHeader header_,
     const RowInputFormatParams & params_,
     const FormatSettings & format_settings_)
     : ValuesBlockInputFormat(std::make_unique<PeekableReadBuffer>(in_), header_, params_, format_settings_)
@@ -50,14 +50,14 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(
 
 ValuesBlockInputFormat::ValuesBlockInputFormat(
     std::unique_ptr<PeekableReadBuffer> buf_,
-    const Block & header_,
+    SharedHeader header_,
     const RowInputFormatParams & params_,
     const FormatSettings & format_settings_)
     : IInputFormat(header_, buf_.get()), buf(std::move(buf_)),
-        params(params_), format_settings(format_settings_), num_columns(header_.columns()),
+        params(params_), format_settings(format_settings_), num_columns(header_->columns()),
         parser_type_for_column(num_columns, ParserType::Streaming),
         attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
-        rows_parsed_using_template(num_columns), templates(num_columns), types(header_.getDataTypes()), serializations(header_.getSerializations())
+        rows_parsed_using_template(num_columns), templates(num_columns), types(header_->getDataTypes()), serializations(header_->getSerializations())
     , block_missing_values(getPort().getHeader().columns())
 {
 }
@@ -750,7 +750,7 @@ void registerInputFormatValues(FormatFactory & factory)
         const RowInputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<ValuesBlockInputFormat>(buf, header, params, settings);
+        return std::make_shared<ValuesBlockInputFormat>(buf, std::make_unique<const Block>(header), params, settings);
     });
 }
 

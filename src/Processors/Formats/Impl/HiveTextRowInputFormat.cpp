@@ -27,13 +27,13 @@ static FormatSettings updateFormatSettings(const FormatSettings & settings, cons
 }
 
 HiveTextRowInputFormat::HiveTextRowInputFormat(
-    const Block & header_, ReadBuffer & in_, const Params & params_, const FormatSettings & format_settings_)
-    : HiveTextRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, updateFormatSettings(format_settings_, header_))
+    SharedHeader header_, ReadBuffer & in_, const Params & params_, const FormatSettings & format_settings_)
+    : HiveTextRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, updateFormatSettings(format_settings_, *header_))
 {
 }
 
 HiveTextRowInputFormat::HiveTextRowInputFormat(
-    const Block & header_, std::shared_ptr<PeekableReadBuffer> buf_, const Params & params_, const FormatSettings & format_settings_)
+    SharedHeader header_, std::shared_ptr<PeekableReadBuffer> buf_, const Params & params_, const FormatSettings & format_settings_)
     : CSVRowInputFormat(
         header_, buf_, params_, true, false, format_settings_, std::make_unique<HiveTextFormatReader>(*buf_, format_settings_))
 {
@@ -59,7 +59,7 @@ void registerInputFormatHiveText(FormatFactory & factory)
     factory.registerInputFormat(
         "HiveText", [](ReadBuffer & buf, const Block & sample, const RowInputFormatParams & params, const FormatSettings & settings)
         {
-            return std::make_shared<HiveTextRowInputFormat>(sample, buf, params, settings);
+            return std::make_shared<HiveTextRowInputFormat>(std::make_unique<const Block>(sample), buf, params, settings);
         });
 }
 
