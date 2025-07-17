@@ -22,6 +22,7 @@ def main():
                 ch.install()
                 and ch.clickbench_config_tweaks()
                 and ch.fuzzer_config_tweaks()
+                and ch.create_log_export_config()
             )
 
         results.append(
