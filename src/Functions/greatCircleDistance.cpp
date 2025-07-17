@@ -426,7 +426,6 @@ Calculates the distance between two points on the Earth's surface using [the gre
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
- 
         factory.registerFunction("greatCircleDistance", [](ContextPtr context) {return std::make_shared<FunctionGeoDistance<Method::SPHERE_METERS>>(std::move(context));}, documentation);
     }
     {
