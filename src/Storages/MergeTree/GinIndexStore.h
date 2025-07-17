@@ -189,6 +189,9 @@ public:
     /// Get a range of next 'numIDs'-many available row IDs
     UInt32 getNextRowIDRange(size_t numIDs);
 
+    /// Get next available segment ID by updating file .gin_sid
+    UInt32 getNextSegmentID();
+
     /// Get total number of segments in the store
     UInt32 getNumOfSegments();
 
@@ -218,8 +221,6 @@ public:
 
     const String & getName() const { return name; }
 
-    bool filesWouldBeWritten() const { return bool(metadata_file_stream) || !current_postings.empty(); }
-
 private:
     /// FST size less than 100KiB does not worth to compress.
     static constexpr auto FST_SIZE_COMPRESSION_THRESHOLD = 100_KiB;
@@ -236,9 +237,6 @@ private:
 
     /// Stores segment id into disk
     void writeSegmentId();
-
-    /// Get next available segment ID by updating file .gin_sid
-    UInt32 getNextSegmentID();
 
     /// Get a range of next available segment IDs
     UInt32 getNextSegmentIDRange(size_t n);
