@@ -54,19 +54,15 @@ bool Lz4InflatingReadBuffer::nextImpl()
                 LZ4F_getErrorName(ret),
                 getExceptionEntryWithFileName(*in));
 
-        out_eof = ret == 0;
-
         in->position() += bytes_read;
+
+        out_eof = ret == 0 && in_eof;
 
         if (bytes_written > 0)
         {
             working_buffer.resize(bytes_written);
             return true;
         }
-
-        /// It may happen that we didn't get new uncompressed data
-        /// (for example if we read the end of frame). Load new data
-        /// in this case.
     }
 
     return false;
