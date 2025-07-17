@@ -84,6 +84,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_query_condition_cache", false, false, "New setting."},
             {"parallel_replicas_for_cluster_engines", false, true, "New setting."},
             {"parallel_hash_join_threshold", 0, 0, "New setting"},
+            {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             /// Release closed. Please use 25.4
         });
         addSettingsChanges(settings_changes_history, "25.2",
