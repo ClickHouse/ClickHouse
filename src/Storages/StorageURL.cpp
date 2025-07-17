@@ -1156,7 +1156,7 @@ void ReadFromURL::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value
     info = updateFormatPrewhereInfo(info, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
     prewhere_info = prewhere_info_value;
-    output_header = info.source_header;
+    output_header = std::make_shared<const Block>(info.source_header);
 }
 
 void IStorageURLBase::read(

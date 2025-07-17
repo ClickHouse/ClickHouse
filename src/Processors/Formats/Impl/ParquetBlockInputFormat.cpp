@@ -1268,7 +1268,7 @@ void registerInputFormatParquet(FormatFactory & factory)
                 {
                     return std::make_shared<ParquetV3BlockInputFormat>(
                         buf,
-                        sample,
+                        std::make_shared<const Block>(sample),
                         settings,
                         parser_group,
                         min_bytes_for_seek);
