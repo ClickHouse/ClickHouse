@@ -2048,7 +2048,7 @@ DECLARE(BoolAuto, query_plan_join_swap_table, Field("auto"), R"(
     - 'false': Never swap tables (the right table is the build table).
     - 'true': Always swap tables (the left table is the build table).
 )", 0) \
-DECLARE(Bool, query_plan_optimize_join_order, false, R"(
+DECLARE(Bool, query_plan_optimize_join_order, true, R"(
     Optimize the order of joins within the same subquery. Currently only supported for very limited cases.
 )", 0) \
     \
