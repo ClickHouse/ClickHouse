@@ -93,13 +93,13 @@ def run_tests(
     Shell.run(command, verbose=True)
 
 
-def run_specific_tests(tests, runs=1):
+def run_specific_tests(tests, runs=1, extra_args=""):
     test_output_file = f"{temp_dir}/test_result.txt"
     nproc = int(Utils.cpu_count() / 2)
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
     command = f"clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --trace \
         --capture-client-stacktrace --queries ./tests/queries --test-runs {runs} \
-        --jobs {nproc} --order=random -- {' '.join(tests)} | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{test_output_file}\""
+        --jobs {nproc} {extra_args} --order=random -- {' '.join(tests)} | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
     Shell.run(command, verbose=True)
@@ -343,7 +343,7 @@ def main():
                 extra_args=runner_options,
             )
         else:
-            run_specific_tests(tests=tests, runs=50 if is_flaky_check else 1)
+            run_specific_tests(tests=tests, runs=50 if is_flaky_check else 1, extra_args=runner_options)
 
         if not info.is_local_run:
             CH.stop_log_exports()
