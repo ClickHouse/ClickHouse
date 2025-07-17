@@ -1,10 +1,13 @@
-#include <atomic>
 #include <Common/Throttler.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
 #include <IO/WriteHelpers.h>
+
+#include <base/scope_guard.h>
+
+#include <atomic>
 
 namespace ProfileEvents
 {
@@ -67,7 +70,9 @@ bool Throttler::throttle(size_t amount, size_t max_block_us)
     if (block)
     {
         block_count.fetch_add(1, std::memory_order_relaxed);
-        SCOPE_EXIT({block_count.fetch_sub(1, std::memory_order_relaxed);});
+        SCOPE_EXIT({
+            block_count.fetch_sub(1, std::memory_order_relaxed);
+        });
 
         auto & profile_events = CurrentThread::getProfileEvents();
         auto timer = profile_events.timer(ProfileEvents::ThrottlerSleepMicroseconds);
