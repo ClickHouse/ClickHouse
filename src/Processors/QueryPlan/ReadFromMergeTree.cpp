@@ -2184,9 +2184,10 @@ void ReadFromMergeTree::replaceVectorColumnWithDistanceColumn(const String & vec
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector column unexpectedly already replaced.");
     std::erase(all_column_names, vector_column);
     all_column_names.emplace_back("_distance");
-    output_header = MergeTreeSelectProcessor::transformHeader(
-                        storage_snapshot->getSampleBlockForColumns(all_column_names),
-                        lazily_read_info, query_info.prewhere_info);
+    output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
+        storage_snapshot->getSampleBlockForColumns(all_column_names),
+        lazily_read_info,
+        prewhere_info));
 
     /// if analysis has already been done (like in optimization for projections),
     /// then update columns to read in analysis result
