@@ -9,7 +9,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
-from helpers.test_tools import assert_eq_with_retry, assert_logs_contain
+from helpers.test_tools import TSV, assert_eq_with_retry, assert_logs_contain
 from helpers.database_disk import get_database_disk_name, replace_text_in_metadata
 
 test_recover_staled_replica_run = 1
@@ -1733,8 +1733,11 @@ def test_system_database_replicas_with_ro(started_cluster):
     main_node.query(f"DETACH DATABASE {database_1}")
     main_node.query(f"ATTACH DATABASE {database_1}", ignore_error=True)
     
+    expected = TSV([
+        [database_1, 1, 1],
+    ])
     assert (
-        main_node.query("SELECT * FROM system.database_replicas") == f"{database_1}\t1\n"
+        main_node.query("SELECT * FROM system.database_replicas") == expected
     )
 
     database_2 = "test_system_database_replicas_2"
@@ -1742,8 +1745,12 @@ def test_system_database_replicas_with_ro(started_cluster):
         f"CREATE DATABASE {database_2} ENGINE = Replicated('/test/{database_2}', 'shard1', 'replica1');"
     )
 
+    expected = TSV([
+        [database_1, 1, 1],
+        [database_2, 0, 1],
+    ])
     assert (
-        main_node.query("SELECT * FROM system.database_replicas ORDER BY database") == f"{database_1}\t1\n{database_2}\t0\n"
+        main_node.query("SELECT * FROM system.database_replicas ORDER BY database") == expected
     )
 
 
@@ -1753,13 +1760,14 @@ def test_block_system_database_replicas(started_cluster):
             f"CREATE DATABASE db_{i} ENGINE = Replicated('/test/db_{i}', 'shard1', 'replica1');"
         )
 
-    expected = f"""db_1\t0
-db_2\t0
-db_3\t0
-db_4\t0
-db_5\t0
-db_6\t0
-"""
+    expected = TSV([
+        ["db_1", 0, 1],
+        ["db_2", 0, 1],
+        ["db_3", 0, 1],
+        ["db_4", 0, 1],
+        ["db_5", 0, 1],
+        ["db_6", 0, 1],
+    ])
     assert (
         main_node.query("SET max_block_size=2; SELECT * FROM system.database_replicas ORDER BY database") == expected
     )
@@ -1780,12 +1788,17 @@ db_6\t0
         main_node.query("SET max_block_size=2; SELECT * FROM system.database_replicas WHERE is_readonly=1 ORDER BY database") == ""
     )
 
+    expected = TSV([["db_1", 0, 1]])
     assert (
-        main_node.query("SET max_block_size=2; SELECT * FROM system.database_replicas ORDER BY database LIMIT 1") == "db_1\t0\n"
+        main_node.query("SET max_block_size=2; SELECT * FROM system.database_replicas ORDER BY database LIMIT 1") == expected
     )
 
+    expected = TSV([
+        ["db_1", 0, 1],
+        ["db_2", 0, 1],
+    ])
     assert (
-        main_node.query("SET max_block_size=2; SELECT * FROM system.database_replicas ORDER BY database LIMIT 2") == "db_1\t0\ndb_2\t0\n"
+        main_node.query("SET max_block_size=2; SELECT * FROM system.database_replicas ORDER BY database LIMIT 2") == expected
     )
 
     zk = cluster.get_kazoo_client("zoo1")
@@ -1801,13 +1814,15 @@ db_6\t0
             f"ATTACH DATABASE db_{i}"
         )
 
-    expected = f"""db_1\t1
-db_2\t1
-db_3\t1
-db_4\t0
-db_5\t0
-db_6\t0
-"""
+    expected = TSV([
+        ["db_1", 1, 1],
+        ["db_2", 1, 1],
+        ["db_3", 1, 1],
+        ["db_4", 0, 1],
+        ["db_5", 0, 1],
+        ["db_6", 0, 1],
+    ])
+
     assert (
         main_node.query("SET max_block_size=2; SELECT * FROM system.database_replicas ORDER BY database") == expected
     )

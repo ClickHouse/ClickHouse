@@ -14,6 +14,8 @@ Columns:
 - `is_readonly` ([UInt8](../../sql-reference/data-types/int-uint.md)) - Whether the database replica is in read-only mode.
     This mode is turned on if the config does not have sections with Zookeeper/ClickHouse Keeper.
 
+- `max_log_ptr` ([UInt32](../../sql-reference/data-types/int-uint.md)) - Maximum entry number in the log of general activity.
+
 
 **Example**
 
@@ -26,5 +28,5 @@ Row 1:
 ──────
 database:                   base
 is_readonly:                1
-
+max_log_ptr:                16
 ```

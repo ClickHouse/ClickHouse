@@ -187,7 +187,6 @@ String DatabaseReplicated::getFullReplicaName(const String & shard, const String
 
 void DatabaseReplicated::getStatus(ReplicatedDatabaseStatus& response, const bool with_zk_fields) const
 {
-    LOG_DEBUG(log, "call DatabaseReplicated::getStatus");
     auto zookeeper = getZooKeeper();
     // const auto storage_settings_ptr = getSettings();
 

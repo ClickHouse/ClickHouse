@@ -1,11 +1,11 @@
 -----------------------
 simple SELECT
-db_1	0
-db_2	0
-db_3	0
-db_4	0
-db_5	0
-db_6	0
+db_1	0	1
+db_2	0	1
+db_3	0	1
+db_4	0	1
+db_5	0	1
+db_6	0	1
 db_1
 db_2
 db_3
@@ -18,46 +18,50 @@ count
 6
 -----------------------
 SELECT with LIMIT
-db_1	0
-db_1	0
-db_2	0
-db_3	0
-db_4	0
-db_5	0
-db_6	0
-db_1	0
-db_2	0
-db_3	0
-db_4	0
-db_5	0
-db_6	0
+db_1	0	1
+db_1	0	1
+db_2	0	1
+db_3	0	1
+db_4	0	1
+db_5	0	1
+db_6	0	1
+db_1	0	1
+db_2	0	1
+db_3	0	1
+db_4	0	1
+db_5	0	1
+db_6	0	1
 -----------------------
 SELECT with max_block
-db_1	0
-db_2	0
-db_3	0
-db_4	0
-db_5	0
-db_6	0
-db_1	0
-db_2	0
-db_3	0
-db_4	0
-db_5	0
-db_6	0
+db_1	0	1
+db_2	0	1
+db_3	0	1
+db_4	0	1
+db_5	0	1
+db_6	0	1
+db_1	0	1
+db_2	0	1
+db_3	0	1
+db_4	0	1
+db_5	0	1
+db_6	0	1
 -----------------------
 SELECT with WHERE
-db_1	0
-db_2	0
-db_3	0
-db_4	0
-db_5	0
-db_6	0
+db_1	0	1
+db_2	0	1
+db_3	0	1
+db_4	0	1
+db_5	0	1
+db_6	0	1
 0
 -----------------------
 DROP DATABASE
-db_2	0
-db_3	0
-db_4	0
-db_5	0
-db_6	0
+db_2	0	1
+db_3	0	1
+db_4	0	1
+db_5	0	1
+db_6	0	1
+-----------------------
+SELECT max_log_ptr
+shard1	replica1	OK	0	0
+db_2	2

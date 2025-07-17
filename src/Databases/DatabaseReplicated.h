@@ -57,8 +57,6 @@ public:
 
     String getEngineName() const override { return "Replicated"; }
 
-    bool isReadOnly() const override { return is_readonly.load(std::memory_order_relaxed); }
-
     /// If current query is initial, then the following methods add metadata updating ZooKeeper operations to current ZooKeeperMetadataTransaction.
     void dropTable(ContextPtr, const String & table_name, bool sync) override;
     void renameTable(ContextPtr context, const String & table_name, IDatabase & to_database,
