@@ -453,7 +453,7 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
             if (cd->primary_key_specifier)
             {
                 if (!primary_key_from_columns)
-                    primary_key_from_columns = makeASTFunction("tuple");
+                    primary_key_from_columns = makeASTOperator("tuple");
                 auto column_identifier = std::make_shared<ASTIdentifier>(cd->name);
                 primary_key_from_columns->children[0]->as<ASTExpressionList>()->children.push_back(column_identifier);
             }

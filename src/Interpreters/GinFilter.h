@@ -102,7 +102,7 @@ public:
 
 private:
     /// Filter parameters
-    const GinFilterParameters & params;
+    const GinFilterParameters & params [[maybe_unused]];
 
     /// Query string of the filter
     String query_string;

@@ -294,14 +294,14 @@ ASTPtr makeBetweenOperator(bool negative, ASTs arguments)
 
     if (negative)
     {
-        auto f_left_expr = makeASTFunction("less", arguments[0], arguments[1]);
-        auto f_right_expr = makeASTFunction("greater", arguments[0], arguments[2]);
-        return makeASTFunction("or", f_left_expr, f_right_expr);
+        auto f_left_expr = makeASTOperator("less", arguments[0], arguments[1]);
+        auto f_right_expr = makeASTOperator("greater", arguments[0], arguments[2]);
+        return makeASTOperator("or", f_left_expr, f_right_expr);
     }
 
-    auto f_left_expr = makeASTFunction("greaterOrEquals", arguments[0], arguments[1]);
-    auto f_right_expr = makeASTFunction("lessOrEquals", arguments[0], arguments[2]);
-    return makeASTFunction("and", f_left_expr, f_right_expr);
+    auto f_left_expr = makeASTOperator("greaterOrEquals", arguments[0], arguments[1]);
+    auto f_right_expr = makeASTOperator("lessOrEquals", arguments[0], arguments[2]);
+    return makeASTOperator("and", f_left_expr, f_right_expr);
 }
 
 ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword, bool is_table_function, bool allow_trailing_commas)
@@ -738,7 +738,7 @@ public:
         // 1. If empty - create function tuple with 0 args
         if (isCurrentElementEmpty())
         {
-            auto function = makeASTFunction("tuple");
+            auto function = makeASTOperator("tuple");
             pushOperand(function);
             return true;
         }
@@ -755,7 +755,7 @@ public:
         /// 3. Put all elements in a single tuple
         else
         {
-            auto function = makeASTFunction("tuple", std::move(elements));
+            auto function = makeASTOperator("tuple", std::move(elements));
             elements.clear();
             pushOperand(function);
         }
@@ -1301,7 +1301,7 @@ protected:
         if (!is_tuple && elements.size() == 1)
             node = std::move(elements[0]);
         else
-            node = makeASTFunction("tuple", std::move(elements));
+            node = makeASTOperator("tuple", std::move(elements));
 
         return true;
     }
@@ -1322,7 +1322,7 @@ public:
 protected:
     bool getResultImpl(ASTPtr & node) override
     {
-        node = makeASTFunction("array", std::move(elements));
+        node = makeASTOperator("array", std::move(elements));
         return true;
     }
 };
@@ -1664,7 +1664,7 @@ public:
             return false;
 
         auto subquery = std::make_shared<ASTSubquery>(std::move(node));
-        elements = {makeASTFunction("exists", subquery)};
+        elements = {makeASTOperator("exists", subquery)};
 
         finished = true;
 
@@ -1932,7 +1932,7 @@ public:
 protected:
     bool getResultImpl(ASTPtr & node) override
     {
-        node = makeASTFunction("tuple", std::move(elements));
+        node = makeASTOperator("tuple", std::move(elements));
         return true;
     }
 };
