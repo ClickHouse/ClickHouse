@@ -22,8 +22,8 @@ using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 PreparedJoinStorage tryGetStorageInTableJoin(const QueryTreeNodePtr & table_expression, const PlannerContextPtr & planner_context);
 
 std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
-    const Block & left_header,
-    const Block & right_header,
+    SharedHeader left_header,
+    SharedHeader right_header,
     const NameSet & outer_scope_columns,
     const JoinNode & join_node,
     const PlannerContextPtr & planner_context);
