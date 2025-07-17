@@ -537,8 +537,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_json_try_infer_numbers_from_strings", trueOrFalseSettingNoOracle},
     {"input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects", trueOrFalseSettingNoOracle},
     {"input_format_json_validate_types_from_metadata", trueOrFalseSettingNoOracle},
-    {"input_format_mysql_dump_map_column_names", trueOrFalseSettingNoOracle},
-    {"input_format_mysql_dump_table_name", trueOrFalseSettingNoOracle},
     {"input_format_native_allow_types_conversion", trueOrFalseSettingNoOracle},
     {"input_format_null_as_default", trueOrFalseSettingNoOracle},
     {"input_format_orc_allow_missing_columns", trueOrFalseSettingNoOracle},
