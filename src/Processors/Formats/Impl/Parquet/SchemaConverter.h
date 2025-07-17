@@ -41,6 +41,8 @@ private:
     {
         None,
         MapTuple,
+        MapTupleAsPlainTuple,
+        MapKey,
         ListTuple,
         ListElement,
     };

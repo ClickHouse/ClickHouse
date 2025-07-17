@@ -53,6 +53,8 @@ void ThreadPoolCallbackRunnerFast::shutdown()
     queue_cv.notify_all();
 #endif
     shutdown_cv.wait(lock, [&] { return threads == 0; });
+
+    chassert(active_tasks.load() == queue.size());
 }
 
 void ThreadPoolCallbackRunnerFast::operator()(std::function<void()> f)

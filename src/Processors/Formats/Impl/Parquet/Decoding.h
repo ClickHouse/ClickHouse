@@ -202,7 +202,7 @@ struct FloatConverter : public FixedSizeConverter
 extern template struct FloatConverter<float>;
 extern template struct FloatConverter<double>;
 
-/// FIXED_LEN_BYTE_ARRAY[2] as float16 (not bfloat16) -> Float32.
+/// FIXED_LEN_BYTE_ARRAY[2] as float16 (not to be confused with bfloat16) -> Float32.
 struct Float16Converter : public FixedSizeConverter
 {
     Float16Converter() { input_size = 2; }

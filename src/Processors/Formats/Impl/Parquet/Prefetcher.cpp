@@ -504,6 +504,8 @@ void PrefetchHandle::reset(MemoryUsageDiff * diff)
 
     if (request->state.exchange(RequestState::State::Cancelled) == RequestState::State::HasTask)
         Prefetcher::decreaseTaskRefcount(request->task, 1);
+
+    request = nullptr;
 }
 
 }

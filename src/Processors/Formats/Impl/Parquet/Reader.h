@@ -32,7 +32,6 @@ namespace DB::Parquet
 //  * assert that memory usage is zero at the end, the reset()s are easy to miss
 //  * support newer parquet versions: https://github.com/apache/parquet-format/blob/master/CHANGES.md
 //  * make writer write DataPageV2
-//  * make writer write SizeStatistics
 //  * make writer write PageEncodingStats
 //  * make writer write DELTA_LENGTH_BYTE_ARRAY
 //  * try adding [[unlikely]] to all ifs
@@ -303,6 +302,7 @@ struct Reader
         PrefetchHandle column_index_prefetch;
         PrefetchHandle offset_index_prefetch;
         PrefetchHandle data_pages_prefetch;
+        size_t data_pages_bytes = 0;
 
         /// Smaller prefetches for parts of bloom_filter_data_prefetch that we actually need.
         std::vector<BloomFilterBlock> bloom_filter_blocks;
@@ -469,7 +469,8 @@ struct Reader
 
     /// Deserialize bf header and determine which bf blocks to read.
     void processBloomFilterHeader(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
-    void decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+    /// Returns false if it turned out that `dictionary_page_prefetch` is not actually a dictionary.
+    bool decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
 
     /// Returns false if the row group was filtered out and should be skipped.
     bool applyBloomAndDictionaryFilters(RowGroup & row_group);
@@ -480,6 +481,7 @@ struct Reader
     void decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group);
     /// Call after prewhere is done on row subgroup. Un-requests prefetch for fully filtered out pages,
     /// adds pages that need prefetch to `out`. Must be called in order.
+    /// May assign dictionary_page_prefetch.
     void determinePagesToPrefetch(ColumnChunk & column, const RowSubgroup & row_subgroup, const RowGroup & row_group, std::vector<PrefetchHandle *> & out);
 
     /// Guess how much memory ColumnSubchunk::{column, arrays_offsets} will use, per row.

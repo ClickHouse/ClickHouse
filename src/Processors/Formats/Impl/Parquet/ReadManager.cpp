@@ -713,7 +713,10 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
                 break;
             case ReadStage::BloomFilterBlocksOrDictionary:
                 if (column.use_dictionary_filter)
-                    reader.decodeDictionaryPage(column, column_info);
+                {
+                    bool ok = reader.decodeDictionaryPage(column, column_info);
+                    chassert(ok);
+                }
                 break;
             case ReadStage::ColumnIndexAndOffsetIndex:
                 reader.decodeOffsetIndex(column, row_group);
@@ -730,7 +733,10 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
             case ReadStage::MainData:
             {
                 if (!column.dictionary.isInitialized() && column.dictionary_page_prefetch)
-                    reader.decodeDictionaryPage(column, column_info);
+                {
+                    if (!reader.decodeDictionaryPage(column, column_info))
+                        column.dictionary_page_prefetch.reset(&diff);
+                }
                 size_t prev_page_idx = column.data_pages_idx;
 
                 chassert(task.row_subgroup_idx != UINT64_MAX);

@@ -34,6 +34,52 @@ namespace DB::ErrorCodes
 namespace DB::Parquet
 {
 
+static void decompressLZ4Raw(const char * data, size_t compressed_size, size_t uncompressed_size, char * out)
+{
+    if (compressed_size > INT32_MAX || uncompressed_size > INT32_MAX)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed page is too long");
+    int n = LZ4_decompress_safe(data, out, int(compressed_size), int(uncompressed_size));
+    if (n < 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed compressed page");
+    if (size_t(n) != uncompressed_size)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected uncompressed page size");
+}
+
+static bool tryDecompressLZ4Hadoop(const char * data, size_t compressed_size, size_t uncompressed_size, char * out)
+{
+    if (compressed_size > INT32_MAX || uncompressed_size > INT32_MAX)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed page is too long");
+
+    /// From TryDecompressHadoop in arrow/cpp/src/arrow/util/compression_lz4.cc:
+    ///   Parquet files written with the Hadoop Lz4Codec use their own framing.
+    ///   The input buffer can contain an arbitrary number of "frames", each
+    ///   with the following structure:
+    ///   - bytes 0..3: big-endian uint32_t representing the frame decompressed size
+    ///   - bytes 4..7: big-endian uint32_t representing the frame compressed size
+    ///   - bytes 8...: frame compressed data
+    while (compressed_size > 0)
+    {
+        if (compressed_size < 8)
+            return false;
+        size_t frame_uncompressed_size = unalignedLoadEndian<std::endian::big, UInt32>(data);
+        size_t frame_compressed_size = unalignedLoadEndian<std::endian::big, UInt32>(data + 4);
+        data += 8;
+        compressed_size -= 8;
+        if (frame_compressed_size > compressed_size || frame_uncompressed_size > uncompressed_size)
+            return false;
+
+        int n = LZ4_decompress_safe(data, out, int(frame_compressed_size), int(frame_uncompressed_size));
+        if (n < 0 || size_t(n) != frame_uncompressed_size)
+            return false;
+
+        data += frame_compressed_size;
+        compressed_size -= frame_compressed_size;
+        out += frame_uncompressed_size;
+        uncompressed_size -= frame_uncompressed_size;
+    }
+    return uncompressed_size == 0;
+}
+
 static void decompress(const char * data, size_t compressed_size, size_t uncompressed_size, parq::CompressionCodec::type codec, char * out)
 {
     CompressionMethod method = CompressionMethod::None;
@@ -68,25 +114,21 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
         case parq::CompressionCodec::BROTLI:
             method = CompressionMethod::Brotli;
             break;
-        case parq::CompressionCodec::LZ4:
-            /// LZ4 framed. In parquet it's deprecated in favor of LZ4_RAW.
-            method = CompressionMethod::Lz4;
-            break;
         case parq::CompressionCodec::ZSTD:
             method = CompressionMethod::Zstd;
             break;
         case parq::CompressionCodec::LZ4_RAW:
         {
             /// LZ4 block.
-            if (compressed_size > INT32_MAX || uncompressed_size > INT32_MAX)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed page is too long");
-            int n = LZ4_decompress_safe(data, out, int(compressed_size), int(uncompressed_size));
-            if (n < 0)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed compressed page");
-            if (size_t(n) != uncompressed_size)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected uncompressed page size");
+            decompressLZ4Raw(data, compressed_size, uncompressed_size, out);
             return;
         }
+        case parq::CompressionCodec::LZ4:
+            /// LZ4 with or without hadoop framing - we have to guess.
+            /// In parquet this is deprecated in favor of LZ4_RAW.
+            if (!tryDecompressLZ4Hadoop(data, compressed_size, uncompressed_size, out))
+                decompressLZ4Raw(data, compressed_size, uncompressed_size, out);
+            return;
     }
     if (method == CompressionMethod::None)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected compression codec in parquet: {}", thriftToString(codec));
@@ -159,6 +201,17 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
     parq::FileMetaData file_metadata = {};
     deserializeThriftStruct(file_metadata, buf.data() + buf_offset, metadata_size);
 
+    /// Some writers incorrectly set dictionary_page_offset offset to 0 when there's no dictionary
+    /// page at offset 0 in the file. Work around it.
+    for (auto & rg : file_metadata.row_groups)
+    {
+        for (auto & col : rg.columns)
+        {
+            if (col.meta_data.__isset.dictionary_page_offset && col.meta_data.dictionary_page_offset == 0)
+                col.meta_data.__isset.dictionary_page_offset = false;
+        }
+    }
+
     return file_metadata;
 }
 
@@ -199,7 +252,7 @@ void Reader::getHyperrectangleForRowGroup(const std::vector</*idx_in_output_bloc
         if (column_meta.statistics.__isset.max_value)
             column_info.decoder.decodeField(column_meta.statistics.max_value, /*is_max=*/ true, range.right);
 
-        if (range.left > range.right)
+        if (accurateLess(range.right, range.left))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Column chunk statistics for column '{}' appear to have min_value > max_value: {} > {}. Use setting input_format_parquet_filter_push_down=0 to ignore.", column_info.name, static_cast<const Field &>(range.left), static_cast<const Field &>(range.right));
 
         if (nullable && can_be_null)
@@ -474,9 +527,20 @@ void Reader::prefilterAndInitRowGroups()
                     size_t(column.meta->column_index_length), /*likely_to_be_used=*/ true);
 
             /// Data pages.
+
+            column.data_pages_bytes = size_t(column.meta->meta_data.total_compressed_size) - dict_page_length;
+
+            /// Old versions of parquet-mr wrote incorrect total_compressed_size, see PARQUET-816.
+            /// Work around it with the same hack as in apache impala: add 100 bytes to the length.
+            /// But leave `data_pages_bytes` unchanged because it's used to check whether there are any
+            /// more pages to read, and we don't want to start reading a page inside these 100 bytes.
+            size_t data_pages_extra_bytes = 0;
+            if (file_metadata.created_by == "parquet-mr" && !column.meta->meta_data.__isset.dictionary_page_offset && !column.meta->__isset.offset_index_offset)
+                data_pages_extra_bytes = std::min(100ul, prefetcher.getFileSize() - size_t(column.meta->meta_data.data_page_offset) - column.data_pages_bytes);
+
             column.data_pages_prefetch = prefetcher.registerRange(
                 size_t(column.meta->meta_data.data_page_offset),
-                size_t(column.meta->meta_data.total_compressed_size) - dict_page_length,
+                column.data_pages_bytes + data_pages_extra_bytes,
                 /*likely_to_be_used=*/ true);
         }
     }
@@ -638,24 +702,34 @@ void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColum
     }
 }
 
-void Reader::decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInfo & column_info)
+bool Reader::decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInfo & column_info)
 {
     auto data = prefetcher.getRangeData(column.dictionary_page_prefetch);
     parq::PageHeader header;
     size_t header_size = deserializeThriftStruct(header, data.data(), data.size());
+
+    if (header.type != parq::PageType::DICTIONARY_PAGE)
+    {
+        if (column.meta->meta_data.__isset.dictionary_page_offset)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected dictionary page type: {}", thriftToString(header.type));
+
+        /// Parquet metadata didn't specifically say that this byte range is a dictionary page.
+        return false;
+    }
+
     decodeDictionaryPageImpl(header, data.subspan(header_size), column, column_info);
+    return true;
 }
 
 void Reader::decodeDictionaryPageImpl(const parq::PageHeader & header, std::span<const char> data, ColumnChunk & column, const PrimitiveColumnInfo & column_info)
 {
+    chassert(header.type == parq::PageType::DICTIONARY_PAGE);
+
     /// TODO [parquet]: Check checksum.
     size_t compressed_page_size = size_t(header.compressed_page_size);
     if (header.compressed_page_size < 0 || compressed_page_size > data.size())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Dictionary page size out of bounds: {} > {}", header.compressed_page_size, data.size());
     data = data.subspan(0, size_t(header.compressed_page_size));
-
-    if (header.type != parq::PageType::DICTIONARY_PAGE)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected dictionary page type: {}", thriftToString(header.type));
 
     auto codec = column.meta->meta_data.codec;
     if (codec != parq::CompressionCodec::UNCOMPRESSED)
@@ -763,7 +837,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
             column_info.decoder.decodeField(column_index.min_values[page_idx], /*is_max=*/ false, range.left);
             column_info.decoder.decodeField(column_index.max_values[page_idx], /*is_max=*/ true, range.right);
 
-            if (range.left > range.right)
+            if (accurateLess(range.right, range.left))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Column index appears to have min_value > max_value: {} > {}. Use setting input_format_parquet_page_filter_push_down=0 to ignore.", static_cast<const Field &>(range.left), static_cast<const Field &>(range.right));
 
             if (nullable && can_be_null)
@@ -956,6 +1030,24 @@ void Reader::determinePagesToPrefetch(ColumnChunk & column, const RowSubgroup & 
         const auto & row_ranges = row_group.intersected_row_ranges_after_column_index;
         chassert(!row_ranges.empty());
         std::vector<std::pair</*global_offset*/ size_t, /*length*/ size_t>> page_byte_ranges;
+
+        /// Some writers don't assign dictionary_page_offset and instead set data_page_offset to
+        /// point to the dictionary page. Such undeclared dictionary page is not listed in offset
+        /// index. So, if the offset index starts at an offset higher than data_page_offset, we make
+        /// a guess that there's a dictionary page at data_page_offset.
+        bool has_undeclared_dictionary_page = false;
+        if (!column.meta->meta_data.__isset.dictionary_page_offset)
+        {
+            chassert(!column.dictionary_page_prefetch);
+            if (locations.at(0).offset > column.meta->meta_data.data_page_offset)
+            {
+                page_byte_ranges.emplace_back(
+                    size_t(column.meta->meta_data.data_page_offset),
+                    size_t(locations[0].offset - column.meta->meta_data.data_page_offset));
+                has_undeclared_dictionary_page = true;
+            }
+        }
+
         size_t ranges_idx = 0;
         for (size_t page_idx = 0; page_idx < locations.size(); ++page_idx)
         {
@@ -972,8 +1064,11 @@ void Reader::determinePagesToPrefetch(ColumnChunk & column, const RowSubgroup & 
         chassert(!page_byte_ranges.empty());
 
         auto handles = prefetcher.splitRange(std::move(column.data_pages_prefetch), page_byte_ranges, /*likely_to_be_used*/ false);
+
+        if (has_undeclared_dictionary_page)
+            column.dictionary_page_prefetch = std::move(handles.at(0));
         for (size_t i = 0; i < column.data_pages.size(); ++i)
-            column.data_pages[i].prefetch = std::move(handles[i]);
+            column.data_pages[i].prefetch = std::move(handles[i + size_t(has_undeclared_dictionary_page)]);
     }
 
     size_t subgroup_end = row_subgroup.start_row_idx + row_subgroup.filter.rows_total;
@@ -1130,7 +1225,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
             if (page.next_row_idx == end_row_idx &&
                 (page.value_idx < page.num_values ||
                  page.end_row_idx.has_value() || // page ends on row boundary
-                 column.next_page_offset == prefetcher.getRangeData(column.data_pages_prefetch).size()))
+                 column.next_page_offset >= column.data_pages_bytes))
                 break;
 
             /// Advance to next page.

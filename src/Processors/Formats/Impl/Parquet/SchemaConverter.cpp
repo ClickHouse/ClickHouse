@@ -1,4 +1,7 @@
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
+
+#include <fmt/ranges.h>
+
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -100,7 +103,7 @@ NamesAndTypesList SchemaConverter::inferSchema()
     return res;
 }
 
-std::optional<size_t> SchemaConverter::processSubtree(String name, bool requested, DataTypePtr type_hint, SchemaContext context)
+std::optional<size_t> SchemaConverter::processSubtree(String name, bool requested, DataTypePtr type_hint, SchemaContext schema_context)
 {
     if (type_hint)
         chassert(requested);
@@ -120,7 +123,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
     size_t output_idx = UINT64_MAX; // index in output_columns
     size_t wrap_in_arrays = 0;
 
-    if (context == SchemaContext::None)
+    if (schema_context == SchemaContext::None)
     {
         if (!name.empty())
             name += ".";
@@ -219,7 +222,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
         /// If an element is declared as MAP, but doesn't have the expected structure of children
         /// and grandchildren, we fall back to interpreting it as a tuple, as if there were no MAP
         /// annotation on it. Or if Tuple type was requested.
-        if (context != SchemaContext::None && context != SchemaContext::ListElement)
+        if (schema_context != SchemaContext::None && schema_context != SchemaContext::ListElement)
             return false;
         if (typeid_cast<const DataTypeTuple *>(type_hint.get()))
             return false;
@@ -235,7 +238,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
     {
         if (element.converted_type != parq::ConvertedType::LIST && !element.logicalType.__isset.LIST)
             return false;
-        if (context != SchemaContext::None && context != SchemaContext::ListElement)
+        if (schema_context != SchemaContext::None && schema_context != SchemaContext::ListElement)
             return false;
         if (element.num_children != 1)
             return false;
@@ -269,7 +272,8 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
                 primitive_type_hint = assert_cast<const DataTypeNullable &>(*primitive_type_hint).getNestedType();
             }
         }
-        else if (!options.schema_inference_force_not_nullable)
+        /// Force map key to be non-nullable because clickhouse Map doesn't support nullable map key.
+        else if (!options.schema_inference_force_not_nullable && schema_context != SchemaContext::MapKey)
         {
             if (levels.back().is_array == false)
             {
@@ -362,25 +366,31 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Map, requested type is {}", name, type_hint->getName());
             }
         }
-        auto array_idx = processSubtree(name, requested, array_type_hint, SchemaContext::MapTuple);
+        /// (MapTupleAsPlainTuple is needed to skip a level in the column name: it changes
+        /// `my_map.key_value.key` to `my_map.key`.
+        auto array_idx = processSubtree(name, requested, array_type_hint, no_map ? SchemaContext::MapTupleAsPlainTuple : SchemaContext::MapTuple);
 
         if (!requested || !array_idx.has_value())
             return std::nullopt;
 
-        /// Support explicitly requesting Array(Tuple) type for map columns. Useful if the map key
-        /// type is something that's not allowed as Map key in clickhouse.
+        /// Support explicitly requesting Array(Tuple) type for map columns. Useful e.g. if the map
+        /// key type is something that's not allowed as Map key in clickhouse.
         if (no_map)
-            return array_idx;
+        {
+            output_idx = array_idx.value();
+        }
+        else
+        {
+            output_idx = output_columns.size();
+            OutputColumnInfo & output = output_columns.emplace_back();
+            const OutputColumnInfo & array = output_columns.at(array_idx.value());
 
-        output_idx = output_columns.size();
-        OutputColumnInfo & output = output_columns.emplace_back();
-        const OutputColumnInfo & array = output_columns.at(array_idx.value());
-
-        output.name = name;
-        output.primitive_start = array.primitive_start;
-        output.primitive_end = array.primitive_end;
-        output.type = std::make_shared<DataTypeMap>(array.type);
-        output.nested_columns = {array_idx.value()};
+            output.name = name;
+            output.primitive_start = array.primitive_start;
+            output.primitive_end = array.primitive_end;
+            output.type = std::make_shared<DataTypeMap>(array.type);
+            output.nested_columns = {array_idx.value()};
+        }
     }
     else if (check_list())
     {
@@ -392,7 +402,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
 
         output_idx = array_idx.value();
     }
-    else if (context == SchemaContext::ListTuple)
+    else if (schema_context == SchemaContext::ListTuple)
     {
         /// Array (middle schema element).
         chassert(element.repetition_type == parq::FieldRepetitionType::REPEATED &&
@@ -426,7 +436,8 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
         std::vector<size_t> elements;
         if (type_hint)
         {
-            if (tuple_type_hint->hasExplicitNames() && !tuple_type_hint->getElements().empty())
+            if (tuple_type_hint->hasExplicitNames() && !tuple_type_hint->getElements().empty() &&
+                schema_context != SchemaContext::MapTuple)
             {
                 /// Allow reading a subset of tuple elements, matched by name, possibly reordered.
                 lookup_by_name = true;
@@ -452,9 +463,11 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
         size_t primitive_start = primitive_columns.size();
         size_t output_start = output_columns.size();
         size_t skipped_unsupported_columns = 0;
+        std::vector<String> element_names_in_file;
         for (size_t i = 0; i < size_t(element.num_children); ++i)
         {
             const String & element_name = file_metadata.schema.at(schema_idx).name;
+            element_names_in_file.push_back(element_name);
             std::optional<size_t> idx_in_output_tuple = i - skipped_unsupported_columns;
             if (lookup_by_name)
             {
@@ -469,13 +482,18 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
                 element_type_hint = tuple_type_hint->getElement(idx_in_output_tuple.value());
 
             bool element_requested = requested && idx_in_output_tuple.has_value();
-            auto element_idx = processSubtree(name, element_requested, element_type_hint, SchemaContext::None);
+
+            SchemaContext child_context = SchemaContext::None;
+            if (schema_context == SchemaContext::MapTuple && idx_in_output_tuple == 0)
+                child_context = SchemaContext::MapKey;
+
+            auto element_idx = processSubtree(name, element_requested, element_type_hint, child_context);
 
             if (element_requested)
             {
                 if (!element_idx.has_value())
                 {
-                    if (type_hint || context == SchemaContext::MapTuple)
+                    if (type_hint || schema_context == SchemaContext::MapTuple)
                     {
                         /// If one of the elements is skipped, skip the whole tuple.
                         /// Remove previous elements.
@@ -511,6 +529,11 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
         if (!requested)
             return std::nullopt;
 
+        /// Map tuple in parquet has elements: {"key" , "value" },
+        /// but DataTypeMap requires:          {"keys", "values"}.
+        if (schema_context == SchemaContext::MapTuple)
+            names = {"keys", "values"};
+
         DataTypePtr output_type;
         if (type_hint)
         {
@@ -520,7 +543,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
                 if (elements[i] != UINT64_MAX)
                     continue;
                 if (!options.format.parquet.allow_missing_columns)
-                    throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Requested tuple element {} of column {} was not found in parquet schema", tuple_type_hint->getNameByPosition(i + 1), name);
+                    throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Requested tuple element {} of column {} was not found in parquet schema ({})", tuple_type_hint->getNameByPosition(i + 1), name, element_names_in_file);
 
                 elements[i] = output_columns.size();
                 OutputColumnInfo & missing_output = output_columns.emplace_back();

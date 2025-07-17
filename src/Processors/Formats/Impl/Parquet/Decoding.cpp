@@ -31,7 +31,7 @@ struct BitPackedRLEDecoder : public PageDecoder
     T val = 0; // if RLE run
     bool run_is_rle = false; // otherwise bit-packed
 
-    BitPackedRLEDecoder(std::span<const char> data_, size_t limit_, bool has_header_byte)
+    BitPackedRLEDecoder(std::span<const char> data_, size_t limit_, bool has_header_byte, bool has_length_bytes = false)
         : PageDecoder(data_), limit(limit_)
     {
         static_assert(sizeof(T) <= 4);
@@ -49,6 +49,19 @@ struct BitPackedRLEDecoder : public PageDecoder
         {
             chassert(limit > 0);
             bit_width = 32 - __builtin_clz(UInt32(limit - 1));
+        }
+
+        if (has_length_bytes)
+        {
+            /// RLE-encoded BOOLEANs have 4-byte length prepended, for some reason. It doesn't add
+            /// any useful information, but let's validate it just in case.
+            requireRemainingBytes(4);
+            UInt32 len = 0;
+            memcpy(&len, data, 4);
+            data += 4;
+            if (ssize_t(len) > end - data)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid length of RLE-encoded page: {} > {}", len, end - data);
+            end = data + size_t(len);
         }
 
         chassert(bit_width <= 32);
@@ -782,7 +795,7 @@ std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
             switch (physical_type)
             {
                 case parq::Type::BOOLEAN:
-                    return std::make_unique<BitPackedRLEDecoder<UInt8>>(data, 2, /*has_header_byte=*/ false);
+                    return std::make_unique<BitPackedRLEDecoder<UInt8>>(data, 2, /*has_header_byte=*/ false, /*has_length_bytes=*/ true);
                 default: break;
             }
             break;
