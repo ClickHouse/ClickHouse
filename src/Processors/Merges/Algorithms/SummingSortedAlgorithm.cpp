@@ -625,7 +625,7 @@ void SummingSortedAlgorithm::SummingMergedData::finishGroup()
                         /// Assume that the row isn't empty in this case
                         ///   (just because it is compatible with previous version)
                         current_row_is_zero = false;
-                    }                
+                    }
                 }
                 catch (...)
                 {
