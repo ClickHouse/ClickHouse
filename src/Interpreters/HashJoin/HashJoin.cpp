@@ -418,7 +418,7 @@ void HashJoin::dataMapInit(MapsVariant & map)
 
 bool HashJoin::preferUseMapsAll() const
 {
-    return table_join->getMixedJoinExpression() != nullptr || (kind == JoinKind::Inner && data->all_values_unique);
+    return table_join->getMixedJoinExpression() != nullptr || data->all_join_was_promoted_to_right_any;
 }
 
 bool HashJoin::empty() const
@@ -1796,7 +1796,12 @@ void HashJoin::onBuildPhaseFinish()
         }
     }
 
-    if (data->all_values_unique)
+    if (data->all_values_unique && strictness == JoinStrictness::All && kind == JoinKind::Inner)
+    {
         strictness = JoinStrictness::RightAny;
+        data->all_join_was_promoted_to_right_any = true;
+
+        LOG_DEBUG(log, "Promoting join strictness to RightAny, because all values in the right table are unique");
+    }
 }
 }
