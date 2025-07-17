@@ -76,6 +76,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     }
 
     auto parser_group = std::make_shared<FormatParserGroup>(context->getSettingsRef(), num_streams, filter_actions_dag, context);
+    parser_group->column_mapper = configuration->getColumnMapper();
 
     for (size_t i = 0; i < num_streams; ++i)
     {

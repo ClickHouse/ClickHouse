@@ -26,6 +26,8 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
@@ -39,6 +41,7 @@ namespace Setting
 {
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsBool allow_experimental_insert_into_iceberg;
 }
 
 namespace ErrorCodes
@@ -47,6 +50,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -123,7 +127,6 @@ StorageObjectStorage::StorageObjectStorage(
                 context,
                 /* if_not_updated_before */is_table_function,
                 /* check_consistent_with_previous_metadata */true);
-
             updated_configuration = true;
         }
     }
@@ -439,6 +442,26 @@ SinkToStoragePtr StorageObjectStorage::write(
     if (configuration->partition_strategy)
     {
         return std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, format_settings, sample_block, local_context);
+    }
+
+    /// Delta lake does not support writes yet.
+    if (configuration->isDataLakeConfiguration() && configuration->supportsWrites())
+    {
+#if USE_AVRO
+        if (local_context->getSettingsRef()[Setting::allow_experimental_insert_into_iceberg])
+        {
+            return std::make_shared<IcebergStorageSink>(
+                object_storage,
+                configuration,
+                format_settings,
+                sample_block,
+                local_context);
+        }
+        else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Insert into iceberg is experimental. "
+                "To allow its usage, enable setting allow_experimental_insert_into_iceberg");
+#endif
     }
 
     auto paths = configuration->getPaths();
