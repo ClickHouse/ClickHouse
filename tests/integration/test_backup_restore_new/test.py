@@ -2070,7 +2070,7 @@ def test_rmv_no_definer():
         instance.query(
             "SELECT name FROM system.tables where database='test' AND name='rmv'"
         )
-        == "rmv\n"
+        == "rmv"
     )
 
 # Test for the "clickhouse_backupview" utility.
