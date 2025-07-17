@@ -609,21 +609,7 @@ void SummingSortedAlgorithm::SummingMergedData::finishGroup()
                 try
                 {
                     desc.function->insertResultInto(desc.state.data(), *desc.merged_column, def.arena.get());
-
-                    /// Update zero status of current row
-                    if (!desc.is_simple_agg_func_type && desc.column_numbers.size() == 1)
-                    {
-                        // Flag row as non-empty if at least one column number if non-zero
-                        current_row_is_zero = current_row_is_zero
-                                              && desc.merged_column->isDefaultAt(desc.merged_column->size() - 1);
-                    }
-                    else
-                    {
-                        /// It is sumMapWithOverflow aggregate function.
-                        /// Assume that the row isn't empty in this case
-                        ///   (just because it is compatible with previous version)
-                        current_row_is_zero = false;
-                    }
+                    current_row_is_zero = false;
                 }
                 catch (...)
                 {
