@@ -1,0 +1,11 @@
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.bloom_filter_has_const_array)
+    Indexes:
+      Skip
+        Name: bf
+        Description: bloom_filter GRANULARITY 1
+        Parts: 1/1
+        Granules: 2/4
+a
+c
