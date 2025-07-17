@@ -880,7 +880,6 @@ void QueryAnalyzer::convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, Ide
         }
     }
 
-
     auto * function = source_expression->as<FunctionNode>();
 
     std::string get_scalar_function_name = "__getScalar";
