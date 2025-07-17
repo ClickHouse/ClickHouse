@@ -15,7 +15,6 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
-#include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
@@ -46,7 +45,6 @@ ObjectStoragePtr DiskObjectStorage::getObjectStorage()
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
 {
     return std::make_shared<DiskObjectStorageTransaction>(
-        *this,
         *object_storage,
         *metadata_storage);
 }
@@ -54,7 +52,6 @@ DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDisk(DiskObjectStorage & to_disk)
 {
     return std::make_shared<MultipleDisksObjectStorageTransaction>(
-        *this,
         *object_storage,
         *metadata_storage,
         *to_disk.getObjectStorage(),
@@ -672,17 +669,6 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     std::optional<size_t> file_size) const
 {
     const auto storage_objects = metadata_storage->getStorageObjects(path);
-    return readFileFromStorageObjects(storage_objects, path, settings, read_hint, file_size);
-}
-
-
-std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFileFromStorageObjects(
-    const StoredObjects & storage_objects,
-    const String & path,
-    const ReadSettings & settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
-{
     auto global_context = Context::getGlobalContextInstance();
 
     if (storage_objects.empty())
