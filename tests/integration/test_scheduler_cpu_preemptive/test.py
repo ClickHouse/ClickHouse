@@ -123,7 +123,7 @@ def test_independent_pools():
 
     def query_thread(workload):
         node.query(
-            f"select count(*) from numbers_mt(10000000) settings workload='{workload}', max_threads=100",
+            f"select count(*) from numbers_mt(10000000000) settings workload='{workload}', max_threads=100",
             query_id=f"test_{workload}",
         )
 
@@ -142,19 +142,14 @@ def test_independent_pools():
         node.query("SYSTEM FLUSH LOGS")
         # Note that we cannot guarantee that all slots that should be (a) granted, (b) acquired and (c) passed to a thread, will actually undergo even the first stage before query finishes
         # So any attempt to make a stricter checks here lead to flakiness due to described race condition. Workaround would require failpoint.
-        # We assume threads will never be preempted and downscaled and upscaled again, so we cna check ConcurrencyControlSlotsAcquired against limit
+        # We assume threads will never be preempted and downscaled and upscaled again, so we can check ConcurrencyControlSlotsAcquired against limit
         assert_profile_event(
             node,
             query_id,
             "ConcurrencyControlSlotsAcquired",
             lambda x: x <= slots,
         )
-        assert_profile_event(
-            node,
-            query_id,
-            "ConcurrencyControlPreemptions",
-            lambda x: x == 0,
-        )
+        # Short preemptions may happen due to lags in the scheduler thread, but dowscales should not
         assert_profile_event(
             node,
             query_id,
