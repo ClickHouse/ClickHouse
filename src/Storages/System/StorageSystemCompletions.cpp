@@ -4,6 +4,7 @@
 #include <Common/Macros.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Databases/IDatabase.h>
 #include <Dictionaries/IDictionary.h>
@@ -33,11 +34,28 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
 }
 
+static constexpr const char * DATABASE_CONTEXT = "database";
+static constexpr const char * TABLE_CONTEXT = "table";
+static constexpr const char * COLUMN_CONTEXT = "column";
+static constexpr const char * FUNCTION_CONTEXT = "function";
+static constexpr const char * TABLE_ENGINE_CONTEXT = "table engine";
+static constexpr const char * FORMAT_CONTEXT = "format";
+static constexpr const char * TABLE_FUNCTION_CONTEXT = "table function";
+static constexpr const char * DATA_TYPE_CONTEXT = "data type";
+static constexpr const char * SETTING_CONTEXT = "setting";
+static constexpr const char * KEYWORD_CONTEXT = "keyword";
+static constexpr const char * CLUSTER_CONTEXT = "cluster";
+static constexpr const char * MACRO_CONTEXT = "macro";
+static constexpr const char * POLICY_CONTEXT = "policy";
+static constexpr const char * DICTIONARY_CONTEXT = "dictionary";
+
 ColumnsDescription StorageSystemCompletions::getColumnsDescription()
 {
     auto description = ColumnsDescription
     {
-        {"word", std::make_shared<DataTypeString>(), "Completion token."}
+        {"word", std::make_shared<DataTypeString>(), "Completion token."},
+        {"context", std::make_shared<DataTypeString>(), "Token entity kind (e.g. table)."},
+        {"belongs", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Token for entity, this token belongs to (e.g. name of owning database)."}
     };
     return description;
 }
@@ -52,6 +70,8 @@ void fillDataWithTableColumns(const String & database_name, const String & table
         return; // table was dropped or deleted, while adding columns for previous table
 
     res_columns[0]->insert(table_name);
+    res_columns[1]->insert(TABLE_CONTEXT);
+    res_columns[2]->insert(database_name);
 
     if (!access->isGranted(AccessType::SHOW_COLUMNS) || !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name))
         return;
@@ -68,6 +88,8 @@ void fillDataWithTableColumns(const String & database_name, const String & table
             continue;
 
         res_columns[0]->insert(column.name);
+        res_columns[1]->insert(COLUMN_CONTEXT);
+        res_columns[2]->insert(table_name);
     }
 }
 
@@ -80,10 +102,12 @@ void fillDataWithDatabasesTablesColumns(MutableColumns & res_columns, const Cont
         if (!access->isGranted(AccessType::SHOW_DATABASES) || !access->isGranted(AccessType::SHOW_DATABASES, database_name))
             continue;
 
-        res_columns[0]->insert(database_name);
-
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
-            continue; /// skipping internal database temporary tables
+            continue; // skipping internal database temporary tables
+
+        res_columns[0]->insert(database_name);
+        res_columns[1]->insert(DATABASE_CONTEXT);
+        res_columns[2]->insertDefault();
 
         /// We are skipping "Lazy" database because we cannot afford initialization of all its tables.
         if (database_ptr->getEngineName() == "Lazy")
@@ -105,30 +129,29 @@ void fillDataWithDatabasesTablesColumns(MutableColumns & res_columns, const Cont
         {
             const String database_name(1, '\0');
             fillDataWithTableColumns(database_name, table_name, table, res_columns, context);
-            res_columns[0]->insert(table_name);
         }
     }
 }
 
 void fillDataWithFunctions(MutableColumns & res_columns, const ContextPtr & context)
 {
+    auto insert_function = [&](const String & name)
+    {
+        res_columns[0]->insert(name);
+        res_columns[1]->insert(FUNCTION_CONTEXT);
+        res_columns[2]->insertDefault();
+    };
     const auto & functions_factory = FunctionFactory::instance();
     const auto & function_names = functions_factory.getAllRegisteredNames();
     for (const auto & function_name : function_names)
-    {
-        res_columns[0]->insert(function_name);
-    }
+        insert_function(function_name);
     const auto & aggregate_functions_factory = AggregateFunctionFactory::instance();
     const auto & aggregate_function_names = aggregate_functions_factory.getAllRegisteredNames();
     for (const auto & function_name : aggregate_function_names)
-    {
-        res_columns[0]->insert(function_name);
-    }
+        insert_function(function_name);
     const auto & user_defined_function_names = UserDefinedExecutableFunctionFactory::getRegisteredNames(context);
     for (const auto & function_name : user_defined_function_names)
-    {
-        res_columns[0]->insert(function_name);
-    }
+        insert_function(function_name);
 }
 
 void fillDataWithTableEngines(MutableColumns & res_columns)
@@ -138,6 +161,8 @@ void fillDataWithTableEngines(MutableColumns & res_columns)
     for (const auto & [table_engine_name, _] : table_engines)
     {
         res_columns[0]->insert(table_engine_name);
+        res_columns[1]->insert(TABLE_ENGINE_CONTEXT);
+        res_columns[2]->insertDefault();
     }
 }
 
@@ -148,6 +173,8 @@ void fillDataWithFormats(MutableColumns & res_columns)
     for (const auto & [format_name, _] : formats)
     {
         res_columns[0]->insert(format_name);
+        res_columns[1]->insert(FORMAT_CONTEXT);
+        res_columns[2]->insertDefault();
     }
 }
 
@@ -160,7 +187,11 @@ void fillDataWithTableFunctions(MutableColumns & res_columns, const ContextPtr &
     {
         auto properties = table_functions_factory.tryGetProperties(function_name);
         if ((non_readonly_allowed) || (properties && properties->allow_readonly))
+        {
             res_columns[0]->insert(function_name);
+            res_columns[1]->insert(TABLE_FUNCTION_CONTEXT);
+            res_columns[2]->insertDefault();
+        }
     }
 }
 
@@ -171,6 +202,8 @@ void fillDataWithDataTypeFamilies(MutableColumns & res_columns)
     for (const auto & data_type_name : data_type_names)
     {
         res_columns[0]->insert(data_type_name);
+        res_columns[1]->insert(DATA_TYPE_CONTEXT);
+        res_columns[2]->insertDefault();
     }
 }
 
@@ -189,6 +222,8 @@ void fillDataWithSettings(MutableColumns & res_columns, const ContextPtr & conte
     for (const auto & setting_name : setting_names)
     {
         res_columns[0]->insert(setting_name);
+        res_columns[1]->insert(SETTING_CONTEXT);
+        res_columns[2]->insertDefault();
     }
 }
 
@@ -197,6 +232,8 @@ void fillDataWithKeywords(MutableColumns & res_columns)
     for (const auto & keyword : getAllKeyWords())
     {
         res_columns[0]->insert(keyword);
+        res_columns[1]->insert(KEYWORD_CONTEXT);
+        res_columns[2]->insertDefault();
     }
 }
 
@@ -206,6 +243,8 @@ void fillDataWithClusters(MutableColumns & res_columns, const ContextPtr & conte
     for (const auto & [cluster_name, _] : clusters)
     {
         res_columns[0]->insert(cluster_name);
+        res_columns[1]->insert(CLUSTER_CONTEXT);
+        res_columns[2]->insertDefault();
     }
 }
 
@@ -215,6 +254,8 @@ void fillDataWithMacros(MutableColumns & res_columns, const ContextPtr & context
     for (const auto & [macro_name, _] : macros->getMacroMap())
     {
         res_columns[0]->insert(macro_name);
+        res_columns[1]->insert(MACRO_CONTEXT);
+        res_columns[2]->insertDefault();
     }
 }
 
@@ -223,6 +264,8 @@ void fillDataWithPolicies(MutableColumns & res_columns, const ContextPtr & conte
     for (const auto & [policy_name, _] : context->getPoliciesMap())
     {
         res_columns[0]->insert(policy_name);
+        res_columns[1]->insert(POLICY_CONTEXT);
+        res_columns[2]->insertDefault();
     }
 }
 
@@ -249,6 +292,8 @@ void fillDataWithDictionaries(MutableColumns & res_columns, const ContextPtr & c
         if (!access->isGranted(AccessType::SHOW_DICTIONARIES, db_or_tag, dict_id.table_name))
             continue;
         res_columns[0]->insert(dict_id.table_name);
+        res_columns[1]->insert(DICTIONARY_CONTEXT);
+        res_columns[2]->insertDefault();
     }
 }
 

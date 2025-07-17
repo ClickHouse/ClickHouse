@@ -7,9 +7,9 @@ CREATE TABLE IF NOT EXISTS `0003566aaatable` (
     `0003566aaabaz`     UInt128
 ) ENGINE = Memory;
 
-SELECT DISTINCT lower(word) AS token
+SELECT *
 FROM system.completions
-WHERE startsWith(token, '0003566')
-ORDER BY token
+WHERE startsWith(word, '0003566')
+ORDER BY word
 LIMIT 5
 FORMAT PrettyCompact;
