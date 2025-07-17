@@ -805,6 +805,31 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     node = std::move(get_scalar_function_node);
 }
 
+bool isNodeInSubtree(const IQueryTreeNode * target, const IQueryTreeNode * root)
+{
+    if (!target || !root)
+        return false;
+
+    std::stack<const IQueryTreeNode *> stack;
+    stack.push(root);
+
+    while (!stack.empty())
+    {
+        const auto * current = stack.top();
+        stack.pop();
+
+        if (current == target)
+            return true;
+
+        for (const auto & child : current->getChildren())
+        {
+            if (child)
+                stack.push(child.get());
+        }
+    }
+    return false;
+}
+
 void QueryAnalyzer::convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, IdentifierResolveScope & scope) const
 {
     auto max_size = scope.context->getSettingsRef()[Setting::optimize_const_array_and_tuple_to_scalar_size];
@@ -814,6 +839,17 @@ void QueryAnalyzer::convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, Ide
     auto * constant_node = node->as<ConstantNode>();
     if (!constant_node || !constant_node->hasSourceExpression())
         return;
+
+    auto * nearest_query_scope = scope.getNearestQueryScope();
+    auto & source_expression = constant_node->getSourceExpression();
+
+    // do not convert in WHERE expression since it can prevent primary key optimization
+    if (nearest_query_scope)
+    {
+        auto * query_node = nearest_query_scope->scope_node->as<QueryNode>();
+        if (isNodeInSubtree(source_expression.get(), query_node->getWhere().get()))
+            return;
+    }
 
     const auto * col_const = typeid_cast<const ColumnConst *>(constant_node->getColumn().get());
     const auto * col_array = typeid_cast<const ColumnArray *>(&col_const->getDataColumn());
@@ -835,7 +871,6 @@ void QueryAnalyzer::convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, Ide
             return;
     }
 
-    auto & source_expression = constant_node->getSourceExpression();
 
     auto * function = source_expression->as<FunctionNode>();
 
@@ -844,7 +879,7 @@ void QueryAnalyzer::convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, Ide
     if (!function || function->getFunctionName() == get_scalar_function_name)
         return;
 
-    if (function->getFunctionName() == "_CAST" || function->getFunctionName() == "array")
+    if (function->getFunctionName() == "_CAST")
         return;
 
     auto & context = scope.context;
@@ -862,7 +897,7 @@ void QueryAnalyzer::convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, Ide
 
     auto scalar_query_hash_string = DB::toString(node_with_hash.hash) + (only_analyze ? "_analyze" : "");
 
-    if (auto * nearest_query_scope = scope.getNearestQueryScope())
+    if (nearest_query_scope)
     {
         auto & nearest_query_scope_query_node = nearest_query_scope->scope_node->as<QueryNode &>();
         auto & mutable_context = nearest_query_scope_query_node.getMutableContext();
