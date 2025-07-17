@@ -94,11 +94,15 @@ public:
 
         ColumnPtr gamma;
         if (arguments.size() == 2)
-            gamma = castColumn(arguments[1], float64_type);
+            gamma = castColumn(arguments[1], float64_type)->convertToFullColumnIfConst();
 
-        const auto & red_data = assert_cast<const ColumnFloat64 &>(*rgb_cols[0]).getData();
-        const auto & green_data = assert_cast<const ColumnFloat64 &>(*rgb_cols[1]).getData();
-        const auto & blue_data = assert_cast<const ColumnFloat64 &>(*rgb_cols[2]).getData();
+        ColumnPtr red_column = rgb_cols[0]->convertToFullColumnIfConst();
+        ColumnPtr green_column = rgb_cols[1]->convertToFullColumnIfConst();
+        ColumnPtr blue_column = rgb_cols[2]->convertToFullColumnIfConst();
+
+        const auto & red_data = assert_cast<const ColumnFloat64 &>(*red_column).getData();
+        const auto & green_data = assert_cast<const ColumnFloat64 &>(*green_column).getData();
+        const auto & blue_data = assert_cast<const ColumnFloat64 &>(*blue_column).getData();
         const auto * gamma_data = gamma ? &assert_cast<const ColumnFloat64 &>(*gamma).getData() : nullptr;
 
         auto col_lightness = ColumnFloat64::create();

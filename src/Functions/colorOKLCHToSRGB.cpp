@@ -93,11 +93,15 @@ public:
 
         ColumnPtr gamma;
         if (arguments.size() == 2)
-            gamma = castColumn(arguments[1], float64_type);
+            gamma = castColumn(arguments[1], float64_type)->convertToFullColumnIfConst();
 
-        const auto & lightness_data = assert_cast<const ColumnFloat64 &>(*rgb_cols[0]).getData();
-        const auto & chroma_data = assert_cast<const ColumnFloat64 &>(*rgb_cols[1]).getData();
-        const auto & hue_data = assert_cast<const ColumnFloat64 &>(*rgb_cols[2]).getData();
+        ColumnPtr lightness_column = rgb_cols[0]->convertToFullColumnIfConst();
+        ColumnPtr chroma_column = rgb_cols[1]->convertToFullColumnIfConst();
+        ColumnPtr hue_column = rgb_cols[2]->convertToFullColumnIfConst();
+
+        const auto & lightness_data = assert_cast<const ColumnFloat64 &>(*lightness_column).getData();
+        const auto & chroma_data = assert_cast<const ColumnFloat64 &>(*chroma_column).getData();
+        const auto & hue_data = assert_cast<const ColumnFloat64 &>(*hue_column).getData();
         const auto * gamma_data = gamma ? &assert_cast<const ColumnFloat64 &>(*gamma).getData() : nullptr;
 
         auto col_red = ColumnFloat64::create();
