@@ -1,7 +1,7 @@
 ---
 description: 'Documentation describing the EXCEPT modifier which specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the output.'
 sidebar_label: 'EXCEPT'
-slug: /sql-reference/statements/select/apply
+slug: /sql-reference/statements/select/except-modifier
 title: 'EXCEPT modifier'
 keywords: ['EXCEPT', 'modifier']
 ---
