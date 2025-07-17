@@ -36,6 +36,7 @@
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include "Core/Joins.h"
 
 namespace ProfileEvents
 {
@@ -406,12 +407,18 @@ void HashJoin::dataMapInit(MapsVariant & map)
 {
     if (kind == JoinKind::Cross)
         return;
-    auto prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
+    const bool prefer_use_maps_all = preferUseMapsAll();
     joinDispatchInit(kind, strictness, map, prefer_use_maps_all);
     joinDispatch(kind, strictness, map, prefer_use_maps_all, [&](auto, auto, auto & map_) { map_.create(data->type, reserve_num); });
 
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin::dataMapInit called with empty data");
+}
+
+
+bool HashJoin::preferUseMapsAll() const
+{
+    return table_join->getMixedJoinExpression() != nullptr || (kind == JoinKind::Inner && data->all_values_unique);
 }
 
 bool HashJoin::empty() const
@@ -438,7 +445,7 @@ size_t HashJoin::getTotalRowCount() const
     }
     else
     {
-        auto prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
+        const bool prefer_use_maps_all = preferUseMapsAll();
         for (const auto & map : data->maps)
         {
             joinDispatch(
@@ -490,7 +497,7 @@ size_t HashJoin::getTotalByteCount() const
 
     if (data->type != Type::CROSS)
     {
-        auto prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
+        const bool prefer_use_maps_all = preferUseMapsAll();
         for (const auto & map : data->maps)
         {
             joinDispatch(
@@ -675,7 +682,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
         return true;
     }
 
-    bool prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
+    const bool prefer_use_maps_all = preferUseMapsAll();
 
     size_t total_rows = 0;
     size_t total_bytes = 0;
@@ -770,7 +777,8 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                             null_map,
                             join_mask_col,
                             data->pool,
-                            is_inserted);
+                            is_inserted,
+                            data->all_values_unique);
 
                         if (flag_per_row)
                             used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(&stored_columns->columns);
@@ -1111,7 +1119,7 @@ JoinResultPtr HashJoin::joinBlock(Block block)
 
     materializeColumnsFromLeftBlock(block);
 
-    bool prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
+    const bool prefer_use_maps_all = preferUseMapsAll();
     {
         std::vector<const std::decay_t<decltype(data->maps[0])> *> maps_vector;
         maps_vector.reserve(table_join->getClauses().size());
@@ -1180,7 +1188,7 @@ JoinResultPtr HashJoin::joinScatteredBlock(ScatteredBlock block)
     for (size_t i = 0; i < table_join->getClauses().size(); ++i)
         maps_vector.push_back(&data->maps[i]);
 
-    bool prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
+    const bool prefer_use_maps_all = preferUseMapsAll();
     JoinResultPtr res;
     [[maybe_unused]] const bool joined = joinDispatch(
         kind,
@@ -1294,7 +1302,7 @@ public:
         {
             auto fill_callback = [&](auto, auto, auto & map) { rows_added = fillColumnsFromMap(map, columns_right); };
 
-            bool prefer_use_maps_all = parent.table_join->getMixedJoinExpression() != nullptr;
+            const bool prefer_use_maps_all = parent.preferUseMapsAll();
             if (!joinDispatch(parent.kind, parent.strictness, parent.data->maps.front(), prefer_use_maps_all, fill_callback))
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR, "Unknown JOIN strictness '{}' (must be on of: ANY, ALL, ASOF)", parent.strictness);
@@ -1508,7 +1516,7 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
     if (flag_per_row)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StorageJoin with ORs is not supported");
 
-    bool prefer_use_maps_all = join.table_join->getMixedJoinExpression() != nullptr;
+    const bool prefer_use_maps_all = preferUseMapsAll();
     for (auto & map : data->maps)
     {
         joinDispatch(
@@ -1770,22 +1778,25 @@ void HashJoin::tryRerangeRightTableData()
 
 void HashJoin::onBuildPhaseFinish()
 {
-    if (needUsedFlagsForPerRightTableRow(table_join))
-        return;
-
-    const bool prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
-    for (auto & map : data->maps)
+    if (!needUsedFlagsForPerRightTableRow(table_join))
     {
-        joinDispatch(
-            kind,
-            strictness,
-            map,
-            prefer_use_maps_all,
-            [this](auto kind_, auto strictness_, auto & map_)
-            {
-                used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map_)>, MapsAll>>(
-                    map_.getBufferSizeInCells(data->type) + 1);
-            });
+        const bool prefer_use_maps_all = preferUseMapsAll();
+        for (auto & map : data->maps)
+        {
+            joinDispatch(
+                kind,
+                strictness,
+                map,
+                prefer_use_maps_all,
+                [this](auto kind_, auto strictness_, auto & map_)
+                {
+                    used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map_)>, MapsAll>>(
+                        map_.getBufferSizeInCells(data->type) + 1);
+                });
+        }
     }
+
+    if (data->all_values_unique)
+        strictness = JoinStrictness::RightAny;
 }
 }
