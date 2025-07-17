@@ -14,14 +14,14 @@ Comma Separated Values format ([RFC](https://tools.ietf.org/html/rfc4180)).
 When formatting, rows are enclosed in double quotes. A double quote inside a string is output as two double quotes in a row.
 There are no other rules for escaping characters.
 
--Date and date-time are enclosed in double quotes.
--Numbers are output without quotes.
--Values are separated by a delimiter character, which is `,` by default. The delimiter character is defined in the setting [format_csv_delimiter](/operations/settings/settings-formats.md/#format_csv_delimiter).
--Rows are separated using the Unix line feed (LF).
--Arrays are serialized in CSV as follows:
--first, the array is serialized to a string as in TabSeparated format
--The resulting string is output to CSV in double quotes.
--Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost).
+- Date and date-time are enclosed in double quotes.
+- Numbers are output without quotes.
+- Values are separated by a delimiter character, which is `,` by default. The delimiter character is defined in the setting [format_csv_delimiter](/operations/settings/settings-formats.md/#format_csv_delimiter).
+- Rows are separated using the Unix line feed (LF).
+- Arrays are serialized in CSV as follows:
+- first, the array is serialized to a string as in TabSeparated format
+- The resulting string is output to CSV in double quotes.
+- Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost).
 
 ```bash
 clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv

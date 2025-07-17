@@ -57,9 +57,9 @@ ENGINE = TinyLog;
 ```
 
 ```sql
--- Parse DateTime
--- - from string,
--- - from integer interpreted as number of seconds since 1970-01-01.
+- - Parse DateTime
+- - - from string,
+- - - from integer interpreted as number of seconds since 1970-01-01.
 INSERT INTO dt VALUES ('2019-01-01 00:00:00', 1), (1546300800, 3);
 
 SELECT * FROM dt;
@@ -72,8 +72,8 @@ SELECT * FROM dt;
 └─────────────────────┴──────────┘
 ```
 
--When inserting datetime as an integer, it is treated as Unix Timestamp (UTC). `1546300800` represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Asia/Istanbul` (UTC+3) timezone specified, when outputting as string the value will be shown as `'2019-01-01 03:00:00'`
--When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Asia/Istanbul` timezone and saved as `1546290000`.
+- When inserting datetime as an integer, it is treated as Unix Timestamp (UTC). `1546300800` represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Asia/Istanbul` (UTC+3) timezone specified, when outputting as string the value will be shown as `'2019-01-01 03:00:00'`
+- When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Asia/Istanbul` timezone and saved as `1546290000`.
 
 **2.** Filtering on `DateTime` values
 
@@ -147,17 +147,17 @@ Time shifts for multiple days. Some pacific islands changed their timezone offse
 
 ClickHouse's DateTime type with time zones can exhibit unexpected behavior during Daylight Saving Time (DST) transitions, particularly when:
 
--[`date_time_output_format`](../../operations/settings/settings-formats.md#date_time_output_format) is set to `simple`.
--Clocks move backward ("Fall Back"), causing a one-hour overlap.
--Clocks move forward ("Spring Forward"), causing a one-hour gap.
+- [`date_time_output_format`](../../operations/settings/settings-formats.md#date_time_output_format) is set to `simple`.
+- Clocks move backward ("Fall Back"), causing a one-hour overlap.
+- Clocks move forward ("Spring Forward"), causing a one-hour gap.
 
 By default, ClickHouse always picks the earlier occurrence of an overlapping time and may interpret nonexistent times during forward shifts.
 
 For example, consider the following transition from Daylight Saving Time (DST) to Standard Time.
 
--On October 29, 2023, at 02:00:00, clocks move backward to 01:00:00 (BST → GMT).
--The hour 01:00:00 – 01:59:59 appears twice (once in BST and once in GMT)
--ClickHouse always picks the first occurrence (BST), causing unexpected results when adding time intervals.
+- On October 29, 2023, at 02:00:00, clocks move backward to 01:00:00 (BST → GMT).
+- The hour 01:00:00 – 01:59:59 appears twice (once in BST and once in GMT)
+- ClickHouse always picks the first occurrence (BST), causing unexpected results when adding time intervals.
 
 ```sql
 SELECT '2023-10-29 01:30:00'::DateTime('Europe/London') AS time, time + toIntervalHour(1) AS one_hour_later
@@ -171,8 +171,8 @@ Similarly, during the transition from Standard Time to Daylight Saving Time, an 
 
 For example:
 
--On March 26, 2023, at `00:59:59`, clocks jump forward to 02:00:00 (GMT → BST).
--The hour `01:00:00` – `01:59:59` does not exist.
+- On March 26, 2023, at `00:59:59`, clocks jump forward to 02:00:00 (GMT → BST).
+- The hour `01:00:00` – `01:59:59` does not exist.
 
 ```sql
 SELECT '2023-03-26 01:30:00'::DateTime('Europe/London') AS time, time + toIntervalHour(1) AS one_hour_later
@@ -186,12 +186,12 @@ In this case, ClickHouse shifts the non-existent time `2023-03-26 01:30:00` back
 
 ## See Also {#see-also}
 
--[Type conversion functions](../../sql-reference/functions/type-conversion-functions.md)
--[Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
--[Functions for working with arrays](../../sql-reference/functions/array-functions.md)
--[The `date_time_input_format` setting](../../operations/settings/settings-formats.md#date_time_input_format)
--[The `date_time_output_format` setting](../../operations/settings/settings-formats.md#date_time_output_format)
--[The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#timezone)
--[The `session_timezone` setting](../../operations/settings/settings.md#session_timezone)
--[Operators for working with dates and times](../../sql-reference/operators#operators-for-working-with-dates-and-times)
--[The `Date` data type](../../sql-reference/data-types/date.md)
+- [Type conversion functions](../../sql-reference/functions/type-conversion-functions.md)
+- [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
+- [Functions for working with arrays](../../sql-reference/functions/array-functions.md)
+- [The `date_time_input_format` setting](../../operations/settings/settings-formats.md#date_time_input_format)
+- [The `date_time_output_format` setting](../../operations/settings/settings-formats.md#date_time_output_format)
+- [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#timezone)
+- [The `session_timezone` setting](../../operations/settings/settings.md#session_timezone)
+- [Operators for working with dates and times](../../sql-reference/operators#operators-for-working-with-dates-and-times)
+- [The `Date` data type](../../sql-reference/data-types/date.md)

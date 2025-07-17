@@ -34,11 +34,11 @@ If the `alter_sync` is set to `2` and some replicas are not active for more than
 
 The `TRUNCATE TABLE` query is **not supported** for the following table engines:
 
--[`View`](../../engines/table-engines/special/view.md)
--[`File`](../../engines/table-engines/special/file.md)
--[`URL`](../../engines/table-engines/special/url.md)
--[`Buffer`](../../engines/table-engines/special/buffer.md)
--[`Null`](../../engines/table-engines/special/null.md)
+- [`View`](../../engines/table-engines/special/view.md)
+- [`File`](../../engines/table-engines/special/file.md)
+- [`URL`](../../engines/table-engines/special/url.md)
+- [`Buffer`](../../engines/table-engines/special/buffer.md)
+- [`Null`](../../engines/table-engines/special/null.md)
 
 ## TRUNCATE ALL TABLES {#truncate-all-tables}
 

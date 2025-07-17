@@ -17,11 +17,11 @@ distinctJSONPaths(json)
 
 **Arguments**
 
--`json` — [JSON](../../data-types/newjson.md) column.
+- `json` — [JSON](../../data-types/newjson.md) column.
 
 **Returned Value**
 
--The sorted list of paths [Array(String)](../../data-types/array.md).
+- The sorted list of paths [Array(String)](../../data-types/array.md).
 
 **Example**
 
@@ -57,11 +57,11 @@ distinctJSONPathsAndTypes(json)
 
 **Arguments**
 
--`json` — [JSON](../../data-types/newjson.md) column.
+- `json` — [JSON](../../data-types/newjson.md) column.
 
 **Returned Value**
 
--The sorted map of paths and types [Map(String, Array(String))](../../data-types/map.md).
+- The sorted map of paths and types [Map(String, Array(String))](../../data-types/map.md).
 
 **Example**
 

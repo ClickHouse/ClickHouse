@@ -37,10 +37,10 @@ VALUES(
 
 ## Arguments {#arguments}
 
--`column1_name Type1, ...` (optional). [String](/sql-reference/data-types/string)
+- `column1_name Type1, ...` (optional). [String](/sql-reference/data-types/string)
   specifying the column names and types. If this argument is omitted columns will
   be named as `c1`, `c2`, etc.
--`(value1_row1, value2_row1)`. [Tuples](/sql-reference/data-types/tuple)
+- `(value1_row1, value2_row1)`. [Tuples](/sql-reference/data-types/tuple)
    containing values of any type.
 
 :::note
@@ -51,7 +51,7 @@ details.
 
 ## Returned value {#returned-value}
 
--Returns a temporary table containing the provided values.
+- Returns a temporary table containing the provided values.
 
 ## Examples {#examples}
 
@@ -127,7 +127,7 @@ in the [syntax](#syntax)), in which case the columns are automatically named.
 For example:
 
 ```sql title="Query"
--- tuples as values
+- - tuples as values
 SELECT *
 FROM VALUES(
     ('Noah', 'Paris'),
@@ -159,7 +159,7 @@ FROM VALUES(
 ```
 
 ```sql
--- single values
+- - single values
 SELECT *
 FROM VALUES(
     'Noah',
@@ -192,4 +192,4 @@ FROM VALUES(
 
 ## See also {#see-also}
 
--[Values format](/interfaces/formats/Values)
+- [Values format](/interfaces/formats/Values)

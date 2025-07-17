@@ -13,8 +13,8 @@ import BetaBadge from '@theme/badges/BetaBadge';
 The problem of finding the N closest points in a multi-dimensional (vector) space for a given point is known as [nearest neighbor search](https://en.wikipedia.org/wiki/Nearest_neighbor_search) or, shorter, vector search.
 Two general approaches exist for solving vector search:
 
--Exact vector search calculates the distance between the given point and all points in the vector space. This ensures the best possible accuracy, i.e. the returned points are guaranteed to be the actual nearest neighbors. Since the vector space is explored exhaustively, exact vector search can be too slow for real-world use.
--Approximate vector search refers to a group of techniques (e.g., special data structures like graphs and random forests) which compute results much faster than exact vector search. The result accuracy is typically "good enough" for practical use. Many approximate techniques provide parameters to tune the trade-off between the result accuracy and the search time.
+- Exact vector search calculates the distance between the given point and all points in the vector space. This ensures the best possible accuracy, i.e. the returned points are guaranteed to be the actual nearest neighbors. Since the vector space is explored exhaustively, exact vector search can be too slow for real-world use.
+- Approximate vector search refers to a group of techniques (e.g., special data structures like graphs and random forests) which compute results much faster than exact vector search. The result accuracy is typically "good enough" for practical use. Many approximate techniques provide parameters to tune the trade-off between the result accuracy and the search time.
 
 A vector search (exact or approximate) can be written in SQL as follows:
 
@@ -111,8 +111,8 @@ ALTER TABLE table MATERIALIZE INDEX <index_name> SETTINGS mutations_sync = 2;
 
 Function `<distance_function>` must be
 
--`L2Distance`, the [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance), representing the length of a line between two points in Euclidean space, or
--`cosineDistance`, the [cosine distance](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance), representing the angle between two non-zero vectors.
+- `L2Distance`, the [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance), representing the length of a line between two points in Euclidean space, or
+- `cosineDistance`, the [cosine distance](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance), representing the angle between two non-zero vectors.
 
 For normalized data, `L2Distance` is usually the best choice, otherwise `cosineDistance` is recommended to compensate for scale.
 
@@ -141,20 +141,20 @@ ORDER BY [...]
 
 These HNSW-specific parameters are available:
 
--`<quantization>` controls the quantization of the vectors in the proximity graph. Possible values are `f64`, `f32`, `f16`, `bf16`, or `i8`. The default value is `bf16`. Note that this parameter does not affect the representation of the vectors in the underlying column.
--`<hnsw_max_connections_per_layer>` controls the number of neighbors per graph node, also known as HNSW hyperparameter `M`. The default value is `32`. Value `0` means using the default value.
--`<hnsw_candidate_list_size_for_construction>` controls the size of the dynamic candidate list during construction of the HNSW graph, also known as HNSW hyperparameter `ef_construction`. The default value is `128`. Value `0` means using the default value.
+- `<quantization>` controls the quantization of the vectors in the proximity graph. Possible values are `f64`, `f32`, `f16`, `bf16`, or `i8`. The default value is `bf16`. Note that this parameter does not affect the representation of the vectors in the underlying column.
+- `<hnsw_max_connections_per_layer>` controls the number of neighbors per graph node, also known as HNSW hyperparameter `M`. The default value is `32`. Value `0` means using the default value.
+- `<hnsw_candidate_list_size_for_construction>` controls the size of the dynamic candidate list during construction of the HNSW graph, also known as HNSW hyperparameter `ef_construction`. The default value is `128`. Value `0` means using the default value.
 
 The default values of all HNSW-specific parameters work reasonably well in the majority of use cases.
 We therefore do not recommend customizing the HNSW-specific parameters.
 
 Further restrictions apply:
 
--Vector similarity indexes can only be build on columns of type [Array(Float32)](../../../sql-reference/data-types/array.md), [Array(Float64)](../../../sql-reference/data-types/array.md), or [Array(BFloat16)](../../../sql-reference/data-types/array.md). Arrays of nullable and low-cardinality floats such as `Array(Nullable(Float32))` and `Array(LowCardinality(Float32))` are not allowed.
--Vector similarity indexes must be build on single columns.
--Vector similarity indexes may be build on calculated expressions (e.g., `INDEX index_name arraySort(vectors) TYPE vector_similarity([...])`) but such indexes cannot be used for approximate neighbor search later on.
--Vector similarity indexes require that all arrays in the underlying column have `<dimension>`-many elements - this is checked during index creation. To detect violations of this requirement as early as possible, users can add a [constraint](/sql-reference/statements/create/table.md#constraints) for the vector column, e.g., `CONSTRAINT same_length CHECK length(vectors) = 256`.
--Likewise, array values in the underlying column must not be empty (`[]`) or have a default value (also `[]`).
+- Vector similarity indexes can only be build on columns of type [Array(Float32)](../../../sql-reference/data-types/array.md), [Array(Float64)](../../../sql-reference/data-types/array.md), or [Array(BFloat16)](../../../sql-reference/data-types/array.md). Arrays of nullable and low-cardinality floats such as `Array(Nullable(Float32))` and `Array(LowCardinality(Float32))` are not allowed.
+- Vector similarity indexes must be build on single columns.
+- Vector similarity indexes may be build on calculated expressions (e.g., `INDEX index_name arraySort(vectors) TYPE vector_similarity([...])`) but such indexes cannot be used for approximate neighbor search later on.
+- Vector similarity indexes require that all arrays in the underlying column have `<dimension>`-many elements - this is checked during index creation. To detect violations of this requirement as early as possible, users can add a [constraint](/sql-reference/statements/create/table.md#constraints) for the vector column, e.g., `CONSTRAINT same_length CHECK length(vectors) = 256`.
+- Likewise, array values in the underlying column must not be empty (`[]`) or have a default value (also `[]`).
 
 ### Using a Vector Similarity Index {#using-a-vector-similarity-index}
 
@@ -237,13 +237,13 @@ Users may optionally specify a `WHERE` clause with additional filter conditions 
 ClickHouse will evaluate these filter conditions using post-filtering or pre-filtering strategy.
 In short, both strategies determine the order in which the filters are evaluated:
 
--Post-filtering means that the vector similarity index is evaluated first, afterwards ClickHouse evaluates the additional filter(s) specified in the `WHERE` clause.
--Pre-filtering means that the filter evaluation order is the other way round.
+- Post-filtering means that the vector similarity index is evaluated first, afterwards ClickHouse evaluates the additional filter(s) specified in the `WHERE` clause.
+- Pre-filtering means that the filter evaluation order is the other way round.
 
 The strategies have different trade-offs:
 
--Post-filtering has the general problem that it may return less than the number of rows requested in the `LIMIT <N>` clause. This situation happens when one or more result rows returned by the vector similarity index fails to satisfy the additional filters.
--Pre-filtering is generally an unsolved problem. Certain specialized vector databases provide pre-filtering algorithms but most relational databases (including ClickHouse) will fall back to exact neighbor search, i.e., a brute-force scan without index.
+- Post-filtering has the general problem that it may return less than the number of rows requested in the `LIMIT <N>` clause. This situation happens when one or more result rows returned by the vector similarity index fails to satisfy the additional filters.
+- Pre-filtering is generally an unsolved problem. Certain specialized vector databases provide pre-filtering algorithms but most relational databases (including ClickHouse) will fall back to exact neighbor search, i.e., a brute-force scan without index.
 
 What strategy is used depends on the filter condition.
 
@@ -271,8 +271,8 @@ If additional filter conditions cannot be evaluated using indexes (primary key i
 
 If additional filter conditions can be evaluated using the [primary key](mergetree.md#primary-key) (i.e., they form a prefix of the primary key) and
 
--the filter condition eliminates at least one row within a part, the ClickHouse will fall back to pre-filtering for the "surviving" ranges within the part,
--the filter condition eliminates no rows within a part, the ClickHouse will perform post-filtering for the part.
+- the filter condition eliminates at least one row within a part, the ClickHouse will fall back to pre-filtering for the "surviving" ranges within the part,
+- the filter condition eliminates no rows within a part, the ClickHouse will perform post-filtering for the part.
 
 In practical use cases, the latter case is rather unlikely.
 
@@ -450,5 +450,5 @@ returns
 
 Blogs:
 
--[Vector Search with ClickHouse - Part 1](https://clickhouse.com/blog/vector-search-clickhouse-p1)
--[Vector Search with ClickHouse - Part 2](https://clickhouse.com/blog/vector-search-clickhouse-p2)
+- [Vector Search with ClickHouse - Part 1](https://clickhouse.com/blog/vector-search-clickhouse-p1)
+- [Vector Search with ClickHouse - Part 2](https://clickhouse.com/blog/vector-search-clickhouse-p2)

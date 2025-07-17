@@ -54,10 +54,10 @@ The `DICTIONARY` type is supported for `INSERT` queries, and for `SELECT` querie
 
 Unsupported Arrow data types:
 
--`FIXED_SIZE_BINARY`
--`JSON`
--`UUID`
--`ENUM`.
+- `FIXED_SIZE_BINARY`
+- `JSON`
+- `UUID`
+- `ENUM`.
 
 The data types of ClickHouse table columns do not have to match the corresponding Arrow data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions#cast) the data to the data type set for the ClickHouse table column.
 

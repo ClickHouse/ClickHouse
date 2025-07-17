@@ -51,8 +51,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
 
 **See Also**
 
--[distributed_foreground_insert](../../../operations/settings/settings.md#distributed_foreground_insert) setting
--[MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
+- [distributed_foreground_insert](../../../operations/settings/settings.md#distributed_foreground_insert) setting
+- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
 
 ### Distributed settings {#distributed-settings}
 
@@ -73,15 +73,15 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
 :::note
 **Durability settings** (`fsync_...`):
 
--Affect only background `INSERT`s (i.e. `distributed_foreground_insert=false`) when data is first stored on the initiator node disk and later, in the background, when sent to shards.
--May significantly decrease `INSERT` performance
--Affect writing the data stored inside the distributed table folder into the **node which accepted your insert**. If you need to have guarantees of writing data to the underlying MergeTree tables, see durability settings (`...fsync...`) in `system.merge_tree_settings`
+- Affect only background `INSERT`s (i.e. `distributed_foreground_insert=false`) when data is first stored on the initiator node disk and later, in the background, when sent to shards.
+- May significantly decrease `INSERT` performance
+- Affect writing the data stored inside the distributed table folder into the **node which accepted your insert**. If you need to have guarantees of writing data to the underlying MergeTree tables, see durability settings (`...fsync...`) in `system.merge_tree_settings`
 
 For **Insert limit settings** (`..._insert`) see also:
 
--[`distributed_foreground_insert`](../../../operations/settings/settings.md#distributed_foreground_insert) setting
--[`prefer_localhost_replica`](/operations/settings/settings#prefer_localhost_replica) setting
--`bytes_to_throw_insert` handled before `bytes_to_delay_insert`, so you should not set it to the value less then `bytes_to_delay_insert`
+- [`distributed_foreground_insert`](../../../operations/settings/settings.md#distributed_foreground_insert) setting
+- [`prefer_localhost_replica`](/operations/settings/settings#prefer_localhost_replica) setting
+- `bytes_to_throw_insert` handled before `bytes_to_delay_insert`, so you should not set it to the value less then `bytes_to_delay_insert`
 
 :::
 
@@ -207,8 +207,8 @@ A simple remainder from the division is a limited solution for sharding and isn'
 
 You should be concerned about the sharding scheme in the following cases:
 
--Queries are used that require joining data (`IN` or `JOIN`) by a specific key. If data is sharded by this key, you can use local `IN` or `JOIN` instead of `GLOBAL IN` or `GLOBAL JOIN`, which is much more efficient.
--A large number of servers is used (hundreds or more) with a large number of small queries, for example, queries for data of individual clients (e.g. websites, advertisers, or partners). In order for the small queries to not affect the entire cluster, it makes sense to locate data for a single client on a single shard. Alternatively, you can set up bi-level sharding: divide the entire cluster into "layers", where a layer may consist of multiple shards. Data for a single client is located on a single layer, but shards can be added to a layer as necessary, and data is randomly distributed within them. `Distributed` tables are created for each layer, and a single shared distributed table is created for global queries.
+- Queries are used that require joining data (`IN` or `JOIN`) by a specific key. If data is sharded by this key, you can use local `IN` or `JOIN` instead of `GLOBAL IN` or `GLOBAL JOIN`, which is much more efficient.
+- A large number of servers is used (hundreds or more) with a large number of small queries, for example, queries for data of individual clients (e.g. websites, advertisers, or partners). In order for the small queries to not affect the entire cluster, it makes sense to locate data for a single client on a single shard. Alternatively, you can set up bi-level sharding: divide the entire cluster into "layers", where a layer may consist of multiple shards. Data for a single client is located on a single layer, but shards can be added to a layer as necessary, and data is randomly distributed within them. `Distributed` tables are created for each layer, and a single shared distributed table is created for global queries.
 
 Data is written in background. When inserted in the table, the data block is just written to the local file system. The data is sent to the remote servers in the background as soon as possible. The periodicity for sending data is managed by the [distributed_background_insert_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_sleep_time_ms) and [distributed_background_insert_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_max_sleep_time_ms) settings. The `Distributed` engine sends each file with inserted data separately, but you can enable batch sending of files with the [distributed_background_insert_batch](../../../operations/settings/settings.md#distributed_background_insert_batch) setting. This setting improves cluster performance by better utilizing local server and network resources. You should check whether data is sent successfully by checking the list of files (data waiting to be sent) in the table directory: `/var/lib/clickhouse/data/database/table/`. The number of threads performing background tasks can be set by [background_distributed_schedule_pool_size](/operations/server-configuration-parameters/settings#background_distributed_schedule_pool_size) setting.
 
@@ -234,6 +234,6 @@ Since [`remote`](../../../sql-reference/table-functions/remote.md) and [`cluster
 
 **See Also**
 
--[Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns) description
--[`background_distributed_schedule_pool_size`](/operations/server-configuration-parameters/settings#background_distributed_schedule_pool_size) setting
--[`shardNum()`](../../../sql-reference/functions/other-functions.md#shardnum) and [`shardCount()`](../../../sql-reference/functions/other-functions.md#shardcount) functions
+- [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns) description
+- [`background_distributed_schedule_pool_size`](/operations/server-configuration-parameters/settings#background_distributed_schedule_pool_size) setting
+- [`shardNum()`](../../../sql-reference/functions/other-functions.md#shardnum) and [`shardCount()`](../../../sql-reference/functions/other-functions.md#shardcount) functions

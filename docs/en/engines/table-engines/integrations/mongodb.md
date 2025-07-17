@@ -115,7 +115,7 @@ CREATE TABLE sample_oid
     another_oid_column String
 ) ENGINE = MongoDB('mongodb://user:pass@host/db', 'sample_oid', '_id,another_oid_column');
 
--- or
+- - or
 
 CREATE TABLE sample_oid
 (
@@ -185,10 +185,10 @@ SELECT count() FROM sample_mflix_table
 ```
 
 ```sql
--- JSONExtractString cannot be pushed down to MongoDB
+- - JSONExtractString cannot be pushed down to MongoDB
 SET mongodb_throw_on_unsupported_query = 0;
 
--- Find all 'Back to the Future' sequels with rating > 7.5
+- - Find all 'Back to the Future' sequels with rating > 7.5
 SELECT title, plot, genres, directors, released FROM sample_mflix_table
 WHERE title IN ('Back to the Future', 'Back to the Future Part II', 'Back to the Future Part III')
     AND toFloat32(JSONExtractString(imdb, 'rating')) > 7.5
@@ -215,7 +215,7 @@ released:  1989-11-22
 ```
 
 ```sql
--- Find top 3 movies based on Cormac McCarthy's books
+- - Find top 3 movies based on Cormac McCarthy's books
 SELECT title, toFloat32(JSONExtractString(imdb, 'rating')) AS rating
 FROM sample_mflix_table
 WHERE arrayExists(x -> x LIKE 'Cormac McCarthy%', writers)

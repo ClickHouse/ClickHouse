@@ -15,12 +15,12 @@ Contains information about all cached file schemas.
 
 Columns:
 
--`storage` ([String](/sql-reference/data-types/string.md)) — Storage name: File, URL, S3 or HDFS.
--`source` ([String](/sql-reference/data-types/string.md)) — File source.
--`format` ([String](/sql-reference/data-types/string.md)) — Format name.
--`additional_format_info` ([String](/sql-reference/data-types/string.md)) - Additional information required to identify the schema. For example, format specific settings.
--`registration_time` ([DateTime](/sql-reference/data-types/datetime.md)) — Timestamp when schema was added in cache.
--`schema` ([String](/sql-reference/data-types/string.md)) - Cached schema.
+- `storage` ([String](/sql-reference/data-types/string.md)) — Storage name: File, URL, S3 or HDFS.
+- `source` ([String](/sql-reference/data-types/string.md)) — File source.
+- `format` ([String](/sql-reference/data-types/string.md)) — Format name.
+- `additional_format_info` ([String](/sql-reference/data-types/string.md)) - Additional information required to identify the schema. For example, format specific settings.
+- `registration_time` ([DateTime](/sql-reference/data-types/datetime.md)) — Timestamp when schema was added in cache.
+- `schema` ([String](/sql-reference/data-types/string.md)) - Cached schema.
 
 **Example**
 
@@ -79,4 +79,4 @@ schema:                 id Nullable(Float64), age Nullable(Float64), name Nullab
 
 **See also**
 
--[Automatic schema inference from input data](/interfaces/schema-inference.md)
+- [Automatic schema inference from input data](/interfaces/schema-inference.md)

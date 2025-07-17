@@ -28,18 +28,18 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Engine parameters:
 
--`ttl` - time to live for values. TTL is accepted in seconds. If TTL is 0, regular RocksDB instance is used (without TTL).
--`rocksdb_dir` - path to the directory of an existed RocksDB or the destination path of the created RocksDB. Open the table with the specified `rocksdb_dir`.
--`read_only` - when `read_only` is set to true, read-only mode is used. For storage with TTL, compaction will not be triggered (neither manual nor automatic), so no expired entries are removed.
--`primary_key_name` – any column name in the column list.
--`primary key` must be specified, it supports only one column in the primary key. The primary key will be serialized in binary as a `rocksdb key`.
--columns other than the primary key will be serialized in binary as `rocksdb` value in corresponding order.
--queries with key `equals` or `in` filtering will be optimized to multi keys lookup from `rocksdb`.
+- `ttl` - time to live for values. TTL is accepted in seconds. If TTL is 0, regular RocksDB instance is used (without TTL).
+- `rocksdb_dir` - path to the directory of an existed RocksDB or the destination path of the created RocksDB. Open the table with the specified `rocksdb_dir`.
+- `read_only` - when `read_only` is set to true, read-only mode is used. For storage with TTL, compaction will not be triggered (neither manual nor automatic), so no expired entries are removed.
+- `primary_key_name` – any column name in the column list.
+- `primary key` must be specified, it supports only one column in the primary key. The primary key will be serialized in binary as a `rocksdb key`.
+- columns other than the primary key will be serialized in binary as `rocksdb` value in corresponding order.
+- queries with key `equals` or `in` filtering will be optimized to multi keys lookup from `rocksdb`.
 
 Engine settings:
 
--`optimize_for_bulk_insert` – Table is optimized for bulk insertions (insert pipeline will create SST files and import to rocksdb database instead of writing to memtables); default value: `1`.
--`bulk_insert_block_size` - Minimum size of SST files (in term of rows) created by bulk insertion; default value: `1048449`.
+- `optimize_for_bulk_insert` – Table is optimized for bulk insertions (insert pipeline will create SST files and import to rocksdb database instead of writing to memtables); default value: `1`.
+- `bulk_insert_block_size` - Minimum size of SST files (in term of rows) created by bulk insertion; default value: `1048449`.
 
 Example:
 
@@ -229,5 +229,5 @@ ORDER BY key ASC
 
 ### More information on Joins {#more-information-on-joins}
 
--[`join_algorithm` setting](/operations/settings/settings.md#join_algorithm)
--[JOIN clause](/sql-reference/statements/select/join.md)
+- [`join_algorithm` setting](/operations/settings/settings.md#join_algorithm)
+- [JOIN clause](/sql-reference/statements/select/join.md)

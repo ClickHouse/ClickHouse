@@ -235,7 +235,7 @@ ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
 )
 ENGINE = MergeTree
 ORDER BY (postcode1, postcode2, addr1, addr2)
--- highlight-start
+- - highlight-start
   SETTINGS disk = disk(
     type=cache,
     max_size='1Gi',
@@ -245,7 +245,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
       endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
       )
   );
--- highlight-end
+- - highlight-end
 ```
 
 In the settings highlighted below notice that the disk of `type=web` is nested within
@@ -506,8 +506,8 @@ Zero-copy replication is disabled by default in ClickHouse version 22.8 and high
 
 In this sample configuration:
 
--the disk is of type `hdfs` (unsupported)
--the data is hosted at `hdfs://hdfs1:9000/clickhouse/`
+- the disk is of type `hdfs` (unsupported)
+- the data is hosted at `hdfs://hdfs1:9000/clickhouse/`
 
 By the way, HDFS is unsupported and therefore there might be issues when using it. Feel free to make a pull request with the fix if any issue arises.
 
@@ -775,9 +775,9 @@ you can load this table into any ClickHouse server via `DiskWeb`.
 
 In this sample configuration:
 
--the disk is of type `web`
--the data is hosted at `http://nginx:80/test1/`
--a cache on local storage is used
+- the disk is of type `web`
+- the data is hosted at `http://nginx:80/test1/`
+- a cache on local storage is used
 
 ```xml
 <clickhouse>
@@ -826,7 +826,7 @@ storage see the tool [clickhouse-static-files-uploader](/operations/utilities/st
 In this `ATTACH TABLE` query the `UUID` provided matches the directory name of the data, and the endpoint is the URL for the raw GitHub content.
 
 ```sql
--- highlight-next-line
+- - highlight-next-line
 ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
 (
     price UInt32,

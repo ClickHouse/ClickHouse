@@ -179,12 +179,12 @@ Extract parts from a given date. For example, you can retrieve a month from a gi
 
 The `part` parameter specifies which part of the date to retrieve. The following values are available:
 
--`DAY` — The day of the month. Possible values: 1–31.
--`MONTH` — The number of a month. Possible values: 1–12.
--`YEAR` — The year.
--`SECOND` — The second. Possible values: 0–59.
--`MINUTE` — The minute. Possible values: 0–59.
--`HOUR` — The hour. Possible values: 0–23.
+- `DAY` — The day of the month. Possible values: 1–31.
+- `MONTH` — The number of a month. Possible values: 1–12.
+- `YEAR` — The year.
+- `SECOND` — The second. Possible values: 0–59.
+- `MINUTE` — The minute. Possible values: 0–59.
+- `HOUR` — The hour. Possible values: 0–23.
 
 The `part` parameter is case-insensitive.
 
@@ -239,14 +239,14 @@ Creates an [Interval](../../sql-reference/data-types/special-data-types/interval
 
 Types of intervals:
 
--`SECOND`
--`MINUTE`
--`HOUR`
--`DAY`
--`WEEK`
--`MONTH`
--`QUARTER`
--`YEAR`
+- `SECOND`
+- `MINUTE`
+- `HOUR`
+- `DAY`
+- `WEEK`
+- `MONTH`
+- `QUARTER`
+- `YEAR`
 
 You can also use a string literal when setting the `INTERVAL` value. For example, `INTERVAL 1 HOUR` is identical to the `INTERVAL '1 hour'` or `INTERVAL '1' hour`.
 
@@ -304,8 +304,8 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 6
 
 **See Also**
 
--[Interval](../../sql-reference/data-types/special-data-types/interval.md) data type
--[toInterval](/sql-reference/functions/type-conversion-functions#tointervalyear) type conversion functions
+- [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type
+- [toInterval](/sql-reference/functions/type-conversion-functions#tointervalyear) type conversion functions
 
 ## Logical AND Operator {#logical-and-operator}
 
@@ -374,14 +374,14 @@ ClickHouse supports the `IS NULL` and `IS NOT NULL` operators.
 
 ### IS NULL {#is_null}
 
--For [Nullable](../../sql-reference/data-types/nullable.md) type values, the `IS NULL` operator returns:
--`1`, if the value is `NULL`.
--`0` otherwise.
--For other values, the `IS NULL` operator always returns `0`.
+- For [Nullable](../../sql-reference/data-types/nullable.md) type values, the `IS NULL` operator returns:
+- `1`, if the value is `NULL`.
+- `0` otherwise.
+- For other values, the `IS NULL` operator always returns `0`.
 
 Can be optimized by enabling the [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NULL FROM table` transforms to `SELECT n.null FROM TABLE`.
 
-<!-- -->
+<!---->
 
 ```sql
 SELECT x+100 FROM t_null WHERE y IS NULL
@@ -395,12 +395,12 @@ SELECT x+100 FROM t_null WHERE y IS NULL
 
 ### IS NOT NULL {#is_not_null}
 
--For [Nullable](../../sql-reference/data-types/nullable.md) type values, the `IS NOT NULL` operator returns:
--`0`, if the value is `NULL`.
--`1` otherwise.
--For other values, the `IS NOT NULL` operator always returns `1`.
+- For [Nullable](../../sql-reference/data-types/nullable.md) type values, the `IS NOT NULL` operator returns:
+- `0`, if the value is `NULL`.
+- `1` otherwise.
+- For other values, the `IS NOT NULL` operator always returns `1`.
 
-<!-- -->
+<!---->
 
 ```sql
 SELECT * FROM t_null WHERE y IS NOT NULL

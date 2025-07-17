@@ -8,8 +8,8 @@ title: 'Projections'
 
 Projections store data in a format that optimizes query execution, this feature is useful for:
 
--Running queries on a column that is not a part of the primary key
--Pre-aggregating columns, it will reduce both computation and IO
+- Running queries on a column that is not a part of the primary key
+- Pre-aggregating columns, it will reduce both computation and IO
 
 You can define one or more projections for a table, and during the query analysis the projection with the least data to scan will be selected by ClickHouse without modifying the query provided by the user.
 

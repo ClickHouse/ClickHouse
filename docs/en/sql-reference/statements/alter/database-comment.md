@@ -72,5 +72,5 @@ WHERE  name = 'database_with_comment';
 
 ## Related content {#related-content}
 
--[`COMMENT`](/sql-reference/statements/create/table#comment-clause) clause
--[`ALTER TABLE ... MODIFY COMMENT`](./comment.md)
+- [`COMMENT`](/sql-reference/statements/create/table#comment-clause) clause
+- [`ALTER TABLE ... MODIFY COMMENT`](./comment.md)

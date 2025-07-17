@@ -19,16 +19,16 @@ Each action is an operation on a column.
 
 The following actions are supported:
 
--[ADD COLUMN](#add-column) — Adds a new column to the table.
--[DROP COLUMN](#drop-column) — Deletes the column.
--[RENAME COLUMN](#rename-column) — Renames an existing column.
--[CLEAR COLUMN](#clear-column) — Resets column values.
--[COMMENT COLUMN](#comment-column) — Adds a text comment to the column.
--[MODIFY COLUMN](#modify-column) — Changes column's type, default expression, TTL, and column settings.
--[MODIFY COLUMN REMOVE](#modify-column-remove) — Removes one of the column properties.
--[MODIFY COLUMN MODIFY SETTING](#modify-column-modify-setting) - Changes column settings.
--[MODIFY COLUMN RESET SETTING](#modify-column-reset-setting) - Reset column settings.
--[MATERIALIZE COLUMN](#materialize-column) — Materializes the column in the parts where the column is missing.
+- [ADD COLUMN](#add-column) — Adds a new column to the table.
+- [DROP COLUMN](#drop-column) — Deletes the column.
+- [RENAME COLUMN](#rename-column) — Renames an existing column.
+- [CLEAR COLUMN](#clear-column) — Resets column values.
+- [COMMENT COLUMN](#comment-column) — Adds a text comment to the column.
+- [MODIFY COLUMN](#modify-column) — Changes column's type, default expression, TTL, and column settings.
+- [MODIFY COLUMN REMOVE](#modify-column-remove) — Removes one of the column properties.
+- [MODIFY COLUMN MODIFY SETTING](#modify-column-modify-setting) - Changes column settings.
+- [MODIFY COLUMN RESET SETTING](#modify-column-reset-setting) - Reset column settings.
+- [MATERIALIZE COLUMN](#materialize-column) — Materializes the column in the parts where the column is missing.
 These actions are described in detail below.
 
 ## ADD COLUMN {#add-column}
@@ -146,15 +146,15 @@ ALTER COLUMN [IF EXISTS] name TYPE [type] [default_expr] [codec] [TTL] [settings
 
 This query changes the `name` column properties:
 
--Type
+- Type
 
--Default expression
+- Default expression
 
--Compression Codec
+- Compression Codec
 
--TTL
+- TTL
 
--Column-level Settings
+- Column-level Settings
 
 For examples of columns compression CODECS modifying, see [Column Compression Codecs](../create/table.md/#column_compression_codec).
 
@@ -232,7 +232,7 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 
 **See Also**
 
--[REMOVE TTL](ttl.md).
+- [REMOVE TTL](ttl.md).
 
 ## MODIFY COLUMN MODIFY SETTING {#modify-column-modify-setting}
 
@@ -279,8 +279,8 @@ For columns with a new or updated `MATERIALIZED` value expression, all existing 
 
 For columns with a new or updated `DEFAULT` value expression, the behavior depends on the ClickHouse version:
 
--In ClickHouse < v24.2, all existing rows are rewritten.
--ClickHouse >= v24.2 distinguishes if a row value in a column with `DEFAULT` value expression was explicitly specified when it was inserted, or not, i.e. calculated from the `DEFAULT` value expression. If the value was explicitly specified, ClickHouse keeps it as is. If the value was calculated, ClickHouse changes it to the new or updated `MATERIALIZED` value expression.
+- In ClickHouse < v24.2, all existing rows are rewritten.
+- ClickHouse >= v24.2 distinguishes if a row value in a column with `DEFAULT` value expression was explicitly specified when it was inserted, or not, i.e. calculated from the `DEFAULT` value expression. If the value was explicitly specified, ClickHouse keeps it as is. If the value was calculated, ClickHouse changes it to the new or updated `MATERIALIZED` value expression.
 
 Syntax:
 
@@ -288,7 +288,7 @@ Syntax:
 ALTER TABLE [db.]table [ON CLUSTER cluster] MATERIALIZE COLUMN col [IN PARTITION partition | IN PARTITION ID 'partition_id'];
 ```
 
--If you specify a PARTITION, a column will be materialized with only the specified partition.
+- If you specify a PARTITION, a column will be materialized with only the specified partition.
 
 **Example**
 
@@ -328,7 +328,7 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 
 **See Also**
 
--[MATERIALIZED](/sql-reference/statements/create/view#materialized-view).
+- [MATERIALIZED](/sql-reference/statements/create/view#materialized-view).
 
 ## Limitations {#limitations}
 

@@ -62,17 +62,17 @@ toBool(expr)
 
 **Arguments**
 
--`expr` — Expression returning a number or a string. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string. [Expression](/sql-reference/syntax#expressions).
 
 Supported arguments:
 
--Values of type (U)Int8/16/32/64/128/256.
--Values of type Float32/64.
--Strings `true` or `false` (case-insensitive).
+- Values of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
+- Strings `true` or `false` (case-insensitive).
 
 **Returned value**
 
--Returns `true` or `false` based on evaluation of the argument. [Bool](../data-types/boolean.md).
+- Returns `true` or `false` based on evaluation of the argument. [Bool](../data-types/boolean.md).
 
 **Example**
 
@@ -112,17 +112,17 @@ toInt8(expr)
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
 
 Unsupported arguments:
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toInt8('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt8('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -132,7 +132,7 @@ For example: `SELECT toInt8(128) == -128;`.
 
 **Returned value**
 
--8-bit integer value. [Int8](../data-types/int-uint.md).
+- 8-bit integer value. [Int8](../data-types/int-uint.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -162,9 +162,9 @@ toInt8('-8'): -8
 
 **See also**
 
--[`toInt8OrZero`](#toint8orzero).
--[`toInt8OrNull`](#toInt8OrNull).
--[`toInt8OrDefault`](#toint8ordefault).
+- [`toInt8OrZero`](#toint8orzero).
+- [`toInt8OrNull`](#toInt8OrNull).
+- [`toInt8OrDefault`](#toint8ordefault).
 
 ## toInt8OrZero {#toint8orzero}
 
@@ -178,16 +178,16 @@ toInt8OrZero(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [String](../data-types/string.md).
+- `x` — A String representation of a number. [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `0`):
 
--String representations of ordinary Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toInt8OrZero('0xc0fe');`.
+- String representations of ordinary Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt8OrZero('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -196,7 +196,7 @@ This is not considered an error.
 
 **Returned value**
 
--8-bit integer value if successful, otherwise `0`. [Int8](../data-types/int-uint.md).
+- 8-bit integer value if successful, otherwise `0`. [Int8](../data-types/int-uint.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -224,9 +224,9 @@ toInt8OrZero('abc'): 0
 
 **See also**
 
--[`toInt8`](#toint8).
--[`toInt8OrNull`](#toInt8OrNull).
--[`toInt8OrDefault`](#toint8ordefault).
+- [`toInt8`](#toint8).
+- [`toInt8OrNull`](#toInt8OrNull).
+- [`toInt8OrDefault`](#toint8ordefault).
 
 ## toInt8OrNull {#toInt8OrNull}
 
@@ -240,16 +240,16 @@ toInt8OrNull(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [String](../data-types/string.md).
+- `x` — A String representation of a number. [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `\N`)
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toInt8OrNull('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt8OrNull('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -258,7 +258,7 @@ This is not considered an error.
 
 **Returned value**
 
--8-bit integer value if successful, otherwise `NULL`. [Int8](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
+- 8-bit integer value if successful, otherwise `NULL`. [Int8](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -286,9 +286,9 @@ toInt8OrNull('abc'): ᴺᵁᴸᴸ
 
 **See also**
 
--[`toInt8`](#toint8).
--[`toInt8OrZero`](#toint8orzero).
--[`toInt8OrDefault`](#toint8ordefault).
+- [`toInt8`](#toint8).
+- [`toInt8OrZero`](#toint8orzero).
+- [`toInt8OrDefault`](#toint8ordefault).
 
 ## toInt8OrDefault {#toint8ordefault}
 
@@ -303,18 +303,18 @@ toInt8OrDefault(expr[, default])
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
--`default` (optional) — The default value to return if parsing to type `Int8` is unsuccessful. [Int8](../data-types/int-uint.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `default` (optional) — The default value to return if parsing to type `Int8` is unsuccessful. [Int8](../data-types/int-uint.md).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
 
 Arguments for which the default value is returned:
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toInt8OrDefault('0xc0fe', CAST('-1', 'Int8'));`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt8OrDefault('0xc0fe', CAST('-1', 'Int8'));`.
 
 :::note
 If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -323,12 +323,12 @@ This is not considered an error.
 
 **Returned value**
 
--8-bit integer value if successful, otherwise returns the default value if passed or `0` if not. [Int8](../data-types/int-uint.md).
+- 8-bit integer value if successful, otherwise returns the default value if passed or `0` if not. [Int8](../data-types/int-uint.md).
 
 :::note
 
--The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
--The default value type should be the same as the cast type.
+- The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+- The default value type should be the same as the cast type.
 
 :::
 
@@ -354,9 +354,9 @@ toInt8OrDefault('abc', CAST('-1', 'Int8')): -1
 
 **See also**
 
--[`toInt8`](#toint8).
--[`toInt8OrZero`](#toint8orzero).
--[`toInt8OrNull`](#toInt8OrNull).
+- [`toInt8`](#toint8).
+- [`toInt8OrZero`](#toint8orzero).
+- [`toInt8OrNull`](#toInt8OrNull).
 
 ## toInt16 {#toint16}
 
@@ -370,17 +370,17 @@ toInt16(expr)
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
 
 Unsupported arguments:
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toInt16('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt16('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -390,7 +390,7 @@ For example: `SELECT toInt16(32768) == -32768;`.
 
 **Returned value**
 
--16-bit integer value. [Int16](../data-types/int-uint.md).
+- 16-bit integer value. [Int16](../data-types/int-uint.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -420,9 +420,9 @@ toInt16('-16'):  -16
 
 **See also**
 
--[`toInt16OrZero`](#toint16orzero).
--[`toInt16OrNull`](#toint16ornull).
--[`toInt16OrDefault`](#toint16ordefault).
+- [`toInt16OrZero`](#toint16orzero).
+- [`toInt16OrNull`](#toint16ornull).
+- [`toInt16OrDefault`](#toint16ordefault).
 
 ## toInt16OrZero {#toint16orzero}
 
@@ -436,16 +436,16 @@ toInt16OrZero(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [String](../data-types/string.md).
+- `x` — A String representation of a number. [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `0`):
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toInt16OrZero('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt16OrZero('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -454,7 +454,7 @@ This is not considered as an error.
 
 **Returned value**
 
--16-bit integer value if successful, otherwise `0`. [Int16](../data-types/int-uint.md).
+- 16-bit integer value if successful, otherwise `0`. [Int16](../data-types/int-uint.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -482,9 +482,9 @@ toInt16OrZero('abc'): 0
 
 **See also**
 
--[`toInt16`](#toint16).
--[`toInt16OrNull`](#toint16ornull).
--[`toInt16OrDefault`](#toint16ordefault).
+- [`toInt16`](#toint16).
+- [`toInt16OrNull`](#toint16ornull).
+- [`toInt16OrDefault`](#toint16ordefault).
 
 ## toInt16OrNull {#toint16ornull}
 
@@ -498,16 +498,16 @@ toInt16OrNull(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [String](../data-types/string.md).
+- `x` — A String representation of a number. [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `\N`)
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toInt16OrNull('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt16OrNull('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -516,7 +516,7 @@ This is not considered an error.
 
 **Returned value**
 
--16-bit integer value if successful, otherwise `NULL`. [Int16](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
+- 16-bit integer value if successful, otherwise `NULL`. [Int16](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -544,9 +544,9 @@ toInt16OrNull('abc'): ᴺᵁᴸᴸ
 
 **See also**
 
--[`toInt16`](#toint16).
--[`toInt16OrZero`](#toint16orzero).
--[`toInt16OrDefault`](#toint16ordefault).
+- [`toInt16`](#toint16).
+- [`toInt16OrZero`](#toint16orzero).
+- [`toInt16OrDefault`](#toint16ordefault).
 
 ## toInt16OrDefault {#toint16ordefault}
 
@@ -561,18 +561,18 @@ toInt16OrDefault(expr[, default])
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
--`default` (optional) — The default value to return if parsing to type `Int16` is unsuccessful. [Int16](../data-types/int-uint.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `default` (optional) — The default value to return if parsing to type `Int16` is unsuccessful. [Int16](../data-types/int-uint.md).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
 
 Arguments for which the default value is returned:
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toInt16OrDefault('0xc0fe', CAST('-1', 'Int16'));`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt16OrDefault('0xc0fe', CAST('-1', 'Int16'));`.
 
 :::note
 If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -581,12 +581,12 @@ This is not considered an error.
 
 **Returned value**
 
--16-bit integer value if successful, otherwise returns the default value if passed or `0` if not. [Int16](../data-types/int-uint.md).
+- 16-bit integer value if successful, otherwise returns the default value if passed or `0` if not. [Int16](../data-types/int-uint.md).
 
 :::note
 
--The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
--The default value type should be the same as the cast type.
+- The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+- The default value type should be the same as the cast type.
 
 :::
 
@@ -612,9 +612,9 @@ toInt16OrDefault('abc', CAST('-1', 'Int16')): -1
 
 **See also**
 
--[`toInt16`](#toint16).
--[`toInt16OrZero`](#toint16orzero).
--[`toInt16OrNull`](#toint16ornull).
+- [`toInt16`](#toint16).
+- [`toInt16OrZero`](#toint16orzero).
+- [`toInt16OrNull`](#toint16ornull).
 
 ## toInt32 {#toint32}
 
@@ -628,17 +628,17 @@ toInt32(expr)
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
 
 Unsupported arguments:
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toInt32('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt32('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), the result over or under flows.
@@ -648,7 +648,7 @@ For example: `SELECT toInt32(2147483648) == -2147483648;`
 
 **Returned value**
 
--32-bit integer value. [Int32](../data-types/int-uint.md).
+- 32-bit integer value. [Int32](../data-types/int-uint.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -678,9 +678,9 @@ toInt32('-32'):  -32
 
 **See also**
 
--[`toInt32OrZero`](#toint32orzero).
--[`toInt32OrNull`](#toint32ornull).
--[`toInt32OrDefault`](#toint32ordefault).
+- [`toInt32OrZero`](#toint32orzero).
+- [`toInt32OrNull`](#toint32ornull).
+- [`toInt32OrDefault`](#toint32ordefault).
 
 ## toInt32OrZero {#toint32orzero}
 
@@ -694,16 +694,16 @@ toInt32OrZero(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [String](../data-types/string.md).
+- `x` — A String representation of a number. [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `0`):
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toInt32OrZero('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt32OrZero('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -712,7 +712,7 @@ This is not considered an error.
 
 **Returned value**
 
--32-bit integer value if successful, otherwise `0`. [Int32](../data-types/int-uint.md)
+- 32-bit integer value if successful, otherwise `0`. [Int32](../data-types/int-uint.md)
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncate fractional digits of numbers.
@@ -740,9 +740,9 @@ toInt32OrZero('abc'): 0
 
 **See also**
 
--[`toInt32`](#toint32).
--[`toInt32OrNull`](#toint32ornull).
--[`toInt32OrDefault`](#toint32ordefault).
+- [`toInt32`](#toint32).
+- [`toInt32OrNull`](#toint32ornull).
+- [`toInt32OrDefault`](#toint32ordefault).
 
 ## toInt32OrNull {#toint32ornull}
 
@@ -756,16 +756,16 @@ toInt32OrNull(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [String](../data-types/string.md).
+- `x` — A String representation of a number. [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `\N`)
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toInt32OrNull('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt32OrNull('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -774,7 +774,7 @@ This is not considered an error.
 
 **Returned value**
 
--32-bit integer value if successful, otherwise `NULL`. [Int32](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
+- 32-bit integer value if successful, otherwise `NULL`. [Int32](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -802,9 +802,9 @@ toInt32OrNull('abc'): ᴺᵁᴸᴸ
 
 **See also**
 
--[`toInt32`](#toint32).
--[`toInt32OrZero`](#toint32orzero).
--[`toInt32OrDefault`](#toint32ordefault).
+- [`toInt32`](#toint32).
+- [`toInt32OrZero`](#toint32orzero).
+- [`toInt32OrDefault`](#toint32ordefault).
 
 ## toInt32OrDefault {#toint32ordefault}
 
@@ -819,18 +819,18 @@ toInt32OrDefault(expr[, default])
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
--`default` (optional) — The default value to return if parsing to type `Int32` is unsuccessful. [Int32](../data-types/int-uint.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `default` (optional) — The default value to return if parsing to type `Int32` is unsuccessful. [Int32](../data-types/int-uint.md).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
 
 Arguments for which the default value is returned:
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toInt32OrDefault('0xc0fe', CAST('-1', 'Int32'));`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt32OrDefault('0xc0fe', CAST('-1', 'Int32'));`.
 
 :::note
 If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -839,12 +839,12 @@ This is not considered an error.
 
 **Returned value**
 
--32-bit integer value if successful, otherwise returns the default value if passed or `0` if not. [Int32](../data-types/int-uint.md).
+- 32-bit integer value if successful, otherwise returns the default value if passed or `0` if not. [Int32](../data-types/int-uint.md).
 
 :::note
 
--The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
--The default value type should be the same as the cast type.
+- The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+- The default value type should be the same as the cast type.
 
 :::
 
@@ -870,9 +870,9 @@ toInt32OrDefault('abc', CAST('-1', 'Int32')): -1
 
 **See also**
 
--[`toInt32`](#toint32).
--[`toInt32OrZero`](#toint32orzero).
--[`toInt32OrNull`](#toint32ornull).
+- [`toInt32`](#toint32).
+- [`toInt32OrZero`](#toint32orzero).
+- [`toInt32OrNull`](#toint32ornull).
 
 ## toInt64 {#toint64}
 
@@ -886,17 +886,17 @@ toInt64(expr)
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
 
 Unsupported types:
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toInt64('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt64('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), the result over or under flows.
@@ -906,7 +906,7 @@ For example: `SELECT toInt64(9223372036854775808) == -9223372036854775808;`
 
 **Returned value**
 
--64-bit integer value. [Int64](../data-types/int-uint.md).
+- 64-bit integer value. [Int64](../data-types/int-uint.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -936,9 +936,9 @@ toInt64('-64'):  -64
 
 **See also**
 
--[`toInt64OrZero`](#toint64orzero).
--[`toInt64OrNull`](#toint64ornull).
--[`toInt64OrDefault`](#toint64ordefault).
+- [`toInt64OrZero`](#toint64orzero).
+- [`toInt64OrNull`](#toint64ornull).
+- [`toInt64OrDefault`](#toint64ordefault).
 
 ## toInt64OrZero {#toint64orzero}
 
@@ -952,16 +952,16 @@ toInt64OrZero(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [String](../data-types/string.md).
+- `x` — A String representation of a number. [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `0`):
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toInt64OrZero('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt64OrZero('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -970,7 +970,7 @@ This is not considered an error.
 
 **Returned value**
 
--64-bit integer value if successful, otherwise `0`. [Int64](../data-types/int-uint.md).
+- 64-bit integer value if successful, otherwise `0`. [Int64](../data-types/int-uint.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -998,9 +998,9 @@ toInt64OrZero('abc'): 0
 
 **See also**
 
--[`toInt64`](#toint64).
--[`toInt64OrNull`](#toint64ornull).
--[`toInt64OrDefault`](#toint64ordefault).
+- [`toInt64`](#toint64).
+- [`toInt64OrNull`](#toint64ornull).
+- [`toInt64OrDefault`](#toint64ordefault).
 
 ## toInt64OrNull {#toint64ornull}
 
@@ -1014,16 +1014,16 @@ toInt64OrNull(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `x` — A String representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `\N`)
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toInt64OrNull('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt64OrNull('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -1032,7 +1032,7 @@ This is not considered an error.
 
 **Returned value**
 
--64-bit integer value if successful, otherwise `NULL`. [Int64](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
+- 64-bit integer value if successful, otherwise `NULL`. [Int64](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -1060,9 +1060,9 @@ toInt64OrNull('abc'): ᴺᵁᴸᴸ
 
 **See also**
 
--[`toInt64`](#toint64).
--[`toInt64OrZero`](#toint64orzero).
--[`toInt64OrDefault`](#toint64ordefault).
+- [`toInt64`](#toint64).
+- [`toInt64OrZero`](#toint64orzero).
+- [`toInt64OrDefault`](#toint64ordefault).
 
 ## toInt64OrDefault {#toint64ordefault}
 
@@ -1077,18 +1077,18 @@ toInt64OrDefault(expr[, default])
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
--`default` (optional) — The default value to return if parsing to type `Int64` is unsuccessful. [Int64](../data-types/int-uint.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `default` (optional) — The default value to return if parsing to type `Int64` is unsuccessful. [Int64](../data-types/int-uint.md).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
 
 Arguments for which the default value is returned:
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toInt64OrDefault('0xc0fe', CAST('-1', 'Int64'));`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt64OrDefault('0xc0fe', CAST('-1', 'Int64'));`.
 
 :::note
 If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -1097,12 +1097,12 @@ This is not considered an error.
 
 **Returned value**
 
--64-bit integer value if successful, otherwise returns the default value if passed or `0` if not. [Int64](../data-types/int-uint.md).
+- 64-bit integer value if successful, otherwise returns the default value if passed or `0` if not. [Int64](../data-types/int-uint.md).
 
 :::note
 
--The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
--The default value type should be the same as the cast type.
+- The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+- The default value type should be the same as the cast type.
 
 :::
 
@@ -1128,9 +1128,9 @@ toInt64OrDefault('abc', CAST('-1', 'Int64')): -1
 
 **See also**
 
--[`toInt64`](#toint64).
--[`toInt64OrZero`](#toint64orzero).
--[`toInt64OrNull`](#toint64ornull).
+- [`toInt64`](#toint64).
+- [`toInt64OrZero`](#toint64orzero).
+- [`toInt64OrNull`](#toint64ornull).
 
 ## toInt128 {#toint128}
 
@@ -1144,17 +1144,17 @@ toInt128(expr)
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
 
 Unsupported arguments:
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toInt128('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt128('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md), the result over or under flows.
@@ -1163,7 +1163,7 @@ This is not considered an error.
 
 **Returned value**
 
--128-bit integer value. [Int128](../data-types/int-uint.md).
+- 128-bit integer value. [Int128](../data-types/int-uint.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -1193,9 +1193,9 @@ toInt128('-128'): -128
 
 **See also**
 
--[`toInt128OrZero`](#toint128orzero).
--[`toInt128OrNull`](#toint128ornull).
--[`toInt128OrDefault`](#toint128ordefault).
+- [`toInt128OrZero`](#toint128orzero).
+- [`toInt128OrNull`](#toint128ornull).
+- [`toInt128OrDefault`](#toint128ordefault).
 
 ## toInt128OrZero {#toint128orzero}
 
@@ -1209,16 +1209,16 @@ toInt128OrZero(expr)
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `0`):
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toInt128OrZero('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt128OrZero('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -1227,7 +1227,7 @@ This is not considered an error.
 
 **Returned value**
 
--128-bit integer value if successful, otherwise `0`. [Int128](../data-types/int-uint.md).
+- 128-bit integer value if successful, otherwise `0`. [Int128](../data-types/int-uint.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -1255,9 +1255,9 @@ toInt128OrZero('abc'):  0
 
 **See also**
 
--[`toInt128`](#toint128).
--[`toInt128OrNull`](#toint128ornull).
--[`toInt128OrDefault`](#toint128ordefault).
+- [`toInt128`](#toint128).
+- [`toInt128OrNull`](#toint128ornull).
+- [`toInt128OrDefault`](#toint128ordefault).
 
 ## toInt128OrNull {#toint128ornull}
 
@@ -1271,16 +1271,16 @@ toInt128OrNull(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `x` — A String representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `\N`)
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toInt128OrNull('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt128OrNull('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -1289,7 +1289,7 @@ This is not considered an error.
 
 **Returned value**
 
--128-bit integer value if successful, otherwise `NULL`. [Int128](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
+- 128-bit integer value if successful, otherwise `NULL`. [Int128](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -1317,9 +1317,9 @@ toInt128OrNull('abc'):  ᴺᵁᴸᴸ
 
 **See also**
 
--[`toInt128`](#toint128).
--[`toInt128OrZero`](#toint128orzero).
--[`toInt128OrDefault`](#toint128ordefault).
+- [`toInt128`](#toint128).
+- [`toInt128OrZero`](#toint128orzero).
+- [`toInt128OrDefault`](#toint128ordefault).
 
 ## toInt128OrDefault {#toint128ordefault}
 
@@ -1334,19 +1334,19 @@ toInt128OrDefault(expr[, default])
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
--`default` (optional) — The default value to return if parsing to type `Int128` is unsuccessful. [Int128](../data-types/int-uint.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `default` (optional) — The default value to return if parsing to type `Int128` is unsuccessful. [Int128](../data-types/int-uint.md).
 
 Supported arguments:
 
--(U)Int8/16/32/64/128/256.
--Float32/64.
--String representations of (U)Int8/16/32/128/256.
+- (U)Int8/16/32/64/128/256.
+- Float32/64.
+- String representations of (U)Int8/16/32/128/256.
 
 Arguments for which the default value is returned:
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toInt128OrDefault('0xc0fe', CAST('-1', 'Int128'));`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt128OrDefault('0xc0fe', CAST('-1', 'Int128'));`.
 
 :::note
 If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -1355,12 +1355,12 @@ This is not considered an error.
 
 **Returned value**
 
--128-bit integer value if successful, otherwise returns the default value if passed or `0` if not. [Int128](../data-types/int-uint.md).
+- 128-bit integer value if successful, otherwise returns the default value if passed or `0` if not. [Int128](../data-types/int-uint.md).
 
 :::note
 
--The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
--The default value type should be the same as the cast type.
+- The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+- The default value type should be the same as the cast type.
 
 :::
 
@@ -1386,9 +1386,9 @@ toInt128OrDefault('abc', CAST('-1', 'Int128')):  -1
 
 **See also**
 
--[`toInt128`](#toint128).
--[`toInt128OrZero`](#toint128orzero).
--[`toInt128OrNull`](#toint128ornull).
+- [`toInt128`](#toint128).
+- [`toInt128OrZero`](#toint128orzero).
+- [`toInt128OrNull`](#toint128ornull).
 
 ## toInt256 {#toint256}
 
@@ -1402,17 +1402,17 @@ toInt256(expr)
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
 
 Unsupported arguments:
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toInt256('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt256('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md), the result over or under flows.
@@ -1421,7 +1421,7 @@ This is not considered an error.
 
 **Returned value**
 
--256-bit integer value. [Int256](../data-types/int-uint.md).
+- 256-bit integer value. [Int256](../data-types/int-uint.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -1451,9 +1451,9 @@ toInt256('-256'):   -256
 
 **See also**
 
--[`toInt256OrZero`](#toint256orzero).
--[`toInt256OrNull`](#toint256ornull).
--[`toInt256OrDefault`](#toint256ordefault).
+- [`toInt256OrZero`](#toint256orzero).
+- [`toInt256OrNull`](#toint256ornull).
+- [`toInt256OrDefault`](#toint256ordefault).
 
 ## toInt256OrZero {#toint256orzero}
 
@@ -1467,16 +1467,16 @@ toInt256OrZero(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [String](../data-types/string.md).
+- `x` — A String representation of a number. [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `0`):
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toInt256OrZero('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt256OrZero('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -1485,7 +1485,7 @@ This is not considered an error.
 
 **Returned value**
 
--256-bit integer value if successful, otherwise `0`. [Int256](../data-types/int-uint.md).
+- 256-bit integer value if successful, otherwise `0`. [Int256](../data-types/int-uint.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -1513,9 +1513,9 @@ toInt256OrZero('abc'):  0
 
 **See also**
 
--[`toInt256`](#toint256).
--[`toInt256OrNull`](#toint256ornull).
--[`toInt256OrDefault`](#toint256ordefault).
+- [`toInt256`](#toint256).
+- [`toInt256OrNull`](#toint256ornull).
+- [`toInt256OrDefault`](#toint256ordefault).
 
 ## toInt256OrNull {#toint256ornull}
 
@@ -1529,16 +1529,16 @@ toInt256OrNull(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [String](../data-types/string.md).
+- `x` — A String representation of a number. [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `\N`)
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toInt256OrNull('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt256OrNull('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -1547,7 +1547,7 @@ This is not considered an error.
 
 **Returned value**
 
--256-bit integer value if successful, otherwise `NULL`. [Int256](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
+- 256-bit integer value if successful, otherwise `NULL`. [Int256](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -1575,9 +1575,9 @@ toInt256OrNull('abc'):  ᴺᵁᴸᴸ
 
 **See also**
 
--[`toInt256`](#toint256).
--[`toInt256OrZero`](#toint256orzero).
--[`toInt256OrDefault`](#toint256ordefault).
+- [`toInt256`](#toint256).
+- [`toInt256OrZero`](#toint256orzero).
+- [`toInt256OrDefault`](#toint256ordefault).
 
 ## toInt256OrDefault {#toint256ordefault}
 
@@ -1592,18 +1592,18 @@ toInt256OrDefault(expr[, default])
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
--`default` (optional) — The default value to return if parsing to type `Int256` is unsuccessful. [Int256](../data-types/int-uint.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `default` (optional) — The default value to return if parsing to type `Int256` is unsuccessful. [Int256](../data-types/int-uint.md).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
 
 Arguments for which the default value is returned:
 
--String representations of Float32/64 values, including `NaN` and `Inf`
--String representations of binary and hexadecimal values, e.g. `SELECT toInt256OrDefault('0xc0fe', CAST('-1', 'Int256'));`
+- String representations of Float32/64 values, including `NaN` and `Inf`
+- String representations of binary and hexadecimal values, e.g. `SELECT toInt256OrDefault('0xc0fe', CAST('-1', 'Int256'));`
 
 :::note
 If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -1612,12 +1612,12 @@ This is not considered an error.
 
 **Returned value**
 
--256-bit integer value if successful, otherwise returns the default value if passed or `0` if not. [Int256](../data-types/int-uint.md).
+- 256-bit integer value if successful, otherwise returns the default value if passed or `0` if not. [Int256](../data-types/int-uint.md).
 
 :::note
 
--The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
--The default value type should be the same as the cast type.
+- The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+- The default value type should be the same as the cast type.
 
 :::
 
@@ -1643,9 +1643,9 @@ toInt256OrDefault('abc', CAST('-1', 'Int256')):  -1
 
 **See also**
 
--[`toInt256`](#toint256).
--[`toInt256OrZero`](#toint256orzero).
--[`toInt256OrNull`](#toint256ornull).
+- [`toInt256`](#toint256).
+- [`toInt256OrZero`](#toint256orzero).
+- [`toInt256OrNull`](#toint256ornull).
 
 ## toUInt8 {#touint8}
 
@@ -1659,17 +1659,17 @@ toUInt8(expr)
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
 
 Unsupported arguments:
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toUInt8('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt8('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [UInt8](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -1679,7 +1679,7 @@ For example: `SELECT toUInt8(256) == 0;`.
 
 **Returned value**
 
--8-bit unsigned integer value. [UInt8](../data-types/int-uint.md).
+- 8-bit unsigned integer value. [UInt8](../data-types/int-uint.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -1709,9 +1709,9 @@ toUInt8('8'): 8
 
 **See also**
 
--[`toUInt8OrZero`](#touint8orzero).
--[`toUInt8OrNull`](#touint8ornull).
--[`toUInt8OrDefault`](#touint8ordefault).
+- [`toUInt8OrZero`](#touint8orzero).
+- [`toUInt8OrNull`](#touint8ornull).
+- [`toUInt8OrDefault`](#touint8ordefault).
 
 ## toUInt8OrZero {#touint8orzero}
 
@@ -1725,16 +1725,16 @@ toUInt8OrZero(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [String](../data-types/string.md).
+- `x` — A String representation of a number. [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `0`):
 
--String representations of ordinary Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toUInt8OrZero('0xc0fe');`.
+- String representations of ordinary Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt8OrZero('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [UInt8](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -1743,7 +1743,7 @@ This is not considered an error.
 
 **Returned value**
 
--8-bit unsigned integer value if successful, otherwise `0`. [UInt8](../data-types/int-uint.md).
+- 8-bit unsigned integer value if successful, otherwise `0`. [UInt8](../data-types/int-uint.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -1771,9 +1771,9 @@ toUInt8OrZero('abc'): 0
 
 **See also**
 
--[`toUInt8`](#touint8).
--[`toUInt8OrNull`](#touint8ornull).
--[`toUInt8OrDefault`](#touint8ordefault).
+- [`toUInt8`](#touint8).
+- [`toUInt8OrNull`](#touint8ornull).
+- [`toUInt8OrDefault`](#touint8ordefault).
 
 ## toUInt8OrNull {#touint8ornull}
 
@@ -1787,16 +1787,16 @@ toUInt8OrNull(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [String](../data-types/string.md).
+- `x` — A String representation of a number. [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `\N`)
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toUInt8OrNull('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt8OrNull('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [UInt8](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -1805,7 +1805,7 @@ This is not considered an error.
 
 **Returned value**
 
--8-bit unsigned integer value if successful, otherwise `NULL`. [UInt8](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
+- 8-bit unsigned integer value if successful, otherwise `NULL`. [UInt8](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -1833,9 +1833,9 @@ toUInt8OrNull('abc'): ᴺᵁᴸᴸ
 
 **See also**
 
--[`toUInt8`](#touint8).
--[`toUInt8OrZero`](#touint8orzero).
--[`toUInt8OrDefault`](#touint8ordefault).
+- [`toUInt8`](#touint8).
+- [`toUInt8OrZero`](#touint8orzero).
+- [`toUInt8OrDefault`](#touint8ordefault).
 
 ## toUInt8OrDefault {#touint8ordefault}
 
@@ -1850,18 +1850,18 @@ toUInt8OrDefault(expr[, default])
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
--`default` (optional) — The default value to return if parsing to type `UInt8` is unsuccessful. [UInt8](../data-types/int-uint.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `default` (optional) — The default value to return if parsing to type `UInt8` is unsuccessful. [UInt8](../data-types/int-uint.md).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
 
 Arguments for which the default value is returned:
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toUInt8OrDefault('0xc0fe', CAST('0', 'UInt8'));`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt8OrDefault('0xc0fe', CAST('0', 'UInt8'));`.
 
 :::note
 If the input value cannot be represented within the bounds of [UInt8](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -1870,12 +1870,12 @@ This is not considered an error.
 
 **Returned value**
 
--8-bit unsigned integer value if successful, otherwise returns the default value if passed or `0` if not. [UInt8](../data-types/int-uint.md).
+- 8-bit unsigned integer value if successful, otherwise returns the default value if passed or `0` if not. [UInt8](../data-types/int-uint.md).
 
 :::note
 
--The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
--The default value type should be the same as the cast type.
+- The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+- The default value type should be the same as the cast type.
 
 :::
 
@@ -1901,9 +1901,9 @@ toUInt8OrDefault('abc', CAST('0', 'UInt8')): 0
 
 **See also**
 
--[`toUInt8`](#touint8).
--[`toUInt8OrZero`](#touint8orzero).
--[`toUInt8OrNull`](#touint8ornull).
+- [`toUInt8`](#touint8).
+- [`toUInt8OrZero`](#touint8orzero).
+- [`toUInt8OrNull`](#touint8ornull).
 
 ## toUInt16 {#touint16}
 
@@ -1917,17 +1917,17 @@ toUInt16(expr)
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
 
 Unsupported arguments:
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toUInt16('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt16('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [UInt16](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -1937,7 +1937,7 @@ For example: `SELECT toUInt16(65536) == 0;`.
 
 **Returned value**
 
--16-bit unsigned integer value. [UInt16](../data-types/int-uint.md).
+- 16-bit unsigned integer value. [UInt16](../data-types/int-uint.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -1967,9 +1967,9 @@ toUInt16('16'):  16
 
 **See also**
 
--[`toUInt16OrZero`](#touint16orzero).
--[`toUInt16OrNull`](#touint16ornull).
--[`toUInt16OrDefault`](#touint16ordefault).
+- [`toUInt16OrZero`](#touint16orzero).
+- [`toUInt16OrNull`](#touint16ornull).
+- [`toUInt16OrDefault`](#touint16ordefault).
 
 ## toUInt16OrZero {#touint16orzero}
 
@@ -1983,16 +1983,16 @@ toUInt16OrZero(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [String](../data-types/string.md).
+- `x` — A String representation of a number. [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `0`):
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toUInt16OrZero('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt16OrZero('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [UInt16](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -2001,7 +2001,7 @@ This is not considered as an error.
 
 **Returned value**
 
--16-bit unsigned integer value if successful, otherwise `0`. [UInt16](../data-types/int-uint.md).
+- 16-bit unsigned integer value if successful, otherwise `0`. [UInt16](../data-types/int-uint.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -2029,9 +2029,9 @@ toUInt16OrZero('abc'): 0
 
 **See also**
 
--[`toUInt16`](#touint16).
--[`toUInt16OrNull`](#touint16ornull).
--[`toUInt16OrDefault`](#touint16ordefault).
+- [`toUInt16`](#touint16).
+- [`toUInt16OrNull`](#touint16ornull).
+- [`toUInt16OrDefault`](#touint16ordefault).
 
 ## toUInt16OrNull {#touint16ornull}
 
@@ -2045,16 +2045,16 @@ toUInt16OrNull(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [String](../data-types/string.md).
+- `x` — A String representation of a number. [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `\N`)
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toUInt16OrNull('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt16OrNull('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [UInt16](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -2063,7 +2063,7 @@ This is not considered an error.
 
 **Returned value**
 
--16-bit unsigned integer value if successful, otherwise `NULL`. [UInt16](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
+- 16-bit unsigned integer value if successful, otherwise `NULL`. [UInt16](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -2091,9 +2091,9 @@ toUInt16OrNull('abc'): ᴺᵁᴸᴸ
 
 **See also**
 
--[`toUInt16`](#touint16).
--[`toUInt16OrZero`](#touint16orzero).
--[`toUInt16OrDefault`](#touint16ordefault).
+- [`toUInt16`](#touint16).
+- [`toUInt16OrZero`](#touint16orzero).
+- [`toUInt16OrDefault`](#touint16ordefault).
 
 ## toUInt16OrDefault {#touint16ordefault}
 
@@ -2108,18 +2108,18 @@ toUInt16OrDefault(expr[, default])
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
--`default` (optional) — The default value to return if parsing to type `UInt16` is unsuccessful. [UInt16](../data-types/int-uint.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `default` (optional) — The default value to return if parsing to type `UInt16` is unsuccessful. [UInt16](../data-types/int-uint.md).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
 
 Arguments for which the default value is returned:
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toUInt16OrDefault('0xc0fe', CAST('0', 'UInt16'));`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt16OrDefault('0xc0fe', CAST('0', 'UInt16'));`.
 
 :::note
 If the input value cannot be represented within the bounds of [UInt16](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -2128,12 +2128,12 @@ This is not considered an error.
 
 **Returned value**
 
--16-bit unsigned integer value if successful, otherwise returns the default value if passed or `0` if not. [UInt16](../data-types/int-uint.md).
+- 16-bit unsigned integer value if successful, otherwise returns the default value if passed or `0` if not. [UInt16](../data-types/int-uint.md).
 
 :::note
 
--The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
--The default value type should be the same as the cast type.
+- The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+- The default value type should be the same as the cast type.
 
 :::
 
@@ -2159,9 +2159,9 @@ toUInt16OrDefault('abc', CAST('0', 'UInt16')): 0
 
 **See also**
 
--[`toUInt16`](#touint16).
--[`toUInt16OrZero`](#touint16orzero).
--[`toUInt16OrNull`](#touint16ornull).
+- [`toUInt16`](#touint16).
+- [`toUInt16OrZero`](#touint16orzero).
+- [`toUInt16OrNull`](#touint16ornull).
 
 ## toUInt32 {#touint32}
 
@@ -2175,17 +2175,17 @@ toUInt32(expr)
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
 
 Unsupported arguments:
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toUInt32('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt32('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [UInt32](../data-types/int-uint.md), the result over or under flows.
@@ -2195,7 +2195,7 @@ For example: `SELECT toUInt32(4294967296) == 0;`
 
 **Returned value**
 
--32-bit unsigned integer value. [UInt32](../data-types/int-uint.md).
+- 32-bit unsigned integer value. [UInt32](../data-types/int-uint.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -2225,9 +2225,9 @@ toUInt32('32'):  32
 
 **See also**
 
--[`toUInt32OrZero`](#touint32orzero).
--[`toUInt32OrNull`](#touint32ornull).
--[`toUInt32OrDefault`](#touint32ordefault).
+- [`toUInt32OrZero`](#touint32orzero).
+- [`toUInt32OrNull`](#touint32ornull).
+- [`toUInt32OrDefault`](#touint32ordefault).
 
 ## toUInt32OrZero {#touint32orzero}
 
@@ -2241,16 +2241,16 @@ toUInt32OrZero(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [String](../data-types/string.md).
+- `x` — A String representation of a number. [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `0`):
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toUInt32OrZero('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt32OrZero('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [UInt32](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -2259,7 +2259,7 @@ This is not considered an error.
 
 **Returned value**
 
--32-bit unsigned integer value if successful, otherwise `0`. [UInt32](../data-types/int-uint.md)
+- 32-bit unsigned integer value if successful, otherwise `0`. [UInt32](../data-types/int-uint.md)
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)
@@ -2288,9 +2288,9 @@ toUInt32OrZero('abc'): 0
 
 **See also**
 
--[`toUInt32`](#touint32).
--[`toUInt32OrNull`](#touint32ornull).
--[`toUInt32OrDefault`](#touint32ordefault).
+- [`toUInt32`](#touint32).
+- [`toUInt32OrNull`](#touint32ornull).
+- [`toUInt32OrDefault`](#touint32ordefault).
 
 ## toUInt32OrNull {#touint32ornull}
 
@@ -2304,16 +2304,16 @@ toUInt32OrNull(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [String](../data-types/string.md).
+- `x` — A String representation of a number. [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `\N`)
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toUInt32OrNull('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt32OrNull('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [UInt32](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -2322,7 +2322,7 @@ This is not considered an error.
 
 **Returned value**
 
--32-bit unsigned integer value if successful, otherwise `NULL`. [UInt32](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
+- 32-bit unsigned integer value if successful, otherwise `NULL`. [UInt32](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)
@@ -2351,9 +2351,9 @@ toUInt32OrNull('abc'): ᴺᵁᴸᴸ
 
 **See also**
 
--[`toUInt32`](#touint32).
--[`toUInt32OrZero`](#touint32orzero).
--[`toUInt32OrDefault`](#touint32ordefault).
+- [`toUInt32`](#touint32).
+- [`toUInt32OrZero`](#touint32orzero).
+- [`toUInt32OrDefault`](#touint32ordefault).
 
 ## toUInt32OrDefault {#touint32ordefault}
 
@@ -2368,18 +2368,18 @@ toUInt32OrDefault(expr[, default])
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
--`default` (optional) — The default value to return if parsing to type `UInt32` is unsuccessful. [UInt32](../data-types/int-uint.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `default` (optional) — The default value to return if parsing to type `UInt32` is unsuccessful. [UInt32](../data-types/int-uint.md).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
 
 Arguments for which the default value is returned:
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toUInt32OrDefault('0xc0fe', CAST('0', 'UInt32'));`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt32OrDefault('0xc0fe', CAST('0', 'UInt32'));`.
 
 :::note
 If the input value cannot be represented within the bounds of [UInt32](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -2388,12 +2388,12 @@ This is not considered an error.
 
 **Returned value**
 
--32-bit unsigned integer value if successful, otherwise returns the default value if passed or `0` if not. [UInt32](../data-types/int-uint.md).
+- 32-bit unsigned integer value if successful, otherwise returns the default value if passed or `0` if not. [UInt32](../data-types/int-uint.md).
 
 :::note
 
--The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
--The default value type should be the same as the cast type.
+- The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+- The default value type should be the same as the cast type.
 
 :::
 
@@ -2419,9 +2419,9 @@ toUInt32OrDefault('abc', CAST('0', 'UInt32')): 0
 
 **See also**
 
--[`toUInt32`](#touint32).
--[`toUInt32OrZero`](#touint32orzero).
--[`toUInt32OrNull`](#touint32ornull).
+- [`toUInt32`](#touint32).
+- [`toUInt32OrZero`](#touint32orzero).
+- [`toUInt32OrNull`](#touint32ornull).
 
 ## toUInt64 {#touint64}
 
@@ -2435,17 +2435,17 @@ toUInt64(expr)
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
 
 Unsupported types:
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toUInt64('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt64('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [UInt64](../data-types/int-uint.md), the result over or under flows.
@@ -2455,7 +2455,7 @@ For example: `SELECT toUInt64(18446744073709551616) == 0;`
 
 **Returned value**
 
--64-bit unsigned integer value. [UInt64](../data-types/int-uint.md).
+- 64-bit unsigned integer value. [UInt64](../data-types/int-uint.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -2485,9 +2485,9 @@ toUInt64('64'):  64
 
 **See also**
 
--[`toUInt64OrZero`](#touint64orzero).
--[`toUInt64OrNull`](#touint64ornull).
--[`toUInt64OrDefault`](#touint64ordefault).
+- [`toUInt64OrZero`](#touint64orzero).
+- [`toUInt64OrNull`](#touint64ornull).
+- [`toUInt64OrDefault`](#touint64ordefault).
 
 ## toUInt64OrZero {#touint64orzero}
 
@@ -2501,16 +2501,16 @@ toUInt64OrZero(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [String](../data-types/string.md).
+- `x` — A String representation of a number. [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `0`):
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toUInt64OrZero('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt64OrZero('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [UInt64](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -2519,7 +2519,7 @@ This is not considered an error.
 
 **Returned value**
 
--64-bit unsigned integer value if successful, otherwise `0`. [UInt64](../data-types/int-uint.md).
+- 64-bit unsigned integer value if successful, otherwise `0`. [UInt64](../data-types/int-uint.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -2547,9 +2547,9 @@ toUInt64OrZero('abc'): 0
 
 **See also**
 
--[`toUInt64`](#touint64).
--[`toUInt64OrNull`](#touint64ornull).
--[`toUInt64OrDefault`](#touint64ordefault).
+- [`toUInt64`](#touint64).
+- [`toUInt64OrNull`](#touint64ornull).
+- [`toUInt64OrDefault`](#touint64ordefault).
 
 ## toUInt64OrNull {#touint64ornull}
 
@@ -2563,16 +2563,16 @@ toUInt64OrNull(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `x` — A String representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `\N`)
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toUInt64OrNull('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt64OrNull('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [UInt64](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -2581,7 +2581,7 @@ This is not considered an error.
 
 **Returned value**
 
--64-bit unsigned integer value if successful, otherwise `NULL`. [UInt64](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
+- 64-bit unsigned integer value if successful, otherwise `NULL`. [UInt64](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -2609,9 +2609,9 @@ toUInt64OrNull('abc'): ᴺᵁᴸᴸ
 
 **See also**
 
--[`toUInt64`](#touint64).
--[`toUInt64OrZero`](#touint64orzero).
--[`toUInt64OrDefault`](#touint64ordefault).
+- [`toUInt64`](#touint64).
+- [`toUInt64OrZero`](#touint64orzero).
+- [`toUInt64OrDefault`](#touint64ordefault).
 
 ## toUInt64OrDefault {#touint64ordefault}
 
@@ -2626,18 +2626,18 @@ toUInt64OrDefault(expr[, default])
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
--`defauult` (optional) — The default value to return if parsing to type `UInt64` is unsuccessful. [UInt64](../data-types/int-uint.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `defauult` (optional) — The default value to return if parsing to type `UInt64` is unsuccessful. [UInt64](../data-types/int-uint.md).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
 
 Arguments for which the default value is returned:
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toUInt64OrDefault('0xc0fe', CAST('0', 'UInt64'));`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt64OrDefault('0xc0fe', CAST('0', 'UInt64'));`.
 
 :::note
 If the input value cannot be represented within the bounds of [UInt64](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -2646,12 +2646,12 @@ This is not considered an error.
 
 **Returned value**
 
--64-bit unsigned integer value if successful, otherwise returns the default value if passed or `0` if not. [UInt64](../data-types/int-uint.md).
+- 64-bit unsigned integer value if successful, otherwise returns the default value if passed or `0` if not. [UInt64](../data-types/int-uint.md).
 
 :::note
 
--The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
--The default value type should be the same as the cast type.
+- The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+- The default value type should be the same as the cast type.
 
 :::
 
@@ -2677,9 +2677,9 @@ toUInt64OrDefault('abc', CAST('0', 'UInt64')): 0
 
 **See also**
 
--[`toUInt64`](#touint64).
--[`toUInt64OrZero`](#touint64orzero).
--[`toUInt64OrNull`](#touint64ornull).
+- [`toUInt64`](#touint64).
+- [`toUInt64OrZero`](#touint64orzero).
+- [`toUInt64OrNull`](#touint64ornull).
 
 ## toUInt128 {#touint128}
 
@@ -2693,17 +2693,17 @@ toUInt128(expr)
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
 
 Unsupported arguments:
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toUInt128('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt128('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [UInt128](../data-types/int-uint.md), the result over or under flows.
@@ -2712,7 +2712,7 @@ This is not considered an error.
 
 **Returned value**
 
--128-bit unsigned integer value. [UInt128](../data-types/int-uint.md).
+- 128-bit unsigned integer value. [UInt128](../data-types/int-uint.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -2742,9 +2742,9 @@ toUInt128('128'): 128
 
 **See also**
 
--[`toUInt128OrZero`](#touint128orzero).
--[`toUInt128OrNull`](#touint128ornull).
--[`toUInt128OrDefault`](#touint128ordefault).
+- [`toUInt128OrZero`](#touint128orzero).
+- [`toUInt128OrNull`](#touint128ornull).
+- [`toUInt128OrDefault`](#touint128ordefault).
 
 ## toUInt128OrZero {#touint128orzero}
 
@@ -2758,16 +2758,16 @@ toUInt128OrZero(expr)
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `0`):
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toUInt128OrZero('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt128OrZero('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [UInt128](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -2776,7 +2776,7 @@ This is not considered an error.
 
 **Returned value**
 
--128-bit unsigned integer value if successful, otherwise `0`. [UInt128](../data-types/int-uint.md).
+- 128-bit unsigned integer value if successful, otherwise `0`. [UInt128](../data-types/int-uint.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -2804,9 +2804,9 @@ toUInt128OrZero('abc'): 0
 
 **See also**
 
--[`toUInt128`](#touint128).
--[`toUInt128OrNull`](#touint128ornull).
--[`toUInt128OrDefault`](#touint128ordefault).
+- [`toUInt128`](#touint128).
+- [`toUInt128OrNull`](#touint128ornull).
+- [`toUInt128OrDefault`](#touint128ordefault).
 
 ## toUInt128OrNull {#touint128ornull}
 
@@ -2820,16 +2820,16 @@ toUInt128OrNull(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `x` — A String representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `\N`)
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toUInt128OrNull('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt128OrNull('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [UInt128](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -2838,7 +2838,7 @@ This is not considered an error.
 
 **Returned value**
 
--128-bit unsigned integer value if successful, otherwise `NULL`. [UInt128](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
+- 128-bit unsigned integer value if successful, otherwise `NULL`. [UInt128](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -2866,9 +2866,9 @@ toUInt128OrNull('abc'): ᴺᵁᴸᴸ
 
 **See also**
 
--[`toUInt128`](#touint128).
--[`toUInt128OrZero`](#touint128orzero).
--[`toUInt128OrDefault`](#touint128ordefault).
+- [`toUInt128`](#touint128).
+- [`toUInt128OrZero`](#touint128orzero).
+- [`toUInt128OrDefault`](#touint128ordefault).
 
 ## toUInt128OrDefault {#touint128ordefault}
 
@@ -2883,19 +2883,19 @@ toUInt128OrDefault(expr[, default])
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
--`default` (optional) — The default value to return if parsing to type `UInt128` is unsuccessful. [UInt128](../data-types/int-uint.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `default` (optional) — The default value to return if parsing to type `UInt128` is unsuccessful. [UInt128](../data-types/int-uint.md).
 
 Supported arguments:
 
--(U)Int8/16/32/64/128/256.
--Float32/64.
--String representations of (U)Int8/16/32/128/256.
+- (U)Int8/16/32/64/128/256.
+- Float32/64.
+- String representations of (U)Int8/16/32/128/256.
 
 Arguments for which the default value is returned:
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toUInt128OrDefault('0xc0fe', CAST('0', 'UInt128'));`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt128OrDefault('0xc0fe', CAST('0', 'UInt128'));`.
 
 :::note
 If the input value cannot be represented within the bounds of [UInt128](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -2904,12 +2904,12 @@ This is not considered an error.
 
 **Returned value**
 
--128-bit unsigned integer value if successful, otherwise returns the default value if passed or `0` if not. [UInt128](../data-types/int-uint.md).
+- 128-bit unsigned integer value if successful, otherwise returns the default value if passed or `0` if not. [UInt128](../data-types/int-uint.md).
 
 :::note
 
--The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
--The default value type should be the same as the cast type.
+- The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+- The default value type should be the same as the cast type.
 
 :::
 
@@ -2935,9 +2935,9 @@ toUInt128OrDefault('abc', CAST('0', 'UInt128')): 0
 
 **See also**
 
--[`toUInt128`](#touint128).
--[`toUInt128OrZero`](#touint128orzero).
--[`toUInt128OrNull`](#touint128ornull).
+- [`toUInt128`](#touint128).
+- [`toUInt128OrZero`](#touint128orzero).
+- [`toUInt128OrNull`](#touint128ornull).
 
 ## toUInt256 {#touint256}
 
@@ -2951,17 +2951,17 @@ toUInt256(expr)
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
 
 Unsupported arguments:
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toUInt256('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt256('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [UInt256](../data-types/int-uint.md), the result over or under flows.
@@ -2970,7 +2970,7 @@ This is not considered an error.
 
 **Returned value**
 
--256-bit unsigned integer value. [Int256](../data-types/int-uint.md).
+- 256-bit unsigned integer value. [Int256](../data-types/int-uint.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -3000,9 +3000,9 @@ toUInt256('256'):   256
 
 **See also**
 
--[`toUInt256OrZero`](#touint256orzero).
--[`toUInt256OrNull`](#touint256ornull).
--[`toUInt256OrDefault`](#touint256ordefault).
+- [`toUInt256OrZero`](#touint256orzero).
+- [`toUInt256OrNull`](#touint256ornull).
+- [`toUInt256OrDefault`](#touint256ordefault).
 
 ## toUInt256OrZero {#touint256orzero}
 
@@ -3016,16 +3016,16 @@ toUInt256OrZero(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [String](../data-types/string.md).
+- `x` — A String representation of a number. [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `0`):
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toUInt256OrZero('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt256OrZero('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [UInt256](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -3034,7 +3034,7 @@ This is not considered an error.
 
 **Returned value**
 
--256-bit unsigned integer value if successful, otherwise `0`. [UInt256](../data-types/int-uint.md).
+- 256-bit unsigned integer value if successful, otherwise `0`. [UInt256](../data-types/int-uint.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -3062,9 +3062,9 @@ toUInt256OrZero('abc'): 0
 
 **See also**
 
--[`toUInt256`](#touint256).
--[`toUInt256OrNull`](#touint256ornull).
--[`toUInt256OrDefault`](#touint256ordefault).
+- [`toUInt256`](#touint256).
+- [`toUInt256OrNull`](#touint256ornull).
+- [`toUInt256OrDefault`](#touint256ordefault).
 
 ## toUInt256OrNull {#touint256ornull}
 
@@ -3078,16 +3078,16 @@ toUInt256OrNull(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [String](../data-types/string.md).
+- `x` — A String representation of a number. [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256.
+- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments (return `\N`)
 
--String representations of Float32/64 values, including `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toUInt256OrNull('0xc0fe');`.
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt256OrNull('0xc0fe');`.
 
 :::note
 If the input value cannot be represented within the bounds of [UInt256](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -3096,7 +3096,7 @@ This is not considered an error.
 
 **Returned value**
 
--256-bit unsigned integer value if successful, otherwise `NULL`. [UInt256](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
+- 256-bit unsigned integer value if successful, otherwise `NULL`. [UInt256](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
 
 :::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
@@ -3124,9 +3124,9 @@ toUInt256OrNull('abc'): ᴺᵁᴸᴸ
 
 **See also**
 
--[`toUInt256`](#touint256).
--[`toUInt256OrZero`](#touint256orzero).
--[`toUInt256OrDefault`](#touint256ordefault).
+- [`toUInt256`](#touint256).
+- [`toUInt256OrZero`](#touint256orzero).
+- [`toUInt256OrDefault`](#touint256ordefault).
 
 ## toUInt256OrDefault {#touint256ordefault}
 
@@ -3141,18 +3141,18 @@ toUInt256OrDefault(expr[, default])
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
--`default` (optional) — The default value to return if parsing to type `UInt256` is unsuccessful. [UInt256](../data-types/int-uint.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `default` (optional) — The default value to return if parsing to type `UInt256` is unsuccessful. [UInt256](../data-types/int-uint.md).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
 
 Arguments for which the default value is returned:
 
--String representations of Float32/64 values, including `NaN` and `Inf`
--String representations of binary and hexadecimal values, e.g. `SELECT toUInt256OrDefault('0xc0fe', CAST('0', 'UInt256'));`
+- String representations of Float32/64 values, including `NaN` and `Inf`
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt256OrDefault('0xc0fe', CAST('0', 'UInt256'));`
 
 :::note
 If the input value cannot be represented within the bounds of [UInt256](../data-types/int-uint.md), overflow or underflow of the result occurs.
@@ -3161,12 +3161,12 @@ This is not considered an error.
 
 **Returned value**
 
--256-bit unsigned integer value if successful, otherwise returns the default value if passed or `0` if not. [UInt256](../data-types/int-uint.md).
+- 256-bit unsigned integer value if successful, otherwise returns the default value if passed or `0` if not. [UInt256](../data-types/int-uint.md).
 
 :::note
 
--The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
--The default value type should be the same as the cast type.
+- The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+- The default value type should be the same as the cast type.
 
 :::
 
@@ -3192,9 +3192,9 @@ toUInt256OrDefault('abc', CAST('0', 'UInt256')):  0
 
 **See also**
 
--[`toUInt256`](#touint256).
--[`toUInt256OrZero`](#touint256orzero).
--[`toUInt256OrNull`](#touint256ornull).
+- [`toUInt256`](#touint256).
+- [`toUInt256OrZero`](#touint256orzero).
+- [`toUInt256OrNull`](#touint256ornull).
 
 ## toFloat32 {#tofloat32}
 
@@ -3208,22 +3208,22 @@ toFloat32(expr)
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
 
 Supported arguments:
 
--Values of type (U)Int8/16/32/64/128/256.
--String representations of (U)Int8/16/32/128/256.
--Values of type Float32/64, including `NaN` and `Inf`.
--String representations of Float32/64, including `NaN` and `Inf` (case-insensitive).
+- Values of type (U)Int8/16/32/64/128/256.
+- String representations of (U)Int8/16/32/128/256.
+- Values of type Float32/64, including `NaN` and `Inf`.
+- String representations of Float32/64, including `NaN` and `Inf` (case-insensitive).
 
 Unsupported arguments:
 
--String representations of binary and hexadecimal values, e.g. `SELECT toFloat32('0xc0fe');`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toFloat32('0xc0fe');`.
 
 **Returned value**
 
--32-bit floating point value. [Float32](../data-types/float.md).
+- 32-bit floating point value. [Float32](../data-types/float.md).
 
 **Example**
 
@@ -3249,9 +3249,9 @@ toFloat32('NaN'):  nan
 
 **See also**
 
--[`toFloat32OrZero`](#tofloat32orzero).
--[`toFloat32OrNull`](#tofloat32ornull).
--[`toFloat32OrDefault`](#tofloat32ordefault).
+- [`toFloat32OrZero`](#tofloat32orzero).
+- [`toFloat32OrNull`](#tofloat32ornull).
+- [`toFloat32OrDefault`](#tofloat32ordefault).
 
 ## toFloat32OrZero {#tofloat32orzero}
 
@@ -3265,19 +3265,19 @@ toFloat32OrZero(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [String](../data-types/string.md).
+- `x` — A String representation of a number. [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256, Float32/64.
+- String representations of (U)Int8/16/32/128/256, Float32/64.
 
 Unsupported arguments (return `0`):
 
--String representations of binary and hexadecimal values, e.g. `SELECT toFloat32OrZero('0xc0fe');`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toFloat32OrZero('0xc0fe');`.
 
 **Returned value**
 
--32-bit Float value if successful, otherwise `0`. [Float32](../data-types/float.md).
+- 32-bit Float value if successful, otherwise `0`. [Float32](../data-types/float.md).
 
 **Example**
 
@@ -3301,9 +3301,9 @@ toFloat32OrZero('abc'):  0
 
 **See also**
 
--[`toFloat32`](#tofloat32).
--[`toFloat32OrNull`](#tofloat32ornull).
--[`toFloat32OrDefault`](#tofloat32ordefault).
+- [`toFloat32`](#tofloat32).
+- [`toFloat32OrNull`](#tofloat32ornull).
+- [`toFloat32OrDefault`](#tofloat32ordefault).
 
 ## toFloat32OrNull {#tofloat32ornull}
 
@@ -3317,19 +3317,19 @@ toFloat32OrNull(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [String](../data-types/string.md).
+- `x` — A String representation of a number. [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256, Float32/64.
+- String representations of (U)Int8/16/32/128/256, Float32/64.
 
 Unsupported arguments (return `\N`):
 
--String representations of binary and hexadecimal values, e.g. `SELECT toFloat32OrNull('0xc0fe');`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toFloat32OrNull('0xc0fe');`.
 
 **Returned value**
 
--32-bit Float value if successful, otherwise `\N`. [Float32](../data-types/float.md).
+- 32-bit Float value if successful, otherwise `\N`. [Float32](../data-types/float.md).
 
 **Example**
 
@@ -3353,9 +3353,9 @@ toFloat32OrNull('abc'):  ᴺᵁᴸᴸ
 
 **See also**
 
--[`toFloat32`](#tofloat32).
--[`toFloat32OrZero`](#tofloat32orzero).
--[`toFloat32OrDefault`](#tofloat32ordefault).
+- [`toFloat32`](#tofloat32).
+- [`toFloat32OrZero`](#tofloat32orzero).
+- [`toFloat32OrDefault`](#tofloat32ordefault).
 
 ## toFloat32OrDefault {#tofloat32ordefault}
 
@@ -3370,23 +3370,23 @@ toFloat32OrDefault(expr[, default])
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
--`default` (optional) — The default value to return if parsing to type `Float32` is unsuccessful. [Float32](../data-types/float.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `default` (optional) — The default value to return if parsing to type `Float32` is unsuccessful. [Float32](../data-types/float.md).
 
 Supported arguments:
 
--Values of type (U)Int8/16/32/64/128/256.
--String representations of (U)Int8/16/32/128/256.
--Values of type Float32/64, including `NaN` and `Inf`.
--String representations of Float32/64, including `NaN` and `Inf` (case-insensitive).
+- Values of type (U)Int8/16/32/64/128/256.
+- String representations of (U)Int8/16/32/128/256.
+- Values of type Float32/64, including `NaN` and `Inf`.
+- String representations of Float32/64, including `NaN` and `Inf` (case-insensitive).
 
 Arguments for which the default value is returned:
 
--String representations of binary and hexadecimal values, e.g. `SELECT toFloat32OrDefault('0xc0fe', CAST('0', 'Float32'));`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toFloat32OrDefault('0xc0fe', CAST('0', 'Float32'));`.
 
 **Returned value**
 
--32-bit Float value if successful, otherwise returns the default value if passed or `0` if not. [Float32](../data-types/float.md).
+- 32-bit Float value if successful, otherwise returns the default value if passed or `0` if not. [Float32](../data-types/float.md).
 
 **Example**
 
@@ -3410,9 +3410,9 @@ toFloat32OrDefault('abc', CAST('0', 'Float32')): 0
 
 **See also**
 
--[`toFloat32`](#tofloat32).
--[`toFloat32OrZero`](#tofloat32orzero).
--[`toFloat32OrNull`](#tofloat32ornull).
+- [`toFloat32`](#tofloat32).
+- [`toFloat32OrZero`](#tofloat32orzero).
+- [`toFloat32OrNull`](#tofloat32ornull).
 
 ## toFloat64 {#tofloat64}
 
@@ -3426,22 +3426,22 @@ toFloat64(expr)
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
 
 Supported arguments:
 
--Values of type (U)Int8/16/32/64/128/256.
--String representations of (U)Int8/16/32/128/256.
--Values of type Float32/64, including `NaN` and `Inf`.
--String representations of type Float32/64, including `NaN` and `Inf` (case-insensitive).
+- Values of type (U)Int8/16/32/64/128/256.
+- String representations of (U)Int8/16/32/128/256.
+- Values of type Float32/64, including `NaN` and `Inf`.
+- String representations of type Float32/64, including `NaN` and `Inf` (case-insensitive).
 
 Unsupported arguments:
 
--String representations of binary and hexadecimal values, e.g. `SELECT toFloat64('0xc0fe');`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toFloat64('0xc0fe');`.
 
 **Returned value**
 
--64-bit floating point value. [Float64](../data-types/float.md).
+- 64-bit floating point value. [Float64](../data-types/float.md).
 
 **Example**
 
@@ -3467,9 +3467,9 @@ toFloat64('NaN'):  nan
 
 **See also**
 
--[`toFloat64OrZero`](#tofloat64orzero).
--[`toFloat64OrNull`](#tofloat64ornull).
--[`toFloat64OrDefault`](#tofloat64ordefault).
+- [`toFloat64OrZero`](#tofloat64orzero).
+- [`toFloat64OrNull`](#tofloat64ornull).
+- [`toFloat64OrDefault`](#tofloat64ordefault).
 
 ## toFloat64OrZero {#tofloat64orzero}
 
@@ -3483,19 +3483,19 @@ toFloat64OrZero(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [String](../data-types/string.md).
+- `x` — A String representation of a number. [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256, Float32/64.
+- String representations of (U)Int8/16/32/128/256, Float32/64.
 
 Unsupported arguments (return `0`):
 
--String representations of binary and hexadecimal values, e.g. `SELECT toFloat64OrZero('0xc0fe');`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toFloat64OrZero('0xc0fe');`.
 
 **Returned value**
 
--64-bit Float value if successful, otherwise `0`. [Float64](../data-types/float.md).
+- 64-bit Float value if successful, otherwise `0`. [Float64](../data-types/float.md).
 
 **Example**
 
@@ -3519,9 +3519,9 @@ toFloat64OrZero('abc'):  0
 
 **See also**
 
--[`toFloat64`](#tofloat64).
--[`toFloat64OrNull`](#tofloat64ornull).
--[`toFloat64OrDefault`](#tofloat64ordefault).
+- [`toFloat64`](#tofloat64).
+- [`toFloat64OrNull`](#tofloat64ornull).
+- [`toFloat64OrDefault`](#tofloat64ordefault).
 
 ## toFloat64OrNull {#tofloat64ornull}
 
@@ -3535,19 +3535,19 @@ toFloat64OrNull(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [String](../data-types/string.md).
+- `x` — A String representation of a number. [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of (U)Int8/16/32/128/256, Float32/64.
+- String representations of (U)Int8/16/32/128/256, Float32/64.
 
 Unsupported arguments (return `\N`):
 
--String representations of binary and hexadecimal values, e.g. `SELECT toFloat64OrNull('0xc0fe');`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toFloat64OrNull('0xc0fe');`.
 
 **Returned value**
 
--64-bit Float value if successful, otherwise `\N`. [Float64](../data-types/float.md).
+- 64-bit Float value if successful, otherwise `\N`. [Float64](../data-types/float.md).
 
 **Example**
 
@@ -3571,9 +3571,9 @@ toFloat64OrNull('abc'):  ᴺᵁᴸᴸ
 
 **See also**
 
--[`toFloat64`](#tofloat64).
--[`toFloat64OrZero`](#tofloat64orzero).
--[`toFloat64OrDefault`](#tofloat64ordefault).
+- [`toFloat64`](#tofloat64).
+- [`toFloat64OrZero`](#tofloat64orzero).
+- [`toFloat64OrDefault`](#tofloat64ordefault).
 
 ## toFloat64OrDefault {#tofloat64ordefault}
 
@@ -3588,23 +3588,23 @@ toFloat64OrDefault(expr[, default])
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
--`default` (optional) — The default value to return if parsing to type `Float64` is unsuccessful. [Float64](../data-types/float.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions) / [String](../data-types/string.md).
+- `default` (optional) — The default value to return if parsing to type `Float64` is unsuccessful. [Float64](../data-types/float.md).
 
 Supported arguments:
 
--Values of type (U)Int8/16/32/64/128/256.
--String representations of (U)Int8/16/32/128/256.
--Values of type Float32/64, including `NaN` and `Inf`.
--String representations of Float32/64, including `NaN` and `Inf` (case-insensitive).
+- Values of type (U)Int8/16/32/64/128/256.
+- String representations of (U)Int8/16/32/128/256.
+- Values of type Float32/64, including `NaN` and `Inf`.
+- String representations of Float32/64, including `NaN` and `Inf` (case-insensitive).
 
 Arguments for which the default value is returned:
 
--String representations of binary and hexadecimal values, e.g. `SELECT toFloat64OrDefault('0xc0fe', CAST('0', 'Float64'));`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toFloat64OrDefault('0xc0fe', CAST('0', 'Float64'));`.
 
 **Returned value**
 
--64-bit Float value if successful, otherwise returns the default value if passed or `0` if not. [Float64](../data-types/float.md).
+- 64-bit Float value if successful, otherwise returns the default value if passed or `0` if not. [Float64](../data-types/float.md).
 
 **Example**
 
@@ -3628,9 +3628,9 @@ toFloat64OrDefault('abc', CAST('0', 'Float64')): 0
 
 **See also**
 
--[`toFloat64`](#tofloat64).
--[`toFloat64OrZero`](#tofloat64orzero).
--[`toFloat64OrNull`](#tofloat64ornull).
+- [`toFloat64`](#tofloat64).
+- [`toFloat64OrZero`](#tofloat64orzero).
+- [`toFloat64OrNull`](#tofloat64ornull).
 
 ## toBFloat16 {#tobfloat16}
 
@@ -3645,18 +3645,18 @@ toBFloat16(expr)
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
 
 Supported arguments:
 
--Values of type (U)Int8/16/32/64/128/256.
--String representations of (U)Int8/16/32/128/256.
--Values of type Float32/64, including `NaN` and `Inf`.
--String representations of Float32/64, including `NaN` and `Inf` (case-insensitive).
+- Values of type (U)Int8/16/32/64/128/256.
+- String representations of (U)Int8/16/32/128/256.
+- Values of type Float32/64, including `NaN` and `Inf`.
+- String representations of Float32/64, including `NaN` and `Inf` (case-insensitive).
 
 **Returned value**
 
--16-bit brain-float value. [BFloat16](/sql-reference/data-types/float#bfloat16).
+- 16-bit brain-float value. [BFloat16](/sql-reference/data-types/float#bfloat16).
 
 **Example**
 
@@ -3676,8 +3676,8 @@ SELECT toBFloat16('42.7');
 
 **See also**
 
--[`toBFloat16OrZero`](#tobfloat16orzero).
--[`toBFloat16OrNull`](#tobfloat16ornull).
+- [`toBFloat16OrZero`](#tobfloat16orzero).
+- [`toBFloat16OrNull`](#tobfloat16ornull).
 
 ## toBFloat16OrZero {#tobfloat16orzero}
 
@@ -3692,20 +3692,20 @@ toBFloat16OrZero(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [String](../data-types/string.md).
+- `x` — A String representation of a number. [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of numeric values.
+- String representations of numeric values.
 
 Unsupported arguments (return `0`):
 
--String representations of binary and hexadecimal values.
--Numeric values.
+- String representations of binary and hexadecimal values.
+- Numeric values.
 
 **Returned value**
 
--16-bit brain-float value, otherwise `0`. [BFloat16](/sql-reference/data-types/float#bfloat16).
+- 16-bit brain-float value, otherwise `0`. [BFloat16](/sql-reference/data-types/float#bfloat16).
 
 :::note
 The function allows a silent loss of precision while converting from the string representation.
@@ -3729,8 +3729,8 @@ SELECT toBFloat16OrZero('12.3456789');
 
 **See also**
 
--[`toBFloat16`](#tobfloat16).
--[`toBFloat16OrNull`](#tobfloat16ornull).
+- [`toBFloat16`](#tobfloat16).
+- [`toBFloat16OrNull`](#tobfloat16ornull).
 
 ## toBFloat16OrNull {#tobfloat16ornull}
 
@@ -3745,20 +3745,20 @@ toBFloat16OrNull(x)
 
 **Arguments**
 
--`x` — A String representation of a number. [String](../data-types/string.md).
+- `x` — A String representation of a number. [String](../data-types/string.md).
 
 Supported arguments:
 
--String representations of numeric values.
+- String representations of numeric values.
 
 Unsupported arguments (return `NULL`):
 
--String representations of binary and hexadecimal values.
--Numeric values.
+- String representations of binary and hexadecimal values.
+- Numeric values.
 
 **Returned value**
 
--16-bit brain-float value, otherwise `NULL` (`\N`). [BFloat16](/sql-reference/data-types/float#bfloat16).
+- 16-bit brain-float value, otherwise `NULL` (`\N`). [BFloat16](/sql-reference/data-types/float#bfloat16).
 
 :::note
 The function allows a silent loss of precision while converting from the string representation.
@@ -3782,8 +3782,8 @@ SELECT toBFloat16OrNull('12.3456789');
 
 **See also**
 
--[`toBFloat16`](#tobfloat16).
--[`toBFloat16OrZero`](#tobfloat16orzero).
+- [`toBFloat16`](#tobfloat16).
+- [`toBFloat16OrZero`](#tobfloat16orzero).
 
 ## toDate {#todate}
 
@@ -3980,8 +3980,8 @@ toDateTime(expr[, time_zone ])
 
 **Arguments**
 
--`expr` — The value. [String](../data-types/string.md), [Int](../data-types/int-uint.md), [Date](../data-types/date.md) or [DateTime](../data-types/datetime.md).
--`time_zone` — Time zone. [String](../data-types/string.md).
+- `expr` — The value. [String](../data-types/string.md), [Int](../data-types/int-uint.md), [Date](../data-types/date.md) or [DateTime](../data-types/datetime.md).
+- `time_zone` — Time zone. [String](../data-types/string.md).
 
 :::note
 If `expr` is a number, it is interpreted as the number of seconds since the beginning of the Unix Epoch (as Unix timestamp).
@@ -3991,7 +3991,7 @@ Thus, parsing of short numbers' string representations (up to 4 digits) is expli
 
 **Returned value**
 
--A date time. [DateTime](../data-types/datetime.md)
+- A date time. [DateTime](../data-types/datetime.md)
 
 **Example**
 
@@ -4087,11 +4087,11 @@ toDate32(expr)
 
 **Arguments**
 
--`expr` — The value. [String](../data-types/string.md), [UInt32](../data-types/int-uint.md) or [Date](../data-types/date.md).
+- `expr` — The value. [String](../data-types/string.md), [UInt32](../data-types/int-uint.md) or [Date](../data-types/date.md).
 
 **Returned value**
 
--A calendar date. Type [Date32](../data-types/date32.md).
+- A calendar date. Type [Date32](../data-types/date32.md).
 
 **Example**
 
@@ -4205,13 +4205,13 @@ toDateTime64(expr, scale, [timezone])
 
 **Arguments**
 
--`expr` — The value. [String](../data-types/string.md), [UInt32](../data-types/int-uint.md), [Float](../data-types/float.md) or [DateTime](../data-types/datetime.md).
--`scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
--`timezone` (optional) - Time zone of the specified datetime64 object.
+- `expr` — The value. [String](../data-types/string.md), [UInt32](../data-types/int-uint.md), [Float](../data-types/float.md) or [DateTime](../data-types/datetime.md).
+- `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
+- `timezone` (optional) - Time zone of the specified datetime64 object.
 
 **Returned value**
 
--A calendar date and time of day, with sub-second precision. [DateTime64](../data-types/datetime64.md).
+- A calendar date and time of day, with sub-second precision. [DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -4275,13 +4275,13 @@ toDateTime64OrZero(expr, scale, [timezone])
 
 **Arguments**
 
--`expr` — The value. [String](../data-types/string.md), [UInt32](../data-types/int-uint.md), [Float](../data-types/float.md) or [DateTime](../data-types/datetime.md).
--`scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
--`timezone` (optional) - Time zone of the specified DateTime64 object.
+- `expr` — The value. [String](../data-types/string.md), [UInt32](../data-types/int-uint.md), [Float](../data-types/float.md) or [DateTime](../data-types/datetime.md).
+- `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
+- `timezone` (optional) - Time zone of the specified DateTime64 object.
 
 **Returned value**
 
--A calendar date and time of day, with sub-second precision, otherwise the minimum value of `DateTime64`: `1970-01-01 01:00:00.000`. [DateTime64](../data-types/datetime64.md).
+- A calendar date and time of day, with sub-second precision, otherwise the minimum value of `DateTime64`: `1970-01-01 01:00:00.000`. [DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -4301,9 +4301,9 @@ Result:
 
 **See also**
 
--[toDateTime64](#todatetime64).
--[toDateTime64OrNull](#todatetime64ornull).
--[toDateTime64OrDefault](#todatetime64ordefault).
+- [toDateTime64](#todatetime64).
+- [toDateTime64OrNull](#todatetime64ornull).
+- [toDateTime64OrDefault](#todatetime64ordefault).
 
 ## toDateTime64OrNull {#todatetime64ornull}
 
@@ -4317,13 +4317,13 @@ toDateTime64OrNull(expr, scale, [timezone])
 
 **Arguments**
 
--`expr` — The value. [String](../data-types/string.md), [UInt32](../data-types/int-uint.md), [Float](../data-types/float.md) or [DateTime](../data-types/datetime.md).
--`scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
--`timezone` (optional) - Time zone of the specified DateTime64 object.
+- `expr` — The value. [String](../data-types/string.md), [UInt32](../data-types/int-uint.md), [Float](../data-types/float.md) or [DateTime](../data-types/datetime.md).
+- `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
+- `timezone` (optional) - Time zone of the specified DateTime64 object.
 
 **Returned value**
 
--A calendar date and time of day, with sub-second precision, otherwise `NULL`. [DateTime64](../data-types/datetime64.md)/[NULL](../data-types/nullable.md).
+- A calendar date and time of day, with sub-second precision, otherwise `NULL`. [DateTime64](../data-types/datetime64.md)/[NULL](../data-types/nullable.md).
 
 **Example**
 
@@ -4345,9 +4345,9 @@ Result:
 
 **See also**
 
--[toDateTime64](#todatetime64).
--[toDateTime64OrZero](#todatetime64orzero).
--[toDateTime64OrDefault](#todatetime64ordefault).
+- [toDateTime64](#todatetime64).
+- [toDateTime64OrZero](#todatetime64orzero).
+- [toDateTime64OrDefault](#todatetime64ordefault).
 
 ## toDateTime64OrDefault {#todatetime64ordefault}
 
@@ -4363,14 +4363,14 @@ toDateTime64OrNull(expr, scale, [timezone, default])
 
 **Arguments**
 
--`expr` — The value. [String](../data-types/string.md), [UInt32](../data-types/int-uint.md), [Float](../data-types/float.md) or [DateTime](../data-types/datetime.md).
--`scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
--`timezone` (optional) - Time zone of the specified DateTime64 object.
--`default` (optional) - Default value to return if an invalid argument is received. [DateTime64](../data-types/datetime64.md).
+- `expr` — The value. [String](../data-types/string.md), [UInt32](../data-types/int-uint.md), [Float](../data-types/float.md) or [DateTime](../data-types/datetime.md).
+- `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
+- `timezone` (optional) - Time zone of the specified DateTime64 object.
+- `default` (optional) - Default value to return if an invalid argument is received. [DateTime64](../data-types/datetime64.md).
 
 **Returned value**
 
--A calendar date and time of day, with sub-second precision, otherwise the minimum value of `DateTime64` or the `default` value if provided. [DateTime64](../data-types/datetime64.md).
+- A calendar date and time of day, with sub-second precision, otherwise the minimum value of `DateTime64` or the `default` value if provided. [DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -4392,9 +4392,9 @@ Result:
 
 **See also**
 
--[toDateTime64](#todatetime64).
--[toDateTime64OrZero](#todatetime64orzero).
--[toDateTime64OrNull](#todatetime64ornull).
+- [toDateTime64](#todatetime64).
+- [toDateTime64OrZero](#todatetime64orzero).
+- [toDateTime64OrNull](#todatetime64ornull).
 
 ## toDecimal32 {#todecimal32}
 
@@ -4408,18 +4408,18 @@ toDecimal32(expr, S)
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
--`S` — Scale parameter between 0 and 9, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `S` — Scale parameter between 0 and 9, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values or string representations of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type Float32/64.
 
 Unsupported arguments:
 
--Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
--String representations of binary and hexadecimal values, e.g. `SELECT toDecimal32('0xc0fe', 1);`.
+- Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal32('0xc0fe', 1);`.
 
 :::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`: `( -1 * 10^(9 - S), 1 * 10^(9 - S) )`.
@@ -4435,7 +4435,7 @@ You can use a String input so the operations use the underlying integer type: `t
 
 **Returned value**
 
--Value of type `Decimal(9, S)`. [Decimal32(S)](../data-types/int-uint.md).
+- Value of type `Decimal(9, S)`. [Decimal32(S)](../data-types/int-uint.md).
 
 **Example**
 
@@ -4464,9 +4464,9 @@ type_c: Decimal(9, 3)
 
 **See also**
 
--[`toDecimal32OrZero`](#todecimal32orzero).
--[`toDecimal32OrNull`](#todecimal32ornull).
--[`toDecimal32OrDefault`](#todecimal32ordefault).
+- [`toDecimal32OrZero`](#todecimal32orzero).
+- [`toDecimal32OrNull`](#todecimal32ornull).
+- [`toDecimal32OrDefault`](#todecimal32ordefault).
 
 ## toDecimal32OrZero {#todecimal32orzero}
 
@@ -4480,18 +4480,18 @@ toDecimal32OrZero(expr, S)
 
 **Arguments**
 
--`expr` — A String representation of a number. [String](../data-types/string.md).
--`S` — Scale parameter between 0 and 9, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+- `expr` — A String representation of a number. [String](../data-types/string.md).
+- `S` — Scale parameter between 0 and 9, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
 
 Supported arguments:
 
--String representations of type (U)Int8/16/32/64/128/256.
--String representations of type Float32/64.
+- String representations of type (U)Int8/16/32/64/128/256.
+- String representations of type Float32/64.
 
 Unsupported arguments:
 
--String representations of Float32/64 values `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toDecimal32OrZero('0xc0fe', 1);`.
+- String representations of Float32/64 values `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal32OrZero('0xc0fe', 1);`.
 
 :::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`: `( -1 * 10^(9 - S), 1 * 10^(9 - S) )`.
@@ -4501,7 +4501,7 @@ Excessive digits in the integer part will lead to an error.
 
 **Returned value**
 
--Value of type `Decimal(9, S)` if successful, otherwise `0` with `S` decimal places. [Decimal32(S)](../data-types/decimal.md).
+- Value of type `Decimal(9, S)` if successful, otherwise `0` with `S` decimal places. [Decimal32(S)](../data-types/decimal.md).
 
 **Example**
 
@@ -4529,9 +4529,9 @@ toTypeName(b): Decimal(9, 5)
 
 **See also**
 
--[`toDecimal32`](#todecimal32).
--[`toDecimal32OrNull`](#todecimal32ornull).
--[`toDecimal32OrDefault`](#todecimal32ordefault).
+- [`toDecimal32`](#todecimal32).
+- [`toDecimal32OrNull`](#todecimal32ornull).
+- [`toDecimal32OrDefault`](#todecimal32ordefault).
 
 ## toDecimal32OrNull {#todecimal32ornull}
 
@@ -4545,18 +4545,18 @@ toDecimal32OrNull(expr, S)
 
 **Arguments**
 
--`expr` — A String representation of a number. [String](../data-types/string.md).
--`S` — Scale parameter between 0 and 9, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+- `expr` — A String representation of a number. [String](../data-types/string.md).
+- `S` — Scale parameter between 0 and 9, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
 
 Supported arguments:
 
--String representations of type (U)Int8/16/32/64/128/256.
--String representations of type Float32/64.
+- String representations of type (U)Int8/16/32/64/128/256.
+- String representations of type Float32/64.
 
 Unsupported arguments:
 
--String representations of Float32/64 values `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toDecimal32OrNull('0xc0fe', 1);`.
+- String representations of Float32/64 values `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal32OrNull('0xc0fe', 1);`.
 
 :::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`: `( -1 * 10^(9 - S), 1 * 10^(9 - S) )`.
@@ -4566,7 +4566,7 @@ Excessive digits in the integer part will lead to an error.
 
 **Returned value**
 
--Value of type `Nullable(Decimal(9, S))` if successful, otherwise value `NULL` of the same type. [Decimal32(S)](../data-types/decimal.md).
+- Value of type `Nullable(Decimal(9, S))` if successful, otherwise value `NULL` of the same type. [Decimal32(S)](../data-types/decimal.md).
 
 **Examples**
 
@@ -4594,9 +4594,9 @@ toTypeName(b): Nullable(Decimal(9, 5))
 
 **See also**
 
--[`toDecimal32`](#todecimal32).
--[`toDecimal32OrZero`](#todecimal32orzero).
--[`toDecimal32OrDefault`](#todecimal32ordefault).
+- [`toDecimal32`](#todecimal32).
+- [`toDecimal32OrZero`](#todecimal32orzero).
+- [`toDecimal32OrDefault`](#todecimal32ordefault).
 
 ## toDecimal32OrDefault {#todecimal32ordefault}
 
@@ -4610,19 +4610,19 @@ toDecimal32OrDefault(expr, S[, default])
 
 **Arguments**
 
--`expr` — A String representation of a number. [String](../data-types/string.md).
--`S` — Scale parameter between 0 and 9, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
--`default` (optional) — The default value to return if parsing to type `Decimal32(S)` is unsuccessful. [Decimal32(S)](../data-types/decimal.md).
+- `expr` — A String representation of a number. [String](../data-types/string.md).
+- `S` — Scale parameter between 0 and 9, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+- `default` (optional) — The default value to return if parsing to type `Decimal32(S)` is unsuccessful. [Decimal32(S)](../data-types/decimal.md).
 
 Supported arguments:
 
--String representations of type (U)Int8/16/32/64/128/256.
--String representations of type Float32/64.
+- String representations of type (U)Int8/16/32/64/128/256.
+- String representations of type Float32/64.
 
 Unsupported arguments:
 
--String representations of Float32/64 values `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toDecimal32OrDefault('0xc0fe', 1);`.
+- String representations of Float32/64 values `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal32OrDefault('0xc0fe', 1);`.
 
 :::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`: `( -1 * 10^(9 - S), 1 * 10^(9 - S) )`.
@@ -4638,7 +4638,7 @@ You can use a String input so the operations use the underlying integer type: `t
 
 **Returned value**
 
--Value of type `Decimal(9, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal32(S)](../data-types/decimal.md).
+- Value of type `Decimal(9, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal32(S)](../data-types/decimal.md).
 
 **Examples**
 
@@ -4666,9 +4666,9 @@ toTypeName(b): Decimal(9, 0)
 
 **See also**
 
--[`toDecimal32`](#todecimal32).
--[`toDecimal32OrZero`](#todecimal32orzero).
--[`toDecimal32OrNull`](#todecimal32ornull).
+- [`toDecimal32`](#todecimal32).
+- [`toDecimal32OrZero`](#todecimal32orzero).
+- [`toDecimal32OrNull`](#todecimal32ornull).
 
 ## toDecimal64 {#todecimal64}
 
@@ -4682,18 +4682,18 @@ toDecimal64(expr, S)
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
--`S` — Scale parameter between 0 and 18, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `S` — Scale parameter between 0 and 18, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values or string representations of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type Float32/64.
 
 Unsupported arguments:
 
--Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
--String representations of binary and hexadecimal values, e.g. `SELECT toDecimal64('0xc0fe', 1);`.
+- Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal64('0xc0fe', 1);`.
 
 :::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal64`: `( -1 * 10^(18 - S), 1 * 10^(18 - S) )`.
@@ -4709,7 +4709,7 @@ You can use a String input so the operations use the underlying integer type: `t
 
 **Returned value**
 
--Value of type `Decimal(18, S)`. [Decimal64(S)](../data-types/int-uint.md).
+- Value of type `Decimal(18, S)`. [Decimal64(S)](../data-types/int-uint.md).
 
 **Example**
 
@@ -4738,9 +4738,9 @@ type_c: Decimal(18, 3)
 
 **See also**
 
--[`toDecimal64OrZero`](#todecimal64orzero).
--[`toDecimal64OrNull`](#todecimal64ornull).
--[`toDecimal64OrDefault`](#todecimal64ordefault).
+- [`toDecimal64OrZero`](#todecimal64orzero).
+- [`toDecimal64OrNull`](#todecimal64ornull).
+- [`toDecimal64OrDefault`](#todecimal64ordefault).
 
 ## toDecimal64OrZero {#todecimal64orzero}
 
@@ -4754,18 +4754,18 @@ toDecimal64OrZero(expr, S)
 
 **Arguments**
 
--`expr` — A String representation of a number. [String](../data-types/string.md).
--`S` — Scale parameter between 0 and 18, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+- `expr` — A String representation of a number. [String](../data-types/string.md).
+- `S` — Scale parameter between 0 and 18, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
 
 Supported arguments:
 
--String representations of type (U)Int8/16/32/64/128/256.
--String representations of type Float32/64.
+- String representations of type (U)Int8/16/32/64/128/256.
+- String representations of type Float32/64.
 
 Unsupported arguments:
 
--String representations of Float32/64 values `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toDecimal64OrZero('0xc0fe', 1);`.
+- String representations of Float32/64 values `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal64OrZero('0xc0fe', 1);`.
 
 :::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal64`: `( -1 * 10^(18 - S), 1 * 10^(18 - S) )`.
@@ -4775,7 +4775,7 @@ Excessive digits in the integer part will lead to an error.
 
 **Returned value**
 
--Value of type `Decimal(18, S)` if successful, otherwise `0` with `S` decimal places. [Decimal64(S)](../data-types/decimal.md).
+- Value of type `Decimal(18, S)` if successful, otherwise `0` with `S` decimal places. [Decimal64(S)](../data-types/decimal.md).
 
 **Example**
 
@@ -4803,9 +4803,9 @@ toTypeName(b): Decimal(18, 18)
 
 **See also**
 
--[`toDecimal64`](#todecimal64).
--[`toDecimal64OrNull`](#todecimal64ornull).
--[`toDecimal64OrDefault`](#todecimal64ordefault).
+- [`toDecimal64`](#todecimal64).
+- [`toDecimal64OrNull`](#todecimal64ornull).
+- [`toDecimal64OrDefault`](#todecimal64ordefault).
 
 ## toDecimal64OrNull {#todecimal64ornull}
 
@@ -4819,18 +4819,18 @@ toDecimal64OrNull(expr, S)
 
 **Arguments**
 
--`expr` — A String representation of a number. [String](../data-types/string.md).
--`S` — Scale parameter between 0 and 18, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+- `expr` — A String representation of a number. [String](../data-types/string.md).
+- `S` — Scale parameter between 0 and 18, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
 
 Supported arguments:
 
--String representations of type (U)Int8/16/32/64/128/256.
--String representations of type Float32/64.
+- String representations of type (U)Int8/16/32/64/128/256.
+- String representations of type Float32/64.
 
 Unsupported arguments:
 
--String representations of Float32/64 values `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toDecimal64OrNull('0xc0fe', 1);`.
+- String representations of Float32/64 values `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal64OrNull('0xc0fe', 1);`.
 
 :::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal64`: `( -1 * 10^(18 - S), 1 * 10^(18 - S) )`.
@@ -4840,7 +4840,7 @@ Excessive digits in the integer part will lead to an error.
 
 **Returned value**
 
--Value of type `Nullable(Decimal(18, S))` if successful, otherwise value `NULL` of the same type. [Decimal64(S)](../data-types/decimal.md).
+- Value of type `Nullable(Decimal(18, S))` if successful, otherwise value `NULL` of the same type. [Decimal64(S)](../data-types/decimal.md).
 
 **Examples**
 
@@ -4868,9 +4868,9 @@ toTypeName(b): Nullable(Decimal(18, 18))
 
 **See also**
 
--[`toDecimal64`](#todecimal64).
--[`toDecimal64OrZero`](#todecimal64orzero).
--[`toDecimal64OrDefault`](#todecimal64ordefault).
+- [`toDecimal64`](#todecimal64).
+- [`toDecimal64OrZero`](#todecimal64orzero).
+- [`toDecimal64OrDefault`](#todecimal64ordefault).
 
 ## toDecimal64OrDefault {#todecimal64ordefault}
 
@@ -4884,19 +4884,19 @@ toDecimal64OrDefault(expr, S[, default])
 
 **Arguments**
 
--`expr` — A String representation of a number. [String](../data-types/string.md).
--`S` — Scale parameter between 0 and 18, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
--`default` (optional) — The default value to return if parsing to type `Decimal64(S)` is unsuccessful. [Decimal64(S)](../data-types/decimal.md).
+- `expr` — A String representation of a number. [String](../data-types/string.md).
+- `S` — Scale parameter between 0 and 18, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+- `default` (optional) — The default value to return if parsing to type `Decimal64(S)` is unsuccessful. [Decimal64(S)](../data-types/decimal.md).
 
 Supported arguments:
 
--String representations of type (U)Int8/16/32/64/128/256.
--String representations of type Float32/64.
+- String representations of type (U)Int8/16/32/64/128/256.
+- String representations of type Float32/64.
 
 Unsupported arguments:
 
--String representations of Float32/64 values `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toDecimal64OrDefault('0xc0fe', 1);`.
+- String representations of Float32/64 values `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal64OrDefault('0xc0fe', 1);`.
 
 :::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal64`: `( -1 * 10^(18 - S), 1 * 10^(18 - S) )`.
@@ -4912,7 +4912,7 @@ You can use a String input so the operations use the underlying integer type: `t
 
 **Returned value**
 
--Value of type `Decimal(18, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal64(S)](../data-types/decimal.md).
+- Value of type `Decimal(18, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal64(S)](../data-types/decimal.md).
 
 **Examples**
 
@@ -4940,9 +4940,9 @@ toTypeName(b): Decimal(18, 0)
 
 **See also**
 
--[`toDecimal64`](#todecimal64).
--[`toDecimal64OrZero`](#todecimal64orzero).
--[`toDecimal64OrNull`](#todecimal64ornull).
+- [`toDecimal64`](#todecimal64).
+- [`toDecimal64OrZero`](#todecimal64orzero).
+- [`toDecimal64OrNull`](#todecimal64ornull).
 
 ## toDecimal128 {#todecimal128}
 
@@ -4956,18 +4956,18 @@ toDecimal128(expr, S)
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
--`S` — Scale parameter between 0 and 38, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `S` — Scale parameter between 0 and 38, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values or string representations of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type Float32/64.
 
 Unsupported arguments:
 
--Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
--String representations of binary and hexadecimal values, e.g. `SELECT toDecimal128('0xc0fe', 1);`.
+- Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal128('0xc0fe', 1);`.
 
 :::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal128`: `( -1 * 10^(38 - S), 1 * 10^(38 - S) )`.
@@ -4983,7 +4983,7 @@ You can use a String input so the operations use the underlying integer type: `t
 
 **Returned value**
 
--Value of type `Decimal(38, S)`. [Decimal128(S)](../data-types/int-uint.md).
+- Value of type `Decimal(38, S)`. [Decimal128(S)](../data-types/int-uint.md).
 
 **Example**
 
@@ -5012,9 +5012,9 @@ type_c: Decimal(38, 3)
 
 **See also**
 
--[`toDecimal128OrZero`](#todecimal128orzero).
--[`toDecimal128OrNull`](#todecimal128ornull).
--[`toDecimal128OrDefault`](#todecimal128ordefault).
+- [`toDecimal128OrZero`](#todecimal128orzero).
+- [`toDecimal128OrNull`](#todecimal128ornull).
+- [`toDecimal128OrDefault`](#todecimal128ordefault).
 
 ## toDecimal128OrZero {#todecimal128orzero}
 
@@ -5028,18 +5028,18 @@ toDecimal128OrZero(expr, S)
 
 **Arguments**
 
--`expr` — A String representation of a number. [String](../data-types/string.md).
--`S` — Scale parameter between 0 and 38, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+- `expr` — A String representation of a number. [String](../data-types/string.md).
+- `S` — Scale parameter between 0 and 38, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
 
 Supported arguments:
 
--String representations of type (U)Int8/16/32/64/128/256.
--String representations of type Float32/64.
+- String representations of type (U)Int8/16/32/64/128/256.
+- String representations of type Float32/64.
 
 Unsupported arguments:
 
--String representations of Float32/64 values `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toDecimal128OrZero('0xc0fe', 1);`.
+- String representations of Float32/64 values `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal128OrZero('0xc0fe', 1);`.
 
 :::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal128`: `( -1 * 10^(38 - S), 1 * 10^(38 - S) )`.
@@ -5049,7 +5049,7 @@ Excessive digits in the integer part will lead to an error.
 
 **Returned value**
 
--Value of type `Decimal(38, S)` if successful, otherwise `0` with `S` decimal places. [Decimal128(S)](../data-types/decimal.md).
+- Value of type `Decimal(38, S)` if successful, otherwise `0` with `S` decimal places. [Decimal128(S)](../data-types/decimal.md).
 
 **Example**
 
@@ -5077,9 +5077,9 @@ toTypeName(b): Decimal(38, 38)
 
 **See also**
 
--[`toDecimal128`](#todecimal128).
--[`toDecimal128OrNull`](#todecimal128ornull).
--[`toDecimal128OrDefault`](#todecimal128ordefault).
+- [`toDecimal128`](#todecimal128).
+- [`toDecimal128OrNull`](#todecimal128ornull).
+- [`toDecimal128OrDefault`](#todecimal128ordefault).
 
 ## toDecimal128OrNull {#todecimal128ornull}
 
@@ -5093,18 +5093,18 @@ toDecimal128OrNull(expr, S)
 
 **Arguments**
 
--`expr` — A String representation of a number. [String](../data-types/string.md).
--`S` — Scale parameter between 0 and 38, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+- `expr` — A String representation of a number. [String](../data-types/string.md).
+- `S` — Scale parameter between 0 and 38, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
 
 Supported arguments:
 
--String representations of type (U)Int8/16/32/64/128/256.
--String representations of type Float32/64.
+- String representations of type (U)Int8/16/32/64/128/256.
+- String representations of type Float32/64.
 
 Unsupported arguments:
 
--String representations of Float32/64 values `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toDecimal128OrNull('0xc0fe', 1);`.
+- String representations of Float32/64 values `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal128OrNull('0xc0fe', 1);`.
 
 :::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal128`: `( -1 * 10^(38 - S), 1 * 10^(38 - S) )`.
@@ -5114,7 +5114,7 @@ Excessive digits in the integer part will lead to an error.
 
 **Returned value**
 
--Value of type `Nullable(Decimal(38, S))` if successful, otherwise value `NULL` of the same type. [Decimal128(S)](../data-types/decimal.md).
+- Value of type `Nullable(Decimal(38, S))` if successful, otherwise value `NULL` of the same type. [Decimal128(S)](../data-types/decimal.md).
 
 **Examples**
 
@@ -5142,9 +5142,9 @@ toTypeName(b): Nullable(Decimal(38, 38))
 
 **See also**
 
--[`toDecimal128`](#todecimal128).
--[`toDecimal128OrZero`](#todecimal128orzero).
--[`toDecimal128OrDefault`](#todecimal128ordefault).
+- [`toDecimal128`](#todecimal128).
+- [`toDecimal128OrZero`](#todecimal128orzero).
+- [`toDecimal128OrDefault`](#todecimal128ordefault).
 
 ## toDecimal128OrDefault {#todecimal128ordefault}
 
@@ -5158,19 +5158,19 @@ toDecimal128OrDefault(expr, S[, default])
 
 **Arguments**
 
--`expr` — A String representation of a number. [String](../data-types/string.md).
--`S` — Scale parameter between 0 and 38, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
--`default` (optional) — The default value to return if parsing to type `Decimal128(S)` is unsuccessful. [Decimal128(S)](../data-types/decimal.md).
+- `expr` — A String representation of a number. [String](../data-types/string.md).
+- `S` — Scale parameter between 0 and 38, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+- `default` (optional) — The default value to return if parsing to type `Decimal128(S)` is unsuccessful. [Decimal128(S)](../data-types/decimal.md).
 
 Supported arguments:
 
--String representations of type (U)Int8/16/32/64/128/256.
--String representations of type Float32/64.
+- String representations of type (U)Int8/16/32/64/128/256.
+- String representations of type Float32/64.
 
 Unsupported arguments:
 
--String representations of Float32/64 values `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toDecimal128OrDefault('0xc0fe', 1);`.
+- String representations of Float32/64 values `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal128OrDefault('0xc0fe', 1);`.
 
 :::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal128`: `( -1 * 10^(38 - S), 1 * 10^(38 - S) )`.
@@ -5186,7 +5186,7 @@ You can use a String input so the operations use the underlying integer type: `t
 
 **Returned value**
 
--Value of type `Decimal(38, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal128(S)](../data-types/decimal.md).
+- Value of type `Decimal(38, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal128(S)](../data-types/decimal.md).
 
 **Examples**
 
@@ -5214,9 +5214,9 @@ toTypeName(b): Decimal(38, 0)
 
 **See also**
 
--[`toDecimal128`](#todecimal128).
--[`toDecimal128OrZero`](#todecimal128orzero).
--[`toDecimal128OrNull`](#todecimal128ornull).
+- [`toDecimal128`](#todecimal128).
+- [`toDecimal128OrZero`](#todecimal128orzero).
+- [`toDecimal128OrNull`](#todecimal128ornull).
 
 ## toDecimal256 {#todecimal256}
 
@@ -5230,18 +5230,18 @@ toDecimal256(expr, S)
 
 **Arguments**
 
--`expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
--`S` — Scale parameter between 0 and 76, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+- `expr` — Expression returning a number or a string representation of a number. [Expression](/sql-reference/syntax#expressions).
+- `S` — Scale parameter between 0 and 76, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
 
 Supported arguments:
 
--Values or string representations of type (U)Int8/16/32/64/128/256.
--Values or string representations of type Float32/64.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type Float32/64.
 
 Unsupported arguments:
 
--Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
--String representations of binary and hexadecimal values, e.g. `SELECT toDecimal256('0xc0fe', 1);`.
+- Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal256('0xc0fe', 1);`.
 
 :::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal256`: `( -1 * 10^(76 - S), 1 * 10^(76 - S) )`.
@@ -5257,7 +5257,7 @@ You can use a String input so the operations use the underlying integer type: `t
 
 **Returned value**
 
--Value of type `Decimal(76, S)`. [Decimal256(S)](../data-types/int-uint.md).
+- Value of type `Decimal(76, S)`. [Decimal256(S)](../data-types/int-uint.md).
 
 **Example**
 
@@ -5286,9 +5286,9 @@ type_c: Decimal(76, 3)
 
 **See also**
 
--[`toDecimal256OrZero`](#todecimal256orzero).
--[`toDecimal256OrNull`](#todecimal256ornull).
--[`toDecimal256OrDefault`](#todecimal256ordefault).
+- [`toDecimal256OrZero`](#todecimal256orzero).
+- [`toDecimal256OrNull`](#todecimal256ornull).
+- [`toDecimal256OrDefault`](#todecimal256ordefault).
 
 ## toDecimal256OrZero {#todecimal256orzero}
 
@@ -5302,18 +5302,18 @@ toDecimal256OrZero(expr, S)
 
 **Arguments**
 
--`expr` — A String representation of a number. [String](../data-types/string.md).
--`S` — Scale parameter between 0 and 76, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+- `expr` — A String representation of a number. [String](../data-types/string.md).
+- `S` — Scale parameter between 0 and 76, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
 
 Supported arguments:
 
--String representations of type (U)Int8/16/32/64/128/256.
--String representations of type Float32/64.
+- String representations of type (U)Int8/16/32/64/128/256.
+- String representations of type Float32/64.
 
 Unsupported arguments:
 
--String representations of Float32/64 values `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toDecimal256OrZero('0xc0fe', 1);`.
+- String representations of Float32/64 values `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal256OrZero('0xc0fe', 1);`.
 
 :::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal256`: `( -1 * 10^(76 - S), 1 * 10^(76 - S) )`.
@@ -5323,7 +5323,7 @@ Excessive digits in the integer part will lead to an error.
 
 **Returned value**
 
--Value of type `Decimal(76, S)` if successful, otherwise `0` with `S` decimal places. [Decimal256(S)](../data-types/decimal.md).
+- Value of type `Decimal(76, S)` if successful, otherwise `0` with `S` decimal places. [Decimal256(S)](../data-types/decimal.md).
 
 **Example**
 
@@ -5351,9 +5351,9 @@ toTypeName(b): Decimal(76, 76)
 
 **See also**
 
--[`toDecimal256`](#todecimal256).
--[`toDecimal256OrNull`](#todecimal256ornull).
--[`toDecimal256OrDefault`](#todecimal256ordefault).
+- [`toDecimal256`](#todecimal256).
+- [`toDecimal256OrNull`](#todecimal256ornull).
+- [`toDecimal256OrDefault`](#todecimal256ordefault).
 
 ## toDecimal256OrNull {#todecimal256ornull}
 
@@ -5367,18 +5367,18 @@ toDecimal256OrNull(expr, S)
 
 **Arguments**
 
--`expr` — A String representation of a number. [String](../data-types/string.md).
--`S` — Scale parameter between 0 and 76, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+- `expr` — A String representation of a number. [String](../data-types/string.md).
+- `S` — Scale parameter between 0 and 76, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
 
 Supported arguments:
 
--String representations of type (U)Int8/16/32/64/128/256.
--String representations of type Float32/64.
+- String representations of type (U)Int8/16/32/64/128/256.
+- String representations of type Float32/64.
 
 Unsupported arguments:
 
--String representations of Float32/64 values `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toDecimal256OrNull('0xc0fe', 1);`.
+- String representations of Float32/64 values `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal256OrNull('0xc0fe', 1);`.
 
 :::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal256`: `( -1 * 10^(76 - S), 1 * 10^(76 - S) )`.
@@ -5388,7 +5388,7 @@ Excessive digits in the integer part will lead to an error.
 
 **Returned value**
 
--Value of type `Nullable(Decimal(76, S))` if successful, otherwise value `NULL` of the same type. [Decimal256(S)](../data-types/decimal.md).
+- Value of type `Nullable(Decimal(76, S))` if successful, otherwise value `NULL` of the same type. [Decimal256(S)](../data-types/decimal.md).
 
 **Examples**
 
@@ -5416,9 +5416,9 @@ toTypeName(b): Nullable(Decimal(76, 76))
 
 **See also**
 
--[`toDecimal256`](#todecimal256).
--[`toDecimal256OrZero`](#todecimal256orzero).
--[`toDecimal256OrDefault`](#todecimal256ordefault).
+- [`toDecimal256`](#todecimal256).
+- [`toDecimal256OrZero`](#todecimal256orzero).
+- [`toDecimal256OrDefault`](#todecimal256ordefault).
 
 ## toDecimal256OrDefault {#todecimal256ordefault}
 
@@ -5432,19 +5432,19 @@ toDecimal256OrDefault(expr, S[, default])
 
 **Arguments**
 
--`expr` — A String representation of a number. [String](../data-types/string.md).
--`S` — Scale parameter between 0 and 76, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
--`default` (optional) — The default value to return if parsing to type `Decimal256(S)` is unsuccessful. [Decimal256(S)](../data-types/decimal.md).
+- `expr` — A String representation of a number. [String](../data-types/string.md).
+- `S` — Scale parameter between 0 and 76, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+- `default` (optional) — The default value to return if parsing to type `Decimal256(S)` is unsuccessful. [Decimal256(S)](../data-types/decimal.md).
 
 Supported arguments:
 
--String representations of type (U)Int8/16/32/64/128/256.
--String representations of type Float32/64.
+- String representations of type (U)Int8/16/32/64/128/256.
+- String representations of type Float32/64.
 
 Unsupported arguments:
 
--String representations of Float32/64 values `NaN` and `Inf`.
--String representations of binary and hexadecimal values, e.g. `SELECT toDecimal256OrDefault('0xc0fe', 1);`.
+- String representations of Float32/64 values `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal256OrDefault('0xc0fe', 1);`.
 
 :::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal256`: `( -1 * 10^(76 - S), 1 * 10^(76 - S) )`.
@@ -5460,7 +5460,7 @@ You can use a String input so the operations use the underlying integer type: `t
 
 **Returned value**
 
--Value of type `Decimal(76, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal256(S)](../data-types/decimal.md).
+- Value of type `Decimal(76, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal256(S)](../data-types/decimal.md).
 
 **Examples**
 
@@ -5488,9 +5488,9 @@ toTypeName(b): Decimal(76, 0)
 
 **See also**
 
--[`toDecimal256`](#todecimal256).
--[`toDecimal256OrZero`](#todecimal256orzero).
--[`toDecimal256OrNull`](#todecimal256ornull).
+- [`toDecimal256`](#todecimal256).
+- [`toDecimal256OrZero`](#todecimal256orzero).
+- [`toDecimal256OrNull`](#todecimal256ornull).
 
 ## toString {#tostring}
 
@@ -5563,12 +5563,12 @@ toFixedString(s, N)
 
 **Arguments**
 
--`s` — A String to convert to a fixed string. [String](../data-types/string.md).
--`N` — Length N. [UInt8](../data-types/int-uint.md)
+- `s` — A String to convert to a fixed string. [String](../data-types/string.md).
+- `N` — Length N. [UInt8](../data-types/int-uint.md)
 
 **Returned value**
 
--An N length fixed string of `s`. [FixedString](../data-types/fixedstring.md).
+- An N length fixed string of `s`. [FixedString](../data-types/fixedstring.md).
 
 **Example**
 
@@ -5638,14 +5638,14 @@ toDecimalString(number, scale)
 
 **Arguments**
 
--`number` — Value to be represented as String, [Int, UInt](../data-types/int-uint.md), [Float](../data-types/float.md), [Decimal](../data-types/decimal.md),
--`scale` — Number of fractional digits, [UInt8](../data-types/int-uint.md).
--Maximum scale for [Decimal](../data-types/decimal.md) and [Int, UInt](../data-types/int-uint.md) types is 77 (it is the maximum possible number of significant digits for Decimal),
--Maximum scale for [Float](../data-types/float.md) is 60.
+- `number` — Value to be represented as String, [Int, UInt](../data-types/int-uint.md), [Float](../data-types/float.md), [Decimal](../data-types/decimal.md),
+- `scale` — Number of fractional digits, [UInt8](../data-types/int-uint.md).
+- Maximum scale for [Decimal](../data-types/decimal.md) and [Int, UInt](../data-types/int-uint.md) types is 77 (it is the maximum possible number of significant digits for Decimal),
+- Maximum scale for [Float](../data-types/float.md) is 60.
 
 **Returned value**
 
--Input value represented as [String](../data-types/string.md) with given number of fractional digits (scale).
+- Input value represented as [String](../data-types/string.md) with given number of fractional digits (scale).
     The number is rounded up or down according to common arithmetic in case requested scale is smaller than original number's scale.
 
 **Example**
@@ -5676,11 +5676,11 @@ reinterpretAsUInt8(x)
 
 **Parameters**
 
--`x`: value to byte reinterpret as UInt8. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `x`: value to byte reinterpret as UInt8. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
--Reinterpreted value `x` as UInt8. [UInt8](/sql-reference/data-types/int-uint).
+- Reinterpreted value `x` as UInt8. [UInt8](/sql-reference/data-types/int-uint).
 
 **Example**
 
@@ -5714,11 +5714,11 @@ reinterpretAsUInt16(x)
 
 **Parameters**
 
--`x`: value to byte reinterpret as UInt16. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `x`: value to byte reinterpret as UInt16. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
--Reinterpreted value `x` as UInt16. [UInt16](/sql-reference/data-types/int-uint).
+- Reinterpreted value `x` as UInt16. [UInt16](/sql-reference/data-types/int-uint).
 
 **Example**
 
@@ -5752,11 +5752,11 @@ reinterpretAsUInt32(x)
 
 **Parameters**
 
--`x`: value to byte reinterpret as UInt32. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `x`: value to byte reinterpret as UInt32. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
--Reinterpreted value `x` as UInt32. [UInt32](/sql-reference/data-types/int-uint).
+- Reinterpreted value `x` as UInt32. [UInt32](/sql-reference/data-types/int-uint).
 
 **Example**
 
@@ -5790,11 +5790,11 @@ reinterpretAsUInt64(x)
 
 **Parameters**
 
--`x`: value to byte reinterpret as UInt64. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `x`: value to byte reinterpret as UInt64. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
--Reinterpreted value `x` as UInt64. [UInt64](/sql-reference/data-types/int-uint).
+- Reinterpreted value `x` as UInt64. [UInt64](/sql-reference/data-types/int-uint).
 
 **Example**
 
@@ -5828,11 +5828,11 @@ reinterpretAsUInt128(x)
 
 **Parameters**
 
--`x`: value to byte reinterpret as UInt128. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `x`: value to byte reinterpret as UInt128. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
--Reinterpreted value `x` as UInt128. [UInt128](/sql-reference/data-types/int-uint).
+- Reinterpreted value `x` as UInt128. [UInt128](/sql-reference/data-types/int-uint).
 
 **Example**
 
@@ -5866,11 +5866,11 @@ reinterpretAsUInt256(x)
 
 **Parameters**
 
--`x`: value to byte reinterpret as UInt256. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `x`: value to byte reinterpret as UInt256. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
--Reinterpreted value `x` as UInt256. [UInt256](/sql-reference/data-types/int-uint).
+- Reinterpreted value `x` as UInt256. [UInt256](/sql-reference/data-types/int-uint).
 
 **Example**
 
@@ -5904,11 +5904,11 @@ reinterpretAsInt8(x)
 
 **Parameters**
 
--`x`: value to byte reinterpret as Int8. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `x`: value to byte reinterpret as Int8. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
--Reinterpreted value `x` as Int8. [Int8](/sql-reference/data-types/int-uint#integer-ranges).
+- Reinterpreted value `x` as Int8. [Int8](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Example**
 
@@ -5942,11 +5942,11 @@ reinterpretAsInt16(x)
 
 **Parameters**
 
--`x`: value to byte reinterpret as Int16. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `x`: value to byte reinterpret as Int16. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
--Reinterpreted value `x` as Int16. [Int16](/sql-reference/data-types/int-uint#integer-ranges).
+- Reinterpreted value `x` as Int16. [Int16](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Example**
 
@@ -5980,11 +5980,11 @@ reinterpretAsInt32(x)
 
 **Parameters**
 
--`x`: value to byte reinterpret as Int32. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `x`: value to byte reinterpret as Int32. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
--Reinterpreted value `x` as Int32. [Int32](/sql-reference/data-types/int-uint#integer-ranges).
+- Reinterpreted value `x` as Int32. [Int32](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Example**
 
@@ -6018,11 +6018,11 @@ reinterpretAsInt64(x)
 
 **Parameters**
 
--`x`: value to byte reinterpret as Int64. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `x`: value to byte reinterpret as Int64. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
--Reinterpreted value `x` as Int64. [Int64](/sql-reference/data-types/int-uint#integer-ranges).
+- Reinterpreted value `x` as Int64. [Int64](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Example**
 
@@ -6056,11 +6056,11 @@ reinterpretAsInt128(x)
 
 **Parameters**
 
--`x`: value to byte reinterpret as Int128. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `x`: value to byte reinterpret as Int128. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
--Reinterpreted value `x` as Int128. [Int128](/sql-reference/data-types/int-uint#integer-ranges).
+- Reinterpreted value `x` as Int128. [Int128](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Example**
 
@@ -6094,11 +6094,11 @@ reinterpretAsInt256(x)
 
 **Parameters**
 
--`x`: value to byte reinterpret as Int256. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `x`: value to byte reinterpret as Int256. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
--Reinterpreted value `x` as Int256. [Int256](/sql-reference/data-types/int-uint#integer-ranges).
+- Reinterpreted value `x` as Int256. [Int256](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Example**
 
@@ -6132,11 +6132,11 @@ reinterpretAsFloat32(x)
 
 **Parameters**
 
--`x`: value to reinterpret as Float32. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `x`: value to reinterpret as Float32. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
--Reinterpreted value `x` as Float32. [Float32](../data-types/float.md).
+- Reinterpreted value `x` as Float32. [Float32](../data-types/float.md).
 
 **Example**
 
@@ -6166,11 +6166,11 @@ reinterpretAsFloat64(x)
 
 **Parameters**
 
--`x`: value to reinterpret as Float64. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `x`: value to reinterpret as Float64. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
--Reinterpreted value `x` as Float64. [Float64](../data-types/float.md).
+- Reinterpreted value `x` as Float64. [Float64](../data-types/float.md).
 
 **Example**
 
@@ -6200,11 +6200,11 @@ reinterpretAsDate(x)
 
 **Parameters**
 
--`x`: number of days since the beginning of the Unix Epoch. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `x`: number of days since the beginning of the Unix Epoch. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
--Date. [Date](../data-types/date.md).
+- Date. [Date](../data-types/date.md).
 
 **Implementation details**
 
@@ -6240,11 +6240,11 @@ reinterpretAsDateTime(x)
 
 **Parameters**
 
--`x`: number of seconds since the beginning of the Unix Epoch. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `x`: number of seconds since the beginning of the Unix Epoch. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), [UUID](../data-types/uuid.md), [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Returned value**
 
--Date and Time. [DateTime](../data-types/datetime.md).
+- Date and Time. [DateTime](../data-types/datetime.md).
 
 **Implementation details**
 
@@ -6280,11 +6280,11 @@ reinterpretAsString(x)
 
 **Parameters**
 
--`x`: value to reinterpret to string. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md).
+- `x`: value to reinterpret to string. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md).
 
 **Returned value**
 
--String containing bytes representing `x`. [String](../data-types/fixedstring.md).
+- String containing bytes representing `x`. [String](../data-types/fixedstring.md).
 
 **Example**
 
@@ -6316,11 +6316,11 @@ reinterpretAsFixedString(x)
 
 **Parameters**
 
--`x`: value to reinterpret to string. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md).
+- `x`: value to reinterpret to string. [(U)Int*](../data-types/int-uint.md), [Float](../data-types/float.md), [Date](../data-types/date.md), [DateTime](../data-types/datetime.md).
 
 **Returned value**
 
--Fixed string containing bytes representing `x`. [FixedString](../data-types/fixedstring.md).
+- Fixed string containing bytes representing `x`. [FixedString](../data-types/fixedstring.md).
 
 **Example**
 
@@ -6356,11 +6356,11 @@ reinterpretAsUUID(fixed_string)
 
 **Arguments**
 
--`fixed_string` — Big-endian byte string. [FixedString](/sql-reference/data-types/fixedstring).
+- `fixed_string` — Big-endian byte string. [FixedString](/sql-reference/data-types/fixedstring).
 
 **Returned value**
 
--The UUID type value. [UUID](/sql-reference/data-types/uuid).
+- The UUID type value. [UUID](/sql-reference/data-types/uuid).
 
 **Examples**
 
@@ -6412,12 +6412,12 @@ reinterpret(x, type)
 
 **Arguments**
 
--`x` — Any type.
--`type` — Destination type. If it is an array, then the array element type must be a fixed length type.
+- `x` — Any type.
+- `type` — Destination type. If it is an array, then the array element type must be a fixed length type.
 
 **Returned value**
 
--Destination type value.
+- Destination type value.
 
 **Examples**
 
@@ -6466,13 +6466,13 @@ x::t
 
 **Arguments**
 
--`x` — A value to convert. May be of any type.
--`T` — The name of the target data type. [String](../data-types/string.md).
--`t` — The target data type.
+- `x` — A value to convert. May be of any type.
+- `T` — The name of the target data type. [String](../data-types/string.md).
+- `t` — The target data type.
 
 **Returned value**
 
--Converted value.
+- Converted value.
 
 :::note
 If the input value does not fit the bounds of the target type, the result overflows. For example, `CAST(-1, 'UInt8')` returns `255`.
@@ -6554,7 +6554,7 @@ Result:
 
 **See also**
 
--[cast_keep_nullable](../../operations/settings/settings.md/#cast_keep_nullable) setting
+- [cast_keep_nullable](../../operations/settings/settings.md/#cast_keep_nullable) setting
 
 ## accurateCast(x, T) {#accuratecastx-t}
 
@@ -6602,12 +6602,12 @@ accurateCastOrNull(x, T)
 
 **Arguments**
 
--`x` — Input value.
--`T` — The name of the returned data type.
+- `x` — Input value.
+- `T` — The name of the returned data type.
 
 **Returned value**
 
--The value, converted to the specified data type `T`.
+- The value, converted to the specified data type `T`.
 
 **Example**
 
@@ -6654,13 +6654,13 @@ accurateCastOrDefault(x, T)
 
 **Arguments**
 
--`x` — Input value.
--`T` — The name of the returned data type.
--`default_value` — Default value of returned data type.
+- `x` — Input value.
+- `T` — The name of the returned data type.
+- `default_value` — Default value of returned data type.
 
 **Returned value**
 
--The value converted to the specified data type `T`.
+- The value converted to the specified data type `T`.
 
 **Example**
 
@@ -6710,28 +6710,28 @@ toInterval(value, unit)
 
 **Arguments**
 
--`value` — Length of the interval. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
+- `value` — Length of the interval. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
 
--`unit` — The type of interval to create. [String Literal](/sql-reference/syntax#string).
+- `unit` — The type of interval to create. [String Literal](/sql-reference/syntax#string).
     Possible values:
 
--`nanosecond`
--`microsecond`
--`millisecond`
--`second`
--`minute`
--`hour`
--`day`
--`week`
--`month`
--`quarter`
--`year`
+- `nanosecond`
+- `microsecond`
+- `millisecond`
+- `second`
+- `minute`
+- `hour`
+- `day`
+- `week`
+- `month`
+- `quarter`
+- `year`
 
     The `unit` argument is case-insensitive.
 
 **Returned value**
 
--The resulting interval. [Interval](../../sql-reference/data-types/special-data-types/interval.md)
+- The resulting interval. [Interval](../../sql-reference/data-types/special-data-types/interval.md)
 
 **Example**
 
@@ -6757,11 +6757,11 @@ toIntervalYear(n)
 
 **Arguments**
 
--`n` — Number of years. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
+- `n` — Number of years. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
 
 **Returned values**
 
--Interval of `n` years. [IntervalYear](../data-types/special-data-types/interval.md).
+- Interval of `n` years. [IntervalYear](../data-types/special-data-types/interval.md).
 
 **Example**
 
@@ -6794,11 +6794,11 @@ toIntervalQuarter(n)
 
 **Arguments**
 
--`n` — Number of quarters. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
+- `n` — Number of quarters. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
 
 **Returned values**
 
--Interval of `n` quarters. [IntervalQuarter](../data-types/special-data-types/interval.md).
+- Interval of `n` quarters. [IntervalQuarter](../data-types/special-data-types/interval.md).
 
 **Example**
 
@@ -6831,11 +6831,11 @@ toIntervalMonth(n)
 
 **Arguments**
 
--`n` — Number of months. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
+- `n` — Number of months. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
 
 **Returned values**
 
--Interval of `n` months. [IntervalMonth](../data-types/special-data-types/interval.md).
+- Interval of `n` months. [IntervalMonth](../data-types/special-data-types/interval.md).
 
 **Example**
 
@@ -6868,11 +6868,11 @@ toIntervalWeek(n)
 
 **Arguments**
 
--`n` — Number of weeks. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
+- `n` — Number of weeks. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
 
 **Returned values**
 
--Interval of `n` weeks. [IntervalWeek](../data-types/special-data-types/interval.md).
+- Interval of `n` weeks. [IntervalWeek](../data-types/special-data-types/interval.md).
 
 **Example**
 
@@ -6905,11 +6905,11 @@ toIntervalDay(n)
 
 **Arguments**
 
--`n` — Number of days. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
+- `n` — Number of days. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
 
 **Returned values**
 
--Interval of `n` days. [IntervalDay](../data-types/special-data-types/interval.md).
+- Interval of `n` days. [IntervalDay](../data-types/special-data-types/interval.md).
 
 **Example**
 
@@ -6942,11 +6942,11 @@ toIntervalHour(n)
 
 **Arguments**
 
--`n` — Number of hours. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
+- `n` — Number of hours. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
 
 **Returned values**
 
--Interval of `n` hours. [IntervalHour](../data-types/special-data-types/interval.md).
+- Interval of `n` hours. [IntervalHour](../data-types/special-data-types/interval.md).
 
 **Example**
 
@@ -6979,11 +6979,11 @@ toIntervalMinute(n)
 
 **Arguments**
 
--`n` — Number of minutes. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
+- `n` — Number of minutes. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
 
 **Returned values**
 
--Interval of `n` minutes. [IntervalMinute](../data-types/special-data-types/interval.md).
+- Interval of `n` minutes. [IntervalMinute](../data-types/special-data-types/interval.md).
 
 **Example**
 
@@ -7016,11 +7016,11 @@ toIntervalSecond(n)
 
 **Arguments**
 
--`n` — Number of seconds. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
+- `n` — Number of seconds. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
 
 **Returned values**
 
--Interval of `n` seconds. [IntervalSecond](../data-types/special-data-types/interval.md).
+- Interval of `n` seconds. [IntervalSecond](../data-types/special-data-types/interval.md).
 
 **Example**
 
@@ -7053,11 +7053,11 @@ toIntervalMillisecond(n)
 
 **Arguments**
 
--`n` — Number of milliseconds. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
+- `n` — Number of milliseconds. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
 
 **Returned values**
 
--Interval of `n` milliseconds. [IntervalMilliseconds](../data-types/special-data-types/interval.md).
+- Interval of `n` milliseconds. [IntervalMilliseconds](../data-types/special-data-types/interval.md).
 
 **Example**
 
@@ -7090,11 +7090,11 @@ toIntervalMicrosecond(n)
 
 **Arguments**
 
--`n` — Number of microseconds. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
+- `n` — Number of microseconds. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
 
 **Returned values**
 
--Interval of `n` microseconds. [IntervalMicrosecond](../data-types/special-data-types/interval.md).
+- Interval of `n` microseconds. [IntervalMicrosecond](../data-types/special-data-types/interval.md).
 
 **Example**
 
@@ -7127,11 +7127,11 @@ toIntervalNanosecond(n)
 
 **Arguments**
 
--`n` — Number of nanoseconds. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
+- `n` — Number of nanoseconds. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
 
 **Returned values**
 
--Interval of `n` nanoseconds. [IntervalNanosecond](../data-types/special-data-types/interval.md).
+- Interval of `n` nanoseconds. [IntervalNanosecond](../data-types/special-data-types/interval.md).
 
 **Example**
 
@@ -7166,9 +7166,9 @@ parseDateTime(str[, format[, timezone]])
 
 **Arguments**
 
--`str` — The String to be parsed
--`format` — The format string. Optional. `%Y-%m-%d %H:%i:%s` if not specified.
--`timezone` — [Timezone](operations/server-configuration-parameters/settings.md#timezone). Optional.
+- `str` — The String to be parsed
+- `format` — The format string. Optional. `%Y-%m-%d %H:%i:%s` if not specified.
+- `timezone` — [Timezone](operations/server-configuration-parameters/settings.md#timezone). Optional.
 
 **Returned value(s)**
 
@@ -7178,7 +7178,7 @@ Return a [DateTime](../data-types/datetime.md) value parsed from the input strin
 
 All format specifiers listed in [formatDateTime](/sql-reference/functions/date-time-functions#formatdatetime) except:
 
--%Q: Quarter (1-4)
+- %Q: Quarter (1-4)
 
 **Example**
 
@@ -7216,9 +7216,9 @@ parseDateTimeInJodaSyntax(str[, format[, timezone]])
 
 **Arguments**
 
--`str` — The String to be parsed
--`format` — The format string. Optional. `yyyy-MM-dd HH:mm:ss` if not specified.
--`timezone` — [Timezone](operations/server-configuration-parameters/settings.md#timezone). Optional.
+- `str` — The String to be parsed
+- `format` — The format string. Optional. `yyyy-MM-dd HH:mm:ss` if not specified.
+- `timezone` — [Timezone](operations/server-configuration-parameters/settings.md#timezone). Optional.
 
 **Returned value(s)**
 
@@ -7228,9 +7228,9 @@ Return a [DateTime](../data-types/datetime.md) value parsed from the input strin
 
 All format specifiers listed in [formatDateTimeInJoda](/sql-reference/functions/date-time-functions#formatdatetime) are supported, except:
 
--S: fraction of second
--z: time zone
--Z: time zone offset/id
+- S: fraction of second
+- z: time zone
+- Z: time zone offset/id
 
 **Example**
 
@@ -7262,9 +7262,9 @@ parseDateTime64(str[, format[, timezone]])
 
 **Arguments**
 
--`str` — The String to be parsed.
--`format` — The format string. Optional. `%Y-%m-%d %H:%i:%s.%f` if not specified.
--`timezone` — [Timezone](/operations/server-configuration-parameters/settings.md#timezone). Optional.
+- `str` — The String to be parsed.
+- `format` — The format string. Optional. `%Y-%m-%d %H:%i:%s.%f` if not specified.
+- `timezone` — [Timezone](/operations/server-configuration-parameters/settings.md#timezone). Optional.
 
 **Returned value(s)**
 
@@ -7291,9 +7291,9 @@ parseDateTime64InJodaSyntax(str[, format[, timezone]])
 
 **Arguments**
 
--`str` — The String to be parsed.
--`format` — The format string. Optional. `yyyy-MM-dd HH:mm:ss` if not specified.
--`timezone` — [Timezone](/operations/server-configuration-parameters/settings.md#timezone). Optional.
+- `str` — The String to be parsed.
+- `format` — The format string. Optional. `yyyy-MM-dd HH:mm:ss` if not specified.
+- `timezone` — [Timezone](/operations/server-configuration-parameters/settings.md#timezone). Optional.
 
 **Returned value(s)**
 
@@ -7324,24 +7324,24 @@ parseDateTimeBestEffort(time_string [, time_zone])
 
 **Arguments**
 
--`time_string` — String containing a date and time to convert. [String](../data-types/string.md).
--`time_zone` — Time zone. The function parses `time_string` according to the time zone. [String](../data-types/string.md).
+- `time_string` — String containing a date and time to convert. [String](../data-types/string.md).
+- `time_zone` — Time zone. The function parses `time_string` according to the time zone. [String](../data-types/string.md).
 
 **Supported non-standard formats**
 
--A string containing 9..10 digit [unix timestamp](https://en.wikipedia.org/wiki/Unix_time).
--A string with a date and a time component: `YYYYMMDDhhmmss`, `DD/MM/YYYY hh:mm:ss`, `DD-MM-YY hh:mm`, `YYYY-MM-DD hh:mm:ss`, etc.
--A string with a date, but no time component: `YYYY`, `YYYYMM`, `YYYY*MM`, `DD/MM/YYYY`, `DD-MM-YY` etc.
--A string with a day and time: `DD`, `DD hh`, `DD hh:mm`. In this case `MM` is substituted by `01`.
--A string that includes the date and time along with time zone offset information: `YYYY-MM-DD hh:mm:ss ±h:mm`, etc. For example, `2020-12-12 17:36:00 -5:00`.
--A [syslog timestamp](https://datatracker.ietf.org/doc/html/rfc3164#section-4.1.2): `Mmm dd hh:mm:ss`. For example, `Jun  9 14:20:32`.
+- A string containing 9..10 digit [unix timestamp](https://en.wikipedia.org/wiki/Unix_time).
+- A string with a date and a time component: `YYYYMMDDhhmmss`, `DD/MM/YYYY hh:mm:ss`, `DD-MM-YY hh:mm`, `YYYY-MM-DD hh:mm:ss`, etc.
+- A string with a date, but no time component: `YYYY`, `YYYYMM`, `YYYY*MM`, `DD/MM/YYYY`, `DD-MM-YY` etc.
+- A string with a day and time: `DD`, `DD hh`, `DD hh:mm`. In this case `MM` is substituted by `01`.
+- A string that includes the date and time along with time zone offset information: `YYYY-MM-DD hh:mm:ss ±h:mm`, etc. For example, `2020-12-12 17:36:00 -5:00`.
+- A [syslog timestamp](https://datatracker.ietf.org/doc/html/rfc3164#section-4.1.2): `Mmm dd hh:mm:ss`. For example, `Jun  9 14:20:32`.
 
 For all of the formats with separator the function parses months names expressed by their full name or by the first three letters of a month name. Examples: `24/DEC/18`, `24-Dec-18`, `01-September-2018`.
 If the year is not specified, it is considered to be equal to the current year. If the resulting DateTime happen to be in the future (even by a second after the current moment), then the current year is substituted by the previous year.
 
 **Returned value**
 
--`time_string` converted to the [DateTime](../data-types/datetime.md) data type.
+- `time_string` converted to the [DateTime](../data-types/datetime.md) data type.
 
 **Examples**
 
@@ -7443,11 +7443,11 @@ Result:
 
 **See also**
 
--[RFC 1123](https://datatracker.ietf.org/doc/html/rfc1123)
--[toDate](#todate)
--[toDateTime](#todatetime)
--[ISO 8601 announcement by @xkcd](https://xkcd.com/1179/)
--[RFC 3164](https://datatracker.ietf.org/doc/html/rfc3164#section-4.1.2)
+- [RFC 1123](https://datatracker.ietf.org/doc/html/rfc1123)
+- [toDate](#todate)
+- [toDateTime](#todatetime)
+- [ISO 8601 announcement by @xkcd](https://xkcd.com/1179/)
+- [RFC 3164](https://datatracker.ietf.org/doc/html/rfc3164#section-4.1.2)
 
 ## parseDateTimeBestEffortUS {#parsedatetimebesteffortus}
 
@@ -7485,13 +7485,13 @@ parseDateTime64BestEffort(time_string [, precision [, time_zone]])
 
 **Arguments**
 
--`time_string` — String containing a date or date with time to convert. [String](../data-types/string.md).
--`precision` — Required precision. `3` — for milliseconds, `6` — for microseconds. Default — `3`. Optional. [UInt8](../data-types/int-uint.md).
--`time_zone` — [Timezone](/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
+- `time_string` — String containing a date or date with time to convert. [String](../data-types/string.md).
+- `precision` — Required precision. `3` — for milliseconds, `6` — for microseconds. Default — `3`. Optional. [UInt8](../data-types/int-uint.md).
+- `time_zone` — [Timezone](/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
 
 **Returned value**
 
--`time_string` converted to the [DateTime](../data-types/datetime.md) data type.
+- `time_string` converted to the [DateTime](../data-types/datetime.md) data type.
 
 **Examples**
 
@@ -7553,11 +7553,11 @@ toLowCardinality(expr)
 
 **Arguments**
 
--`expr` — [Expression](/sql-reference/syntax#expressions) resulting in one of the [supported data types](/sql-reference/data-types).
+- `expr` — [Expression](/sql-reference/syntax#expressions) resulting in one of the [supported data types](/sql-reference/data-types).
 
 **Returned values**
 
--Result of `expr`. [LowCardinality](../data-types/lowcardinality.md) of the type of `expr`.
+- Result of `expr`. [LowCardinality](../data-types/lowcardinality.md) of the type of `expr`.
 
 **Example**
 
@@ -7591,11 +7591,11 @@ toUnixTimestamp64Second(value)
 
 **Arguments**
 
--`value` — DateTime64 value with any precision. [DateTime64](../data-types/datetime64.md).
+- `value` — DateTime64 value with any precision. [DateTime64](../data-types/datetime64.md).
 
 **Returned value**
 
--`value` converted to the `Int64` data type. [Int64](../data-types/int-uint.md).
+- `value` converted to the `Int64` data type. [Int64](../data-types/int-uint.md).
 
 **Example**
 
@@ -7630,11 +7630,11 @@ toUnixTimestamp64Milli(value)
 
 **Arguments**
 
--`value` — DateTime64 value with any precision. [DateTime64](../data-types/datetime64.md).
+- `value` — DateTime64 value with any precision. [DateTime64](../data-types/datetime64.md).
 
 **Returned value**
 
--`value` converted to the `Int64` data type. [Int64](../data-types/int-uint.md).
+- `value` converted to the `Int64` data type. [Int64](../data-types/int-uint.md).
 
 **Example**
 
@@ -7669,11 +7669,11 @@ toUnixTimestamp64Micro(value)
 
 **Arguments**
 
--`value` — DateTime64 value with any precision. [DateTime64](../data-types/datetime64.md).
+- `value` — DateTime64 value with any precision. [DateTime64](../data-types/datetime64.md).
 
 **Returned value**
 
--`value` converted to the `Int64` data type. [Int64](../data-types/int-uint.md).
+- `value` converted to the `Int64` data type. [Int64](../data-types/int-uint.md).
 
 **Example**
 
@@ -7708,11 +7708,11 @@ toUnixTimestamp64Nano(value)
 
 **Arguments**
 
--`value` — DateTime64 value with any precision. [DateTime64](../data-types/datetime64.md).
+- `value` — DateTime64 value with any precision. [DateTime64](../data-types/datetime64.md).
 
 **Returned value**
 
--`value` converted to the `Int64` data type. [Int64](../data-types/int-uint.md).
+- `value` converted to the `Int64` data type. [Int64](../data-types/int-uint.md).
 
 **Example**
 
@@ -7747,12 +7747,12 @@ fromUnixTimestamp64Second(value[, timezone])
 
 **Arguments**
 
--`value` — value with any precision. [Int64](../data-types/int-uint.md).
--`timezone` — (optional) timezone name of the result. [String](../data-types/string.md).
+- `value` — value with any precision. [Int64](../data-types/int-uint.md).
+- `timezone` — (optional) timezone name of the result. [String](../data-types/string.md).
 
 **Returned value**
 
--`value` converted to DateTime64 with precision `0`. [DateTime64](../data-types/datetime64.md).
+- `value` converted to DateTime64 with precision `0`. [DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -7789,12 +7789,12 @@ fromUnixTimestamp64Milli(value[, timezone])
 
 **Arguments**
 
--`value` — value with any precision. [Int64](../data-types/int-uint.md).
--`timezone` — (optional) timezone name of the result. [String](../data-types/string.md).
+- `value` — value with any precision. [Int64](../data-types/int-uint.md).
+- `timezone` — (optional) timezone name of the result. [String](../data-types/string.md).
 
 **Returned value**
 
--`value` converted to DateTime64 with precision `3`. [DateTime64](../data-types/datetime64.md).
+- `value` converted to DateTime64 with precision `3`. [DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -7831,12 +7831,12 @@ fromUnixTimestamp64Micro(value[, timezone])
 
 **Arguments**
 
--`value` — value with any precision. [Int64](../data-types/int-uint.md).
--`timezone` — (optional) timezone name of the result. [String](../data-types/string.md).
+- `value` — value with any precision. [Int64](../data-types/int-uint.md).
+- `timezone` — (optional) timezone name of the result. [String](../data-types/string.md).
 
 **Returned value**
 
--`value` converted to DateTime64 with precision `6`. [DateTime64](../data-types/datetime64.md).
+- `value` converted to DateTime64 with precision `6`. [DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -7873,12 +7873,12 @@ fromUnixTimestamp64Nano(value[, timezone])
 
 **Arguments**
 
--`value` — value with any precision. [Int64](../data-types/int-uint.md).
--`timezone` — (optional) timezone name of the result. [String](../data-types/string.md).
+- `value` — value with any precision. [Int64](../data-types/int-uint.md).
+- `timezone` — (optional) timezone name of the result. [String](../data-types/string.md).
 
 **Returned value**
 
--`value` converted to DateTime64 with precision `9`. [DateTime64](../data-types/datetime64.md).
+- `value` converted to DateTime64 with precision `9`. [DateTime64](../data-types/datetime64.md).
 
 **Example**
 
@@ -7911,12 +7911,12 @@ formatRow(format, x, y, ...)
 
 **Arguments**
 
--`format` — Text format. For example, [CSV](/interfaces/formats.md/#csv), [TSV](/interfaces/formats.md/#tabseparated).
--`x`,`y`, ... — Expressions.
+- `format` — Text format. For example, [CSV](/interfaces/formats.md/#csv), [TSV](/interfaces/formats.md/#tabseparated).
+- `x`,`y`, ... — Expressions.
 
 **Returned value**
 
--A formatted string. (for text formats it's usually terminated with the new line character).
+- A formatted string. (for text formats it's usually terminated with the new line character).
 
 **Example**
 
@@ -7982,12 +7982,12 @@ formatRowNoNewline(format, x, y, ...)
 
 **Arguments**
 
--`format` — Text format. For example, [CSV](/interfaces/formats.md/#csv), [TSV](/interfaces/formats.md/#tabseparated).
--`x`,`y`, ... — Expressions.
+- `format` — Text format. For example, [CSV](/interfaces/formats.md/#csv), [TSV](/interfaces/formats.md/#tabseparated).
+- `x`,`y`, ... — Expressions.
 
 **Returned value**
 
--A formatted string.
+- A formatted string.
 
 **Example**
 
@@ -8012,7 +8012,7 @@ Result:
 The inner content of the tags below are replaced at doc framework build time with 
 docs generated from system.functions. Please do not modify or remove the tags.
 See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
--->
+- ->
 
 <!--AUTOGENERATED_START-->
 <!--AUTOGENERATED_END-->

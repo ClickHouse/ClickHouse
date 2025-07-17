@@ -18,9 +18,9 @@ format(format_name, [structure], data)
 
 ## Arguments {#arguments}
 
--`format_name` — The [format](/sql-reference/formats) of the data.
--`structure` - Structure of the table. Optional. Format 'column1_name column1_type, column2_name column2_type, ...'.
--`data` — String literal or constant expression that returns a string containing data in specified format
+- `format_name` — The [format](/sql-reference/formats) of the data.
+- `structure` - Structure of the table. Optional. Format 'column1_name column1_type, column2_name column2_type, ...'.
+- `data` — String literal or constant expression that returns a string containing data in specified format
 
 ## Returned value {#returned_value}
 
@@ -101,4 +101,4 @@ $$)
 
 ## Related {#related}
 
--[Formats](../../interfaces/formats.md)
+- [Formats](../../interfaces/formats.md)

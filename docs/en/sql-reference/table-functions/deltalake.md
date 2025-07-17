@@ -56,5 +56,5 @@ LIMIT 2
 
 ## Related {#related}
 
--[DeltaLake engine](engines/table-engines/integrations/deltalake.md)
--[DeltaLake cluster table function](sql-reference/table-functions/deltalakeCluster.md)
+- [DeltaLake engine](engines/table-engines/integrations/deltalake.md)
+- [DeltaLake cluster table function](sql-reference/table-functions/deltalakeCluster.md)

@@ -70,14 +70,14 @@ Search phrase: ${s:Quoted}, count: ${c:Escaped}, ad price: $$${p:JSON};
 The following values will be printed (if using `SELECT`) or expected (if using `INPUT`),
 between columns `Search phrase:`, `, count:`, `, ad price: $` and `;` delimiters respectively:
 
--`s` (with escape rule `Quoted`)
--`c` (with escape rule `Escaped`)
--`p` (with escape rule `JSON`)
+- `s` (with escape rule `Quoted`)
+- `c` (with escape rule `Escaped`)
+- `p` (with escape rule `JSON`)
 
 For example:
 
--If `INSERT`ing, the line below matches the expected template and would read values `bathroom interior design`, `2166`, `$3` into columns `Search phrase`, `count`, `ad price`.
--If `SELECT`ing the line below is the output, assuming that values `bathroom interior design`, `2166`, `$3` are already stored in a table under columns `Search phrase`, `count`, `ad price`.  
+- If `INSERT`ing, the line below matches the expected template and would read values `bathroom interior design`, `2166`, `$3` into columns `Search phrase`, `count`, `ad price`.
+- If `SELECT`ing the line below is the output, assuming that values `bathroom interior design`, `2166`, `$3` are already stored in a table under columns `Search phrase`, `count`, `ad price`.  
 
 ```yaml
 Search phrase: 'bathroom interior design', count: 2166, ad price: $3;
@@ -94,15 +94,15 @@ The setting `format_template_resultset` specifies the path to the file, which co
 The format string for the result set has the same syntax as a format string for rows.
 It allows for specifying a prefix, a suffix and a way to print some additional information and contains the following placeholders instead of column names:
 
--`data` is the rows with data in `format_template_row` format, separated by `format_template_rows_between_delimiter`. This placeholder must be the first placeholder in the format string.
--`totals` is the row with total values in `format_template_row` format (when using WITH TOTALS).
--`min` is the row with minimum values in `format_template_row` format (when extremes are set to 1).
--`max` is the row with maximum values in `format_template_row` format (when extremes are set to 1).
--`rows` is the total number of output rows.
--`rows_before_limit` is the minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT. If the query contains GROUP BY, rows_before_limit_at_least is the exact number of rows there would have been without a LIMIT.
--`time` is the request execution time in seconds.
--`rows_read` is the number of rows has been read.
--`bytes_read` is the number of bytes (uncompressed) has been read.
+- `data` is the rows with data in `format_template_row` format, separated by `format_template_rows_between_delimiter`. This placeholder must be the first placeholder in the format string.
+- `totals` is the row with total values in `format_template_row` format (when using WITH TOTALS).
+- `min` is the row with minimum values in `format_template_row` format (when extremes are set to 1).
+- `max` is the row with maximum values in `format_template_row` format (when extremes are set to 1).
+- `rows` is the total number of output rows.
+- `rows_before_limit` is the minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT. If the query contains GROUP BY, rows_before_limit_at_least is the exact number of rows there would have been without a LIMIT.
+- `time` is the request execution time in seconds.
+- `rows_read` is the number of rows has been read.
+- `bytes_read` is the number of bytes (uncompressed) has been read.
 
 The placeholders `data`, `totals`, `min` and `max` must not have escaping rule specified (or `None` must be specified explicitly). The remaining placeholders may have any escaping rule specified.
 
@@ -124,8 +124,8 @@ rather than as a path to the file which contains it.
 :::note
 The rules for format strings and escape sequences are the same as those for:
 
--[`format_template_row`](#format_template_row) when using `format_template_row_format`.
--[`format_template_resultset`](#format_template_resultset) when using `format_template_resultset_format`.
+- [`format_template_row`](#format_template_row) when using `format_template_row_format`.
+- [`format_template_resultset`](#format_template_resultset) when using `format_template_resultset_format`.
 
 :::
 

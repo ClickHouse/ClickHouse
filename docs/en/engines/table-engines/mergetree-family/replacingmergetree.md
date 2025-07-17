@@ -49,13 +49,13 @@ Uniqueness of rows is determined by the `ORDER BY` table section, not `PRIMARY K
 
 When merging, `ReplacingMergeTree` from all the rows with the same sorting key leaves only one:
 
--The last in the selection, if `ver` not set. A selection is a set of rows in a set of parts participating in the merge. The most recently created part (the last insert) will be the last one in the selection. Thus, after deduplication, the very last row from the most recent insert will remain for each unique sorting key.
--With the maximum version, if `ver` specified. If `ver` is the same for several rows, then it will use "if `ver` is not specified" rule for them, i.e. the most recent inserted row will remain.
+- The last in the selection, if `ver` not set. A selection is a set of rows in a set of parts participating in the merge. The most recently created part (the last insert) will be the last one in the selection. Thus, after deduplication, the very last row from the most recent insert will remain for each unique sorting key.
+- With the maximum version, if `ver` specified. If `ver` is the same for several rows, then it will use "if `ver` is not specified" rule for them, i.e. the most recent inserted row will remain.
 
 Example:
 
 ```sql
--- without ver - the last inserted 'wins'
+- - without ver - the last inserted 'wins'
 CREATE TABLE myFirstReplacingMT
 (
     `key` Int64,
@@ -75,7 +75,7 @@ SELECT * FROM myFirstReplacingMT FINAL;
 └─────┴─────────┴─────────────────────┘
 
 
--- with ver - the row with the biggest ver 'wins'
+- - with ver - the row with the biggest ver 'wins'
 CREATE TABLE mySecondReplacingMT
 (
     `key` Int64,
@@ -121,7 +121,7 @@ all into a single part and remove any delete rows.
 Example:
 
 ```sql
--- with ver and is_deleted
+- - with ver and is_deleted
 CREATE OR REPLACE TABLE myThirdReplacingMT
 (
     `key` Int64,
@@ -140,7 +140,7 @@ select * from myThirdReplacingMT final;
 
 0 rows in set. Elapsed: 0.003 sec.
 
--- delete rows with is_deleted
+- - delete rows with is_deleted
 OPTIMIZE TABLE myThirdReplacingMT FINAL CLEANUP;
 
 INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 00:00:00', 0);
@@ -175,7 +175,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 All of the parameters excepting `ver` have the same meaning as in `MergeTree`.
 
--`ver` - column with the version. Optional parameter. For a description, see the text above.
+- `ver` - column with the version. Optional parameter. For a description, see the text above.
 
 </details>
 

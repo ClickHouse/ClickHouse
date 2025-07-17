@@ -19,13 +19,13 @@ Insert operations create table parts which are merged by a background process wi
 
 Main features of `MergeTree`-family table engines.
 
--The table's primary key determines the sort order within each table part (clustered index). The primary key also does not reference individual rows but blocks of 8192 rows called granules. This makes primary keys of huge data sets small enough to remain loaded in main memory, while still providing fast access to on-disk data.
+- The table's primary key determines the sort order within each table part (clustered index). The primary key also does not reference individual rows but blocks of 8192 rows called granules. This makes primary keys of huge data sets small enough to remain loaded in main memory, while still providing fast access to on-disk data.
 
--Tables can be partitioned using an arbitrary partition expression. Partition pruning ensures partitions are omitted from reading when the query allows it.
+- Tables can be partitioned using an arbitrary partition expression. Partition pruning ensures partitions are omitted from reading when the query allows it.
 
--Data can be replicated across multiple cluster nodes for high availability, failover, and zero downtime upgrades. See [Data replication](/engines/table-engines/mergetree-family/replication.md).
+- Data can be replicated across multiple cluster nodes for high availability, failover, and zero downtime upgrades. See [Data replication](/engines/table-engines/mergetree-family/replication.md).
 
--`MergeTree` table engines support various statistics kinds and sampling methods to help query optimization.
+- `MergeTree` table engines support various statistics kinds and sampling methods to help query optimization.
 
 :::note
 Despite a similar name, the [Merge](/engines/table-engines/special/merge) engine is different from `*MergeTree` engines.
@@ -142,10 +142,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **MergeTree() Parameters**
 
--`date-column` — The name of a column of the [Date](/sql-reference/data-types/date.md) type. ClickHouse automatically creates partitions by month based on this column. The partition names are in the `"YYYYMM"` format.
--`sampling_expression` — An expression for sampling.
--`(primary, key)` — Primary key. Type: [Tuple()](/sql-reference/data-types/tuple.md)
--`index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. The value 8192 is appropriate for most tasks.
+- `date-column` — The name of a column of the [Date](/sql-reference/data-types/date.md) type. ClickHouse automatically creates partitions by month based on this column. The partition names are in the `"YYYYMM"` format.
+- `sampling_expression` — An expression for sampling.
+- `(primary, key)` — Primary key. Type: [Tuple()](/sql-reference/data-types/tuple.md)
+- `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. The value 8192 is appropriate for most tasks.
 
 **Example**
 
@@ -187,9 +187,9 @@ Marks numbers:   0      1      2      3      4      5      6      7      8      
 
 If the data query specifies:
 
--`CounterID in ('a', 'h')`, the server reads the data in the ranges of marks `[0, 3)` and `[6, 8)`.
--`CounterID IN ('a', 'h') AND Date = 3`, the server reads the data in the ranges of marks `[1, 3)` and `[7, 8)`.
--`Date = 3`, the server reads the data in the range of marks `[1, 10]`.
+- `CounterID in ('a', 'h')`, the server reads the data in the ranges of marks `[0, 3)` and `[6, 8)`.
+- `CounterID IN ('a', 'h') AND Date = 3`, the server reads the data in the ranges of marks `[1, 3)` and `[7, 8)`.
+- `Date = 3`, the server reads the data in the range of marks `[1, 10]`.
 
 The examples above show that it is always more effective to use an index than a full scan.
 
@@ -205,18 +205,18 @@ You can use `Nullable`-typed expressions in the `PRIMARY KEY` and `ORDER BY` cla
 
 The number of columns in the primary key is not explicitly limited. Depending on the data structure, you can include more or fewer columns in the primary key. This may:
 
--Improve the performance of an index.
+- Improve the performance of an index.
 
     If the primary key is `(a, b)`, then adding another column `c` will improve the performance if the following conditions are met:
 
--There are queries with a condition on column `c`.
--Long data ranges (several times longer than the `index_granularity`) with identical values for `(a, b)` are common. In other words, when adding another column allows you to skip quite long data ranges.
+- There are queries with a condition on column `c`.
+- Long data ranges (several times longer than the `index_granularity`) with identical values for `(a, b)` are common. In other words, when adding another column allows you to skip quite long data ranges.
 
--Improve data compression.
+- Improve data compression.
 
     ClickHouse sorts data by primary key, so the higher the consistency, the better the compression.
 
--Provide additional logic when merging data parts in the [CollapsingMergeTree](/engines/table-engines/mergetree-family/collapsingmergetree) and [SummingMergeTree](/engines/table-engines/mergetree-family/summingmergetree.md) engines.
+- Provide additional logic when merging data parts in the [CollapsingMergeTree](/engines/table-engines/mergetree-family/collapsingmergetree) and [SummingMergeTree](/engines/table-engines/mergetree-family/summingmergetree.md) engines.
 
     In this case it makes sense to specify the *sorting key* that is different from the primary key.
 
@@ -333,15 +333,15 @@ SELECT count() FROM table WHERE u64 * length(s) == 1234
 Data skipping indexes can also be created on composite columns:
 
 ```sql
--- on columns of type Map:
+- - on columns of type Map:
 INDEX map_key_index mapKeys(map_column) TYPE bloom_filter
 INDEX map_value_index mapValues(map_column) TYPE bloom_filter
 
--- on columns of type Tuple:
+- - on columns of type Tuple:
 INDEX tuple_1_index tuple_column.1 TYPE bloom_filter
 INDEX tuple_2_index tuple_column.2 TYPE bloom_filter
 
--- on columns of type Nested:
+- - on columns of type Nested:
 INDEX nested_1_index col.nested_col1 TYPE bloom_filter
 INDEX nested_2_index col.nested_col2 TYPE bloom_filter
 ```
@@ -372,10 +372,10 @@ Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) that contain
 
 Syntax: `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
 
--`n` — ngram size,
--`size_of_bloom_filter_in_bytes` — Bloom filter size in bytes (you can use large values here, for example, 256 or 512, because it can be compressed well).
--`number_of_hash_functions` — The number of hash functions used in the Bloom filter.
--`random_seed` — The seed for Bloom filter hash functions.
+- `n` — ngram size,
+- `size_of_bloom_filter_in_bytes` — Bloom filter size in bytes (you can use large values here, for example, 256 or 512, because it can be compressed well).
+- `number_of_hash_functions` — The number of hash functions used in the Bloom filter.
+- `random_seed` — The seed for Bloom filter hash functions.
 
 Users can create [UDF](/sql-reference/statements/create/function.md) to estimate the parameters set of `ngrambf_v1`. Query statements are as follows:
 
@@ -429,8 +429,8 @@ Syntax: `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, ran
 
 #### Special-purpose {#special-purpose}
 
--An experimental index to support approximate nearest neighbor search. See [here](annindexes.md) for details.
--An experimental text index to support full-text search. See [here](invertedindexes.md) for details.
+- An experimental index to support approximate nearest neighbor search. See [here](annindexes.md) for details.
+- An experimental text index to support full-text search. See [here](invertedindexes.md) for details.
 
 ### Functions support {#functions-support}
 
@@ -475,18 +475,18 @@ Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`
 
 For example:
 
--Can be optimized:
--`s LIKE '%test%'`
--`NOT s NOT LIKE '%test%'`
--`s = 1`
--`NOT s != 1`
--`startsWith(s, 'test')`
--Can not be optimized:
--`NOT s LIKE '%test%'`
--`s NOT LIKE '%test%'`
--`NOT s = 1`
--`s != 1`
--`NOT startsWith(s, 'test')`
+- Can be optimized:
+- `s LIKE '%test%'`
+- `NOT s NOT LIKE '%test%'`
+- `s = 1`
+- `NOT s != 1`
+- `startsWith(s, 'test')`
+- Can not be optimized:
+- `NOT s LIKE '%test%'`
+- `s NOT LIKE '%test%'`
+- `NOT s = 1`
+- `s != 1`
+- `NOT startsWith(s, 'test')`
 
 :::
 
@@ -603,11 +603,11 @@ TTL expr
 
 Type of TTL rule may follow each TTL expression. It affects an action which is to be done once the expression is satisfied (reaches current time):
 
--`DELETE` - delete expired rows (default action);
--`RECOMPRESS codec_name` - recompress data part with the `codec_name`;
--`TO DISK 'aaa'` - move part to the disk `aaa`;
--`TO VOLUME 'bbb'` - move part to the disk `bbb`;
--`GROUP BY` - aggregate expired rows.
+- `DELETE` - delete expired rows (default action);
+- `RECOMPRESS codec_name` - recompress data part with the `codec_name`;
+- `TO DISK 'aaa'` - move part to the disk `aaa`;
+- `TO VOLUME 'bbb'` - move part to the disk `bbb`;
+- `GROUP BY` - aggregate expired rows.
 
 `DELETE` action can be used together with `WHERE` clause to delete only some of the expired rows based on a filtering condition:
 
@@ -699,20 +699,20 @@ If you perform the `SELECT` query between merges, you may get expired data. To a
 
 **See Also**
 
--[ttl_only_drop_parts](/operations/settings/merge-tree-settings#ttl_only_drop_parts) setting
+- [ttl_only_drop_parts](/operations/settings/merge-tree-settings#ttl_only_drop_parts) setting
 
 ## Disk types {#disk-types}
 
 In addition to local block devices, ClickHouse supports these storage types:
 
--[`s3` for S3 and MinIO](#table_engine-mergetree-s3)
--[`gcs` for GCS](/integrations/data-ingestion/gcs/index.md/#creating-a-disk)
--[`blob_storage_disk` for Azure Blob Storage](/operations/storing-data#azure-blob-storage)
--[`hdfs` for HDFS](/engines/table-engines/integrations/hdfs)
--[`web` for read-only from web](/operations/storing-data#web-storage)
--[`cache` for local caching](/operations/storing-data#using-local-cache)
--[`s3_plain` for backups to S3](/operations/backup#backuprestore-using-an-s3-disk)
--[`s3_plain_rewritable` for immutable, non-replicated tables in S3](/operations/storing-data.md#s3-plain-rewritable-storage)
+- [`s3` for S3 and MinIO](#table_engine-mergetree-s3)
+- [`gcs` for GCS](/integrations/data-ingestion/gcs/index.md/#creating-a-disk)
+- [`blob_storage_disk` for Azure Blob Storage](/operations/storing-data#azure-blob-storage)
+- [`hdfs` for HDFS](/engines/table-engines/integrations/hdfs)
+- [`web` for read-only from web](/operations/storing-data#web-storage)
+- [`cache` for local caching](/operations/storing-data#using-local-cache)
+- [`s3_plain` for backups to S3](/operations/backup#backuprestore-using-an-s3-disk)
+- [`s3_plain_rewritable` for immutable, non-replicated tables in S3](/operations/storing-data.md#s3-plain-rewritable-storage)
 
 ## Using multiple block devices for data storage {#table_engine-mergetree-multiple-volumes}
 
@@ -724,10 +724,10 @@ Data part is the minimum movable unit for `MergeTree`-engine tables. The data be
 
 ### Terms {#terms}
 
--Disk — Block device mounted to the filesystem.
--Default disk — Disk that stores the path specified in the [path](/operations/server-configuration-parameters/settings.md/#path) server setting.
--Volume — Ordered set of equal disks (similar to [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
--Storage policy — Set of volumes and the rules for moving data between them.
+- Disk — Block device mounted to the filesystem.
+- Default disk — Disk that stores the path specified in the [path](/operations/server-configuration-parameters/settings.md/#path) server setting.
+- Volume — Ordered set of equal disks (similar to [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
+- Storage policy — Set of volumes and the rules for moving data between them.
 
 The names given to the described entities can be found in the system tables, [system.storage_policies](/operations/system-tables/storage_policies) and [system.disks](/operations/system-tables/disks). To apply one of the configured storage policies for a table, use the `storage_policy` setting of `MergeTree`-engine family tables.
 
@@ -767,9 +767,9 @@ Configuration structure:
 
 Tags:
 
--`<disk_name_N>` — Disk name. Names must be different for all disks.
--`path` — path under which a server will store data (`data` and `shadow` folders), should be terminated with '/'.
--`keep_free_space_bytes` — the amount of free disk space to be reserved.
+- `<disk_name_N>` — Disk name. Names must be different for all disks.
+- `path` — path under which a server will store data (`data` and `shadow` folders), should be terminated with '/'.
+- `keep_free_space_bytes` — the amount of free disk space to be reserved.
 
 The order of the disk definition is not important.
 
@@ -805,20 +805,20 @@ Storage policies configuration markup:
 
 Tags:
 
--`policy_name_N` — Policy name. Policy names must be unique.
--`volume_name_N` — Volume name. Volume names must be unique.
--`disk` — a disk within a volume.
--`max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume's disks. If the a size of a merged part estimated to be bigger than `max_data_part_size_bytes` then this part will be written to a next volume. Basically this feature allows to keep new/small parts on a hot (SSD) volume and move them to a cold (HDD) volume when they reach large size. Do not use this setting if your policy has only one volume.
--`move_factor` — when the amount of available space gets lower than this factor, data automatically starts to move on the next volume if any (by default, 0.1). ClickHouse sorts existing parts by size from largest to smallest (in descending order) and selects parts with the total size that is sufficient to meet the `move_factor` condition. If the total size of all parts is insufficient, all parts will be moved.
--`perform_ttl_move_on_insert` — Disables TTL move on data part INSERT. By default (if enabled) if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3). If disabled then already expired data part is written into a default volume and then right after moved to TTL volume.
--`load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
--`least_used_ttl_ms` - Configure timeout (in milliseconds) for the updating available space on all disks (`0` - update always, `-1` - never update, default is `60000`). Note, if the disk can be used by ClickHouse only and is not subject to a online filesystem resize/shrink you can use `-1`, in all other cases it is not recommended, since eventually it will lead to incorrect space distribution.
--`prefer_not_to_merge` — You should not use this setting. Disables merging of data parts on this volume (this is harmful and leads to performance degradation). When this setting is enabled (don't do it), merging data on this volume is not allowed (which is bad). This allows (but you don't need it) controlling (if you want to control something, you're making a mistake) how ClickHouse works with slow disks (but ClickHouse knows better, so please don't use this setting).
--`volume_priority` — Defines the priority (order) in which volumes are filled. Lower value means higher priority. The parameter values should be natural numbers and collectively cover the range from 1 to N (lowest priority given) without skipping any numbers.
--If *all* volumes are tagged, they are prioritized in given order.
--If only *some* volumes are tagged, those without the tag have the lowest priority, and they are prioritized in the order they are defined in config.
--If *no* volumes are tagged, their priority is set correspondingly to their order they are declared in configuration.
--Two volumes cannot have the same priority value.
+- `policy_name_N` — Policy name. Policy names must be unique.
+- `volume_name_N` — Volume name. Volume names must be unique.
+- `disk` — a disk within a volume.
+- `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume's disks. If the a size of a merged part estimated to be bigger than `max_data_part_size_bytes` then this part will be written to a next volume. Basically this feature allows to keep new/small parts on a hot (SSD) volume and move them to a cold (HDD) volume when they reach large size. Do not use this setting if your policy has only one volume.
+- `move_factor` — when the amount of available space gets lower than this factor, data automatically starts to move on the next volume if any (by default, 0.1). ClickHouse sorts existing parts by size from largest to smallest (in descending order) and selects parts with the total size that is sufficient to meet the `move_factor` condition. If the total size of all parts is insufficient, all parts will be moved.
+- `perform_ttl_move_on_insert` — Disables TTL move on data part INSERT. By default (if enabled) if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3). If disabled then already expired data part is written into a default volume and then right after moved to TTL volume.
+- `load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
+- `least_used_ttl_ms` - Configure timeout (in milliseconds) for the updating available space on all disks (`0` - update always, `-1` - never update, default is `60000`). Note, if the disk can be used by ClickHouse only and is not subject to a online filesystem resize/shrink you can use `-1`, in all other cases it is not recommended, since eventually it will lead to incorrect space distribution.
+- `prefer_not_to_merge` — You should not use this setting. Disables merging of data parts on this volume (this is harmful and leads to performance degradation). When this setting is enabled (don't do it), merging data on this volume is not allowed (which is bad). This allows (but you don't need it) controlling (if you want to control something, you're making a mistake) how ClickHouse works with slow disks (but ClickHouse knows better, so please don't use this setting).
+- `volume_priority` — Defines the priority (order) in which volumes are filled. Lower value means higher priority. The parameter values should be natural numbers and collectively cover the range from 1 to N (lowest priority given) without skipping any numbers.
+- If *all* volumes are tagged, they are prioritized in given order.
+- If only *some* volumes are tagged, those without the tag have the lowest priority, and they are prioritized in the order they are defined in config.
+- If *no* volumes are tagged, their priority is set correspondingly to their order they are declared in configuration.
+- Two volumes cannot have the same priority value.
 
 Configuration examples:
 
@@ -894,10 +894,10 @@ The number of threads performing background moves of data parts can be changed b
 
 In the case of `MergeTree` tables, data is getting to disk in different ways:
 
--As a result of an insert (`INSERT` query).
--During background merges and [mutations](/sql-reference/statements/alter#mutations).
--When downloading from another replica.
--As a result of partition freezing [ALTER TABLE ... FREEZE PARTITION](/sql-reference/statements/alter/partition#freeze-partition).
+- As a result of an insert (`INSERT` query).
+- During background merges and [mutations](/sql-reference/statements/alter#mutations).
+- When downloading from another replica.
+- As a result of partition freezing [ALTER TABLE ... FREEZE PARTITION](/sql-reference/statements/alter/partition#freeze-partition).
 
 In all these cases except for mutations and partition freezing, a part is stored on a volume and a disk according to the given storage policy:
 
@@ -973,19 +973,19 @@ ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [
 
 ## Virtual columns {#virtual-columns}
 
--`_part` — Name of a part.
--`_part_index` — Sequential index of the part in the query result.
--`_part_starting_offset` — Cumulative starting row of the part in the query result.
--`_part_offset` — Number of row in the part.
--`_part_granule_offset` — Number of granule in the part.
--`_partition_id` — Name of a partition.
--`_part_uuid` — Unique part identifier (if enabled MergeTree setting `assign_part_uuids`).
--`_part_data_version` — Data version of part (either min block number or mutation version).
--`_partition_value` — Values (a tuple) of a `partition by` expression.
--`_sample_factor` — Sample factor (from the query).
--`_block_number` — Original number of block for row that was assigned at insert, persisted on merges when setting `enable_block_number_column` is enabled.
--`_block_offset` — Original number of row in block that was assigned at insert, persisted on merges when setting `enable_block_offset_column` is enabled.
--`_disk_name` — Disk name used for the storage.
+- `_part` — Name of a part.
+- `_part_index` — Sequential index of the part in the query result.
+- `_part_starting_offset` — Cumulative starting row of the part in the query result.
+- `_part_offset` — Number of row in the part.
+- `_part_granule_offset` — Number of granule in the part.
+- `_partition_id` — Name of a partition.
+- `_part_uuid` — Unique part identifier (if enabled MergeTree setting `assign_part_uuids`).
+- `_part_data_version` — Data version of part (either min block number or mutation version).
+- `_partition_value` — Values (a tuple) of a `partition by` expression.
+- `_sample_factor` — Sample factor (from the query).
+- `_block_number` — Original number of block for row that was assigned at insert, persisted on merges when setting `enable_block_number_column` is enabled.
+- `_block_offset` — Original number of row in block that was assigned at insert, persisted on merges when setting `enable_block_offset_column` is enabled.
+- `_disk_name` — Disk name used for the storage.
 
 ## Column statistics {#column-statistics}
 
@@ -1016,25 +1016,25 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 
 ### Available types of column statistics {#available-types-of-column-statistics}
 
--`MinMax`
+- `MinMax`
 
     The minimum and maximum column value which allows to estimate the selectivity of range filters on numeric columns.
 
     Syntax: `minmax`
 
--`TDigest`
+- `TDigest`
 
     [TDigest](https://github.com/tdunning/t-digest) sketches which allow to compute approximate percentiles (e.g. the 90th percentile) for numeric columns.
 
     Syntax: `tdigest`
 
--`Uniq`
+- `Uniq`
 
     [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) sketches which provide an estimation how many distinct values a column contains.
 
     Syntax: `uniq`
 
--`CountMin`
+- `CountMin`
 
     [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
 
@@ -1062,8 +1062,8 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 
 Certain MergeTree settings can be overridden at column level:
 
--`max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table.
--`min_compress_block_size` — Minimum size of blocks of uncompressed data required for compression when writing the next mark.
+- `max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table.
+- `min_compress_block_size` — Minimum size of blocks of uncompressed data required for compression when writing the next mark.
 
 Example:
 
@@ -1079,19 +1079,19 @@ ORDER BY id
 
 Column-level settings can be modified or removed using [ALTER MODIFY COLUMN](/sql-reference/statements/alter/column.md), for example:
 
--Remove `SETTINGS` from column declaration:
+- Remove `SETTINGS` from column declaration:
 
 ```sql
 ALTER TABLE tab MODIFY COLUMN document REMOVE SETTINGS;
 ```
 
--Modify a setting:
+- Modify a setting:
 
 ```sql
 ALTER TABLE tab MODIFY COLUMN document MODIFY SETTING min_compress_block_size = 8192;
 ```
 
--Reset one or more settings, also removes the setting declaration in the column expression of the table's CREATE query.
+- Reset one or more settings, also removes the setting declaration in the column expression of the table's CREATE query.
 
 ```sql
 ALTER TABLE tab MODIFY COLUMN document RESET SETTING min_compress_block_size;

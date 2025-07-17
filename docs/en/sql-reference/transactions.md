@@ -13,46 +13,46 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 This is transactional (ACID) if the inserted rows are packed and inserted as a single block (see Notes):
 
--Atomic: an INSERT succeeds or is rejected as a whole: if a confirmation is sent to the client, then all rows were inserted; if an error is sent to the client, then no rows were inserted.
--Consistent: if there are no table constraints violated, then all rows in an INSERT are inserted and the INSERT succeeds; if constraints are violated, then no rows are inserted.
--Isolated: concurrent clients observe a consistent snapshot of the table–the state of the table either as it was before the INSERT attempt, or after the successful INSERT; no partial state is seen. Clients inside of another transaction have [snapshot isolation](https://en.wikipedia.org/wiki/Snapshot_isolation), while clients outside of a transaction have [read uncommitted](https://en.wikipedia.org/wiki/Isolation_(database_systems)#Read_uncommitted) isolation level.
--Durable: a successful INSERT is written to the filesystem before answering to the client, on a single replica or multiple replicas (controlled by the `insert_quorum` setting), and ClickHouse can ask the OS to sync the filesystem data on the storage media (controlled by the `fsync_after_insert` setting).
--INSERT into multiple tables with one statement is possible if materialized views are involved (the INSERT from the client is to a table which has associate materialized views).
+- Atomic: an INSERT succeeds or is rejected as a whole: if a confirmation is sent to the client, then all rows were inserted; if an error is sent to the client, then no rows were inserted.
+- Consistent: if there are no table constraints violated, then all rows in an INSERT are inserted and the INSERT succeeds; if constraints are violated, then no rows are inserted.
+- Isolated: concurrent clients observe a consistent snapshot of the table–the state of the table either as it was before the INSERT attempt, or after the successful INSERT; no partial state is seen. Clients inside of another transaction have [snapshot isolation](https://en.wikipedia.org/wiki/Snapshot_isolation), while clients outside of a transaction have [read uncommitted](https://en.wikipedia.org/wiki/Isolation_(database_systems)#Read_uncommitted) isolation level.
+- Durable: a successful INSERT is written to the filesystem before answering to the client, on a single replica or multiple replicas (controlled by the `insert_quorum` setting), and ClickHouse can ask the OS to sync the filesystem data on the storage media (controlled by the `fsync_after_insert` setting).
+- INSERT into multiple tables with one statement is possible if materialized views are involved (the INSERT from the client is to a table which has associate materialized views).
 
 ## Case 2: INSERT into multiple partitions, of one table, of the MergeTree* family {#case-2-insert-into-multiple-partitions-of-one-table-of-the-mergetree-family}
 
 Same as Case 1 above, with this detail:
 
--If table has many partitions and INSERT covers many partitions, then insertion into every partition is transactional on its own
+- If table has many partitions and INSERT covers many partitions, then insertion into every partition is transactional on its own
 
 ## Case 3: INSERT into one distributed table of the MergeTree* family {#case-3-insert-into-one-distributed-table-of-the-mergetree-family}
 
 Same as Case 1 above, with this detail:
 
--INSERT into Distributed table is not transactional as a whole, while insertion into every shard is transactional
+- INSERT into Distributed table is not transactional as a whole, while insertion into every shard is transactional
 
 ## Case 4: Using a Buffer table {#case-4-using-a-buffer-table}
 
--insert into Buffer tables is neither atomic nor isolated nor consistent nor durable
+- insert into Buffer tables is neither atomic nor isolated nor consistent nor durable
 
 ## Case 5: Using async_insert {#case-5-using-async_insert}
 
 Same as Case 1 above, with this detail:
 
--atomicity is ensured even if `async_insert` is enabled and `wait_for_async_insert` is set to 1 (the default), but if `wait_for_async_insert` is set to 0, then atomicity is not ensured.
+- atomicity is ensured even if `async_insert` is enabled and `wait_for_async_insert` is set to 1 (the default), but if `wait_for_async_insert` is set to 0, then atomicity is not ensured.
 
 ## Notes {#notes}
 
--rows inserted from the client in some data format are packed into a single block when:
--the insert format is row-based (like CSV, TSV, Values, JSONEachRow, etc) and the data contains less then `max_insert_block_size` rows (~1 000 000 by default) or less then `min_chunk_bytes_for_parallel_parsing` bytes (10 MB by default) in case of parallel parsing is used (enabled by default)
--the insert format is column-based (like Native, Parquet, ORC, etc) and the data contains only one block of data
--the size of the inserted block in general may depend on many settings (for example: `max_block_size`, `max_insert_block_size`, `min_insert_block_size_rows`, `min_insert_block_size_bytes`, `preferred_block_size_bytes`, etc)
--if the client did not receive an answer from the server, the client does not know if the transaction succeeded, and it can repeat the transaction, using exactly-once insertion properties
--ClickHouse is using [MVCC](https://en.wikipedia.org/wiki/Multiversion_concurrency_control) with [snapshot isolation](https://en.wikipedia.org/wiki/Snapshot_isolation) internally for concurrent transactions
--all ACID properties are valid even in the case of server kill/crash
--either insert_quorum into different AZ or fsync should be enabled to ensure durable inserts in the typical setup
--"consistency" in ACID terms does not cover the semantics of distributed systems, see <https://jepsen.io/consistency> which is controlled by different settings (select_sequential_consistency)
--this explanation does not cover a new transactions feature that allow to have full-featured transactions over multiple tables, materialized views, for multiple SELECTs, etc. (see the next section on Transactions, Commit, and Rollback)
+- rows inserted from the client in some data format are packed into a single block when:
+- the insert format is row-based (like CSV, TSV, Values, JSONEachRow, etc) and the data contains less then `max_insert_block_size` rows (~1 000 000 by default) or less then `min_chunk_bytes_for_parallel_parsing` bytes (10 MB by default) in case of parallel parsing is used (enabled by default)
+- the insert format is column-based (like Native, Parquet, ORC, etc) and the data contains only one block of data
+- the size of the inserted block in general may depend on many settings (for example: `max_block_size`, `max_insert_block_size`, `min_insert_block_size_rows`, i`min_insert_block_size_bytes`, `preferred_block_size_bytes`, etc)
+- if the client did not receive an answer from the server, the client does not know if the transaction succeeded, and it can repeat the transaction, using exactly-once insertion properties
+- ClickHouse is using [MVCC](https://en.wikipedia.org/wiki/Multiversion_concurrency_control) with [snapshot isolation](https://en.wikipedia.org/wiki/Snapshot_isolation) internally for concurrent transactions
+- all ACID properties are valid even in the case of server kill/crash
+- either insert_quorum into different AZ or fsync should be enabled to ensure durable inserts in the typical setup
+- "consistency" in ACID terms does not cover the semantics of distributed systems, see https://jepsen.io/consistency which is controlled by different settings (select_sequential_consistency)
+- this explanation does not cover a new transactions feature that allow to have full-featured transactions over multiple tables, materialized views, for multiple SELECTs, etc. (see the next section on Transactions, Commit, and Rollback)
 
 ## Transactions, Commit, and Rollback {#transactions-commit-and-rollback}
 
@@ -63,10 +63,10 @@ In addition to the functionality described at the top of this document, ClickHou
 
 ### Requirements {#requirements}
 
--Deploy ClickHouse Keeper or ZooKeeper to track transactions
--Atomic DB only (Default)
--Non-Replicated MergeTree table engine only
--Enable experimental transaction support by adding this setting in `config.d/transactions.xml`:
+- Deploy ClickHouse Keeper or ZooKeeper to track transactions
+- Atomic DB only (Default)
+- Non-Replicated MergeTree table engine only
+- Enable experimental transaction support by adding this setting in `config.d/transactions.xml`:
 
   ```xml
   <clickhouse>
@@ -76,9 +76,9 @@ In addition to the functionality described at the top of this document, ClickHou
 
 ### Notes {#notes-1}
 
--This is an experimental feature, and changes should be expected.
--If an exception occurs during a transaction, you cannot commit the transaction.  This includes all exceptions, including `UNKNOWN_FUNCTION` exceptions caused by typos.  
--Nested transactions are not supported; finish the current transaction and start a new one instead
+- This is an experimental feature, and changes should be expected.
+- If an exception occurs during a transaction, you cannot commit the transaction.  This includes all exceptions, including `UNKNOWN_FUNCTION` exceptions caused by typos.  
+- Nested transactions are not supported; finish the current transaction and start a new one instead
 
 ### Configuration {#configuration}
 

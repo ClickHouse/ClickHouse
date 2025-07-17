@@ -41,7 +41,7 @@ Change the settings for a particular table using `ALTER TABLE ... MODIFY SETTING
 ```sql
 ALTER TABLE tab MODIFY SETTING max_suspicious_broken_parts = 100;
 
--- reset to global default (value from system.merge_tree_settings)
+- - reset to global default (value from system.merge_tree_settings)
 ALTER TABLE tab RESET SETTING max_suspicious_broken_parts;
 ```
 
@@ -144,8 +144,8 @@ Enables to allow floating-point number as a partition key.
 
 Possible values:
 
--`0` — Floating-point partition key not allowed.
--`1` — Floating-point partition key allowed.
+- `0` — Floating-point partition key not allowed.
+- `1` — Floating-point partition key allowed.
 
 ## allow_nullable_key {#allow_nullable_key}
 
@@ -198,7 +198,7 @@ from other replicas.
 
 Possible values:
 
--true, false
+- true, false
 
 ## always_use_copy_instead_of_hardlinks {#always_use_copy_instead_of_hardlinks}
 
@@ -259,9 +259,9 @@ trigger such an action.
 
 **See Also**
 
--[ignore_cold_parts_seconds](/operations/settings/settings#ignore_cold_parts_seconds)
--[prefer_warmed_unmerged_parts_seconds](/operations/settings/settings#prefer_warmed_unmerged_parts_seconds)
--[cache_warmer_threads](/operations/settings/settings#cache_warmer_threads)
+- [ignore_cold_parts_seconds](/operations/settings/settings#ignore_cold_parts_seconds)
+- [prefer_warmed_unmerged_parts_seconds](/operations/settings/settings#prefer_warmed_unmerged_parts_seconds)
+- [cache_warmer_threads](/operations/settings/settings#cache_warmer_threads)
 
 ## cache_populated_by_fetch_filename_regexp {#cache_populated_by_fetch_filename_regexp}
 
@@ -287,8 +287,8 @@ ampling or sampling expression is correct. The data type must be one of unsigned
 
 Possible values:
 
--`true`  — The check is enabled.
--`false` — The check is disabled at table creation.
+- `true`  — The check is enabled.
+- `false` — The check is disabled at table creation.
 
 Default value: `true`.
 
@@ -404,10 +404,10 @@ option `lightweight_mutation_projection_mode`, it is also part level.
 
 Possible values:
 
--`ignore`
--`throw`
--`drop`
--`rebuild`
+- `ignore`
+- `throw`
+- `drop`
+- `rebuild`
 
 ## default_compression_codec {#default_compression_codec}
 
@@ -435,8 +435,8 @@ The setting is applicable to `MergeTree` tables with enabled
 
 Possible values:
 
--`0` — Parts are removed.
--`1` — Parts are detached.
+- `0` — Parts are removed.
+- `1` — Parts are detached.
 
 ## detach_old_local_parts_when_cloning_replica {#detach_old_local_parts_when_cloning_replica}
 
@@ -446,8 +446,8 @@ Do not remove old local parts when repairing lost replica.
 
 Possible values:
 
--`true`
--`false`
+- `true`
+- `false`
 
 ## disable_detach_partition_for_zero_copy_replication {#disable_detach_partition_for_zero_copy_replication}
 
@@ -500,8 +500,8 @@ If settings `min_age_to_force_merge_seconds` and
 
 Possible values:
 
--`true`
--`false`
+- `true`
+- `false`
 
 ## enable_mixed_granularity_parts {#enable_mixed_granularity_parts}
 
@@ -528,8 +528,8 @@ to be enabled.
 
 Possible values:
 
--`true`
--`false`
+- `true`
+- `false`
 
 ## enable_the_endpoint_id_with_zookeeper_name_prefix {#enable_the_endpoint_id_with_zookeeper_name_prefix}
 
@@ -565,12 +565,12 @@ affected by `DELETE FROM` executed after this setting is enabled.
 
 Possible values:
 
--`true`
--`false`
+- `true`
+- `false`
 
 **See Also**
 
--[load_existing_rows_count_for_old_parts](#load_existing_rows_count_for_old_parts)
+- [load_existing_rows_count_for_old_parts](#load_existing_rows_count_for_old_parts)
 setting
 
 ## execute_merges_on_single_replica_time_threshold {#execute_merges_on_single_replica_time_threshold}
@@ -585,7 +585,7 @@ behavior happens.
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 ## fault_probability_after_part_commit {#fault_probability_after_part_commit}
 
@@ -646,7 +646,7 @@ It is useful when a server fails to clean up parts quickly enough.
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 ## inactive_parts_to_throw_insert {#inactive_parts_to_throw_insert}
 
@@ -661,7 +661,7 @@ slower than inserts" exception."
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 ## index_granularity {#index_granularity}
 
@@ -712,9 +712,9 @@ drop or rebuild.
 
 Possible values:
 
--`throw`
--`drop`
--`rebuild`
+- `throw`
+- `drop`
+- `rebuild`
 
 ## load_existing_rows_count_for_old_parts {#load_existing_rows_count_for_old_parts}
 
@@ -726,12 +726,12 @@ starting up. Note that it may slow down start up table loading.
 
 Possible values:
 
--`true`
--`false`
+- `true`
+- `false`
 
 **See Also**
 
--[exclude_deleted_rows_for_part_size_in_merge](#exclude_deleted_rows_for_part_size_in_merge) setting
+- [exclude_deleted_rows_for_part_size_in_merge](#exclude_deleted_rows_for_part_size_in_merge) setting
 
 ## lock_acquire_timeout_for_background_operations {#lock_acquire_timeout_for_background_operations}
 
@@ -789,7 +789,7 @@ part size created by an automatic background merge. (0 means merges will be disa
 
 Possible values:
 
--Any non-negative integer.
+- Any non-negative integer.
 
 The merge scheduler periodically analyzes the sizes and number of parts in
 partitions, and if there are enough free resources in the pool, it starts
@@ -809,7 +809,7 @@ minimum available resources in the background pool.
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 `max_bytes_to_merge_at_min_space_in_pool` defines the maximum total size of
 parts which can be merged despite the lack of available disk space (in pool).
@@ -846,8 +846,8 @@ Queries will still be limited by other `max_concurrent_queries` settings.
 
 Possible values:
 
--Positive integer.
--`0` — No limit.
+- Positive integer.
+- `0` — No limit.
 
 Default value: `0` (no limit).
 
@@ -867,7 +867,7 @@ number of active parts in a single partition exceeds the
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 The delay (in milliseconds) for `INSERT` is calculated by the formula:
 
@@ -928,7 +928,7 @@ is greater than this setting.
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 Default value: 75
 
@@ -941,7 +941,7 @@ setting.
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 ## max_merge_delayed_streams_for_parallel_write {#max_merge_delayed_streams_for_parallel_write}
 
@@ -994,7 +994,7 @@ query-level setting.
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 You can also specify a query complexity setting [max_partitions_to_read](/operations/settings/settings#max_partitions_to_read)
 at a query / session / profile level.
@@ -1009,7 +1009,7 @@ If the total number of active parts in all partitions of a table exceeds the
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 A large number of parts in a table reduces performance of ClickHouse queries
 and increases ClickHouse boot time. Most often this is a consequence of an
@@ -1075,8 +1075,8 @@ The setting isn't followed perfectly accurately.
 
 Possible values:
 
--Positive integer.
--`0` — Unlimited.
+- Positive integer.
+- `0` — Unlimited.
 
 Default value: `0`.
 
@@ -1094,7 +1094,7 @@ replica. An inactive replica becomes lost when when this number exceed.
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 ## max_replicated_merges_in_queue {#max_replicated_merges_in_queue}
 
@@ -1136,8 +1136,8 @@ The setting isn't followed perfectly accurately.
 
 Possible values:
 
--Positive integer.
--`0` — Unlimited.
+- Positive integer.
+- `0` — Unlimited.
 
 **Usage**
 
@@ -1153,7 +1153,7 @@ If the number of broken parts in a single partition exceeds the
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 ## max_suspicious_broken_parts_bytes {#max_suspicious_broken_parts_bytes}
 
@@ -1163,7 +1163,7 @@ Max size of all broken parts, if more - deny automatic deletion.
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 ## merge_max_block_size {#merge_max_block_size}
 
@@ -1173,7 +1173,7 @@ The number of rows that are read from the merged parts into memory.
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 Merge reads rows from parts in blocks of `merge_max_block_size` rows, then
 merges and writes the result into a new part. The read block is placed in RAM,
@@ -1269,7 +1269,7 @@ parts, WALs, and mutations.
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 ## merge_tree_clear_old_temporary_directories_interval_seconds {#merge_tree_clear_old_temporary_directories_interval_seconds}
 
@@ -1280,7 +1280,7 @@ temporary directories.
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 ## merge_tree_enable_clear_old_broken_detached {#merge_tree_enable_clear_old_broken_detached}
 
@@ -1306,7 +1306,7 @@ server setting `merge_workload` is used instead.
 
 **See Also**
 
--[Workload Scheduling](/operations/workload-scheduling.md)
+- [Workload Scheduling](/operations/workload-scheduling.md)
 
 ## min_absolute_delay_to_close {#min_absolute_delay_to_close}
 
@@ -1327,7 +1327,7 @@ By default, ignores setting `max_bytes_to_merge_at_max_space_in_pool` (see
 
 Possible values:
 
--true, false
+- true, false
 
 ## min_age_to_force_merge_seconds {#min_age_to_force_merge_seconds}
 
@@ -1341,7 +1341,7 @@ By default, ignores setting `max_bytes_to_merge_at_max_space_in_pool`
 
 Possible values:
 
--Positive integer.
+- Positive integer.
 
 ## min_bytes_for_compact_part {#min_bytes_for_compact_part}
 
@@ -1377,8 +1377,8 @@ parts over volume disks [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_arch
 
 Possible values:
 
--Positive integer.
--`0` — Balancing is disabled.
+- Positive integer.
+- `0` — Balancing is disabled.
 
 **Usage**
 
@@ -1432,14 +1432,14 @@ insert data. If the number of available free bytes is less than
 `min_free_disk_bytes_to_perform_insert` then an exception is thrown and the
 insert is not executed. Note that this setting:
 
--takes into account the `keep_free_space_bytes` setting.
--does not take into account the amount of data that will be written by the
+- takes into account the `keep_free_space_bytes` setting.
+- does not take into account the amount of data that will be written by the
 `INSERT` operation.
--is only checked if a positive (non-zero) number of bytes is specified
+- is only checked if a positive (non-zero) number of bytes is specified
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 :::note
 If both `min_free_disk_bytes_to_perform_insert` and `min_free_disk_ratio_to_perform_insert`
@@ -1454,14 +1454,14 @@ inserts on a bigger amount of free memory.
 The minimum free to total disk space ratio to perform an `INSERT`. Must be a
 floating point value between 0 and 1. Note that this setting:
 
--takes into account the `keep_free_space_bytes` setting.
--does not take into account the amount of data that will be written by the
+- takes into account the `keep_free_space_bytes` setting.
+- does not take into account the amount of data that will be written by the
 `INSERT` operation.
--is only checked if a positive (non-zero) ratio is specified
+- is only checked if a positive (non-zero) ratio is specified
 
 Possible values:
 
--Float, 0.0 - 1.0
+- Float, 0.0 - 1.0
 
 Note that if both `min_free_disk_ratio_to_perform_insert` and
 `min_free_disk_bytes_to_perform_insert` are specified, ClickHouse will count
@@ -1490,8 +1490,8 @@ Queries will still be limited by other `max_concurrent_queries` settings.
 
 Possible values:
 
--Positive integer.
--`0` — Disabled (`max_concurrent_queries` limit applied to no queries).
+- Positive integer.
+- `0` — Disabled (`max_concurrent_queries` limit applied to no queries).
 
 **Example**
 
@@ -1545,7 +1545,7 @@ log before cleaning.
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 ## min_rows_for_compact_part {#min_rows_for_compact_part}
 
@@ -1578,7 +1578,7 @@ server setting `mutation_workload` is used instead.
 
 **See Also**
 
--[Workload Scheduling](/operations/workload-scheduling.md)
+- [Workload Scheduling](/operations/workload-scheduling.md)
 
 ## non_replicated_deduplication_window {#non_replicated_deduplication_window}
 
@@ -1590,8 +1590,8 @@ for which hash sums are stored to check for duplicates.
 
 Possible values:
 
--Any positive integer.
--`0` (disable deduplication).
+- Any positive integer.
+- `0` (disable deduplication).
 
 A deduplication mechanism is used, similar to replicated tables (see
 [replicated_deduplication_window](#replicated_deduplication_window) setting).
@@ -1615,14 +1615,14 @@ to avoid "Too many parts" errors.
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 **Usage**
 
 The value of the `number_of_free_entries_in_pool_to_execute_mutation` setting
 should be less than the value of the [background_pool_size](/operations/server-configuration-parameters/settings.md/#background_pool_size)
 
--[background_merges_mutations_concurrency_ratio](/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio).
+- [background_merges_mutations_concurrency_ratio](/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio).
 Otherwise, ClickHouse will throw an exception.
 
 ## number_of_free_entries_in_pool_to_execute_optimize_entire_partition {#number_of_free_entries_in_pool_to_execute_optimize_entire_partition}
@@ -1637,13 +1637,13 @@ for regular merges and avoid "Too many parts".
 
 Possible values:
 
--Positive integer.
+- Positive integer.
 
 The value of the `number_of_free_entries_in_pool_to_execute_optimize_entire_partition`
 setting should be less than the value of the
 [background_pool_size](/operations/server-configuration-parameters/settings.md/#background_pool_size)
 
--[background_merges_mutations_concurrency_ratio](/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio).
+- [background_merges_mutations_concurrency_ratio](/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio).
 Otherwise, ClickHouse throws an exception.
 
 ## number_of_free_entries_in_pool_to_lower_max_size_of_merge {#number_of_free_entries_in_pool_to_lower_max_size_of_merge}
@@ -1658,7 +1658,7 @@ running merges.
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 ## number_of_mutations_to_delay {#number_of_mutations_to_delay}
 
@@ -1692,7 +1692,7 @@ during spontaneous server reboots.
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 After merging several parts into a new part, ClickHouse marks the original
 parts as inactive and deletes them only after `old_parts_lifetime` seconds.
@@ -1814,7 +1814,7 @@ If the number of active parts in a single partition exceeds the
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 ClickHouse artificially executes `INSERT` longer (adds 'sleep') so that the
 background merge process can merge parts faster than they are added.
@@ -1830,7 +1830,7 @@ exception.
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 To achieve maximum performance of `SELECT` queries, it is necessary to
 minimize the number of parts processed, see [Merge Tree](/development/architecture#merge-tree).
@@ -1853,7 +1853,7 @@ merges.
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 ## prefer_fetch_merged_part_time_threshold {#prefer_fetch_merged_part_time_threshold}
 
@@ -1867,7 +1867,7 @@ up very long merges.
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 ## prewarm_mark_cache {#prewarm_mark_cache}
 
@@ -1930,8 +1930,8 @@ then the columns will be always written using the normal full serialization.
 
 Possible values:
 
--Float between `0` and `1` to enable sparse serialization
--`1.0` (or greater) if you do not want to use sparse serialization
+- Float between `0` and `1` to enable sparse serialization
+- `1.0` (or greater) if you do not want to use sparse serialization
 
 **Example**
 
@@ -2062,7 +2062,7 @@ This feature is not recommended for production use.
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 ## remote_fs_zero_copy_path_compatible_mode {#remote_fs_zero_copy_path_compatible_mode}
 
@@ -2115,8 +2115,8 @@ leadership.
 
 Possible values:
 
--`true`
--`false`
+- `true`
+- `false`
 
 ## replicated_deduplication_window {#replicated_deduplication_window}
 
@@ -2127,8 +2127,8 @@ hash sums to check for duplicates.
 
 Possible values:
 
--Any positive integer.
--0 (disable deduplication)
+- Any positive integer.
+- 0 (disable deduplication)
 
 The `Insert` command creates one or more blocks (parts). For
 [insert deduplication](../../engines/table-engines/mergetree-family/replication.md),
@@ -2151,8 +2151,8 @@ stores hash sums to check for duplicates.
 
 Possible values:
 
--Any positive integer.
--0 (disable deduplication for async_inserts)
+- Any positive integer.
+- 0 (disable deduplication for async_inserts)
 
 The [Async Insert](/operations/settings/settings#async_insert) command will
 be cached in one or more blocks (parts). For [insert deduplication](/engines/table-engines/mergetree-family/replication),
@@ -2174,7 +2174,7 @@ removed from ClickHouse Keeper.
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 Similar to [replicated_deduplication_window](#replicated_deduplication_window),
 `replicated_deduplication_window_seconds` specifies how long to store hash
@@ -2194,7 +2194,7 @@ removed from ClickHouse Keeper.
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 Similar to [replicated_deduplication_window_for_async_inserts](#replicated_deduplication_window_for_async_inserts),
 `replicated_deduplication_window_seconds_for_async_inserts` specifies how
@@ -2246,7 +2246,7 @@ allow to start.
 
 Possible values:
 
--Float, 0.0 - 1.0
+- Float, 0.0 - 1.0
 
 ## shared_merge_tree_create_per_replica_metadata_nodes {#shared_merge_tree_create_per_replica_metadata_nodes}
 
@@ -2611,7 +2611,7 @@ replica which assigned this merge with recompression.
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.
 
 ## ttl_only_drop_parts {#ttl_only_drop_parts}
 
@@ -2641,8 +2641,8 @@ If true, we cache the hash sums of the async inserts.
 
 Possible values:
 
--`true`
--`false`
+- `true`
+- `false`
 
 A block bearing multiple async inserts will generate multiple hash sums.
 When some of the inserts are duplicated, keeper will only return one
@@ -2786,4 +2786,4 @@ ZooKeeper session expiration check period, in seconds.
 
 Possible values:
 
--Any positive integer.
+- Any positive integer.

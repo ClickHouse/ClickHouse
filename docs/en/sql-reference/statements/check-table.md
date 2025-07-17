@@ -24,13 +24,13 @@ The basic syntax of the query is as follows:
 CHECK TABLE table_name [PARTITION partition_expression | PART part_name] [FORMAT format] [SETTINGS check_query_single_value_result = (0|1) [, other_settings]]
 ```
 
--`table_name`: Specifies the name of the table that you want to check.
--`partition_expression`: (Optional) If you want to check a specific partition of the table, you can use this expression to specify the partition.
--`part_name`: (Optional) If you want to check a specific part in the table, you can add string literal to specify a part name.
--`FORMAT format`: (Optional) Allows you to specify the output format of the result.
--`SETTINGS`: (Optional) Allows additional settings.
--**`check_query_single_value_result`**: (Optional) This setting allows you to toggle between a detailed result (`0`) or a summarized result (`1`).
--Other settings can be applied as well. If you don't require a deterministic order for the results, you can set max_threads to a value greater than one to speed up the query.
+- `table_name`: Specifies the name of the table that you want to check.
+- `partition_expression`: (Optional) If you want to check a specific partition of the table, you can use this expression to specify the partition.
+- `part_name`: (Optional) If you want to check a specific part in the table, you can add string literal to specify a part name.
+- `FORMAT format`: (Optional) Allows you to specify the output format of the result.
+- `SETTINGS`: (Optional) Allows additional settings.
+- **`check_query_single_value_result`**: (Optional) This setting allows you to toggle between a detailed result (`0`) or a summarized result (`1`).
+- Other settings can be applied as well. If you don't require a deterministic order for the results, you can set max_threads to a value greater than one to speed up the query.
 
 The query response depends on the value of contains `check_query_single_value_result` setting.
 In case of `check_query_single_value_result = 1` only `result` column with a single row is returned. Value inside this row is `1` if the integrity check is passed and `0` if data is corrupted.
@@ -42,10 +42,10 @@ With `check_query_single_value_result = 0` the query returns the following colum
 
 The `CHECK TABLE` query supports the following table engines:
 
--[Log](../../engines/table-engines/log-family/log.md)
--[TinyLog](../../engines/table-engines/log-family/tinylog.md)
--[StripeLog](../../engines/table-engines/log-family/stripelog.md)
--[MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
+- [Log](../../engines/table-engines/log-family/log.md)
+- [TinyLog](../../engines/table-engines/log-family/tinylog.md)
+- [StripeLog](../../engines/table-engines/log-family/stripelog.md)
+- [MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
 
 Performed over the tables with another table engines causes an `NOT_IMPLEMENTED` exception.
 

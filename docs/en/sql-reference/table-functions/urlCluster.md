@@ -63,5 +63,5 @@ Character `|` inside patterns is used to specify failover addresses. They are it
 
 ## Related {#related}
 
--[HDFS engine](/engines/table-engines/integrations/hdfs)
--[URL table function](/engines/table-engines/special/url)
+- [HDFS engine](/engines/table-engines/integrations/hdfs)
+- [URL table function](/engines/table-engines/special/url)

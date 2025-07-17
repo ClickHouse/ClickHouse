@@ -18,9 +18,9 @@ import RowBinaryFormatSettings from './_snippets/common-row-binary-format-settin
 
 Similar to the [RowBinary](./RowBinary.md) format, but with added header:
 
--[`LEB128`](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N).
--N `String`s specifying column names.
--N `String`s specifying column types.
+- [`LEB128`](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N).
+- N `String`s specifying column names.
+- N `String`s specifying column types.
 
 ## Example usage {#example-usage}
 

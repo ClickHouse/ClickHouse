@@ -62,8 +62,8 @@ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Avro" > file.avro
 
 Column names must:
 
--Start with `[A-Za-z_]`
--Be followed by only `[A-Za-z0-9_]`
+- Start with `[A-Za-z_]`
+- Be followed by only `[A-Za-z0-9_]`
 
 The output compression and sync interval for Avro files can be configured using the [`output_format_avro_codec`](/operations/settings/settings-formats.md/#output_format_avro_codec) and [`output_format_avro_sync_interval`](/operations/settings/settings-formats.md/#output_format_avro_sync_interval) settings, respectively.
 

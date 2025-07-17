@@ -30,10 +30,10 @@ The `JSON` format returns the following:
 
 The `JSON` type is compatible with JavaScript. To ensure this, some characters are additionally escaped:
 
--the slash `/` is escaped as `\/`
--alternative line breaks `U+2028` and `U+2029`, which break some browsers, are escaped as `\uXXXX`.
--ASCII control characters are escaped: backspace, form feed, line feed, carriage return, and horizontal tab are replaced with `\b`, `\f`, `\n`, `\r`, `\t` , as well as the remaining bytes in the 00-1F range using `\uXXXX` sequences.
--Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences.
+- the slash `/` is escaped as `\/`
+- alternative line breaks `U+2028` and `U+2029`, which break some browsers, are escaped as `\uXXXX`.
+- ASCII control characters are escaped: backspace, form feed, line feed, carriage return, and horizontal tab are replaced with `\b`, `\f`, `\n`, `\r`, `\t` , as well as the remaining bytes in the 00-1F range using `\uXXXX` sequences.
+- Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences.
 
 For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double quotes by default.
 To remove the quotes, you can set the configuration parameter [`output_format_json_quote_64bit_integers`](/operations/settings/settings-formats.md/#output_format_json_quote_64bit_integers) to `0`.
@@ -105,5 +105,5 @@ the types from metadata in input data will be compared with the types of the cor
 
 ## See also {#see-also}
 
--[JSONEachRow](/interfaces/formats/JSONEachRow) format
--[output_format_json_array_of_rows](/operations/settings/settings-formats.md/#output_format_json_array_of_rows) setting
+- [JSONEachRow](/interfaces/formats/JSONEachRow) format
+- [output_format_json_array_of_rows](/operations/settings/settings-formats.md/#output_format_json_array_of_rows) setting

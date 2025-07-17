@@ -42,9 +42,9 @@ ENGINE = TinyLog;
 ```
 
 ``` sql
--- Parse Time
--- - from integer interpreted as number of seconds since 1970-01-01.
--- - from string,
+- - Parse Time
+- - - from integer interpreted as number of seconds since 1970-01-01.
+- - - from string,
 INSERT INTO t64 VALUES (15463123, 1), (154600.123, 2), ('100:00:00', 3);
 
 SELECT * FROM t64;
@@ -99,13 +99,13 @@ SELECT toTime64(now(), 3) AS column, toTypeName(column) AS x;
 
 **See Also**
 
--[Type conversion functions](../../sql-reference/functions/type-conversion-functions.md)
--[Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
--[The `date_time_input_format` setting](../../operations/settings/settings-formats.md#date_time_input_format)
--[The `date_time_output_format` setting](../../operations/settings/settings-formats.md#date_time_output_format)
--[The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#timezone)
--[The `session_timezone` setting](../../operations/settings/settings.md#session_timezone)
--[Operators for working with dates and times](../../sql-reference/operators/index.md#operators-for-working-with-dates-and-times)
--[`Date` data type](../../sql-reference/data-types/date.md)
--[`Time` data type](../../sql-reference/data-types/time.md)
--[`DateTime` data type](../../sql-reference/data-types/datetime.md)
+- [Type conversion functions](../../sql-reference/functions/type-conversion-functions.md)
+- [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
+- [The `date_time_input_format` setting](../../operations/settings/settings-formats.md#date_time_input_format)
+- [The `date_time_output_format` setting](../../operations/settings/settings-formats.md#date_time_output_format)
+- [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#timezone)
+- [The `session_timezone` setting](../../operations/settings/settings.md#session_timezone)
+- [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-for-working-with-dates-and-times)
+- [`Date` data type](../../sql-reference/data-types/date.md)
+- [`Time` data type](../../sql-reference/data-types/time.md)
+- [`DateTime` data type](../../sql-reference/data-types/datetime.md)

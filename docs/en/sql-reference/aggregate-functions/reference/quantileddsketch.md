@@ -15,17 +15,17 @@ quantileDD(relative_accuracy, [level])(expr)
 
 **Arguments**
 
--`expr` — Column with numeric data. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md).
+- `expr` — Column with numeric data. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md).
 
 **Parameters**
 
--`relative_accuracy` — Relative accuracy of the quantile. Possible values are in the range from 0 to 1. [Float](../../../sql-reference/data-types/float.md). The size of the sketch depends on the range of the data and the relative accuracy. The larger the range and the smaller the relative accuracy, the larger the sketch. The rough memory size of the of the sketch is `log(max_value/min_value)/relative_accuracy`. The recommended value is 0.001 or higher.
+- `relative_accuracy` — Relative accuracy of the quantile. Possible values are in the range from 0 to 1. [Float](../../../sql-reference/data-types/float.md). The size of the sketch depends on the range of the data and the relative accuracy. The larger the range and the smaller the relative accuracy, the larger the sketch. The rough memory size of the of the sketch is `log(max_value/min_value)/relative_accuracy`. The recommended value is 0.001 or higher.
 
--`level` — Level of quantile. Optional. Possible values are in the range from 0 to 1. Default value: 0.5. [Float](../../../sql-reference/data-types/float.md).
+- `level` — Level of quantile. Optional. Possible values are in the range from 0 to 1. Default value: 0.5. [Float](../../../sql-reference/data-types/float.md).
 
 **Returned value**
 
--Approximate quantile of the specified level.
+- Approximate quantile of the specified level.
 
 Type: [Float64](/sql-reference/data-types/float).
 
@@ -58,5 +58,5 @@ Result:
 
 **See Also**
 
--[median](/sql-reference/aggregate-functions/reference/median)
--[quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
+- [median](/sql-reference/aggregate-functions/reference/median)
+- [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)

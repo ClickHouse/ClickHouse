@@ -168,7 +168,7 @@ SELECT * FROM test;
 │   2 │        2 │     0 │
 └─────┴──────────┴───────┘
 
--- Let's find a value for each key with the biggest duration, if durations are equal, select the biggest value
+- - Let's find a value for each key with the biggest duration, if durations are equal, select the biggest value
 
 SELECT
     key,

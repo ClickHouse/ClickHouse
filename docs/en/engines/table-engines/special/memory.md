@@ -13,8 +13,8 @@ title: 'Memory Table Engine'
 :::note
 When using the Memory table engine on ClickHouse Cloud, data is not replicated across all nodes (by design). To guarantee that all queries are routed to the same node and that the Memory table engine works as expected, you can do one of the following:
 
--Execute all operations in the same session
--Use a client that uses TCP or the native interface (which enables support for sticky connections) such as [clickhouse-client](/interfaces/cli)
+- Execute all operations in the same session
+- Use a client that uses TCP or the native interface (which enables support for sticky connections) such as [clickhouse-client](/interfaces/cli)
 
 :::
 
@@ -32,18 +32,18 @@ Upper and lower bounds can be specified to limit Memory engine table size, effec
 
 ## Engine parameters {#engine-parameters}
 
--`min_bytes_to_keep` — Minimum bytes to keep when memory table is size-capped.
--Default value: `0`
--Requires `max_bytes_to_keep`
--`max_bytes_to_keep` — Maximum bytes to keep within memory table where oldest rows are deleted on each insertion (i.e circular buffer). Max bytes can exceed the stated limit if the oldest batch of rows to remove falls under the `min_bytes_to_keep` limit when adding a large block.
--Default value: `0`
--`min_rows_to_keep` — Minimum rows to keep when memory table is size-capped.
--Default value: `0`
--Requires `max_rows_to_keep`
--`max_rows_to_keep` — Maximum rows to keep within memory table where oldest rows are deleted on each insertion (i.e circular buffer). Max rows can exceed the stated limit if the oldest batch of rows to remove falls under the `min_rows_to_keep` limit when adding a large block.
--Default value: `0`
--`compress` - Whether to compress data in memory.
--Default value: `false`
+- `min_bytes_to_keep` — Minimum bytes to keep when memory table is size-capped.
+- Default value: `0`
+- Requires `max_bytes_to_keep`
+- `max_bytes_to_keep` — Maximum bytes to keep within memory table where oldest rows are deleted on each insertion (i.e circular buffer). Max bytes can exceed the stated limit if the oldest batch of rows to remove falls under the `min_bytes_to_keep` limit when adding a large block.
+- Default value: `0`
+- `min_rows_to_keep` — Minimum rows to keep when memory table is size-capped.
+- Default value: `0`
+- Requires `max_rows_to_keep`
+- `max_rows_to_keep` — Maximum rows to keep within memory table where oldest rows are deleted on each insertion (i.e circular buffer). Max rows can exceed the stated limit if the oldest batch of rows to remove falls under the `min_rows_to_keep` limit when adding a large block.
+- Default value: `0`
+- `compress` - Whether to compress data in memory.
+- Default value: `false`
 
 ## Usage {#usage}
 

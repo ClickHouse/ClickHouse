@@ -1,27 +1,27 @@
 
 [//]: # (This file is included in FAQ > Troubleshooting)
 
--[Installation](#troubleshooting-installation-errors)
--[Connecting to the server](#troubleshooting-accepts-no-connections)
--[Query processing](#troubleshooting-does-not-process-queries)
--[Efficiency of query processing](#troubleshooting-too-slow)
+- [Installation](#troubleshooting-installation-errors)
+- [Connecting to the server](#troubleshooting-accepts-no-connections)
+- [Query processing](#troubleshooting-does-not-process-queries)
+- [Efficiency of query processing](#troubleshooting-too-slow)
 
 ## Installation {#troubleshooting-installation-errors}
 
 ### You cannot get deb packages from ClickHouse repository with apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
--Check firewall settings.
--If you cannot access the repository for any reason, download packages as described in the [install guide](../getting-started/install.md) article and install them manually using the `sudo dpkg -i <packages>` command. You will also need the `tzdata` package.
+- Check firewall settings.
+- If you cannot access the repository for any reason, download packages as described in the [install guide](../getting-started/install.md) article and install them manually using the `sudo dpkg -i <packages>` command. You will also need the `tzdata` package.
 
 ### You cannot update deb packages from ClickHouse repository with apt-get {#you-cannot-update-deb-packages-from-clickhouse-repository-with-apt-get}
 
--The issue may be happened when the GPG key is changed.
+- The issue may be happened when the GPG key is changed.
 
 Please use the manual from the [setup](../getting-started/install.md#setup-the-debian-repository) page to update the repository configuration.
 
 ### You get different warnings with `apt-get update` {#you-get-different-warnings-with-apt-get-update}
 
--The completed warning messages are as one of following:
+- The completed warning messages are as one of following:
 
 ```bash
 N: Skipping acquire of configured file 'main/binary-i386/Packages' as repository 'https://packages.clickhouse.com/deb stable InRelease' doesn't support architecture 'i386'
@@ -95,8 +95,8 @@ The reason is an old docker daemon with version lower than `20.10.10`. A way to 
 
 Possible issues:
 
--The server is not running.
--Unexpected or wrong configuration parameters.
+- The server is not running.
+- Unexpected or wrong configuration parameters.
 
 ### Server is not running {#server-is-not-running}
 
@@ -120,8 +120,8 @@ The main log of `clickhouse-server` is in `/var/log/clickhouse-server/clickhouse
 
 If the server started successfully, you should see the strings:
 
--`<Information> Application: starting up.` — Server started.
--`<Information> Application: Ready for connections.` — Server is running and ready for connections.
+- `<Information> Application: starting up.` — Server started.
+- `<Information> Application: Ready for connections.` — Server is running and ready for connections.
 
 If `clickhouse-server` start failed with a configuration error, you should see the `<Error>` string with an error description. For example:
 
@@ -171,30 +171,30 @@ This command starts the server as an interactive app with standard parameters of
 
 Check:
 
--Docker settings.
+- Docker settings.
 
     If you run ClickHouse in Docker in an IPv6 network, make sure that `network=host` is set.
 
--Endpoint settings.
+- Endpoint settings.
 
     Check [listen_host](../operations/server-configuration-parameters/settings.md#listen_host) and [tcp_port](../operations/server-configuration-parameters/settings.md#tcp_port) settings.
 
     ClickHouse server accepts localhost connections only by default.
 
--HTTP protocol settings.
+- HTTP protocol settings.
 
     Check protocol settings for the HTTP API.
 
--Secure connection settings.
+- Secure connection settings.
 
     Check:
 
--The [tcp_port_secure](../operations/server-configuration-parameters/settings.md#tcp_port_secure) setting.
--Settings for [SSL certificates](../operations/server-configuration-parameters/settings.md#openssl).
+- The [tcp_port_secure](../operations/server-configuration-parameters/settings.md#tcp_port_secure) setting.
+- Settings for [SSL certificates](../operations/server-configuration-parameters/settings.md#openssl).
 
     Use proper parameters while connecting. For example, use the `port_secure` parameter with `clickhouse_client`.
 
--User settings.
+- User settings.
 
     You might be using the wrong user name or password.
 

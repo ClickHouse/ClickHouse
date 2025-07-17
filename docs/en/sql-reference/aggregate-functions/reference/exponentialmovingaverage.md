@@ -20,16 +20,16 @@ Each `value` corresponds to the determinate `timeunit`. The half-life `x` is the
 
 **Arguments**
 
--`value` — Value. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
--`timeunit` — Timeunit. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md). Timeunit is not timestamp (seconds), it's -- an index of the time interval. Can be calculated using [intDiv](/sql-reference/functions/arithmetic-functions#intDiv).
+- `value` — Value. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
+- `timeunit` — Timeunit. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md). Timeunit is not timestamp (seconds), it's -- an index of the time interval. Can be calculated using [intDiv](/sql-reference/functions/arithmetic-functions#intDiv).
 
 **Parameters**
 
--`x` — Half-life period. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
+- `x` — Half-life period. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
 
 **Returned values**
 
--Returns an [exponentially smoothed moving average](https://en.wikipedia.org/wiki/Moving_average#Exponential_moving_average) of the values for the past `x` time at the latest point of time.
+- Returns an [exponentially smoothed moving average](https://en.wikipedia.org/wiki/Moving_average#Exponential_moving_average) of the values for the past `x` time at the latest point of time.
 
 Type: [Float64](/sql-reference/data-types/float).
 
@@ -160,7 +160,7 @@ SELECT
 FROM numbers_mt(10);
 
 
--- Calculate timeunit using intDiv
+- - Calculate timeunit using intDiv
 SELECT
     value,
     time,
@@ -183,7 +183,7 @@ ORDER BY time ASC;
 └───────┴─────────────────────┴─────────────┴──────────┘
 
 
--- Calculate timeunit using toRelativeHourNum
+- - Calculate timeunit using toRelativeHourNum
 SELECT
     value,
     time,

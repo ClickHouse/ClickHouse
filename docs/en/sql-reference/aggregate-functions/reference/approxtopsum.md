@@ -21,13 +21,13 @@ We recommend using the `N < 10` value; performance is reduced with large `N` val
 
 **Parameters**
 
--`N` — The number of elements to return. Optional. Default value: 10.
--`reserved` — Defines, how many cells reserved for values. If uniq(column) > reserved, result of topK function will be approximate. Optional. Default value: N * 3.
+- `N` — The number of elements to return. Optional. Default value: 10.
+- `reserved` — Defines, how many cells reserved for values. If uniq(column) > reserved, result of topK function will be approximate. Optional. Default value: N * 3.
 
 **Arguments**
 
--`column` — The value to calculate frequency.
--`weight` — The weight. Every value is accounted `weight` times for frequency calculation. [UInt64](../../../sql-reference/data-types/int-uint.md).
+- `column` — The value to calculate frequency.
+- `weight` — The weight. Every value is accounted `weight` times for frequency calculation. [UInt64](../../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -48,6 +48,6 @@ Result:
 
 **See Also**
 
--[topK](../../../sql-reference/aggregate-functions/reference/topk.md)
--[topKWeighted](../../../sql-reference/aggregate-functions/reference/topkweighted.md)
--[approx_top_k](../../../sql-reference/aggregate-functions/reference/approxtopk.md)
+- [topK](../../../sql-reference/aggregate-functions/reference/topk.md)
+- [topKWeighted](../../../sql-reference/aggregate-functions/reference/topkweighted.md)
+- [approx_top_k](../../../sql-reference/aggregate-functions/reference/approxtopk.md)

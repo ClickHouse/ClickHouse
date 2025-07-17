@@ -9,10 +9,10 @@ title: 'EXCEPT Clause'
 
 The `EXCEPT` clause returns only those rows that result from the first query without the second.
 
--Both queries must have the same number of columns in the same order and data type.
--The result of `EXCEPT` can contain duplicate rows. Use `EXCEPT DISTINCT` if this is not desirable.
--Multiple `EXCEPT` statements are executed from left to right if parentheses are not specified.
--The `EXCEPT` operator has the same priority as the `UNION` clause and lower priority than the `INTERSECT` clause.
+- Both queries must have the same number of columns in the same order and data type.
+- The result of `EXCEPT` can contain duplicate rows. Use `EXCEPT DISTINCT` if this is not desirable.
+- Multiple `EXCEPT` statements are executed from left to right if parentheses are not specified.
+- The `EXCEPT` operator has the same priority as the `UNION` clause and lower priority than the `INTERSECT` clause.
 
 ## Syntax {#syntax}
 
@@ -219,5 +219,5 @@ Result:
 
 **See Also**
 
--[UNION](/sql-reference/statements/select/union)
--[INTERSECT](/sql-reference/statements/select/intersect)
+- [UNION](/sql-reference/statements/select/union)
+- [INTERSECT](/sql-reference/statements/select/intersect)

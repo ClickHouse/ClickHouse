@@ -66,8 +66,8 @@ INSERT INTO insert_select_testtable VALUES (1, DEFAULT, 1) ;
 
 If a list of columns does not include all existing columns, the rest of the columns are filled with:
 
--The values calculated from the `DEFAULT` expressions specified in the table definition.
--Zeros and empty strings, if `DEFAULT` expressions are not defined.
+- The values calculated from the `DEFAULT` expressions specified in the table definition.
+- Zeros and empty strings, if `DEFAULT` expressions are not defined.
 
 Data can be passed to the INSERT in any [format](/sql-reference/formats) supported by ClickHouse. The format must be specified explicitly in the query:
 
@@ -243,13 +243,13 @@ Note that for replicated setups, `INSERTs` can sometimes take a considerable amo
 
 `INSERT` sorts the input data by primary key and splits them into partitions by a partition key. If you insert data into several partitions at once, it can significantly reduce the performance of the `INSERT` query. To avoid this:
 
--Add data in fairly large batches, such as 100,000 rows at a time.
--Group data by a partition key before uploading it to ClickHouse.
+- Add data in fairly large batches, such as 100,000 rows at a time.
+- Group data by a partition key before uploading it to ClickHouse.
 
 Performance will not decrease if:
 
--Data is added in real time.
--You upload data that is usually sorted by time.
+- Data is added in real time.
+- You upload data that is usually sorted by time.
 
 ### Asynchronous inserts {#asynchronous-inserts}
 
@@ -263,9 +263,9 @@ When you are inserting large amounts of data, ClickHouse will optimize write per
 
 **See Also**
 
--[async_insert](/operations/settings/settings#async_insert)
--[wait_for_async_insert](/operations/settings/settings#wait_for_async_insert)
--[wait_for_async_insert_timeout](/operations/settings/settings#wait_for_async_insert_timeout)
--[async_insert_max_data_size](/operations/settings/settings#async_insert_max_data_size)
--[async_insert_busy_timeout_ms](/operations/settings/settings#async_insert_busy_timeout_max_ms)
--[async_insert_stale_timeout_ms](/operations/settings/settings#async_insert_max_data_size)
+- [async_insert](/operations/settings/settings#async_insert)
+- [wait_for_async_insert](/operations/settings/settings#wait_for_async_insert)
+- [wait_for_async_insert_timeout](/operations/settings/settings#wait_for_async_insert_timeout)
+- [async_insert_max_data_size](/operations/settings/settings#async_insert_max_data_size)
+- [async_insert_busy_timeout_ms](/operations/settings/settings#async_insert_busy_timeout_max_ms)
+- [async_insert_stale_timeout_ms](/operations/settings/settings#async_insert_max_data_size)

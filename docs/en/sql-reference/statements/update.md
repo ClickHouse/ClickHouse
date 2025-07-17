@@ -44,9 +44,9 @@ The process of updating is similar to a `INSERT ... SELECT ...` query but the `U
 
 The updated values are:
 
--**Immediately visible** in `SELECT` queries through patches application
--**Physically materialized** only during subsequent merges and mutations
--**Automatically cleaned up** once all active parts have the patches materialized
+- **Immediately visible** in `SELECT` queries through patches application
+- **Physically materialized** only during subsequent merges and mutations
+- **Automatically cleaned up** once all active parts have the patches materialized
 
 ## Lightweight updates requirements {#lightweight-update-requirements}
 
@@ -62,17 +62,17 @@ A [lightweight `DELETE`](/sql-reference/statements/delete) query can be run as a
 
 **Advantages of lightweight updates:**
 
--The latency of the update is comparable to the latency of the `INSERT ... SELECT ...` query
--Only updated columns and values are written, not entire columns in data parts
--No need to wait for currently running merges/mutations to complete, therefore the latency of an update is predictable
--Parallel execution of lightweight updates is possible
+- The latency of the update is comparable to the latency of the `INSERT ... SELECT ...` query
+- Only updated columns and values are written, not entire columns in data parts
+- No need to wait for currently running merges/mutations to complete, therefore the latency of an update is predictable
+- Parallel execution of lightweight updates is possible
 
 **Potential performance impacts:**
 
--Adds an overhead to `SELECT` queries that need to apply patches
--[Skipping indexes](/engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-data_skipping-indexes) and [projections](/engines/table-engines/mergetree-family/mergetree.md/#projections) are not used for data parts that have patches to be applied
--Small updates which are too frequent may lead to a "too many parts" error. It is recommended to batch several updates into a single query, for example by putting ids for updates in a single `IN` clause in the `WHERE` clause
--Lightweight updates are designed to update small amounts of rows (up to about 10% of the table). If you need to update a larger amount, it is recommended to use the [`ALTER TABLE ... UPDATE`](/sql-reference/statements/alter/update) mutation
+- Adds an overhead to `SELECT` queries that need to apply patches
+- [Skipping indexes](/engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-data_skipping-indexes) and [projections](/engines/table-engines/mergetree-family/mergetree.md/#projections) are not used for data parts that have patches to be applied
+- Small updates which are too frequent may lead to a "too many parts" error. It is recommended to batch several updates into a single query, for example by putting ids for updates in a single `IN` clause in the `WHERE` clause
+- Lightweight updates are designed to update small amounts of rows (up to about 10% of the table). If you need to update a larger amount, it is recommended to use the [`ALTER TABLE ... UPDATE`](/sql-reference/statements/alter/update) mutation
 
 ## Concurrent operations {#concurrent-operations}
 
@@ -91,11 +91,11 @@ GRANT ALTER UPDATE ON db.table TO username;
 
 Patch parts are the same as the regular parts, but contain only updated columns and several system columns:
 
--`_part` - the name of the original part
--`_part_offset` - the row number in the original part
--`_block_number` - the block number of the row in the original part
--`_block_offset` - the block offset of the row in the original part
--`_data_version` - the data version of the updated data (block number allocated for the `UPDATE` query)
+- `_part` - the name of the original part
+- `_part_offset` - the row number in the original part
+- `_block_number` - the block number of the row in the original part
+- `_block_offset` - the block offset of the row in the original part
+- `_data_version` - the data version of the updated data (block number allocated for the `UPDATE` query)
 
 On average it gives about 40 bytes (uncompressed data) of overhead per updated row in the patch parts.
 System columns help to find rows in the original part which should be updated.
@@ -115,17 +115,17 @@ Because of that there can be two cases of applying patch parts.
 
 For example if we read part `A`, we need to apply patch part `X`:
 
--if `X` contains part `A` itself. It happens if `A` was not participating in merge when `UPDATE` was executed.
--if `X` contains part `B` and `C`, which are covered by part `A`. It happens if there was a merge (`B`, `C`) -> `A` running when `UPDATE` was executed.
+- if `X` contains part `A` itself. It happens if `A` was not participating in merge when `UPDATE` was executed.
+- if `X` contains part `B` and `C`, which are covered by part `A`. It happens if there was a merge (`B`, `C`) -> `A` running when `UPDATE` was executed.
 
 For these two cases there are two ways to apply patch parts respectively:
 
--Using merge by sorted columns `_part`, `_part_offset`.
--Using join by `_block_number`, `_block_offset` columns.
+- Using merge by sorted columns `_part`, `_part_offset`.
+- Using join by `_block_number`, `_block_offset` columns.
 
 The join mode is slower and requires more memory than the merge mode, but it is used less often.
 
 ## Related Content {#related-content}
 
--[`ALTER UPDATE`](/sql-reference/statements/alter/update) - Heavy `UPDATE` operations
--[Lightweight `DELETE`](/sql-reference/statements/delete) - Lightweight `DELETE` operations
+- [`ALTER UPDATE`](/sql-reference/statements/alter/update) - Heavy `UPDATE` operations
+- [Lightweight `DELETE`](/sql-reference/statements/delete) - Lightweight `DELETE` operations

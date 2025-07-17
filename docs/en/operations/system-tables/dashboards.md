@@ -66,6 +66,6 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
 
 Columns:
 
--`dashboard` (`String`) - The dashboard name.
--`title` (`String`) - The title of a chart.
--`query` (`String`) - The query to obtain data to be displayed.
+- `dashboard` (`String`) - The dashboard name.
+- `title` (`String`) - The title of a chart.
+- `query` (`String`) - The query to obtain data to be displayed.

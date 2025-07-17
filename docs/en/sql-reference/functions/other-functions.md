@@ -24,7 +24,7 @@ hostName()
 
 **Returned value**
 
--Host name. [String](../data-types/string.md).
+- Host name. [String](../data-types/string.md).
 
 ## getMacro {#getMacro}
 
@@ -38,11 +38,11 @@ getMacro(name);
 
 **Arguments**
 
--`name` — Macro name to retrieve from the `<macros>` section. [String](/sql-reference/data-types/string).
+- `name` — Macro name to retrieve from the `<macros>` section. [String](/sql-reference/data-types/string).
 
 **Returned value**
 
--Value of the specified macro. [String](../data-types/string.md).
+- Value of the specified macro. [String](../data-types/string.md).
 
 **Example**
 
@@ -95,7 +95,7 @@ Aliases: `fullHostName`, `FQDN`.
 
 **Returned value**
 
--String with the fully qualified domain name. [String](../data-types/string.md).
+- String with the fully qualified domain name. [String](../data-types/string.md).
 
 **Example**
 
@@ -121,14 +121,14 @@ basename(expr)
 
 **Arguments**
 
--`expr` — A value of type [String](../data-types/string.md). Backslashes must be escaped.
+- `expr` — A value of type [String](../data-types/string.md). Backslashes must be escaped.
 
 **Returned Value**
 
 A string that contains:
 
--The tail of the input string after its last slash or backslash. If the input string ends with a slash or backslash (e.g. `/` or `c:\`), the function returns an empty string.
--The original string if there are no slashes or backslashes.
+- The tail of the input string after its last slash or backslash. If the input string ends with a slash or backslash (e.g. `/` or `c:\`), the function returns an empty string.
+- The original string if there are no slashes or backslashes.
 
 **Example**
 
@@ -217,11 +217,11 @@ toTypeName(value)
 
 **Arguments**
 
--`value` — A value of arbitrary type.
+- `value` — A value of arbitrary type.
 
 **Returned value**
 
--The data type name of the input value. [String](../data-types/string.md).
+- The data type name of the input value. [String](../data-types/string.md).
 
 **Example**
 
@@ -289,11 +289,11 @@ byteSize(argument [, ...])
 
 **Arguments**
 
--`argument` — Value.
+- `argument` — Value.
 
 **Returned value**
 
--Estimation of byte size of the arguments in memory. [UInt64](../data-types/int-uint.md).
+- Estimation of byte size of the arguments in memory. [UInt64](../data-types/int-uint.md).
 
 **Examples**
 
@@ -387,11 +387,11 @@ materialize(x)
 
 **Parameters**
 
--`x` — A constant. [Constant](overview.md/#constants).
+- `x` — A constant. [Constant](overview.md/#constants).
 
 **Returned value**
 
--A column containing a single value `x`.
+- A column containing a single value `x`.
 
 **Example**
 
@@ -426,11 +426,11 @@ ignore([arg1[, arg2[, ...]])
 
 **Arguments**
 
--Accepts arbitrarily many arguments of arbitrary type, including `NULL`.
+- Accepts arbitrarily many arguments of arbitrary type, including `NULL`.
 
 **Returned value**
 
--Returns `0`.
+- Returns `0`.
 
 **Example**
 
@@ -460,7 +460,7 @@ sleep(seconds)
 
 **Arguments**
 
--`seconds`: [UInt*](../data-types/int-uint.md) or [Float](../data-types/float.md) The number of seconds to pause the query execution to a maximum of 3 seconds. It can be a floating-point value to specify fractional seconds.
+- `seconds`: [UInt*](../data-types/int-uint.md) or [Float](../data-types/float.md) The number of seconds to pause the query execution to a maximum of 3 seconds. It can be a floating-point value to specify fractional seconds.
 
 **Returned value**
 
@@ -510,7 +510,7 @@ sleepEachRow(seconds)
 
 **Arguments**
 
--`seconds`: [UInt*](../data-types/int-uint.md) or [Float*](../data-types/float.md) The number of seconds to pause the query execution for each row in the result set to a maximum of 3 seconds. It can be a floating-point value to specify fractional seconds.
+- `seconds`: [UInt*](../data-types/int-uint.md) or [Float*](../data-types/float.md) The number of seconds to pause the query execution for each row in the result set to a maximum of 3 seconds. It can be a floating-point value to specify fractional seconds.
 
 **Returned value**
 
@@ -555,7 +555,7 @@ currentDatabase()
 
 **Returned value**
 
--Returns the current database name. [String](../data-types/string.md).
+- Returns the current database name. [String](../data-types/string.md).
 
 **Example**
 
@@ -587,8 +587,8 @@ Aliases: `user()`, `USER()`, `current_user()`. Aliases are case insensitive.
 
 **Returned values**
 
--The name of the current user. [String](../data-types/string.md).
--In distributed queries, the login of the user who initiated the query. [String](../data-types/string.md).
+- The name of the current user. [String](../data-types/string.md).
+- In distributed queries, the login of the user who initiated the query. [String](../data-types/string.md).
 
 **Example**
 
@@ -618,7 +618,7 @@ Alias: `current_schemas`.
 
 **Arguments**
 
--`bool`: A boolean value. [Bool](../data-types/boolean.md).
+- `bool`: A boolean value. [Bool](../data-types/boolean.md).
 
 :::note
 The boolean argument is ignored. It only exists for the sake of compatibility with the [implementation](https://www.postgresql.org/docs/7.3/functions-misc.html) of this function in PostgreSQL.
@@ -626,7 +626,7 @@ The boolean argument is ignored. It only exists for the sake of compatibility wi
 
 **Returned values**
 
--Returns a single-element array with the name of the current database
+- Returns a single-element array with the name of the current database
 
 **Example**
 
@@ -656,12 +656,12 @@ isConstant(x)
 
 **Arguments**
 
--`x` — Expression to check.
+- `x` — Expression to check.
 
 **Returned values**
 
--`1` if `x` is constant. [UInt8](../data-types/int-uint.md).
--`0` if `x` is non-constant. [UInt8](../data-types/int-uint.md).
+- `1` if `x` is constant. [UInt8](../data-types/int-uint.md).
+- `0` if `x` is non-constant. [UInt8](../data-types/int-uint.md).
 
 **Examples**
 
@@ -719,17 +719,17 @@ hasColumnInTable(\['hostname'\[, 'username'\[, 'password'\]\],\] 'database', 'ta
 
 **Parameters**
 
--`database` : name of the database. [String literal](/sql-reference/syntax#string)
--`table` : name of the table. [String literal](/sql-reference/syntax#string)
--`column` : name of the column. [String literal](/sql-reference/syntax#string)
--`hostname` : remote server name to perform the check on. [String literal](/sql-reference/syntax#string)
--`username` : username for remote server. [String literal](/sql-reference/syntax#string)
--`password` : password for remote server. [String literal](/sql-reference/syntax#string)
+- `database` : name of the database. [String literal](/sql-reference/syntax#string)
+- `table` : name of the table. [String literal](/sql-reference/syntax#string)
+- `column` : name of the column. [String literal](/sql-reference/syntax#string)
+- `hostname` : remote server name to perform the check on. [String literal](/sql-reference/syntax#string)
+- `username` : username for remote server. [String literal](/sql-reference/syntax#string)
+- `password` : password for remote server. [String literal](/sql-reference/syntax#string)
 
 **Returned value**
 
--`1` if the given column exists.
--`0`, otherwise.
+- `1` if the given column exists.
+- `0`, otherwise.
 
 **Implementation details**
 
@@ -773,9 +773,9 @@ Builds a bar chart.
 
 **Arguments**
 
--`x` — Size to display.
--`min, max` — Integer constants. The value must fit in `Int64`.
--`width` — Constant, positive integer, can be fractional.
+- `x` — Size to display.
+- `min, max` — Integer constants. The value must fit in `Int64`.
+- `width` — Constant, positive integer, can be fractional.
 
 The band is drawn with accuracy to one eighth of a symbol.
 
@@ -1020,14 +1020,14 @@ This function accepts any numeric type as input, but internally it casts them to
 
 **Arguments**
 
--`column` — A column with a numeric time delta.
--`maximum_unit` — Optional. Maximum unit to show.
--Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`.
--Default value: `years`.
--`minimum_unit` — Optional. Minimum unit to show. All smaller units are truncated.
--Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`.
--If explicitly specified value is bigger than `maximum_unit`, an exception will be thrown.
--Default value: `seconds` if `maximum_unit` is `seconds` or bigger, `nanoseconds` otherwise.
+- `column` — A column with a numeric time delta.
+- `maximum_unit` — Optional. Maximum unit to show.
+- Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`.
+- Default value: `years`.
+- `minimum_unit` — Optional. Minimum unit to show. All smaller units are truncated.
+- Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`.
+- If explicitly specified value is bigger than `maximum_unit`, an exception will be thrown.
+- Default value: `seconds` if `maximum_unit` is `seconds` or bigger, `nanoseconds` otherwise.
 
 **Example**
 
@@ -1088,11 +1088,11 @@ parseReadableSize(x)
 
 **Arguments**
 
--`x` : Readable size with ISO/IEC 80000-13 or decimal byte unit ([String](../../sql-reference/data-types/string.md)).
+- `x` : Readable size with ISO/IEC 80000-13 or decimal byte unit ([String](../../sql-reference/data-types/string.md)).
 
 **Returned value**
 
--Number of bytes, rounded up to the nearest integer ([UInt64](../../sql-reference/data-types/int-uint.md)).
+- Number of bytes, rounded up to the nearest integer ([UInt64](../../sql-reference/data-types/int-uint.md)).
 
 **Example**
 
@@ -1126,11 +1126,11 @@ parseReadableSizeOrNull(x)
 
 **Arguments**
 
--`x` : Readable size with ISO/IEC 80000-13  or decimal byte unit ([String](../../sql-reference/data-types/string.md)).
+- `x` : Readable size with ISO/IEC 80000-13  or decimal byte unit ([String](../../sql-reference/data-types/string.md)).
 
 **Returned value**
 
--Number of bytes, rounded up to the nearest integer, or NULL if unable to parse the input (Nullable([UInt64](../../sql-reference/data-types/int-uint.md))).
+- Number of bytes, rounded up to the nearest integer, or NULL if unable to parse the input (Nullable([UInt64](../../sql-reference/data-types/int-uint.md))).
 
 **Example**
 
@@ -1164,11 +1164,11 @@ parseReadableSizeOrZero(x)
 
 **Arguments**
 
--`x` : Readable size with ISO/IEC 80000-13  or decimal byte unit  ([String](../../sql-reference/data-types/string.md)).
+- `x` : Readable size with ISO/IEC 80000-13  or decimal byte unit  ([String](../../sql-reference/data-types/string.md)).
 
 **Returned value**
 
--Number of bytes, rounded up to the nearest integer, or 0 if unable to parse the input ([UInt64](../../sql-reference/data-types/int-uint.md)).
+- Number of bytes, rounded up to the nearest integer, or 0 if unable to parse the input ([UInt64](../../sql-reference/data-types/int-uint.md)).
 
 **Example**
 
@@ -1200,11 +1200,11 @@ parseTimeDelta(timestr)
 
 **Arguments**
 
--`timestr` — A sequence of numbers followed by something resembling a time unit.
+- `timestr` — A sequence of numbers followed by something resembling a time unit.
 
 **Returned value**
 
--A floating-point number with the number of seconds.
+- A floating-point number with the number of seconds.
 
 **Example**
 
@@ -1269,7 +1269,7 @@ uptime()
 
 **Returned value**
 
--Time value of seconds. [UInt32](../data-types/int-uint.md).
+- Time value of seconds. [UInt32](../data-types/int-uint.md).
 
 **Example**
 
@@ -1291,10 +1291,10 @@ Result:
 
 Returns the current version of ClickHouse as a string in the form of:
 
--Major version
--Minor version
--Patch version
--Number of commits since the previous stable release.
+- Major version
+- Minor version
+- Patch version
+- Number of commits since the previous stable release.
 
 ```text
 major_version.minor_version.patch_version.number_of_commits_since_the_previous_stable_release
@@ -1314,7 +1314,7 @@ None.
 
 **Returned value**
 
--Current version of ClickHouse. [String](../data-types/string).
+- Current version of ClickHouse. [String](../data-types/string).
 
 **Implementation details**
 
@@ -1360,7 +1360,7 @@ blockNumber()
 
 **Returned value**
 
--Sequence number of the data block where the row is located. [UInt64](../data-types/int-uint.md).
+- Sequence number of the data block where the row is located. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -1414,7 +1414,7 @@ rowNumberInBlock()
 
 **Returned value**
 
--Ordinal number of the row in the data block starting from 0. [UInt64](../data-types/int-uint.md).
+- Ordinal number of the row in the data block starting from 0. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -1467,7 +1467,7 @@ rowNumberInAllBlocks()
 
 **Returned value**
 
--Ordinal number of the row in the data block starting from 0. [UInt64](../data-types/int-uint.md).
+- Ordinal number of the row in the data block starting from 0. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -1521,11 +1521,11 @@ normalizeQuery(x)
 
 **Arguments**
 
--`x` — Sequence of characters. [String](../data-types/string.md).
+- `x` — Sequence of characters. [String](../data-types/string.md).
 
 **Returned value**
 
--Sequence of characters with placeholders. [String](../data-types/string.md).
+- Sequence of characters with placeholders. [String](../data-types/string.md).
 
 **Example**
 
@@ -1556,11 +1556,11 @@ normalizeQueryKeepNames(x)
 
 **Arguments**
 
--`x` — Sequence of characters. [String](../data-types/string.md).
+- `x` — Sequence of characters. [String](../data-types/string.md).
 
 **Returned value**
 
--Sequence of characters with placeholders. [String](../data-types/string.md).
+- Sequence of characters with placeholders. [String](../data-types/string.md).
 
 **Example**
 
@@ -1590,11 +1590,11 @@ normalizedQueryHash(x)
 
 **Arguments**
 
--`x` — Sequence of characters. [String](../data-types/string.md).
+- `x` — Sequence of characters. [String](../data-types/string.md).
 
 **Returned value**
 
--Hash value. [UInt64](/sql-reference/data-types/int-uint#integer-ranges).
+- Hash value. [UInt64](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Example**
 
@@ -1625,11 +1625,11 @@ normalizedQueryHashKeepNames(x)
 
 **Arguments**
 
--`x` — Sequence of characters. [String](../data-types/string.md).
+- `x` — Sequence of characters. [String](../data-types/string.md).
 
 **Returned value**
 
--Hash value. [UInt64](/sql-reference/data-types/int-uint#integer-ranges).
+- Hash value. [UInt64](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Example**
 
@@ -1673,14 +1673,14 @@ To prevent that you can create a subquery with [ORDER BY](../../sql-reference/st
 
 **Arguments**
 
--`column` — A column name or scalar expression.
--`offset` — The number of rows to look before or ahead of the current row in `column`. [Int64](../data-types/int-uint.md).
--`default_value` — Optional. The returned value if offset is beyond the block boundaries. Type of data blocks affected.
+- `column` — A column name or scalar expression.
+- `offset` — The number of rows to look before or ahead of the current row in `column`. [Int64](../data-types/int-uint.md).
+- `default_value` — Optional. The returned value if offset is beyond the block boundaries. Type of data blocks affected.
 
 **Returned values**
 
--Value of `column` with `offset` distance from current row, if `offset` is not outside the block boundaries.
--The default value of `column` or `default_value` (if given), if `offset` is outside the block boundaries.
+- Value of `column` with `offset` distance from current row, if `offset` is not outside the block boundaries.
+- The default value of `column` or `default_value` (if given), if `offset` is outside the block boundaries.
 
 :::note
 The return type will be that of the data blocks affected or the default value type.
@@ -1894,12 +1894,12 @@ runningConcurrency(start, end)
 
 **Arguments**
 
--`start` — A column with the start time of events. [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), or [DateTime64](../data-types/datetime64.md).
--`end` — A column with the end time of events. [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), or [DateTime64](../data-types/datetime64.md).
+- `start` — A column with the start time of events. [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), or [DateTime64](../data-types/datetime64.md).
+- `end` — A column with the end time of events. [Date](../data-types/date.md), [DateTime](../data-types/datetime.md), or [DateTime64](../data-types/datetime64.md).
 
 **Returned values**
 
--The number of concurrent events at each event start time. [UInt32](../data-types/int-uint.md)
+- The number of concurrent events at each event start time. [UInt32](../data-types/int-uint.md)
 
 **Example**
 
@@ -1974,11 +1974,11 @@ getSizeOfEnumType(value)
 
 **Arguments:**
 
--`value` — Value of type `Enum`.
+- `value` — Value of type `Enum`.
 
 **Returned values**
 
--The number of fields with `Enum` input values.
+- The number of fields with `Enum` input values.
 
 **Example**
 
@@ -2002,11 +2002,11 @@ blockSerializedSize(value[, value[, ...]])
 
 **Arguments**
 
--`value` — Any value.
+- `value` — Any value.
 
 **Returned values**
 
--The number of bytes that will be written to disk for block of values without compression.
+- The number of bytes that will be written to disk for block of values without compression.
 
 **Example**
 
@@ -2036,11 +2036,11 @@ toColumnTypeName(value)
 
 **Arguments:**
 
--`value` — Any type of value.
+- `value` — Any type of value.
 
 **Returned values**
 
--The internal data type name used to represent `value`.
+- The internal data type name used to represent `value`.
 
 **Example**
 
@@ -2084,11 +2084,11 @@ dumpColumnStructure(value)
 
 **Arguments:**
 
--`value` — Any type of value.
+- `value` — Any type of value.
 
 **Returned values**
 
--A description of the column structure used for representing `value`.
+- A description of the column structure used for representing `value`.
 
 **Example**
 
@@ -2116,13 +2116,13 @@ defaultValueOfArgumentType(expression)
 
 **Arguments:**
 
--`expression` — Arbitrary type of value or an expression that results in a value of an arbitrary type.
+- `expression` — Arbitrary type of value or an expression that results in a value of an arbitrary type.
 
 **Returned values**
 
--`0` for numbers.
--Empty string for strings.
--`ᴺᵁᴸᴸ` for [Nullable](../data-types/nullable.md).
+- `0` for numbers.
+- Empty string for strings.
+- `ᴺᵁᴸᴸ` for [Nullable](../data-types/nullable.md).
 
 **Example**
 
@@ -2166,13 +2166,13 @@ defaultValueOfTypeName(type)
 
 **Arguments:**
 
--`type` — A string representing a type name.
+- `type` — A string representing a type name.
 
 **Returned values**
 
--`0` for numbers.
--Empty string for strings.
--`ᴺᵁᴸᴸ` for [Nullable](../data-types/nullable.md).
+- `0` for numbers.
+- Empty string for strings.
+- `ᴺᵁᴸᴸ` for [Nullable](../data-types/nullable.md).
 
 **Example**
 
@@ -2218,7 +2218,7 @@ SELECT * FROM table WHERE indexHint(<expression>)
 
 **Returned value**
 
--`1`. [Uint8](../data-types/int-uint.md).
+- `1`. [Uint8](../data-types/int-uint.md).
 
 **Example**
 
@@ -2320,8 +2320,8 @@ replicate(x, arr)
 
 **Arguments**
 
--`x` — The value to fill the result array with.
--`arr` — An array. [Array](../data-types/array.md).
+- `x` — The value to fill the result array with.
+- `arr` — An array. [Array](../data-types/array.md).
 
 **Returned value**
 
@@ -2355,7 +2355,7 @@ revision()
 
 **Returned value**
 
--The current ClickHouse server revision. [UInt32](../data-types/int-uint.md).
+- The current ClickHouse server revision. [UInt32](../data-types/int-uint.md).
 
 **Example**
 
@@ -2385,7 +2385,7 @@ filesystemAvailable()
 
 **Returned value**
 
--The amount of remaining space available in bytes. [UInt64](../data-types/int-uint.md).
+- The amount of remaining space available in bytes. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -2415,7 +2415,7 @@ filesystemUnreserved()
 
 **Returned value**
 
--The amount of free space in bytes. [UInt64](../data-types/int-uint.md).
+- The amount of free space in bytes. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -2445,7 +2445,7 @@ filesystemCapacity()
 
 **Returned value**
 
--Capacity of the filesystem in bytes. [UInt64](../data-types/int-uint.md).
+- Capacity of the filesystem in bytes. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -2475,12 +2475,12 @@ initializeAggregation (aggregate_function, arg1, arg2, ..., argN)
 
 **Arguments**
 
--`aggregate_function` — Name of the aggregation function to initialize. [String](../data-types/string.md).
--`arg` — Arguments of aggregate function.
+- `aggregate_function` — Name of the aggregation function to initialize. [String](../data-types/string.md).
+- `arg` — Arguments of aggregate function.
 
 **Returned value(s)**
 
--Result of aggregation for every row passed to the function.
+- Result of aggregation for every row passed to the function.
 
 The return type is the same as the return type of function, that `initializeAggregation` takes as first argument.
 
@@ -2536,7 +2536,7 @@ INSERT INTO metrics VALUES (0, initializeAggregation('sumState', toUInt64(42)))
 
 **See Also**
 
--[arrayReduce](../../sql-reference/functions/array-functions.md#arrayReduce)
+- [arrayReduce](../../sql-reference/functions/array-functions.md#arrayReduce)
 
 ## finalizeAggregation {#finalizeaggregation}
 
@@ -2550,11 +2550,11 @@ finalizeAggregation(state)
 
 **Arguments**
 
--`state` — State of aggregation. [AggregateFunction](/sql-reference/data-types/aggregatefunction).
+- `state` — State of aggregation. [AggregateFunction](/sql-reference/data-types/aggregatefunction).
 
 **Returned value(s)**
 
--Value/values that was aggregated.
+- Value/values that was aggregated.
 
 :::note
 The return type is equal to that of any types which were aggregated.
@@ -2638,8 +2638,8 @@ Result:
 
 **See Also**
 
--[arrayReduce](../../sql-reference/functions/array-functions.md#arrayReduce)
--[initializeAggregation](#initializeaggregation)
+- [arrayReduce](../../sql-reference/functions/array-functions.md#arrayReduce)
+- [initializeAggregation](#initializeaggregation)
 
 ## runningAccumulate {#runningaccumulate}
 
@@ -2658,12 +2658,12 @@ runningAccumulate(agg_state[, grouping]);
 
 **Arguments**
 
--`agg_state` — State of the aggregate function. [AggregateFunction](/sql-reference/data-types/aggregatefunction).
--`grouping` — Grouping key. Optional. The state of the function is reset if the `grouping` value is changed. It can be any of the [supported data types](../data-types/index.md) for which the equality operator is defined.
+- `agg_state` — State of the aggregate function. [AggregateFunction](/sql-reference/data-types/aggregatefunction).
+- `grouping` — Grouping key. Optional. The state of the function is reset if the `grouping` value is changed. It can be any of the [supported data types](../data-types/index.md) for which the equality operator is defined.
 
 **Returned value**
 
--Each resulting row contains a result of the aggregate function, accumulated for all the input rows from 0 to the current position. `runningAccumulate` resets states for each new data block or when the `grouping` value changes.
+- Each resulting row contains a result of the aggregate function, accumulated for all the input rows from 0 to the current position. `runningAccumulate` resets states for each new data block or when the `grouping` value changes.
 
 Type depends on the aggregate function used.
 
@@ -2764,9 +2764,9 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 **Arguments**
 
--`join_storage_table_name` — an [identifier](/sql-reference/syntax#identifiers) indicating where the search is performed.
--`value_column` — name of the column of the table that contains required data.
--`join_keys` — list of keys.
+- `join_storage_table_name` — an [identifier](/sql-reference/syntax#identifiers) indicating where the search is performed.
+- `value_column` — name of the column of the table that contains required data.
+- `join_keys` — list of keys.
 
 :::note
 The identifier is searched for in the default database (see setting `default_database` in the config file). To override the default database, use `USE db_name` or specify the database and the table through the separator `db_name.db_table` as in the example.
@@ -2774,7 +2774,7 @@ The identifier is searched for in the default database (see setting `default_dat
 
 **Returned value**
 
--Returns a list of values corresponded to the list of keys.
+- Returns a list of values corresponded to the list of keys.
 
 :::note
 If a certain key does not exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting during table creation.
@@ -2863,9 +2863,9 @@ joinGetOrNull(join_storage_table_name, `value_column`, join_keys)
 
 **Arguments**
 
--`join_storage_table_name` — an [identifier](/sql-reference/syntax#identifiers) indicating where the search is performed.
--`value_column` — name of the column of the table that contains required data.
--`join_keys` — list of keys.
+- `join_storage_table_name` — an [identifier](/sql-reference/syntax#identifiers) indicating where the search is performed.
+- `value_column` — name of the column of the table that contains required data.
+- `join_keys` — list of keys.
 
 :::note
 The identifier is searched for in the default database (see setting `default_database` in the config file). To override the default database, use `USE db_name` or specify the database and the table through the separator `db_name.db_table` as in the example.
@@ -2873,7 +2873,7 @@ The identifier is searched for in the default database (see setting `default_dat
 
 **Returned value**
 
--Returns a list of values corresponded to the list of keys.
+- Returns a list of values corresponded to the list of keys.
 
 :::note
 If a certain key does not exist in source table then `NULL` is returned for that key.
@@ -2982,9 +2982,9 @@ throwIf(x[, message[, error_code]])
 
 **Arguments**
 
--`x` - the condition to check.
--`message` - a constant string providing a custom error message. Optional.
--`error_code` - A constant integer providing a custom error code. Optional.
+- `x` - the condition to check.
+- `message` - a constant string providing a custom error message. Optional.
+- `error_code` - A constant integer providing a custom error code. Optional.
 
 To use the `error_code` argument, configuration parameter `allow_custom_error_code_in_throwif` must be enabled.
 
@@ -3039,11 +3039,11 @@ getSetting('custom_setting');
 
 **Parameter**
 
--`custom_setting` — The setting name. [String](../data-types/string.md).
+- `custom_setting` — The setting name. [String](../data-types/string.md).
 
 **Returned value**
 
--The setting's current value.
+- The setting's current value.
 
 **Example**
 
@@ -3060,7 +3060,7 @@ Result:
 
 **See Also**
 
--[Custom Settings](/operations/settings/query-level#custom_settings)
+- [Custom Settings](/operations/settings/query-level#custom_settings)
 
 ## getSettingOrDefault {#getsettingordefault}
 
@@ -3074,12 +3074,12 @@ getSettingOrDefault('custom_setting', default_value);
 
 **Parameter**
 
--`custom_setting` — The setting name. [String](../data-types/string.md).
--`default_value` — Value to return if custom_setting is not set. Value may be of any data type or Null.
+- `custom_setting` — The setting name. [String](../data-types/string.md).
+- `default_value` — Value to return if custom_setting is not set. Value may be of any data type or Null.
 
 **Returned value**
 
--The setting's current value or default_value if setting is not set.
+- The setting's current value or default_value if setting is not set.
 
 **Example**
 
@@ -3099,7 +3099,7 @@ NULL
 
 **See Also**
 
--[Custom Settings](/operations/settings/query-level#custom_settings)
+- [Custom Settings](/operations/settings/query-level#custom_settings)
 
 ## isDecimalOverflow {#isdecimaloverflow}
 
@@ -3113,13 +3113,13 @@ isDecimalOverflow(d, [p])
 
 **Arguments**
 
--`d` — value. [Decimal](../data-types/decimal.md).
--`p` — precision. Optional. If omitted, the initial precision of the first argument is used. This parameter can be helpful to migrate data from/to another database or file. [UInt8](/sql-reference/data-types/int-uint#integer-ranges).
+- `d` — value. [Decimal](../data-types/decimal.md).
+- `p` — precision. Optional. If omitted, the initial precision of the first argument is used. This parameter can be helpful to migrate data from/to another database or file. [UInt8](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Returned values**
 
--`1` — Decimal value has more digits then allowed by its precision,
--`0` — Decimal value satisfies the specified precision.
+- `1` — Decimal value has more digits then allowed by its precision,
+- `0` — Decimal value satisfies the specified precision.
 
 **Example**
 
@@ -3150,11 +3150,11 @@ countDigits(x)
 
 **Arguments**
 
--`x` — [Int](../data-types/int-uint.md) or [Decimal](../data-types/decimal.md) value.
+- `x` — [Int](../data-types/int-uint.md) or [Decimal](../data-types/decimal.md) value.
 
 **Returned value**
 
--Number of digits. [UInt8](/sql-reference/data-types/int-uint#integer-ranges).
+- Number of digits. [UInt8](/sql-reference/data-types/int-uint#integer-ranges).
 
 :::note
 For `Decimal` values takes into account their scales: calculates result over underlying integer type which is `(value * scale)`. For example: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. I.e. you may check decimal overflow for `Decimal64` with `countDecimal(x) > 18`. It's a slow variant of [isDecimalOverflow](#isdecimaloverflow).
@@ -3178,7 +3178,7 @@ Result:
 
 ## errorCodeToName {#errorcodetoname}
 
--The textual name of an error code. [LowCardinality(String)](../data-types/lowcardinality.md).
+- The textual name of an error code. [LowCardinality(String)](../data-types/lowcardinality.md).
 
 **Syntax**
 
@@ -3205,11 +3205,11 @@ tcpPort()
 
 **Arguments**
 
--None.
+- None.
 
 **Returned value**
 
--The TCP port number. [UInt16](../data-types/int-uint.md).
+- The TCP port number. [UInt16](../data-types/int-uint.md).
 
 **Example**
 
@@ -3229,7 +3229,7 @@ Result:
 
 **See Also**
 
--[tcp_port](../../operations/server-configuration-parameters/settings.md#tcp_port)
+- [tcp_port](../../operations/server-configuration-parameters/settings.md#tcp_port)
 
 ## currentProfiles {#currentprofiles}
 
@@ -3245,7 +3245,7 @@ currentProfiles()
 
 **Returned value**
 
--List of the current user settings profiles. [Array](../data-types/array.md)([String](../data-types/string.md)).
+- List of the current user settings profiles. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 ## enabledProfiles {#enabledprofiles}
 
@@ -3259,7 +3259,7 @@ enabledProfiles()
 
 **Returned value**
 
--List of the enabled settings profiles. [Array](../data-types/array.md)([String](../data-types/string.md)).
+- List of the enabled settings profiles. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 ## defaultProfiles {#defaultprofiles}
 
@@ -3273,7 +3273,7 @@ defaultProfiles()
 
 **Returned value**
 
--List of the default settings profiles. [Array](../data-types/array.md)([String](../data-types/string.md)).
+- List of the default settings profiles. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 ## currentRoles {#currentroles}
 
@@ -3287,7 +3287,7 @@ currentRoles()
 
 **Returned value**
 
--A list of the current roles for the current user. [Array](../data-types/array.md)([String](../data-types/string.md)).
+- A list of the current roles for the current user. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 ## enabledRoles {#enabledroles}
 
@@ -3301,7 +3301,7 @@ enabledRoles()
 
 **Returned value**
 
--List of the enabled roles for the current user. [Array](../data-types/array.md)([String](../data-types/string.md)).
+- List of the enabled roles for the current user. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 ## defaultRoles {#defaultroles}
 
@@ -3315,7 +3315,7 @@ defaultRoles()
 
 **Returned value**
 
--List of the default roles for the current user. [Array](../data-types/array.md)([String](../data-types/string.md)).
+- List of the default roles for the current user. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 ## getServerPort {#getserverport}
 
@@ -3329,22 +3329,22 @@ getServerPort(port_name)
 
 **Arguments**
 
--`port_name` — The name of the server port. [String](/sql-reference/data-types/string). Possible values:
+- `port_name` — The name of the server port. [String](/sql-reference/data-types/string). Possible values:
 
--'tcp_port'
--'tcp_port_secure'
--'http_port'
--'https_port'
--'interserver_http_port'
--'interserver_https_port'
--'mysql_port'
--'postgresql_port'
--'grpc_port'
--'prometheus.port'
+- 'tcp_port'
+- 'tcp_port_secure'
+- 'http_port'
+- 'https_port'
+- 'interserver_http_port'
+- 'interserver_https_port'
+- 'mysql_port'
+- 'postgresql_port'
+- 'grpc_port'
+- 'prometheus.port'
 
 **Returned value**
 
--The number of the server port. [UInt16](../data-types/int-uint.md).
+- The number of the server port. [UInt16](../data-types/int-uint.md).
 
 **Example**
 
@@ -3376,7 +3376,7 @@ queryID()
 
 **Returned value**
 
--The ID of the current query. [String](../data-types/string.md)
+- The ID of the current query. [String](../data-types/string.md)
 
 **Example**
 
@@ -3410,7 +3410,7 @@ initialQueryID()
 
 **Returned value**
 
--The ID of the initial current query. [String](../data-types/string.md)
+- The ID of the initial current query. [String](../data-types/string.md)
 
 **Example**
 
@@ -3444,7 +3444,7 @@ initialQueryStartTime()
 
 **Returned value**
 
--The start time of the initial current query. [DateTime](../data-types/datetime.md)
+- The start time of the initial current query. [DateTime](../data-types/datetime.md)
 
 **Example**
 
@@ -3480,12 +3480,12 @@ partitionID(x[, y, ...]);
 
 **Arguments**
 
--`x` — Column for which to return the partition ID.
--`y, ...` — Remaining N columns for which to return the partition ID (optional).
+- `x` — Column for which to return the partition ID.
+- `y, ...` — Remaining N columns for which to return the partition ID (optional).
 
 **Returned Value**
 
--Partition ID that the row would belong to. [String](../data-types/string.md).
+- Partition ID that the row would belong to. [String](../data-types/string.md).
 
 **Example**
 
@@ -3536,7 +3536,7 @@ shardNum()
 
 **Returned value**
 
--Shard index or constant `0`. [UInt32](../data-types/int-uint.md).
+- Shard index or constant `0`. [UInt32](../data-types/int-uint.md).
 
 **Example**
 
@@ -3561,7 +3561,7 @@ Result:
 
 **See Also**
 
--[Distributed Table Engine](../../engines/table-engines/special/distributed.md)
+- [Distributed Table Engine](../../engines/table-engines/special/distributed.md)
 
 ## shardCount {#shardcount}
 
@@ -3576,11 +3576,11 @@ shardCount()
 
 **Returned value**
 
--Total number of shards or `0`. [UInt32](../data-types/int-uint.md).
+- Total number of shards or `0`. [UInt32](../data-types/int-uint.md).
 
 **See Also**
 
--[shardNum()](#shardnum) function example also contains `shardCount()` function call.
+- [shardNum()](#shardnum) function example also contains `shardCount()` function call.
 
 ## getOSKernelVersion {#getoskernelversion}
 
@@ -3594,11 +3594,11 @@ getOSKernelVersion()
 
 **Arguments**
 
--None.
+- None.
 
 **Returned value**
 
--The current OS kernel version. [String](../data-types/string.md).
+- The current OS kernel version. [String](../data-types/string.md).
 
 **Example**
 
@@ -3628,11 +3628,11 @@ zookeeperSessionUptime()
 
 **Arguments**
 
--None.
+- None.
 
 **Returned value**
 
--Uptime of the current ZooKeeper session in seconds. [UInt32](../data-types/int-uint.md).
+- Uptime of the current ZooKeeper session in seconds. [UInt32](../data-types/int-uint.md).
 
 **Example**
 
@@ -3662,14 +3662,14 @@ generateRandomStructure([number_of_columns, seed])
 
 **Arguments**
 
--`number_of_columns` — The desired number of columns in the result table structure. If set to 0 or `Null`, the number of columns will be random from 1 to 128. Default value: `Null`.
--`seed` - Random seed to produce stable results. If seed is not specified or set to `Null`, it is randomly generated.
+- `number_of_columns` — The desired number of columns in the result table structure. If set to 0 or `Null`, the number of columns will be random from 1 to 128. Default value: `Null`.
+- `seed` - Random seed to produce stable results. If seed is not specified or set to `Null`, it is randomly generated.
 
 All arguments must be constant.
 
 **Returned value**
 
--Randomly generated table structure. [String](../data-types/string.md).
+- Randomly generated table structure. [String](../data-types/string.md).
 
 **Examples**
 
@@ -3731,12 +3731,12 @@ structureToCapnProtoSchema(structure)
 
 **Arguments**
 
--`structure` — Table structure in a format `column1_name column1_type, column2_name column2_type, ...`.
--`root_struct_name` — Name for root struct in CapnProto schema. Default value - `Message`;
+- `structure` — Table structure in a format `column1_name column1_type, column2_name column2_type, ...`.
+- `root_struct_name` — Name for root struct in CapnProto schema. Default value - `Message`;
 
 **Returned value**
 
--CapnProto schema. [String](../data-types/string.md).
+- CapnProto schema. [String](../data-types/string.md).
 
 **Examples**
 
@@ -3830,12 +3830,12 @@ structureToProtobufSchema(structure)
 
 **Arguments**
 
--`structure` — Table structure in a format `column1_name column1_type, column2_name column2_type, ...`.
--`root_message_name` — Name for root message in Protobuf schema. Default value - `Message`;
+- `structure` — Table structure in a format `column1_name column1_type, column2_name column2_type, ...`.
+- `root_message_name` — Name for root message in Protobuf schema. Default value - `Message`;
 
 **Returned value**
 
--Protobuf schema. [String](../data-types/string.md).
+- Protobuf schema. [String](../data-types/string.md).
 
 **Examples**
 
@@ -3915,11 +3915,11 @@ formatQueryOrNull(query)
 
 **Arguments**
 
--`query` - The SQL query to be formatted. [String](../data-types/string.md)
+- `query` - The SQL query to be formatted. [String](../data-types/string.md)
 
 **Returned value**
 
--The formatted query. [String](../data-types/string.md).
+- The formatted query. [String](../data-types/string.md).
 
 **Example**
 
@@ -3954,11 +3954,11 @@ formatQuerySingleLineOrNull(query)
 
 **Arguments**
 
--`query` - The SQL query to be formatted. [String](../data-types/string.md)
+- `query` - The SQL query to be formatted. [String](../data-types/string.md)
 
 **Returned value**
 
--The formatted query. [String](../data-types/string.md).
+- The formatted query. [String](../data-types/string.md).
 
 **Example**
 
@@ -3986,13 +3986,13 @@ variantElement(variant, type_name, [, default_value])
 
 **Arguments**
 
--`variant` — Variant column. [Variant](../data-types/variant.md).
--`type_name` — The name of the variant type to extract. [String](../data-types/string.md).
--`default_value` - The default value that will be used if variant doesn't have variant with specified type. Can be any type. Optional.
+- `variant` — Variant column. [Variant](../data-types/variant.md).
+- `type_name` — The name of the variant type to extract. [String](../data-types/string.md).
+- `default_value` - The default value that will be used if variant doesn't have variant with specified type. Can be any type. Optional.
 
 **Returned value**
 
--Subcolumn of a `Variant` column with specified type.
+- Subcolumn of a `Variant` column with specified type.
 
 **Example**
 
@@ -4023,11 +4023,11 @@ variantType(variant)
 
 **Arguments**
 
--`variant` — Variant column. [Variant](../data-types/variant.md).
+- `variant` — Variant column. [Variant](../data-types/variant.md).
 
 **Returned value**
 
--Enum8 column with variant type name for each row.
+- Enum8 column with variant type name for each row.
 
 **Example**
 
@@ -4070,18 +4070,18 @@ Uses the formula described in [this article](https://towardsdatascience.com/requ
 
 **Arguments**
 
--`baseline` — Baseline conversion. [Float](../data-types/float.md).
--`mde` — Minimum detectable effect (MDE) as percentage points (e.g. for a baseline conversion 0.25 the MDE 0.03 means an expected change to 0.25 ± 0.03). [Float](../data-types/float.md).
--`power` — Required statistical power of a test (1 - probability of Type II error). [Float](../data-types/float.md).
--`alpha` — Required significance level of a test (probability of Type I error). [Float](../data-types/float.md).
+- `baseline` — Baseline conversion. [Float](../data-types/float.md).
+- `mde` — Minimum detectable effect (MDE) as percentage points (e.g. for a baseline conversion 0.25 the MDE 0.03 means an expected change to 0.25 ± 0.03). [Float](../data-types/float.md).
+- `power` — Required statistical power of a test (1 - probability of Type II error). [Float](../data-types/float.md).
+- `alpha` — Required significance level of a test (probability of Type I error). [Float](../data-types/float.md).
 
 **Returned value**
 
 A named [Tuple](../data-types/tuple.md) with 3 elements:
 
--`"minimum_sample_size"` — Required sample size. [Float64](../data-types/float.md).
--`"detect_range_lower"` — Lower bound of the range of values not detectable with the returned required sample size (i.e. all values less than or equal to `"detect_range_lower"` are detectable with the provided `alpha` and `power`). Calculated as `baseline - mde`. [Float64](../data-types/float.md).
--`"detect_range_upper"` — Upper bound of the range of values not detectable with the returned required sample size (i.e. all values greater than or equal to `"detect_range_upper"` are detectable with the provided `alpha` and `power`). Calculated as `baseline + mde`. [Float64](../data-types/float.md).
+- `"minimum_sample_size"` — Required sample size. [Float64](../data-types/float.md).
+- `"detect_range_lower"` — Lower bound of the range of values not detectable with the returned required sample size (i.e. all values less than or equal to `"detect_range_lower"` are detectable with the provided `alpha` and `power`). Calculated as `baseline - mde`. [Float64](../data-types/float.md).
+- `"detect_range_upper"` — Upper bound of the range of values not detectable with the returned required sample size (i.e. all values greater than or equal to `"detect_range_upper"` are detectable with the provided `alpha` and `power`). Calculated as `baseline + mde`. [Float64](../data-types/float.md).
 
 **Example**
 
@@ -4115,19 +4115,19 @@ Uses the formula described in [this article](https://towardsdatascience.com/requ
 
 **Arguments**
 
--`baseline` — Baseline value of a metric. [Integer](../data-types/int-uint.md) or [Float](../data-types/float.md).
--`sigma` — Baseline standard deviation of a metric. [Integer](../data-types/int-uint.md) or [Float](../data-types/float.md).
--`mde` — Minimum detectable effect (MDE) as percentage of the baseline value (e.g. for a baseline value 112.25 the MDE 0.03 means an expected change to 112.25 ± 112.25\*0.03). [Integer](../data-types/int-uint.md) or [Float](../data-types/float.md).
--`power` — Required statistical power of a test (1 - probability of Type II error). [Integer](../data-types/int-uint.md) or [Float](../data-types/float.md).
--`alpha` — Required significance level of a test (probability of Type I error). [Integer](../data-types/int-uint.md) or [Float](../data-types/float.md).
+- `baseline` — Baseline value of a metric. [Integer](../data-types/int-uint.md) or [Float](../data-types/float.md).
+- `sigma` — Baseline standard deviation of a metric. [Integer](../data-types/int-uint.md) or [Float](../data-types/float.md).
+- `mde` — Minimum detectable effect (MDE) as percentage of the baseline value (e.g. for a baseline value 112.25 the MDE 0.03 means an expected change to 112.25 ± 112.25\*0.03). [Integer](../data-types/int-uint.md) or [Float](../data-types/float.md).
+- `power` — Required statistical power of a test (1 - probability of Type II error). [Integer](../data-types/int-uint.md) or [Float](../data-types/float.md).
+- `alpha` — Required significance level of a test (probability of Type I error). [Integer](../data-types/int-uint.md) or [Float](../data-types/float.md).
 
 **Returned value**
 
 A named [Tuple](../data-types/tuple.md) with 3 elements:
 
--`"minimum_sample_size"` — Required sample size. [Float64](../data-types/float.md).
--`"detect_range_lower"` — Lower bound of the range of values not detectable with the returned required sample size (i.e. all values less than or equal to `"detect_range_lower"` are detectable with the provided `alpha` and `power`). Calculated as `baseline * (1 - mde)`. [Float64](../data-types/float.md).
--`"detect_range_upper"` — Upper bound of the range of values not detectable with the returned required sample size (i.e. all values greater than or equal to `"detect_range_upper"` are detectable with the provided `alpha` and `power`). Calculated as `baseline * (1 + mde)`. [Float64](../data-types/float.md).
+- `"minimum_sample_size"` — Required sample size. [Float64](../data-types/float.md).
+- `"detect_range_lower"` — Lower bound of the range of values not detectable with the returned required sample size (i.e. all values less than or equal to `"detect_range_lower"` are detectable with the provided `alpha` and `power`). Calculated as `baseline * (1 - mde)`. [Float64](../data-types/float.md).
+- `"detect_range_upper"` — Upper bound of the range of values not detectable with the returned required sample size (i.e. all values greater than or equal to `"detect_range_upper"` are detectable with the provided `alpha` and `power`). Calculated as `baseline * (1 + mde)`. [Float64](../data-types/float.md).
 
 **Example**
 
@@ -4207,7 +4207,7 @@ showCertificate()
 
 **Returned value**
 
--Map of key-value pairs relating to the configured SSL certificate. [Map](../data-types/map.md)([String](../data-types/string.md), [String](../data-types/string.md)).
+- Map of key-value pairs relating to the configured SSL certificate. [Map](../data-types/map.md)([String](../data-types/string.md), [String](../data-types/string.md)).
 
 **Example**
 
@@ -4235,11 +4235,11 @@ lowCardinalityIndices(col)
 
 **Arguments**
 
--`col` — a low cardinality column. [LowCardinality](../data-types/lowcardinality.md).
+- `col` — a low cardinality column. [LowCardinality](../data-types/lowcardinality.md).
 
 **Returned value**
 
--The position of the value in the dictionary of the current part. [UInt64](../data-types/int-uint.md).
+- The position of the value in the dictionary of the current part. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -4249,7 +4249,7 @@ Query:
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (s LowCardinality(String)) ENGINE = Memory;
 
--- create two parts:
+- - create two parts:
 
 INSERT INTO test VALUES ('ab'), ('cd'), ('ab'), ('ab'), ('df');
 INSERT INTO test VALUES ('ef'), ('cd'), ('ab'), ('cd'), ('ef');
@@ -4288,11 +4288,11 @@ lowCardinalityIndices(col)
 
 **Arguments**
 
--`col` — a low cardinality column. [LowCardinality](../data-types/lowcardinality.md).
+- `col` — a low cardinality column. [LowCardinality](../data-types/lowcardinality.md).
 
 **Returned value**
 
--The dictionary keys. [UInt64](../data-types/int-uint.md).
+- The dictionary keys. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -4302,7 +4302,7 @@ Query:
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (s LowCardinality(String)) ENGINE = Memory;
 
--- create two parts:
+- - create two parts:
 
 INSERT INTO test VALUES ('ab'), ('cd'), ('ab'), ('ab'), ('df');
 INSERT INTO test VALUES ('ef'), ('cd'), ('ab'), ('cd'), ('ef');
@@ -4341,7 +4341,7 @@ displayName()
 
 **Returned value**
 
--Value of `display_name` from config or server FQDN if not set. [String](../data-types/string.md).
+- Value of `display_name` from config or server FQDN if not set. [String](../data-types/string.md).
 
 **Example**
 
@@ -4350,7 +4350,7 @@ The `display_name` can be set in `config.xml`. Taking for example a server with 
 ```xml
 <!-- It is the name that will be shown in the clickhouse-client.
      By default, anything with "production" will be highlighted in red in query prompt.
--->
+- ->
 <display_name>production</display_name>
 ```
 
@@ -4395,11 +4395,11 @@ transactionID()
 
 **Returned value**
 
--Returns a tuple consisting of `start_csn`, `local_tid` and `host_id`. [Tuple](../data-types/tuple.md).
+- Returns a tuple consisting of `start_csn`, `local_tid` and `host_id`. [Tuple](../data-types/tuple.md).
 
--`start_csn`: Global sequential number, the newest commit timestamp that was seen when this transaction began. [UInt64](../data-types/int-uint.md).
--`local_tid`: Local sequential number that is unique for each transaction started by this host within a specific start_csn. [UInt64](../data-types/int-uint.md).
--`host_id`: UUID of the host that has started this transaction. [UUID](../data-types/uuid.md).
+- `start_csn`: Global sequential number, the newest commit timestamp that was seen when this transaction began. [UInt64](../data-types/int-uint.md).
+- `local_tid`: Local sequential number that is unique for each transaction started by this host within a specific start_csn. [UInt64](../data-types/int-uint.md).
+- `host_id`: UUID of the host that has started this transaction. [UUID](../data-types/uuid.md).
 
 **Example**
 
@@ -4446,7 +4446,7 @@ transactionLatestSnapshot()
 
 **Returned value**
 
--Returns the latest snapshot (CSN) of a transaction. [UInt64](../data-types/int-uint.md)
+- Returns the latest snapshot (CSN) of a transaction. [UInt64](../data-types/int-uint.md)
 
 **Example**
 
@@ -4493,7 +4493,7 @@ transactionOldestSnapshot()
 
 **Returned value**
 
--Returns the oldest snapshot (CSN) of a transaction. [UInt64](../data-types/int-uint.md)
+- Returns the oldest snapshot (CSN) of a transaction. [UInt64](../data-types/int-uint.md)
 
 **Example**
 
@@ -4525,12 +4525,12 @@ getSubcolumn(col_name, subcol_name)
 
 **Arguments**
 
--`col_name` — Table expression or identifier. [Expression](../syntax.md/#expressions), [Identifier](../syntax.md/#identifiers).
--`subcol_name` — The name of the sub-column. [String](../data-types/string.md).
+- `col_name` — Table expression or identifier. [Expression](../syntax.md/#expressions), [Identifier](../syntax.md/#identifiers).
+- `subcol_name` — The name of the sub-column. [String](../data-types/string.md).
 
 **Returned value**
 
--Returns the extracted sub-column.
+- Returns the extracted sub-column.
 
 **Example**
 
@@ -4567,11 +4567,11 @@ getTypeSerializationStreams(col)
 
 **Arguments**
 
--`col` — Column or string representation of a data-type from which the data type will be detected.
+- `col` — Column or string representation of a data-type from which the data type will be detected.
 
 **Returned value**
 
--Returns an array with all the serialization sub-stream paths.[Array](../data-types/array.md)([String](../data-types/string.md)).
+- Returns an array with all the serialization sub-stream paths.[Array](../data-types/array.md)([String](../data-types/string.md)).
 
 **Examples**
 
@@ -4615,11 +4615,11 @@ globalVariable(name)
 
 **Arguments**
 
--`name` — Global variable name. [String](../data-types/string.md).
+- `name` — Global variable name. [String](../data-types/string.md).
 
 **Returned value**
 
--Returns the value of variable `name`.
+- Returns the value of variable `name`.
 
 **Example**
 
@@ -4649,11 +4649,11 @@ getMaxTableNameLengthForDatabase(database_name)
 
 **Arguments**
 
--`database_name` — The name of the specified database. [String](../data-types/string.md).
+- `database_name` — The name of the specified database. [String](../data-types/string.md).
 
 **Returned value**
 
--Returns the length of the maximum table name.
+- Returns the length of the maximum table name.
 
 **Example**
 
@@ -4683,11 +4683,11 @@ getServerSetting('server_setting');
 
 **Parameter**
 
--`server_setting` — The setting name. [String](../data-types/string.md).
+- `server_setting` — The setting name. [String](../data-types/string.md).
 
 **Returned value**
 
--The server setting's current value.
+- The server setting's current value.
 
 **Example**
 
@@ -4715,11 +4715,11 @@ getMergeTreeSetting('merge_tree_setting');
 
 **Parameter**
 
--`merge_tree_setting` — The setting name. [String](../data-types/string.md).
+- `merge_tree_setting` — The setting name. [String](../data-types/string.md).
 
 **Returned value**
 
--The merge tree setting's current value.
+- The merge tree setting's current value.
 
 **Example**
 
@@ -4739,7 +4739,7 @@ Result:
 The inner content of the tags below are replaced at doc framework build time with 
 docs generated from system.functions. Please do not modify or remove the tags.
 See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
--->
+- ->
 
 <!--AUTOGENERATED_START-->
 <!--AUTOGENERATED_END-->

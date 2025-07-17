@@ -16,10 +16,10 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 
 Columns:
 
--`hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
--`event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
--`event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
--`event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Event time with microseconds resolution.
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
+- `event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
+- `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
+- `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Event time with microseconds resolution.
 
 **Example**
 
@@ -64,8 +64,8 @@ There is also a compatibility schema, `transposed_with_wide_view`, which stores 
 
 **See also**
 
--[metric_log setting](../../operations/server-configuration-parameters/settings.md#metric_log) — Enabling and disabling the setting.
--[system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md) — Contains periodically calculated metrics.
--[system.events](/operations/system-tables/events) — Contains a number of events that occurred.
--[system.metrics](../../operations/system-tables/metrics.md) — Contains instantly calculated metrics.
--[Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
+- [metric_log setting](../../operations/server-configuration-parameters/settings.md#metric_log) — Enabling and disabling the setting.
+- [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md) — Contains periodically calculated metrics.
+- [system.events](/operations/system-tables/events) — Contains a number of events that occurred.
+- [system.metrics](../../operations/system-tables/metrics.md) — Contains instantly calculated metrics.
+- [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.

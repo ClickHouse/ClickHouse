@@ -25,18 +25,18 @@ any(column) [RESPECT NULLS]
 
 Aliases `any(column)` (without `RESPECT NULLS`)
 
--`any_value`
--[`first_value`](../reference/first_value.md).
+- `any_value`
+- [`first_value`](../reference/first_value.md).
 
 Alias for `any(column) RESPECT NULLS`
 
--`anyRespectNulls`, `any_respect_nulls`
--`firstValueRespectNulls`, `first_value_respect_nulls`
--`anyValueRespectNulls`, `any_value_respect_nulls`
+- `anyRespectNulls`, `any_respect_nulls`
+- `firstValueRespectNulls`, `first_value_respect_nulls`
+- `anyValueRespectNulls`, `any_value_respect_nulls`
 
 **Parameters**
 
--`column`: The column name.
+- `column`: The column name.
 
 **Returned value**
 

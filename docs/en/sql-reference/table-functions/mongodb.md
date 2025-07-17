@@ -100,5 +100,5 @@ SELECT * FROM mongodb(
 
 ## Related {#related}
 
--[The `MongoDB` table engine](engines/table-engines/integrations/mongodb.md)
--[Using MongoDB as a dictionary source](sql-reference/dictionaries/index.md#mongodb)
+- [The `MongoDB` table engine](engines/table-engines/integrations/mongodb.md)
+- [Using MongoDB as a dictionary source](sql-reference/dictionaries/index.md#mongodb)

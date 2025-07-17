@@ -11,18 +11,18 @@ It allows publishing almost real production data for usage in benchmarks.
 
 It is designed to retain the following properties of data:
 
--cardinalities of values (number of distinct values) for every column and every tuple of columns;
--conditional cardinalities: number of distinct values of one column under the condition on the value of another column;
--probability distributions of the absolute value of integers; the sign of signed integers; exponent and sign for floats;
--probability distributions of the length of strings;
--probability of zero values of numbers; empty strings and arrays, `NULL`s;
+- cardinalities of values (number of distinct values) for every column and every tuple of columns;
+- conditional cardinalities: number of distinct values of one column under the condition on the value of another column;
+- probability distributions of the absolute value of integers; the sign of signed integers; exponent and sign for floats;
+- probability distributions of the length of strings;
+- probability of zero values of numbers; empty strings and arrays, `NULL`s;
 
--data compression ratio when compressed with LZ77 and entropy family of codecs;
--continuity (magnitude of difference) of time values across the table; continuity of floating-point values;
--date component of `DateTime` values;
+- data compression ratio when compressed with LZ77 and entropy family of codecs;
+- continuity (magnitude of difference) of time values across the table; continuity of floating-point values;
+- date component of `DateTime` values;
 
--UTF-8 validity of string values;
--string values look natural.
+- UTF-8 validity of string values;
+- string values look natural.
 
 Most of the properties above are viable for performance testing:
 

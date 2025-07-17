@@ -24,12 +24,12 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 **Parameters**
 
--`x` — Column name.
--`offset` — nth row to evaluate current row against.
+- `x` — Column name.
+- `offset` — nth row to evaluate current row against.
 
 **Returned value**
 
--The first non-NULL value evaluated against the nth row (offset) in its ordered frame.
+- The first non-NULL value evaluated against the nth row (offset) in its ordered frame.
 
 **Example**
 

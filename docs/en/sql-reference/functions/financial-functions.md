@@ -25,17 +25,17 @@ financialInternalRateOfReturn(cashflows[, guess])
 
 **Arguments**
 
--`cashflows` — Array of cash flows. Each value represents a payment (negative value) or income (positive value). Type: Array of numeric values (Int8, Int16, Int32, Int64, Float32, Float64).
+- `cashflows` — Array of cash flows. Each value represents a payment (negative value) or income (positive value). Type: Array of numeric values (Int8, Int16, Int32, Int64, Float32, Float64).
 - `guess` — Optional initial guess (constant value) for the internal rate of return. Default: 0.1. Type: Float32|Float64.
 
 **Returned value**
 
--Returns the internal rate of return as a Float64 value.
--Returns NaN if:
--The calculation cannot converge
--Input array is empty or has only one element
--All cash flows are zero
--Other calculation errors occur
+- Returns the internal rate of return as a Float64 value.
+- Returns NaN if:
+- The calculation cannot converge
+- Input array is empty or has only one element
+- All cash flows are zero
+- Other calculation errors occur
 
 **Examples**
 
@@ -65,8 +65,8 @@ SELECT financialInternalRateOfReturn([-100, 60, 60], 0.2);
 
 **Notes**
 
--The function uses Newton-Raphson and TOMS748 methods for finding the root.
--At least one cash flow must be negative and one must be positive for a meaningful IRR calculation.
+- The function uses Newton-Raphson and TOMS748 methods for finding the root.
+- At least one cash flow must be negative and one must be positive for a meaningful IRR calculation.
 
 ## financialInternalRateOfReturnExtended {#financialInternalRateOfReturnExtended}
 
@@ -86,22 +86,22 @@ financialInternalRateOfReturnExtended(cashflows, dates[, guess[, daycount]])
 
 **Arguments**
 
--`cashflows` — Array of cash flows. Each value represents a payment (negative value) or income (positive value). Type: Array of numeric values (Int8, Int16, Int32, Int64, Float32, Float64).
--`dates` — Array of dates corresponding to each cash flow. Must be sorted in ascending order with unique values. Type: Array of Date or Date32.
+- `cashflows` — Array of cash flows. Each value represents a payment (negative value) or income (positive value). Type: Array of numeric values (Int8, Int16, Int32, Int64, Float32, Float64).
+- `dates` — Array of dates corresponding to each cash flow. Must be sorted in ascending order with unique values. Type: Array of Date or Date32.
 - `guess` — Optional initial guess (constant value) for the internal rate of return. Default: 0.1. Type: Float32|Float64.
--`daycount` — Optional day count convention. Supported values:
--'ACT_365F' (default) — Actual/365 Fixed
--'ACT_365_25' — Actual/365.25
+- `daycount` — Optional day count convention. Supported values:
+- 'ACT_365F' (default) — Actual/365 Fixed
+- 'ACT_365_25' — Actual/365.25
 
 **Returned value**
 
--Returns the internal rate of return as a Float64 value.
--Returns NaN if:
--The calculation cannot converge
--Input arrays are empty or have only one element
--All cash flows are zero
--Dates are not sorted or not unique
--Other calculation errors occur
+- Returns the internal rate of return as a Float64 value.
+- Returns NaN if:
+- The calculation cannot converge
+- Input arrays are empty or have only one element
+- All cash flows are zero
+- Dates are not sorted or not unique
+- Other calculation errors occur
 
 **Examples**
 
@@ -139,8 +139,8 @@ SELECT round(
 
 **Notes**
 
--The function uses Newton-Raphson and TOMS748 methods for finding the root.
--The dates array must be sorted in ascending order with unique values.
+- The function uses Newton-Raphson and TOMS748 methods for finding the root.
+- The dates array must be sorted in ascending order with unique values.
 
 ## financialNetPresentValueExtended {#financialNetPresentValueExtended}
 
@@ -160,16 +160,16 @@ financialNetPresentValueExtended(rate, cashflows, dates[, daycount])
 
 **Arguments**
 
--`rate` — The discount rate to apply. Type: Float64.
--`cashflows` — Array of cash flows. Each value represents a payment (negative value) or income (positive value). Must contain at least one positive and one negative value. Type: Array of numeric values (Int8, Int16, Int32, Int64, Float32, Float64).
--`dates` — Array of dates corresponding to each cash flow. Must have the same size as cashflows array. Type: Array of Date or Date32.
--`daycount` — Optional day count convention. Supported values:
--'ACT_365F' (default) — Actual/365 Fixed
--'ACT_365_25' — Actual/365.25
+- `rate` — The discount rate to apply. Type: Float64.
+- `cashflows` — Array of cash flows. Each value represents a payment (negative value) or income (positive value). Must contain at least one positive and one negative value. Type: Array of numeric values (Int8, Int16, Int32, Int64, Float32, Float64).
+- `dates` — Array of dates corresponding to each cash flow. Must have the same size as cashflows array. Type: Array of Date or Date32.
+- `daycount` — Optional day count convention. Supported values:
+- 'ACT_365F' (default) — Actual/365 Fixed
+- 'ACT_365_25' — Actual/365.25
 
 **Returned value**
 
--Returns the net present value as a Float64 value.
+- Returns the net present value as a Float64 value.
 
 **Examples**
 
@@ -224,13 +224,13 @@ financialNetPresentValue(rate, cashflows[, start_from_zero])
 
 **Arguments**
 
--`rate` — The discount rate to apply. Type: Float64.
--`cashflows` — Array of cash flows. Each value represents a payment (negative value) or income (positive value). Type: Array of numeric values (Int8, Int16, Int32, Int64, Float32, Float64).
--`start_from_zero` — Optional boolean parameter indicating whether to start the NPV calculation from period 0 (true) or period 1 (false). Default: true.
+- `rate` — The discount rate to apply. Type: Float64.
+- `cashflows` — Array of cash flows. Each value represents a payment (negative value) or income (positive value). Type: Array of numeric values (Int8, Int16, Int32, Int64, Float32, Float64).
+- `start_from_zero` — Optional boolean parameter indicating whether to start the NPV calculation from period 0 (true) or period 1 (false). Default: true.
 
 **Returned value**
 
--Returns the net present value as a Float64 value.
+- Returns the net present value as a Float64 value.
 
 **Examples**
 
@@ -260,5 +260,5 @@ SELECT financialNetPresentValue(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000
 
 **Notes**
 
--When `start_from_zero = true`, the first cash flow is discounted by `(1 + rate)^0`, which equals 1
--When `start_from_zero = false`, the first cash flow is discounted by `(1 + rate)^1`, matching Excel's NPV function behavior
+- When `start_from_zero = true`, the first cash flow is discounted by `(1 + rate)^0`, which equals 1
+- When `start_from_zero = false`, the first cash flow is discounted by `(1 + rate)^1`, matching Excel's NPV function behavior

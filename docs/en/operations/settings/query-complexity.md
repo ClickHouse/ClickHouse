@@ -28,8 +28,8 @@ processed.
 Most restrictions also have an `overflow_mode` setting, which defines what happens
 when the limit is exceeded, and can take one of two values:
 
--`throw`: throw an exception (default).
--`break`: stop executing the query and return the partial result, as if the
+- `throw`: throw an exception (default).
+- `break`: stop executing the query and return the partial result, as if the
            source data ran out.
 
 ## `group_by_overflow_mode` settings {#group_by_overflow_mode_settings}
@@ -37,7 +37,7 @@ when the limit is exceeded, and can take one of two values:
 The `group_by_overflow_mode` setting also has
 the value `any`:
 
--`any` : continue aggregation for the keys that got into the set, but do not
+- `any` : continue aggregation for the keys that got into the set, but do not
           add new keys to the set.
 
 ## List of settings {#relevant-settings}

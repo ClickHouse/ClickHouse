@@ -9,9 +9,9 @@ title: 'ORDER BY Clause'
 
 The `ORDER BY` clause contains
 
--a list of expressions, e.g. `ORDER BY visits, search_phrase`,
--a list of numbers referring to columns in the `SELECT` clause, e.g. `ORDER BY 2, 1`, or
--`ALL` which means all columns of the `SELECT` clause, e.g. `ORDER BY ALL`.
+- a list of expressions, e.g. `ORDER BY visits, search_phrase`,
+- a list of numbers referring to columns in the `SELECT` clause, e.g. `ORDER BY 2, 1`, or
+- `ALL` which means all columns of the `SELECT` clause, e.g. `ORDER BY ALL`.
 
 To disable sorting by column numbers, set setting [enable_positional_arguments](/operations/settings/settings#enable_positional_arguments) = 0.
 To disable sorting by `ALL`, set setting [enable_order_by_all](/operations/settings/settings#enable_order_by_all) = 0.
@@ -28,8 +28,8 @@ If the `ORDER BY` clause is omitted in a `SELECT` statement, the row order is al
 
 There are two approaches to `NaN` and `NULL` sorting order:
 
--By default or with the `NULLS LAST` modifier: first the values, then `NaN`, then `NULL`.
--With the `NULLS FIRST` modifier: first `NULL`, then `NaN`, then other values.
+- By default or with the `NULLS LAST` modifier: first the values, then `NaN`, then `NULL`.
+- With the `NULLS FIRST` modifier: first `NULL`, then `NaN`, then other values.
 
 ### Example {#example}
 
@@ -277,9 +277,9 @@ Consider disabling `optimize_read_in_order` manually, when running queries that 
 
 Optimization is supported in the following table engines:
 
--[MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) (including [materialized views](/sql-reference/statements/create/view#materialized-view)),
--[Merge](../../../engines/table-engines/special/merge.md),
--[Buffer](../../../engines/table-engines/special/buffer.md)
+- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) (including [materialized views](/sql-reference/statements/create/view#materialized-view)),
+- [Merge](../../../engines/table-engines/special/merge.md),
+- [Buffer](../../../engines/table-engines/special/buffer.md)
 
 In `MaterializedView`-engine tables the optimization works with views like `SELECT ... FROM merge_tree_table ORDER BY pk`. But it is not supported in the queries like `SELECT ... FROM view ORDER BY pk` if the view query does not have the `ORDER BY` clause.
 
@@ -671,4 +671,4 @@ This behavior is controlled by setting `use_with_fill_by_sorting_prefix` (enable
 
 ## Related content {#related-content}
 
--Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
+- Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

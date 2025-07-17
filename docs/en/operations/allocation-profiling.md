@@ -55,8 +55,8 @@ The generated file will be appended to the prefix PID and sequence number.
 After heap profiles have been generated, they need to be analyzed.  
 For that, `jemalloc`'s tool called [jeprof](https://github.com/jemalloc/jemalloc/blob/dev/bin/jeprof.in) can be used. It can be installed in multiple ways:
 
--Using the system's package manager
--Cloning the [jemalloc repo](https://github.com/jemalloc/jemalloc) and running `autogen.sh` from the root folder. This will provide you with the `jeprof` script inside the `bin` folder
+- Using the system's package manager
+- Cloning the [jemalloc repo](https://github.com/jemalloc/jemalloc) and running `autogen.sh` from the root folder. This will provide you with the `jeprof` script inside the `bin` folder
 
 :::note
 `jeprof` uses `addr2line` to generate stacktraces which can be really slow.  
@@ -88,13 +88,13 @@ jeprof path/to/binary --base path/to/first/heap/profile path/to/second/heap/prof
 
 ### Examples {#examples}
 
--if you want to generate a text file with each procedure written per line:
+- if you want to generate a text file with each procedure written per line:
 
 ```sh
 jeprof path/to/binary path/to/heap/profile --text > result.txt
 ```
 
--if you want to generate a PDF file with a call-graph:
+- if you want to generate a PDF file with a call-graph:
 
 ```sh
 jeprof path/to/binary path/to/heap/profile --pdf > result.pdf

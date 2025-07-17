@@ -24,12 +24,12 @@ corrStable(x, y)
 
 **Arguments**
 
--`x` — first variable. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal](../../data-types/decimal.md).
--`y` — second variable. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal](../../data-types/decimal.md).
+- `x` — first variable. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal](../../data-types/decimal.md).
+- `y` — second variable. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal](../../data-types/decimal.md).
 
 **Returned Value**
 
--The Pearson correlation coefficient. [Float64](../../data-types/float.md).
+- The Pearson correlation coefficient. [Float64](../../data-types/float.md).
 
 ***Example**
 

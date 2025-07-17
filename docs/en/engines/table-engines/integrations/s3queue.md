@@ -92,8 +92,8 @@ To get a list of settings, configured for the table, use `system.s3_queue_settin
 
 Possible values:
 
--unordered — With unordered mode, the set of all already processed files is tracked with persistent nodes in ZooKeeper.
--ordered — With ordered mode, the files are processed in lexicographic order. It means that if file named 'BBB' was processed at some point and later on a file named 'AA' is added to the bucket, it will be ignored. Only the max name (in lexicographic sense) of the successfully consumed file, and the names of files that will be retried after unsuccessful loading attempt are being stored in ZooKeeper.
+- unordered — With unordered mode, the set of all already processed files is tracked with persistent nodes in ZooKeeper.
+- ordered — With ordered mode, the files are processed in lexicographic order. It means that if file named 'BBB' was processed at some point and later on a file named 'AA' is added to the bucket, it will be ignored. Only the max name (in lexicographic sense) of the successfully consumed file, and the names of files that will be retried after unsuccessful loading attempt are being stored in ZooKeeper.
 
 Default value: `ordered` in versions before 24.6. Starting with 24.6 there is no default value, the setting becomes required to be specified manually. For tables created on earlier versions the default value will remain `Ordered` for compatibility.
 
@@ -102,8 +102,8 @@ Default value: `ordered` in versions before 24.6. Starting with 24.6 there is no
 Delete or keep file after successful processing.
 Possible values:
 
--keep.
--delete.
+- keep.
+- delete.
 
 Default value: `keep`.
 
@@ -112,7 +112,7 @@ Default value: `keep`.
 The path in ZooKeeper can be specified as a table engine setting or default path can be formed from the global configuration-provided path and table UUID.
 Possible values:
 
--String.
+- String.
 
 Default value: `/`.
 
@@ -121,7 +121,7 @@ Default value: `/`.
 Retry file loading up to specified number of times. By default, there are no retries.
 Possible values:
 
--Positive integer.
+- Positive integer.
 
 Default value: `0`.
 
@@ -154,7 +154,7 @@ Specifies the minimum time, in milliseconds, that ClickHouse waits before making
 
 Possible values:
 
--Positive integer.
+- Positive integer.
 
 Default value: `1000`.
 
@@ -164,7 +164,7 @@ Defines the maximum time, in milliseconds, that ClickHouse waits before initiati
 
 Possible values:
 
--Positive integer.
+- Positive integer.
 
 Default value: `10000`.
 
@@ -174,7 +174,7 @@ Determines the additional wait time added to the previous polling interval when 
 
 Possible values:
 
--Positive integer.
+- Positive integer.
 
 Default value: `0`.
 
@@ -185,7 +185,7 @@ If limit reached the oldest processed files will be deleted from ZooKeeper node 
 
 Possible values:
 
--Positive integer.
+- Positive integer.
 
 Default value: `1000`.
 
@@ -196,7 +196,7 @@ After the specified number of seconds, the file will be re-imported.
 
 Possible values:
 
--Positive integer.
+- Positive integer.
 
 Default value: `0`.
 
@@ -281,10 +281,10 @@ Example:
 
 ## Virtual columns {#virtual-columns}
 
--`_path` — Path to the file.
--`_file` — Name of the file.
--`_size` — Size of the file.
--`_time` — Time of the file creation.
+- `_path` — Path to the file.
+- `_file` — Name of the file.
+- `_size` — Size of the file.
+- `_time` — Time of the file creation.
 
 For more information about virtual columns see [here](../../../engines/table-engines/index.md#table_engines-virtual_columns).
 
@@ -292,11 +292,11 @@ For more information about virtual columns see [here](../../../engines/table-eng
 
 `path` argument can specify multiple files using bash-like wildcards. For being processed file should exist and match to the whole path pattern. Listing of files is determined during `SELECT` (not at `CREATE` moment).
 
--`*` — Substitutes any number of any characters except `/` including empty string.
--`**` — Substitutes any number of any characters include `/` including empty string.
--`?` — Substitutes any single character.
--`{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
--`{N..M}` — Substitutes any number in range from N to M including both borders. N and M can have leading zeroes e.g. `000..078`.
+- `*` — Substitutes any number of any characters except `/` including empty string.
+- `**` — Substitutes any number of any characters include `/` including empty string.
+- `?` — Substitutes any single character.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
+- `{N..M}` — Substitutes any number in range from N to M including both borders. N and M can have leading zeroes e.g. `000..078`.
 
 Constructions with `{}` are similar to the [remote](../../../sql-reference/table-functions/remote.md) table function.
 
@@ -304,11 +304,11 @@ Constructions with `{}` are similar to the [remote](../../../sql-reference/table
 
 1.Duplicated rows can be as a result of:
 
--an exception happens during parsing in the middle of file processing and retries are enabled via `s3queue_loading_retries`;
+- an exception happens during parsing in the middle of file processing and retries are enabled via `s3queue_loading_retries`;
 
--`S3Queue` is configured on multiple servers pointing to the same path in zookeeper and keeper session expires before one server managed to commit processed file, which could lead to another server taking processing of the file, which could be partially or fully processed by the first server;
+- `S3Queue` is configured on multiple servers pointing to the same path in zookeeper and keeper session expires before one server managed to commit processed file, which could lead to another server taking processing of the file, which could be partially or fully processed by the first server;
 
--abnormal server termination.
+- abnormal server termination.
 
 2.`S3Queue` is configured on multiple servers pointing to the same path in zookeeper and `Ordered` mode is used, then `s3queue_loading_retries` will not work. This will be fixed soon.
 

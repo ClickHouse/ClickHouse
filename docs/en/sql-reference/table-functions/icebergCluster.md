@@ -28,8 +28,8 @@ icebergHDFSCluster(cluster_name, named_collection[, option=value [,..]])
 
 ## Arguments {#arguments}
 
--`cluster_name` — Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
--Description of all other arguments coincides with description of arguments in equivalent [iceberg](/sql-reference/table-functions/iceberg.md) table function.
+- `cluster_name` — Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
+- Description of all other arguments coincides with description of arguments in equivalent [iceberg](/sql-reference/table-functions/iceberg.md) table function.
 
 **Returned value**
 
@@ -43,5 +43,5 @@ SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/c
 
 **See Also**
 
--[Iceberg engine](/engines/table-engines/integrations/iceberg.md)
--[Iceberg table function](sql-reference/table-functions/iceberg.md)
+- [Iceberg engine](/engines/table-engines/integrations/iceberg.md)
+- [Iceberg table function](sql-reference/table-functions/iceberg.md)

@@ -46,7 +46,7 @@ The GCS path is in this format as the endpoint for the Google XML API is differe
   https://storage.googleapis.com/<bucket>/<folder>/<filename(s)>
 ```
 
-and not ~~<https://storage.cloud.google.com>~~.
+and not ~~https://storage.cloud.google.com~~.
 :::
 
 Arguments can also be passed using [named collections](operations/named-collections.md). In this case `url`, `format`, `structure`, `compression_method` work in the same way, and some extra parameters are supported:
@@ -100,14 +100,14 @@ LIMIT 2;
 
 Suppose that we have several files with following URIs on GCS:
 
--'<https://storage.googleapis.com/my-test-bucket-768/some_prefix/some_file_1.csv>'
--'<https://storage.googleapis.com/my-test-bucket-768/some_prefix/some_file_2.csv>'
--'<https://storage.googleapis.com/my-test-bucket-768/some_prefix/some_file_3.csv>'
--'<https://storage.googleapis.com/my-test-bucket-768/some_prefix/some_file_4.csv>'
--'<https://storage.googleapis.com/my-test-bucket-768/another_prefix/some_file_1.csv>'
--'<https://storage.googleapis.com/my-test-bucket-768/another_prefix/some_file_2.csv>'
--'<https://storage.googleapis.com/my-test-bucket-768/another_prefix/some_file_3.csv>'
--'<https://storage.googleapis.com/my-test-bucket-768/another_prefix/some_file_4.csv>'
+- https://storage.googleapis.com/my-test-bucket-768/some_prefix/some_file_1.csv>
+- https://storage.googleapis.com/my-test-bucket-768/some_prefix/some_file_2.csv
+- https://storage.googleapis.com/my-test-bucket-768/some_prefix/some_file_3.csv
+- https://storage.googleapis.com/my-test-bucket-768/some_prefix/some_file_4.csv
+- https://storage.googleapis.com/my-test-bucket-768/another_prefix/some_file_1.csv
+- https://storage.googleapis.com/my-test-bucket-768/another_prefix/some_file_2.csv
+- https://storage.googleapis.com/my-test-bucket-768/another_prefix/some_file_3.csv
+- https://storage.googleapis.com/my-test-bucket-768/another_prefix/some_file_4.csv
 
 Count the amount of rows in files ending with numbers from 1 to 3:
 
@@ -217,5 +217,5 @@ As a result, the data is written into three files in different buckets: `my_buck
 
 ## Related {#related}
 
--[S3 table function](s3.md)
--[S3 engine](../../engines/table-engines/integrations/s3.md)
+- [S3 table function](s3.md)
+- [S3 engine](../../engines/table-engines/integrations/s3.md)

@@ -25,20 +25,20 @@ anyLast(column) [RESPECT NULLS]
 
 Alias `anyLast(column)` (without `RESPECT NULLS`)
 
--[`last_value`](../reference/last_value.md).
+- [`last_value`](../reference/last_value.md).
 
 Aliases for `anyLast(column) RESPECT NULLS`
 
--`anyLastRespectNulls`, `anyLast_respect_nulls`
--`lastValueRespectNulls`, `last_value_respect_nulls`
+- `anyLastRespectNulls`, `anyLast_respect_nulls`
+- `lastValueRespectNulls`, `last_value_respect_nulls`
 
 **Parameters**
 
--`column`: The column name.
+- `column`: The column name.
 
 **Returned value**
 
--The last value encountered.
+- The last value encountered.
 
 **Example**
 

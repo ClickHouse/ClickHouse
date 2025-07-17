@@ -33,9 +33,9 @@ All standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) types are supp
 | `FULL OUTER JOIN` | non-matching rows from both tables are returned in addition to matching rows. |
 | `CROSS JOIN`      | produces cartesian product of whole tables, "join keys" are **not** specified.|
 
--`JOIN` without a type specified implies `INNER`.
--The keyword `OUTER` can be safely omitted.
--An alternative syntax for `CROSS JOIN` is specifying multiple tables in the [`FROM` clause](../../../sql-reference/statements/select/from.md) separated by commas.
+- `JOIN` without a type specified implies `INNER`.
+- The keyword `OUTER` can be safely omitted.
+- An alternative syntax for `CROSS JOIN` is specifying multiple tables in the [`FROM` clause](../../../sql-reference/statements/select/from.md) separated by commas.
 
 Additional join types available in ClickHouse are:
 
@@ -59,12 +59,12 @@ The behavior of the ClickHouse server for `ANY JOIN` operations depends on the [
 
 **See also**
 
--[`join_algorithm`](../../../operations/settings/settings.md#join_algorithm)
--[`join_any_take_last_row`](../../../operations/settings/settings.md#join_any_take_last_row)
--[`join_use_nulls`](../../../operations/settings/settings.md#join_use_nulls)
--[`partial_merge_join_rows_in_right_blocks`](../../../operations/settings/settings.md#partial_merge_join_rows_in_right_blocks)
--[`join_on_disk_max_files_to_merge`](../../../operations/settings/settings.md#join_on_disk_max_files_to_merge)
--[`any_join_distinct_right_table_keys`](../../../operations/settings/settings.md#any_join_distinct_right_table_keys)
+- [`join_algorithm`](../../../operations/settings/settings.md#join_algorithm)
+- [`join_any_take_last_row`](../../../operations/settings/settings.md#join_any_take_last_row)
+- [`join_use_nulls`](../../../operations/settings/settings.md#join_use_nulls)
+- [`partial_merge_join_rows_in_right_blocks`](../../../operations/settings/settings.md#partial_merge_join_rows_in_right_blocks)
+- [`join_on_disk_max_files_to_merge`](../../../operations/settings/settings.md#join_on_disk_max_files_to_merge)
+- [`any_join_distinct_right_table_keys`](../../../operations/settings/settings.md#any_join_distinct_right_table_keys)
 
 Use the `cross_to_inner_join_rewrite` setting to define the behavior when ClickHouse fails to rewrite a `CROSS JOIN` as an `INNER JOIN`. The default value is `1`, which  allows the join to continue but it will be slower. Set `cross_to_inner_join_rewrite` to `0` if you want an error to be thrown, and set it to `2` to not run the cross joins but instead force a rewrite of all comma/cross joins. If the rewriting fails when the value is `2`, you will receive an error message stating "Please, try to simplify `WHERE` section".
 
@@ -72,8 +72,8 @@ Use the `cross_to_inner_join_rewrite` setting to define the behavior when ClickH
 
 An `ON` section can contain several conditions combined using the `AND` and `OR` operators. Conditions specifying join keys must:
 
--reference both left and right tables
--use the equality operator
+- reference both left and right tables
+- use the equality operator
 
 Other conditions may use other logical operators but they must reference either the left or the right table of a query.
 
@@ -289,9 +289,9 @@ SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
 
 This JOIN algorithm requires a special column in tables. This column:
 
--Must contain an ordered sequence.
--Can be one of the following types: [Int, UInt](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md), [Date](../../../sql-reference/data-types/date.md), [DateTime](../../../sql-reference/data-types/datetime.md), [Decimal](../../../sql-reference/data-types/decimal.md).
--For the `hash` join algorithm it can't be the only column in the `JOIN` clause.
+- Must contain an ordered sequence.
+- Can be one of the following types: [Int, UInt](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md), [Date](../../../sql-reference/data-types/date.md), [DateTime](../../../sql-reference/data-types/datetime.md), [Decimal](../../../sql-reference/data-types/decimal.md).
+- For the `hash` join algorithm it can't be the only column in the `JOIN` clause.
 
 Syntax `ASOF JOIN ... ON`:
 
@@ -322,7 +322,7 @@ For example, consider the following tables:
 ```text
          table_1                           table_2
       event   | ev_time | user_id       event   | ev_time | user_id
-    ----------|---------|---------- ----------|---------|----------
+    ----------|---------|--------------------|---------|----------
                   ...                               ...
     event_1_1 |  12:00  |  42         event_2_1 |  11:59  |   42
                   ...                 event_2_2 |  12:30  |   42
@@ -399,8 +399,8 @@ SETTINGS max_block_size = 2;
 
 There are two ways to execute a JOIN involving distributed tables:
 
--When using a normal `JOIN`, the query is sent to remote servers. Subqueries are run on each of them in order to make the right table, and the join is performed with this table. In other words, the right table is formed on each server separately.
--When using `GLOBAL ... JOIN`, first the requestor server runs a subquery to calculate the right table. This temporary table is passed to each remote server, and queries are run on them using the temporary data that was transmitted.
+- When using a normal `JOIN`, the query is sent to remote servers. Subqueries are run on each of them in order to make the right table, and the join is performed with this table. In other words, the right table is formed on each server separately.
+- When using `GLOBAL ... JOIN`, first the requestor server runs a subquery to calculate the right table. This temporary table is passed to each remote server, and queries are run on them using the temporary data that was transmitted.
 
 Be careful when using `GLOBAL`. For more information, see the [Distributed subqueries](/sql-reference/operators/in#distributed-subqueries) section.
 
@@ -464,13 +464,13 @@ The `USING` clause specifies one or more columns to join, which establishes the 
 
 For multiple `JOIN` clauses in a single `SELECT` query:
 
--Taking all the columns via `*` is available only if tables are joined, not subqueries.
--The `PREWHERE` clause is not available.
--The `USING` clause is not available.
+- Taking all the columns via `*` is available only if tables are joined, not subqueries.
+- The `PREWHERE` clause is not available.
+- The `USING` clause is not available.
 
 For `ON`, `WHERE`, and `GROUP BY` clauses:
 
--Arbitrary expressions cannot be used in `ON`, `WHERE`, and `GROUP BY` clauses, but you can define an expression in a `SELECT` clause and then use it in these clauses via an alias.
+- Arbitrary expressions cannot be used in `ON`, `WHERE`, and `GROUP BY` clauses, but you can define an expression in a `SELECT` clause and then use it in these clauses via an alias.
 
 ### Performance {#performance}
 
@@ -488,8 +488,8 @@ By default, ClickHouse uses the [hash join](https://en.wikipedia.org/wiki/Hash_j
 
 If you need to restrict `JOIN` operation memory consumption use the following settings:
 
--[max_rows_in_join](/operations/settings/settings#max_rows_in_join) — Limits number of rows in the hash table.
--[max_bytes_in_join](/operations/settings/settings#max_bytes_in_join) — Limits size of the hash table.
+- [max_rows_in_join](/operations/settings/settings#max_rows_in_join) — Limits number of rows in the hash table.
+- [max_bytes_in_join](/operations/settings/settings#max_bytes_in_join) — Limits size of the hash table.
 
 When any of these limits is reached, ClickHouse acts as the [join_overflow_mode](/operations/settings/settings#join_overflow_mode)
 setting instructs.
@@ -539,7 +539,7 @@ LIMIT 10
 
 ## Related content {#related-content}
 
--Blog: [ClickHouse: A Blazingly Fast DBMS with Full SQL Join Support - Part 1](https://clickhouse.com/blog/clickhouse-fully-supports-joins)
--Blog: [ClickHouse: A Blazingly Fast DBMS with Full SQL Join Support - Under the Hood - Part 2](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2)
--Blog: [ClickHouse: A Blazingly Fast DBMS with Full SQL Join Support - Under the Hood - Part 3](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3)
--Blog: [ClickHouse: A Blazingly Fast DBMS with Full SQL Join Support - Under the Hood - Part 4](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4)
+- Blog: [ClickHouse: A Blazingly Fast DBMS with Full SQL Join Support - Part 1](https://clickhouse.com/blog/clickhouse-fully-supports-joins)
+- Blog: [ClickHouse: A Blazingly Fast DBMS with Full SQL Join Support - Under the Hood - Part 2](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2)
+- Blog: [ClickHouse: A Blazingly Fast DBMS with Full SQL Join Support - Under the Hood - Part 3](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3)
+- Blog: [ClickHouse: A Blazingly Fast DBMS with Full SQL Join Support - Under the Hood - Part 4](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4)

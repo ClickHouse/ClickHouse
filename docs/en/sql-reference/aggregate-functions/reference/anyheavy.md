@@ -17,7 +17,7 @@ anyHeavy(column)
 
 **Arguments**
 
--`column` – The column name.
+- `column` – The column name.
 
 **Example**
 

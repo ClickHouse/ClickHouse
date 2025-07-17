@@ -20,9 +20,9 @@ deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [
 
 ## Arguments {#arguments}
 
--`cluster_name` — Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
+- `cluster_name` — Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
 
--Description of all other arguments coincides with description of arguments in equivalent [deltaLake](sql-reference/table-functions/deltalake.md) table function.
+- Description of all other arguments coincides with description of arguments in equivalent [deltaLake](sql-reference/table-functions/deltalake.md) table function.
 
 ## Returned value {#returned_value}
 
@@ -30,5 +30,5 @@ A table with the specified structure for reading data from cluster in the specif
 
 ## Related {#related}
 
--[deltaLake engine](engines/table-engines/integrations/deltalake.md)
--[deltaLake table function](sql-reference/table-functions/deltalake.md)
+- [deltaLake engine](engines/table-engines/integrations/deltalake.md)
+- [deltaLake table function](sql-reference/table-functions/deltalake.md)

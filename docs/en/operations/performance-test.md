@@ -29,6 +29,6 @@ chmod a+x ./hardware.sh
 ./hardware.sh
 ```
 
-3.Copy the output and send it to <feedback@clickhouse.com>
+3.Copy the output and send it to feedback@clickhouse.com
 
-All the results are published here: <https://clickhouse.com/benchmark/hardware/>
+All the results are published here: https://clickhouse.com/benchmark/hardware/

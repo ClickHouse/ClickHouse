@@ -16,9 +16,9 @@ Contains metrics that are calculated periodically in the background. For example
 
 Columns:
 
--`metric` ([String](../../sql-reference/data-types/string.md)) — Metric name.
--`value` ([Float64](../../sql-reference/data-types/float.md)) — Metric value.
--`description` ([String](../../sql-reference/data-types/string.md) - Metric description)
+- `metric` ([String](../../sql-reference/data-types/string.md)) — Metric name.
+- `value` ([Float64](../../sql-reference/data-types/float.md)) — Metric value.
+- `description` ([String](../../sql-reference/data-types/string.md) - Metric description)
 
 **Example**
 
@@ -65,63 +65,63 @@ Metrics update interval
 
 ### BlockActiveTime_*name* {#blockactivetime_name}
 
-Time in seconds the block device had the IO requests queued. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See <https://www.kernel.org/doc/Documentation/block/stat.txt>
+Time in seconds the block device had the IO requests queued. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
 ### BlockDiscardBytes_*name* {#blockdiscardbytes_name}
 
-Number of discarded bytes on the block device. These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See <https://www.kernel.org/doc/Documentation/block/stat.txt>
+Number of discarded bytes on the block device. These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
 ### BlockDiscardMerges_*name* {#blockdiscardmerges_name}
 
-Number of discard operations requested from the block device and merged together by the OS IO scheduler. These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See <https://www.kernel.org/doc/Documentation/block/stat.txt>
+Number of discard operations requested from the block device and merged together by the OS IO scheduler. These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
 ### BlockDiscardOps_*name* {#blockdiscardops_name}
 
-Number of discard operations requested from the block device. These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See <https://www.kernel.org/doc/Documentation/block/stat.txt>
+Number of discard operations requested from the block device. These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
 ### BlockDiscardTime_*name* {#blockdiscardtime_name}
 
-Time in seconds spend in discard operations requested from the block device, summed across all the operations. These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See <https://www.kernel.org/doc/Documentation/block/stat.txt>
+Time in seconds spend in discard operations requested from the block device, summed across all the operations. These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
 ### BlockInFlightOps_*name* {#blockinflightops_name}
 
-This value counts the number of I/O requests that have been issued to the device driver but have not yet completed. It does not include IO requests that are in the queue but not yet issued to the device driver. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See <https://www.kernel.org/doc/Documentation/block/stat.txt>
+This value counts the number of I/O requests that have been issued to the device driver but have not yet completed. It does not include IO requests that are in the queue but not yet issued to the device driver. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
 ### BlockQueueTime_*name* {#blockqueuetime_name}
 
-This value counts the number of milliseconds that IO requests have waited on this block device. If there are multiple IO requests waiting, this value will increase as the product of the number of milliseconds times the number of requests waiting. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See <https://www.kernel.org/doc/Documentation/block/stat.txt>
+This value counts the number of milliseconds that IO requests have waited on this block device. If there are multiple IO requests waiting, this value will increase as the product of the number of milliseconds times the number of requests waiting. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
 ### BlockReadBytes_*name* {#blockreadbytes_name}
 
-Number of bytes read from the block device. It can be lower than the number of bytes read from the filesystem due to the usage of the OS page cache, that saves IO. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See <https://www.kernel.org/doc/Documentation/block/stat.txt>
+Number of bytes read from the block device. It can be lower than the number of bytes read from the filesystem due to the usage of the OS page cache, that saves IO. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
 ### BlockReadMerges_*name* {#blockreadmerges_name}
 
-Number of read operations requested from the block device and merged together by the OS IO scheduler. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See <https://www.kernel.org/doc/Documentation/block/stat.txt>
+Number of read operations requested from the block device and merged together by the OS IO scheduler. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
 ### BlockReadOps_*name* {#blockreadops_name}
 
-Number of read operations requested from the block device. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See <https://www.kernel.org/doc/Documentation/block/stat.txt>
+Number of read operations requested from the block device. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
 ### BlockReadTime_*name* {#blockreadtime_name}
 
-Time in seconds spend in read operations requested from the block device, summed across all the operations. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See <https://www.kernel.org/doc/Documentation/block/stat.txt>
+Time in seconds spend in read operations requested from the block device, summed across all the operations. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
 ### BlockWriteBytes_*name* {#blockwritebytes_name}
 
-Number of bytes written to the block device. It can be lower than the number of bytes written to the filesystem due to the usage of the OS page cache, that saves IO. A write to the block device may happen later than the corresponding write to the filesystem due to write-through caching. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See <https://www.kernel.org/doc/Documentation/block/stat.txt>
+Number of bytes written to the block device. It can be lower than the number of bytes written to the filesystem due to the usage of the OS page cache, that saves IO. A write to the block device may happen later than the corresponding write to the filesystem due to write-through caching. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
 ### BlockWriteMerges_*name* {#blockwritemerges_name}
 
-Number of write operations requested from the block device and merged together by the OS IO scheduler. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See <https://www.kernel.org/doc/Documentation/block/stat.txt>
+Number of write operations requested from the block device and merged together by the OS IO scheduler. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
 ### BlockWriteOps_*name* {#blockwriteops_name}
 
-Number of write operations requested from the block device. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See <https://www.kernel.org/doc/Documentation/block/stat.txt>
+Number of write operations requested from the block device. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
 ### BlockWriteTime_*name* {#blockwritetime_name}
 
-Time in seconds spend in write operations requested from the block device, summed across all the operations. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See <https://www.kernel.org/doc/Documentation/block/stat.txt>
+Time in seconds spend in write operations requested from the block device, summed across all the operations. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
 ### CPUFrequencyMHz_*name* {#cpufrequencymhz_name}
 
@@ -389,7 +389,7 @@ The amount of free memory plus OS page cache memory on the host system, in bytes
 
 ### OSMemoryFreeWithoutCached {#osmemoryfreewithoutcached}
 
-The amount of free memory on the host system, in bytes. This does not include the memory used by the OS page cache memory, in bytes. The page cache memory is also available for usage by programs, so the value of this metric can be confusing. See the `OSMemoryAvailable` metric instead. For convenience, we also provide the `OSMemoryFreePlusCached` metric, that should be somewhat similar to OSMemoryAvailable. See also <https://www.linuxatemyram.com/>. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server.
+The amount of free memory on the host system, in bytes. This does not include the memory used by the OS page cache memory, in bytes. The page cache memory is also available for usage by programs, so the value of this metric can be confusing. See the `OSMemoryAvailable` metric instead. For convenience, we also provide the `OSMemoryFreePlusCached` metric, that should be somewhat similar to OSMemoryAvailable. See also https://www.linuxatemyram.com/. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server.
 
 ### OSMemoryTotal {#osmemorytotal}
 
@@ -557,43 +557,43 @@ The server uptime in seconds. It includes the time spent for server initializati
 
 ### jemalloc.active {#jemallocactive}
 
-An internal metric of the low-level memory allocator (jemalloc). See <https://jemalloc.net/jemalloc.3.html>
+An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
 
 ### jemalloc.allocated {#jemallocallocated}
 
-An internal metric of the low-level memory allocator (jemalloc). See <https://jemalloc.net/jemalloc.3.html>
+An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
 
 ### jemalloc.arenas.all.dirty_purged {#jemallocarenasalldirty_purged}
 
-An internal metric of the low-level memory allocator (jemalloc). See <https://jemalloc.net/jemalloc.3.html>
+An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
 
 ### jemalloc.arenas.all.muzzy_purged {#jemallocarenasallmuzzy_purged}
 
-An internal metric of the low-level memory allocator (jemalloc). See <https://jemalloc.net/jemalloc.3.html>
+An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
 
 ### jemalloc.arenas.all.pactive {#jemallocarenasallpactive}
 
-An internal metric of the low-level memory allocator (jemalloc). See <https://jemalloc.net/jemalloc.3.html>
+An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
 
 ### jemalloc.arenas.all.pdirty {#jemallocarenasallpdirty}
 
-An internal metric of the low-level memory allocator (jemalloc). See <https://jemalloc.net/jemalloc.3.html>
+An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
 
 ### jemalloc.arenas.all.pmuzzy {#jemallocarenasallpmuzzy}
 
-An internal metric of the low-level memory allocator (jemalloc). See <https://jemalloc.net/jemalloc.3.html>
+An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
 
 ### jemalloc.background_thread.num_runs {#jemallocbackground_threadnum_runs}
 
-An internal metric of the low-level memory allocator (jemalloc). See <https://jemalloc.net/jemalloc.3.html>
+An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
 
 ### jemalloc.background_thread.num_threads {#jemallocbackground_threadnum_threads}
 
-An internal metric of the low-level memory allocator (jemalloc). See <https://jemalloc.net/jemalloc.3.html>
+An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
 
 ### jemalloc.background_thread.run_intervals {#jemallocbackground_threadrun_intervals}
 
-An internal metric of the low-level memory allocator (jemalloc). See <https://jemalloc.net/jemalloc.3.html>
+An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
 
 ### jemalloc.epoch {#jemallocepoch}
 
@@ -601,31 +601,31 @@ An internal incremental update number of the statistics of jemalloc (Jason Evans
 
 ### jemalloc.mapped {#jemallocmapped}
 
-An internal metric of the low-level memory allocator (jemalloc). See <https://jemalloc.net/jemalloc.3.html>
+An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
 
 ### jemalloc.metadata {#jemallocmetadata}
 
-An internal metric of the low-level memory allocator (jemalloc). See <https://jemalloc.net/jemalloc.3.html>
+An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
 
 ### jemalloc.metadata_thp {#jemallocmetadata_thp}
 
-An internal metric of the low-level memory allocator (jemalloc). See <https://jemalloc.net/jemalloc.3.html>
+An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
 
 ### jemalloc.resident {#jemallocresident}
 
-An internal metric of the low-level memory allocator (jemalloc). See <https://jemalloc.net/jemalloc.3.html>
+An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
 
 ### jemalloc.retained {#jemallocretained}
 
-An internal metric of the low-level memory allocator (jemalloc). See <https://jemalloc.net/jemalloc.3.html>
+An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
 
 ### jemalloc.prof.active {#jemallocprofactive}
 
-An internal metric of the low-level memory allocator (jemalloc). See <https://jemalloc.net/jemalloc.3.html>
+An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
 
 **See Also**
 
--[Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
--[system.metrics](/operations/system-tables/metrics) — Contains instantly calculated metrics.
--[system.events](/operations/system-tables/events) — Contains a number of events that have occurred.
--[system.metric_log](/operations/system-tables/metric_log) — Contains a history of metrics values from tables `system.metrics` and `system.events`.
+- [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
+- [system.metrics](/operations/system-tables/metrics) — Contains instantly calculated metrics.
+- [system.events](/operations/system-tables/events) — Contains a number of events that have occurred.
+- [system.metric_log](/operations/system-tables/metric_log) — Contains a history of metrics values from tables `system.metrics` and `system.events`.

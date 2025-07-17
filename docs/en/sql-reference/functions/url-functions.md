@@ -57,7 +57,7 @@ domain(url)
 
 **Arguments**
 
--`url` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 
 The URL can be specified with or without a protocol. Examples:
 
@@ -77,7 +77,7 @@ clickhouse.com
 
 **Returned values**
 
--Host name if the input string can be parsed as a URL, otherwise an empty string. [String](../data-types/string.md).
+- Host name if the input string can be parsed as a URL, otherwise an empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -103,11 +103,11 @@ domainRFC(url)
 
 **Arguments**
 
--`url` — URL. [String](../data-types/string.md).
+- `url` — URL. [String](../data-types/string.md).
 
 **Returned values**
 
--Host name if the input string can be parsed as a URL, otherwise an empty string. [String](../data-types/string.md).
+- Host name if the input string can be parsed as a URL, otherwise an empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -135,11 +135,11 @@ domainWithoutWWW(url)
 
 **Arguments**
 
--`url` — URL. [String](../data-types/string.md).
+- `url` — URL. [String](../data-types/string.md).
 
 **Returned values**
 
--Domain name if the input string can be parsed as a URL (without leading `www.`), otherwise an empty string. [String](../data-types/string.md).
+- Domain name if the input string can be parsed as a URL (without leading `www.`), otherwise an empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -165,11 +165,11 @@ domainWithoutWWWRFC(url)
 
 **Arguments**
 
--`url` — URL. [String](../data-types/string.md).
+- `url` — URL. [String](../data-types/string.md).
 
 **Returned values**
 
--Domain name if the input string can be parsed as a URL (without leading `www.`), otherwise an empty string. [String](../data-types/string.md).
+- Domain name if the input string can be parsed as a URL (without leading `www.`), otherwise an empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -199,7 +199,7 @@ topLevelDomain(url)
 
 **Arguments**
 
--`url` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 
 :::note
 The URL can be specified with or without a protocol. Examples:
@@ -214,7 +214,7 @@ https://clickhouse.com/time/
 
 **Returned values**
 
--Domain name if the input string can be parsed as a URL. Otherwise, an empty string. [String](../../sql-reference/data-types/string.md).
+- Domain name if the input string can be parsed as a URL. Otherwise, an empty string. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -243,7 +243,7 @@ topLevelDomainRFC(url)
 
 **Arguments**
 
--`url` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 
 :::note
 The URL can be specified with or without a protocol. Examples:
@@ -258,7 +258,7 @@ https://clickhouse.com/time/
 
 **Returned values**
 
--Domain name if the input string can be parsed as a URL. Otherwise, an empty string. [String](../../sql-reference/data-types/string.md).
+- Domain name if the input string can be parsed as a URL. Otherwise, an empty string. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -291,11 +291,11 @@ firstSignificantSubdomain(url)
 
 **Arguments**
 
--`url` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--The first significant subdomain. [String](../data-types/string.md).
+- The first significant subdomain. [String](../data-types/string.md).
 
 **Example**
 
@@ -329,11 +329,11 @@ firstSignificantSubdomainRFC(url)
 
 **Arguments**
 
--`url` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--The first significant subdomain. [String](../data-types/string.md).
+- The first significant subdomain. [String](../data-types/string.md).
 
 **Example**
 
@@ -365,11 +365,11 @@ cutToFirstSignificantSubdomain(url)
 
 **Arguments**
 
--`url` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--Part of the domain that includes top-level subdomains up to the first significant subdomain if possible, otherwise returns an empty string. [String](../data-types/string.md).
+- Part of the domain that includes top-level subdomains up to the first significant subdomain if possible, otherwise returns an empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -403,11 +403,11 @@ cutToFirstSignificantSubdomainRFC(url)
 
 **Arguments**
 
--`url` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--Part of the domain that includes top-level subdomains up to the first significant subdomain if possible, otherwise returns an empty string. [String](../data-types/string.md).
+- Part of the domain that includes top-level subdomains up to the first significant subdomain if possible, otherwise returns an empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -439,11 +439,11 @@ cutToFirstSignificantSubdomainWithWWW(url)
 
 **Arguments**
 
--`url` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--Part of the domain that includes top-level subdomains up to the first significant subdomain (with `www`) if possible, otherwise returns an empty string. [String](../data-types/string.md).
+- Part of the domain that includes top-level subdomains up to the first significant subdomain (with `www`) if possible, otherwise returns an empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -477,11 +477,11 @@ cutToFirstSignificantSubdomainWithWWW(url)
 
 **Arguments**
 
--`url` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--Part of the domain that includes top-level subdomains up to the first significant subdomain (with "www") if possible, otherwise returns an empty string. [String](../data-types/string.md).
+- Part of the domain that includes top-level subdomains up to the first significant subdomain (with "www") if possible, otherwise returns an empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -526,12 +526,12 @@ cutToFirstSignificantSubdomain(url, tld)
 
 **Arguments**
 
--`url` — URL. [String](../../sql-reference/data-types/string.md).
--`tld` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
+- `tld` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--Part of the domain that includes top-level subdomains up to the first significant subdomain. [String](../../sql-reference/data-types/string.md).
+- Part of the domain that includes top-level subdomains up to the first significant subdomain. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -551,7 +551,7 @@ Result:
 
 **See Also**
 
--[firstSignificantSubdomain](#firstsignificantsubdomain).
+- [firstSignificantSubdomain](#firstsignificantsubdomain).
 
 ### cutToFirstSignificantSubdomainCustomRFC {#cuttofirstsignificantsubdomaincustomrfc}
 
@@ -568,16 +568,16 @@ cutToFirstSignificantSubdomainRFC(url, tld)
 
 **Arguments**
 
--`url` — URL. [String](../../sql-reference/data-types/string.md).
--`tld` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
+- `tld` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--Part of the domain that includes top-level subdomains up to the first significant subdomain. [String](../../sql-reference/data-types/string.md).
+- Part of the domain that includes top-level subdomains up to the first significant subdomain. [String](../../sql-reference/data-types/string.md).
 
 **See Also**
 
--[firstSignificantSubdomain](#firstsignificantsubdomain).
+- [firstSignificantSubdomain](#firstsignificantsubdomain).
 
 ### cutToFirstSignificantSubdomainCustomWithWWW {#cuttofirstsignificantsubdomaincustomwithwww}
 
@@ -604,12 +604,12 @@ cutToFirstSignificantSubdomainCustomWithWWW(url, tld)
 
 **Arguments**
 
--`url` — URL. [String](../../sql-reference/data-types/string.md).
--`tld` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
+- `tld` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--Part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`. [String](../data-types/string.md).
+- Part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`. [String](../data-types/string.md).
 
 **Example**
 
@@ -629,8 +629,8 @@ Result:
 
 **See Also**
 
--[firstSignificantSubdomain](#firstsignificantsubdomain).
--[top_level_domains_list](../../operations/server-configuration-parameters/settings.md/#top_level_domains_list)
+- [firstSignificantSubdomain](#firstsignificantsubdomain).
+- [top_level_domains_list](../../operations/server-configuration-parameters/settings.md/#top_level_domains_list)
 
 ### cutToFirstSignificantSubdomainCustomWithWWWRFC {#cuttofirstsignificantsubdomaincustomwithwwwrfc}
 
@@ -647,17 +647,17 @@ cutToFirstSignificantSubdomainCustomWithWWWRFC(url, tld)
 
 **Arguments**
 
--`url` — URL. [String](../../sql-reference/data-types/string.md).
--`tld` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
+- `tld` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--Part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`. [String](../../sql-reference/data-types/string.md).
+- Part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`. [String](../../sql-reference/data-types/string.md).
 
 **See Also**
 
--[firstSignificantSubdomain](#firstsignificantsubdomain).
--[top_level_domains_list](../../operations/server-configuration-parameters/settings.md/#top_level_domains_list)
+- [firstSignificantSubdomain](#firstsignificantsubdomain).
+- [top_level_domains_list](../../operations/server-configuration-parameters/settings.md/#top_level_domains_list)
 
 ### firstSignificantSubdomainCustom {#firstsignificantsubdomaincustom}
 
@@ -684,12 +684,12 @@ firstSignificantSubdomainCustom(url, tld)
 
 **Arguments**
 
--`url` — URL. [String](../../sql-reference/data-types/string.md).
--`tld` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
+- `tld` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--First significant subdomain. [String](../../sql-reference/data-types/string.md).
+- First significant subdomain. [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -709,8 +709,8 @@ Result:
 
 **See Also**
 
--[firstSignificantSubdomain](#firstsignificantsubdomain).
--[top_level_domains_list](../../operations/server-configuration-parameters/settings.md/#top_level_domains_list)
+- [firstSignificantSubdomain](#firstsignificantsubdomain).
+- [top_level_domains_list](../../operations/server-configuration-parameters/settings.md/#top_level_domains_list)
 
 ### firstSignificantSubdomainCustomRFC {#firstsignificantsubdomaincustomrfc}
 
@@ -727,17 +727,17 @@ firstSignificantSubdomainCustomRFC(url, tld)
 
 **Arguments**
 
--`url` — URL. [String](../../sql-reference/data-types/string.md).
--`tld` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
+- `tld` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--First significant subdomain. [String](../../sql-reference/data-types/string.md).
+- First significant subdomain. [String](../../sql-reference/data-types/string.md).
 
 **See Also**
 
--[firstSignificantSubdomain](#firstsignificantsubdomain).
--[top_level_domains_list](../../operations/server-configuration-parameters/settings.md/#top_level_domains_list)
+- [firstSignificantSubdomain](#firstsignificantsubdomain).
+- [top_level_domains_list](../../operations/server-configuration-parameters/settings.md/#top_level_domains_list)
 
 ### port {#port}
 
@@ -751,12 +751,12 @@ port(url [, default_port = 0])
 
 **Arguments**
 
--`url` — URL. [String](../data-types/string.md).
--`default_port` — The default port number to be returned. [UInt16](../data-types/int-uint.md).
+- `url` — URL. [String](../data-types/string.md).
+- `default_port` — The default port number to be returned. [UInt16](../data-types/int-uint.md).
 
 **Returned value**
 
--Port or the default port if there is no port in the URL or in case of a validation error. [UInt16](../data-types/int-uint.md).
+- Port or the default port if there is no port in the URL or in case of a validation error. [UInt16](../data-types/int-uint.md).
 
 **Example**
 
@@ -787,12 +787,12 @@ portRFC(url [, default_port = 0])
 
 **Arguments**
 
--`url` — URL. [String](../../sql-reference/data-types/string.md).
--`default_port` — The default port number to be returned. [UInt16](../data-types/int-uint.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
+- `default_port` — The default port number to be returned. [UInt16](../data-types/int-uint.md).
 
 **Returned value**
 
--Port or the default port if there is no port in the URL or in case of a validation error. [UInt16](../data-types/int-uint.md).
+- Port or the default port if there is no port in the URL or in case of a validation error. [UInt16](../data-types/int-uint.md).
 
 **Example**
 
@@ -836,11 +836,11 @@ protocol(url)
 
 **Arguments**
 
--`url` — URL to extract protocol from. [String](../data-types/string.md).
+- `url` — URL to extract protocol from. [String](../data-types/string.md).
 
 **Returned value**
 
--Protocol, or an empty string if it cannot be determined. [String](../data-types/string.md).
+- Protocol, or an empty string if it cannot be determined. [String](../data-types/string.md).
 
 **Example**
 
@@ -984,11 +984,11 @@ netloc(url)
 
 **Arguments**
 
--`url` — URL. [String](../../sql-reference/data-types/string.md).
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--`username:password@host:port`. [String](../data-types/string.md).
+- `username:password@host:port`. [String](../data-types/string.md).
 
 **Example**
 
@@ -1039,12 +1039,12 @@ cutURLParameter(url, name)
 
 **Arguments**
 
--`url` — URL. [String](../../sql-reference/data-types/string.md).
--`name` — name of URL parameter. [String](../../sql-reference/data-types/string.md) or [Array](../../sql-reference/data-types/array.md) of Strings.
+- `url` — URL. [String](../../sql-reference/data-types/string.md).
+- `name` — name of URL parameter. [String](../../sql-reference/data-types/string.md) or [Array](../../sql-reference/data-types/array.md) of Strings.
 
 **Returned value**
 
--url with `name` URL parameter removed. [String](../data-types/string.md).
+- url with `name` URL parameter removed. [String](../data-types/string.md).
 
 **Example**
 
@@ -1068,7 +1068,7 @@ Result:
 The inner content of the tags below are replaced at doc framework build time with 
 docs generated from system.functions. Please do not modify or remove the tags.
 See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
--->
+- ->
 
 <!--AUTOGENERATED_START-->
 <!--AUTOGENERATED_END-->

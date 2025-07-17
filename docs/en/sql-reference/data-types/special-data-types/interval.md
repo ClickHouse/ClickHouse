@@ -12,22 +12,22 @@ The family of data types representing time and date intervals. The resulting typ
 
 Structure:
 
--Time interval as an unsigned integer value.
--Type of an interval.
+- Time interval as an unsigned integer value.
+- Type of an interval.
 
 Supported interval types:
 
--`NANOSECOND`
--`MICROSECOND`
--`MILLISECOND`
--`SECOND`
--`MINUTE`
--`HOUR`
--`DAY`
--`WEEK`
--`MONTH`
--`QUARTER`
--`YEAR`
+- `NANOSECOND`
+- `MICROSECOND`
+- `MILLISECOND`
+- `SECOND`
+- `MINUTE`
+- `HOUR`
+- `DAY`
+- `WEEK`
+- `MONTH`
+- `QUARTER`
+- `YEAR`
 
 For each interval type, there is a separate data type. For example, the `DAY` interval corresponds to the `IntervalDay` data type:
 
@@ -81,5 +81,5 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 
 ## See Also {#see-also}
 
--[INTERVAL](/sql-reference/operators#interval) operator
--[toInterval](/sql-reference/functions/type-conversion-functions#tointervalyear) type conversion functions
+- [INTERVAL](/sql-reference/operators#interval) operator
+- [toInterval](/sql-reference/functions/type-conversion-functions#tointervalyear) type conversion functions

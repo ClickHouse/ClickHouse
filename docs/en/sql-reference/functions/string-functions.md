@@ -25,11 +25,11 @@ empty(x)
 
 **Arguments**
 
--`x` — Input value. [String](../data-types/string.md).
+- `x` — Input value. [String](../data-types/string.md).
 
 **Returned value**
 
--Returns `1` for an empty string or `0` for a non-empty string. [UInt8](../data-types/int-uint.md).
+- Returns `1` for an empty string or `0` for a non-empty string. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -59,11 +59,11 @@ notEmpty(x)
 
 **Arguments**
 
--`x` — Input value. [String](../data-types/string.md).
+- `x` — Input value. [String](../data-types/string.md).
 
 **Returned value**
 
--Returns `1` for a non-empty string or `0` for an empty string string. [UInt8](../data-types/int-uint.md).
+- Returns `1` for a non-empty string or `0` for an empty string string. [UInt8](../data-types/int-uint.md).
 
 **Example**
 
@@ -93,11 +93,11 @@ length(s)
 
 **Parameters**
 
--`s` — An input string or array. [String](../data-types/string)/[Array](../data-types/array).
+- `s` — An input string or array. [String](../data-types/string)/[Array](../data-types/array).
 
 **Returned value**
 
--Length of the string or array `s` in bytes. [UInt64](../data-types/int-uint).
+- Length of the string or array `s` in bytes. [UInt64](../data-types/int-uint).
 
 **Example**
 
@@ -135,8 +135,8 @@ Returns the length of a string in Unicode code points rather than in bytes or ch
 
 Aliases:
 
--`CHAR_LENGTH`
--`CHARACTER_LENGTH`
+- `CHAR_LENGTH`
+- `CHARACTER_LENGTH`
 
 **Syntax**
 
@@ -146,11 +146,11 @@ lengthUTF8(s)
 
 **Parameters**
 
--`s` — String containing valid UTF-8 encoded text. [String](../data-types/string).
+- `s` — String containing valid UTF-8 encoded text. [String](../data-types/string).
 
 **Returned value**
 
--Length of the string `s` in Unicode code points. [UInt64](../data-types/int-uint.md).
+- Length of the string `s` in Unicode code points. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -180,14 +180,14 @@ left(s, offset)
 
 **Parameters**
 
--`s` — The string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
--`offset` — The number of bytes of the offset. [(U)Int*](../data-types/int-uint).
+- `s` — The string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `offset` — The number of bytes of the offset. [(U)Int*](../data-types/int-uint).
 
 **Returned value**
 
--For positive `offset`: A substring of `s` with `offset` many bytes, starting from the left of the string.
+- For positive `offset`: A substring of `s` with `offset` many bytes, starting from the left of the string.
 - For negative `offset`: A substring of `s` with `length(s) - |offset|` bytes, starting from the left of the string.
--An empty string if `length` is 0.
+- An empty string if `length` is 0.
 
 **Example**
 
@@ -227,14 +227,14 @@ leftUTF8(s, offset)
 
 **Parameters**
 
--`s` — The UTF-8 encoded string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
--`offset` — The number of bytes of the offset. [(U)Int*](../data-types/int-uint).
+- `s` — The UTF-8 encoded string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `offset` — The number of bytes of the offset. [(U)Int*](../data-types/int-uint).
 
 **Returned value**
 
--For positive `offset`: A substring of `s` with `offset` many bytes, starting from the left of the string.
+- For positive `offset`: A substring of `s` with `offset` many bytes, starting from the left of the string.
 - For negative `offset`: A substring of `s` with `length(s) - |offset|` bytes, starting from the left of the string.
--An empty string if `length` is 0.
+- An empty string if `length` is 0.
 
 **Example**
 
@@ -276,13 +276,13 @@ Alias: `LPAD`
 
 **Arguments**
 
--`string` — Input string that should be padded. [String](../data-types/string.md).
--`length` — The length of the resulting string. [UInt or Int](../data-types/int-uint.md). If the value is smaller than the input string length, then the input string is shortened to `length` characters.
--`pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
+- `string` — Input string that should be padded. [String](../data-types/string.md).
+- `length` — The length of the resulting string. [UInt or Int](../data-types/int-uint.md). If the value is smaller than the input string length, then the input string is shortened to `length` characters.
+- `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
 
 **Returned value**
 
--A left-padded string of the given length. [String](../data-types/string.md).
+- A left-padded string of the given length. [String](../data-types/string.md).
 
 **Example**
 
@@ -310,13 +310,13 @@ leftPadUTF8(string, length[, pad_string])
 
 **Arguments**
 
--`string` — Input string that should be padded. [String](../data-types/string.md).
--`length` — The length of the resulting string. [UInt or Int](../data-types/int-uint.md). If the value is smaller than the input string length, then the input string is shortened to `length` characters.
--`pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
+- `string` — Input string that should be padded. [String](../data-types/string.md).
+- `length` — The length of the resulting string. [UInt or Int](../data-types/int-uint.md). If the value is smaller than the input string length, then the input string is shortened to `length` characters.
+- `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
 
 **Returned value**
 
--A left-padded string of the given length. [String](../data-types/string.md).
+- A left-padded string of the given length. [String](../data-types/string.md).
 
 **Example**
 
@@ -344,14 +344,14 @@ right(s, offset)
 
 **Parameters**
 
--`s` — The string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
--`offset` — The number of bytes of the offset. [(U)Int*](../data-types/int-uint).
+- `s` — The string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `offset` — The number of bytes of the offset. [(U)Int*](../data-types/int-uint).
 
 **Returned value**
 
--For positive `offset`: A substring of `s` with `offset` many bytes, starting from the right of the string.
+- For positive `offset`: A substring of `s` with `offset` many bytes, starting from the right of the string.
 - For negative `offset`: A substring of `s` with `length(s) - |offset|` bytes, starting from the right of the string.
--An empty string if `length` is 0.
+- An empty string if `length` is 0.
 
 **Example**
 
@@ -391,14 +391,14 @@ rightUTF8(s, offset)
 
 **Parameters**
 
--`s` — The UTF-8 encoded string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
--`offset` — The number of bytes of the offset. [(U)Int*](../data-types/int-uint).
+- `s` — The UTF-8 encoded string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- `offset` — The number of bytes of the offset. [(U)Int*](../data-types/int-uint).
 
 **Returned value**
 
--For positive `offset`: A substring of `s` with `offset` many bytes, starting from the right of the string.
+- For positive `offset`: A substring of `s` with `offset` many bytes, starting from the right of the string.
 - For negative `offset`: A substring of `s` with `length(s) - |offset|` bytes, starting from the right of the string.
--An empty string if `length` is 0.
+- An empty string if `length` is 0.
 
 **Example**
 
@@ -440,13 +440,13 @@ Alias: `RPAD`
 
 **Arguments**
 
--`string` — Input string that should be padded. [String](../data-types/string.md).
--`length` — The length of the resulting string. [UInt or Int](../data-types/int-uint.md). If the value is smaller than the input string length, then the input string is shortened to `length` characters.
--`pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
+- `string` — Input string that should be padded. [String](../data-types/string.md).
+- `length` — The length of the resulting string. [UInt or Int](../data-types/int-uint.md). If the value is smaller than the input string length, then the input string is shortened to `length` characters.
+- `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
 
 **Returned value**
 
--A left-padded string of the given length. [String](../data-types/string.md).
+- A left-padded string of the given length. [String](../data-types/string.md).
 
 **Example**
 
@@ -474,13 +474,13 @@ rightPadUTF8(string, length[, pad_string])
 
 **Arguments**
 
--`string` — Input string that should be padded. [String](../data-types/string.md).
--`length` — The length of the resulting string. [UInt or Int](../data-types/int-uint.md). If the value is smaller than the input string length, then the input string is shortened to `length` characters.
--`pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
+- `string` — Input string that should be padded. [String](../data-types/string.md).
+- `length` — The length of the resulting string. [UInt or Int](../data-types/int-uint.md). If the value is smaller than the input string length, then the input string is shortened to `length` characters.
+- `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
 
 **Returned value**
 
--A right-padded string of the given length. [String](../data-types/string.md).
+- A right-padded string of the given length. [String](../data-types/string.md).
 
 **Example**
 
@@ -508,17 +508,17 @@ compareSubstrings(string1, string2, string1_offset, string2_offset, num_bytes);
 
 **Arguments**
 
--`string1` — The first string to compare. [String](../data-types/string.md)
--`string2` - The second string to compare.[String](../data-types/string.md)
--`string1_offset` — The position (zero-based) in `string1` from which the comparison starts. [UInt*](../data-types/int-uint.md).
--`string2_offset` — The position (zero-based index) in `string2` from which the comparison starts. [UInt*](../data-types/int-uint.md).
--`num_bytes` — The maximum number of bytes to compare in both strings. If `string_offset` + `num_bytes` exceeds the end of an input string, `num_bytes` will be reduced accordingly. [UInt*](../data-types/int-uint.md).
+- `string1` — The first string to compare. [String](../data-types/string.md)
+- `string2` - The second string to compare.[String](../data-types/string.md)
+- `string1_offset` — The position (zero-based) in `string1` from which the comparison starts. [UInt*](../data-types/int-uint.md).
+- `string2_offset` — The position (zero-based index) in `string2` from which the comparison starts. [UInt*](../data-types/int-uint.md).
+- `num_bytes` — The maximum number of bytes to compare in both strings. If `string_offset` + `num_bytes` exceeds the end of an input string, `num_bytes` will be reduced accordingly. [UInt*](../data-types/int-uint.md).
 
 **Returned value**
 
---1 — If `string1`[`string1_offset` : `string1_offset` + `num_bytes`] < `string2`[`string2_offset` : `string2_offset` + `num_bytes`].
--0 — If `string1`[`string1_offset` : `string1_offset` + `num_bytes`] = `string2`[`string2_offset` : `string2_offset` + `num_bytes`].
--1 — If `string1`[`string1_offset` : `string1_offset` + `num_bytes`] > `string2`[`string2_offset` : `string2_offset` + `num_bytes`].
+- -1 — If `string1`[`string1_offset` : `string1_offset` + `num_bytes`] < `string2`[`string2_offset` : `string2_offset` + `num_bytes`].
+- 0 — If `string1`[`string1_offset` : `string1_offset` + `num_bytes`] = `string2`[`string2_offset` : `string2_offset` + `num_bytes`].
+- 1 — If `string1`[`string1_offset` : `string1_offset` + `num_bytes`] > `string2`[`string2_offset` : `string2_offset` + `num_bytes`].
 
 **Example**
 
@@ -550,11 +550,11 @@ Alias: `lcase`
 
 **Parameters**
 
--`input`: A string type [String](../data-types/string.md).
+- `input`: A string type [String](../data-types/string.md).
 
 **Returned value**
 
--A [String](../data-types/string.md) data type value.
+- A [String](../data-types/string.md) data type value.
 
 **Example**
 
@@ -584,11 +584,11 @@ Alias: `ucase`
 
 **Parameters**
 
--`input` — A string type [String](../data-types/string.md).
+- `input` — A string type [String](../data-types/string.md).
 
 **Returned value**
 
--A [String](../data-types/string.md) data type value.
+- A [String](../data-types/string.md) data type value.
 
 **Examples**
 
@@ -620,11 +620,11 @@ lowerUTF8(input)
 
 **Parameters**
 
--`input` — A string type [String](../data-types/string.md).
+- `input` — A string type [String](../data-types/string.md).
 
 **Returned value**
 
--A [String](../data-types/string.md) data type value.
+- A [String](../data-types/string.md) data type value.
 
 **Example**
 
@@ -658,11 +658,11 @@ upperUTF8(input)
 
 **Parameters**
 
--`input` — A string type [String](../data-types/string.md).
+- `input` — A string type [String](../data-types/string.md).
 
 **Returned value**
 
--A [String](../data-types/string.md) data type value.
+- A [String](../data-types/string.md) data type value.
 
 **Example**
 
@@ -692,11 +692,11 @@ isValidUTF8(input)
 
 **Parameters**
 
--`input` — A string type [String](../data-types/string.md).
+- `input` — A string type [String](../data-types/string.md).
 
 **Returned value**
 
--Returns `1`, if the set of bytes constitutes valid UTF-8-encoded text, otherwise `0`.
+- Returns `1`, if the set of bytes constitutes valid UTF-8-encoded text, otherwise `0`.
 
 Query:
 
@@ -724,11 +724,11 @@ toValidUTF8(input_string)
 
 **Arguments**
 
--`input_string` — Any set of bytes represented as the [String](../data-types/string.md) data type object.
+- `input_string` — Any set of bytes represented as the [String](../data-types/string.md) data type object.
 
 **Returned value**
 
--A valid UTF-8 string.
+- A valid UTF-8 string.
 
 **Example**
 
@@ -756,8 +756,8 @@ Alias: `REPEAT`
 
 **Arguments**
 
--`s` — The string to repeat. [String](../data-types/string.md).
--`n` — The number of times to repeat the string. [UInt* or Int*](../data-types/int-uint.md).
+- `s` — The string to repeat. [String](../data-types/string.md).
+- `n` — The number of times to repeat the string. [UInt* or Int*](../data-types/int-uint.md).
 
 **Returned value**
 
@@ -791,7 +791,7 @@ Alias: `SPACE`.
 
 **Arguments**
 
--`n` — The number of times to repeat the space. [UInt* or Int*](../data-types/int-uint.md).
+- `n` — The number of times to repeat the space. [UInt* or Int*](../data-types/int-uint.md).
 
 **Returned value**
 
@@ -946,8 +946,8 @@ Alias: `concat_ws`
 
 **Arguments**
 
--sep — separator. Const [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
--exprN — expression to be concatenated. Arguments which are not of types [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md) are converted to strings using their default serialization. As this decreases performance, it is not recommended to use non-String/FixedString arguments.
+- sep — separator. Const [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- exprN — expression to be concatenated. Arguments which are not of types [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md) are converted to strings using their default serialization. As this decreases performance, it is not recommended to use non-String/FixedString arguments.
 
 **Returned values**
 
@@ -987,15 +987,15 @@ substring(s, offset[, length])
 
 Aliases:
 
--`substr`
--`mid`
--`byteSlice`
+- `substr`
+- `mid`
+- `byteSlice`
 
 **Arguments**
 
--`s` — The string to calculate a substring from. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md) or [Enum](../data-types/enum.md)
--`offset` — The starting position of the substring in `s` . [(U)Int*](../data-types/int-uint.md).
--`length` — The maximum length of the substring. [(U)Int*](../data-types/int-uint.md). Optional.
+- `s` — The string to calculate a substring from. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md) or [Enum](../data-types/enum.md)
+- `offset` — The starting position of the substring in `s` . [(U)Int*](../data-types/int-uint.md).
+- `length` — The maximum length of the substring. [(U)Int*](../data-types/int-uint.md). Optional.
 
 **Returned value**
 
@@ -1029,9 +1029,9 @@ substringUTF8(s, offset[, length])
 
 **Arguments**
 
--`s` — The string to calculate a substring from. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md) or [Enum](../data-types/enum.md)
--`offset` — The starting position of the substring in `s` . [(U)Int*](../data-types/int-uint.md).
--`length` — The maximum length of the substring. [(U)Int*](../data-types/int-uint.md). Optional.
+- `s` — The string to calculate a substring from. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md) or [Enum](../data-types/enum.md)
+- `offset` — The starting position of the substring in `s` . [(U)Int*](../data-types/int-uint.md).
+- `length` — The maximum length of the substring. [(U)Int*](../data-types/int-uint.md). Optional.
 
 **Returned value**
 
@@ -1067,9 +1067,9 @@ Alias: `SUBSTRING_INDEX`
 
 **Arguments**
 
--s — The string to extract substring from. [String](../data-types/string.md).
--delim — The character to split. [String](../data-types/string.md).
--count — The number of occurrences of the delimiter to count before extracting the substring. If count is positive, everything to the left of the final delimiter (counting from the left) is returned. If count is negative, everything to the right of the final delimiter (counting from the right) is returned. [UInt or Int](../data-types/int-uint.md)
+- s — The string to extract substring from. [String](../data-types/string.md).
+- delim — The character to split. [String](../data-types/string.md).
+- count — The number of occurrences of the delimiter to count before extracting the substring. If count is positive, everything to the left of the final delimiter (counting from the left) is returned. If count is negative, everything to the right of the final delimiter (counting from the right) is returned. [UInt or Int](../data-types/int-uint.md)
 
 **Example**
 
@@ -1099,9 +1099,9 @@ substringIndexUTF8(s, delim, count)
 
 **Arguments**
 
--`s` — The string to extract substring from. [String](../data-types/string.md).
--`delim` — The character to split. [String](../data-types/string.md).
--`count` — The number of occurrences of the delimiter to count before extracting the substring. If count is positive, everything to the left of the final delimiter (counting from the left) is returned. If count is negative, everything to the right of the final delimiter (counting from the right) is returned. [UInt or Int](../data-types/int-uint.md)
+- `s` — The string to extract substring from. [String](../data-types/string.md).
+- `delim` — The character to split. [String](../data-types/string.md).
+- `count` — The number of occurrences of the delimiter to count before extracting the substring. If count is positive, everything to the left of the final delimiter (counting from the left) is returned. If count is negative, everything to the right of the final delimiter (counting from the right) is returned. [UInt or Int](../data-types/int-uint.md)
 
 **Returned value**
 
@@ -1153,11 +1153,11 @@ base32Encode(plaintext)
 
 **Arguments**
 
--`plaintext` — [String](../data-types/string.md) column or constant.
+- `plaintext` — [String](../data-types/string.md) column or constant.
 
 **Returned value**
 
--A string containing the encoded value of the argument. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- A string containing the encoded value of the argument. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Example**
 
@@ -1185,11 +1185,11 @@ base32Decode(encoded)
 
 **Arguments**
 
--`encoded` — [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md). If the string is not a valid Base32-encoded value, an exception is thrown.
+- `encoded` — [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md). If the string is not a valid Base32-encoded value, an exception is thrown.
 
 **Returned value**
 
--A string containing the decoded value of the argument. [String](../data-types/string.md).
+- A string containing the decoded value of the argument. [String](../data-types/string.md).
 
 **Example**
 
@@ -1217,11 +1217,11 @@ tryBase32Decode(encoded)
 
 **Parameters**
 
--`encoded`: [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md). If the string is not a valid Base32-encoded value, returns an empty string in case of error.
+- `encoded`: [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md). If the string is not a valid Base32-encoded value, returns an empty string in case of error.
 
 **Returned value**
 
--A string containing the decoded value of the argument.
+- A string containing the decoded value of the argument.
 
 **Examples**
 
@@ -1249,11 +1249,11 @@ base58Encode(plaintext)
 
 **Arguments**
 
--`plaintext` — [String](../data-types/string.md) column or constant.
+- `plaintext` — [String](../data-types/string.md) column or constant.
 
 **Returned value**
 
--A string containing the encoded value of the argument. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- A string containing the encoded value of the argument. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 
 **Example**
 
@@ -1281,11 +1281,11 @@ base58Decode(encoded)
 
 **Arguments**
 
--`encoded` — [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md). If the string is not a valid Base58-encoded value, an exception is thrown.
+- `encoded` — [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md). If the string is not a valid Base58-encoded value, an exception is thrown.
 
 **Returned value**
 
--A string containing the decoded value of the argument. [String](../data-types/string.md).
+- A string containing the decoded value of the argument. [String](../data-types/string.md).
 
 **Example**
 
@@ -1313,11 +1313,11 @@ tryBase58Decode(encoded)
 
 **Parameters**
 
--`encoded`: [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md). If the string is not a valid Base58-encoded value, returns an empty string in case of error.
+- `encoded`: [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md). If the string is not a valid Base58-encoded value, returns an empty string in case of error.
 
 **Returned value**
 
--A string containing the decoded value of the argument.
+- A string containing the decoded value of the argument.
 
 **Examples**
 
@@ -1347,11 +1347,11 @@ base64Encode(plaintext)
 
 **Arguments**
 
--`plaintext` — [String](../data-types/string.md) column or constant.
+- `plaintext` — [String](../data-types/string.md) column or constant.
 
 **Returned value**
 
--A string containing the encoded value of the argument.
+- A string containing the encoded value of the argument.
 
 **Example**
 
@@ -1379,11 +1379,11 @@ base64URLEncode(url)
 
 **Arguments**
 
--`url` — [String](../data-types/string.md) column or constant.
+- `url` — [String](../data-types/string.md) column or constant.
 
 **Returned value**
 
--A string containing the encoded value of the argument.
+- A string containing the encoded value of the argument.
 
 **Example**
 
@@ -1413,11 +1413,11 @@ base64Decode(encoded)
 
 **Arguments**
 
--`encoded` — [String](../data-types/string.md) column or constant. If the string is not a valid Base64-encoded value, an exception is thrown.
+- `encoded` — [String](../data-types/string.md) column or constant. If the string is not a valid Base64-encoded value, an exception is thrown.
 
 **Returned value**
 
--A string containing the decoded value of the argument.
+- A string containing the decoded value of the argument.
 
 **Example**
 
@@ -1445,11 +1445,11 @@ base64URLDecode(encodedUrl)
 
 **Arguments**
 
--`encodedURL` — [String](../data-types/string.md) column or constant. If the string is not a valid Base64-encoded value with URL-specific modifications, an exception is thrown.
+- `encodedURL` — [String](../data-types/string.md) column or constant. If the string is not a valid Base64-encoded value with URL-specific modifications, an exception is thrown.
 
 **Returned value**
 
--A string containing the decoded value of the argument.
+- A string containing the decoded value of the argument.
 
 **Example**
 
@@ -1477,11 +1477,11 @@ tryBase64Decode(encoded)
 
 **Arguments**
 
--`encoded` — [String](../data-types/string.md) column or constant. If the string is not a valid Base64-encoded value, returns an empty string.
+- `encoded` — [String](../data-types/string.md) column or constant. If the string is not a valid Base64-encoded value, returns an empty string.
 
 **Returned value**
 
--A string containing the decoded value of the argument.
+- A string containing the decoded value of the argument.
 
 **Examples**
 
@@ -1509,11 +1509,11 @@ tryBase64URLDecode(encodedUrl)
 
 **Parameters**
 
--`encodedURL` — [String](../data-types/string.md) column or constant. If the string is not a valid Base64-encoded value with URL-specific modifications, returns an empty string.
+- `encodedURL` — [String](../data-types/string.md) column or constant. If the string is not a valid Base64-encoded value with URL-specific modifications, returns an empty string.
 
 **Returned value**
 
--A string containing the decoded value of the argument.
+- A string containing the decoded value of the argument.
 
 **Examples**
 
@@ -1611,8 +1611,8 @@ trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 
 **Arguments**
 
--`trim_character` — The characters to trim. [String](../data-types/string.md).
--`input_string` — String for trim. [String](../data-types/string.md).
+- `trim_character` — The characters to trim. [String](../data-types/string.md).
+- `input_string` — String for trim. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -1646,8 +1646,8 @@ Alias: `ltrim`.
 
 **Arguments**
 
--`input_string` — The string to trim. [String](../data-types/string.md).
--`trim_characters` — The characters to trim. Optional. [String](../data-types/string.md). If not specified, `' '` ( single whitespace) is used as trim character.
+- `input_string` — The string to trim. [String](../data-types/string.md).
+- `trim_characters` — The characters to trim. Optional. [String](../data-types/string.md). If not specified, `' '` ( single whitespace) is used as trim character.
 
 **Returned value**
 
@@ -1681,8 +1681,8 @@ Alias: `rtrim`.
 
 **Arguments**
 
--`input_string` — The string to trim. [String](../data-types/string.md).
--`trim_characters` — The characters to trim. Optional. [String](../data-types/string.md). If not specified, `' '` ( single whitespace) is used as trim character.
+- `input_string` — The string to trim. [String](../data-types/string.md).
+- `trim_characters` — The characters to trim. Optional. [String](../data-types/string.md). If not specified, `' '` ( single whitespace) is used as trim character.
 
 **Returned value**
 
@@ -1716,8 +1716,8 @@ Alias: `trim`.
 
 **Arguments**
 
--`input_string` — The string to trim. [String](../data-types/string.md).
--`trim_characters` — The characters to trim. Optional. [String](../data-types/string.md). If not specified, `' '` ( single whitespace) is used as trim character.
+- `input_string` — The string to trim. [String](../data-types/string.md).
+- `trim_characters` — The characters to trim. Optional. [String](../data-types/string.md). If not specified, `' '` ( single whitespace) is used as trim character.
 
 **Returned value**
 
@@ -1767,11 +1767,11 @@ normalizeUTF8NFC(words)
 
 **Arguments**
 
--`words` — UTF8-encoded input string. [String](../data-types/string.md).
+- `words` — UTF8-encoded input string. [String](../data-types/string.md).
 
 **Returned value**
 
--String transformed to NFC normalization form. [String](../data-types/string.md).
+- String transformed to NFC normalization form. [String](../data-types/string.md).
 
 **Example**
 
@@ -1799,11 +1799,11 @@ normalizeUTF8NFD(words)
 
 **Arguments**
 
--`words` — UTF8-encoded input string. [String](../data-types/string.md).
+- `words` — UTF8-encoded input string. [String](../data-types/string.md).
 
 **Returned value**
 
--String transformed to NFD normalization form. [String](../data-types/string.md).
+- String transformed to NFD normalization form. [String](../data-types/string.md).
 
 **Example**
 
@@ -1831,11 +1831,11 @@ normalizeUTF8NFKC(words)
 
 **Arguments**
 
--`words` — UTF8-encoded input string. [String](../data-types/string.md).
+- `words` — UTF8-encoded input string. [String](../data-types/string.md).
 
 **Returned value**
 
--String transformed to NFKC normalization form. [String](../data-types/string.md).
+- String transformed to NFKC normalization form. [String](../data-types/string.md).
 
 **Example**
 
@@ -1863,11 +1863,11 @@ normalizeUTF8NFKD(words)
 
 **Arguments**
 
--`words` — UTF8-encoded input string. [String](../data-types/string.md).
+- `words` — UTF8-encoded input string. [String](../data-types/string.md).
 
 **Returned value**
 
--String transformed to NFKD normalization form. [String](../data-types/string.md).
+- String transformed to NFKD normalization form. [String](../data-types/string.md).
 
 **Example**
 
@@ -1898,11 +1898,11 @@ encodeXMLComponent(x)
 
 **Arguments**
 
--`x` — An input string. [String](../data-types/string.md).
+- `x` — An input string. [String](../data-types/string.md).
 
 **Returned value**
 
--The escaped string. [String](../data-types/string.md).
+- The escaped string. [String](../data-types/string.md).
 
 **Example**
 
@@ -1936,11 +1936,11 @@ decodeXMLComponent(x)
 
 **Arguments**
 
--`x` — An input string. [String](../data-types/string.md).
+- `x` — An input string. [String](../data-types/string.md).
 
 **Returned value**
 
--The un-escaped string. [String](../data-types/string.md).
+- The un-escaped string. [String](../data-types/string.md).
 
 **Example**
 
@@ -1970,11 +1970,11 @@ decodeHTMLComponent(x)
 
 **Arguments**
 
--`x` — An input string. [String](../data-types/string.md).
+- `x` — An input string. [String](../data-types/string.md).
 
 **Returned value**
 
--The un-escaped string. [String](../data-types/string.md).
+- The un-escaped string. [String](../data-types/string.md).
 
 **Example**
 
@@ -2012,7 +2012,7 @@ Note: tag without end is skipped to the end of input: `<hello`
     -Whitespaces at the beginning and at the end are removed.
     -Consecutive whitespaces are collapsed.
     -But if the text is separated by other elements and there is no whitespace, it is inserted.
-    -It may cause unnatural examples: `Hello<b>world</b>`, `Hello<!-- -->world` - there is no whitespace in HTML, but the function inserts it. Also consider: `Hello<p>world</p>`, `Hello<br>world`. This behavior is reasonable for data analysis, e.g. to convert HTML to a bag of words.
+    -It may cause unnatural examples: `Hello<b>world</b>`, `Hello<!---->world` - there is no whitespace in HTML, but the function inserts it. Also consider: `Hello<p>world</p>`, `Hello<br>world`. This behavior is reasonable for data analysis, e.g. to convert HTML to a bag of words.
 7.Also note that correct handling of whitespaces requires the support of `<pre></pre>` and CSS `display` and `white-space` properties.
 
 **Syntax**
@@ -2023,11 +2023,11 @@ extractTextFromHTML(x)
 
 **Arguments**
 
--`x` — input text. [String](../data-types/string.md).
+- `x` — input text. [String](../data-types/string.md).
 
 **Returned value**
 
--Extracted text. [String](../data-types/string.md).
+- Extracted text. [String](../data-types/string.md).
 
 **Example**
 
@@ -2073,11 +2073,11 @@ soundex(val)
 
 **Arguments**
 
--`val` — Input value. [String](../data-types/string.md)
+- `val` — Input value. [String](../data-types/string.md)
 
 **Returned value**
 
--The Soundex code of the input value. [String](../data-types/string.md)
+- The Soundex code of the input value. [String](../data-types/string.md)
 
 **Example**
 
@@ -2106,11 +2106,11 @@ punycodeEncode(val)
 
 **Arguments**
 
--`val` — Input value. [String](../data-types/string.md)
+- `val` — Input value. [String](../data-types/string.md)
 
 **Returned value**
 
--A Punycode representation of the input value. [String](../data-types/string.md)
+- A Punycode representation of the input value. [String](../data-types/string.md)
 
 **Example**
 
@@ -2139,11 +2139,11 @@ punycodeEncode(val)
 
 **Arguments**
 
--`val` — Punycode-encoded string. [String](../data-types/string.md)
+- `val` — Punycode-encoded string. [String](../data-types/string.md)
 
 **Returned value**
 
--The plaintext of the input value. [String](../data-types/string.md)
+- The plaintext of the input value. [String](../data-types/string.md)
 
 **Example**
 
@@ -2177,11 +2177,11 @@ idnaEncode(val)
 
 **Arguments**
 
--`val` — Input value. [String](../data-types/string.md)
+- `val` — Input value. [String](../data-types/string.md)
 
 **Returned value**
 
--A ASCII representation according to the IDNA mechanism of the input value. [String](../data-types/string.md)
+- A ASCII representation according to the IDNA mechanism of the input value. [String](../data-types/string.md)
 
 **Example**
 
@@ -2215,11 +2215,11 @@ idnaDecode(val)
 
 **Arguments**
 
--`val` — Input value. [String](../data-types/string.md)
+- `val` — Input value. [String](../data-types/string.md)
 
 **Returned value**
 
--A Unicode (UTF-8) representation according to the IDNA mechanism of the input value. [String](../data-types/string.md)
+- A Unicode (UTF-8) representation according to the IDNA mechanism of the input value. [String](../data-types/string.md)
 
 **Example**
 
@@ -2443,11 +2443,11 @@ initcap(val)
 
 **Arguments**
 
--`val` — Input value. [String](../data-types/string.md).
+- `val` — Input value. [String](../data-types/string.md).
 
 **Returned value**
 
--`val` with the first letter of each word converted to upper case. [String](../data-types/string.md).
+- `val` with the first letter of each word converted to upper case. [String](../data-types/string.md).
 
 **Example**
 
@@ -2483,11 +2483,11 @@ initcapUTF8(val)
 
 **Arguments**
 
--`val` — Input value. [String](../data-types/string.md).
+- `val` — Input value. [String](../data-types/string.md).
 
 **Returned value**
 
--`val` with the first letter of each word converted to upper case. [String](../data-types/string.md).
+- `val` with the first letter of each word converted to upper case. [String](../data-types/string.md).
 
 **Example**
 
@@ -2517,11 +2517,11 @@ firstLine(val)
 
 **Arguments**
 
--`val` — Input value. [String](../data-types/string.md)
+- `val` — Input value. [String](../data-types/string.md)
 
 **Returned value**
 
--The first line of the input value or the whole value if there is no line
+- The first line of the input value or the whole value if there is no line
   separators. [String](../data-types/string.md)
 
 **Example**
@@ -2550,19 +2550,19 @@ stringCompare(string1, string2[, str1_off, string2_offset, num_bytes]);
 
 **Arguments**
 
--`string1` — The first string to compare. [String](../data-types/string.md)
--`string2` - The second string to compare.[String](../data-types/string.md)
--`string1_offset` — The position (zero-based) in `string1` from which the comparison starts. Optional, positive number.
--`string2_offset` — The position (zero-based index) in `string2` from which the comparison starts. Optional, positive number.
--`num_bytes` — The maximum number of bytes to compare in both strings. If `string_offset` + `num_bytes` exceeds the end of an input string, `num_bytes` will be reduced accordingly.
+- `string1` — The first string to compare. [String](../data-types/string.md)
+- `string2` - The second string to compare.[String](../data-types/string.md)
+- `string1_offset` — The position (zero-based) in `string1` from which the comparison starts. Optional, positive number.
+- `string2_offset` — The position (zero-based index) in `string2` from which the comparison starts. Optional, positive number.
+- `num_bytes` — The maximum number of bytes to compare in both strings. If `string_offset` + `num_bytes` exceeds the end of an input string, `num_bytes` will be reduced accordingly.
 
 **Returned value**
 
---1 — If `string1`[`string1_offset`: `string1_offset` + `num_bytes`] < `string2`[`string2_offset`:`string2_offset` + `num_bytes`] and `string1_offset` < len(`string1`) and `string2_offset` < len(`string2`).
+- -1 — If `string1`[`string1_offset`: `string1_offset` + `num_bytes`] < `string2`[`string2_offset`:`string2_offset` + `num_bytes`] and `string1_offset` < len(`string1`) and `string2_offset` < len(`string2`).
 If `string1_offset` >= len(`string1`) and `string2_offset` < len(`string2`).
--0 — If `string1`[`string1_offset`: `string1_offset` + `num_bytes`] = `string2`[`string2_offset`:`string2_offset` + `num_bytes`] and `string1_offset` < len(`string1`) and `string2_offset` < len(`string2`).
+- 0 — If `string1`[`string1_offset`: `string1_offset` + `num_bytes`] = `string2`[`string2_offset`:`string2_offset` + `num_bytes`] and `string1_offset` < len(`string1`) and `string2_offset` < len(`string2`).
 If `string1_offset` >= len(`string1`) and `string2_offset` >= len(`string2`).
--1 — If `string1`[`string1_offset`: `string1_offset` + `num_bytes`] > `string2`[`string2_offset`:`string2_offset` + `num_bytes`] and `string1_offset` < len(`string1`) and `string2_offset` < len(`string2`).
+- 1 — If `string1`[`string1_offset`: `string1_offset` + `num_bytes`] > `string2`[`string2_offset`:`string2_offset` + `num_bytes`] and `string1_offset` < len(`string1`) and `string2_offset` < len(`string2`).
 If `string1_offset` < len(`string1`) and `string2_offset` >= len(`string2`).
 
 **Example**
@@ -2612,13 +2612,13 @@ sparseGrams(s[, min_ngram_length]);
 
 **Arguments**
 
--`s` — An input string. [String](../data-types/string.md)
--`min_ngram_length` — The minimum length of extracted ngram. The default and minimal value is 3.
--`max_ngram_length` — The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'
+- `s` — An input string. [String](../data-types/string.md)
+- `min_ngram_length` — The minimum length of extracted ngram. The default and minimal value is 3.
+- `max_ngram_length` — The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'
 
 **Returned value**
 
--An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
+- An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 **Example**
 
@@ -2650,13 +2650,13 @@ sparseGramsUTF8(s[, min_ngram_length]);
 
 **Arguments**
 
--`s` — An input string. [String](../data-types/string.md)
--`min_ngram_length` — The minimum length of extracted ngram. The default and minimal value is 3.
--`max_ngram_length` — The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'
+- `s` — An input string. [String](../data-types/string.md)
+- `min_ngram_length` — The minimum length of extracted ngram. The default and minimal value is 3.
+- `max_ngram_length` — The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'
 
 **Returned value**
 
--An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
+- An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 **Example**
 
@@ -2687,13 +2687,13 @@ sparseGramsHashes(s[, min_ngram_length]);
 
 **Arguments**
 
--`s` — An input string. [String](../data-types/string.md)
--`min_ngram_length` — The minimum length of extracted ngram. The default and minimal value is 3.
--`max_ngram_length` — The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'
+- `s` — An input string. [String](../data-types/string.md)
+- `min_ngram_length` — The minimum length of extracted ngram. The default and minimal value is 3.
+- `max_ngram_length` — The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'
 
 **Returned value**
 
--An array of selected substrings crc32-c hashes. [Array](../data-types/array.md)([UInt32](../data-types/int-uint.md)).
+- An array of selected substrings crc32-c hashes. [Array](../data-types/array.md)([UInt32](../data-types/int-uint.md)).
 
 **Example**
 
@@ -2725,13 +2725,13 @@ sparseGramsUTF8(s[, min_ngram_length]);
 
 **Arguments**
 
--`s` — An input string. [String](../data-types/string.md)
--`min_ngram_length` — The minimum length of extracted ngram. The default and minimal value is 3.
--`max_ngram_length` — The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'
+- `s` — An input string. [String](../data-types/string.md)
+- `min_ngram_length` — The minimum length of extracted ngram. The default and minimal value is 3.
+- `max_ngram_length` — The maximum length of extracted ngram. The default value is 100. Should be not less than 'min_ngram_length'
 
 **Returned value**
 
--An array of selected substrings crc32-c hashes. [Array](../data-types/array.md)([UInt32](../data-types/int-uint.md)).
+- An array of selected substrings crc32-c hashes. [Array](../data-types/array.md)([UInt32](../data-types/int-uint.md)).
 
 **Example**
 
@@ -2759,11 +2759,11 @@ stringBytesUniq(s)
 
 **Arguments**
 
--`s` — The string to analyze. [String](../data-types/string.md).
+- `s` — The string to analyze. [String](../data-types/string.md).
 
 **Returned value**
 
--The number of distinct bytes in the string. [UInt16](../data-types/int-uint.md).
+- The number of distinct bytes in the string. [UInt16](../data-types/int-uint.md).
 
 **Example**
 
@@ -2791,11 +2791,11 @@ stringBytesEntropy(s)
 
 **Arguments**
 
--`s` — The string to analyze. [String](../data-types/string.md).
+- `s` — The string to analyze. [String](../data-types/string.md).
 
 **Returned value**
 
--Shannon's entropy of byte distribution in the string. [Float64](../data-types/float.md).
+- Shannon's entropy of byte distribution in the string. [Float64](../data-types/float.md).
 
 **Example**
 
@@ -2815,7 +2815,7 @@ Result:
 The inner content of the tags below are replaced at doc framework build time with 
 docs generated from system.functions. Please do not modify or remove the tags.
 See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
--->
+- ->
 
 <!--AUTOGENERATED_START-->
 <!--AUTOGENERATED_END-->

@@ -43,19 +43,19 @@ Note, that you can define multiple HTTP servers inside the `http_authentication_
 
 **Parameters**
 
--`uri` - URI for making authentication request
+- `uri` - URI for making authentication request
 
 Timeouts in milliseconds on the socket used for communicating with the server:
 
--`connection_timeout_ms` - Default: 1000 ms.
--`receive_timeout_ms` - Default: 1000 ms.
--`send_timeout_ms` - Default: 1000 ms.
+- `connection_timeout_ms` - Default: 1000 ms.
+- `receive_timeout_ms` - Default: 1000 ms.
+- `send_timeout_ms` - Default: 1000 ms.
 
 Retry parameters:
 
--`max_tries` - The maximum number of attempts to make an authentication request. Default: 3
--`retry_initial_backoff_ms` - The backoff initial interval on retry. Default: 50 ms
--`retry_max_backoff_ms` - The maximum backoff interval. Default: 1000 ms
+- `max_tries` - The maximum number of attempts to make an authentication request. Default: 3
+- `retry_initial_backoff_ms` - The backoff initial interval on retry. Default: 50 ms
+- `retry_max_backoff_ms` - The maximum backoff interval. Default: 1000 ms
 
 Forward headers:
 
@@ -67,8 +67,8 @@ In order to enable HTTP authentication for the user, specify `http_authenticatio
 
 Parameters:
 
--`server` - Name of the HTTP authentication server configured in the main `config.xml` file as described previously.
--`scheme` - HTTP authentication scheme. `Basic` is only supported now. Default: Basic
+- `server` - Name of the HTTP authentication server configured in the main `config.xml` file as described previously.
+- `scheme` - HTTP authentication scheme. `Basic` is only supported now. Default: Basic
 
 Example (goes into `users.xml`):
 

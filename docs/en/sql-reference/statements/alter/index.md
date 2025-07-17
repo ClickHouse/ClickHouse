@@ -78,4 +78,4 @@ For all `ALTER` queries, if `alter_sync = 2` and some replicas are not active fo
 
 ## Related content {#related-content}
 
--Blog: [Handling Updates and Deletes in ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
+- Blog: [Handling Updates and Deletes in ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

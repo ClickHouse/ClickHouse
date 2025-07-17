@@ -17,8 +17,8 @@ service, you must use [SQL-driven Settings Profiles](/operations/access-rights#s
 
 There are two main groups of ClickHouse settings:
 
--Global server settings
--Session settings
+- Global server settings
+- Session settings
 
 The main distinction between both is that global server settings apply globally
 for the ClickHouse server, while session settings apply to user sessions or even
@@ -55,7 +55,7 @@ Which will return something like this:
 
 ## Further reading {#further-reading}
 
--See [global server settings](/operations/server-configuration-parameters/settings.md) to learn more about configuring your
+- See [global server settings](/operations/server-configuration-parameters/settings.md) to learn more about configuring your
   ClickHouse server at the global server level.
--See [session settings](/operations/settings/settings-query-level.md) to learn more about configuring your ClickHouse
+- See [session settings](/operations/settings/settings-query-level.md) to learn more about configuring your ClickHouse
   server at the session level.

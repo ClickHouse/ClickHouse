@@ -19,15 +19,15 @@ Aliases: `SVG`, `svg`
 
 **Parameters**
 
--`geometry` — Geo data. [Geo](../../data-types/geo).
--`style` — Optional style name. [String](../../data-types/string).
+- `geometry` — Geo data. [Geo](../../data-types/geo).
+- `style` — Optional style name. [String](../../data-types/string).
 
 **Returned value**
 
--The SVG representation of the geometry. [String](../../data-types/string).
--SVG circle
--SVG polygon
--SVG path
+- The SVG representation of the geometry. [String](../../data-types/string).
+- SVG circle
+- SVG polygon
+- SVG path
 
 **Examples**
 

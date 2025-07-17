@@ -340,8 +340,8 @@ Values of a `Variant` type can be compared only with values with the same `Varia
 
 The result of operator `<` for values `v1` with underlying type `T1` and `v2` with underlying type `T2`  of a type `Variant(..., T1, ... T2, ...)` is defined as follows:
 
--If `T1 = T2 = T`, the result will be `v1.T < v2.T` (underlying values will be compared).
--If `T1 != T2`, the result will be `T1 < T2` (type names will be compared).
+- If `T1 = T2 = T`, the result will be `v1.T < v2.T` (underlying values will be compared).
+- If `T1 != T2`, the result will be `T1 < T2` (type names will be compared).
 
 Examples:
 
@@ -383,7 +383,7 @@ SELECT v1, variantType(v1) AS v1_type, v2, variantType(v2) AS v2_type, v1 = v2, 
 
 If you need to find the row with specific `Variant` value, you can do one of the following:
 
--Cast value to the corresponding `Variant` type:
+- Cast value to the corresponding `Variant` type:
 
 ```sql
 SELECT * FROM test WHERE v2 == [1,2,3]::Array(UInt32)::Variant(String, UInt64, Array(UInt32));
@@ -395,7 +395,7 @@ SELECT * FROM test WHERE v2 == [1,2,3]::Array(UInt32)::Variant(String, UInt64, A
 └────┴─────────┘
 ```
 
--Compare `Variant` subcolumn with required type:
+- Compare `Variant` subcolumn with required type:
 
 ```sql
 SELECT * FROM test WHERE v2.`Array(UInt32)` == [1,2,3] -- or using variantElement(v2, 'Array(UInt32)')

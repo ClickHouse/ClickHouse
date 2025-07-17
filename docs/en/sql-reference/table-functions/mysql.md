@@ -144,9 +144,9 @@ WHERE id > (SELECT max(id) FROM mysql_copy);
 
 ## Related {#related}
 
--[The 'MySQL' table engine](../../engines/table-engines/integrations/mysql.md)
--[Using MySQL as a dictionary source](/sql-reference/dictionaries#mysql)
--[mysql_datatypes_support_level](operations/settings/settings.md#mysql_datatypes_support_level)
--[mysql_map_fixed_string_to_text_in_show_columns](operations/settings/settings.md#mysql_map_fixed_string_to_text_in_show_columns)
--[mysql_map_string_to_text_in_show_columns](operations/settings/settings.md#mysql_map_string_to_text_in_show_columns)
--[mysql_max_rows_to_insert](operations/settings/settings.md#mysql_max_rows_to_insert)
+- [The 'MySQL' table engine](../../engines/table-engines/integrations/mysql.md)
+- [Using MySQL as a dictionary source](/sql-reference/dictionaries#mysql)
+- [mysql_datatypes_support_level](operations/settings/settings.md#mysql_datatypes_support_level)
+- [mysql_map_fixed_string_to_text_in_show_columns](operations/settings/settings.md#mysql_map_fixed_string_to_text_in_show_columns)
+- [mysql_map_string_to_text_in_show_columns](operations/settings/settings.md#mysql_map_string_to_text_in_show_columns)
+- [mysql_max_rows_to_insert](operations/settings/settings.md#mysql_max_rows_to_insert)

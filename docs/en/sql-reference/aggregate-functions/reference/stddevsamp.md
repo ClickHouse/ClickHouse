@@ -23,7 +23,7 @@ stddevSamp(x)
 
 **Parameters**
 
--`x`: Values for which to find the square root of sample variance. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal*](../../data-types/decimal.md).
+- `x`: Values for which to find the square root of sample variance. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal*](../../data-types/decimal.md).
 
 **Returned value**
 

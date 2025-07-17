@@ -47,9 +47,9 @@ ENGINE = TinyLog;
 ```
 
 ``` sql
--- Parse Time
--- - from string,
--- - from integer interpreted as number of seconds since 1970-01-01.
+- - Parse Time
+- - - from string,
+- - - from integer interpreted as number of seconds since 1970-01-01.
 INSERT INTO dt VALUES ('100:00:00', 1), (12453, 3);
 
 SELECT * FROM dt;
@@ -100,12 +100,12 @@ SELECT toTime(now()) AS column, toTypeName(column) AS x
 
 ## See Also {#see-also}
 
--[Type conversion functions](../functions/type-conversion-functions.md)
--[Functions for working with dates and times](../functions/date-time-functions.md)
--[Functions for working with arrays](../functions/array-functions.md)
--[The `date_time_input_format` setting](../../operations/settings/settings-formats.md#date_time_input_format)
--[The `date_time_output_format` setting](../../operations/settings/settings-formats.md#date_time_output_format)
--[The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#timezone)
--[The `session_timezone` setting](../../operations/settings/settings.md#session_timezone)
--[The `DateTime` data type](datetime.md)
--[The `Date` data type](date.md)
+- [Type conversion functions](../functions/type-conversion-functions.md)
+- [Functions for working with dates and times](../functions/date-time-functions.md)
+- [Functions for working with arrays](../functions/array-functions.md)
+- [The `date_time_input_format` setting](../../operations/settings/settings-formats.md#date_time_input_format)
+- [The `date_time_output_format` setting](../../operations/settings/settings-formats.md#date_time_output_format)
+- [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#timezone)
+- [The `session_timezone` setting](../../operations/settings/settings.md#session_timezone)
+- [The `DateTime` data type](datetime.md)
+- [The `Date` data type](date.md)

@@ -17,8 +17,8 @@ intervalLengthSum(start, end)
 
 **Arguments**
 
--`start` — The starting value of the interval. [Int32](/sql-reference/data-types/int-uint#integer-ranges), [Int64](/sql-reference/data-types/int-uint#integer-ranges), [UInt32](/sql-reference/data-types/int-uint#integer-ranges), [UInt64](/sql-reference/data-types/int-uint#integer-ranges), [Float32](/sql-reference/data-types/float), [Float64](/sql-reference/data-types/float), [DateTime](/sql-reference/data-types/datetime) or [Date](/sql-reference/data-types/date).
--`end` — The ending value of the interval. [Int32](/sql-reference/data-types/int-uint#integer-ranges), [Int64](/sql-reference/data-types/int-uint#integer-ranges), [UInt32](/sql-reference/data-types/int-uint#integer-ranges), [UInt64](/sql-reference/data-types/int-uint#integer-ranges), [Float32](/sql-reference/data-types/float), [Float64](/sql-reference/data-types/float), [DateTime](/sql-reference/data-types/datetime) or [Date](/sql-reference/data-types/date).
+- `start` — The starting value of the interval. [Int32](/sql-reference/data-types/int-uint#integer-ranges), [Int64](/sql-reference/data-types/int-uint#integer-ranges), [UInt32](/sql-reference/data-types/int-uint#integer-ranges), [UInt64](/sql-reference/data-types/int-uint#integer-ranges), [Float32](/sql-reference/data-types/float), [Float64](/sql-reference/data-types/float), [DateTime](/sql-reference/data-types/datetime) or [Date](/sql-reference/data-types/date).
+- `end` — The ending value of the interval. [Int32](/sql-reference/data-types/int-uint#integer-ranges), [Int64](/sql-reference/data-types/int-uint#integer-ranges), [UInt32](/sql-reference/data-types/int-uint#integer-ranges), [UInt64](/sql-reference/data-types/int-uint#integer-ranges), [Float32](/sql-reference/data-types/float), [Float64](/sql-reference/data-types/float), [DateTime](/sql-reference/data-types/datetime) or [Date](/sql-reference/data-types/date).
 
 :::note
 Arguments must be of the same data type. Otherwise, an exception will be thrown.
@@ -26,7 +26,7 @@ Arguments must be of the same data type. Otherwise, an exception will be thrown.
 
 **Returned value**
 
--Total length of union of all ranges (segments on numeric axis). Depending on the type of the argument, the return value may be [UInt64](/sql-reference/data-types/int-uint#integer-ranges) or [Float64](/sql-reference/data-types/float) type.
+- Total length of union of all ranges (segments on numeric axis). Depending on the type of the argument, the return value may be [UInt64](/sql-reference/data-types/int-uint#integer-ranges) or [Float64](/sql-reference/data-types/float) type.
 
 **Examples**
 

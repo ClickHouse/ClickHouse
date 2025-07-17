@@ -26,7 +26,7 @@ Example 1: `sumArray(arr)` - Totals all the elements of all 'arr' arrays. In thi
 
 Example 2: `uniqArray(arr)` – Counts the number of unique elements in all 'arr' arrays. This could be done an easier way: `uniq(arrayJoin(arr))`, but it's not always possible to add 'arrayJoin' to a query.
 
--If and -Array can be combined. However, 'Array' must come first, then 'If'. Examples: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Due to this order, the 'cond' argument won't be an array.
+- If and -Array can be combined. However, 'Array' must come first, then 'If'. Examples: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Due to this order, the 'cond' argument won't be an array.
 
 ## -Map {#-map}
 
@@ -73,7 +73,7 @@ If you apply this combinator, the aggregate function returns the same value but 
 
 **Arguments**
 
--`x` — Aggregate function parameters.
+- `x` — Aggregate function parameters.
 
 **Returned values**
 
@@ -105,11 +105,11 @@ Please notice, that -MapState is not an invariant for the same data due to the f
 
 To work with these states, use:
 
--[AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) table engine.
--[finalizeAggregation](/sql-reference/functions/other-functions#finalizeaggregation) function.
--[runningAccumulate](../../sql-reference/functions/other-functions.md#runningaccumulate) function.
--[-Merge](#-merge) combinator.
--[-MergeState](#-mergestate) combinator.
+- [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) table engine.
+- [finalizeAggregation](/sql-reference/functions/other-functions#finalizeaggregation) function.
+- [runningAccumulate](../../sql-reference/functions/other-functions.md#runningaccumulate) function.
+- [-Merge](#-merge) combinator.
+- [-MergeState](#-mergestate) combinator.
 
 ## -Merge {#-merge}
 
@@ -144,7 +144,7 @@ If an aggregate function does not have input values, with this combinator it ret
 
 **Arguments**
 
--`x` — Aggregate function parameters.
+- `x` — Aggregate function parameters.
 
 **Returned values**
 
@@ -204,12 +204,12 @@ This combinator converts a result of an aggregate function to the [Nullable](../
 
 **Arguments**
 
--`x` — Aggregate function parameters.
+- `x` — Aggregate function parameters.
 
 **Returned values**
 
--The result of the aggregate function, converted to the `Nullable` data type.
--`NULL`, if there is nothing to aggregate.
+- The result of the aggregate function, converted to the `Nullable` data type.
+- `NULL`, if there is nothing to aggregate.
 
 Type: `Nullable(aggregate function return type)`.
 
@@ -261,15 +261,15 @@ Lets you divide data into groups, and then separately aggregates the data in tho
 
 **Arguments**
 
--`start` — Starting value of the whole required interval for `resampling_key` values.
--`stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval does not include the `stop` value `[start, stop)`.
--`step` — Step for separating the whole interval into subintervals. The `aggFunction` is executed over each of those subintervals independently.
--`resampling_key` — Column whose values are used for separating data into intervals.
--`aggFunction_params` — `aggFunction` parameters.
+- `start` — Starting value of the whole required interval for `resampling_key` values.
+- `stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval does not include the `stop` value `[start, stop)`.
+- `step` — Step for separating the whole interval into subintervals. The `aggFunction` is executed over each of those subintervals independently.
+- `resampling_key` — Column whose values are used for separating data into intervals.
+- `aggFunction_params` — `aggFunction` parameters.
 
 **Returned values**
 
--Array of `aggFunction` results for each subinterval.
+- Array of `aggFunction` results for each subinterval.
 
 **Example**
 
@@ -331,4 +331,4 @@ Similar to suffix -ArgMin but processes only the rows that have the maximum valu
 
 ## Related Content {#related-content}
 
--Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
+- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

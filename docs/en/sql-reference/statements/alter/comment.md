@@ -85,5 +85,5 @@ ClickHouse versions.
 
 ## Related content {#related-content}
 
--[`COMMENT`](/sql-reference/statements/create/table#comment-clause) clause
--[`ALTER DATABASE ... MODIFY COMMENT`](./database-comment.md)
+- [`COMMENT`](/sql-reference/statements/create/table#comment-clause) clause
+- [`ALTER DATABASE ... MODIFY COMMENT`](./database-comment.md)

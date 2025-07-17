@@ -59,13 +59,13 @@ The setting does not apply to [date and time functions](../../sql-reference/func
 
 Possible values:
 
--`'best_effort'` — Enables extended parsing.
+- `'best_effort'` — Enables extended parsing.
 
     ClickHouse can parse the basic `YYYY-MM-DD HH:MM:SS` format and all [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
 
--`'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](../../sql-reference/functions/type-conversion-functions#parsedatetimebesteffortus)
+- `'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](../../sql-reference/functions/type-conversion-functions#parsedatetimebesteffortus)
 
--`'basic'` — Use basic parser.
+- `'basic'` — Use basic parser.
 
     ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DD` format. For example, `2019-08-20 10:18:56` or `2019-08-20`.
 
@@ -73,8 +73,8 @@ Cloud default value: `'best_effort'`.
 
 See also:
 
--[DateTime data type.](../../sql-reference/data-types/datetime.md)
--[Functions for working with dates and times.](../../sql-reference/functions/date-time-functions.md)
+- [DateTime data type.](../../sql-reference/data-types/datetime.md)
+- [Functions for working with dates and times.](../../sql-reference/functions/date-time-functions.md)
 
 ## date_time_output_format {#date_time_output_format}
 
@@ -84,22 +84,22 @@ Allows choosing different output formats of the text representation of date and 
 
 Possible values:
 
--`simple` - Simple output format.
+- `simple` - Simple output format.
 
     ClickHouse output date and time `YYYY-MM-DD hh:mm:ss` format. For example, `2019-08-20 10:18:56`. The calculation is performed according to the data type's time zone (if present) or server time zone.
 
--`iso` - ISO output format.
+- `iso` - ISO output format.
 
     ClickHouse output date and time in [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) `YYYY-MM-DDThh:mm:ssZ` format. For example, `2019-08-20T10:18:56Z`. Note that output is in UTC (`Z` means UTC).
 
--`unix_timestamp` - Unix timestamp output format.
+- `unix_timestamp` - Unix timestamp output format.
 
     ClickHouse output date and time in [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time) format. For example `1566285536`.
 
 See also:
 
--[DateTime data type.](../../sql-reference/data-types/datetime.md)
--[Functions for working with dates and times.](../../sql-reference/functions/date-time-functions.md)
+- [DateTime data type.](../../sql-reference/data-types/datetime.md)
+- [Functions for working with dates and times.](../../sql-reference/functions/date-time-functions.md)
 
 ## date_time_overflow_behavior {#date_time_overflow_behavior}
 
@@ -109,9 +109,9 @@ Defines the behavior when [Date](../../sql-reference/data-types/date.md), [Date3
 
 Possible values:
 
--`ignore` — Silently ignore overflows. Result are undefined.
--`throw` — Throw an exception in case of overflow.
--`saturate` — Saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
+- `ignore` — Silently ignore overflows. Result are undefined.
+- `throw` — Throw an exception in case of overflow.
+- `saturate` — Saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
 
 Default value: `ignore`.
 
@@ -234,8 +234,8 @@ turned on and a
 
 Possible values:
 
--0 — Disabled.
--1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 ## format_json_object_each_row_column_for_object_name {#format_json_object_each_row_column_for_object_name}
 
@@ -273,8 +273,8 @@ This parameter is useful when you are using formats that require a schema defini
 Define the name of the required message in the schema defined in `format_schema`.
 To maintain compatibility with the legacy format_schema format (`file_name:message_name`):
 
--If `format_schema_message_name` is not specified, the message name is inferred from the `message_name` part of the legacy `format_schema` value.
--If `format_schema_message_name` is specified while using the legacy format, an error will be raised.
+- If `format_schema_message_name` is not specified, the message name is inferred from the `message_name` part of the legacy `format_schema` value.
+- If `format_schema_message_name` is specified while using the legacy format, an error will be raised.
 
 ## format_schema_source {#format_schema_source}
 
@@ -283,17 +283,17 @@ To maintain compatibility with the legacy format_schema format (`file_name:messa
 Define the source of `format_schema`.
 Possible values:
 
--'file' (default):: The `format_schema` is the name of a schema file located in the `format_schemas` directory.
--'string': The `format_schema` is the literal content of the schema.
--'query': The `format_schema` is a query to retrieve the schema.
+- 'file' (default):: The `format_schema` is the name of a schema file located in the `format_schemas` directory.
+- 'string': The `format_schema` is the literal content of the schema.
+- 'query': The `format_schema` is a query to retrieve the schema.
 When `format_schema_source` is set to 'query', the following conditions apply:
--The query must return exactly one value: a single row with a single string column.
--The result of the query is treated as the schema content.
--This result is cached locally in the `format_schemas` directory.
--You can clear the local cache using the command: `SYSTEM DROP FORMAT SCHEMA CACHE FOR Files`.
--Once cached, identical queries are not executed to fetch the schema again until the cache is explicitly cleared
--In addition to local cache files, Protobuf messages are also cached in memory. Even after clearing the local cache files, the in-memory cache must be cleared using `SYSTEM DROP FORMAT SCHEMA CACHE [FOR Protobuf]` to fully refresh the schema.
--Run the query `SYSTEM DROP FORMAT SCHEMA CACHE` to clear the cache for both cache files and Protobuf messages schemas at once.
+- The query must return exactly one value: a single row with a single string column.
+- The result of the query is treated as the schema content.
+- This result is cached locally in the `format_schemas` directory.
+- You can clear the local cache using the command: `SYSTEM DROP FORMAT SCHEMA CACHE FOR Files`.
+- Once cached, identical queries are not executed to fetch the schema again until the cache is explicitly cleared
+- In addition to local cache files, Protobuf messages are also cached in memory. Even after clearing the local cache files, the in-memory cache must be cleared using `SYSTEM DROP FORMAT SCHEMA CACHE [FOR Protobuf]` to fully refresh the schema.
+- Run the query `SYSTEM DROP FORMAT SCHEMA CACHE` to clear the cache for both cache files and Protobuf messages schemas at once.
 
 ## format_template_resultset {#format_template_resultset}
 
@@ -538,8 +538,8 @@ When this option is enabled, extended table metadata are sent from server to cli
 
 Possible values:
 
--0 — Disabled.
--1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 ## input_format_force_null_for_omitted_fields {#input_format_force_null_for_omitted_fields}
 
@@ -579,16 +579,16 @@ Enables or disables the insertion of JSON data with nested objects.
 
 Supported formats:
 
--[JSONEachRow](/interfaces/formats/JSONEachRow)
+- [JSONEachRow](/interfaces/formats/JSONEachRow)
 
 Possible values:
 
--0 — Disabled.
--1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 See also:
 
--[Usage of Nested Structures](/integrations/data-formats/json/other-formats#accessing-nested-json-objects) with the `JSONEachRow` format.
+- [Usage of Nested Structures](/integrations/data-formats/json/other-formats#accessing-nested-json-objects) with the `JSONEachRow` format.
 
 ## input_format_ipv4_default_on_conversion_error {#input_format_ipv4_default_on_conversion_error}
 
@@ -632,8 +632,8 @@ When enabled, replace empty input fields in JSON with default values. For comple
 
 Possible values:
 
--0 — Disable.
--1 — Enable.
+- 0 — Disable.
+- 1 — Enable.
 
 ## input_format_json_ignore_unknown_keys_in_named_tuple {#input_format_json_ignore_unknown_keys_in_named_tuple}
 
@@ -881,8 +881,8 @@ For complex default expressions `input_format_defaults_for_omitted_fields` must 
 
 Possible values:
 
--0 — Inserting `NULL` into a not nullable column causes an exception.
--1 — `NULL` fields are initialized with default column values.
+- 0 — Inserting `NULL` into a not nullable column causes an exception.
+- 1 — `NULL` fields are initialized with default column values.
 
 ## input_format_orc_allow_missing_columns {#input_format_orc_allow_missing_columns}
 
@@ -1036,17 +1036,17 @@ When writing data, ClickHouse throws an exception if input data contain columns 
 
 Supported formats:
 
--[JSONEachRow](/interfaces/formats/JSONEachRow) (and other JSON formats)
--[BSONEachRow](/interfaces/formats/BSONEachRow) (and other JSON formats)
--[TSKV](/interfaces/formats/TSKV)
--All formats with suffixes WithNames/WithNamesAndTypes
--[MySQLDump](/interfaces/formats/MySQLDump)
--[Native](/interfaces/formats/Native)
+- [JSONEachRow](/interfaces/formats/JSONEachRow) (and other JSON formats)
+- [BSONEachRow](/interfaces/formats/BSONEachRow) (and other JSON formats)
+- [TSKV](/interfaces/formats/TSKV)
+- All formats with suffixes WithNames/WithNamesAndTypes
+- [MySQLDump](/interfaces/formats/MySQLDump)
+- [Native](/interfaces/formats/Native)
 
 Possible values:
 
--0 — Disabled.
--1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 ## input_format_try_infer_dates {#input_format_try_infer_dates}
 
@@ -1092,8 +1092,8 @@ If enabled, ClickHouse will try to infer type [`Variant`](../../sql-reference/da
 
 Possible values:
 
--0 — Disabled.
--1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 ## input_format_tsv_allow_variable_number_of_columns {#input_format_tsv_allow_variable_number_of_columns}
 
@@ -1171,23 +1171,23 @@ To improve insert performance, we recommend disabling this check if you are sure
 
 Supported formats:
 
--[CSVWithNames](/interfaces/formats/CSVWithNames)
--[CSVWithNamesAndTypes](/interfaces/formats/CSVWithNamesAndTypes)
--[TabSeparatedWithNames](/interfaces/formats/TabSeparatedWithNames)
--[TabSeparatedWithNamesAndTypes](/interfaces/formats/TabSeparatedWithNamesAndTypes)
--[JSONCompactEachRowWithNames](/interfaces/formats/JSONCompactEachRowWithNames)
--[JSONCompactEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactEachRowWithNamesAndTypes)
--[JSONCompactStringsEachRowWithNames](/interfaces/formats/JSONCompactStringsEachRowWithNames)
--[JSONCompactStringsEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactStringsEachRowWithNamesAndTypes)
--[RowBinaryWithNames](/interfaces/formats/RowBinaryWithNames)
--[RowBinaryWithNamesAndTypes](/interfaces/formats/RowBinaryWithNamesAndTypes)
--[CustomSeparatedWithNames](/interfaces/formats/CustomSeparatedWithNames)
--[CustomSeparatedWithNamesAndTypes](/interfaces/formats/CustomSeparatedWithNamesAndTypes)
+- [CSVWithNames](/interfaces/formats/CSVWithNames)
+- [CSVWithNamesAndTypes](/interfaces/formats/CSVWithNamesAndTypes)
+- [TabSeparatedWithNames](/interfaces/formats/TabSeparatedWithNames)
+- [TabSeparatedWithNamesAndTypes](/interfaces/formats/TabSeparatedWithNamesAndTypes)
+- [JSONCompactEachRowWithNames](/interfaces/formats/JSONCompactEachRowWithNames)
+- [JSONCompactEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactEachRowWithNamesAndTypes)
+- [JSONCompactStringsEachRowWithNames](/interfaces/formats/JSONCompactStringsEachRowWithNames)
+- [JSONCompactStringsEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactStringsEachRowWithNamesAndTypes)
+- [RowBinaryWithNames](/interfaces/formats/RowBinaryWithNames)
+- [RowBinaryWithNamesAndTypes](/interfaces/formats/RowBinaryWithNamesAndTypes)
+- [CustomSeparatedWithNames](/interfaces/formats/CustomSeparatedWithNames)
+- [CustomSeparatedWithNamesAndTypes](/interfaces/formats/CustomSeparatedWithNamesAndTypes)
 
 Possible values:
 
--0 — Disabled.
--1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 ## input_format_with_types_use_header {#input_format_with_types_use_header}
 
@@ -1197,17 +1197,17 @@ Controls whether format parser should check if data types from the input data ma
 
 Supported formats:
 
--[CSVWithNamesAndTypes](/interfaces/formats/CSVWithNamesAndTypes)
--[TabSeparatedWithNamesAndTypes](/interfaces/formats/TabSeparatedWithNamesAndTypes)
--[JSONCompactEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactEachRowWithNamesAndTypes)
--[JSONCompactStringsEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactStringsEachRowWithNamesAndTypes)
--[RowBinaryWithNamesAndTypes](/interfaces/formats/RowBinaryWithNamesAndTypes)
--[CustomSeparatedWithNamesAndTypes](/interfaces/formats/CustomSeparatedWithNamesAndTypes)
+- [CSVWithNamesAndTypes](/interfaces/formats/CSVWithNamesAndTypes)
+- [TabSeparatedWithNamesAndTypes](/interfaces/formats/TabSeparatedWithNamesAndTypes)
+- [JSONCompactEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactEachRowWithNamesAndTypes)
+- [JSONCompactStringsEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactStringsEachRowWithNamesAndTypes)
+- [RowBinaryWithNamesAndTypes](/interfaces/formats/RowBinaryWithNamesAndTypes)
+- [CustomSeparatedWithNamesAndTypes](/interfaces/formats/CustomSeparatedWithNamesAndTypes)
 
 Possible values:
 
--0 — Disabled.
--1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 ## insert_distributed_one_random_shard {#insert_distributed_one_random_shard}
 
@@ -1219,8 +1219,8 @@ By default, when inserting data into a `Distributed` table with more than one sh
 
 Possible values:
 
--0 — Insertion is rejected if there are multiple shards and no distributed key is given.
--1 — Insertion is done randomly among all available shards when no distributed key is given.
+- 0 — Insertion is rejected if there are multiple shards and no distributed key is given.
+- 1 — Insertion is done randomly among all available shards when no distributed key is given.
 
 ## interval_output_format {#interval_output_format}
 
@@ -1230,17 +1230,17 @@ Allows choosing different output formats of the text representation of interval 
 
 Possible values:
 
--`kusto` - KQL-style output format.
+- `kusto` - KQL-style output format.
 
     ClickHouse outputs intervals in [KQL format](https://learn.microsoft.com/en-us/dotnet/standard/base-types/standard-timespan-format-strings#the-constant-c-format-specifier). For example, `toIntervalDay(2)` would be formatted as `2.00:00:00`. Please note that for interval types of varying length (ie. `IntervalMonth` and `IntervalYear`) the average number of seconds per interval is taken into account.
 
--`numeric` - Numeric output format.
+- `numeric` - Numeric output format.
 
     ClickHouse outputs intervals as their underlying numeric representation. For example, `toIntervalDay(2)` would be formatted as `2`.
 
 See also:
 
--[Interval](../../sql-reference/data-types/special-data-types/interval.md)
+- [Interval](../../sql-reference/data-types/special-data-types/interval.md)
 
 ## output_format_arrow_compression_method {#output_format_arrow_compression_method}
 
@@ -1344,8 +1344,8 @@ Enables the ability to output all rows as a JSON array in the [JSONEachRow](/int
 
 Possible values:
 
--1 — ClickHouse outputs all rows as an array, each row in the `JSONEachRow` format.
--0 — ClickHouse outputs each row separately in the `JSONEachRow` format.
+- 1 — ClickHouse outputs all rows as an array, each row in the `JSONEachRow` format.
+- 0 — ClickHouse outputs each row separately in the `JSONEachRow` format.
 
 **Example of a query with the enabled setting**
 
@@ -1424,8 +1424,8 @@ Such integers are enclosed in quotes by default. This behavior is compatible wit
 
 Possible values:
 
--0 — Integers are output without quotes.
--1 — Integers are enclosed in quotes.
+- 0 — Integers are output without quotes.
+- 1 — Integers are enclosed in quotes.
 
 ## output_format_json_quote_decimals {#output_format_json_quote_decimals}
 
@@ -1443,8 +1443,8 @@ Enables `+nan`, `-nan`, `+inf`, `-inf` outputs in [JSON](/interfaces/formats/JSO
 
 Possible values:
 
--0 — Disabled.
--1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 **Example**
 
@@ -1562,8 +1562,8 @@ When enabled, escape special characters in Markdown.
 
 Possible values:
 
--0 — Disable.
--1 — Enable.
+- 0 — Disable.
+- 1 — Enable.
 
 ## output_format_msgpack_uuid_representation {#output_format_msgpack_uuid_representation}
 
@@ -1631,11 +1631,11 @@ Check page size every this many rows. Consider decreasing if you have columns wi
 
 Approximate number of bits to use for each distinct value in parquet bloom filters. Estimated false positive rates:
 
--6   bits - 10%
--10.5 bits -  1%
--16.9 bits -  0.1%
--26.4 bits -  0.01%
--41   bits -  0.001%
+- 6   bits - 10%
+- 10.5 bits -  1%
+- 16.9 bits -  0.1%
+- 26.4 bits -  0.01%
+- 41   bits -  0.001%
 
 ## output_format_parquet_bloom_filter_flush_threshold_bytes {#output_format_parquet_bloom_filter_flush_threshold_bytes}
 
@@ -1643,9 +1643,9 @@ Approximate number of bits to use for each distinct value in parquet bloom filte
 
 Where in the parquet file to place the bloom filters. Bloom filters will be written in groups of approximately this size. In particular:
 
--if 0, each row group's bloom filters are written immediately after the row group,
--if greater than the total size of all bloom filters, bloom filters for all row groups will be accumulated in memory, then written together near the end of the file,
--otherwise, bloom filters will be accumulated in memory and written out whenever their total size goes above this value.
+- if 0, each row group's bloom filters are written immediately after the row group,
+- if greater than the total size of all bloom filters, bloom filters for all row groups will be accumulated in memory, then written together near the end of the file,
+- otherwise, bloom filters will be accumulated in memory and written out whenever their total size goes above this value.
 
 ## output_format_parquet_compliant_nested_types {#output_format_parquet_compliant_nested_types}
 
@@ -1745,8 +1745,8 @@ Display column names in the footer if there are many table rows.
 
 Possible values:
 
--0 — No column names are displayed in the footer.
--1 — Column names are displayed in the footer if row count is greater than or equal to the threshold value set by [output_format_pretty_display_footer_column_names_min_rows](#output_format_pretty_display_footer_column_names_min_rows) (50 by default).
+- 0 — No column names are displayed in the footer.
+- 1 — Column names are displayed in the footer if row count is greater than or equal to the threshold value set by [output_format_pretty_display_footer_column_names_min_rows](#output_format_pretty_display_footer_column_names_min_rows) (50 by default).
 
 **Example**
 

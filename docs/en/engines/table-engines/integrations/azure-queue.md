@@ -75,8 +75,8 @@ SELECT * FROM stats ORDER BY key;
 
 ## Virtual columns {#virtual-columns}
 
--`_path` — Path to the file.
--`_file` — Name of the file.
+- `_path` — Path to the file.
+- `_file` — Name of the file.
 
 For more information about virtual columns see [here](../../../engines/table-engines/index.md#table_engines-virtual_columns).
 

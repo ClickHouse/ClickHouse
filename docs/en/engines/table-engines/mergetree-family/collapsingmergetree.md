@@ -31,7 +31,7 @@ increasing the efficiency of `SELECT` queries as a consequence.
 All parameters of this table engine, with the exception of the `Sign` parameter,
 have the same meaning as in [`MergeTree`](/engines/table-engines/mergetree-family/mergetree).
 
--`Sign` — The name given to a column with the type of row where `1` is a "state" row and `-1` is a "cancel" row. Type: [Int8](/sql-reference/data-types/int-uint).
+- `Sign` — The name given to a column with the type of row where `1` is a "state" row and `-1` is a "cancel" row. Type: [Int8](/sql-reference/data-types/int-uint).
 
 ## Creating a table {#creating-a-table}
 
@@ -72,8 +72,8 @@ ENGINE [=] CollapsingMergeTree(date-column [, sampling_expression], (primary, ke
 
 </details>
 
--For a description of query parameters, see [query description](../../../sql-reference/statements/create/table.md).
--When creating a `CollapsingMergeTree` table, the same [query clauses](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) are required, as when creating a `MergeTree` table.
+- For a description of query parameters, see [query description](../../../sql-reference/statements/create/table.md).
+- When creating a `CollapsingMergeTree` table, the same [query clauses](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) are required, as when creating a `MergeTree` table.
 
 ## Collapsing {#table_engine-collapsingmergetree-collapsing}
 
@@ -86,8 +86,8 @@ If we need to write data quickly, performing large numbers of updates is not an 
 but we can always write the changes of an object sequentially.
 To do so, we make use of the special column `Sign`.
 
--If `Sign` = `1` it means that the row is a "state" row: _a row containing fields which represent a current valid state_.
--If `Sign` = `-1` it means that the row is a "cancel" row: _a row used for the cancellation of state of an object with the same attributes_.
+- If `Sign` = `1` it means that the row is a "state" row: _a row containing fields which represent a current valid state_.
+- If `Sign` = `-1` it means that the row is a "cancel" row: _a row used for the cancellation of state of an object with the same attributes_.
 
 For example, we want to calculate how many pages users checked on some website and how long they visited them for.
 At some given moment in time, we write the following row with the state of user activity:

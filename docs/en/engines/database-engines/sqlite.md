@@ -20,7 +20,7 @@ Allows to connect to [SQLite](https://www.sqlite.org/index.html) database and pe
 
 **Engine Parameters**
 
--`db_path` — Path to a file with SQLite database.
+- `db_path` — Path to a file with SQLite database.
 
 ## Data types support {#data_types-support}
 

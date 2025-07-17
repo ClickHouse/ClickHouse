@@ -23,12 +23,12 @@ covarPop(x, y)
 
 **Arguments**
 
--`x` — first variable. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal](../../data-types/decimal.md).
--`y` — second variable. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal](../../data-types/decimal.md).
+- `x` — first variable. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal](../../data-types/decimal.md).
+- `y` — second variable. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal](../../data-types/decimal.md).
 
 **Returned Value**
 
--The population covariance between `x` and `y`. [Float64](../../data-types/float.md).
+- The population covariance between `x` and `y`. [Float64](../../data-types/float.md).
 
 **Example**
 

@@ -24,8 +24,8 @@ floor(x[, N])
 
 **Parameters**
 
--`x` - The value to round. [Float*](../data-types/float.md), [Decimal*](../data-types/decimal.md), or [(U)Int*](../data-types/int-uint.md).
--`N` . [(U)Int*](../data-types/int-uint.md). The default is zero, which means rounding to an integer. Can be negative.
+- `x` - The value to round. [Float*](../data-types/float.md), [Decimal*](../data-types/decimal.md), or [(U)Int*](../data-types/int-uint.md).
+- `N` . [(U)Int*](../data-types/int-uint.md). The default is zero, which means rounding to an integer. Can be negative.
 
 **Returned value**
 
@@ -114,11 +114,11 @@ round(x[, N])
 
 **Arguments**
 
--`x` — A number to round. [Float*](../data-types/float.md), [Decimal*](../data-types/decimal.md), or [(U)Int*](../data-types/int-uint.md).
--`N` — The number of decimal places to round to. Integer. Defaults to `0`.
--If `N > 0`, the function rounds to the right of the decimal point.
--If `N < 0`, the function rounds to the left of the decimal point.
--If `N = 0`, the function rounds to the next integer.
+- `x` — A number to round. [Float*](../data-types/float.md), [Decimal*](../data-types/decimal.md), or [(U)Int*](../data-types/int-uint.md).
+- `N` — The number of decimal places to round to. Integer. Defaults to `0`.
+- If `N > 0`, the function rounds to the right of the decimal point.
+- If `N < 0`, the function rounds to the left of the decimal point.
+- If `N = 0`, the function rounds to the next integer.
 
 **Returned value:**
 
@@ -190,7 +190,7 @@ round(3.65, 1) = 3.6
 
 **See Also**
 
--[roundBankers](#roundbankers)
+- [roundBankers](#roundbankers)
 
 ## roundBankers {#roundbankers}
 
@@ -210,9 +210,9 @@ Using banker's rounding, you can reduce the effect that rounding numbers has on 
 
 For example, sum numbers 1.5, 2.5, 3.5, 4.5 with different rounding:
 
--No rounding: 1.5 + 2.5 + 3.5 + 4.5 = 12.
--Banker's rounding: 2 + 2 + 4 + 4 = 12.
--Rounding to the nearest integer: 2 + 3 + 4 + 5 = 14.
+- No rounding: 1.5 + 2.5 + 3.5 + 4.5 = 12.
+- Banker's rounding: 2 + 2 + 4 + 4 = 12.
+- Rounding to the nearest integer: 2 + 3 + 4 + 5 = 14.
 
 **Syntax**
 
@@ -226,11 +226,11 @@ roundBankers(x [, N])
     -`N < 0` — The function rounds the number to the given position left of the decimal point. Example: `roundBankers(24.55, -1) = 20`.
     -`N = 0` — The function rounds the number to an integer. In this case the argument can be omitted. Example: `roundBankers(2.5) = 2`.
 
--`x` — A number to round. [Float*](../data-types/float.md), [Decimal*](../data-types/decimal.md), or [(U)Int*](../data-types/int-uint.md).
--`N` — The number of decimal places to round to. Integer. Defaults to `0`.
--If `N > 0`, the function rounds to the right of the decimal point.
--If `N < 0`, the function rounds to the left of the decimal point.
--If `N = 0`, the function rounds to the next integer.
+- `x` — A number to round. [Float*](../data-types/float.md), [Decimal*](../data-types/decimal.md), or [(U)Int*](../data-types/int-uint.md).
+- `N` — The number of decimal places to round to. Integer. Defaults to `0`.
+- If `N > 0`, the function rounds to the right of the decimal point.
+- If `N < 0`, the function rounds to the left of the decimal point.
+- If `N = 0`, the function rounds to the next integer.
 
 **Returned value**
 
@@ -275,7 +275,7 @@ roundBankers(10.755, 2) = 10.76
 
 **See Also**
 
--[round](#round)
+- [round](#round)
 
 ## roundToExp2 {#roundtoexp2}
 
@@ -289,12 +289,12 @@ roundToExp2(num)
 
 **Parameters**
 
--`num`: A number to round. [UInt](../data-types/int-uint.md)/[Float](../data-types/float.md).
+- `num`: A number to round. [UInt](../data-types/int-uint.md)/[Float](../data-types/float.md).
 
 **Returned value**
 
--`0`, for `num` $\lt 1$. [UInt8](../data-types/int-uint.md).
--`num` rounded down to the nearest (whole non-negative) degree of two. [UInt](../data-types/int-uint.md)/[Float](../data-types/float.md) equivalent to the input type.
+- `0`, for `num` $\lt 1$. [UInt8](../data-types/int-uint.md).
+- `num` rounded down to the nearest (whole non-negative) degree of two. [UInt](../data-types/int-uint.md)/[Float](../data-types/float.md) equivalent to the input type.
 
 **Example**
 
@@ -329,12 +329,12 @@ roundDuration(num)
 
 **Parameters**
 
--`num`: A number to round to one of the numbers in the set of common durations. [UInt](../data-types/int-uint.md)/[Float](../data-types/float.md).
+- `num`: A number to round to one of the numbers in the set of common durations. [UInt](../data-types/int-uint.md)/[Float](../data-types/float.md).
 
 **Returned value**
 
--`0`, for `num` $\lt 1$.
--Otherwise, one of: `1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000`. [UInt16](../data-types/int-uint.md).
+- `0`, for `num` $\lt 1$.
+- Otherwise, one of: `1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000`. [UInt16](../data-types/int-uint.md).
 
 **Example**
 
@@ -379,17 +379,17 @@ roundAge(num)
 
 **Parameters**
 
--`age`: A number representing an age in years. [UInt](../data-types/int-uint.md)/[Float](../data-types/float.md).
+- `age`: A number representing an age in years. [UInt](../data-types/int-uint.md)/[Float](../data-types/float.md).
 
 **Returned value**
 
--Returns `0`, for $age \lt 1$.
--Returns `17`, for $1 \leq age \leq 17$.
--Returns `18`, for $18 \leq age \leq 24$.
--Returns `25`, for $25 \leq age \leq 34$.
--Returns `35`, for $35 \leq age \leq 44$.
--Returns `45`, for $45 \leq age \leq 54$.
--Returns `55`, for $age \geq 55$.
+- Returns `0`, for $age \lt 1$.
+- Returns `17`, for $1 \leq age \leq 17$.
+- Returns `18`, for $18 \leq age \leq 24$.
+- Returns `25`, for $25 \leq age \leq 34$.
+- Returns `35`, for $35 \leq age \leq 44$.
+- Returns `45`, for $45 \leq age \leq 54$.
+- Returns `55`, for $age \geq 55$.
 
 Type: [UInt8](../data-types/int-uint.md).
 
@@ -427,12 +427,12 @@ roundDown(num, arr)
 
 **Parameters**
 
--`num`: A number to round down. [Numeric](../data-types/int-uint.md).
--`arr`: Array of elements to round `age` down to. [Array](../data-types/array.md) of [UInt](../data-types/int-uint.md)/[Float](../data-types/float.md) type.
+- `num`: A number to round down. [Numeric](../data-types/int-uint.md).
+- `arr`: Array of elements to round `age` down to. [Array](../data-types/array.md) of [UInt](../data-types/int-uint.md)/[Float](../data-types/float.md) type.
 
 **Returned value**
 
--Number rounded down to an element in `arr`. If the value is less than the lowest bound, the lowest bound is returned. [UInt](../data-types/int-uint.md)/[Float](../data-types/float.md) type deduced from the type of `arr`.
+- Number rounded down to an element in `arr`. If the value is less than the lowest bound, the lowest bound is returned. [UInt](../data-types/int-uint.md)/[Float](../data-types/float.md) type deduced from the type of `arr`.
 
 **Example**
 
@@ -459,7 +459,7 @@ Result:
 The inner content of the tags below are replaced at doc framework build time with 
 docs generated from system.functions. Please do not modify or remove the tags.
 See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
--->
+- ->
 
 <!--AUTOGENERATED_START-->
 <!--AUTOGENERATED_END-->

@@ -9,8 +9,8 @@ Contains information about the ClickHouse server's build options.
 
 Columns:
 
--`name` (String) — Name of the build option, e.g. `USE_ODBC`
--`value` (String) — Value of the build option, e.g. `1`
+- `name` (String) — Name of the build option, e.g. `USE_ODBC`
+- `value` (String) — Value of the build option, e.g. `1`
 
 **Example**
 

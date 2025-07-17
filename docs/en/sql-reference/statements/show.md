@@ -10,8 +10,8 @@ title: 'SHOW Statements'
 
 `SHOW CREATE (TABLE|DATABASE|USER)` hides secrets unless the following settings are turned on:
 
--[`display_secrets_in_show_and_select`](../../operations/server-configuration-parameters/settings/#display_secrets_in_show_and_select) (server setting)
--[`format_display_secrets_in_show_and_select`](../../operations/settings/formats/#format_display_secrets_in_show_and_select) (format setting)  
+- [`display_secrets_in_show_and_select`](../../operations/server-configuration-parameters/settings/#display_secrets_in_show_and_select) (server setting)
+- [`format_display_secrets_in_show_and_select`](../../operations/settings/formats/#format_display_secrets_in_show_and_select) (format setting)  
 
 Additionally, the user should have the [`displaySecretsInShowAndSelect`](grant.md/#displaysecretsinshowandselect) privilege.
 :::
@@ -105,7 +105,7 @@ SHOW DATABASES LIMIT 2
 
 ### See also {#see-also}
 
--[`CREATE DATABASE`](/sql-reference/statements/create/database)
+- [`CREATE DATABASE`](/sql-reference/statements/create/database)
 
 ## SHOW TABLES {#show-tables}
 
@@ -182,8 +182,8 @@ SHOW TABLES FROM system LIMIT 2
 
 ### See also {#see-also-1}
 
--[`Create Tables`](/sql-reference/statements/create/table)
--[`SHOW CREATE TABLE`](#show-create-table--dictionary--view--database)
+- [`Create Tables`](/sql-reference/statements/create/table)
+- [`SHOW CREATE TABLE`](#show-create-table--dictionary--view--database)
 
 ## SHOW COLUMNS {#show_columns}
 
@@ -235,7 +235,7 @@ SHOW COLUMNS FROM 'orders' LIKE 'delivery_%'
 
 ### See also {#see-also-2}
 
--[`system.columns`](../../operations/system-tables/columns.md)
+- [`system.columns`](../../operations/system-tables/columns.md)
 
 ## SHOW DICTIONARIES {#show-dictionaries}
 
@@ -330,8 +330,8 @@ SHOW INDEX FROM 'tbl'
 
 ### See also {#see-also-3}
 
--[`system.tables`](../../operations/system-tables/tables.md)
--[`system.data_skipping_indices`](../../operations/system-tables/data_skipping_indices.md)
+- [`system.tables`](../../operations/system-tables/tables.md)
+- [`system.data_skipping_indices`](../../operations/system-tables/data_skipping_indices.md)
 
 ## SHOW PROCESSLIST {#show-processlist}
 
@@ -624,7 +624,7 @@ SHOW SETTING <name>
 
 ### See also {#see-also-4}
 
--[`system.settings`](../../operations/system-tables/settings.md) table
+- [`system.settings`](../../operations/system-tables/settings.md) table
 
 ## SHOW FILESYSTEM CACHES {#show-filesystem-caches}
 
@@ -642,7 +642,7 @@ SHOW FILESYSTEM CACHES
 
 ### See also {#see-also-5}
 
--[`system.settings`](../../operations/system-tables/settings.md) table
+- [`system.settings`](../../operations/system-tables/settings.md) table
 
 ## SHOW ENGINES {#show-engines}
 
@@ -657,7 +657,7 @@ SHOW ENGINES [INTO OUTFILE filename] [FORMAT format]
 
 ### See also {#see-also-6}
 
--[system.table_engines](../../operations/system-tables/table_engines.md) table
+- [system.table_engines](../../operations/system-tables/table_engines.md) table
 
 ## SHOW FUNCTIONS {#show-functions}
 
@@ -673,7 +673,7 @@ If either `LIKE` or `ILIKE` clause is specified, the query returns a list of sys
 
 ### See Also {#see-also-7}
 
--[`system.functions`](../../operations/system-tables/functions.md) table
+- [`system.functions`](../../operations/system-tables/functions.md) table
 
 ## SHOW MERGES {#show-merges}
 

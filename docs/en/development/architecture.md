@@ -91,8 +91,8 @@ All subsequent data processing is handled by another part of the pipeline, which
 
 But there are notable exceptions:
 
--The AST query is passed to the `read` method, and the table engine can use it to derive index usage and to read fewer data from a table.
--Sometimes the table engine can process data itself to a specific stage. For example, `StorageDistributed` can send a query to remote servers, ask them to process data to a stage where data from different remote servers can be merged, and return that preprocessed data. The query interpreter then finishes processing the data.
+- The AST query is passed to the `read` method, and the table engine can use it to derive index usage and to read fewer data from a table.
+- Sometimes the table engine can process data itself to a specific stage. For example, `StorageDistributed` can send a query to remote servers, ask them to process data to a stage where data from different remote servers can be merged, and return that preprocessed data. The query interpreter then finishes processing the data.
 
 The table's `read` method can return a `Pipe` consisting of multiple `Processors`. These `Processors` can read from a table in parallel.
 Then, you can connect these processors with various other transformations (such as expression evaluation or filtering), which can be calculated independently.
@@ -156,9 +156,9 @@ Aggregation states can be serialized and deserialized to pass over the network d
 
 The server implements several different interfaces:
 
--An HTTP interface for any foreign clients.
--A TCP interface for the native ClickHouse client and for cross-server communication during distributed query execution.
--An interface for transferring data for replication.
+- An HTTP interface for any foreign clients.
+- A TCP interface for the native ClickHouse client and for cross-server communication during distributed query execution.
+- An interface for transferring data for replication.
 
 Internally, it is just a primitive multithread server without coroutines or fibers. Since the server is not designed to process a high rate of simple queries but to process a relatively low rate of complex queries, each of them can process a vast amount of data for analytics.
 
@@ -182,19 +182,19 @@ For queries and subsystems other than `Server` config is accessible using `Conte
 
 To execute queries and do side activities ClickHouse allocates threads from one of thread pools to avoid frequent thread creation and destruction. There are a few thread pools, which are selected depending on a purpose and structure of a job:
 
--Server pool for incoming client sessions.
--Global thread pool for general purpose jobs, background activities and standalone threads.
--IO thread pool for jobs that are mostly blocked on some IO and are not CPU-intensive.
--Background pools for periodic tasks.
--Pools for preemptable tasks that can be split into steps.
+- Server pool for incoming client sessions.
+- Global thread pool for general purpose jobs, background activities and standalone threads.
+- IO thread pool for jobs that are mostly blocked on some IO and are not CPU-intensive.
+- Background pools for periodic tasks.
+- Pools for preemptable tasks that can be split into steps.
 
 Server pool is a `Poco::ThreadPool` class instance defined in `Server::main()` method. It can have at most `max_connection` threads. Every thread is dedicated to a single active connection.
 
 Global thread pool is `GlobalThreadPool` singleton class. To allocate thread from it `ThreadFromGlobalPool` is used. It has an interface similar to `std::thread`, but pulls thread from the global pool and does all necessary initialization. It is configured with the following settings:
 
--`max_thread_pool_size` - limit on thread count in pool.
--`max_thread_pool_free_size` - limit on idle thread count waiting for new jobs.
--`thread_pool_queue_size` - limit on scheduled job count.
+- `max_thread_pool_size` - limit on thread count in pool.
+- `max_thread_pool_free_size` - limit on idle thread count waiting for new jobs.
+- `thread_pool_queue_size` - limit on scheduled job count.
 
 Global pool is universal and all pools described below are implemented on top of it. This can be thought of as a hierarchy of pools. Any specialized pool takes its threads from the global pool using `ThreadPool` class. So the main purpose of any specialized pool is to apply limit on the number of simultaneous jobs and do job scheduling. If there are more jobs scheduled than threads in a pool, `ThreadPool` accumulates jobs in a queue with priorities. Each job has an integer priority. Default priority is zero. All jobs with higher priority values are started before any job with lower priority value. But there is no difference between already executing jobs, thus priority matters only when the pool in overloaded.
 
@@ -216,9 +216,9 @@ Notion of CPU `slot` is introduced. Slot is a unit of concurrency: to run a thre
 
 Each slot can be seen as an independent state machine with the following states:
 
--`free`: slot is available to be allocated by any query.
--`granted`: slot is `allocated` by specific query, but not yet acquired by any thread.
--`acquired`: slot is `allocated` by specific query and acquired by a thread.
+- `free`: slot is available to be allocated by any query.
+- `granted`: slot is `allocated` by specific query, but not yet acquired by any thread.
+- `acquired`: slot is `allocated` by specific query and acquired by a thread.
 
 Note that `allocated` slot can be in two different states: `granted` and `acquired`. The former is a transitional state, that actually should be short (from the instant when a slot is allocated to a query till the moment when the up-scaling procedure is run by any thread of that query).
 

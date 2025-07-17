@@ -11,7 +11,7 @@ ClickHouse supports data types for representing geographical objects — locatio
 
 **See Also**
 
--[Representing simple geographical features](https://en.wikipedia.org/wiki/GeoJSON).
+- [Representing simple geographical features](https://en.wikipedia.org/wiki/GeoJSON).
 
 ## Point {#point}
 
@@ -147,4 +147,4 @@ Result:
 
 ## Related Content {#related-content}
 
--[Exploring massive, real-world data sets: 100+ Years of Weather Records in ClickHouse](https://clickhouse.com/blog/real-world-data-noaa-climate-data)
+- [Exploring massive, real-world data sets: 100+ Years of Weather Records in ClickHouse](https://clickhouse.com/blog/real-world-data-noaa-climate-data)

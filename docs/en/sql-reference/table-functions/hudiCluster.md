@@ -36,5 +36,5 @@ A table with the specified structure for reading data from cluster in the specif
 
 ## Related {#related}
 
--[Hudi engine](engines/table-engines/integrations/hudi.md)
--[Hudi table function](sql-reference/table-functions/hudi.md)
+- [Hudi engine](engines/table-engines/integrations/hudi.md)
+- [Hudi table function](sql-reference/table-functions/hudi.md)

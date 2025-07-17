@@ -87,7 +87,7 @@ To read a table where the schema has changed after its creation with dynamic sch
 
 ## Partition pruning {#partition-pruning}
 
-ClickHouse supports partition pruning during SELECT queries for Iceberg tables, which helps optimize query performance by skipping irrelevant data files. To enable partition pruning, set `use_iceberg_partition_pruning = 1`. For more information about iceberg partition pruning address <https://iceberg.apache.org/spec/#partitioning>
+ClickHouse supports partition pruning during SELECT queries for Iceberg tables, which helps optimize query performance by skipping irrelevant data files. To enable partition pruning, set `use_iceberg_partition_pruning = 1`. For more information about iceberg partition pruning address https://iceberg.apache.org/spec/#partitioning
 
 ## Time travel {#time-travel}
 
@@ -132,23 +132,23 @@ Consider this sequence of operations:
   USING iceberg 
   OPTIONS ('format-version'='2')
 
--- Insert data into the table
+- - Insert data into the table
   INSERT INTO spark_catalog.db.time_travel_example VALUES 
     (1, 'Mars')
 
   ts1 = now() // A piece of pseudo code
 
--- Alter table to add a new column
+- - Alter table to add a new column
   ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
  
   ts2 = now()
 
--- Insert data into the table
+- - Insert data into the table
   INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
 
    ts3 = now()
 
--- Query the table at each timestamp
+- - Query the table at each timestamp
   SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
 
 +------------+------------+
@@ -186,7 +186,7 @@ Query results at different timestamps:
 A time travel query at a current moment might show a different schema than the current table:
 
 ```sql
--- Create a table
+- - Create a table
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_2 (
   order_number int, 
   product_code string
@@ -194,15 +194,15 @@ A time travel query at a current moment might show a different schema than the c
   USING iceberg 
   OPTIONS ('format-version'='2')
 
--- Insert initial data into the table
+- - Insert initial data into the table
   INSERT INTO spark_catalog.db.time_travel_example_2 VALUES (2, 'Venus');
 
--- Alter table to add a new column
+- - Alter table to add a new column
   ALTER TABLE spark_catalog.db.time_travel_example_2 ADD COLUMN (price double);
 
   ts = now();
 
--- Query the table at a current moment but using timestamp syntax
+- - Query the table at a current moment but using timestamp syntax
 
   SELECT * FROM spark_catalog.db.time_travel_example_2 TIMESTAMP AS OF ts;
 
@@ -212,7 +212,7 @@ A time travel query at a current moment might show a different schema than the c
     |           2|       Venus|
     +------------+------------+
 
--- Query the table at a current moment
+- - Query the table at a current moment
   SELECT * FROM spark_catalog.db.time_travel_example_2;
 
 
@@ -230,7 +230,7 @@ This happens because `ALTER TABLE` doesn't create a new snapshot but for the cur
 The second one is that while doing time travel you can't get state of table before any data was written to it:
 
 ```sql
--- Create a table
+- - Create a table
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_3 (
   order_number int, 
   product_code string
@@ -240,7 +240,7 @@ The second one is that while doing time travel you can't get state of table befo
 
   ts = now();
 
--- Query the table at a specific timestamp
+- - Query the table at a specific timestamp
   SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finises with error: Cannot find a snapshot older than ts.
 ```
 

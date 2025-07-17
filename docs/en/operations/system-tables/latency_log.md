@@ -15,10 +15,10 @@ Contains history of all latency buckets, periodically flushed to disk.
 
 Columns:
 
--`hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
--`event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
--`event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
--`event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Event time with microseconds resolution.
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
+- `event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
+- `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
+- `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Event time with microseconds resolution.
 
 **Example**
 
@@ -53,6 +53,6 @@ LatencyEvent_DiskS3WriteConnectMicroseconds:           [329,362,362,363,363,363,
 
 **See also**
 
--[latency_log_setting](../../operations/server-configuration-parameters/settings.md#latency_log) - Enabling and disabling the setting.
--[latency_buckets](../../operations/system-tables/latency_buckets.md) - Latency log buckets bounds.
--[Monitoring](../../operations/monitoring.md) - Base concepts of ClickHouse monitoring.
+- [latency_log_setting](../../operations/server-configuration-parameters/settings.md#latency_log) - Enabling and disabling the setting.
+- [latency_buckets](../../operations/system-tables/latency_buckets.md) - Latency log buckets bounds.
+- [Monitoring](../../operations/monitoring.md) - Base concepts of ClickHouse monitoring.

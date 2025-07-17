@@ -44,17 +44,17 @@ HTTP layer, you can add a new basic module to the `protocols` section:
 
 Modules can be configured according to:
 
--`plain_http` - name which can be referred to by another layer
--`type` - denotes the protocol handler which will be instantiated to process data.
+- `plain_http` - name which can be referred to by another layer
+- `type` - denotes the protocol handler which will be instantiated to process data.
    It has the following set of predefined protocol handlers:
--`tcp` - native clickhouse protocol handler
--`http` - HTTP clickhouse protocol handler
--`tls` - TLS encryption layer
--`proxy1` - PROXYv1 layer
--`mysql` - MySQL compatibility protocol handler
--`postgres` - PostgreSQL compatibility protocol handler
--`prometheus` - Prometheus protocol handler
--`interserver` - clickhouse interserver handler
+- `tcp` - native clickhouse protocol handler
+- `http` - HTTP clickhouse protocol handler
+- `tls` - TLS encryption layer
+- `proxy1` - PROXYv1 layer
+- `mysql` - MySQL compatibility protocol handler
+- `postgres` - PostgreSQL compatibility protocol handler
+- `prometheus` - Prometheus protocol handler
+- `interserver` - clickhouse interserver handler
 
 :::note
 `gRPC` protocol handler is not implemented for `Composable protocols`

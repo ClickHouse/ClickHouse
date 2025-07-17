@@ -14,11 +14,11 @@ You can install pre-built ClickHouse as described in [Quick Start](https://click
 
 ClickHouse can be build on the following platforms:
 
--x86_64
--AArch64
--PowerPC 64 LE (experimental)
--s390/x (experimental)
--RISC-V 64 (experimental)
+- x86_64
+- AArch64
+- PowerPC 64 LE (experimental)
+- s390/x (experimental)
+- RISC-V 64 (experimental)
 
 ## Assumptions {#assumptions}
 

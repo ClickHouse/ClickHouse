@@ -16,10 +16,10 @@ Contains metrics which can be calculated instantly, or have a current value. For
 
 Columns:
 
--`metric` ([String](../../sql-reference/data-types/string.md)) — Metric name.
--`value` ([Int64](../../sql-reference/data-types/int-uint.md)) — Metric value.
--`description` ([String](../../sql-reference/data-types/string.md)) — Metric description.
--`name` ([String](../../sql-reference/data-types/string.md)) — Alias for `metric`.
+- `metric` ([String](../../sql-reference/data-types/string.md)) — Metric name.
+- `value` ([Int64](../../sql-reference/data-types/int-uint.md)) — Metric value.
+- `description` ([String](../../sql-reference/data-types/string.md)) — Metric description.
+- `name` ([String](../../sql-reference/data-types/string.md)) — Alias for `metric`.
 
 You can find all supported metrics in source file [src/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/CurrentMetrics.cpp).
 
@@ -782,7 +782,7 @@ Value of soft limit on number of CPU slots.
 
 **See Also**
 
--[system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) — Contains periodically calculated metrics.
--[system.events](/operations/system-tables/events) — Contains a number of events that occurred.
--[system.metric_log](/operations/system-tables/metric_log) — Contains a history of metrics values from tables `system.metrics` and `system.events`.
--[Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
+- [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) — Contains periodically calculated metrics.
+- [system.events](/operations/system-tables/events) — Contains a number of events that occurred.
+- [system.metric_log](/operations/system-tables/metric_log) — Contains a history of metrics values from tables `system.metrics` and `system.events`.
+- [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.

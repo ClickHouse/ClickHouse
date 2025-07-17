@@ -18,18 +18,18 @@ If current value drops below the threshold, the entry is removed from the table.
 
 The table can be configured with these settings:
 
--[max_table_num_to_warn](../server-configuration-parameters/settings.md#max_table_num_to_warn)
--[max_database_num_to_warn](../server-configuration-parameters/settings.md#max_database_num_to_warn)
--[max_dictionary_num_to_warn](../server-configuration-parameters/settings.md#max_dictionary_num_to_warn)
--[max_view_num_to_warn](../server-configuration-parameters/settings.md#max_view_num_to_warn)
--[max_part_num_to_warn](../server-configuration-parameters/settings.md#max_part_num_to_warn)
--[max_pending_mutations_to_warn](../server-configuration-parameters/settings.md#max_pending_mutations_to_warn)
--[max_pending_mutations_execution_time_to_warn](/operations/server-configuration-parameters/settings#max_pending_mutations_execution_time_to_warn)
+- [max_table_num_to_warn](../server-configuration-parameters/settings.md#max_table_num_to_warn)
+- [max_database_num_to_warn](../server-configuration-parameters/settings.md#max_database_num_to_warn)
+- [max_dictionary_num_to_warn](../server-configuration-parameters/settings.md#max_dictionary_num_to_warn)
+- [max_view_num_to_warn](../server-configuration-parameters/settings.md#max_view_num_to_warn)
+- [max_part_num_to_warn](../server-configuration-parameters/settings.md#max_part_num_to_warn)
+- [max_pending_mutations_to_warn](../server-configuration-parameters/settings.md#max_pending_mutations_to_warn)
+- [max_pending_mutations_execution_time_to_warn](/operations/server-configuration-parameters/settings#max_pending_mutations_execution_time_to_warn)
 
 Columns:
 
--`message` ([String](../../sql-reference/data-types/string.md)) — Warning message.
--`message_format_string` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — The format string used to format the message.
+- `message` ([String](../../sql-reference/data-types/string.md)) — Warning message.
+- `message_format_string` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — The format string used to format the message.
 
 **Example**
 

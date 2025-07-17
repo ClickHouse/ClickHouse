@@ -55,10 +55,10 @@ SELECT
 Kill the query:
 
 ```sql
--- Forcibly terminates all queries with the specified query_id:
+- - Forcibly terminates all queries with the specified query_id:
 KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'
 
--- Synchronously terminates all queries run by 'username':
+- - Synchronously terminates all queries run by 'username':
 KILL QUERY WHERE user='username' SYNC
 ```
 
@@ -83,8 +83,8 @@ A test query (`TEST`) only checks the user's rights and displays a list of queri
 
 The presence of long-running or incomplete mutations often indicates that a ClickHouse service is running poorly. The asynchronous nature of mutations can cause them to consume all available resources on a system. You may need to either:
 
--Pause all new mutations, `INSERT`s , and `SELECT`s and allow the queue of mutations to complete.
--Or manually kill some of these mutations by sending a `KILL` command.
+- Pause all new mutations, `INSERT`s , and `SELECT`s and allow the queue of mutations to complete.
+- Or manually kill some of these mutations by sending a `KILL` command.
 
 ```sql
 KILL MUTATION
@@ -138,10 +138,10 @@ WHERE is_done = 0;
 Kill the mutations as needed:
 
 ```sql
--- Cancel and remove all mutations of the single table:
+- - Cancel and remove all mutations of the single table:
 KILL MUTATION WHERE database = 'default' AND table = 'table'
 
--- Cancel the specific mutation:
+- - Cancel the specific mutation:
 KILL MUTATION WHERE database = 'default' AND table = 'table' AND mutation_id = 'mutation_3.txt'
 ```
 

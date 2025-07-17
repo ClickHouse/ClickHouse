@@ -66,13 +66,13 @@ SELECT * FROM imp_regex_table;
 
 When working with the `Regexp` format, you can use the following settings:
 
--`format_regexp` — [String](/sql-reference/data-types/string.md). Contains regular expression in the [re2](https://github.com/google/re2/wiki/Syntax) format.
--`format_regexp_escaping_rule` — [String](/sql-reference/data-types/string.md). The following escaping rules are supported:
+- `format_regexp` — [String](/sql-reference/data-types/string.md). Contains regular expression in the [re2](https://github.com/google/re2/wiki/Syntax) format.
+- `format_regexp_escaping_rule` — [String](/sql-reference/data-types/string.md). The following escaping rules are supported:
 
--CSV (similarly to [CSV](/interfaces/formats/CSV)
--JSON (similarly to [JSONEachRow](/interfaces/formats/JSONEachRow)
--Escaped (similarly to [TSV](/interfaces/formats/TabSeparated)
--Quoted (similarly to [Values](/interfaces/formats/Values)
--Raw (extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](/interfaces/formats/TabSeparated)
+- CSV (similarly to [CSV](/interfaces/formats/CSV)
+- JSON (similarly to [JSONEachRow](/interfaces/formats/JSONEachRow)
+- Escaped (similarly to [TSV](/interfaces/formats/TabSeparated)
+- Quoted (similarly to [Values](/interfaces/formats/Values)
+- Raw (extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](/interfaces/formats/TabSeparated)
 
--`format_regexp_skip_unmatched` — [UInt8](/sql-reference/data-types/int-uint.md). Defines the need to throw an exception in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
+- `format_regexp_skip_unmatched` — [UInt8](/sql-reference/data-types/int-uint.md). Defines the need to throw an exception in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.

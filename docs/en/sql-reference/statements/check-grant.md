@@ -16,7 +16,7 @@ The basic syntax of the query is as follows:
 CHECK GRANT privilege[(column_name [,...])] [,...] ON {db.table[*]|db[*].*|*.*|table[*]|*}
 ```
 
--`privilege` — Type of privilege.
+- `privilege` — Type of privilege.
 
 ## Examples {#examples}
 

@@ -15,9 +15,9 @@ These functions are slow and may impose security considerations.
 
 For proper operation of introspection functions:
 
--Install the `clickhouse-common-static-dbg` package.
+- Install the `clickhouse-common-static-dbg` package.
 
--Set the [allow_introspection_functions](../../operations/settings/settings.md#allow_introspection_functions) setting to 1.
+- Set the [allow_introspection_functions](../../operations/settings/settings.md#allow_introspection_functions) setting to 1.
 
         For security reasons introspection functions are disabled by default.
 
@@ -37,14 +37,14 @@ addressToLine(address_of_binary_instruction)
 
 **Arguments**
 
--`address_of_binary_instruction` ([UInt64](../data-types/int-uint.md)) — Address of instruction in a running process.
+- `address_of_binary_instruction` ([UInt64](../data-types/int-uint.md)) — Address of instruction in a running process.
 
 **Returned value**
 
--Source code filename and the line number in this file delimited by colon.
+- Source code filename and the line number in this file delimited by colon.
         For example, `/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199`, where `199` is a line number.
--Name of a binary, if the function couldn't find the debug information.
--Empty string, if the address is not valid.
+- Name of a binary, if the function couldn't find the debug information.
+- Empty string, if the address is not valid.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -129,11 +129,11 @@ addressToLineWithInlines(address_of_binary_instruction)
 
 **Arguments**
 
--`address_of_binary_instruction` ([UInt64](../data-types/int-uint.md)) — Address of instruction in a running process.
+- `address_of_binary_instruction` ([UInt64](../data-types/int-uint.md)) — Address of instruction in a running process.
 
 **Returned value**
 
--An array whose first element is the source code filename and line number in the file delimited by a colon. From the second element onwards, inline functions' source code filenames, line numbers and function names are listed. If the function couldn't find the debug information, then an array with a single element equal to the name of the binary is returned, otherwise an empty array is returned if the address is not valid. [Array(String)](../data-types/array.md).
+- An array whose first element is the source code filename and line number in the file delimited by a colon. From the second element onwards, inline functions' source code filenames, line numbers and function names are listed. If the function couldn't find the debug information, then an array with a single element equal to the name of the binary is returned, otherwise an empty array is returned if the address is not valid. [Array(String)](../data-types/array.md).
 
 **Example**
 
@@ -225,12 +225,12 @@ addressToSymbol(address_of_binary_instruction)
 
 **Arguments**
 
--`address_of_binary_instruction` ([UInt64](../data-types/int-uint.md)) — Address of instruction in a running process.
+- `address_of_binary_instruction` ([UInt64](../data-types/int-uint.md)) — Address of instruction in a running process.
 
 **Returned value**
 
--Symbol from ClickHouse object files. [String](../data-types/string.md).
--Empty string, if the address is not valid. [String](../data-types/string.md).
+- Symbol from ClickHouse object files. [String](../data-types/string.md).
+- Empty string, if the address is not valid. [String](../data-types/string.md).
 
 **Example**
 
@@ -320,11 +320,11 @@ demangle(symbol)
 
 **Arguments**
 
--`symbol` ([String](../data-types/string.md)) — Symbol from an object file.
+- `symbol` ([String](../data-types/string.md)) — Symbol from an object file.
 
 **Returned value**
 
--Name of the C++ function, or an empty string if the symbol is not valid. [String](../data-types/string.md).
+- Name of the C++ function, or an empty string if the symbol is not valid. [String](../data-types/string.md).
 
 **Example**
 
@@ -414,7 +414,7 @@ tid()
 
 **Returned value**
 
--Current thread id. [Uint64](/sql-reference/data-types/int-uint#integer-ranges).
+- Current thread id. [Uint64](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Example**
 
@@ -444,11 +444,11 @@ logTrace('message')
 
 **Arguments**
 
--`message` — Message that is emitted to server log. [String](/sql-reference/data-types/string).
+- `message` — Message that is emitted to server log. [String](/sql-reference/data-types/string).
 
 **Returned value**
 
--Always returns 0.
+- Always returns 0.
 
 **Example**
 
@@ -478,16 +478,16 @@ mergeTreePartInfo(part_name)
 
 **Arguments**
 
--`part_name` ([String](../data-types/string.md)) — Name of part to unpack.
+- `part_name` ([String](../data-types/string.md)) — Name of part to unpack.
 
 **Returned value**
 
--[Tuple](../data-types/tuple.md) with subcolumns:
--`partition_id`
--`min_block`
--`max_block`
--`level`
--`mutation`
+- [Tuple](../data-types/tuple.md) with subcolumns:
+- `partition_id`
+- `min_block`
+- `max_block`
+- `level`
+- `mutation`
 
 **Example**
 
@@ -517,12 +517,12 @@ isMergeTreePartCoveredBy(nested_part, covering_part)
 
 **Arguments**
 
--`nested_part` ([String](../data-types/string.md)) — Name of expected nested part.
--`covering_part` ([String](../data-types/string.md)) — Name of expected covering part.
+- `nested_part` ([String](../data-types/string.md)) — Name of expected nested part.
+- `covering_part` ([String](../data-types/string.md)) — Name of expected covering part.
 
 **Returned value**
 
--1 if it covers, 0 otherwise
+- 1 if it covers, 0 otherwise
 
 **Example**
 
@@ -544,7 +544,7 @@ Result:
 The inner content of the tags below are replaced at doc framework build time with
 docs generated from system.functions. Please do not modify or remove the tags.
 See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
--->
+- ->
 
 <!--AUTOGENERATED_START-->
 <!--AUTOGENERATED_END-->

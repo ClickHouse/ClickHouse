@@ -25,16 +25,16 @@ dictGetOrNull('dict_name', attr_name, id_expr)
 
 **Arguments**
 
--`dict_name` — Name of the dictionary. [String literal](/sql-reference/syntax#string).
--`attr_names` — Name of the column of the dictionary, [String literal](/sql-reference/syntax#string), or tuple of column names, [Tuple](/sql-reference/data-types/tuple)([String literal](/sql-reference/syntax#string).
--`id_expr` — Key value. [Expression](/sql-reference/syntax#expressions) returning dictionary key-type value or [Tuple](../data-types/tuple.md)-type value depending on the dictionary configuration.
--`default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](/sql-reference/syntax#expressions) or [Tuple](../data-types/tuple.md)([Expression](/sql-reference/syntax#expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
+- `dict_name` — Name of the dictionary. [String literal](/sql-reference/syntax#string).
+- `attr_names` — Name of the column of the dictionary, [String literal](/sql-reference/syntax#string), or tuple of column names, [Tuple](/sql-reference/data-types/tuple)([String literal](/sql-reference/syntax#string).
+- `id_expr` — Key value. [Expression](/sql-reference/syntax#expressions) returning dictionary key-type value or [Tuple](../data-types/tuple.md)-type value depending on the dictionary configuration.
+- `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](/sql-reference/syntax#expressions) or [Tuple](../data-types/tuple.md)([Expression](/sql-reference/syntax#expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
 
 **Returned value**
 
--If ClickHouse parses the attribute successfully in the [attribute's data type](/sql-reference/dictionaries#dictionary-key-and-fields), functions return the value of the dictionary attribute that corresponds to `id_expr`.
+- If ClickHouse parses the attribute successfully in the [attribute's data type](/sql-reference/dictionaries#dictionary-key-and-fields), functions return the value of the dictionary attribute that corresponds to `id_expr`.
 
--If there is no the key, corresponding to `id_expr`, in the dictionary, then:
+- If there is no the key, corresponding to `id_expr`, in the dictionary, then:
 
         -`dictGet` returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
         -`dictGetOrDefault` returns the value passed as the `default_value_expr` parameter.
@@ -228,7 +228,7 @@ Result:
 
 **See Also**
 
--[Dictionaries](../../sql-reference/dictionaries/index.md)
+- [Dictionaries](../../sql-reference/dictionaries/index.md)
 
 ## dictHas {#dicthas}
 
@@ -240,13 +240,13 @@ dictHas('dict_name', id_expr)
 
 **Arguments**
 
--`dict_name` — Name of the dictionary. [String literal](/sql-reference/syntax#string).
--`id_expr` — Key value. [Expression](/sql-reference/syntax#expressions) returning dictionary key-type value or [Tuple](../data-types/tuple.md)-type value depending on the dictionary configuration.
+- `dict_name` — Name of the dictionary. [String literal](/sql-reference/syntax#string).
+- `id_expr` — Key value. [Expression](/sql-reference/syntax#expressions) returning dictionary key-type value or [Tuple](../data-types/tuple.md)-type value depending on the dictionary configuration.
 
 **Returned value**
 
--0, if there is no key. [UInt8](../data-types/int-uint.md).
--1, if there is a key. [UInt8](../data-types/int-uint.md).
+- 0, if there is no key. [UInt8](../data-types/int-uint.md).
+- 1, if there is a key. [UInt8](../data-types/int-uint.md).
 
 ## dictGetHierarchy {#dictgethierarchy}
 
@@ -260,12 +260,12 @@ dictGetHierarchy('dict_name', key)
 
 **Arguments**
 
--`dict_name` — Name of the dictionary. [String literal](/sql-reference/syntax#string).
--`key` — Key value. [Expression](/sql-reference/syntax#expressions) returning a [UInt64](../data-types/int-uint.md)-type value.
+- `dict_name` — Name of the dictionary. [String literal](/sql-reference/syntax#string).
+- `key` — Key value. [Expression](/sql-reference/syntax#expressions) returning a [UInt64](../data-types/int-uint.md)-type value.
 
 **Returned value**
 
--Parents for the key. [Array(UInt64)](../data-types/array.md).
+- Parents for the key. [Array(UInt64)](../data-types/array.md).
 
 ## dictIsIn {#dictisin}
 
@@ -277,14 +277,14 @@ dictIsIn('dict_name', child_id_expr, ancestor_id_expr)
 
 **Arguments**
 
--`dict_name` — Name of the dictionary. [String literal](/sql-reference/syntax#string).
--`child_id_expr` — Key to be checked. [Expression](/sql-reference/syntax#expressions) returning a [UInt64](../data-types/int-uint.md)-type value.
--`ancestor_id_expr` — Alleged ancestor of the `child_id_expr` key. [Expression](/sql-reference/syntax#expressions) returning a [UInt64](../data-types/int-uint.md)-type value.
+- `dict_name` — Name of the dictionary. [String literal](/sql-reference/syntax#string).
+- `child_id_expr` — Key to be checked. [Expression](/sql-reference/syntax#expressions) returning a [UInt64](../data-types/int-uint.md)-type value.
+- `ancestor_id_expr` — Alleged ancestor of the `child_id_expr` key. [Expression](/sql-reference/syntax#expressions) returning a [UInt64](../data-types/int-uint.md)-type value.
 
 **Returned value**
 
--0, if `child_id_expr` is not a child of `ancestor_id_expr`. [UInt8](../data-types/int-uint.md).
--1, if `child_id_expr` is a child of `ancestor_id_expr` or if `child_id_expr` is an `ancestor_id_expr`. [UInt8](../data-types/int-uint.md).
+- 0, if `child_id_expr` is not a child of `ancestor_id_expr`. [UInt8](../data-types/int-uint.md).
+- 1, if `child_id_expr` is a child of `ancestor_id_expr` or if `child_id_expr` is an `ancestor_id_expr`. [UInt8](../data-types/int-uint.md).
 
 ## dictGetChildren {#dictgetchildren}
 
@@ -298,12 +298,12 @@ dictGetChildren(dict_name, key)
 
 **Arguments**
 
--`dict_name` — Name of the dictionary. [String literal](/sql-reference/syntax#string).
--`key` — Key value. [Expression](/sql-reference/syntax#expressions) returning a [UInt64](../data-types/int-uint.md)-type value.
+- `dict_name` — Name of the dictionary. [String literal](/sql-reference/syntax#string).
+- `key` — Key value. [Expression](/sql-reference/syntax#expressions) returning a [UInt64](../data-types/int-uint.md)-type value.
 
 **Returned values**
 
--First-level descendants for the key. [Array](../data-types/array.md)([UInt64](../data-types/int-uint.md)).
+- First-level descendants for the key. [Array](../data-types/array.md)([UInt64](../data-types/int-uint.md)).
 
 **Example**
 
@@ -345,13 +345,13 @@ dictGetDescendants(dict_name, key, level)
 
 **Arguments**
 
--`dict_name` — Name of the dictionary. [String literal](/sql-reference/syntax#string).
--`key` — Key value. [Expression](/sql-reference/syntax#expressions) returning a [UInt64](../data-types/int-uint.md)-type value.
--`level` — Hierarchy level. If `level = 0` returns all descendants to the end. [UInt8](../data-types/int-uint.md).
+- `dict_name` — Name of the dictionary. [String literal](/sql-reference/syntax#string).
+- `key` — Key value. [Expression](/sql-reference/syntax#expressions) returning a [UInt64](../data-types/int-uint.md)-type value.
+- `level` — Hierarchy level. If `level = 0` returns all descendants to the end. [UInt8](../data-types/int-uint.md).
 
 **Returned values**
 
--Descendants for the key. [Array](../data-types/array.md)([UInt64](../data-types/int-uint.md)).
+- Descendants for the key. [Array](../data-types/array.md)([UInt64](../data-types/int-uint.md)).
 
 **Example**
 
@@ -410,16 +410,16 @@ dictGetAll('dict_name', attr_names, id_expr[, limit])
 
 **Arguments**
 
--`dict_name` — Name of the dictionary. [String literal](/sql-reference/syntax#string).
--`attr_names` — Name of the column of the dictionary, [String literal](/sql-reference/syntax#string), or tuple of column names, [Tuple](/sql-reference/data-types/tuple)([String literal](/sql-reference/syntax#string)).
--`id_expr` — Key value. [Expression](/sql-reference/syntax#expressions) returning array of dictionary key-type value or [Tuple](/sql-reference/data-types/tuple)-type value depending on the dictionary configuration.
--`limit` - Maximum length for each value array returned. When truncating, child nodes are given precedence over parent nodes, and otherwise the defined list order for the regexp tree dictionary is respected. If unspecified, array length is unlimited.
+- `dict_name` — Name of the dictionary. [String literal](/sql-reference/syntax#string).
+- `attr_names` — Name of the column of the dictionary, [String literal](/sql-reference/syntax#string), or tuple of column names, [Tuple](/sql-reference/data-types/tuple)([String literal](/sql-reference/syntax#string)).
+- `id_expr` — Key value. [Expression](/sql-reference/syntax#expressions) returning array of dictionary key-type value or [Tuple](/sql-reference/data-types/tuple)-type value depending on the dictionary configuration.
+- `limit` - Maximum length for each value array returned. When truncating, child nodes are given precedence over parent nodes, and otherwise the defined list order for the regexp tree dictionary is respected. If unspecified, array length is unlimited.
 
 **Returned value**
 
--If ClickHouse parses the attribute successfully in the attribute's data type as defined in the dictionary, returns an array of dictionary attribute values that correspond to `id_expr` for each attribute specified by `attr_names`.
+- If ClickHouse parses the attribute successfully in the attribute's data type as defined in the dictionary, returns an array of dictionary attribute values that correspond to `id_expr` for each attribute specified by `attr_names`.
 
--If there is no key corresponding to `id_expr` in the dictionary, then an empty array is returned.
+- If there is no key corresponding to `id_expr` in the dictionary, then an empty array is returned.
 
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
 
@@ -479,14 +479,14 @@ ClickHouse supports specialized functions that convert dictionary attribute valu
 
 Functions:
 
--`dictGetInt8`, `dictGetInt16`, `dictGetInt32`, `dictGetInt64`
--`dictGetUInt8`, `dictGetUInt16`, `dictGetUInt32`, `dictGetUInt64`
--`dictGetFloat32`, `dictGetFloat64`
--`dictGetDate`
--`dictGetDateTime`
--`dictGetUUID`
--`dictGetString`
--`dictGetIPv4`, `dictGetIPv6`
+- `dictGetInt8`, `dictGetInt16`, `dictGetInt32`, `dictGetInt64`
+- `dictGetUInt8`, `dictGetUInt16`, `dictGetUInt32`, `dictGetUInt64`
+- `dictGetFloat32`, `dictGetFloat64`
+- `dictGetDate`
+- `dictGetDateTime`
+- `dictGetUUID`
+- `dictGetString`
+- `dictGetIPv4`, `dictGetIPv6`
 
 All these functions have the `OrDefault` modification. For example, `dictGetDateOrDefault`.
 
@@ -499,16 +499,16 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 **Arguments**
 
--`dict_name` — Name of the dictionary. [String literal](/sql-reference/syntax#string).
--`attr_name` — Name of the column of the dictionary. [String literal](/sql-reference/syntax#string).
--`id_expr` — Key value. [Expression](/sql-reference/syntax#expressions) returning a [UInt64](../data-types/int-uint.md) or [Tuple](../data-types/tuple.md)-type value depending on the dictionary configuration.
--`default_value_expr` — Value returned if the dictionary does not contain a row with the `id_expr` key. [Expression](/sql-reference/syntax#expressions) returning the value in the data type configured for the `attr_name` attribute.
+- `dict_name` — Name of the dictionary. [String literal](/sql-reference/syntax#string).
+- `attr_name` — Name of the column of the dictionary. [String literal](/sql-reference/syntax#string).
+- `id_expr` — Key value. [Expression](/sql-reference/syntax#expressions) returning a [UInt64](../data-types/int-uint.md) or [Tuple](../data-types/tuple.md)-type value depending on the dictionary configuration.
+- `default_value_expr` — Value returned if the dictionary does not contain a row with the `id_expr` key. [Expression](/sql-reference/syntax#expressions) returning the value in the data type configured for the `attr_name` attribute.
 
 **Returned value**
 
--If ClickHouse parses the attribute successfully in the [attribute's data type](/sql-reference/dictionaries#dictionary-key-and-fields), functions return the value of the dictionary attribute that corresponds to `id_expr`.
+- If ClickHouse parses the attribute successfully in the [attribute's data type](/sql-reference/dictionaries#dictionary-key-and-fields), functions return the value of the dictionary attribute that corresponds to `id_expr`.
 
--If there is no requested `id_expr` in the dictionary then:
+- If there is no requested `id_expr` in the dictionary then:
 
         -`dictGet[Type]` returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
         -`dictGet[Type]OrDefault` returns the value passed as the `default_value_expr` parameter.
@@ -519,7 +519,7 @@ ClickHouse throws an exception if it cannot parse the value of the attribute or 
 The inner content of the tags below are replaced at doc framework build time with 
 docs generated from system.functions. Please do not modify or remove the tags.
 See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
--->
+- ->
 
 <!--AUTOGENERATED_START-->
 <!--AUTOGENERATED_END-->

@@ -90,4 +90,4 @@ All patterns supported by [File](../../sql-reference/table-functions/file.md#glo
 
 ## Related {#related}
 
--[File table function](../../sql-reference/table-functions/file.md)
+- [File table function](../../sql-reference/table-functions/file.md)

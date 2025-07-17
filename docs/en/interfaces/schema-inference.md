@@ -142,9 +142,9 @@ no conversions between types will be performed.
 There is a special setting [use_structure_from_insertion_table_in_table_functions](/operations/settings/settings.md/#use_structure_from_insertion_table_in_table_functions)
 that controls this behaviour. It has 3 possible values:
 
--0 - table function will extract the structure from the data.
--1 - table function will use the structure from the insertion table.
--2 - ClickHouse will automatically determine if it's possible to use the structure from the insertion table or use schema inference. Default value.
+- 0 - table function will extract the structure from the data.
+- 1 - table function will use the structure from the insertion table.
+- 2 - ClickHouse will automatically determine if it's possible to use the structure from the insertion table or use schema inference. Default value.
 
 **Example 1:**
 
@@ -247,8 +247,8 @@ To prevent inferring the same schema every time ClickHouse read the data from th
 
 There are special settings that control this cache:
 
--`schema_inference_cache_max_elements_for_{file/s3/hdfs/url/azure}` - the maximum number of cached schemas for the corresponding table function. The default value is `4096`. These settings should be set in the server config.
--`schema_inference_use_cache_for_{file,s3,hdfs,url,azure}` - allows turning on/off using cache for schema inference. These settings can be used in queries.
+- `schema_inference_cache_max_elements_for_{file/s3/hdfs/url/azure}` - the maximum number of cached schemas for the corresponding table function. The default value is `4096`. These settings should be set in the server config.
+- `schema_inference_use_cache_for_{file,s3,hdfs,url,azure}` - allows turning on/off using cache for schema inference. These settings can be used in queries.
 
 The schema of the file can be changed by modifying the data or by changing format settings.
 For this reason, the schema inference cache identifies the schema by file source, format name, used format settings, and the last modification time of the file.
@@ -1469,8 +1469,8 @@ correctly determine the types (especially when the data contains a lot of nulls)
 
 Default values:
 
--`25000` for `input_format_max_rows_to_read_for_schema_inference`.
--`33554432` (32 Mb) for `input_format_max_bytes_to_read_for_schema_inference`.
+- `25000` for `input_format_max_rows_to_read_for_schema_inference`.
+- `33554432` (32 Mb) for `input_format_max_bytes_to_read_for_schema_inference`.
 
 #### column_names_for_schema_inference {#column-names-for-schema-inference}
 
@@ -2243,9 +2243,9 @@ As we can see, we have all fields from all files.
 
 Note:
 
--As some of the files may not contain some columns from the resulting schema, union mode is supported only for formats that support reading subset of columns (like JSONEachRow, Parquet, TSVWithNames, etc) and won't work for other formats (like CSV, TSV, JSONCompactEachRow, etc).
--If ClickHouse cannot infer the schema from one of the files, the exception will be thrown.
--If you have a lot of files, reading schema from all of them can take a lot of time.
+- As some of the files may not contain some columns from the resulting schema, union mode is supported only for formats that support reading subset of columns (like JSONEachRow, Parquet, TSVWithNames, etc) and won't work for other formats (like CSV, TSV, JSONCompactEachRow, etc).
+- If ClickHouse cannot infer the schema from one of the files, the exception will be thrown.
+- If you have a lot of files, reading schema from all of them can take a lot of time.
 
 ## Automatic format detection {#automatic-format-detection}
 

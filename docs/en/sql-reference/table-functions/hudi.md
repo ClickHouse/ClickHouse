@@ -33,5 +33,5 @@ A table with the specified structure for reading data in the specified Hudi tabl
 
 ## Related {#related}
 
--[Hudi engine](/engines/table-engines/integrations/hudi.md)
--[Hudi cluster table function](/sql-reference/table-functions/hudiCluster.md)
+- [Hudi engine](/engines/table-engines/integrations/hudi.md)
+- [Hudi cluster table function](/sql-reference/table-functions/hudiCluster.md)

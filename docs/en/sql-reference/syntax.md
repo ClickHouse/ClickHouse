@@ -14,8 +14,8 @@ ClickHouse uses a syntax based on SQL but offers a number of extensions and opti
 
 There are two types of parsers in ClickHouse:
 
--_A full SQL parser_ (a recursive descent parser).
--_A data format parser_ (a fast stream parser).
+- _A full SQL parser_ (a recursive descent parser).
+- _A data format parser_ (a fast stream parser).
 
 The full SQL parser is used in all cases except for the `INSERT` query, which uses both parsers.
 
@@ -57,15 +57,15 @@ For more information about format parsers, see the [Formats](../interfaces/forma
 
 ## Spaces {#spaces}
 
--There may be any number of space symbols between syntactical constructions (including the beginning and end of a query).
--Space symbols include the space, tab, line feed, CR, and form feed.
+- There may be any number of space symbols between syntactical constructions (including the beginning and end of a query).
+- Space symbols include the space, tab, line feed, CR, and form feed.
 
 ## Comments {#comments}
 
 ClickHouse supports both SQL-style and C-style comments:
 
--SQL-style comments begin with `--`, `#!` or `#` and continue to the end of the line. A space after `--` and `#!` can be omitted.
--C-style comments span from `/*` to `*/` and can be multiline. Spaces are not required either.
+- SQL-style comments begin with `--`, `#!` or `#` and continue to the end of the line. A space after `--` and `#!` can be omitted.
+- C-style comments span from `/*` to `*/` and can be multiline. Spaces are not required either.
 
 ## Keywords {#keywords}
 
@@ -73,8 +73,8 @@ Keywords in ClickHouse can be either _case-sensitive_ or _case-insensitive_ depe
 
 Keywords are **case-insensitive** when they correspond to:
 
--SQL standard. For example, `SELECT`, `select` and `SeLeCt` are all valid.
--Implementation in some popular DBMS (MySQL or Postgres). For example, `DateTime` is the same as `datetime`.
+- SQL standard. For example, `SELECT`, `select` and `SeLeCt` are all valid.
+- Implementation in some popular DBMS (MySQL or Postgres). For example, `DateTime` is the same as `datetime`.
 
 :::note
 You can check whether a data type name is case-sensitive in the [system.data_type_families](/operations/system-tables/data_type_families) table.
@@ -96,10 +96,10 @@ SELECT "FROM" FROM table_name
 
 Identifiers are:
 
--Cluster, database, table, partition, and column names.
--[Functions](#functions).
--[Data types](../sql-reference/data-types/index.md).
--[Expression aliases](#expression-aliases).
+- Cluster, database, table, partition, and column names.
+- [Functions](#functions).
+- [Data types](../sql-reference/data-types/index.md).
+- [Expression aliases](#expression-aliases).
 
 Identifiers can be quoted or non-quoted, although the latter is preferred.
 
@@ -123,11 +123,11 @@ In other words it is a fixed value which does not change during query execution.
 
 Literals can be:
 
--[String](#string)
--[Numeric](#numeric)
--[Compound](#compound)
--[`NULL`](#null)
--[Heredocs](#heredoc) (custom string literals)
+- [String](#string)
+- [Numeric](#numeric)
+- [Compound](#compound)
+- [`NULL`](#null)
+- [Heredocs](#heredoc) (custom string literals)
 
 We take a look at each of these in more detail in the sections below.
 
@@ -137,8 +137,8 @@ String literals must be enclosed in single quotes. Double quotes are not support
 
 Escaping works by either:
 
--using a preceding single quote where the single-quote character `'` (and only this character) can be escaped as `''`, or
--using the preceding backslash with the following supported escape sequences listed in the table below.
+- using a preceding single quote where the single-quote character `'` (and only this character) can be escaped as `''`, or
+- using the preceding backslash with the following supported escape sequences listed in the table below.
 
 :::note
 The backslash loses its special meaning i.e. it is interpreted literally should it precede characters other than the ones listed below.
@@ -173,16 +173,16 @@ In string literals, you need to escape at least `'` and `\` using escape codes `
 
 Numeric literals are parsed as follows:
 
--First, as a 64-bit signed number, using the [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul) function.
--If unsuccessful, as a 64-bit unsigned number, using the [strtoll](https://en.cppreference.com/w/cpp/string/byte/strtol) function.
--If unsuccessful, as a floating-point number using the [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof) function.
--Otherwise, an error is returned.
+- First, as a 64-bit signed number, using the [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul) function.
+- If unsuccessful, as a 64-bit unsigned number, using the [strtoll](https://en.cppreference.com/w/cpp/string/byte/strtol) function.
+- If unsuccessful, as a floating-point number using the [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof) function.
+- Otherwise, an error is returned.
 
 Literal values are cast to the smallest type that the value fits in.
 For example:
 
--`1` is parsed as `UInt8`
--`256` is parsed as `UInt16`.
+- `1` is parsed as `UInt8`
+- `256` is parsed as `UInt16`.
 
 For more information, see [Data types](../sql-reference/data-types/index.md).
 
@@ -224,9 +224,9 @@ To store `NULL` in a table field, it must be of the [Nullable](../sql-reference/
 :::note
 The following should be noted for `NULL`:
 
--Depending on the data format (input or output), `NULL` may have a different representation. For more information, see [data formats](/interfaces/formats).
--`NULL` processing is nuanced. For example, if at least one of the arguments of a comparison operation is `NULL`, the result of this operation is also `NULL`. The same is true for multiplication, addition, and other operations. We recommend to read the documentation for each operation.
--In queries, you can check `NULL` using the [`IS NULL`](/sql-reference/functions/functions-for-nulls#isnull) and [`IS NOT NULL`](/sql-reference/functions/functions-for-nulls#isnotnull) operators and the related functions `isNull` and `isNotNull`.
+- Depending on the data format (input or output), `NULL` may have a different representation. For more information, see [data formats](/interfaces/formats).
+- `NULL` processing is nuanced. For example, if at least one of the arguments of a comparison operation is `NULL`, the result of this operation is also `NULL`. The same is true for multiplication, addition, and other operations. We recommend to read the documentation for each operation.
+- In queries, you can check `NULL` using the [`IS NULL`](/sql-reference/functions/functions-for-nulls#isnull) and [`IS NOT NULL`](/sql-reference/functions/functions-for-nulls#isnotnull) operators and the related functions `isNull` and `isNotNull`.
 
 :::
 
@@ -247,13 +247,13 @@ SELECT $heredoc$SHOW CREATE VIEW my_view$heredoc$;
 
 :::note
 
--A value between two heredocs is processed "as-is".
+- A value between two heredocs is processed "as-is".
 
 :::
 
 :::tip
 
--You can use a heredoc to embed snippets of SQL, HTML, or XML code, etc.
+- You can use a heredoc to embed snippets of SQL, HTML, or XML code, etc.
 
 :::
 
@@ -265,13 +265,13 @@ all placeholders are resolved and replaced by the actual query parameter values.
 
 There are two ways to define a query parameter:
 
--`SET param_<name>=<value>`
--`--param_<name>='<value>'`
+- `SET param_<name>=<value>`
+- `--param_<name>='<value>'`
 
 When using the second variant, it is passed as an argument to `clickhouse-client` on the command line where:
 
--`<name>` is the name of the query parameter.
--`<value>` is its value.
+- `<name>` is the name of the query parameter.
+- `<value>` is its value.
 
 A query parameter can be referenced in a query using `{<name>: <datatype>}`, where `<name>` is the query parameter name and `<datatype>` is the datatype it is converted to.
 
@@ -334,8 +334,8 @@ now()
 
 There are also:
 
--[Regular functions](/sql-reference/functions/overview).
--[Aggregate functions](/sql-reference/aggregate-functions).
+- [Regular functions](/sql-reference/functions/overview).
+- [Aggregate functions](/sql-reference/aggregate-functions).
 
 Some aggregate functions can contain two lists of arguments in brackets. For example:
 
@@ -373,21 +373,21 @@ In other words, they may or may not contain an argument list in brackets.
 
 For more information, see the sections:
 
--[Data types](/sql-reference/data-types/index.md)
--[Table engines](/engines/table-engines/index.md)
--[CREATE](/sql-reference/statements/create/index.md).
+- [Data types](/sql-reference/data-types/index.md)
+- [Table engines](/engines/table-engines/index.md)
+- [CREATE](/sql-reference/statements/create/index.md).
 
 ## Expressions {#expressions}
 
 An expression can be the following:
 
--a function
--an identifier
--a literal
--an application of an operator
--an expression in brackets
--a subquery
--or an asterisk.
+- a function
+- an identifier
+- a literal
+- an application of an operator
+- an expression in brackets
+- a subquery
+- or an asterisk.
 
 It can also contain an [alias](#expression-aliases).
 
@@ -412,25 +412,25 @@ The parts of the syntax above are explained below.
 
 ### Notes on Usage {#notes-on-usage}
 
--Aliases are global for a query or subquery, and you can define an alias in any part of a query for any expression. For example:
+- Aliases are global for a query or subquery, and you can define an alias in any part of a query for any expression. For example:
 
 ```sql
 SELECT (1 AS n) + 2, n`.
 ```
 
--Aliases are not visible in subqueries and between subqueries. For example, while executing the following query ClickHouse generates the exception `Unknown identifier: num`:
+- Aliases are not visible in subqueries and between subqueries. For example, while executing the following query ClickHouse generates the exception `Unknown identifier: num`:
 
 ```sql
 `SELECT (SELECT sum(b.a) + num FROM b) - a.a AS num FROM a`
 ```
 
--If an alias is defined for the result columns in the `SELECT` clause of a subquery, these columns are visible in the outer query. For example:
+- If an alias is defined for the result columns in the `SELECT` clause of a subquery, these columns are visible in the outer query. For example:
 
 ```sql
 SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
 ```
 
--Be careful with aliases that are the same as column or table names. Let's consider the following example:
+- Be careful with aliases that are the same as column or table names. Let's consider the following example:
 
 ```sql
 CREATE TABLE t

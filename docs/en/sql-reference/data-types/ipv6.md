@@ -74,4 +74,4 @@ SELECT toIPv4('127.0.0.1') = toIPv6('::ffff:127.0.0.1');
 
 **See Also**
 
--[Functions for Working with IPv4 and IPv6 Addresses](../functions/ip-address-functions.md)
+- [Functions for Working with IPv4 and IPv6 Addresses](../functions/ip-address-functions.md)

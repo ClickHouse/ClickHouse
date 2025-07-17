@@ -34,15 +34,15 @@ See a detailed description of the [CREATE TABLE](/sql-reference/statements/creat
 
 The table structure can differ from the source table structure:
 
--Column names should be the same as in the source table, but you can use just some of these columns and in any order.
--Column types may differ from those in the source table. ClickHouse tries to [cast](/sql-reference/functions/type-conversion-functions#cast) values to the ClickHouse data types.
--The [external_table_functions_use_nulls](/operations/settings/settings#external_table_functions_use_nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
+- Column names should be the same as in the source table, but you can use just some of these columns and in any order.
+- Column types may differ from those in the source table. ClickHouse tries to [cast](/sql-reference/functions/type-conversion-functions#cast) values to the ClickHouse data types.
+- The [external_table_functions_use_nulls](/operations/settings/settings#external_table_functions_use_nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
 
 **Engine Parameters**
 
--`datasource` — Name of the section with connection settings in the `odbc.ini` file.
--`external_database` — Name of a database in an external DBMS.
--`external_table` — Name of a table in the `external_database`.
+- `datasource` — Name of the section with connection settings in the `odbc.ini` file.
+- `external_database` — Name of a database in an external DBMS.
+- `external_table` — Name of a table in the `external_database`.
 
 These parameters can also be passed using [named collections](operations/named-collections.md).
 
@@ -137,5 +137,5 @@ SELECT * FROM odbc_t
 
 ## See also {#see-also}
 
--[ODBC dictionaries](/sql-reference/dictionaries#mysql)
--[ODBC table function](../../../sql-reference/table-functions/odbc.md)
+- [ODBC dictionaries](/sql-reference/dictionaries#mysql)
+- [ODBC table function](../../../sql-reference/table-functions/odbc.md)

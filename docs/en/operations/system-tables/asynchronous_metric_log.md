@@ -14,11 +14,11 @@ Contains the historical values for `system.asynchronous_metrics`, which are save
 
 Columns:
 
--`hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
--`event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
--`event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
--`metric` ([String](../../sql-reference/data-types/string.md)) — Metric name.
--`value` ([Float64](../../sql-reference/data-types/float.md)) — Metric value.
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
+- `event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
+- `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
+- `metric` ([String](../../sql-reference/data-types/string.md)) — Metric name.
+- `value` ([Float64](../../sql-reference/data-types/float.md)) — Metric value.
 
 **Example**
 
@@ -54,6 +54,6 @@ value:      0
 
 **See Also**
 
--[asynchronous_metric_log setting](../../operations/server-configuration-parameters/settings.md#asynchronous_metric_log) — Enabling and disabling the setting.
--[system.asynchronous_metrics](../system-tables/asynchronous_metrics.md) — Contains metrics, calculated periodically in the background.
--[system.metric_log](../system-tables/metric_log.md) — Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.
+- [asynchronous_metric_log setting](../../operations/server-configuration-parameters/settings.md#asynchronous_metric_log) — Enabling and disabling the setting.
+- [system.asynchronous_metrics](../system-tables/asynchronous_metrics.md) — Contains metrics, calculated periodically in the background.
+- [system.metric_log](../system-tables/metric_log.md) — Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.

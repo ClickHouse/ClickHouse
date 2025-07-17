@@ -22,14 +22,14 @@ topKWeighted(N, load_factor, 'counts')(column, weight)
 
 **Parameters**
 
--`N` — The number of elements to return. Optional. Default value: 10.
--`load_factor` — Defines, how many cells reserved for values. If uniq(column) > N * load_factor, result of topK function will be approximate. Optional. Default value: 3.
--`counts` — Defines, should result contain approximate count and error value.
+- `N` — The number of elements to return. Optional. Default value: 10.
+- `load_factor` — Defines, how many cells reserved for values. If uniq(column) > N * load_factor, result of topK function will be approximate. Optional. Default value: 3.
+- `counts` — Defines, should result contain approximate count and error value.
 
 **Arguments**
 
--`column` — The value.
--`weight` — The weight. Every value is accounted `weight` times for frequency calculation. [UInt64](../../../sql-reference/data-types/int-uint.md).
+- `column` — The value.
+- `weight` — The weight. Every value is accounted `weight` times for frequency calculation. [UInt64](../../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
@@ -69,6 +69,6 @@ Result:
 
 **See Also**
 
--[topK](../../../sql-reference/aggregate-functions/reference/topk.md)
--[approx_top_k](../../../sql-reference/aggregate-functions/reference/approxtopk.md)
--[approx_top_sum](../../../sql-reference/aggregate-functions/reference/approxtopsum.md)
+- [topK](../../../sql-reference/aggregate-functions/reference/topk.md)
+- [approx_top_k](../../../sql-reference/aggregate-functions/reference/approxtopk.md)
+- [approx_top_sum](../../../sql-reference/aggregate-functions/reference/approxtopsum.md)

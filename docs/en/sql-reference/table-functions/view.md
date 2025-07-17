@@ -18,11 +18,11 @@ view(subquery)
 
 ## Arguments {#arguments}
 
--`subquery` — `SELECT` query.
+- `subquery` — `SELECT` query.
 
 ## Returned value {#returned_value}
 
--A table.
+- A table.
 
 ## Examples {#examples}
 
@@ -66,4 +66,4 @@ SELECT * FROM cluster(`cluster_name`, view(SELECT a, b, c FROM table_name));
 
 ## Related {#related}
 
--[View Table Engine](/engines/table-engines/special/view/)
+- [View Table Engine](/engines/table-engines/special/view/)

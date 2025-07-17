@@ -115,21 +115,21 @@ Use these options and follow the [general build process](../development/build.md
 
 ### Report details {#report-details}
 
--**Compiler**: `clang-19`, optionally with the name of a target platform
--**Build type**: `Debug` or `RelWithDebInfo` (cmake).
--**Sanitizer**: `none` (without sanitizers), `address` (ASan), `memory` (MSan), `undefined` (UBSan), or `thread` (TSan).
--**Status**: `success` or `fail`
--**Build log**: link to the building and files copying log, useful when build failed.
--**Build time**.
--**Artifacts**: build result files (with `XXX` being the server version e.g. `20.8.1.4344`).
--`clickhouse-client_XXX_amd64.deb`
--`clickhouse-common-static-dbg_XXX[+asan, +msan, +ubsan, +tsan]_amd64.deb`
--`clickhouse-common-staticXXX_amd64.deb`
--`clickhouse-server_XXX_amd64.deb`
--`clickhouse`: Main built binary.
--`clickhouse-odbc-bridge`
--`unit_tests_dbms`: GoogleTest binary with ClickHouse unit tests.
--`performance.tar.zst`: Special package for performance tests.
+- **Compiler**: `clang-19`, optionally with the name of a target platform
+- **Build type**: `Debug` or `RelWithDebInfo` (cmake).
+- **Sanitizer**: `none` (without sanitizers), `address` (ASan), `memory` (MSan), `undefined` (UBSan), or `thread` (TSan).
+- **Status**: `success` or `fail`
+- **Build log**: link to the building and files copying log, useful when build failed.
+- **Build time**.
+- **Artifacts**: build result files (with `XXX` being the server version e.g. `20.8.1.4344`).
+- `clickhouse-client_XXX_amd64.deb`
+- `clickhouse-common-static-dbg_XXX[+asan, +msan, +ubsan, +tsan]_amd64.deb`
+- `clickhouse-common-staticXXX_amd64.deb`
+- `clickhouse-server_XXX_amd64.deb`
+- `clickhouse`: Main built binary.
+- `clickhouse-odbc-bridge`
+- `unit_tests_dbms`: GoogleTest binary with ClickHouse unit tests.
+- `performance.tar.zst`: Special package for performance tests.
 
 ## Special build check {#special-build-check}
 

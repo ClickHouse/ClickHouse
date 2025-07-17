@@ -57,11 +57,11 @@ Character `|` inside patterns is used to specify failover addresses. They are it
 
 ## Virtual Columns {#virtual-columns}
 
--`_path` — Path to the `URL`. Type: `LowCardinality(String)`.
--`_file` — Resource name of the `URL`. Type: `LowCardinality(String)`.
--`_size` — Size of the resource in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
--`_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
--`_headers` - HTTP response headers. Type: `Map(LowCardinality(String), LowCardinality(String))`.
+- `_path` — Path to the `URL`. Type: `LowCardinality(String)`.
+- `_file` — Resource name of the `URL`. Type: `LowCardinality(String)`.
+- `_size` — Size of the resource in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
+- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
+- `_headers` - HTTP response headers. Type: `Map(LowCardinality(String), LowCardinality(String))`.
 
 ## Hive-style partitioning {#hive-style-partitioning}
 
@@ -77,8 +77,8 @@ SELECT * FROM url('http://data/path/date=*/country=*/code=*/*.parquet') WHERE _d
 
 ## Storage Settings {#storage-settings}
 
--[engine_url_skip_empty_files](/operations/settings/settings.md#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
--[enable_url_encoding](/operations/settings/settings.md#enable_url_encoding) - allows to enable/disable decoding/encoding path in uri. Enabled by default.
+- [engine_url_skip_empty_files](/operations/settings/settings.md#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [enable_url_encoding](/operations/settings/settings.md#enable_url_encoding) - allows to enable/disable decoding/encoding path in uri. Enabled by default.
 
 ## Permissions {#permissions}
 
@@ -86,4 +86,4 @@ SELECT * FROM url('http://data/path/date=*/country=*/code=*/*.parquet') WHERE _d
 
 ## Related {#related}
 
--[Virtual columns](/engines/table-engines/index.md#table_engines-virtual_columns)
+- [Virtual columns](/engines/table-engines/index.md#table_engines-virtual_columns)

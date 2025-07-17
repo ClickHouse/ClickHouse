@@ -18,7 +18,7 @@ It is called "lightweight `DELETE`" to contrast it to the [ALTER TABLE ... DELET
 ## Examples {#examples}
 
 ```sql
--- Deletes all rows from the `hits` table where the `Title` column contains the text `hello`
+- - Deletes all rows from the `hits` table where the `Title` column contains the text `hello`
 DELETE FROM hits WHERE Title LIKE '%hello%';
 ```
 
@@ -50,10 +50,10 @@ By default, `DELETE` does not work for tables with projections. This is because 
 
 The following can also negatively impact lightweight `DELETE` performance:
 
--A heavy `WHERE` condition in a `DELETE` query.
--If the mutations queue is filled with many other mutations, this can possibly lead to performance issues as all mutations on a table are executed sequentially.
--The affected table has a very large number of data parts.
--Having a lot of data in compact parts. In a Compact part, all columns are stored in one file.
+- A heavy `WHERE` condition in a `DELETE` query.
+- If the mutations queue is filled with many other mutations, this can possibly lead to performance issues as all mutations on a table are executed sequentially.
+- The affected table has a very large number of data parts.
+- Having a lot of data in compact parts. In a Compact part, all columns are stored in one file.
 
 ## Delete permissions {#delete-permissions}
 
@@ -95,4 +95,4 @@ GRANT ALTER DELETE ON db.table to username;
 
 ## Related content {#related-content}
 
--Blog: [Handling Updates and Deletes in ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
+- Blog: [Handling Updates and Deletes in ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

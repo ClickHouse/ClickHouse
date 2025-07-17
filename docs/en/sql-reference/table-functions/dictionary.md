@@ -19,7 +19,7 @@ dictionary('dict')
 
 ## Arguments {#arguments}
 
--`dict` — A dictionary name. [String](../../sql-reference/data-types/string.md).
+- `dict` — A dictionary name. [String](../../sql-reference/data-types/string.md).
 
 ## Returned value {#returned_value}
 
@@ -60,4 +60,4 @@ Result:
 
 ## Related {#related}
 
--[Dictionary engine](/engines/table-engines/special/dictionary)
+- [Dictionary engine](/engines/table-engines/special/dictionary)

@@ -16,11 +16,11 @@ This table contains histogram metrics that can be calculated instantly and expor
 
 Columns:
 
--`metric` ([String](../../sql-reference/data-types/string.md)) — Metric name.
--`value` ([Int64](../../sql-reference/data-types/int-uint.md)) — Metric value.
--`description` ([String](../../sql-reference/data-types/string.md)) — Metric description.
--`labels` ([Map(String, String)](../../sql-reference/data-types/map.md)) — Metric labels.
--`name` ([String](../../sql-reference/data-types/string.md)) — Alias for `metric`.
+- `metric` ([String](../../sql-reference/data-types/string.md)) — Metric name.
+- `value` ([Int64](../../sql-reference/data-types/int-uint.md)) — Metric value.
+- `description` ([String](../../sql-reference/data-types/string.md)) — Metric description.
+- `labels` ([Map(String, String)](../../sql-reference/data-types/map.md)) — Metric labels.
+- `name` ([String](../../sql-reference/data-types/string.md)) — Alias for `metric`.
 
 **Example**
 
@@ -45,7 +45,7 @@ The response time of Keeper, in milliseconds.
 
 **See Also**
 
--[system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) — Contains periodically calculated metrics.
--[system.events](/operations/system-tables/events) — Contains a number of events that occurred.
--[system.metric_log](/operations/system-tables/metric_log) — Contains a history of metrics values from tables `system.metrics` and `system.events`.
--[Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
+- [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) — Contains periodically calculated metrics.
+- [system.events](/operations/system-tables/events) — Contains a number of events that occurred.
+- [system.metric_log](/operations/system-tables/metric_log) — Contains a history of metrics values from tables `system.metrics` and `system.events`.
+- [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.

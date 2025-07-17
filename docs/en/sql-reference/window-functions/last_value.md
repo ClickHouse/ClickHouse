@@ -33,7 +33,7 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 **Returned value**
 
--The last value evaluated within its ordered frame.
+- The last value evaluated within its ordered frame.
 
 **Example**
 

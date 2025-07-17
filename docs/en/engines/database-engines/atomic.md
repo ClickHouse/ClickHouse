@@ -86,4 +86,4 @@ If unspecified, the disk defined in `database_disk.disk` is used by default.
 
 ## See also {#see-also}
 
--[system.databases](../../operations/system-tables/databases.md) system table
+- [system.databases](../../operations/system-tables/databases.md) system table

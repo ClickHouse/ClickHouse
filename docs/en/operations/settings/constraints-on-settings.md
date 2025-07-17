@@ -66,11 +66,11 @@ setting remains unchanged.
 
 There are a few types of constraints supported in ClickHouse:
 
--`min`
--`max`
--`disallowed`
--`readonly` (with alias `const`)
--`changeable_in_readonly`
+- `min`
+- `max`
+- `disallowed`
+- `readonly` (with alias `const`)
+- `changeable_in_readonly`
 
 The `min` and `max` constraints specify upper and lower boundaries for a numeric
 setting and can be used in combination with each other.
@@ -102,10 +102,10 @@ is enabled:
 If there are multiple profiles active for a user, then constraints are merged.
 The Merge process depends on `settings_constraints_replace_previous`:
 
--**true** (recommended): constraints for the same setting are replaced during
+- **true** (recommended): constraints for the same setting are replaced during
   merge, such that the last constraint is used and all previous ones are ignored.
   This includes fields that are not set in new constraint.
--**false** (default): constraints for the same setting are merged in a way that
+- **false** (default): constraints for the same setting are merged in a way that
   every unset type of constraint is taken from the previous profile and every
   set type of constraint is replaced by the value from the new profile.
 
@@ -114,10 +114,10 @@ The Merge process depends on `settings_constraints_replace_previous`:
 Read-only mode is enabled by the `readonly` setting which is not to be confused
 with the `readonly` constraint type:
 
--`readonly=0`: No read-only restrictions.
--`readonly=1`: Only read queries are allowed and settings cannot be changed
+- `readonly=0`: No read-only restrictions.
+- `readonly=1`: Only read queries are allowed and settings cannot be changed
    unless `changeable_in_readonly` is set.
--`readonly=2`: Only read queries are allowed, but settings can be changed,
+- `readonly=2`: Only read queries are allowed, but settings can be changed,
   except for `readonly` setting itself.
 
 ### Example {#example-read-only}

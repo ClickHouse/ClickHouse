@@ -112,7 +112,7 @@ This creates the user `ingester` with the setting `async_inset = 1`:
 ```sql
 CREATE USER ingester
 IDENTIFIED WITH sha256_hash BY '7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3'
--- highlight-next-line
+- - highlight-next-line
 SETTINGS async_insert = 1
 ```
 
@@ -145,7 +145,7 @@ This creates the user `ingester` and assigns the user the settings profile `log_
 ```sql
 CREATE USER ingester
 IDENTIFIED WITH sha256_hash BY '7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3'
--- highlight-next-line
+- - highlight-next-line
 SETTINGS PROFILE log_ingest
 ```
 
@@ -213,12 +213,12 @@ SELECT value FROM system.settings where name='async_insert';
 
 ```sql
 INSERT INTO YourTable
--- highlight-next-line
+- - highlight-next-line
 SETTINGS async_insert=1
 VALUES (...)
 ```
 
 ## See also {#see-also}
 
--View the [Settings](/operations/settings/settings.md) page for a description of the ClickHouse settings.
--[Global server settings](/operations/server-configuration-parameters/settings.md)
+- View the [Settings](/operations/settings/settings.md) page for a description of the ClickHouse settings.
+- [Global server settings](/operations/server-configuration-parameters/settings.md)

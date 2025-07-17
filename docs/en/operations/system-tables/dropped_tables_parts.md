@@ -12,6 +12,6 @@ The schema of this table is the same as [system.parts](./parts.md)
 
 **See Also**
 
--[MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
--[system.parts](./parts.md)
--[system.dropped_tables](./dropped_tables.md)
+- [MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
+- [system.parts](./parts.md)
+- [system.dropped_tables](./dropped_tables.md)

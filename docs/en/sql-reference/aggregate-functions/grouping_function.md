@@ -12,8 +12,8 @@ title: 'GROUPING'
 
 The GROUPING function takes multiple columns as an argument, and returns a bitmask.
 
--`1` indicates that a row returned by a `ROLLUP` or `CUBE` modifier to `GROUP BY` is a subtotal
--`0` indicates that a row returned by a `ROLLUP` or `CUBE` is a row that is not a subtotal
+- `1` indicates that a row returned by a `ROLLUP` or `CUBE` modifier to `GROUP BY` is a subtotal
+- `0` indicates that a row returned by a `ROLLUP` or `CUBE` is a row that is not a subtotal
 
 ## GROUPING SETS {#grouping-sets}
 

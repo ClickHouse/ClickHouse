@@ -23,9 +23,9 @@ In the former case, ClickHouse may skip the corresponding granule during filter 
 
 The query condition cache is effective if three prerequisites are fulfilled:
 
--First, the workload must evaluate the same filter conditions repeatedly. This happens naturally if a query is repeated multiple times but it can also happen if two queries share the same filters, e.g. `SELECT product FROM products WHERE quality > 3` and `SELECT vendor, count() FROM products WHERE quality > 3`.
--Second, the majority of the data is immutable, i.e., does not change between queries. This is generally the case in ClickHouse as parts are immutable and created only by INSERTs.
--Third, filters are selective, i.e. only relatively few rows satisfy the filter condition. The fewer rows match the filter condition, the more granules will be recorded with bit 0 (no matching rows), and the more data can be "pruned" from subsequent filter evaluations.
+- First, the workload must evaluate the same filter conditions repeatedly. This happens naturally if a query is repeated multiple times but it can also happen if two queries share the same filters, e.g. `SELECT product FROM products WHERE quality > 3` and `SELECT vendor, count() FROM products WHERE quality > 3`.
+- Second, the majority of the data is immutable, i.e., does not change between queries. This is generally the case in ClickHouse as parts are immutable and created only by INSERTs.
+- Third, filters are selective, i.e. only relatively few rows satisfy the filter condition. The fewer rows match the filter condition, the more granules will be recorded with bit 0 (no matching rows), and the more data can be "pruned" from subsequent filter evaluations.
 
 ## Memory consumption {#memory-consumption}
 
@@ -71,5 +71,5 @@ Both counters are only updated for `SELECT` queries which run with setting `use_
 
 ## Related content {#related-content}
 
--Blog: [Introducing the Query Condition Cache](https://clickhouse.com/blog/introducing-the-clickhouse-query-condition-cache)
--[Predicate Caching: Query-Driven Secondary Indexing for Cloud Data Warehouses (Schmidt et. al., 2024)](https://doi.org/10.1145/3626246.3653395)
+- Blog: [Introducing the Query Condition Cache](https://clickhouse.com/blog/introducing-the-clickhouse-query-condition-cache)
+- [Predicate Caching: Query-Driven Secondary Indexing for Cloud Data Warehouses (Schmidt et. al., 2024)](https://doi.org/10.1145/3626246.3653395)

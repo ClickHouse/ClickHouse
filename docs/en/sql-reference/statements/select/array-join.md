@@ -23,8 +23,8 @@ FROM <left_subquery>
 
 Supported types of `ARRAY JOIN` are listed below:
 
--`ARRAY JOIN` - In base case, empty arrays are not included in the result of `JOIN`.
--`LEFT ARRAY JOIN` - The result of `JOIN` contains rows with empty arrays. The value for an empty array is set to the default value for the array element type (usually 0, empty string or NULL).
+- `ARRAY JOIN` - In base case, empty arrays are not included in the result of `JOIN`.
+- `LEFT ARRAY JOIN` - The result of `JOIN` contains rows with empty arrays. The value for an empty array is set to the default value for the array element type (usually 0, empty string or NULL).
 
 ## Basic ARRAY JOIN Examples {#basic-array-join-examples}
 
@@ -385,4 +385,4 @@ The query execution order is optimized when running `ARRAY JOIN`. Although `ARRA
 
 ## Related content {#related-content}
 
--Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
+- Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

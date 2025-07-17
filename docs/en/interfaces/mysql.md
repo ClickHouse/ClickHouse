@@ -17,14 +17,14 @@ import mysql3 from '@site/static/images/interfaces/mysql3.png';
 
 ClickHouse supports the MySQL wire protocol. This allows certain clients that do not have native ClickHouse connectors leverage the MySQL protocol instead, and it has been validated with the following BI tools:
 
--[Looker Studio](../integrations/data-visualization/looker-studio-and-clickhouse.md)
--[Tableau Online](../integrations/tableau-online)
--[QuickSight](../integrations/quicksight)
+- [Looker Studio](../integrations/data-visualization/looker-studio-and-clickhouse.md)
+- [Tableau Online](../integrations/tableau-online)
+- [QuickSight](../integrations/quicksight)
 
 If you are trying other untested clients or integrations, keep in mind that there could be the following limitations:
 
--SSL implementation might not be fully compatible; there could be potential [TLS SNI](https://www.cloudflare.com/learning/ssl/what-is-sni/) issues.
--A particular tool might require dialect features (e.g., MySQL-specific functions or settings) that are not implemented yet.
+- SSL implementation might not be fully compatible; there could be potential [TLS SNI](https://www.cloudflare.com/learning/ssl/what-is-sni/) issues.
+- A particular tool might require dialect features (e.g., MySQL-specific functions or settings) that are not implemented yet.
 
 If there is a native driver available (e.g., [DBeaver](../integrations/dbeaver)), it is always preferred to use it instead of the MySQL interface. Additionally, while most of the MySQL language clients should work fine, MySQL interface is not guaranteed to be a drop-in replacement for a codebase with existing MySQL queries.
 
@@ -162,9 +162,9 @@ If user password is specified using [SHA256](/sql-reference/functions/hash-funct
 
 Restrictions:
 
--prepared queries are not supported
+- prepared queries are not supported
 
--some data types are sent as strings
+- some data types are sent as strings
 
 To cancel a long query use `KILL QUERY connection_id` statement (it is replaced with `KILL QUERY WHERE query_id = connection_id` while proceeding). For example:
 

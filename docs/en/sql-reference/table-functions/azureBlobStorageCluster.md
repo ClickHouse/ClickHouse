@@ -55,5 +55,5 @@ See [azureBlobStorage](/sql-reference/table-functions/azureBlobStorage#using-sha
 
 ## Related {#related}
 
--[AzureBlobStorage engine](../../engines/table-engines/integrations/azureBlobStorage.md)
--[azureBlobStorage table function](../../sql-reference/table-functions/azureBlobStorage.md)
+- [AzureBlobStorage engine](../../engines/table-engines/integrations/azureBlobStorage.md)
+- [azureBlobStorage table function](../../sql-reference/table-functions/azureBlobStorage.md)

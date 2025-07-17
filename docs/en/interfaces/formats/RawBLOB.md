@@ -16,25 +16,25 @@ Below is a comparison of the formats `RawBLOB` and [`TabSeparatedRaw`](./TabSepa
 
 `RawBLOB`:
 
--data is output in binary format, no escaping;
--there are no delimiters between values;
--no new-line at the end of each value.
+- data is output in binary format, no escaping;
+- there are no delimiters between values;
+- no new-line at the end of each value.
 
 `TabSeparatedRaw`:
 
--data is output without escaping;
--the rows contain values separated by tabs;
--there is a line feed after the last value in every row.
+- data is output without escaping;
+- the rows contain values separated by tabs;
+- there is a line feed after the last value in every row.
 
 The following is a comparison of the `RawBLOB` and [RowBinary](./RowBinary/RowBinary.md) formats.
 
 `RawBLOB`:
 
--String fields are output without being prefixed by length.
+- String fields are output without being prefixed by length.
 
 `RowBinary`:
 
--String fields are represented as length in varint format (unsigned [LEB128] (<https://en.wikipedia.org/wiki/LEB128>)), followed by the bytes of the string.
+- String fields are represented as length in varint format (unsigned [LEB128] (https://en.wikipedia.org/wiki/LEB128)), followed by the bytes of the string.
 
 When empty data is passed to the `RawBLOB` input, ClickHouse throws an exception:
 

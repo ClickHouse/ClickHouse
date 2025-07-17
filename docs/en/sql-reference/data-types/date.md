@@ -28,10 +28,10 @@ ENGINE = TinyLog;
 ```
 
 ```sql
--- Parse Date
--- - from string,
--- - from 'small' integer interpreted as number of days since 1970-01-01, and
--- - from 'big' integer interpreted as number of seconds since 1970-01-01.
+- - Parse Date
+- - - from string,
+- - - from 'small' integer interpreted as number of days since 1970-01-01, and
+- - - from 'big' integer interpreted as number of seconds since 1970-01-01.
 INSERT INTO dt VALUES ('2019-01-01', 1), (17897, 2), (1546300800, 3);
 
 SELECT * FROM dt;
@@ -47,6 +47,6 @@ SELECT * FROM dt;
 
 **See Also**
 
--[Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
--[Operators for working with dates and times](../../sql-reference/operators#operators-for-working-with-dates-and-times)
--[`DateTime` data type](../../sql-reference/data-types/datetime.md)
+- [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
+- [Operators for working with dates and times](../../sql-reference/operators#operators-for-working-with-dates-and-times)
+- [`DateTime` data type](../../sql-reference/data-types/datetime.md)

@@ -18,11 +18,11 @@ aggThrow(throw_prob)
 
 **Arguments**
 
--`throw_prob` — Probability to throw on creation. [Float64](../../data-types/float.md).
+- `throw_prob` — Probability to throw on creation. [Float64](../../data-types/float.md).
 
 **Returned value**
 
--An exception: `Code: 503. DB::Exception: Aggregate function aggThrow has thrown exception successfully`.
+- An exception: `Code: 503. DB::Exception: Aggregate function aggThrow has thrown exception successfully`.
 
 **Example**
 

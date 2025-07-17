@@ -46,17 +46,17 @@ If your system has less than 16 GB of RAM, you may experience various memory exc
 
 When using ClickHouse with less than 16GB of RAM, we recommend the following:
 
--Lower the size of the mark cache in the `config.xml`. It can be set as low as 500 MB, but it cannot be set to zero.
--Lower the number of query processing threads down to `1`.
--Lower the `max_block_size` to `8192`. Values as low as `1024` can still be practical.
--Lower `max_download_threads` to `1`.
--Set `input_format_parallel_parsing` and `output_format_parallel_formatting` to `0`.
+- Lower the size of the mark cache in the `config.xml`. It can be set as low as 500 MB, but it cannot be set to zero.
+- Lower the number of query processing threads down to `1`.
+- Lower the `max_block_size` to `8192`. Values as low as `1024` can still be practical.
+- Lower `max_download_threads` to `1`.
+- Set `input_format_parallel_parsing` and `output_format_parallel_formatting` to `0`.
 
 Additional notes:
 
--To flush the memory cached by the memory allocator, you can run the `SYSTEM JEMALLOC PURGE`
+- To flush the memory cached by the memory allocator, you can run the `SYSTEM JEMALLOC PURGE`
 command.
--We do not recommend using S3 or Kafka integrations on low-memory machines because they require significant memory for buffers.
+- We do not recommend using S3 or Kafka integrations on low-memory machines because they require significant memory for buffers.
 
 ## Storage Subsystem {#storage-subsystem}
 
@@ -164,7 +164,7 @@ ClickHouse Keeper is recommended to replace ZooKeeper for ClickHouse clusters.  
 
 If you would like to continue using ZooKeeper then it is best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
 
-You should never use manually written scripts to transfer data between different ZooKeeper clusters, because the result will be incorrect for sequential nodes. Never use the "zkcopy" utility for the same reason: <https://github.com/ksprojects/zkcopy/issues/15>
+You should never use manually written scripts to transfer data between different ZooKeeper clusters, because the result will be incorrect for sequential nodes. Never use the "zkcopy" utility for the same reason: https://github.com/ksprojects/zkcopy/issues/15
 
 If you want to divide an existing ZooKeeper cluster into two, the correct way is to increase the number of its replicas and then reconfigure it as two independent clusters.
 
@@ -321,4 +321,4 @@ If you use antivirus software configure it to skip folders with ClickHouse dataf
 
 ## Related Content {#related-content}
 
--[Getting started with ClickHouse? Here are 13 "Deadly Sins" and how to avoid them](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse)
+- [Getting started with ClickHouse? Here are 13 "Deadly Sins" and how to avoid them](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse)

@@ -10,7 +10,7 @@ Contains all active roles at the moment, including the current role of the curre
 
 Columns:
 
--`role_name` ([String](../../sql-reference/data-types/string.md))) — Role name.
--`with_admin_option` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Flag that shows whether `enabled_role` is a role with `ADMIN OPTION` privilege.
--`is_current` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Flag that shows whether `enabled_role` is a current role of a current user.
--`is_default` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Flag that shows whether `enabled_role` is a default role.
+- `role_name` ([String](../../sql-reference/data-types/string.md))) — Role name.
+- `with_admin_option` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Flag that shows whether `enabled_role` is a role with `ADMIN OPTION` privilege.
+- `is_current` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Flag that shows whether `enabled_role` is a current role of a current user.
+- `is_default` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Flag that shows whether `enabled_role` is a default role.

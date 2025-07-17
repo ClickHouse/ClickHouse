@@ -40,8 +40,8 @@ Finds non-negative derivative for given `metric_column` by `timestamp_column`.
 `INTERVAL` can be omitted, default is `INTERVAL 1 SECOND`.
 The computed value is the following for each row:
 
--`0` for 1st row,
--${\text{metric}_i - \text{metric}_{i-1} \over \text{timestamp}_i - \text{timestamp}_{i-1}}  * \text{interval}$ for $i_{th}$ row.
+- `0` for 1st row,
+- ${\text{metric}_i - \text{metric}_{i-1} \over \text{timestamp}_i - \text{timestamp}_{i-1}}  * \text{interval}$ for $i_{th}$ row.
 
 ## Syntax {#syntax}
 
@@ -53,10 +53,10 @@ FROM table_name
 WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column]])
 ```
 
--`PARTITION BY` - defines how to break a resultset into groups.
--`ORDER BY` - defines how to order rows inside the group during calculation aggregate_function.
--`ROWS or RANGE` - defines bounds of a frame, aggregate_function is calculated within a frame.
--`WINDOW` - allows multiple expressions to use the same window definition.
+- `PARTITION BY` - defines how to break a resultset into groups.
+- `ORDER BY` - defines how to order rows inside the group during calculation aggregate_function.
+- `ROWS or RANGE` - defines bounds of a frame, aggregate_function is calculated within a frame.
+- `WINDOW` - allows multiple expressions to use the same window definition.
 
 ```text
       PARTITION
@@ -79,14 +79,14 @@ WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
 
 These functions can be used only as a window function.
 
--[`row_number()`](./row_number.md) - Number the current row within its partition starting from 1.
--[`first_value(x)`](./first_value.md) - Return the first value evaluated within its ordered frame.
--[`last_value(x)`](./last_value.md) -    Return the last value evaluated within its ordered frame.
--[`nth_value(x, offset)`](./nth_value.md) - Return the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
--[`rank()`](./rank.md) - Rank the current row within its partition with gaps.
--[`dense_rank()`](./dense_rank.md) - Rank the current row within its partition without gaps.
--[`lagInFrame(x)`](./lagInFrame.md) - Return a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
--[`leadInFrame(x)`](./leadInFrame.md) - Return a value evaluated at the row that is offset rows after the current row within the ordered frame.
+- [`row_number()`](./row_number.md) - Number the current row within its partition starting from 1.
+- [`first_value(x)`](./first_value.md) - Return the first value evaluated within its ordered frame.
+- [`last_value(x)`](./last_value.md) -    Return the last value evaluated within its ordered frame.
+- [`nth_value(x, offset)`](./nth_value.md) - Return the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
+- [`rank()`](./rank.md) - Rank the current row within its partition with gaps.
+- [`dense_rank()`](./dense_rank.md) - Rank the current row within its partition without gaps.
+- [`lagInFrame(x)`](./lagInFrame.md) - Return a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
+- [`leadInFrame(x)`](./leadInFrame.md) - Return a value evaluated at the row that is offset rows after the current row within the ordered frame.
 
 ## Examples {#examples}
 
@@ -245,7 +245,7 @@ INSERT INTO wf_frame FORMAT Values
 ```
 
 ```sql
--- Frame is bounded by bounds of a partition (BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+- - Frame is bounded by bounds of a partition (BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
 SELECT
     part_key,
     value,
@@ -270,8 +270,8 @@ ORDER BY
 ```
 
 ```sql
--- short form - no bound expression, no order by,
--- an equalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
+- - short form - no bound expression, no order by,
+- - an equalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
 SELECT
     part_key,
     value,
@@ -294,7 +294,7 @@ ORDER BY
 ```
 
 ```sql
--- frame is bounded by the beginning of a partition and the current row
+- - frame is bounded by the beginning of a partition and the current row
 SELECT
     part_key,
     value,
@@ -319,8 +319,8 @@ ORDER BY
 ```
 
 ```sql
--- short form (frame is bounded by the beginning of a partition and the current row)
--- an equalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
+- - short form (frame is bounded by the beginning of a partition and the current row)
+- - an equalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
 SELECT
     part_key,
     value,
@@ -344,7 +344,7 @@ ORDER BY
 ```
 
 ```sql
--- frame is bounded by the beginning of a partition and the current row, but order is backward
+- - frame is bounded by the beginning of a partition and the current row, but order is backward
 SELECT
     part_key,
     value,
@@ -365,7 +365,7 @@ ORDER BY
 ```
 
 ```sql
--- sliding frame - 1 PRECEDING ROW AND CURRENT ROW
+- - sliding frame - 1 PRECEDING ROW AND CURRENT ROW
 SELECT
     part_key,
     value,
@@ -390,7 +390,7 @@ ORDER BY
 ```
 
 ```sql
--- sliding frame - ROWS BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING 
+- - sliding frame - ROWS BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING 
 SELECT
     part_key,
     value,
@@ -415,7 +415,7 @@ ORDER BY
 ```
 
 ```sql
--- row_number does not respect the frame, so rn_1 = rn_2 = rn_3 != rn_4
+- - row_number does not respect the frame, so rn_1 = rn_2 = rn_3 != rn_4
 SELECT
     part_key,
     value,
@@ -447,7 +447,7 @@ ORDER BY
 ```
 
 ```sql
--- first_value and last_value respect the frame
+- - first_value and last_value respect the frame
 SELECT
     groupArray(value) OVER w1 AS frame_values_1,
     first_value(value) OVER w1 AS first_value_1,
@@ -473,7 +473,7 @@ ORDER BY
 ```
 
 ```sql
--- second value within the frame
+- - second value within the frame
 SELECT
     groupArray(value) OVER w1 AS frame_values_1,
     nth_value(value, 2) OVER w1 AS second_value
@@ -493,7 +493,7 @@ ORDER BY
 ```
 
 ```sql
--- second value within the frame + Null for missing values
+- - second value within the frame + Null for missing values
 SELECT
     groupArray(value) OVER w1 AS frame_values_1,
     nth_value(toNullable(value), 2) OVER w1 AS second_value
@@ -754,30 +754,35 @@ All GitHub issues related to window functions have the [comp-window-functions](h
 
 These tests contain the examples of the currently supported grammar:
 
-<https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/window_functions.xml>
+https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/window_functions.xml
 
-<https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/01591_window_functions.sql>
+https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/01591_window_functions.sql
+
+
+https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/01591_window_functions.sql
 
 ### Postgres Docs {#postgres-docs}
 
-<https://www.postgresql.org/docs/current/sql-select.html#SQL-WINDOW>
+https://www.postgresql.org/docs/current/sql-select.html#SQL-WINDOW
 
-<https://www.postgresql.org/docs/devel/sql-expressions.html#SYNTAX-WINDOW-FUNCTIONS>
+https://www.postgresql.org/docs/devel/sql-expressions.html#SYNTAX-WINDOW-FUNCTIONS
 
-<https://www.postgresql.org/docs/devel/functions-window.html>
+https://www.postgresql.org/docs/devel/functions-window.html
 
-<https://www.postgresql.org/docs/devel/tutorial-window.html>
+https://www.postgresql.org/docs/devel/tutorial-window.html
 
 ### MySQL Docs {#mysql-docs}
 
-<https://dev.mysql.com/doc/refman/8.0/en/window-function-descriptions.html>
+https://dev.mysql.com/doc/refman/8.0/en/window-function-descriptions.html
 
-<https://dev.mysql.com/doc/refman/8.0/en/window-functions-usage.html>
+https://dev.mysql.com/doc/refman/8.0/en/window-functions-usage.html
 
-<https://dev.mysql.com/doc/refman/8.0/en/window-functions-frames.html>
+https://dev.mysql.com/doc/refman/8.0/en/window-functions-frames.html
 
 ## Related Content {#related-content}
 
--Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
--Blog: [Window and array functions for Git commit sequences](https://clickhouse.com/blog/clickhouse-window-array-functions-git-commits)
--Blog: [Getting Data Into ClickHouse - Part 3 - Using S3](https://clickhouse.com/blog/getting-data-into-clickhouse-part-3-s3)
+- Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
+
+- Blog: [Window and array functions for Git commit sequences](https://clickhouse.com/blog/clickhouse-window-array-functions-git-commits)
+
+- Blog: [Getting Data Into ClickHouse - Part 3 - Using S3](https://clickhouse.com/blog/getting-data-into-clickhouse-part-3-s3)

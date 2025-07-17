@@ -93,5 +93,5 @@ For details on optimizing the performance of the s3 function see [our detailed g
 
 ## Related {#related}
 
--[S3 engine](../../engines/table-engines/integrations/s3.md)
--[s3 table function](../../sql-reference/table-functions/s3.md)
+- [S3 engine](../../engines/table-engines/integrations/s3.md)
+- [s3 table function](../../sql-reference/table-functions/s3.md)

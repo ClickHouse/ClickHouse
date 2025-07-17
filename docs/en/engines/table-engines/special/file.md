@@ -13,9 +13,9 @@ The File table engine keeps the data in a file in one of the supported [file for
 
 Usage scenarios:
 
--Data export from ClickHouse to file.
--Convert data from one format to another.
--Updating data in ClickHouse via editing a file on a disk.
+- Data export from ClickHouse to file.
+- Convert data from one format to another.
+- Updating data in ClickHouse via editing a file on a disk.
 
 :::note
 This engine is not currently available in ClickHouse Cloud, please [use the S3 table function instead](/sql-reference/table-functions/s3.md).
@@ -85,14 +85,14 @@ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64) 
 
 ## Details of Implementation {#details-of-implementation}
 
--Multiple `SELECT` queries can be performed concurrently, but `INSERT` queries will wait each other.
--Supported creating new file by `INSERT` query.
--If file exists, `INSERT` would append new values in it.
--Not supported:
--`ALTER`
--`SELECT ... SAMPLE`
--Indices
--Replication
+- Multiple `SELECT` queries can be performed concurrently, but `INSERT` queries will wait each other.
+- Supported creating new file by `INSERT` query.
+- If file exists, `INSERT` would append new values in it.
+- Not supported:
+- `ALTER`
+- `SELECT ... SAMPLE`
+- Indices
+- Replication
 
 ## PARTITION BY {#partition-by}
 
@@ -102,15 +102,15 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 
 ## Virtual columns {#virtual-columns}
 
--`_path` — Path to the file. Type: `LowCardinality(String)`.
--`_file` — Name of the file. Type: `LowCardinality(String)`.
--`_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
--`_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
+- `_path` — Path to the file. Type: `LowCardinality(String)`.
+- `_file` — Name of the file. Type: `LowCardinality(String)`.
+- `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
+- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
 ## Settings {#settings}
 
--[engine_file_empty_if_not_exists](/operations/settings/settings#engine_file_empty_if_not_exists) - allows to select empty data from a file that doesn't exist. Disabled by default.
--[engine_file_truncate_on_insert](/operations/settings/settings#engine_file_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
--[engine_file_allow_create_multiple_files](/operations/settings/settings.md#engine_file_allow_create_multiple_files) - allows to create a new file on each insert if format has suffix. Disabled by default.
--[engine_file_skip_empty_files](/operations/settings/settings.md#engine_file_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
--[storage_file_read_method](/operations/settings/settings#engine_file_empty_if_not_exists) - method of reading data from storage file, one of: `read`, `pread`, `mmap`. The mmap method does not apply to clickhouse-server (it's intended for clickhouse-local). Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local.
+- [engine_file_empty_if_not_exists](/operations/settings/settings#engine_file_empty_if_not_exists) - allows to select empty data from a file that doesn't exist. Disabled by default.
+- [engine_file_truncate_on_insert](/operations/settings/settings#engine_file_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
+- [engine_file_allow_create_multiple_files](/operations/settings/settings.md#engine_file_allow_create_multiple_files) - allows to create a new file on each insert if format has suffix. Disabled by default.
+- [engine_file_skip_empty_files](/operations/settings/settings.md#engine_file_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [storage_file_read_method](/operations/settings/settings#engine_file_empty_if_not_exists) - method of reading data from storage file, one of: `read`, `pread`, `mmap`. The mmap method does not apply to clickhouse-server (it's intended for clickhouse-local). Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local.

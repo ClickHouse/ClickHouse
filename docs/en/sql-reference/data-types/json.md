@@ -85,5 +85,5 @@ SELECT * FROM json FORMAT JSONEachRow
 
 ## Related Content {#related-content}
 
--[Using JSON in ClickHouse](/integrations/data-formats/json/overview)
--[Getting Data Into ClickHouse - Part 2 - A JSON detour](https://clickhouse.com/blog/getting-data-into-clickhouse-part-2-json)
+- [Using JSON in ClickHouse](/integrations/data-formats/json/overview)
+- [Getting Data Into ClickHouse - Part 2 - A JSON detour](https://clickhouse.com/blog/getting-data-into-clickhouse-part-2-json)

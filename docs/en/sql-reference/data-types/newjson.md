@@ -330,15 +330,15 @@ During parsing of `JSON`, ClickHouse tries to detect the most appropriate data t
 It works similarly to [automatic schema inference from input data](/interfaces/schema-inference.md),
 and is controlled by the same settings:
 
--[input_format_try_infer_dates](/operations/settings/formats#input_format_try_infer_dates)
--[input_format_try_infer_datetimes](/operations/settings/formats#input_format_try_infer_datetimes)
--[schema_inference_make_columns_nullable](/operations/settings/formats#schema_inference_make_columns_nullable)
--[input_format_json_try_infer_numbers_from_strings](/operations/settings/formats#input_format_json_try_infer_numbers_from_strings)
--[input_format_json_infer_incomplete_types_as_strings](/operations/settings/formats#input_format_json_infer_incomplete_types_as_strings)
--[input_format_json_read_numbers_as_strings](/operations/settings/formats#input_format_json_read_numbers_as_strings)
--[input_format_json_read_bools_as_strings](/operations/settings/formats#input_format_json_read_bools_as_strings)
--[input_format_json_read_bools_as_numbers](/operations/settings/formats#input_format_json_read_bools_as_numbers)
--[input_format_json_read_arrays_as_strings](/operations/settings/formats#input_format_json_read_arrays_as_strings)
+- [input_format_try_infer_dates](/operations/settings/formats#input_format_try_infer_dates)
+- [input_format_try_infer_datetimes](/operations/settings/formats#input_format_try_infer_datetimes)
+- [schema_inference_make_columns_nullable](/operations/settings/formats#schema_inference_make_columns_nullable)
+- [input_format_json_try_infer_numbers_from_strings](/operations/settings/formats#input_format_json_try_infer_numbers_from_strings)
+- [input_format_json_infer_incomplete_types_as_strings](/operations/settings/formats#input_format_json_infer_incomplete_types_as_strings)
+- [input_format_json_read_numbers_as_strings](/operations/settings/formats#input_format_json_read_numbers_as_strings)
+- [input_format_json_read_bools_as_strings](/operations/settings/formats#input_format_json_read_bools_as_strings)
+- [input_format_json_read_bools_as_numbers](/operations/settings/formats#input_format_json_read_bools_as_numbers)
+- [input_format_json_read_arrays_as_strings](/operations/settings/formats#input_format_json_read_arrays_as_strings)
 
 Let's take a look at some examples:
 
@@ -654,14 +654,14 @@ As we can see, ClickHouse kept the most frequent paths `a`, `b` and `c` and move
 
 There are several functions that can help to inspect the content of the JSON column:
 
--[`JSONAllPaths`](../functions/json-functions.md#jsonallpaths)
--[`JSONAllPathsWithTypes`](../functions/json-functions.md#jsonallpathswithtypes)
--[`JSONDynamicPaths`](../functions/json-functions.md#jsondynamicpaths)
--[`JSONDynamicPathsWithTypes`](../functions/json-functions.md#jsondynamicpathswithtypes)
--[`JSONSharedDataPaths`](../functions/json-functions.md#jsonshareddatapaths)
--[`JSONSharedDataPathsWithTypes`](../functions/json-functions.md#jsonshareddatapathswithtypes)
--[`distinctDynamicTypes`](../aggregate-functions/reference/distinctdynamictypes.md)
--[`distinctJSONPaths and distinctJSONPathsAndTypes`](../aggregate-functions/reference/distinctjsonpaths.md)
+- [`JSONAllPaths`](../functions/json-functions.md#jsonallpaths)
+- [`JSONAllPathsWithTypes`](../functions/json-functions.md#jsonallpathswithtypes)
+- [`JSONDynamicPaths`](../functions/json-functions.md#jsondynamicpaths)
+- [`JSONDynamicPathsWithTypes`](../functions/json-functions.md#jsondynamicpathswithtypes)
+- [`JSONSharedDataPaths`](../functions/json-functions.md#jsonshareddatapaths)
+- [`JSONSharedDataPathsWithTypes`](../functions/json-functions.md#jsonshareddatapathswithtypes)
+- [`distinctDynamicTypes`](../aggregate-functions/reference/distinctdynamictypes.md)
+- [`distinctJSONPaths and distinctJSONPathsAndTypes`](../aggregate-functions/reference/distinctjsonpaths.md)
 
 **Examples**
 
@@ -852,12 +852,12 @@ SELECT json1, json2, json1 < json2, json1 = json2, json1 > json2 FROM test;
 
 Before creating `JSON` column and loading data into it, consider the following tips:
 
--Investigate your data and specify as many path hints with types as you can. It will make storage and reading much more efficient.
--Think about what paths you will need and what paths you will never need. Specify paths that you won't need in the `SKIP` section, and `SKIP REGEXP` section if needed. This will improve the storage.
--Don't set the `max_dynamic_paths` parameter to very high values, as it can make storage and reading less efficient.
+- Investigate your data and specify as many path hints with types as you can. It will make storage and reading much more efficient.
+- Think about what paths you will need and what paths you will never need. Specify paths that you won't need in the `SKIP` section, and `SKIP REGEXP` section if needed. This will improve the storage.
+- Don't set the `max_dynamic_paths` parameter to very high values, as it can make storage and reading less efficient.
   While highly dependent on system parameters such as memory, CPU, etc., a general rule of thumb would be to not set `max_dynamic_paths` > 10 000.
 
 ## Further Reading {#further-reading}
 
--[How we built a new powerful JSON data type for ClickHouse](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse)
--[The billion docs JSON Challenge: ClickHouse vs. MongoDB, Elasticsearch, and more](https://clickhouse.com/blog/json-bench-clickhouse-vs-mongodb-elasticsearch-duckdb-postgresql)
+- [How we built a new powerful JSON data type for ClickHouse](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse)
+- [The billion docs JSON Challenge: ClickHouse vs. MongoDB, Elasticsearch, and more](https://clickhouse.com/blog/json-bench-clickhouse-vs-mongodb-elasticsearch-duckdb-postgresql)

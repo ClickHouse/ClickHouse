@@ -26,12 +26,12 @@ ENGINE = HDFS(URI, format)
 
 **Engine Parameters**
 
--`URI` - whole file URI in HDFS. The path part of `URI` may contain globs. In this case the table would be readonly.
--`format` - specifies one of the available file formats. To perform
+- `URI` - whole file URI in HDFS. The path part of `URI` may contain globs. In this case the table would be readonly.
+- `format` - specifies one of the available file formats. To perform
 `SELECT` queries, the format must be supported for input, and to perform
 `INSERT` queries – for output. The available formats are listed in the
 [Formats](/sql-reference/formats#formats-overview) section.
--[PARTITION BY expr]
+- [PARTITION BY expr]
 
 ### PARTITION BY {#partition-by}
 
@@ -68,11 +68,11 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 ## Implementation details {#implementation-details}
 
--Reads and writes can be parallel.
--Not supported:
--`ALTER` and `SELECT...SAMPLE` operations.
--Indexes.
--[Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not recommended.
+- Reads and writes can be parallel.
+- Not supported:
+- `ALTER` and `SELECT...SAMPLE` operations.
+- Indexes.
+- [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not recommended.
 
   :::note Zero-copy replication is not ready for production
   Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
@@ -82,10 +82,10 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 Multiple path components can have globs. For being processed file should exists and matches to the whole path pattern. Listing of files determines during `SELECT` (not at `CREATE` moment).
 
--`*` — Substitutes any number of any characters except `/` including empty string.
--`?` — Substitutes any single character.
--`{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
--`{N..M}` — Substitutes any number in range from N to M including both borders.
+- `*` — Substitutes any number of any characters except `/` including empty string.
+- `?` — Substitutes any single character.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
+- `{N..M}` — Substitutes any number in range from N to M including both borders.
 
 Constructions with `{}` are similar to the [remote](../../../sql-reference/table-functions/remote.md) table function.
 
@@ -102,7 +102,7 @@ Constructions with `{}` are similar to the [remote](../../../sql-reference/table
 
 1.There are several ways to make a table consisting of all six files:
 
-<!-- -->
+<!---->
 
 ```sql
 CREATE TABLE table_with_range (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV')
@@ -210,7 +210,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 
 ### Limitations {#limitations}
 
--`hadoop_security_kerberos_ticket_cache_path` and `libhdfs3_conf` can be global only, not user specific
+- `hadoop_security_kerberos_ticket_cache_path` and `libhdfs3_conf` can be global only, not user specific
 
 ## Kerberos support {#kerberos-support}
 
@@ -226,8 +226,8 @@ If `hadoop_kerberos_keytab`, `hadoop_kerberos_principal` or `hadoop_security_ker
 
 libhdfs3 support HDFS namenode HA.
 
--Copy `hdfs-site.xml` from an HDFS node to `/etc/clickhouse-server/`.
--Add following piece to ClickHouse config file:
+- Copy `hdfs-site.xml` from an HDFS node to `/etc/clickhouse-server/`.
+- Add following piece to ClickHouse config file:
 
 ```xml
   <hdfs>
@@ -235,21 +235,21 @@ libhdfs3 support HDFS namenode HA.
   </hdfs>
 ```
 
--Then use `dfs.nameservices` tag value of `hdfs-site.xml` as the namenode address in the HDFS URI. For example, replace `hdfs://appadmin@192.168.101.11:8020/abc/` with `hdfs://appadmin@my_nameservice/abc/`.
+- Then use `dfs.nameservices` tag value of `hdfs-site.xml` as the namenode address in the HDFS URI. For example, replace `hdfs://appadmin@192.168.101.11:8020/abc/` with `hdfs://appadmin@my_nameservice/abc/`.
 
 ## Virtual columns {#virtual-columns}
 
--`_path` — Path to the file. Type: `LowCardinality(String)`.
--`_file` — Name of the file. Type: `LowCardinality(String)`.
--`_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
--`_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
+- `_path` — Path to the file. Type: `LowCardinality(String)`.
+- `_file` — Name of the file. Type: `LowCardinality(String)`.
+- `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
+- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
 ## Storage settings {#storage-settings}
 
--[hdfs_truncate_on_insert](/operations/settings/settings.md#hdfs_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
--[hdfs_create_new_file_on_insert](/operations/settings/settings.md#hdfs_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
--[hdfs_skip_empty_files](/operations/settings/settings.md#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [hdfs_truncate_on_insert](/operations/settings/settings.md#hdfs_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
+- [hdfs_create_new_file_on_insert](/operations/settings/settings.md#hdfs_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
+- [hdfs_skip_empty_files](/operations/settings/settings.md#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
 
 **See Also**
 
--[Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
+- [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)

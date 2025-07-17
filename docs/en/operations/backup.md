@@ -8,10 +8,10 @@ title: 'Backup and restore'
 
 # Backup and restore
 
--[Backup to a local disk](#backup-to-a-local-disk)
--[Configuring backup/restore to use an S3 endpoint](#configuring-backuprestore-to-use-an-s3-endpoint)
--[Backup/restore using an S3 disk](#backuprestore-using-an-s3-disk)
--[Alternatives](#alternatives)
+- [Backup to a local disk](#backup-to-a-local-disk)
+- [Configuring backup/restore to use an S3 endpoint](#configuring-backuprestore-to-use-an-s3-endpoint)
+- [Backup/restore using an S3 disk](#backuprestore-using-an-s3-disk)
+- [Alternatives](#alternatives)
 
 ## Command summary {#command-summary}
 
@@ -79,21 +79,21 @@ Backups can be either full or incremental, and can include tables (including mat
 
 The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a destination (or source), options and settings:
 
--The destination for the backup, or the source for the restore.  This is based on the disk defined earlier.  For example `Disk('backups', 'filename.zip')`
--ASYNC: backup or restore asynchronously
--PARTITIONS: a list of partitions to restore
--SETTINGS:
--`id`: id of backup or restore operation, randomly generated UUID is used, if not specified manually. If there is already running operation with the same `id` exception is thrown.
--[`compression_method`](/sql-reference/statements/create/table#column_compression_codec) and compression_level
--`password` for the file on disk
--`base_backup`: the destination of the previous backup of this source.  For example, `Disk('backups', '1.zip')`
--`use_same_s3_credentials_for_base_backup`: whether base backup to S3 should inherit credentials from the query. Only works with `S3`.
--`use_same_password_for_base_backup`: whether base backup archive should inherit the password from the query.
--`structure_only`: if enabled, allows to only backup or restore the CREATE statements without the data of tables
--`storage_policy`: storage policy for the tables being restored. See [Using Multiple Block Devices for Data Storage](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes). This setting is only applicable to the `RESTORE` command. The specified storage policy applies only to tables with an engine from the `MergeTree` family.
--`s3_storage_class`: the storage class used for S3 backup. For example, `STANDARD`
--`azure_attempt_to_create_container`: when using Azure Blob Storage, whether the specified container will try to be created if it doesn't exist. Default: true.
--[core settings](/operations/settings/settings) can be used here too
+- The destination for the backup, or the source for the restore.  This is based on the disk defined earlier.  For example `Disk('backups', 'filename.zip')`
+- ASYNC: backup or restore asynchronously
+- PARTITIONS: a list of partitions to restore
+- SETTINGS:
+- `id`: id of backup or restore operation, randomly generated UUID is used, if not specified manually. If there is already running operation with the same `id` exception is thrown.
+- [`compression_method`](/sql-reference/statements/create/table#column_compression_codec) and compression_level
+- `password` for the file on disk
+- `base_backup`: the destination of the previous backup of this source.  For example, `Disk('backups', '1.zip')`
+- `use_same_s3_credentials_for_base_backup`: whether base backup to S3 should inherit credentials from the query. Only works with `S3`.
+- `use_same_password_for_base_backup`: whether base backup archive should inherit the password from the query.
+- `structure_only`: if enabled, allows to only backup or restore the CREATE statements without the data of tables
+- `storage_policy`: storage policy for the tables being restored. See [Using Multiple Block Devices for Data Storage](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes). This setting is only applicable to the `RESTORE` command. The specified storage policy applies only to tables with an engine from the `MergeTree` family.
+- `s3_storage_class`: the storage class used for S3 backup. For example, `STANDARD`
+- `azure_attempt_to_create_container`: when using Azure Blob Storage, whether the specified container will try to be created if it doesn't exist. Default: true.
+- [core settings](/operations/settings/settings) can be used here too
 
 ### Usage examples {#usage-examples}
 
@@ -308,11 +308,11 @@ bytes_read:              0
 
 To write backups to an S3 bucket you need three pieces of information:
 
--S3 endpoint,
+- S3 endpoint,
   for example `https://mars-doc-test.s3.amazonaws.com/backup-S3/`
--Access key ID,
+- Access key ID,
   for example `ABC123`
--Secret access key,
+- Secret access key,
   for example `Abc+123`
 
 :::note
@@ -466,8 +466,8 @@ RESTORE TABLE data AS data_restored FROM Disk('s3_plain', 'cloud_backup');
 :::note
 But keep in mind that:
 
--This disk should not be used for `MergeTree` itself, only for `BACKUP`/`RESTORE`
--If your tables are backed by S3 storage and types of the disks are different, it doesn't use `CopyObject` calls to copy parts to the destination bucket, instead, it downloads and uploads them, which is very inefficient. Prefer to use `BACKUP ... TO S3(<endpoint>)` syntax for this use-case.
+- This disk should not be used for `MergeTree` itself, only for `BACKUP`/`RESTORE`
+- If your tables are backed by S3 storage and types of the disks are different, it doesn't use `CopyObject` calls to copy parts to the destination bucket, instead, it downloads and uploads them, which is very inefficient. Prefer to use `BACKUP ... TO S3(<endpoint>)` syntax for this use-case.
 
 :::
 
@@ -518,11 +518,11 @@ When these settings are false on a cluster, only 1 backup/restore is allowed to 
 
 To write backups to an AzureBlobStorage container you need the following pieces of information:
 
--AzureBlobStorage endpoint connection string / url,
--Container,
--Path,
--Account name (if url is specified)
--Account Key (if url is specified)
+- AzureBlobStorage endpoint connection string / url,
+- Container,
+- Path,
+- Account name (if url is specified)
+- Account Key (if url is specified)
 
 The destination for a backup will be specified like this:
 

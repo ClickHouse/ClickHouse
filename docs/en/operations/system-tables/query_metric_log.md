@@ -19,11 +19,11 @@ by default). The data is also collected when the query finishes if the query tak
 
 Columns:
 
--`query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the query.
--`hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
--`event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
--`event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
--`event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Event time with microseconds resolution.
+- `query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the query.
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
+- `event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
+- `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
+- `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Event time with microseconds resolution.
 
 **Example**
 
@@ -51,9 +51,9 @@ ProfileEvent_FailedSelectQuery:                                  0
 
 **See also**
 
--[query_metric_log setting](../../operations/server-configuration-parameters/settings.md#query_metric_log) — Enabling and disabling the setting.
--[query_metric_log_interval](../../operations/settings/settings.md#query_metric_log_interval)
--[system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md) — Contains periodically calculated metrics.
--[system.events](/operations/system-tables/events) — Contains a number of events that occurred.
--[system.metrics](../../operations/system-tables/metrics.md) — Contains instantly calculated metrics.
--[Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
+- [query_metric_log setting](../../operations/server-configuration-parameters/settings.md#query_metric_log) — Enabling and disabling the setting.
+- [query_metric_log_interval](../../operations/settings/settings.md#query_metric_log_interval)
+- [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md) — Contains periodically calculated metrics.
+- [system.events](/operations/system-tables/events) — Contains a number of events that occurred.
+- [system.metrics](../../operations/system-tables/metrics.md) — Contains instantly calculated metrics.
+- [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.

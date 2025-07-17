@@ -25,4 +25,4 @@ merge(['db_name',] 'tables_regexp')
 
 ## Related {#related}
 
--[Merge](../../engines/table-engines/special/merge.md) table engine
+- [Merge](../../engines/table-engines/special/merge.md) table engine

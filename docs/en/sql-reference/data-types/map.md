@@ -18,8 +18,8 @@ Also, `m[k]` scans the map, i.e. the runtime of the operation is linear in the s
 
 **Parameters**
 
--`K` — The type of the Map keys. Arbitrary type except [Nullable](../../sql-reference/data-types/nullable.md) and [LowCardinality](../../sql-reference/data-types/lowcardinality.md) nested with [Nullable](../../sql-reference/data-types/nullable.md) types.
--`V` — The type of the Map values. Arbitrary type.
+- `K` — The type of the Map keys. Arbitrary type except [Nullable](../../sql-reference/data-types/nullable.md) and [LowCardinality](../../sql-reference/data-types/lowcardinality.md) nested with [Nullable](../../sql-reference/data-types/nullable.md) types.
+- `V` — The type of the Map values. Arbitrary type.
 
 **Examples**
 
@@ -114,10 +114,10 @@ Result:
 
 **See Also**
 
--[map()](/sql-reference/functions/tuple-map-functions#map) function
--[CAST()](/sql-reference/functions/type-conversion-functions#cast) function
--[-Map combinator for Map datatype](../aggregate-functions/combinators.md#-map)
+- [map()](/sql-reference/functions/tuple-map-functions#map) function
+- [CAST()](/sql-reference/functions/type-conversion-functions#cast) function
+- [-Map combinator for Map datatype](../aggregate-functions/combinators.md#-map)
 
 ## Related content {#related-content}
 
--Blog: [Building an Observability Solution with ClickHouse - Part 2 - Traces](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)
+- Blog: [Building an Observability Solution with ClickHouse - Part 2 - Traces](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)

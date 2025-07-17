@@ -24,8 +24,8 @@ This format requires an external format schema, which is cached between queries.
 
 ClickHouse supports:
 
--both `proto2` and `proto3` syntaxes.
--`Repeated`/`optional`/`required` fields.
+- both `proto2` and `proto3` syntaxes.
+- `Repeated`/`optional`/`required` fields.
 
 ## Example usage {#example-usage}
 

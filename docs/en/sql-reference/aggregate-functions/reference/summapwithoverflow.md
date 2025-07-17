@@ -15,13 +15,13 @@ It differs from the [sumMap](../reference/summap.md) function in that it does su
 
 **Syntax**
 
--`sumMapWithOverflow(key <Array>, value <Array>)` [Array type](../../data-types/array.md).
--`sumMapWithOverflow(Tuple(key <Array>, value <Array>))` [Tuple type](../../data-types/tuple.md).
+- `sumMapWithOverflow(key <Array>, value <Array>)` [Array type](../../data-types/array.md).
+- `sumMapWithOverflow(Tuple(key <Array>, value <Array>))` [Tuple type](../../data-types/tuple.md).
 
 **Arguments**
 
--`key`: [Array](../../data-types/array.md) of keys.
--`value`: [Array](../../data-types/array.md) of values.
+- `key`: [Array](../../data-types/array.md) of keys.
+- `value`: [Array](../../data-types/array.md) of values.
 
 Passing a tuple of key and value arrays is a synonym to passing separately an array of keys and an array of values.
 
@@ -31,7 +31,7 @@ The number of elements in `key` and `value` must be the same for each row that i
 
 **Returned Value**
 
--Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
+- Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
 
 **Example**
 
@@ -95,4 +95,4 @@ Result:
 
 **See Also**
 
--[sumMap](../reference/summap.md)
+- [sumMap](../reference/summap.md)

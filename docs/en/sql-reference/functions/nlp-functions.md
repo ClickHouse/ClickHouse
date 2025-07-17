@@ -29,11 +29,11 @@ detectCharset('text_to_be_analyzed')
 
 *Arguments*
 
--`text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](/sql-reference/data-types/string).
+- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](/sql-reference/data-types/string).
 
 *Returned value*
 
--A `String` containing the code of the detected character set
+- A `String` containing the code of the detected character set
 
 *Examples*
 
@@ -65,16 +65,16 @@ detectLanguage('text_to_be_analyzed')
 
 *Arguments*
 
--`text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](/sql-reference/data-types/string).
+- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](/sql-reference/data-types/string).
 
 *Returned value*
 
--The 2-letter ISO code of the detected language
+- The 2-letter ISO code of the detected language
 
 Other possible results:
 
--`un` = unknown, can not detect any language.
--`other` = the detected language does not have 2 letter code.
+- `un` = unknown, can not detect any language.
+- `other` = the detected language does not have 2 letter code.
 
 *Examples*
 
@@ -102,11 +102,11 @@ detectLanguageMixed('text_to_be_analyzed')
 
 *Arguments*
 
--`text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](/sql-reference/data-types/string).
+- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](/sql-reference/data-types/string).
 
 *Returned value*
 
--`Map(String, Float32)`: The keys are 2-letter ISO codes and the values are a percentage of text found for that language
+- `Map(String, Float32)`: The keys are 2-letter ISO codes and the values are a percentage of text found for that language
 
 *Examples*
 
@@ -137,11 +137,11 @@ detectProgrammingLanguage('source_code')
 
 *Arguments*
 
--`source_code` — String representation of the source code to analyze. [String](/sql-reference/data-types/string).
+- `source_code` — String representation of the source code to analyze. [String](/sql-reference/data-types/string).
 
 *Returned value*
 
--Programming language. [String](../data-types/string.md).
+- Programming language. [String](../data-types/string.md).
 
 *Examples*
 
@@ -171,16 +171,16 @@ detectLanguageUnknown('text_to_be_analyzed')
 
 *Arguments*
 
--`text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](/sql-reference/data-types/string).
+- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](/sql-reference/data-types/string).
 
 *Returned value*
 
--The 2-letter ISO code of the detected language
+- The 2-letter ISO code of the detected language
 
 Other possible results:
 
--`un` = unknown, can not detect any language.
--`other` = the detected language does not have 2 letter code.
+- `un` = unknown, can not detect any language.
+- `other` = the detected language does not have 2 letter code.
 
 *Examples*
 
@@ -215,11 +215,11 @@ detectTonality(text)
 
 *Arguments*
 
--`text` — The text to be analyzed. [String](/sql-reference/data-types/string).
+- `text` — The text to be analyzed. [String](/sql-reference/data-types/string).
 
 *Returned value*
 
--The average sentiment value of the words in `text`. [Float32](../data-types/float.md).
+- The average sentiment value of the words in `text`. [Float32](../data-types/float.md).
 
 *Examples*
 
@@ -251,8 +251,8 @@ lemmatize('language', word)
 
 *Arguments*
 
--`language` — Language which rules will be applied. [String](/sql-reference/data-types/string).
--`word` — Word that needs to be lemmatized. Must be lowercase. [String](/sql-reference/data-types/string).
+- `language` — Language which rules will be applied. [String](/sql-reference/data-types/string).
+- `word` — Word that needs to be lemmatized. Must be lowercase. [String](/sql-reference/data-types/string).
 
 *Examples*
 
@@ -298,8 +298,8 @@ stem('language', word)
 
 *Arguments*
 
--`language` — Language which rules will be applied. Use the two letter [ISO 639-1 code](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes).
--`word` — word that needs to be stemmed. Must be in lowercase. [String](/sql-reference/data-types/string).
+- `language` — Language which rules will be applied. Use the two letter [ISO 639-1 code](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes).
+- `word` — word that needs to be stemmed. Must be in lowercase. [String](/sql-reference/data-types/string).
 
 *Examples*
 
@@ -323,35 +323,35 @@ Result:
 The stem() function uses the [Snowball stemming](https://snowballstem.org/) library, see the Snowball website for updated languages etc.
 :::
 
--Arabic
--Armenian
--Basque
--Catalan
--Danish
--Dutch
--English
--Finnish
--French
--German
--Greek
--Hindi
--Hungarian
--Indonesian
--Irish
--Italian
--Lithuanian
--Nepali
--Norwegian
--Porter
--Portuguese
--Romanian
--Russian
--Serbian
--Spanish
--Swedish
--Tamil
--Turkish
--Yiddish
+- Arabic
+- Armenian
+- Basque
+- Catalan
+- Danish
+- Dutch
+- English
+- Finnish
+- French
+- German
+- Greek
+- Hindi
+- Hungarian
+- Indonesian
+- Irish
+- Italian
+- Lithuanian
+- Nepali
+- Norwegian
+- Porter
+- Portuguese
+- Romanian
+- Russian
+- Serbian
+- Spanish
+- Swedish
+- Tamil
+- Turkish
+- Yiddish
 
 ## synonyms {#synonyms}
 
@@ -369,8 +369,8 @@ synonyms('extension_name', word)
 
 *Arguments*
 
--`extension_name` — Name of the extension in which search will be performed. [String](/sql-reference/data-types/string).
--`word` — Word that will be searched in extension. [String](/sql-reference/data-types/string).
+- `extension_name` — Name of the extension in which search will be performed. [String](/sql-reference/data-types/string).
+- `word` — Word that will be searched in extension. [String](/sql-reference/data-types/string).
 
 *Examples*
 
@@ -409,7 +409,7 @@ Result:
 The inner content of the tags below are replaced at doc framework build time with 
 docs generated from system.functions. Please do not modify or remove the tags.
 See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
--->
+- ->
 
 <!--AUTOGENERATED_START-->
 <!--AUTOGENERATED_END-->

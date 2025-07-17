@@ -19,9 +19,9 @@ The `MySQL` database engine translate queries to the MySQL server so you can per
 
 You cannot perform the following queries:
 
--`RENAME`
--`CREATE TABLE`
--`ALTER`
+- `RENAME`
+- `CREATE TABLE`
+- `ALTER`
 
 ## Creating a database {#creating-a-database}
 
@@ -32,10 +32,10 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 
 **Engine Parameters**
 
--`host:port` — MySQL server address.
--`database` — Remote database name.
--`user` — MySQL user.
--`password` — User password.
+- `host:port` — MySQL server address.
+- `database` — Remote database name.
+- `user` — MySQL user.
+- `password` — User password.
 
 ## Data types support {#data_types-support}
 
@@ -65,8 +65,8 @@ For better compatibility you may address global variables in MySQL style, as `@@
 
 These variables are supported:
 
--`version`
--`max_allowed_packet`
+- `version`
+- `max_allowed_packet`
 
 :::note
 By now these variables are stubs and don't correspond to anything.

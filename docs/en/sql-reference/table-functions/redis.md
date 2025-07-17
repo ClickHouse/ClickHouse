@@ -28,8 +28,8 @@ redis(host:port, key, structure[, db_index[, password[, pool_size]]])
 | `pool_size` | Redis max connection pool size, default is 16.                                                               |
 | `primary`   | must be specified, it supports only one column in the primary key. The primary key will be serialized in binary as a Redis key. |
 
--columns other than the primary key will be serialized in binary as Redis value in corresponding order.
--queries with key equals or in filtering will be optimized to multi keys lookup from Redis. If queries without filtering key full table scan will happen which is a heavy operation.
+- columns other than the primary key will be serialized in binary as Redis value in corresponding order.
+- queries with key equals or in filtering will be optimized to multi keys lookup from Redis. If queries without filtering key full table scan will happen which is a heavy operation.
 
 [Named collections](/operations/named-collections.md) are not supported for `redis` table function at the moment.
 
@@ -60,5 +60,5 @@ INSERT INTO TABLE FUNCTION redis(
 
 ## Related {#related}
 
--[The `Redis` table engine](/engines/table-engines/integrations/redis.md)
--[Using redis as a dictionary source](/sql-reference/dictionaries/index.md#redis)
+- [The `Redis` table engine](/engines/table-engines/integrations/redis.md)
+- [Using redis as a dictionary source](/sql-reference/dictionaries/index.md#redis)

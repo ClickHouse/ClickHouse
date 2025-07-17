@@ -22,8 +22,8 @@ You can see an example of how to use the AggregatingMergeTree and Aggregate func
 
 The engine processes all columns with the following types:
 
--[`AggregateFunction`](../../../sql-reference/data-types/aggregatefunction.md)
--[`SimpleAggregateFunction`](../../../sql-reference/data-types/simpleaggregatefunction.md)
+- [`AggregateFunction`](../../../sql-reference/data-types/aggregatefunction.md)
+- [`SimpleAggregateFunction`](../../../sql-reference/data-types/simpleaggregatefunction.md)
 
 It is appropriate to use `AggregatingMergeTree` if it reduces the number of rows by orders.
 
@@ -190,4 +190,4 @@ Each source row produces one row in the materialized view, and the actual aggreg
 
 ## Related content {#related-content}
 
--Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
+- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

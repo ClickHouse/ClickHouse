@@ -20,12 +20,12 @@ singleValueOrNull(x)
 
 **Parameters**
 
--`x` — Column of any [data type](../../data-types/index.md) (except [Map](../../data-types/map.md), [Array](../../data-types/array.md) or [Tuple](../../data-types/tuple) which cannot be of type [Nullable](../../data-types/nullable.md)).
+- `x` — Column of any [data type](../../data-types/index.md) (except [Map](../../data-types/map.md), [Array](../../data-types/array.md) or [Tuple](../../data-types/tuple) which cannot be of type [Nullable](../../data-types/nullable.md)).
 
 **Returned values**
 
--The unique value, if there is only one unique non-NULL value in `x`.
--`NULL`, if there are zero or at least two distinct values.
+- The unique value, if there is only one unique non-NULL value in `x`.
+- `NULL`, if there are zero or at least two distinct values.
 
 **Examples**
 

@@ -11,15 +11,15 @@ title: 'System Tables Overview'
 
 System tables provide information about:
 
--Server states, processes, and environment.
--Server's internal processes.
--Options used when the ClickHouse binary was built.
+- Server states, processes, and environment.
+- Server's internal processes.
+- Options used when the ClickHouse binary was built.
 
 System tables:
 
--Located in the `system` database.
--Available only for reading data.
--Can't be dropped or altered, but can be detached.
+- Located in the `system` database.
+- Available only for reading data.
+- Can't be dropped or altered, but can be detached.
 
 Most of the system tables store their data in RAM. A ClickHouse server creates such system tables at the start.
 
@@ -27,12 +27,12 @@ Unlike other system tables, the system log tables [metric_log](../../operations/
 
 System log tables can be customized by creating a config file with the same name as the table under `/etc/clickhouse-server/config.d/`, or setting corresponding elements in `/etc/clickhouse-server/config.xml`. Elements can be customized are:
 
--`database`: database the system log table belongs to. This option is deprecated now. All system log tables are under database `system`.
--`table`: table to insert data.
--`partition_by`: specify [PARTITION BY](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) expression.
--`ttl`: specify table [TTL](../../sql-reference/statements/alter/ttl.md) expression.
--`flush_interval_milliseconds`: interval of flushing data to disk.
--`engine`: provide full engine expression (starting with `ENGINE =` ) with parameters. This option conflicts with `partition_by` and `ttl`. If set together, the server will raise an exception and exit.
+- `database`: database the system log table belongs to. This option is deprecated now. All system log tables are under database `system`.
+- `table`: table to insert data.
+- `partition_by`: specify [PARTITION BY](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) expression.
+- `ttl`: specify table [TTL](../../sql-reference/statements/alter/ttl.md) expression.
+- `flush_interval_milliseconds`: interval of flushing data to disk.
+- `engine`: provide full engine expression (starting with `ENGINE =` ) with parameters. This option conflicts with `partition_by` and `ttl`. If set together, the server will raise an exception and exit.
 
 An example:
 
@@ -61,8 +61,8 @@ By default, table growth is unlimited. To control a size of a table, you can use
 
 For collecting system metrics ClickHouse server uses:
 
--`CAP_NET_ADMIN` capability.
--[procfs](https://en.wikipedia.org/wiki/Procfs) (only in Linux).
+- `CAP_NET_ADMIN` capability.
+- [procfs](https://en.wikipedia.org/wiki/Procfs) (only in Linux).
 
 **procfs**
 
@@ -70,13 +70,13 @@ If ClickHouse server does not have `CAP_NET_ADMIN` capability, it tries to fall 
 
 If procfs is supported and enabled on the system, ClickHouse server collects these metrics:
 
--`OSCPUVirtualTimeMicroseconds`
--`OSCPUWaitMicroseconds`
--`OSIOWaitMicroseconds`
--`OSReadChars`
--`OSWriteChars`
--`OSReadBytes`
--`OSWriteBytes`
+- `OSCPUVirtualTimeMicroseconds`
+- `OSCPUWaitMicroseconds`
+- `OSIOWaitMicroseconds`
+- `OSReadChars`
+- `OSWriteChars`
+- `OSReadBytes`
+- `OSWriteBytes`
 
 :::note
 `OSIOWaitMicroseconds` is disabled by default in Linux kernels starting from 5.14.x.
@@ -115,9 +115,9 @@ Conversely, other system tables are node-specific e.g. in-memory or persisting t
 
 In general, the following rules can be applied when determining if a system table is node-specific:
 
--System tables with a `_log` suffix.
--System tables that expose metrics e.g. `metrics`, `asynchronous_metrics`, `events`.
--System tables that expose ongoing processes e.g. `processes`, `merges`.
+- System tables with a `_log` suffix.
+- System tables that expose metrics e.g. `metrics`, `asynchronous_metrics`, `events`.
+- System tables that expose ongoing processes e.g. `processes`, `merges`.
 
 Additionally, new versions of system tables may be created as a result of upgrades or changes to their schema. These versions are named using a numerical suffix.
 
@@ -244,6 +244,6 @@ GROUP BY host SETTINGS skip_unavailable_shards = 1
 
 ## Related content {#related-content}
 
--Blog: [System Tables and a window into the internals of ClickHouse](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables)
--Blog: [Essential monitoring queries - part 1 - INSERT queries](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)
--Blog: [Essential monitoring queries - part 2 - SELECT queries](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse)
+- Blog: [System Tables and a window into the internals of ClickHouse](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables)
+- Blog: [Essential monitoring queries - part 1 - INSERT queries](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)
+- Blog: [Essential monitoring queries - part 2 - SELECT queries](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse)

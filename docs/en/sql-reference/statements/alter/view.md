@@ -43,15 +43,15 @@ ORDER BY ts, event_type;
 │ 2020-01-02 00:00:00 │ imp        │               2 │
 └─────────────────────┴────────────┴─────────────────┘
 
--- Let's add the new measurement `cost`
--- and the new dimension `browser`.
+- - Let's add the new measurement `cost`
+- - and the new dimension `browser`.
 
 ALTER TABLE events
   ADD COLUMN browser String,
   ADD COLUMN cost Float64;
 
--- Column do not have to match in a materialized view and TO
--- (destination table), so the next alter does not break insertion.
+- - Column do not have to match in a materialized view and TO
+- - (destination table), so the next alter does not break insertion.
 
 ALTER TABLE events_by_day
     ADD COLUMN cost Float64,
@@ -65,7 +65,7 @@ SELECT Date '2020-01-02' + interval number * 900 second,
        10/(number+1)%33
 FROM numbers(100);
 
--- New columns `browser` and `cost` are empty because we did not change Materialized View yet.
+- - New columns `browser` and `cost` are empty because we did not change Materialized View yet.
 
 SELECT ts, event_type, browser, sum(events_cnt) events_cnt, round(sum(cost),2) cost
 FROM events_by_day
@@ -119,7 +119,7 @@ ORDER BY ts, event_type;
 │ 2020-01-04 00:00:00 │ imp        │ chrome  │          1 │   0.1 │
 └─────────────────────┴────────────┴─────────┴────────────┴───────┘
 
--- !!! During `MODIFY ORDER BY` PRIMARY KEY was implicitly introduced.
+- - !!! During `MODIFY ORDER BY` PRIMARY KEY was implicitly introduced.
 
 SHOW CREATE TABLE events_by_day FORMAT TSVRaw
 
@@ -136,9 +136,9 @@ PRIMARY KEY (event_type, ts)
 ORDER BY (event_type, ts, browser)
 SETTINGS index_granularity = 8192
 
--- !!! The columns' definition is unchanged but it does not matter, we are not querying
--- MATERIALIZED VIEW, we are querying TO (storage) table.
--- SELECT section is updated.
+- - !!! The columns' definition is unchanged but it does not matter, we are not querying
+- - MATERIALIZED VIEW, we are querying TO (storage) table.
+- - SELECT section is updated.
 
 SHOW CREATE TABLE mv FORMAT TSVRaw;
 

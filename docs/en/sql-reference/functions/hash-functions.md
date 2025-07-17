@@ -79,11 +79,11 @@ RIPEMD160(input)
 
 **Parameters**
 
--`input`: Input string. [String](../data-types/string.md)
+- `input`: Input string. [String](../data-types/string.md)
 
 **Returned value**
 
--A 160-bit `RIPEMD-160` hash value of type [FixedString(20)](../data-types/fixedstring.md).
+- A 160-bit `RIPEMD-160` hash value of type [FixedString(20)](../data-types/fixedstring.md).
 
 **Example**
 
@@ -372,11 +372,11 @@ intHash32(int)
 
 **Arguments**
 
--`int` — Integer to hash. [(U)Int*](../data-types/int-uint.md).
+- `int` — Integer to hash. [(U)Int*](../data-types/int-uint.md).
 
 **Returned value**
 
--32-bit hash code. [UInt32](../data-types/int-uint.md).
+- 32-bit hash code. [UInt32](../data-types/int-uint.md).
 
 **Example**
 
@@ -408,11 +408,11 @@ intHash64(int)
 
 **Arguments**
 
--`int` — Integer to hash. [(U)Int*](../data-types/int-uint.md).
+- `int` — Integer to hash. [(U)Int*](../data-types/int-uint.md).
 
 **Returned value**
 
--64-bit hash code. [UInt64](../data-types/int-uint.md).
+- 64-bit hash code. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -448,11 +448,11 @@ Even in these cases, we recommend applying the function offline and pre-calculat
 
 **Arguments**
 
--`s` — Input string for SHA hash calculation. [String](../data-types/string.md).
+- `s` — Input string for SHA hash calculation. [String](../data-types/string.md).
 
 **Returned value**
 
--SHA hash as a hex-unencoded FixedString. SHA-1 returns as FixedString(20), SHA-224 as FixedString(28), SHA-256 — FixedString(32), SHA-512 — FixedString(64). [FixedString](../data-types/fixedstring.md).
+- SHA hash as a hex-unencoded FixedString. SHA-1 returns as FixedString(20), SHA-224 as FixedString(28), SHA-256 — FixedString(32), SHA-512 — FixedString(64). [FixedString](../data-types/fixedstring.md).
 
 **Example**
 
@@ -486,11 +486,11 @@ This cryptographic hash-function is integrated into ClickHouse with BLAKE3 Rust 
 
 **Arguments**
 
--s - input string for BLAKE3 hash calculation. [String](../data-types/string.md).
+- s - input string for BLAKE3 hash calculation. [String](../data-types/string.md).
 
 **Return value**
 
--BLAKE3 hash as a byte array with type FixedString(32). [FixedString](../data-types/fixedstring.md).
+- BLAKE3 hash as a byte array with type FixedString(32). [FixedString](../data-types/fixedstring.md).
 
 **Example**
 
@@ -613,7 +613,7 @@ javaHashUTF16LE(stringUtf16le)
 
 **Arguments**
 
--`stringUtf16le` — a string in UTF-16LE encoding.
+- `stringUtf16le` — a string in UTF-16LE encoding.
 
 **Returned value**
 
@@ -649,7 +649,7 @@ This is just [JavaHash](#javahash) with zeroed out sign bit. This function is us
 
 **Returned value**
 
--`hiveHash` hash value. [Int32](../data-types/int-uint.md).
+- `hiveHash` hash value. [Int32](../data-types/int-uint.md).
 
 **Example**
 
@@ -715,12 +715,12 @@ Alias: `yandexConsistentHash` (left for backwards compatibility sake).
 
 **Parameters**
 
--`input`: A UInt64-type key [UInt64](../data-types/int-uint.md).
--`n`: Number of buckets. [UInt16](../data-types/int-uint.md).
+- `input`: A UInt64-type key [UInt64](../data-types/int-uint.md).
+- `n`: Number of buckets. [UInt16](../data-types/int-uint.md).
 
 **Returned value**
 
--A [UInt16](../data-types/int-uint.md) data type hash value.
+- A [UInt16](../data-types/int-uint.md) data type hash value.
 
 **Implementation details**
 
@@ -755,8 +755,8 @@ Both functions take a variable number of input parameters. Arguments can be any 
 
 **Returned Value**
 
--The `murmurHash2_32` function returns hash value having the [UInt32](../data-types/int-uint.md) data type.
--The `murmurHash2_64` function returns hash value having the [UInt64](../data-types/int-uint.md) data type.
+- The `murmurHash2_32` function returns hash value having the [UInt32](../data-types/int-uint.md) data type.
+- The `murmurHash2_64` function returns hash value having the [UInt64](../data-types/int-uint.md) data type.
 
 **Example**
 
@@ -782,11 +782,11 @@ gccMurmurHash(par1, ...)
 
 **Arguments**
 
--`par1, ...` — A variable number of parameters that can be any of the [supported data types](/sql-reference/data-types).
+- `par1, ...` — A variable number of parameters that can be any of the [supported data types](/sql-reference/data-types).
 
 **Returned value**
 
--Calculated hash value. [UInt64](../data-types/int-uint.md).
+- Calculated hash value. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -818,11 +818,11 @@ MurmurHash(par1, ...)
 
 **Arguments**
 
--`par1, ...` — A variable number of parameters that can be any of the [supported data types](/sql-reference/data-types).
+- `par1, ...` — A variable number of parameters that can be any of the [supported data types](/sql-reference/data-types).
 
 **Returned value**
 
--Calculated hash value. [UInt32](../data-types/int-uint.md).
+- Calculated hash value. [UInt32](../data-types/int-uint.md).
 
 **Example**
 
@@ -857,8 +857,8 @@ Both functions take a variable number of input parameters. Arguments can be any 
 
 **Returned Value**
 
--The `murmurHash3_32` function returns a [UInt32](../data-types/int-uint.md) data type hash value.
--The `murmurHash3_64` function returns a [UInt64](../data-types/int-uint.md) data type hash value.
+- The `murmurHash3_32` function returns a [UInt32](../data-types/int-uint.md) data type hash value.
+- The `murmurHash3_64` function returns a [UInt64](../data-types/int-uint.md) data type hash value.
 
 **Example**
 
@@ -884,7 +884,7 @@ murmurHash3_128(expr)
 
 **Arguments**
 
--`expr` — A list of [expressions](/sql-reference/syntax#expressions). [String](../data-types/string.md).
+- `expr` — A list of [expressions](/sql-reference/syntax#expressions). [String](../data-types/string.md).
 
 **Returned value**
 
@@ -918,7 +918,7 @@ xxh3(expr)
 
 **Arguments**
 
--`expr` — A list of [expressions](/sql-reference/syntax#expressions) of any data type.
+- `expr` — A list of [expressions](/sql-reference/syntax#expressions) of any data type.
 
 **Returned value**
 
@@ -954,7 +954,7 @@ SELECT xxHash64('')
 
 **Returned value**
 
--Hash value. [UInt32/64](../data-types/int-uint.md).
+- Hash value. [UInt32/64](../data-types/int-uint.md).
 
 :::note
 The return type will be `UInt32` for `xxHash32` and `UInt64` for `xxHash64`.
@@ -978,7 +978,7 @@ Result:
 
 **See Also**
 
--[xxHash](http://cyan4973.github.io/xxHash/).
+- [xxHash](http://cyan4973.github.io/xxHash/).
 
 ## ngramSimHash {#ngramsimhash}
 
@@ -994,12 +994,12 @@ ngramSimHash(string[, ngramsize])
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
--`ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
--Hash value. [UInt64](../data-types/int-uint.md).
+- Hash value. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -1031,12 +1031,12 @@ ngramSimHashCaseInsensitive(string[, ngramsize])
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
--`ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
--Hash value. [UInt64](../data-types/int-uint.md).
+- Hash value. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -1068,12 +1068,12 @@ ngramSimHashUTF8(string[, ngramsize])
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
--`ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
--Hash value. [UInt64](../data-types/int-uint.md).
+- Hash value. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -1105,12 +1105,12 @@ ngramSimHashCaseInsensitiveUTF8(string[, ngramsize])
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
--`ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
--Hash value. [UInt64](../data-types/int-uint.md).
+- Hash value. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -1142,12 +1142,12 @@ wordShingleSimHash(string[, shinglesize])
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
--`shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
--Hash value. [UInt64](../data-types/int-uint.md).
+- Hash value. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -1179,12 +1179,12 @@ wordShingleSimHashCaseInsensitive(string[, shinglesize])
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
--`shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
--Hash value. [UInt64](../data-types/int-uint.md).
+- Hash value. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -1216,12 +1216,12 @@ wordShingleSimHashUTF8(string[, shinglesize])
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
--`shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
--Hash value. [UInt64](../data-types/int-uint.md).
+- Hash value. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -1253,12 +1253,12 @@ wordShingleSimHashCaseInsensitiveUTF8(string[, shinglesize])
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
--`shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
--Hash value. [UInt64](../data-types/int-uint.md).
+- Hash value. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -1288,11 +1288,11 @@ wyHash64(string)
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
+- `string` — String. [String](../data-types/string.md).
 
 **Returned value**
 
--Hash value. [UInt64](../data-types/int-uint.md).
+- Hash value. [UInt64](../data-types/int-uint.md).
 
 **Example**
 
@@ -1324,13 +1324,13 @@ ngramMinHash(string[, ngramsize, hashnum])
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
--`ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
--`hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
--Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).
+- Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).
 
 **Example**
 
@@ -1362,13 +1362,13 @@ ngramMinHashCaseInsensitive(string[, ngramsize, hashnum])
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
--`ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
--`hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
--Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).
+- Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).
 
 **Example**
 
@@ -1400,13 +1400,13 @@ ngramMinHashUTF8(string[, ngramsize, hashnum])
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
--`ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
--`hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
--Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).
+- Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).
 
 **Example**
 
@@ -1438,13 +1438,13 @@ ngramMinHashCaseInsensitiveUTF8(string [, ngramsize, hashnum])
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
--`ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
--`hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
--Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).
+- Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).
 
 **Example**
 
@@ -1474,13 +1474,13 @@ ngramMinHashArg(string[, ngramsize, hashnum])
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
--`ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
--`hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
--Tuple with two tuples with `hashnum` n-grams each. [Tuple](../data-types/tuple.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md)), [Tuple](../data-types/tuple.md)([String](../data-types/string.md))).
+- Tuple with two tuples with `hashnum` n-grams each. [Tuple](../data-types/tuple.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md)), [Tuple](../data-types/tuple.md)([String](../data-types/string.md))).
 
 **Example**
 
@@ -1510,13 +1510,13 @@ ngramMinHashArgCaseInsensitive(string[, ngramsize, hashnum])
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
--`ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
--`hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
--Tuple with two tuples with `hashnum` n-grams each. [Tuple](../data-types/tuple.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md)), [Tuple](../data-types/tuple.md)([String](../data-types/string.md))).
+- Tuple with two tuples with `hashnum` n-grams each. [Tuple](../data-types/tuple.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md)), [Tuple](../data-types/tuple.md)([String](../data-types/string.md))).
 
 **Example**
 
@@ -1546,13 +1546,13 @@ ngramMinHashArgUTF8(string[, ngramsize, hashnum])
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
--`ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
--`hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
--Tuple with two tuples with `hashnum` n-grams each. [Tuple](../data-types/tuple.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md)), [Tuple](../data-types/tuple.md)([String](../data-types/string.md))).
+- Tuple with two tuples with `hashnum` n-grams each. [Tuple](../data-types/tuple.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md)), [Tuple](../data-types/tuple.md)([String](../data-types/string.md))).
 
 **Example**
 
@@ -1582,13 +1582,13 @@ ngramMinHashArgCaseInsensitiveUTF8(string[, ngramsize, hashnum])
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
--`ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
--`hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
--Tuple with two tuples with `hashnum` n-grams each. [Tuple](../data-types/tuple.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md)), [Tuple](../data-types/tuple.md)([String](../data-types/string.md))).
+- Tuple with two tuples with `hashnum` n-grams each. [Tuple](../data-types/tuple.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md)), [Tuple](../data-types/tuple.md)([String](../data-types/string.md))).
 
 **Example**
 
@@ -1620,13 +1620,13 @@ wordShingleMinHash(string[, shinglesize, hashnum])
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
--`shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
--`hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
--Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).
+- Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).
 
 **Example**
 
@@ -1658,13 +1658,13 @@ wordShingleMinHashCaseInsensitive(string[, shinglesize, hashnum])
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
--`shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
--`hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
--Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).
+- Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).
 
 **Example**
 
@@ -1696,13 +1696,13 @@ wordShingleMinHashUTF8(string[, shinglesize, hashnum])
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
--`shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
--`hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
--Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).
+- Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).
 
 **Example**
 
@@ -1734,13 +1734,13 @@ wordShingleMinHashCaseInsensitiveUTF8(string[, shinglesize, hashnum])
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
--`shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
--`hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
--Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).
+- Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).
 
 **Example**
 
@@ -1770,13 +1770,13 @@ wordShingleMinHashArg(string[, shinglesize, hashnum])
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
--`shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
--`hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
--Tuple with two tuples with `hashnum` word shingles each. [Tuple](../data-types/tuple.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md)), [Tuple](../data-types/tuple.md)([String](../data-types/string.md))).
+- Tuple with two tuples with `hashnum` word shingles each. [Tuple](../data-types/tuple.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md)), [Tuple](../data-types/tuple.md)([String](../data-types/string.md))).
 
 **Example**
 
@@ -1806,13 +1806,13 @@ wordShingleMinHashArgCaseInsensitive(string[, shinglesize, hashnum])
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
--`shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
--`hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
--Tuple with two tuples with `hashnum` word shingles each. [Tuple](../data-types/tuple.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md)), [Tuple](../data-types/tuple.md)([String](../data-types/string.md))).
+- Tuple with two tuples with `hashnum` word shingles each. [Tuple](../data-types/tuple.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md)), [Tuple](../data-types/tuple.md)([String](../data-types/string.md))).
 
 **Example**
 
@@ -1842,13 +1842,13 @@ wordShingleMinHashArgUTF8(string[, shinglesize, hashnum])
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
--`shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
--`hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
--Tuple with two tuples with `hashnum` word shingles each. [Tuple](../data-types/tuple.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md)), [Tuple](../data-types/tuple.md)([String](../data-types/string.md))).
+- Tuple with two tuples with `hashnum` word shingles each. [Tuple](../data-types/tuple.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md)), [Tuple](../data-types/tuple.md)([String](../data-types/string.md))).
 
 **Example**
 
@@ -1878,13 +1878,13 @@ wordShingleMinHashArgCaseInsensitiveUTF8(string[, shinglesize, hashnum])
 
 **Arguments**
 
--`string` — String. [String](../data-types/string.md).
--`shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
--`hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
+- `string` — String. [String](../data-types/string.md).
+- `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md).
+- `hashnum` — The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md).
 
 **Returned value**
 
--Tuple with two tuples with `hashnum` word shingles each. [Tuple](../data-types/tuple.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md)), [Tuple](../data-types/tuple.md)([String](../data-types/string.md))).
+- Tuple with two tuples with `hashnum` word shingles each. [Tuple](../data-types/tuple.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md)), [Tuple](../data-types/tuple.md)([String](../data-types/string.md))).
 
 **Example**
 
@@ -1918,7 +1918,7 @@ Alias: `sqid`
 
 **Arguments**
 
--A variable number of UInt8, UInt16, UInt32 or UInt64 numbers.
+- A variable number of UInt8, UInt16, UInt32 or UInt64 numbers.
 
 **Returned Value**
 
@@ -1949,7 +1949,7 @@ sqidDecode(sqid)
 
 **Arguments**
 
--A sqid - [String](../data-types/string.md)
+- A sqid - [String](../data-types/string.md)
 
 **Returned Value**
 
@@ -1981,11 +1981,11 @@ This cryptographic hash-function is used a lot in [EVM-based blockchains](https:
 
 **Arguments**
 
--s - input string for Keccak-256 hash calculation. [String](../data-types/string.md).
+- s - input string for Keccak-256 hash calculation. [String](../data-types/string.md).
 
 **Return value**
 
--Keccak-256 hash as a byte array with type FixedString(32). [FixedString](../data-types/fixedstring.md).
+- Keccak-256 hash as a byte array with type FixedString(32). [FixedString](../data-types/fixedstring.md).
 
 **Example**
 
@@ -2009,7 +2009,7 @@ Result:
 The inner content of the tags below are replaced at doc framework build time with 
 docs generated from system.functions. Please do not modify or remove the tags.
 See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
--->
+- ->
 
 <!--AUTOGENERATED_START-->
 <!--AUTOGENERATED_END-->

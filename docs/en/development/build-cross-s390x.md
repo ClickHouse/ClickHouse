@@ -14,8 +14,8 @@ ClickHouse has experimental support for s390x.
 
 s390x has two OpenSSL-related build options:
 
--By default, OpenSSL is build on s390x as a shared library. This is different from all other platforms, where OpenSSL is build as static library.
--To build OpenSSL as a static library regardless, pass `-DENABLE_OPENSSL_DYNAMIC=0` to CMake.
+- By default, OpenSSL is build on s390x as a shared library. This is different from all other platforms, where OpenSSL is build as static library.
+- To build OpenSSL as a static library regardless, pass `-DENABLE_OPENSSL_DYNAMIC=0` to CMake.
 
 These instructions assume that the host machine is x86_64 and has all the tooling required to build natively based on the [build instructions](../development/build.md). It also assumes that the host is Ubuntu 22.04 but the following instructions should also work on Ubuntu 20.04.
 
@@ -31,7 +31,7 @@ If you wish to cross compile rust code install the rust cross compile target for
 rustup target add s390x-unknown-linux-gnu
 ```
 
-The s390x build uses the mold linker, download it from <https://github.com/rui314/mold/releases/download/v2.0.0/mold-2.0.0-x86_64-linux.tar.gz>
+The s390x build uses the mold linker, download it from https://github.com/rui314/mold/releases/download/v2.0.0/mold-2.0.0-x86_64-linux.tar.gz
 and place it into your `$PATH`.
 
 To build for s390x:
@@ -74,7 +74,7 @@ Current executable set to '/<Clickhouse Parent Directory>/ClickHouse/<build dire
 Process 1 stopped
 * thread #1, stop reason = signal SIGTRAP
     frame #0: 0x0000004020e74cd0
-->  0x4020e74cd0: lgr    %r2, %r15
+- >  0x4020e74cd0: lgr    %r2, %r15
     0x4020e74cd4: aghi   %r15, -160
     0x4020e74cd8: xc     0(8,%r15), 0(%r15)
     0x4020e74cde: brasl  %r14, 275429939040
@@ -88,7 +88,7 @@ Process 1 stopped
    447  #if !defined(FUZZING_MODE)
    448  int main(int argc_, char ** argv_)
    449  {
--> 450      inside_main = true;
+- > 450      inside_main = true;
    451      SCOPE_EXIT({ inside_main = false; });
    452
    453      /// PHDR cache is required for query profiler to work reliably
@@ -96,10 +96,10 @@ Process 1 stopped
 
 ## Visual Studio Code integration {#visual-studio-code-integration}
 
--[CodeLLDB](https://github.com/vadimcn/vscode-lldb) extension is required for visual debugging.
--[Command Variable](https://github.com/rioj7/command-variable) extension can help dynamic launches if using [CMake Variants](https://github.com/microsoft/vscode-cmake-tools/blob/main/docs/variants.md).
--Make sure to set the backend to your LLVM installation eg. `"lldb.library": "/usr/lib/x86_64-linux-gnu/liblldb-15.so"`
--Make sure to run the clickhouse executable in debug mode prior to launch. (It is also possible to create a `preLaunchTask` that automates this)
+- [CodeLLDB](https://github.com/vadimcn/vscode-lldb) extension is required for visual debugging.
+- [Command Variable](https://github.com/rioj7/command-variable) extension can help dynamic launches if using [CMake Variants](https://github.com/microsoft/vscode-cmake-tools/blob/main/docs/variants.md).
+- Make sure to set the backend to your LLVM installation eg. `"lldb.library": "/usr/lib/x86_64-linux-gnu/liblldb-15.so"`
+- Make sure to run the clickhouse executable in debug mode prior to launch. (It is also possible to create a `preLaunchTask` that automates this)
 
 ### Example configurations {#example-configurations}
 

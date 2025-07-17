@@ -42,11 +42,11 @@ PRIMARY KEY key;
 
 **Engine Parameters**
 
--`host:port` — PostgreSQL server address.
--`database` — Remote database name.
--`table` — Remote table name.
--`user` — PostgreSQL user.
--`password` — User password.
+- `host:port` — PostgreSQL server address.
+- `database` — Remote database name.
+- `table` — Remote table name.
+- `user` — PostgreSQL user.
+- `password` — User password.
 
 ## Requirements {#requirements}
 
@@ -60,11 +60,11 @@ PRIMARY KEY key;
 
 ## Virtual columns {#virtual-columns}
 
--`_version` — Transaction counter. Type: [UInt64](../../../sql-reference/data-types/int-uint.md).
+- `_version` — Transaction counter. Type: [UInt64](../../../sql-reference/data-types/int-uint.md).
 
--`_sign` — Deletion mark. Type: [Int8](../../../sql-reference/data-types/int-uint.md). Possible values:
--`1` — Row is not deleted,
--`-1` — Row is deleted.
+- `_sign` — Deletion mark. Type: [Int8](../../../sql-reference/data-types/int-uint.md). Possible values:
+- `1` — Row is not deleted,
+- `-1` — Row is deleted.
 
 These columns do not need to be added when a table is created. They are always accessible in `SELECT` query.
 `_version` column equals `LSN` position in `WAL`, so it might be used to check how up-to-date replication is.

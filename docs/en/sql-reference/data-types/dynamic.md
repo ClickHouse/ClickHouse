@@ -508,8 +508,8 @@ SELECT d, d.Int64 + 1 AS res, toTypeName(res) FROM test;
 During `ORDER BY` and `GROUP BY` values of `Dynamic` types are compared similar to values of `Variant` type:
 The result of operator `<` for values `d1` with underlying type `T1` and `d2` with underlying type `T2`  of a type `Dynamic` is defined as follows:
 
--If `T1 = T2 = T`, the result will be `d1.T < d2.T` (underlying values will be compared).
--If `T1 != T2`, the result will be `T1 < T2` (type names will be compared).
+- If `T1 = T2 = T`, the result will be `d1.T < d2.T` (underlying values will be compared).
+- If `T1 != T2`, the result will be `T1 < T2` (type names will be compared).
 
 By default `Dynamic` type is not allowed in `GROUP BY`/`ORDER BY` keys, if you want to use it consider its special comparison rule and enable `allow_suspicious_types_in_group_by`/`allow_suspicious_types_in_order_by` settings.
 

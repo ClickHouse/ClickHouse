@@ -149,8 +149,8 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 
 ## Related {#related}
 
--[The PostgreSQL table engine](../../engines/table-engines/integrations/postgresql.md)
--[Using PostgreSQL as a dictionary source](/sql-reference/dictionaries#postgresql)
+- [The PostgreSQL table engine](../../engines/table-engines/integrations/postgresql.md)
+- [Using PostgreSQL as a dictionary source](/sql-reference/dictionaries#postgresql)
 
 ### Replicating or migrating Postgres data with with PeerDB {#replicating-or-migrating-postgres-data-with-with-peerdb}
 

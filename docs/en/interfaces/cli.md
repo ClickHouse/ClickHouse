@@ -220,8 +220,8 @@ In the query, place the values that you want to fill using command-line paramete
 {<name>:<data type>}
 ```
 
--`name` — Placeholder identifier. The corresponding command-line option is `--param_<name> = value`.
--`data type` — [Data type](../sql-reference/data-types/index.md) of the parameter. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use other [integer](../sql-reference/data-types/int-uint.md) types). It is also possible to pass the table name, database name, and column names as parameters, in that case you would need to use `Identifier` as the data type.
+- `name` — Placeholder identifier. The corresponding command-line option is `--param_<name> = value`.
+- `data type` — [Data type](../sql-reference/data-types/index.md) of the parameter. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use other [integer](../sql-reference/data-types/int-uint.md) types). It is also possible to pass the table name, database name, and column names as parameters, in that case you would need to use `Identifier` as the data type.
 
 ### Examples {#cli-queries-with-parameters-examples}
 
@@ -331,54 +331,54 @@ ai:
 
 ### Parameters {#ai-sql-generation-parameters}
 
--`enable_schema_access` - Allow AI to explore database schemas (default: `true`)
--`temperature` - Controls randomness in generation, 0.0 = deterministic (default: `0.0`)
--`max_tokens` - Maximum response length (default: `1000`)
--`timeout_seconds` - Request timeout (default: `30`)
--`max_steps` - Maximum tool-calling steps for schema exploration (default: `10`)
--`system_prompt` - Custom instructions for the AI (optional)
+- `enable_schema_access` - Allow AI to explore database schemas (default: `true`)
+- `temperature` - Controls randomness in generation, 0.0 = deterministic (default: `0.0`)
+- `max_tokens` - Maximum response length (default: `1000`)
+- `timeout_seconds` - Request timeout (default: `30`)
+- `max_steps` - Maximum tool-calling steps for schema exploration (default: `10`)
+- `system_prompt` - Custom instructions for the AI (optional)
 
 ### How it works {#ai-sql-generation-how-it-works}
 
 The AI SQL generator uses a multi-step process:
 
 1.**Schema Discovery**: The AI uses built-in tools to explore your database:
--Lists available databases
--Discovers tables within relevant databases
--Examines table structures via `CREATE TABLE` statements
+- Lists available databases
+- Discovers tables within relevant databases
+- Examines table structures via `CREATE TABLE` statements
 
 2.**Query Generation**: Based on the discovered schema, the AI generates SQL that:
--Matches your natural language intent
--Uses correct table and column names
--Applies appropriate joins and aggregations
+- Matches your natural language intent
+- Uses correct table and column names
+- Applies appropriate joins and aggregations
 
 3.**Execution**: The generated SQL is automatically executed and results are displayed
 
 ### Limitations {#ai-sql-generation-limitations}
 
--Requires an active internet connection
--API usage is subject to rate limits and costs from the AI provider
--Complex queries may require multiple refinements
--The AI has read-only access to schema information, not actual data
+- Requires an active internet connection
+- API usage is subject to rate limits and costs from the AI provider
+- Complex queries may require multiple refinements
+- The AI has read-only access to schema information, not actual data
 
 ### Security {#ai-sql-generation-security}
 
--API keys are never sent to ClickHouse servers
--The AI only sees schema information (table/column names and types), not actual data
--All generated queries respect your existing database permissions
+- API keys are never sent to ClickHouse servers
+- The AI only sees schema information (table/column names and types), not actual data
+- All generated queries respect your existing database permissions
 
 ## Aliases {#cli_aliases}
 
--`\l` - SHOW DATABASES
--`\d` - SHOW TABLES
--`\c <DATABASE>` - USE DATABASE
--`.` - repeat the last query
+- `\l` - SHOW DATABASES
+- `\d` - SHOW TABLES
+- `\c <DATABASE>` - USE DATABASE
+- `.` - repeat the last query
 
 ## Keyboard shortcuts {#keyboard_shortcuts}
 
--`Alt (Option) + Shift + e` - open editor with the current query. It is possible to specify the editor to use with the environment variable `EDITOR`. By default, `vim` is used.
--`Alt (Option) + #` - comment line.
--`Ctrl + r` - fuzzy history search.
+- `Alt (Option) + Shift + e` - open editor with the current query. It is possible to specify the editor to use with the environment variable `EDITOR`. By default, `vim` is used.
+- `Alt (Option) + #` - comment line.
+- `Ctrl + r` - fuzzy history search.
 
 The full list with all available keyboard shortcuts is available at [replxx](https://github.com/AmokHuginnsson/replxx/blob/1f149bf/src/replxx_impl.cxx#L262).
 
@@ -398,11 +398,11 @@ clickhouse:[//[user[:password]@][hosts_and_ports]][/database][?query_parameters]
 
 **Components**
 
--`user` - (optional) Database username. Default: `default`.
--`password` - (optional) Database user password. If `:` is specified and the password is blank, the client will prompt for the user's password.
--`hosts_and_ports` - (optional) List of hosts and optional ports `host[:port] [, host:[port]], ...`. Default: `localhost:9000`.
--`database` - (optional) Database name. Default: `default`.
--`query_parameters` - (optional) List of key-value pairs `param1=value1[,&param2=value2], ...`. For some parameters, no value is required. Parameter names and values are case-sensitive.
+- `user` - (optional) Database username. Default: `default`.
+- `password` - (optional) Database user password. If `:` is specified and the password is blank, the client will prompt for the user's password.
+- `hosts_and_ports` - (optional) List of hosts and optional ports `host[:port] [, host:[port]], ...`. Default: `localhost:9000`.
+- `database` - (optional) Database name. Default: `default`.
+- `query_parameters` - (optional) List of key-value pairs `param1=value1[,&param2=value2], ...`. For some parameters, no value is required. Parameter names and values are case-sensitive.
 
 If the username, password or database was specified in the connection string, it cannot be specified using `--user`, `--password` or `--database` (and vice versa).
 
@@ -418,7 +418,7 @@ The connection string must be specified as the first argument of `clickHouse-cli
 
 The following keys are allowed for `query_parameters`:
 
--`secure` or shorthanded `s`. If specified, the client will connect to the server over a secure connection (TLS). See `--secure` in the [command-line options](#command-line-options).
+- `secure` or shorthanded `s`. If specified, the client will connect to the server over a secure connection (TLS). See `--secure` in the [command-line options](#command-line-options).
 
 **Percent encoding**
 
@@ -535,7 +535,7 @@ speedscope:http://speedscope-host/#profileURL=qp%3Fid%3Dc8ecc783-e753-4b38-97f1-
 
 ClickHouse Client uses the first existing file of the following:
 
--A file that is defined with the `-c [ -C, --config, --config-file ]` parameter.
+- A file that is defined with the `-c [ -C, --config, --config-file ]` parameter.
 - `./clickhouse-client.[xml|yaml|yml]`
 - `~/.clickhouse-client/config.[xml|yaml|yml]`
 - `/etc/clickhouse-client/config.[xml|yaml|yml]`
@@ -745,9 +745,9 @@ If specified, print memory usage to `stderr` in non-interactive mode.
 
 Possible values:
 
--`none` - do not print memory usage
--`default` - print number of bytes
--`readable` - print memory usage in human-readable format
+- `none` - do not print memory usage
+- `default` - print number of bytes
+- `readable` - print memory usage in human-readable format
 
 **`--print-profile-events`**
 
@@ -760,7 +760,7 @@ Print progress of query execution.
 Possible values:
 
 - `tty|on|1|true|yes` - outputs to the terminal in interactive mode
--`err` - outputs to `stderr` in non-interactive mode
+- `err` - outputs to `stderr` in non-interactive mode
 - `off|0|false|no` - disables progress printing
 
 Default value: `tty` in interactive mode, `off` in non-interactive (batch) mode.
@@ -772,7 +772,7 @@ Print a progress table with changing metrics during query execution.
 Possible values:
 
 - `tty|on|1|true|yes` - outputs to the terminal in interactive mode
--`err` - outputs to `stderr` non-interactive mode
+- `err` - outputs to `stderr` non-interactive mode
 - `off|0|false|no` - disables the progress table
 
 Default value: `tty` in interactive mode, `off` in non-interactive (batch) mode.

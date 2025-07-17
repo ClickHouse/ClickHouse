@@ -18,11 +18,11 @@ sumCount(x)
 
 **Arguments**
 
--`x` — Input value, must be [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md), or [Decimal](../../../sql-reference/data-types/decimal.md).
+- `x` — Input value, must be [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md), or [Decimal](../../../sql-reference/data-types/decimal.md).
 
 **Returned value**
 
--Tuple `(sum, count)`, where `sum` is the sum of numbers and `count` is the number of rows with not-NULL values.
+- Tuple `(sum, count)`, where `sum` is the sum of numbers and `count` is the number of rows with not-NULL values.
 
 Type: [Tuple](../../../sql-reference/data-types/tuple.md).
 
@@ -47,4 +47,4 @@ Result:
 
 **See also**
 
--[optimize_syntax_fuse_functions](../../../operations/settings/settings.md#optimize_syntax_fuse_functions) setting.
+- [optimize_syntax_fuse_functions](../../../operations/settings/settings.md#optimize_syntax_fuse_functions) setting.

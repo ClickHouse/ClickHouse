@@ -73,5 +73,5 @@ SET use_page_cache_for_disks_without_file_cache=1;
 
 ## Related content {#related-content}
 
--[Filesystem cache](/docs/operations/storing-data)
--[ClickHouse v25.3 Release Webinar](https://www.youtube.com/live/iCKEzp0_Z2Q?feature=shared&t=1320)
+- [Filesystem cache](/docs/operations/storing-data)
+- [ClickHouse v25.3 Release Webinar](https://www.youtube.com/live/iCKEzp0_Z2Q?feature=shared&t=1320)

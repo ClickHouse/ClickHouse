@@ -46,11 +46,11 @@ ClickHouse's Git repository uses submodules to pull in 3rd party libraries.
 Submodules are not checked out by default.
 You can either
 
--run `git clone` with option `--recurse-submodules`,
+- run `git clone` with option `--recurse-submodules`,
 
--if `git clone` is run without `--recurse-submodules`, run `git submodule update --init --jobs <N>` to checkout all submodules explicitly. (`<N>` can be set for example to `12` to parallelize the download.)
+- if `git clone` is run without `--recurse-submodules`, run `git submodule update --init --jobs <N>` to checkout all submodules explicitly. (`<N>` can be set for example to `12` to parallelize the download.)
 
--if `git clone` is run without `--recurse-submodules` and you like to use [sparse](https://github.blog/2020-01-17-bring-your-monorepo-down-to-size-with-sparse-checkout/) and [shallow](https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone/) submodule checkout to omit unneeded files and history in submodules to save space (ca. 5 GB instead of ca. 15 GB), run `./contrib/update-submodules.sh`. This alternative is used by CI but not recommended for local development as it makes working with submodules less convenient and slower.
+- if `git clone` is run without `--recurse-submodules` and you like to use [sparse](https://github.blog/2020-01-17-bring-your-monorepo-down-to-size-with-sparse-checkout/) and [shallow](https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone/) submodule checkout to omit unneeded files and history in submodules to save space (ca. 5 GB instead of ca. 15 GB), run `./contrib/update-submodules.sh`. This alternative is used by CI but not recommended for local development as it makes working with submodules less convenient and slower.
 
 To check the status of the Git submodules, run `git submodule status`.
 
@@ -94,11 +94,11 @@ It is better to specify the remote and branch names explicitly, e.g. `git push o
 
 Below you can find some quick links which may be useful when writing code for ClickHouse:
 
--[ClickHouse Architecture](/development/architecture/).
--[Code style guide](/development/style/).
--[Third-party libraries](/development/contrib#adding-and-maintaining-third-party-libraries)
--[Writing tests](/development/tests/)
--[Open issues](https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22)
+- [ClickHouse Architecture](/development/architecture/).
+- [Code style guide](/development/style/).
+- [Third-party libraries](/development/contrib#adding-and-maintaining-third-party-libraries)
+- [Writing tests](/development/tests/)
+- [Open issues](https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22)
 
 ### IDE {#ide}
 
@@ -106,9 +106,9 @@ Below you can find some quick links which may be useful when writing code for Cl
 
 [CLion](https://www.jetbrains.com/clion/) is another great alternative. However, it can be slower on larger projects like ClickHouse. A few things to keep in mind when using CLion:
 
--CLion creates a `build` path on its own and automatically selects `debug` for the build type
--It uses a version of CMake that is defined in CLion and not the one installed by you
--CLion will use `make` to run build tasks instead of `ninja` (this is normal behavior)
+- CLion creates a `build` path on its own and automatically selects `debug` for the build type
+- It uses a version of CMake that is defined in CLion and not the one installed by you
+- CLion will use `make` to run build tasks instead of `ninja` (this is normal behavior)
 
 Other IDEs you can use are [Sublime Text](https://www.sublimetext.com/), [Qt Creator](https://www.qt.io/product/development-tools), or [Kate](https://kate-editor.org/).
 

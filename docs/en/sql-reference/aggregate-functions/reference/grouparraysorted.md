@@ -15,9 +15,9 @@ groupArraySorted(N)(column)
 
 **Arguments**
 
--`N` – The number of elements to return.
+- `N` – The number of elements to return.
 
--`column` – The value (Integer, String, Float and other Generic types).
+- `column` – The value (Integer, String, Float and other Generic types).
 
 **Example**
 

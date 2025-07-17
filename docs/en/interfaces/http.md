@@ -16,8 +16,8 @@ import Image from '@theme/IdealImage';
 
 For the examples in this article you will need:
 
--to have a running instance of ClickHouse server
--have `curl` installed. On Ubuntu or Debian, run `sudo apt install curl` or refer to this [documentation](https://curl.se/download.html) for installation instructions.
+- to have a running instance of ClickHouse server
+- have `curl` installed. On Ubuntu or Debian, run `sudo apt install curl` or refer to this [documentation](https://curl.se/download.html) for installation instructions.
 
 ## Overview {#overview}
 
@@ -25,8 +25,8 @@ The HTTP interface lets you use ClickHouse on any platform from any programming 
 
 By default, `clickhouse-server` listens on the following ports:
 
--port 8123 for HTTP
--port 8443 for HTTPS can be enabled
+- port 8123 for HTTP
+- port 8443 for HTTPS can be enabled
 
 If you make a `GET /` request without any parameters, a 200 response code is returned along with the string "Ok.":
 
@@ -67,9 +67,9 @@ Ok.
 
 To query over HTTP/HTTPS there are three options:
 
--send the request as a URL 'query' parameter
--using the POST method.
--Send the beginning of the query in the 'query' parameter, and the rest using POST
+- send the request as a URL 'query' parameter
+- using the POST method.
+- Send the beginning of the query in the 'query' parameter, and the rest using POST
 
 :::note
 The size of the URL is limited to 1 MiB by default, this can be changed with the `http_max_uri_size` setting.
@@ -287,14 +287,14 @@ If you specify `compress=1` in the URL, the server will compress the data it sen
 
 You can also choose to use [HTTP compression](https://en.wikipedia.org/wiki/HTTP_compression). ClickHouse supports the following [compression methods](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens):
 
--`gzip`
--`br`
--`deflate`
--`xz`
--`zstd`
--`lz4`
--`bz2`
--`snappy`
+- `gzip`
+- `br`
+- `deflate`
+- `xz`
+- `zstd`
+- `lz4`
+- `bz2`
+- `snappy`
 
 To send a compressed `POST` request, append the request header `Content-Encoding: compression_method`.
 
@@ -319,7 +319,7 @@ To receive the compressed data archive from the server:
 
 ```bash
 curl -vsS "http://localhost:8123/?enable_http_compression=1" \
--H 'Accept-Encoding: gzip' --output result.gz -d 'SELECT number FROM system.numbers LIMIT 3'
+- H 'Accept-Encoding: gzip' --output result.gz -d 'SELECT number FROM system.numbers LIMIT 3'
 
 zcat result.gz
 0
@@ -331,7 +331,7 @@ To receive compressed data from the server, using gunzip to receive decompressed
 
 ```bash
 curl -sS "http://localhost:8123/?enable_http_compression=1" \
--H 'Accept-Encoding: gzip' -d 'SELECT number FROM system.numbers LIMIT 3' | gunzip -
+- H 'Accept-Encoding: gzip' -d 'SELECT number FROM system.numbers LIMIT 3' | gunzip -
 0
 1
 2
@@ -414,8 +414,8 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 
 For more information see:
 
--[Settings](/operations/settings/settings)
--[SET](/sql-reference/statements/set)
+- [Settings](/operations/settings/settings)
+- [SET](/sql-reference/statements/set)
 
 ## Using ClickHouse sessions in the HTTP protocol {#using-clickhouse-sessions-in-the-http-protocol}
 
@@ -460,13 +460,13 @@ The HTTP interface allows passing external data (external temporary tables) for 
 
 Response buffering can be enabled on the server-side. The following URL parameters are provided for this purpose:
 
--`buffer_size`
--`wait_end_of_query`
+- `buffer_size`
+- `wait_end_of_query`
 
 The following settings can be used:
 
--[`http_response_buffer_size`](/operations/settings/settings#http_response_buffer_size)
--[`http_wait_end_of_query`](/operations/settings/settings#http_wait_end_of_query)
+- [`http_response_buffer_size`](/operations/settings/settings#http_response_buffer_size)
+- [`http_wait_end_of_query`](/operations/settings/settings#http_wait_end_of_query)
 
 `buffer_size` determines the number of bytes in the result to buffer in the server memory. If a result body is larger than this threshold, the buffer is written to the HTTP channel, and the remaining data is sent directly to the HTTP channel.
 
@@ -660,35 +660,35 @@ Configuration options for `http_handlers` work as follows.
 
 `rule` can configure the following parameters:
 
--`method`
--`headers`
--`url`
--`handler`
+- `method`
+- `headers`
+- `url`
+- `handler`
 
 Each of these are discussed below:
 
--`method` is responsible for matching the method part of the HTTP request. `method` fully conforms to the definition of [`method`]
-  (<https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods>) in the HTTP protocol. It is an optional configuration. If it is not defined in the
+- `method` is responsible for matching the method part of the HTTP request. `method` fully conforms to the definition of [`method`]
+  (https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) in the HTTP protocol. It is an optional configuration. If it is not defined in the
   configuration file, it does not match the method portion of the HTTP request.
 
--`url` is responsible for matching the URL part of the HTTP request. It is compatible with [RE2](https://github.com/google/re2)'s regular
+- `url` is responsible for matching the URL part of the HTTP request. It is compatible with [RE2](https://github.com/google/re2)'s regular
   expressions. It is an optional configuration. If it is not defined in the configuration file, it does not match the URL portion of the HTTP
   request.
 
--`headers` are responsible for matching the header part of the HTTP request. It is compatible with RE2's regular expressions. It is an optional
+- `headers` are responsible for matching the header part of the HTTP request. It is compatible with RE2's regular expressions. It is an optional
   configuration. If it is not defined in the configuration file, it does not match the header portion of the HTTP request.
 
--`handler` contains the main processing part. Now `handler` can configure `type`, `status`, `content_type`, `http_response_headers`,
+- `handler` contains the main processing part. Now `handler` can configure `type`, `status`, `content_type`, `http_response_headers`,
   `response_content`, `query`, `query_param_name`. `type` currently supports three types: [`predefined_query_handler`](#predefined_query_handler),
   [`dynamic_query_handler`](#dynamic_query_handler), [`static`](#static).
 
--`query` — use with `predefined_query_handler` type, executes query when the handler is called.
--`query_param_name` — use with `dynamic_query_handler` type, extracts and executes the value corresponding to the `query_param_name` value in
+- `query` — use with `predefined_query_handler` type, executes query when the handler is called.
+- `query_param_name` — use with `dynamic_query_handler` type, extracts and executes the value corresponding to the `query_param_name` value in
        HTTP request parameters.
--`status` — use with `static` type, response status code.
--`content_type` — use with any type, response [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
--`http_response_headers` — use with any type, response headers map. Could be used to set content type as well.
--`response_content` — use with `static` type, response content sent to client, when using the prefix 'file://' or 'config://', find the content
+- `status` — use with `static` type, response status code.
+- `content_type` — use with any type, response [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
+- `http_response_headers` — use with any type, response headers map. Could be used to set content type as well.
+- `response_content` — use with `static` type, response content sent to client, when using the prefix 'file://' or 'config://', find the content
     from the file or configuration sends to client.
 
 The configuration methods for different `type`s are discussed next.
@@ -966,9 +966,9 @@ ClickHouse allows you to configure custom HTTP response headers that can be appl
 
 For example, you can configure headers for:
 
--Regular query endpoints
--Web UI
--Health check.
+- Regular query endpoints
+- Web UI
+- Health check.
 
 It is also possible to specify `common_http_response_headers`. These will be applied to all http handlers defined in the configuration.
 

@@ -12,9 +12,9 @@ Contains information about setting changes in previous ClickHouse versions.
 
 Columns:
 
--`type` ([Enum](../../sql-reference/data-types/enum.md)) - The settings type: `Core` (general / query settings), `MergeTree`.
--`version` ([String](../../sql-reference/data-types/string.md)) — The ClickHouse version in which settings were changed
--`changes` ([Array](../../sql-reference/data-types/array.md) of [Tuple](../../sql-reference/data-types/tuple.md)) — A description of the setting changes: (setting name, previous value, new value, reason for the change)
+- `type` ([Enum](../../sql-reference/data-types/enum.md)) - The settings type: `Core` (general / query settings), `MergeTree`.
+- `version` ([String](../../sql-reference/data-types/string.md)) — The ClickHouse version in which settings were changed
+- `changes` ([Array](../../sql-reference/data-types/array.md) of [Tuple](../../sql-reference/data-types/tuple.md)) — A description of the setting changes: (setting name, previous value, new value, reason for the change)
 
 **Example**
 
@@ -35,5 +35,5 @@ changes: [('input_format_parquet_preserve_order','1','0','Allow Parquet reader t
 
 **See also**
 
--[Settings](/operations/system-tables/overview#system-tables-introduction)
--[system.settings](settings.md)
+- [Settings](/operations/system-tables/overview#system-tables-introduction)
+- [system.settings](settings.md)

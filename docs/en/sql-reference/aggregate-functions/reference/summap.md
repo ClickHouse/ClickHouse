@@ -13,15 +13,15 @@ Totals a `value` array according to the keys specified in the `key` array. Retur
 
 **Syntax**
 
--`sumMap(key <Array>, value <Array>)` [Array type](../../data-types/array.md).
--`sumMap(Tuple(key <Array>, value <Array>))` [Tuple type](../../data-types/tuple.md).
+- `sumMap(key <Array>, value <Array>)` [Array type](../../data-types/array.md).
+- `sumMap(Tuple(key <Array>, value <Array>))` [Tuple type](../../data-types/tuple.md).
 
 Alias: `sumMappedArrays`.
 
 **Arguments**
 
--`key`: [Array](../../data-types/array.md) of keys.
--`value`: [Array](../../data-types/array.md) of values.
+- `key`: [Array](../../data-types/array.md) of keys.
+- `value`: [Array](../../data-types/array.md) of values.
 
 Passing a tuple of key and value arrays is a synonym to passing separately an array of keys and an array of values.
 
@@ -31,7 +31,7 @@ The number of elements in `key` and `value` must be the same for each row that i
 
 **Returned Value**
 
--Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
+- Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
 
 **Example**
 
@@ -83,5 +83,5 @@ Result:
 
 **See Also**
 
--[Map combinator for Map datatype](../combinators.md#-map)
--[sumMapWithOverflow](../reference/summapwithoverflow.md)
+- [Map combinator for Map datatype](../combinators.md#-map)
+- [sumMapWithOverflow](../reference/summapwithoverflow.md)

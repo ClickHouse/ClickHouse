@@ -36,10 +36,10 @@ Depending on dictionary [layout](/sql-reference/dictionaries#storing-dictionarie
 
 The source for a dictionary can be a:
 
--table in the current ClickHouse service
--table in a remote ClickHouse service
--file available by HTTP(S)
--another database
+- table in the current ClickHouse service
+- table in a remote ClickHouse service
+- file available by HTTP(S)
+- another database
 
 ### Create a dictionary from a table in the current ClickHouse service {#create-a-dictionary-from-a-table-in-the-current-clickhouse-service}
 
@@ -160,5 +160,5 @@ Please see the details in [Dictionary sources](/sql-reference/dictionaries#dbms)
 
 **See Also**
 
--For more information, see the [Dictionaries](../../../sql-reference/dictionaries/index.md) section.
--[system.dictionaries](../../../operations/system-tables/dictionaries.md) — This table contains information about [Dictionaries](../../../sql-reference/dictionaries/index.md).
+- For more information, see the [Dictionaries](../../../sql-reference/dictionaries/index.md) section.
+- [system.dictionaries](../../../operations/system-tables/dictionaries.md) — This table contains information about [Dictionaries](../../../sql-reference/dictionaries/index.md).

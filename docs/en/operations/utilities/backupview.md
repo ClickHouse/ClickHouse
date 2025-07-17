@@ -11,10 +11,10 @@ The main motivation was to allows getting some information from a backup without
 
 This module provides functions to
 
--enumerate files contained in a backup
--read files from a backup
--get useful information in readable form about databases, tables, parts contained in a backup
--check integrity of a backup
+- enumerate files contained in a backup
+- read files from a backup
+- get useful information in readable form about databases, tables, parts contained in a backup
+- check integrity of a backup
 
 ## Example: {#example}
 

@@ -20,9 +20,9 @@ means of a [materialized view](../../sql-reference/statements/create/view.md).
 There are two aggregate function [combinators](/sql-reference/aggregate-functions/combinators)
 commonly used with the `AggregateFunction` type:
 
--The [`-State`](/sql-reference/aggregate-functions/combinators#-state) aggregate function combinator, which when appended to an aggregate
+- The [`-State`](/sql-reference/aggregate-functions/combinators#-state) aggregate function combinator, which when appended to an aggregate
   function name, produces `AggregateFunction` intermediate states.
--The [`-Merge`](/sql-reference/aggregate-functions/combinators#-merge) aggregate
+- The [`-Merge`](/sql-reference/aggregate-functions/combinators#-merge) aggregate
   function combinator, which is used to get the final result of an aggregation
   from the intermediate states.
 
@@ -34,9 +34,9 @@ AggregateFunction(aggregate_function_name, types_of_arguments...)
 
 **Parameters**
 
--`aggregate_function_name` - The name of an aggregate function. If the function
+- `aggregate_function_name` - The name of an aggregate function. If the function
    is parametric, then its parameters should be specified too.
--`types_of_arguments` - The types of the aggregate function arguments.
+- `types_of_arguments` - The types of the aggregate function arguments.
 
 for example:
 
@@ -101,7 +101,7 @@ See [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregat
 
 ## Related Content {#related-content}
 
--Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
--[MergeState](/sql-reference/aggregate-functions/combinators#-mergestate)
+- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
+- [MergeState](/sql-reference/aggregate-functions/combinators#-mergestate)
   combinator.
--[State](/sql-reference/aggregate-functions/combinators#-state) combinator.
+- [State](/sql-reference/aggregate-functions/combinators#-state) combinator.

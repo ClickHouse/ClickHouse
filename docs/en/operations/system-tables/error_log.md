@@ -14,13 +14,13 @@ Contains history of error values from table `system.errors`, periodically flushe
 
 Columns:
 
--`hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
--`event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
--`event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
--`code` ([Int32](../../sql-reference/data-types/int-uint.md)) — Code number of the error.
--`error` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) - Name of the error.
--`value` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The number of times this error happened.
--`remote` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Remote exception (i.e. received during one of the distributed queries).
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
+- `event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
+- `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
+- `code` ([Int32](../../sql-reference/data-types/int-uint.md)) — Code number of the error.
+- `error` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) - Name of the error.
+- `value` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The number of times this error happened.
+- `remote` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Remote exception (i.e. received during one of the distributed queries).
 
 **Example**
 
@@ -42,6 +42,6 @@ remote:     0
 
 **See also**
 
--[error_log setting](../../operations/server-configuration-parameters/settings.md#error_log) — Enabling and disabling the setting.
--[system.errors](../../operations/system-tables/errors.md) — Contains error codes with the number of times they have been triggered.
--[Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
+- [error_log setting](../../operations/server-configuration-parameters/settings.md#error_log) — Enabling and disabling the setting.
+- [system.errors](../../operations/system-tables/errors.md) — Contains error codes with the number of times they have been triggered.
+- [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.

@@ -19,8 +19,8 @@ The monitoring data outlined in this guide is accessible in ClickHouse Cloud. In
 
 You can monitor:
 
--Utilization of hardware resources.
--ClickHouse server metrics.
+- Utilization of hardware resources.
+- ClickHouse server metrics.
 
 ## Built-in advanced observability dashboard {#built-in-advanced-observability-dashboard}
 
@@ -28,28 +28,28 @@ You can monitor:
 
 ClickHouse comes with a built-in advanced observability dashboard feature which can be accessed by `$HOST:$PORT/dashboard` (requires user and password) that shows the following metrics:
 
--Queries/second
--CPU usage (cores)
--Queries running
--Merges running
--Selected bytes/second
--IO wait
--CPU wait
--OS CPU Usage (userspace)
--OS CPU Usage (kernel)
--Read from disk
--Read from filesystem
--Memory (tracked)
--Inserted rows/second
--Total MergeTree parts
--Max parts for partition
+- Queries/second
+- CPU usage (cores)
+- Queries running
+- Merges running
+- Selected bytes/second
+- IO wait
+- CPU wait
+- OS CPU Usage (userspace)
+- OS CPU Usage (kernel)
+- Read from disk
+- Read from filesystem
+- Memory (tracked)
+- Inserted rows/second
+- Total MergeTree parts
+- Max parts for partition
 
 ## Resource utilization {#resource-utilization}
 
 ClickHouse also monitors the state of hardware resources by itself such as:
 
--Load and temperature on processors.
--Utilization of storage system, RAM and network.
+- Load and temperature on processors.
+- Utilization of storage system, RAM and network.
 
 This data is collected in the `system.asynchronous_metric_log` table.
 
@@ -61,8 +61,8 @@ To track server events use server logs. See the [logger](../operations/server-co
 
 ClickHouse collects:
 
--Different metrics of how the server uses computational resources.
--Common statistics on query processing.
+- Different metrics of how the server uses computational resources.
+- Common statistics on query processing.
 
 You can find metrics in the [system.metrics](/operations/system-tables/metrics), [system.events](/operations/system-tables/events), and [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) tables.
 

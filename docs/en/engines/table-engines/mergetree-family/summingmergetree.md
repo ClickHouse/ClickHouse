@@ -62,7 +62,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 All of the parameters excepting `columns` have the same meaning as in `MergeTree`.
 
--`columns` — tuple with names of columns values of which will be summed. Optional parameter. For a description, see the text above.
+- `columns` — tuple with names of columns values of which will be summed. Optional parameter. For a description, see the text above.
 
 </details>
 
@@ -125,8 +125,8 @@ Table can have nested data structures that are processed in a special way.
 
 If the name of a nested table ends with `Map` and it contains at least two columns that meet the following criteria:
 
--the first column is numeric `(*Int*, Date, DateTime)` or a string `(String, FixedString)`, let's call it `key`,
--the other columns are arithmetic `(*Int*, Float32/64)`, let's call it `(values...)`,
+- the first column is numeric `(*Int*, Date, DateTime)` or a string `(String, FixedString)`, let's call it `key`,
+- the other columns are arithmetic `(*Int*, Float32/64)`, let's call it `(values...)`,
 
 then this nested table is interpreted as a mapping of `key => (values...)`, and when merging its rows, the elements of two data sets are merged by `key` with a summation of the corresponding `(values...)`.
 
@@ -192,4 +192,4 @@ For nested data structure, you do not need to specify its columns in the tuple o
 
 ## Related content {#related-content}
 
--Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
+- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

@@ -21,8 +21,8 @@ Aliases: `anova`
 
 **Parameters**
 
--`val`: value.
--`group_no` : group number that `val` belongs to.
+- `val`: value.
+- `group_no` : group number that `val` belongs to.
 
 :::note
 Groups are enumerated starting from 0 and there should be at least two groups to perform a test.
@@ -31,7 +31,7 @@ There should be at least one group with the number of observations greater than 
 
 **Returned value**
 
--`(f_statistic, p_value)`. [Tuple](../../data-types/tuple.md)([Float64](../../data-types/float.md), [Float64](../../data-types/float.md)).
+- `(f_statistic, p_value)`. [Tuple](../../data-types/tuple.md)([Float64](../../data-types/float.md), [Float64](../../data-types/float.md)).
 
 **Example**
 

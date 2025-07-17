@@ -9,11 +9,11 @@ title: 'Functions for Working with Polygons'
 
 Returns a WKT (Well Known Text) geometric object from various [Geo Data Types](../../data-types/geo.md). Supported WKT objects are:
 
--POINT
--POLYGON
--MULTIPOLYGON
--LINESTRING
--MULTILINESTRING
+- POINT
+- POLYGON
+- MULTIPOLYGON
+- LINESTRING
+- MULTILINESTRING
 
 **Syntax**
 
@@ -25,20 +25,20 @@ WKT(geo_data)
 
 `geo_data` can be one of the following [Geo Data Types](../../data-types/geo.md) or their underlying primitive types:
 
--[Point](../../data-types/geo.md#point)
--[Ring](../../data-types/geo.md#ring)
--[Polygon](../../data-types/geo.md#polygon)
--[MultiPolygon](../../data-types/geo.md#multipolygon)
--[LineString](../../data-types/geo.md#linestring)
--[MultiLineString](../../data-types/geo.md#multilinestring)
+- [Point](../../data-types/geo.md#point)
+- [Ring](../../data-types/geo.md#ring)
+- [Polygon](../../data-types/geo.md#polygon)
+- [MultiPolygon](../../data-types/geo.md#multipolygon)
+- [LineString](../../data-types/geo.md#linestring)
+- [MultiLineString](../../data-types/geo.md#multilinestring)
 
 **Returned value**
 
--WKT geometric object `POINT` is returned for a Point.
--WKT geometric object `POLYGON` is returned for a Polygon
--WKT geometric object `MULTIPOLYGON` is returned for a MultiPolygon.
--WKT geometric object `LINESTRING` is returned for a LineString.
--WKT geometric object `MULTILINESTRING` is returned for a MultiLineString.
+- WKT geometric object `POINT` is returned for a Point.
+- WKT geometric object `POLYGON` is returned for a Polygon
+- WKT geometric object `MULTIPOLYGON` is returned for a MultiPolygon.
+- WKT geometric object `LINESTRING` is returned for a LineString.
+- WKT geometric object `MULTILINESTRING` is returned for a MultiLineString.
 
 **Examples**
 
@@ -134,7 +134,7 @@ readWKTPoint(wkt_string)
 
 ### Arguments {#arguments}
 
--`wkt_string`: The input WKT string representing a Point geometry.
+- `wkt_string`: The input WKT string representing a Point geometry.
 
 ### Returned value {#returned-value-2}
 
@@ -162,7 +162,7 @@ readWKTLineString(wkt_string)
 
 ### Arguments {#arguments-1}
 
--`wkt_string`: The input WKT string representing a LineString geometry.
+- `wkt_string`: The input WKT string representing a LineString geometry.
 
 ### Returned value {#returned-value-3}
 
@@ -190,7 +190,7 @@ readWKTMultiLineString(wkt_string)
 
 ### Arguments {#arguments-2}
 
--`wkt_string`: The input WKT string representing a MultiLineString geometry.
+- `wkt_string`: The input WKT string representing a MultiLineString geometry.
 
 ### Returned value {#returned-value-4}
 
@@ -218,7 +218,7 @@ readWKTRing(wkt_string)
 
 ### Arguments {#arguments-3}
 
--`wkt_string`: The input WKT string representing a Polygon geometry.
+- `wkt_string`: The input WKT string representing a Polygon geometry.
 
 ### Returned value {#returned-value-5}
 
@@ -236,7 +236,7 @@ SELECT readWKTRing('POLYGON ((1 1, 2 2, 3 3, 1 1))');
 
 ## polygonsWithinSpherical {#polygonswithinspherical}
 
-Returns true or false depending on whether or not one polygon lies completely inside another polygon. Reference <https://www.boost.org/doc/libs/1_62_0/libs/geometry/doc/html/geometry/reference/algorithms/within/within_2.html>
+Returns true or false depending on whether or not one polygon lies completely inside another polygon. Reference https://www.boost.org/doc/libs/1_62_0/libs/geometry/doc/html/geometry/reference/algorithms/within/within_2.html
 
 ### Example {#example-6}
 
@@ -310,7 +310,7 @@ readWKBPoint(wkb_string)
 
 ### Arguments {#arguments-4}
 
--`wkb_string`: The input WKB string representing a Point geometry.
+- `wkb_string`: The input WKB string representing a Point geometry.
 
 ### Returned value {#returned-value-8}
 
@@ -338,7 +338,7 @@ readWKBLineString(wkb_string)
 
 ### Arguments {#arguments-5}
 
--`wkb_string`: The input WKB string representing a LineString geometry.
+- `wkb_string`: The input WKB string representing a LineString geometry.
 
 ### Returned value {#returned-value-9}
 
@@ -366,7 +366,7 @@ readWKBMultiLineString(wkb_string)
 
 ### Arguments {#arguments-6}
 
--`wkb_string`: The input WKB string representing a MultiLineString geometry.
+- `wkb_string`: The input WKB string representing a MultiLineString geometry.
 
 ### Returned value {#returned-value-10}
 
@@ -566,7 +566,7 @@ UInt8, 0 for false, 1 for true
 
 ## polygonsIntersectSpherical {#polygonsintersectspherical}
 
-Returns true if the two polygons intersect (share any common area or boundary). Reference <https://www.boost.org/doc/libs/1_62_0/libs/geometry/doc/html/geometry/reference/algorithms/intersects.html>
+Returns true if the two polygons intersect (share any common area or boundary). Reference https://www.boost.org/doc/libs/1_62_0/libs/geometry/doc/html/geometry/reference/algorithms/intersects.html
 
 ### Example {#example-intersects-spherical}
 

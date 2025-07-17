@@ -30,9 +30,9 @@ mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
 
 A table object with columns with values of primary index and min-max index (if enabled) of source table, columns with values of marks (if enabled) for all possible files in data parts of source table and virtual columns:
 
--`part_name` - The name of data part.
--`mark_number` - The number of current mark in data part.
--`rows_in_granule` - The number of rows in current granule.
+- `part_name` - The name of data part.
+- `mark_number` - The number of current mark in data part.
+- `rows_in_granule` - The number of rows in current granule.
 
 Marks column may contain `(NULL, NULL)` value in case when column is absent in data part or marks for one of its substreams are not written (e.g. in compact parts).
 

@@ -16,20 +16,20 @@ title: 'Values'
 
 The `Values` format prints every row in brackets.
 
--Rows are separated by commas without a comma after the last row.
--The values inside the brackets are also comma-separated.
--Numbers are output in a decimal format without quotes.
--Arrays are output in square brackets.
--Strings, dates, and dates with times are output in quotes.
--Escaping rules and parsing are similar to the [TabSeparated](TabSeparated/TabSeparated.md) format.
+- Rows are separated by commas without a comma after the last row.
+- The values inside the brackets are also comma-separated.
+- Numbers are output in a decimal format without quotes.
+- Arrays are output in square brackets.
+- Strings, dates, and dates with times are output in quotes.
+- Escaping rules and parsing are similar to the [TabSeparated](TabSeparated/TabSeparated.md) format.
 
 During formatting, extra spaces aren't inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed).
 [`NULL`](/sql-reference/syntax.md) is represented as `NULL`.
 
 The minimum set of characters that you need to escape when passing data in the `Values` format:
 
--single quotes
--backslashes
+- single quotes
+- backslashes
 
 This is the format that is used in `INSERT INTO t VALUES ...`, but you can also use it for formatting query results.
 

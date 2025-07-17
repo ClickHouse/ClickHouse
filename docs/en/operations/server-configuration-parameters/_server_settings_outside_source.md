@@ -113,10 +113,10 @@ We recommend not changing this if you have just started using ClickHouse.
 
 **`<case>` fields**:
 
--`min_part_size` – The minimum size of a data part.
--`min_part_size_ratio` – The ratio of the data part size to the table size.
--`method` – Compression method. Acceptable values: `lz4`, `lz4hc`, `zstd`,`deflate_qpl`.
--`level` – Compression level. See [Codecs](/sql-reference/statements/create/table#general-purpose-codecs).
+- `min_part_size` – The minimum size of a data part.
+- `min_part_size_ratio` – The ratio of the data part size to the table size.
+- `method` – Compression method. Acceptable values: `lz4`, `lz4hc`, `zstd`,`deflate_qpl`.
+- `level` – Compression level. See [Codecs](/sql-reference/statements/create/table#general-purpose-codecs).
 
 :::note
 You can configure multiple `<case>` sections.
@@ -124,8 +124,8 @@ You can configure multiple `<case>` sections.
 
 **Actions when conditions are met**:
 
--If a data part matches a condition set, ClickHouse uses the specified compression method.
--If a data part matches multiple condition sets, ClickHouse uses the first matched condition set.
+- If a data part matches a condition set, ClickHouse uses the specified compression method.
+- If a data part matches multiple condition sets, ClickHouse uses the first matched condition set.
 
 :::note
 If no conditions are met for a data part, ClickHouse uses the `lz4` compression.
@@ -273,7 +273,7 @@ List of prefixes for [custom settings](/operations/settings/query-level#custom_s
 
 **See Also**
 
--[Custom settings](/operations/settings/query-level#custom_settings)
+- [Custom settings](/operations/settings/query-level#custom_settings)
 
 ## core_dump {#core_dump}
 
@@ -307,12 +307,12 @@ The path to the config file for dictionaries.
 
 Path:
 
--Specify the absolute path or the path relative to the server config file.
--The path can contain wildcards \* and ?.
+- Specify the absolute path or the path relative to the server config file.
+- The path can contain wildcards \* and ?.
 
 See also:
 
--"[Dictionaries](../../sql-reference/dictionaries/index.md)".
+- "[Dictionaries](../../sql-reference/dictionaries/index.md)".
 
 **Example**
 
@@ -326,12 +326,12 @@ The path to the config file for executable user defined functions.
 
 Path:
 
--Specify the absolute path or the path relative to the server config file.
--The path can contain wildcards \* and ?.
+- Specify the absolute path or the path relative to the server config file.
+- The path can contain wildcards \* and ?.
 
 See also:
 
--"[Executable User Defined Functions](/sql-reference/functions/udf#executable-user-defined-functions).".
+- "[Executable User Defined Functions](/sql-reference/functions/udf#executable-user-defined-functions).".
 
 **Example**
 
@@ -356,15 +356,15 @@ Sending data to [Graphite](https://github.com/graphite-project).
 
 Settings:
 
--`host` – The Graphite server.
--`port` – The port on the Graphite server.
--`interval` – The interval for sending, in seconds.
--`timeout` – The timeout for sending data, in seconds.
--`root_path` – Prefix for keys.
--`metrics` – Sending data from the [system.metrics](/operations/system-tables/metrics) table.
--`events` – Sending deltas data accumulated for the time period from the [system.events](/operations/system-tables/events) table.
--`events_cumulative` – Sending cumulative data from the [system.events](/operations/system-tables/events) table.
--`asynchronous_metrics` – Sending data from the [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) table.
+- `host` – The Graphite server.
+- `port` – The port on the Graphite server.
+- `interval` – The interval for sending, in seconds.
+- `timeout` – The timeout for sending data, in seconds.
+- `root_path` – Prefix for keys.
+- `metrics` – Sending data from the [system.metrics](/operations/system-tables/metrics) table.
+- `events` – Sending deltas data accumulated for the time period from the [system.events](/operations/system-tables/events) table.
+- `events_cumulative` – Sending cumulative data from the [system.events](/operations/system-tables/events) table.
+- `asynchronous_metrics` – Sending data from the [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) table.
 
 You can configure multiple `<graphite>` clauses. For instance, you can use this for sending different data at different intervals.
 
@@ -644,18 +644,18 @@ A username and a password used to connect to other servers during [replication](
 
 :::note
 
--By default, if `interserver_http_credentials` section is omitted, authentication is not used during replication.
--`interserver_http_credentials` settings do not relate to a ClickHouse client credentials [configuration](../../interfaces/cli.md#configuration_files).
--These credentials are common for replication via `HTTP` and `HTTPS`.
+- By default, if `interserver_http_credentials` section is omitted, authentication is not used during replication.
+- `interserver_http_credentials` settings do not relate to a ClickHouse client credentials [configuration](../../interfaces/cli.md#configuration_files).
+- These credentials are common for replication via `HTTP` and `HTTPS`.
 
 :::
 
 The following settings can be configured by sub-tags:
 
--`user` — Username.
--`password` — Password.
--`allow_empty` — If `true`, then other replicas are allowed to connect without authentication even if credentials are set. If `false`, then connections without authentication are refused. Default: `false`.
--`old` — Contains old `user` and `password` used during credential rotation. Several `old` sections can be specified.
+- `user` — Username.
+- `password` — Password.
+- `allow_empty` — If `true`, then other replicas are allowed to connect without authentication even if credentials are set. If `false`, then connections without authentication are refused. Default: `false`.
+- `old` — Contains old `user` and `password` used during credential rotation. Several `old` sections can be specified.
 
 **Credentials Rotation**
 
@@ -696,8 +696,8 @@ When new credentials are applied to all replicas, old credentials may be removed
 
 List LDAP servers with their connection parameters here to:
 
--use them as authenticators for dedicated local users, who have an 'ldap' authentication mechanism specified instead of 'password'
--use them as remote user directories.
+- use them as authenticators for dedicated local users, who have an 'ldap' authentication mechanism specified instead of 'password'
+- use them as remote user directories.
 
 The following settings can be configured by sub-tags:
 
@@ -800,13 +800,13 @@ Backlog (queue size of pending connections) of the listen socket. The default va
 
 Usually this value does not need to be changed, since:
 
--The default value is large enough,
--For accepting client's connections server has separate thread.
+- The default value is large enough,
+- For accepting client's connections server has separate thread.
 
 So even if you have `TcpExtListenOverflows` (from `nstat`) non-zero and this counter grows for ClickHouse server it does not mean that this value needs to be increased, since:
 
--Usually if `4096` is not enough it shows some internal ClickHouse scaling issue, so it is better to report an issue.
--It does not mean that the server can handle more connections later (and even if it could, by that moment clients may be gone or disconnected).
+- Usually if `4096` is not enough it shows some internal ClickHouse scaling issue, so it is better to report an issue.
+- It does not mean that the server can handle more connections later (and even if it could, by that moment clients may be gone or disconnected).
 
 **Example**
 
@@ -1120,10 +1120,10 @@ The sub-tags above define the following settings for `policies`:
 
 For the `volume_priority`:
 
--If all volumes have this parameter, they are prioritized in the specified order.
--If only _some_ volumes have it, volumes that do not have it have the lowest priority. Those that do have it are prioritized according to the tag value, the priority of the rest is determined by the order of description in the configuration file relative to each other.
--If _no_ volumes are given this parameter, their order is determined by the order of the description in the configuration file.
--The priority of volumes may not be identical.
+- If all volumes have this parameter, they are prioritized in the specified order.
+- If only _some_ volumes have it, volumes that do not have it have the lowest priority. Those that do have it are prioritized according to the tag value, the priority of the rest is determined by the order of description in the configuration file relative to each other.
+- If _no_ volumes are given this parameter, their order is determined by the order of the description in the configuration file.
+- The priority of volumes may not be identical.
 
 ## macros {#macros}
 
@@ -1438,12 +1438,12 @@ Exposing metrics data for scraping from [Prometheus](https://prometheus.io).
 
 Settings:
 
--`endpoint` – HTTP endpoint for scraping metrics by prometheus server. Start from '/'.
--`port` – Port for `endpoint`.
--`metrics` – Expose metrics from the [system.metrics](/operations/system-tables/metrics) table.
--`events` – Expose metrics from the [system.events](/operations/system-tables/events) table.
--`asynchronous_metrics` – Expose current metrics values from the [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) table.
--`errors` - Expose the number of errors by error codes occurred since the last server restart. This information could be obtained from the [system.errors](/operations/system-tables/errors) as well.
+- `endpoint` – HTTP endpoint for scraping metrics by prometheus server. Start from '/'.
+- `port` – Port for `endpoint`.
+- `metrics` – Expose metrics from the [system.metrics](/operations/system-tables/metrics) table.
+- `events` – Expose metrics from the [system.events](/operations/system-tables/events) table.
+- `asynchronous_metrics` – Expose current metrics values from the [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) table.
+- `errors` - Expose the number of errors by error codes occurred since the last server restart. This information could be obtained from the [system.errors](/operations/system-tables/errors) as well.
 
 **Example**
 
@@ -1546,8 +1546,8 @@ The following settings are available:
 
 :::note
 
--Changed settings take effect immediately.
--Data for the query cache is allocated in DRAM. If memory is scarce, make sure to set a small value for `max_size_in_bytes` or disable the query cache altogether.
+- Changed settings take effect immediately.
+- Data for the query cache is allocated in DRAM. If memory is scarce, make sure to set a small value for `max_size_in_bytes` or disable the query cache altogether.
 
 :::
 
@@ -1818,9 +1818,9 @@ For the value of the `incl` attribute, see the section "[Configuration files](/o
 
 **See Also**
 
--[skip_unavailable_shards](../../operations/settings/settings.md#skip_unavailable_shards)
--[Cluster Discovery](../../operations/cluster-discovery.md)
--[Replicated database engine](../../engines/database-engines/replicated.md)
+- [skip_unavailable_shards](../../operations/settings/settings.md#skip_unavailable_shards)
+- [Cluster Discovery](../../operations/cluster-discovery.md)
+- [Replicated database engine](../../engines/database-engines/replicated.md)
 
 ## remote_url_allow_hosts {#remote_url_allow_hosts}
 
@@ -1828,11 +1828,11 @@ List of hosts which are allowed to be used in URL-related storage engines and ta
 
 When adding a host with the `\<host\>` xml tag:
 
--it should be specified exactly as in the URL, as the name is checked before DNS resolution. For example: `<host>clickhouse.com</host>`
--if the port is explicitly specified in the URL, then host:port is checked as a whole. For example: `<host>clickhouse.com:80</host>`
--if the host is specified without a port, then any port of the host is allowed. For example: if `<host>clickhouse.com</host>` is specified then `clickhouse.com:20` (FTP), `clickhouse.com:80` (HTTP), `clickhouse.com:443` (HTTPS) etc are allowed.
--if the host is specified as an IP address, then it is checked as specified in the URL. For example: `[2a02:6b8:a::a]`.
--if there are redirects and support for redirects is enabled, then every redirect (the location field) is checked.
+- it should be specified exactly as in the URL, as the name is checked before DNS resolution. For example: `<host>clickhouse.com</host>`
+- if the port is explicitly specified in the URL, then host:port is checked as a whole. For example: `<host>clickhouse.com:80</host>`
+- if the host is specified without a port, then any port of the host is allowed. For example: if `<host>clickhouse.com</host>` is specified then `clickhouse.com:20` (FTP), `clickhouse.com:80` (HTTP), `clickhouse.com:443` (HTTPS) etc are allowed.
+- if the host is specified as an IP address, then it is checked as specified in the URL. For example: `[2a02:6b8:a::a]`.
+- if there are redirects and support for redirects is enabled, then every redirect (the location field) is checked.
 
 For example:
 
@@ -1858,7 +1858,7 @@ The time zone is necessary for conversions between String and DateTime formats w
 
 **See also**
 
--[session_timezone](../settings/settings.md#session_timezone)
+- [session_timezone](../settings/settings.md#session_timezone)
 
 ## tcp_port {#tcp_port}
 
@@ -1886,8 +1886,8 @@ Port for communicating with clients over MySQL protocol.
 
 :::note
 
--Positive integers specify the port number to listen to
--Empty values are used to disable communication with clients over MySQL protocol.
+- Positive integers specify the port number to listen to
+- Empty values are used to disable communication with clients over MySQL protocol.
 
 :::
 
@@ -1903,8 +1903,8 @@ Port for communicating with clients over PostgreSQL protocol.
 
 :::note
 
--Positive integers specify the port number to listen to
--Empty values are used to disable communication with clients over PostgreSQL protocol.
+- Positive integers specify the port number to listen to
+- Empty values are used to disable communication with clients over PostgreSQL protocol.
 
 :::
 
@@ -1920,8 +1920,8 @@ Path on the local filesystem to store temporary data for processing large querie
 
 :::note
 
--Only one option can be used to configure temporary data storage: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
--The trailing slash is mandatory.
+- Only one option can be used to configure temporary data storage: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
+- The trailing slash is mandatory.
 
 :::
 
@@ -1989,10 +1989,10 @@ The directory with user defined files. Used for SQL user defined functions [SQL 
 
 Path to the file that contains:
 
--User configurations.
--Access rights.
--Settings profiles.
--Quota settings.
+- User configurations.
+- Access rights.
+- Settings profiles.
+- Quota settings.
 
 **Example**
 
@@ -2098,9 +2098,9 @@ There is also the `zookeeper_load_balancing` setting (optional) which lets you s
 
 **See Also**
 
--[Replication](../../engines/table-engines/mergetree-family/replication.md)
--[ZooKeeper Programmer's Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
--[Optional secured communication between ClickHouse and Zookeeper](/operations/ssl-zookeeper)
+- [Replication](../../engines/table-engines/mergetree-family/replication.md)
+- [ZooKeeper Programmer's Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
+- [Optional secured communication between ClickHouse and Zookeeper](/operations/ssl-zookeeper)
 
 ## use_minimalistic_part_header_in_zookeeper {#use_minimalistic_part_header_in_zookeeper}
 
@@ -2116,8 +2116,8 @@ When creating a table, specify the corresponding [engine setting](../../engines/
 
 **Possible values**
 
--`0` — Functionality is turned off.
--`1` — Functionality is turned on.
+- `0` — Functionality is turned off.
+- `1` — Functionality is turned on.
 
 If [`use_minimalistic_part_header_in_zookeeper = 1`](#use_minimalistic_part_header_in_zookeeper), then [replicated](../../engines/table-engines/mergetree-family/replication.md) tables store the headers of the data parts compactly using a single `znode`. If the table contains many columns, this storage method significantly reduces the volume of the data stored in Zookeeper.
 
@@ -2177,7 +2177,7 @@ Path to a folder where a ClickHouse server stores user and role configurations c
 
 **See also**
 
--[Access Control and Account Management](/operations/access-rights#access-control-usage)
+- [Access Control and Account Management](/operations/access-rights#access-control-usage)
 
 ## allow_plaintext_password {#allow_plaintext_password}
 
@@ -2217,10 +2217,10 @@ Sets the password type to be automatically set for in queries like `CREATE USER 
 
 Accepted values are:
 
--`plaintext_password`
--`sha256_password`
--`double_sha1_password`
--`bcrypt_password`
+- `plaintext_password`
+- `sha256_password`
+- `double_sha1_password`
+- `bcrypt_password`
 
 ```xml
 <default_password_type>sha256_password</default_password_type>
@@ -2230,9 +2230,9 @@ Accepted values are:
 
 Section of the configuration file that contains settings:
 
--Path to configuration file with predefined users.
--Path to folder where users created by SQL commands are stored.
--ZooKeeper node path where users created by SQL commands are stored and replicated (experimental).
+- Path to configuration file with predefined users.
+- Path to folder where users created by SQL commands are stored.
+- ZooKeeper node path where users created by SQL commands are stored and replicated (experimental).
 
 If this section is specified, the path from [users_config](/operations/server-configuration-parameters/settings#users_config) and [access_control_path](../../operations/server-configuration-parameters/settings.md#access_control_path) won't be used.
 
@@ -2299,7 +2299,7 @@ For example:
 
 See also:
 
--function [`cutToFirstSignificantSubdomainCustom`](../../sql-reference/functions/url-functions.md/#cuttofirstsignificantsubdomaincustom) and variations thereof,
+- function [`cutToFirstSignificantSubdomainCustom`](../../sql-reference/functions/url-functions.md/#cuttofirstsignificantsubdomaincustom) and variations thereof,
   which accepts a custom TLD list name, returning the part of the domain that includes top-level subdomains up to the first significant subdomain.
 
 ## proxy {#proxy}
@@ -2308,9 +2308,9 @@ Define proxy servers for HTTP and HTTPS requests, currently supported by S3 stor
 
 There are three ways to define proxy servers:
 
--environment variables
--proxy lists
--remote proxy resolvers.
+- environment variables
+- proxy lists
+- remote proxy resolvers.
 
 Bypassing proxy servers for specific hosts is also supported with the use of `no_proxy`.
 
@@ -2487,8 +2487,8 @@ The directory used as a storage for all `CREATE WORKLOAD` and `CREATE RESOURCE` 
 
 **See Also**
 
--[Workload Hierarchy](/operations/workload-scheduling.md#workloads)
--[workload_zookeeper_path](#workload_zookeeper_path)
+- [Workload Hierarchy](/operations/workload-scheduling.md#workloads)
+- [workload_zookeeper_path](#workload_zookeeper_path)
 
 ## workload_zookeeper_path {#workload_zookeeper_path}
 
@@ -2502,5 +2502,5 @@ The path to a ZooKeeper node, which is used as a storage for all `CREATE WORKLOA
 
 **See Also**
 
--[Workload Hierarchy](/operations/workload-scheduling.md#workloads)
--[workload_path](#workload_path)
+- [Workload Hierarchy](/operations/workload-scheduling.md#workloads)
+- [workload_path](#workload_path)

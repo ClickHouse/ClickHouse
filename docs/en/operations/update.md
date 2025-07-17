@@ -9,9 +9,9 @@ title: 'Self-managed Upgrade'
 
 This document contains:
 
--general guidelines
--a recommended plan
--specifics for upgrading the binaries on your systems
+- general guidelines
+- a recommended plan
+- specifics for upgrading the binaries on your systems
 
 ## General guidelines {#general-guidelines}
 
@@ -39,17 +39,17 @@ We make an effort to maintain a one-year compatibility window (which includes 2 
 
 We never recommend running different versions in the same cluster when the release dates are more than one year. While we do not expect that you will have data loss, the cluster may become unusable. The issues that you should expect if you have more than one year difference in versions include:
 
--the cluster may not work
--some (or even all) queries may fail with arbitrary errors
--arbitrary errors/warnings may appear in the logs
--it may be impossible to downgrade
+- the cluster may not work
+- some (or even all) queries may fail with arbitrary errors
+- arbitrary errors/warnings may appear in the logs
+- it may be impossible to downgrade
 
 ### Incremental upgrades {#incremental-upgrades}
 
 If the difference between the current version and the target version is more than one year, then it is recommended to either:
 
--Upgrade with downtime (stop all servers, upgrade all servers, run all servers).
--Or to upgrade through an intermediate version (a version less than one year more recent than the current version).
+- Upgrade with downtime (stop all servers, upgrade all servers, run all servers).
+- Or to upgrade through an intermediate version (a version less than one year more recent than the current version).
 
 ## Recommended plan {#recommended-plan}
 
@@ -60,11 +60,11 @@ These are the recommended steps for a zero-downtime ClickHouse upgrade:
 3.Make any updates identified in the breaking changes that can be made before upgrading, and a list of the changes that will need to be made after the upgrade.
 4.Identify one or more replicas for each shard to keep up while the rest of the replicas for each shard are upgraded.
 5.On the replicas that will be upgraded, one at a time:
--shutdown ClickHouse server
--upgrade the server to the target version
--bring ClickHouse server up
--wait for the Keeper messages to indicate that the system is stable
--continue to the next replica
+- shutdown ClickHouse server
+- upgrade the server to the target version
+- bring ClickHouse server up
+- wait for the Keeper messages to indicate that the system is stable
+- continue to the next replica
 6.Check for errors in the Keeper log and the ClickHouse log
 7.Upgrade the replicas identified in step 4 to the new version
 8.Refer to the list of changes made in steps 1 through 3 and make the changes that need to be made after the upgrade.

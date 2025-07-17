@@ -40,10 +40,10 @@ ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password') [SE
 
 **Engine Parameters**
 
--`host:port` — PostgreSQL server endpoint.
--`database` — PostgreSQL database name.
--`user` — PostgreSQL user.
--`password` — User password.
+- `host:port` — PostgreSQL server endpoint.
+- `database` — PostgreSQL database name.
+- `user` — PostgreSQL user.
+- `password` — User password.
 
 ## Example of use {#example-of-use}
 
@@ -133,9 +133,9 @@ Warning: for this case dots in table name are not allowed.
 
 2.Each replicated table must have one of the following [replica identity](https://www.postgresql.org/docs/10/sql-altertable.html#SQL-CREATETABLE-REPLICA-IDENTITY):
 
--primary key (by default)
+- primary key (by default)
 
--index
+- index
 
 ```bash
 postgres# CREATE TABLE postgres_table (a Integer NOT NULL, b Integer, c Integer NOT NULL, d Integer, e Integer NOT NULL);
