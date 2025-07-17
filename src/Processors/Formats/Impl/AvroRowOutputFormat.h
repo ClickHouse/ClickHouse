@@ -2,6 +2,7 @@
 #include "config.h"
 #if USE_AVRO
 
+#include <Core/Block_fwd.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Formats/FormatSettings.h>
@@ -19,6 +20,23 @@ class Block;
 class WriteBuffer;
 
 class AvroSerializerTraits;
+
+class OutputStreamWriteBufferAdapter : public avro::OutputStream
+{
+public:
+    explicit OutputStreamWriteBufferAdapter(WriteBuffer & out_) : out(out_) {}
+
+    bool next(uint8_t ** data, size_t * len) override;
+
+    void backup(size_t len) override { out.position() -= len; }
+
+    uint64_t byteCount() const override { return out.count(); }
+    void flush() override {}
+
+private:
+    WriteBuffer & out;
+};
+
 
 class AvroSerializer
 {
@@ -47,7 +65,7 @@ private:
 class AvroRowOutputFormat final : public IRowOutputFormat
 {
 public:
-    AvroRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_);
+    AvroRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_);
     ~AvroRowOutputFormat() override;
 
     String getName() const override { return "AvroRowOutputFormat"; }

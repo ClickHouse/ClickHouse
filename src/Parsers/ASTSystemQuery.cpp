@@ -346,10 +346,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
-        case Type::DROP_DISTRIBUTED_CACHE_CONNECTIONS:
-        {
-            break;
-        }
         case Type::DROP_DISTRIBUTED_CACHE:
         {
             if (distributed_cache_drop_connections)

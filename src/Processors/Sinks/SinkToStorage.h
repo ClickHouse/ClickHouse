@@ -14,7 +14,7 @@ class SinkToStorage : public ExceptionKeepingTransform
 friend class PartitionedSink;
 
 public:
-    explicit SinkToStorage(const Block & header);
+    explicit SinkToStorage(SharedHeader header);
 
     const Block & getHeader() const { return inputs.front().getHeader(); }
     void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
