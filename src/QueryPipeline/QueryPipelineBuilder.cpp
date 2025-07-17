@@ -188,9 +188,11 @@ void QueryPipelineBuilder::addDelayedStream(ProcessorPtr source)
     addTransform(std::move(processor));
 }
 
-void QueryPipelineBuilder::addMergingAggregatedMemoryEfficientTransform(AggregatingTransformParamsPtr params, size_t num_merging_processors)
+void QueryPipelineBuilder::addMergingAggregatedMemoryEfficientTransform(
+    AggregatingTransformParamsPtr params, size_t num_merging_processors, bool should_produce_results_in_order_of_bucket_number)
 {
-    DB::addMergingAggregatedMemoryEfficientTransform(pipe, std::move(params), num_merging_processors);
+    DB::addMergingAggregatedMemoryEfficientTransform(
+        pipe, std::move(params), num_merging_processors, should_produce_results_in_order_of_bucket_number);
 }
 
 void QueryPipelineBuilder::resize(size_t num_streams, bool strict, UInt64 min_outstreams_per_resize_after_split)
