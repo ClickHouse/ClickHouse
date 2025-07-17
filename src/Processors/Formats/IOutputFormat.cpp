@@ -207,7 +207,7 @@ void IOutputFormat::onProgress(const Progress & progress)
     fiu_do_on(
         FailPoints::output_format_sleep_on_progress,
         {
-            sleepForSeconds(1);
+            sleepForMilliseconds(100);
         });
 
     statistics.progress.incrementPiecewiseAtomically(progress);
@@ -222,7 +222,7 @@ void IOutputFormat::onProgress(const Progress & progress)
         {
             std::unique_lock lock(writing_mutex, std::try_to_lock);
 
-            if (lock)
+            if (lock && has_progress_update_to_write && !finalized)
             {
                 writeProgress(statistics.progress);
                 flushImpl();

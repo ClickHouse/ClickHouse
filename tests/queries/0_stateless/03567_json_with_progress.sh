@@ -16,14 +16,13 @@ trap on_exit EXIT
 ${CLICKHOUSE_CLIENT} -m --query "SYSTEM ENABLE FAILPOINT output_format_sleep_on_progress;"
 
 query="
-SELECT number
-FROM (SELECT number FROM system.numbers_mt LIMIT 10)
-LIMIT 5
+SELECT 1
+FROM (SELECT number FROM system.numbers_mt LIMIT 2)
+LIMIT 1
 "
-
 
 SETTINGS="default_format=JSONEachRowWithProgress"
 SETTINGS="${SETTINGS}&interactive_delay=1"
 SETTINGS="${SETTINGS}&max_block_size=1&max_threads=10"
 
-${CLICKHOUSE_CURL} -sS -v "${CLICKHOUSE_URL}&${SETTINGS}" -d "$query"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&${SETTINGS}" -d "$query" | sed 's/^{"progress":{.*}$//g' | grep -v "^$"
