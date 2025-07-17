@@ -13,8 +13,7 @@ create table rmt (n int) engine=ReplicatedMergeTree('/test/01158/{database}/rmt'
     settings
         cleanup_delay_period=86400,
         max_cleanup_delay_period=86400,
-        replicated_can_become_leader=0,
-        allow_remote_fs_zero_copy_replication=0;
+        replicated_can_become_leader=0;
 system sync replica rmt;
 insert into rmt values (1);
 insert into rmt values (1);

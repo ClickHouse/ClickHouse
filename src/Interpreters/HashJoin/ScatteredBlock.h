@@ -226,7 +226,7 @@ struct ScatteredBlock : private boost::noncopyable
     const auto & getSelector() const { return selector; }
     auto detachSelector() { return std::move(selector); }
 
-    explicit operator bool() const { return !!block; }
+    bool empty() const { return block.empty(); }
 
     /// Accounts only selected rows
     size_t rows() const { return selector.size(); }
@@ -268,7 +268,7 @@ struct ScatteredBlock : private boost::noncopyable
     /// Filters selector by mask discarding rows for which filter is false
     void filter(const IColumnFilter & filter)
     {
-        chassert(block && block.rows() == filter.size());
+        chassert(!block.empty() && block.rows() == filter.size());
         IndexesPtr new_selector = Indexes::create();
         new_selector->reserve(selector.size());
         std::copy_if(
@@ -279,7 +279,7 @@ struct ScatteredBlock : private boost::noncopyable
     /// Applies `selector` to the `block` in-place
     void filterBySelector()
     {
-        if (!block || !wasScattered())
+        if (block.empty() || !wasScattered())
             return;
 
         if (selector.isContinuousRange())
@@ -311,7 +311,7 @@ struct ScatteredBlock : private boost::noncopyable
             return ScatteredBlock{Block{}};
         }
 
-        chassert(block);
+        chassert(!block.empty());
 
         auto && [first_num_rows, remaining_selector] = selector.split(num_rows);
 

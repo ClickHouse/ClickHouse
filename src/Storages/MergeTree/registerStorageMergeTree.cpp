@@ -866,8 +866,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (merging_params.mode != MergeTreeData::MergingParams::Mode::Ordinary
             && (*storage_settings)[MergeTreeSetting::deduplicate_merge_projection_mode] == DeduplicateMergeProjectionMode::THROW)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Projection is fully supported in {}MergeTree with deduplicate_merge_projection_mode = throw. "
-                "Use 'drop' or 'rebuild' option of deduplicate_merge_projection_mode.",
+                "Projections are not supported for {}MergeTree with deduplicate_merge_projection_mode = throw. "
+                "Please set setting 'deduplicate_merge_projection_mode' to 'drop' or 'rebuild'",
                 merging_params.getModeName());
     }
 

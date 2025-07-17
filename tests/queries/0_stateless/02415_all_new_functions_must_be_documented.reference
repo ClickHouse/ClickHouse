@@ -34,20 +34,6 @@ JSONType
 JSON_EXISTS
 JSON_QUERY
 JSON_VALUE
-L1Distance
-L1Norm
-L1Normalize
-L2Distance
-L2Norm
-L2Normalize
-L2SquaredDistance
-L2SquaredNorm
-LinfDistance
-LinfNorm
-LinfNormalize
-LpDistance
-LpNorm
-LpNormalize
 MACNumToString
 MACStringToNum
 MACStringToOUI
@@ -105,7 +91,6 @@ concatAssumeInjective
 connectionId
 cos
 cosh
-cosineDistance
 countDigits
 countMatches
 countMatchesCaseInsensitive
@@ -125,7 +110,6 @@ cutWWW
 dateDiff
 dateTime64ToSnowflake
 dateTimeToSnowflake
-dateTrunc
 decodeHTMLComponent
 decodeURLComponent
 decodeURLFormComponent
@@ -557,7 +541,6 @@ toIPv6OrDefault
 toIPv6OrNull
 toIPv6OrZero
 toISOWeek
-toISOYear
 toInt128
 toInt128OrDefault
 toInt128OrNull
@@ -638,8 +621,6 @@ toUnixTimestamp64Milli
 toUnixTimestamp64Nano
 toUnixTimestamp64Second
 toValidUTF8
-toWeek
-toYearWeek
 today
 transactionID
 transactionLatestSnapshot
