@@ -59,6 +59,7 @@ using namespace DB;
 namespace ProfileEvents
 {
 extern const Event HashJoinPreallocatedElementsInHashTables;
+extern const Event CHJAddBlock;
 }
 
 namespace CurrentMetrics
@@ -248,6 +249,9 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
 
 bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_limits)
 {
+    Stopwatch watch;
+    size_t deduct = 0;
+
     /// We materialize columns here to avoid materializing them multiple times on different threads
     /// (inside different `hash_join`-s) because the block will be shared.
     Block right_block = hash_joins[0]->data->materializeColumnsFromRightBlock(right_block_);
@@ -283,7 +287,9 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                     hash_join->space_was_preallocated = true;
                 }
 
+                auto start_inner = watch.elapsedMicroseconds();
                 bool limit_exceeded = !hash_join->data->addBlockToJoin(dispatched_block, check_limits);
+                deduct += watch.elapsedMicroseconds() - start_inner;
 
                 dispatched_block = {};
                 blocks_left--;
@@ -296,6 +302,8 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
 
     if (check_limits && table_join->sizeLimits().hasLimits())
         return table_join->sizeLimits().check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+
+    ProfileEvents::increment(ProfileEvents::CHJAddBlock, watch.elapsedMicroseconds() - deduct);
     return true;
 }
 

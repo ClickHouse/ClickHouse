@@ -34,6 +34,13 @@
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+
+namespace ProfileEvents
+{
+extern const Event HJAddBlock;
+}
+
 namespace DB
 {
 
@@ -587,6 +594,8 @@ bool HashJoin::addBlockToJoin(const Block & source_block, bool check_limits)
 
 bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HJAddBlock);
+
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join data was released");
 
