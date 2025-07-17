@@ -37,3 +37,12 @@ def test_remote(start_cluster):
         )
         == ""
     )
+
+
+def test_remote_fail(start_cluster):
+    assert (
+        "Unknown table expression identifier 'default.table_not_exists'"
+        in node1.query_and_get_error(
+            "SELECT 1 FROM remote('node2', view(SELECT * FROM default.table_not_exists)) WHERE (APIKey = 137715) AND (CustomAttributeId IN (45, 66)) AND (ProfileIDHash != 0) LIMIT 1"
+        )
+    )
