@@ -31,6 +31,8 @@ namespace Setting
     extern const SettingsBool enable_s3_requests_logging;
     extern const SettingsUInt64 s3_max_redirects;
     extern const SettingsUInt64 s3_retry_attempts;
+    extern const SettingsUInt64 s3_retry_scale_factor;
+    extern const SettingsUInt64 s3_retry_max_delay_ms;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
     extern const SettingsBool s3_slow_all_threads_after_retryable_error;
 }
@@ -67,6 +69,8 @@ namespace S3RequestSetting
 {
     extern const S3RequestSettingsUInt64 max_redirects;
     extern const S3RequestSettingsUInt64 retry_attempts;
+    extern const S3RequestSettingsUInt64 retry_scale_factor;
+    extern const S3RequestSettingsUInt64 retry_max_delay_ms;
     extern const S3RequestSettingsBool slow_all_threads_after_network_error;
     extern const S3RequestSettingsBool enable_request_logging;
 }
@@ -115,6 +119,14 @@ std::unique_ptr<S3::Client> getClient(
     if (!for_disk_s3 && local_settings.isChanged("s3_retry_attempts"))
         s3_retry_attempts = static_cast<unsigned int>(local_settings[Setting::s3_retry_attempts]);
 
+    unsigned int s3_retry_scale_factor = static_cast<unsigned int>(request_settings[S3RequestSetting::retry_scale_factor]);
+    if (!for_disk_s3 && local_settings.isChanged("s3_retry_scale_factor"))
+        s3_retry_scale_factor = static_cast<unsigned int>(local_settings[Setting::s3_retry_scale_factor]);
+
+    unsigned int s3_retry_max_delay_ms = static_cast<unsigned int>(request_settings[S3RequestSetting::retry_max_delay_ms]);
+    if (!for_disk_s3 && local_settings.isChanged("s3_retry_max_delay_ms"))
+        s3_retry_max_delay_ms = static_cast<unsigned int>(local_settings[Setting::s3_retry_max_delay_ms]);
+
     bool s3_slow_all_threads_after_network_error = request_settings[S3RequestSetting::slow_all_threads_after_network_error];
     if (!for_disk_s3 && local_settings.isChanged("s3_slow_all_threads_after_network_error"))
         s3_slow_all_threads_after_network_error = local_settings[Setting::s3_slow_all_threads_after_network_error];
@@ -153,6 +165,9 @@ std::unique_ptr<S3::Client> getClient(
 
     client_configuration.endpointOverride = url.endpoint;
     client_configuration.s3_use_adaptive_timeouts = auth_settings[S3AuthSetting::use_adaptive_timeouts];
+
+    client_configuration.s3_retry_scale_factor = s3_retry_scale_factor;
+    client_configuration.s3_retry_max_delay_ms = s3_retry_max_delay_ms;
 
     if (request_settings.proxy_resolver)
     {

@@ -593,6 +593,12 @@ Do not calculate a checksum when sending a file to S3. This speeds up writes by 
     DECLARE(UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, R"(
 Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries
 )", 0) \
+    DECLARE(UInt64, s3_retry_scale_factor, S3::DEFAULT_RETRY_SCALE_FACTOR, R"(
+Setting for Aws::Client::RetryStrategy, scale factor for exponential backoff of sleep time before retry of Aws::Client
+)", 0) \
+    DECLARE(UInt64, s3_retry_max_delay_ms, S3::DEFAULT_RETRY_MAX_DELAY_MS, R"(
+Setting for Aws::Client::RetryStrategy, max sleep time before each retry of Aws::Client
+)", 0) \
     DECLARE(UInt64, s3_request_timeout_ms, S3::DEFAULT_REQUEST_TIMEOUT_MS, R"(
 Idleness timeout for sending and receiving data to/from S3. Fail if a single TCP read or write call blocks for this long.
 )", 0) \
