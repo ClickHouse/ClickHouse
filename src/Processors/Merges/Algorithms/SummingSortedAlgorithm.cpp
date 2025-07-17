@@ -357,6 +357,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
 
         DataTypes argument_types;
         SummingSortedAlgorithm::AggregateDescription desc;
+        desc.sum_function_map_name = sum_function_map_name;
         SummingSortedAlgorithm::MapDescription map_desc;
 
         column_num_it = map.second.begin();
