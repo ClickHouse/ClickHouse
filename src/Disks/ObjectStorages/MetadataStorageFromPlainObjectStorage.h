@@ -12,7 +12,6 @@
 #include <memory>
 #include <string>
 #include <unordered_set>
-#include <vector>
 #include <Poco/Timestamp.h>
 
 
@@ -155,10 +154,6 @@ public:
     void replaceFile(const std::string & path_from, const std::string & path_to) override;
 
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
-
-    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
-
-    std::vector<std::string> listUncommittedDirectory(const std::string & path) const override;
 
     void commit() override;
 
