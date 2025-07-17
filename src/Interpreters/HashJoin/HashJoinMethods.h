@@ -22,7 +22,7 @@ struct Inserter
 
         if (emplace_result.isInserted() || join.anyTakeLastRow())
             new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_columns, i);
-        return emplace_result.isInserted();
+        return emplace_result.isInserted() || join.anyTakeLastRow();
     }
 
     static ALWAYS_INLINE bool
