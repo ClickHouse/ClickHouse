@@ -398,10 +398,7 @@ This function returns the angle in degrees between two points on a sphere.
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
- 
-        factory.registerFunction("greatCircleAngle", [](ContextPtr context) {
-          return std::make_shared<FunctionGeoDistance<Method::SPHERE_DEGREES>>(std::move(context)); 
-        }, documentation);
+        factory.registerFunction("greatCircleAngle", [](ContextPtr context) {return std::make_shared<FunctionGeoDistance<Method::SPHERE_DEGREES>>(std::move(context));}, documentation);
     }
     {
         FunctionDocumentation::Description description = R"(
@@ -430,9 +427,7 @@ Calculates the distance between two points on the Earth's surface using [the gre
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
  
-        factory.registerFunction("greatCircleDistance", [](ContextPtr context) {
-            return std::make_shared<FunctionGeoDistance<Method::SPHERE_METERS>>(std::move(context));
-        }, documentation);
+        factory.registerFunction("greatCircleDistance", [](ContextPtr context) {return std::make_shared<FunctionGeoDistance<Method::SPHERE_METERS>>(std::move(context));}, documentation);
     }
     {
         FunctionDocumentation::Description description = R"(
@@ -463,10 +458,7 @@ Technical note: for close enough points we calculate the distance using planar a
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
- 
-        factory.registerFunction("geoDistance", [](ContextPtr context) {
-            return std::make_shared<FunctionGeoDistance<Method::WGS84_METERS>>(std::move(context));
-        }, documentation);
+        factory.registerFunction("geoDistance", [](ContextPtr context) {return std::make_shared<FunctionGeoDistance<Method::WGS84_METERS>>(std::move(context));}, documentation);
     }
 }
 

@@ -200,7 +200,6 @@ This function throws an exception if the size of theresulting array exceeds more
         "Returns an array of precision-long strings of geohash-boxes covering the provided area, or an empty array if the minimum latitude and longitude values aren't less than the corresponding maximum values.",
         {"Array(String)"}
     };
- 
     FunctionDocumentation::Examples examples = {
         {
             "Basic usage",
@@ -215,7 +214,6 @@ This function throws an exception if the size of theresulting array exceeds more
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
- 
     factory.registerFunction<FunctionGeohashesInBox>(documentation);
 }
 
