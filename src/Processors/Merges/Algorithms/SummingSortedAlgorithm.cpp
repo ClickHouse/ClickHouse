@@ -14,8 +14,6 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
-#include <iostream>
-
 namespace DB
 {
 
@@ -55,7 +53,7 @@ struct SummingSortedAlgorithm::AggregateDescription
     bool remove_default_values;
     bool aggregate_all_columns;
 
-    String sum_function_name;
+    String sum_function_map_name;
 
     void init(const char * function_name, const DataTypes & argument_types)
     {
@@ -238,6 +236,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     const Names & column_names_to_sum,
     const Names & partition_and_sorting_required_columns,
     const String & sum_function_name,
+    const String & sum_function_map_name,
     bool remove_default_values,
     bool aggregate_all_columns)
 {
@@ -301,7 +300,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 SummingSortedAlgorithm::AggregateDescription desc;
                 desc.remove_default_values = remove_default_values;
                 desc.aggregate_all_columns = aggregate_all_columns;
-                desc.sum_function_name = sum_function_name;
+                desc.sum_function_map_name = sum_function_map_name;
                 desc.is_agg_func_type = is_agg_func;
                 desc.column_numbers = {i};
 
@@ -403,7 +402,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         if (map_desc.key_col_nums.size() == 1)
         {
             // Create summation for all value columns in the map
-            desc.init(desc.sum_function_name.c_str(), argument_types);
+            desc.init(desc.sum_function_map_name.c_str(), argument_types);
             def.columns_to_aggregate.emplace_back(std::move(desc));
         }
         else
@@ -743,11 +742,12 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
     size_t max_block_size_rows,
     size_t max_block_size_bytes,
     const String & sum_function_name,
+    const String & sum_function_map_name,
     bool remove_default_values,
     bool aggregate_all_columns)
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, std::move(description_))
     , columns_definition(
-          defineColumns(*header_, description, column_names_to_sum, partition_and_sorting_required_columns, sum_function_name, remove_default_values, aggregate_all_columns))
+          defineColumns(*header_, description, column_names_to_sum, partition_and_sorting_required_columns, sum_function_name, sum_function_map_name, remove_default_values, aggregate_all_columns))
     , merged_data(max_block_size_rows, max_block_size_bytes, columns_definition)
 {
 }

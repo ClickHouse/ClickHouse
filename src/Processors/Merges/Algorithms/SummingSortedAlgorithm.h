@@ -26,6 +26,7 @@ public:
         size_t max_block_size_rows,
         size_t max_block_size_bytes,
         const String & sum_function_name,
+        const String & sum_function_map_name,
         bool remove_default_values,
         bool aggregate_all_columns);
 
