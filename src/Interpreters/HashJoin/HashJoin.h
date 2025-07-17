@@ -403,6 +403,7 @@ public:
         bool sorted = false;
 
         bool all_values_unique = true;
+        bool all_join_was_promoted_to_right_any = false;
 
         size_t avgPerKeyRows() const
         {
