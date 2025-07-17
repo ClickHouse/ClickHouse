@@ -332,6 +332,12 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 object_storage_list_objects_cache_ttl;
 }
 
+namespace ErrorCodes
+{
+    extern const int STARTUP_SCRIPTS_ERROR;
+}
+
+}
 
 namespace CurrentMetrics
 {
