@@ -271,7 +271,6 @@ gccMurmurHash
 generateRandomStructure
 generateSerialID
 generateUUIDv4
-getClientHTTPHeader
 getMacro
 getMaxTableNameLengthForDatabase
 getMergeTreeSetting
