@@ -30,6 +30,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNICODE_ERROR;
+}
+
+
 std::vector<std::pair<String, UProperty>> getPropNames()
 {
     std::vector<std::pair<String, UProperty>> properties;
@@ -145,7 +151,8 @@ ColumnsDescription StorageSystemUnicode::getColumnsDescription()
 
 Block StorageSystemUnicode::getFilterSampleBlock() const
 {
-    return {
+    return
+    {
         { {}, std::make_shared<DataTypeString>(), "code_point" },
         { {}, std::make_shared<DataTypeInt32>(), "code_point_value" },
     };
@@ -153,17 +160,13 @@ Block StorageSystemUnicode::getFilterSampleBlock() const
 
 static ColumnPtr getFilteredCodePoints(const ActionsDAG::Node * predicate, ContextPtr context)
 {
-    icu::UnicodeSet all_unicode(0x0000, 0x10FFFF);
-    // Remove surrogate pairs
-    all_unicode.remove(0xD800, 0xDFFF);
-    // Remove non character code points
-    all_unicode.remove(0xFDD0, 0xFDEF);
-    // Remove non-character code points at the end of each Unicode plane
-    for (UChar32 base = 0xFFFE; base <= 0x10FFFF; base += 0x10000)
-    {
-        all_unicode.remove(base, base + 1);
-    }
-    icu::UnicodeSetIterator iter(all_unicode);
+    icu::UnicodeSet all_assigned;
+    UErrorCode status = U_ZERO_ERROR;
+    all_assigned.applyPattern("[[:Assigned:]]", status);
+    if (U_FAILURE(status))
+        throw Exception(ErrorCodes::UNICODE_ERROR, "Cannot obtain the list of assigned code points");
+
+    icu::UnicodeSetIterator iter(all_assigned);
 
     MutableColumnPtr code_point_column = ColumnString::create();
     MutableColumnPtr code_point_value_column = ColumnInt32::create();
@@ -198,27 +201,29 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr con
     auto prop_names = getPropNames();
 
     // Get filtered code points based on predicate
-    ColumnPtr filtered_code_points = getFilteredCodePoints(predicate, context);
+    ColumnPtr filtered_code_points_ptr = getFilteredCodePoints(predicate, context);
+    const ColumnInt32::Container & filtered_code_points = assert_cast<const ColumnInt32 &>(*filtered_code_points_ptr).getData();
+    size_t num_filtered_code_points = filtered_code_points.size();
 
-    for (size_t i = 0; i < filtered_code_points->size(); ++i)
+    for (size_t i = 0; i < num_filtered_code_points; ++i)
     {
-        UChar32 code = filtered_code_points->getInt(i);
-        int index = 0;
+        UChar32 code = filtered_code_points[i];
+        size_t column_index = 0;
 
         icu::UnicodeString u_value(code);
         String value;
         u_value.toUTF8String(value);
-        assert_cast<ColumnString &>(*res_columns[index++]).insert(value);
-        assert_cast<ColumnInt32 &>(*res_columns[index++]).insert(code);
+        assert_cast<ColumnString &>(*res_columns[column_index++]).insert(value);
+        assert_cast<ColumnInt32 &>(*res_columns[column_index++]).insert(code);
         // Unicode string notation
-        assert_cast<ColumnString &>(*res_columns[index++]).insert(fmt::format("U+{:04X}", code));
+        assert_cast<ColumnString &>(*res_columns[column_index++]).insert(fmt::format("U+{:04X}", code));
         size_t prop_index = 0;
         while (prop_index < prop_names.size())
         {
             const auto & [_, prop] = prop_names[prop_index];
             if (prop >= UCHAR_BINARY_LIMIT)
                 break;
-            assert_cast<ColumnUInt8 &>(*res_columns[index++]).insert(u_hasBinaryProperty(code, prop));
+            assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).insert(u_hasBinaryProperty(code, prop));
             ++prop_index;
         }
 
@@ -229,7 +234,7 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr con
                 break;
 
             // TODO: Using Int32 for now, not sure if Int16 would be sufficient
-            assert_cast<ColumnInt32 &>(*res_columns[index++]).insert(u_getIntPropertyValue(code, prop));
+            assert_cast<ColumnInt32 &>(*res_columns[column_index++]).insert(u_getIntPropertyValue(code, prop));
             ++prop_index;
         }
 
@@ -241,7 +246,7 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr con
             // Only handle UCHAR_GENERAL_CATEGORY_MASK
             // Result is a mask,, U_GC_L_MASK, U_GC_M_MASK, U_GC_N_MASK, U_GC_P_MASK, U_GC_S_MASK ...
             // Now we just use Int32 to store it
-            assert_cast<ColumnInt32 &>(*res_columns[index++]).insert(u_getIntPropertyValue(code, prop));
+            assert_cast<ColumnInt32 &>(*res_columns[column_index++]).insert(u_getIntPropertyValue(code, prop));
             ++prop_index;
         }
 
@@ -255,12 +260,12 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr con
                 auto type = u_getIntPropertyValue(code, UCHAR_NUMERIC_TYPE);
                 if (type == U_NT_NUMERIC)
                 {
-                    assert_cast<ColumnFloat64 &>(*res_columns[index++]).insert(u_getNumericValue(code));
+                    assert_cast<ColumnFloat64 &>(*res_columns[column_index++]).insert(u_getNumericValue(code));
                 }
                 else
                 {
                     // Not a numeric value, set to 0.0
-                    assert_cast<ColumnFloat64 &>(*res_columns[index++]).insert(0.0);
+                    assert_cast<ColumnFloat64 &>(*res_columns[column_index++]).insert(0.0);
                 }
             }
             ++prop_index;
@@ -354,7 +359,7 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr con
                 str.toUTF8String(ret);
             }
 
-            assert_cast<ColumnString &>(*res_columns[index++]).insert(ret);
+            assert_cast<ColumnString &>(*res_columns[column_index++]).insert(ret);
             ++prop_index;
         }
 
@@ -377,7 +382,7 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr con
                         arr.push_back(scx_val_array[j]);
                     }
                 }
-                assert_cast<ColumnArray &>(*res_columns[index++]).insert(arr);
+                assert_cast<ColumnArray &>(*res_columns[column_index++]).insert(arr);
             }
 
             // NOT handle UCHAR_IDENTIFIER_TYPE
