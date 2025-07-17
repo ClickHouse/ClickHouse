@@ -2632,8 +2632,12 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
     StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr();
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
     MergeTreeReaderSettings settings;
+    /// We need to read only prefixes, so no data will be read.
+    /// Use read settings without prefetches/filesystem cache/etc.
     settings.read_settings = getReadSettingsForMetadata();
     settings.can_read_part_without_marks = true;
+    /// Use prefixes deserialization thread pool to read prefixes faster.
+    /// In JSON type ther emight be hundreds of small files that needs to be read.
     settings.use_prefixes_deserialization_thread_pool = true;
 
     auto alter_conversions = std::make_shared<AlterConversions>();
