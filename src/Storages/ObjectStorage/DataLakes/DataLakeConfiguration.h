@@ -409,7 +409,7 @@ public:
 protected:
     /// Find storage_type argument and remove it from args if exists.
     /// Return storage type.
-    ObjectStorageType extractDynamicStorageType(ASTs & args, ContextPtr context, ASTPtr * type_arg = nullptr) const override
+    ObjectStorageType extractDynamicStorageType(ASTs & args, ContextPtr context, ASTPtr * type_arg) const override
     {
         static const auto storage_type_name = "storage_type";
 
@@ -480,7 +480,7 @@ protected:
 
     void createDynamicConfiguration(ASTs & args, ContextPtr context)
     {
-        ObjectStorageType type = extractDynamicStorageType(args, context);
+        ObjectStorageType type = extractDynamicStorageType(args, context, nullptr);
         createDynamicStorage(type);
     }
 
