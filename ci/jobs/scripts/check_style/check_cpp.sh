@@ -14,7 +14,7 @@
 
 LC_ALL="en_US.UTF-8"
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*.cpp|programs/keeper-bench/example.yaml|base/base/openpty.h'
+EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*.cpp|programs/keeper-bench/example.yaml|base/base/openpty.h|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema.h'
 EXCLUDE_DOCS='Settings\.cpp|FormatFactorySettings\.h'
 
 # From [1]:
@@ -324,7 +324,7 @@ ls -1d $ROOT_PATH/contrib/*-cmake | xargs -I@ find @ -name 'CMakeLists.txt' -or 
 # Wrong spelling of abbreviations, e.g. SQL is right, Sql is wrong. XMLHttpRequest is very wrong.
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE |
-    xargs grep -P 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -P 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3' &&
+    xargs grep -P 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -P 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3|ai::JsonValue|IcebergWrites' &&
     echo "Abbreviations such as SQL, XML, HTTP, should be in all caps. For example, SQL is right, Sql is wrong. XMLHttpRequest is very wrong."
 
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
@@ -353,6 +353,7 @@ QUOTE_EXCLUSIONS=(
     --exclude "$ROOT_PATH/utils/memcpy-bench/glibc/*"
 )
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | \
+  grep -vP $EXCLUDE |
   xargs grep -P '#include[\s]*(").*(")' "${QUOTE_EXCLUSIONS[@]}" | \
   grep -v -F -e \"config.h\" -e \"config_tools.h\" -e \"SQLGrammar.pb.h\" -e \"out.pb.h\" -e \"clickhouse_grpc.grpc.pb.h\" -e \"delta_kernel_ffi.hpp\" | \
   xargs -i echo "Found include with quotes in '{}'. Please use <> instead"

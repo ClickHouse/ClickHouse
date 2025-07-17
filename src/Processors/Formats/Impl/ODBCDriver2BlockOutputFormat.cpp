@@ -10,8 +10,8 @@
 namespace DB
 {
 ODBCDriver2BlockOutputFormat::ODBCDriver2BlockOutputFormat(
-    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_.getSerializations())
+    WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
+    : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_->getSerializations())
 {
 }
 
@@ -100,7 +100,7 @@ void registerOutputFormatODBCDriver2(FormatFactory & factory)
     factory.registerOutputFormat(
         "ODBCDriver2", [](WriteBuffer & buf, const Block & sample, const FormatSettings & format_settings)
         {
-            return std::make_shared<ODBCDriver2BlockOutputFormat>(buf, sample, format_settings);
+            return std::make_shared<ODBCDriver2BlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings);
         });
     factory.markOutputFormatNotTTYFriendly("ODBCDriver2");
     factory.setContentType("ODBCDriver2", "application/octet-stream");

@@ -346,7 +346,10 @@ void CacheMetadata::removeAllKeys(bool if_releasable, const UserID & user_id)
         for (auto it = bucket.begin(); it != bucket.end();)
         {
             if (!it->second->checkAccess(user_id))
+            {
+                ++it;
                 continue;
+            }
 
             auto locked_key = it->second->lockNoStateCheck();
             if (locked_key->getKeyState() == KeyMetadata::KeyState::ACTIVE)
