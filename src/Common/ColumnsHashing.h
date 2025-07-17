@@ -351,11 +351,11 @@ struct HashMethodSerialized
     std::vector<const UInt8 *> null_maps;
 
     /// Below fields are used only if prealloc is true.
-    std::atomic<bool> initialized{false};
+    mutable std::atomic<bool> initialized{false};
 
     PaddedPODArray<UInt64> row_sizes;
     size_t total_size = 0;
-    std::vector<StringRef> serialized_keys;
+    mutable std::vector<StringRef> serialized_keys;
 
     HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
         : key_columns(key_columns_), keys_size(key_columns_.size())
@@ -386,7 +386,7 @@ struct HashMethodSerialized
         }
     }
 
-    void lazyInitialize(Arena & pool)
+    void lazyInitialize(Arena & pool) const
     requires(prealloc)
     {
         const char * begin = nullptr;
