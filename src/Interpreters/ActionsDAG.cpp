@@ -24,6 +24,7 @@
 #include <Planner/PlannerActionsVisitor.h>
 
 #include <stack>
+#include <unordered_map>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
@@ -756,8 +757,13 @@ void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
 
 ActionsDAG ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases)
 {
-    ActionsDAG actions;
     std::unordered_map<const Node *, Node *> copy_map;
+    return cloneSubDAG(outputs, copy_map, remove_aliases);
+}
+
+ActionsDAG ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, NodePtrMap & copy_map, bool remove_aliases)
+{
+    ActionsDAG actions;
 
     struct Frame
     {
@@ -1755,6 +1761,12 @@ ActionsDAG ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
 
 void ActionsDAG::mergeInplace(ActionsDAG && second)
 {
+    std::unordered_map<const Node *, const Node *> inputs_map;
+    mergeInplace(std::move(second), inputs_map, false);
+}
+
+void ActionsDAG::mergeInplace(ActionsDAG && second, std::unordered_map<const Node *, const Node *> & inputs_map, bool remove_dangling_inputs)
+{
     auto & first = *this;
     /// first: x (1), x (2), y ==> x (2), z, x (3)
     /// second: x (1), x (2), x (3) ==> x (3), x (2), x (1)
@@ -1766,7 +1778,6 @@ void ActionsDAG::mergeInplace(ActionsDAG && second)
     /// The second element is the number of removes (cause one node may be repeated several times in result).
     std::unordered_map<const Node *, size_t> removed_first_result;
     /// Map inputs of `second` to nodes of `first`.
-    std::unordered_map<const Node *, const Node *> inputs_map;
 
     /// Update inputs list.
     {
@@ -1828,6 +1839,13 @@ void ActionsDAG::mergeInplace(ActionsDAG && second)
 
         first.outputs.swap(second.outputs);
     }
+
+    if (remove_dangling_inputs)
+        std::erase_if(second.nodes, [&inputs_map](const auto & node)
+        {
+            auto mapit = inputs_map.find(&node);
+            return mapit != inputs_map.end() && mapit->second != &node;
+        });
 
     first.nodes.splice(first.nodes.end(), std::move(second.nodes));
 }
@@ -1913,6 +1931,13 @@ void ActionsDAG::mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs
         if (node_to_move_it->type == ActionType::INPUT)
             inputs.push_back(&(*node_to_move_it));
     }
+}
+
+void ActionsDAG::unite(ActionsDAG && second)
+{
+    nodes.splice(nodes.end(), std::move(second.nodes));
+    inputs.append_range(second.inputs);
+    outputs.append_range(second.outputs);
 }
 
 ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping, bool avoid_duplicate_inputs) const
@@ -2483,7 +2508,7 @@ ColumnsWithTypeAndName prepareFunctionArguments(const ActionsDAG::NodeRawConstPt
 /// Create actions which calculate conjunction of selected nodes.
 /// Assume conjunction nodes are predicates (and may be used as arguments of function AND).
 ///
-/// Result actions add single column with conjunction result (it is always first in outputs).
+/// Result actions may add single column with conjunction result if it's not in outputs (then it is always first in outputs).
 /// No other columns are added or removed.
 std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs)
 {
@@ -3564,17 +3589,68 @@ static MutableColumnPtr deserializeConstant(
     return ColumnConst::create(std::move(column), 0);
 }
 
-void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const
+std::unordered_map<const ActionsDAG::Node *, size_t> ActionsDAG::getNodeToIdMap() const
 {
-    size_t nodes_size = nodes.size();
-    writeVarUInt(nodes_size, out);
-
     std::unordered_map<const Node *, size_t> node_to_id;
     for (const auto & node : nodes)
         node_to_id.emplace(&node, node_to_id.size());
 
-    if (nodes_size != node_to_id.size())
+    if (nodes.size() != node_to_id.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate nodes in ActionsDAG");
+
+    return node_to_id;
+}
+
+std::unordered_map<size_t, const ActionsDAG::Node *> ActionsDAG::getIdToNodeMap() const
+{
+    std::unordered_map<size_t, const Node *> id_to_node;
+    for (const auto & node : nodes)
+        id_to_node.emplace(id_to_node.size(), &node);
+
+    return id_to_node;
+}
+
+void ActionsDAG::serializeNodeList(WriteBuffer & out, const std::unordered_map<const Node *, size_t> & node_to_id, const NodeRawConstPtrs & nodes)
+{
+    writeVarUInt(nodes.size(), out);
+    for (const auto * node : nodes)
+    {
+        if (auto it = node_to_id.find(node); it != node_to_id.end())
+            writeVarUInt(it->second, out);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find node '{}' in node map", node->result_name);
+    }
+}
+
+ActionsDAG::NodeRawConstPtrs ActionsDAG::deserializeNodeList(ReadBuffer & in, const std::unordered_map<size_t, const Node *> & node_map)
+{
+    size_t num_nodes;
+    readVarUInt(num_nodes, in);
+    if (num_nodes > node_map.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Number of nodes {} is greater than number of nodes in node map {}", num_nodes, node_map.size());
+
+    NodeRawConstPtrs nodes(num_nodes);
+
+    for (size_t i = 0; i < num_nodes; ++i)
+    {
+        size_t node_id;
+        readVarUInt(node_id, in);
+        if (auto it = node_map.find(node_id); it != node_map.end())
+            nodes[i] = it->second;
+        else
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot find node with id {} in node map", node_id);
+    }
+
+    return nodes;
+}
+
+
+void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const
+{
+    auto node_to_id = getNodeToIdMap();
+    size_t nodes_size = node_to_id.size();
+
+    writeVarUInt(nodes_size, out);
 
     for (const auto & node : nodes)
     {
@@ -3823,6 +3899,14 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
     dag.outputs = std::move(outputs);
 
     return dag;
+}
+
+bool ActionsDAG::containsNode(const Node * node)
+{
+    for (const auto & dag_node : nodes)
+        if (&dag_node == node)
+            return true;
+    return false;
 }
 
 }

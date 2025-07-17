@@ -61,6 +61,7 @@ struct QueryPlanOptimizationSettings
     /// true/false - always/never swap
     /// nullopt - swap if it's beneficial
     std::optional<bool> join_swap_table;
+    bool optimize_join_order;
 
     /// --- Second-pass optimizations
     bool optimize_prewhere;

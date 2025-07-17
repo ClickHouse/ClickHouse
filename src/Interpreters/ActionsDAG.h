@@ -135,6 +135,12 @@ public:
     std::string dumpNames() const;
     std::string dumpDAG() const;
 
+    std::unordered_map<size_t, const Node *> getIdToNodeMap() const;
+    std::unordered_map<const Node *, size_t> getNodeToIdMap() const;
+
+    static void serializeNodeList(WriteBuffer & out, const std::unordered_map<const Node *, size_t> & node_to_id, const NodeRawConstPtrs & nodes);
+    static NodeRawConstPtrs deserializeNodeList(ReadBuffer & in, const std::unordered_map<size_t, const Node *> & node_map);
+
     void serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const;
     static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context);
 
@@ -270,10 +276,12 @@ public:
     void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
 
-    ActionsDAG clone(std::unordered_map<const Node *, Node *> & old_to_new_nodes) const;
+    using NodePtrMap = std::unordered_map<const Node *, Node *>;
+    ActionsDAG clone(NodePtrMap & old_to_new_nodes) const;
     ActionsDAG clone() const;
 
     static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases);
+    static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, NodePtrMap & copy_map, bool remove_aliases);
 
     /// Execute actions for header. Input block must have empty columns.
     /// Result should be equal to the execution of ExpressionActions built from this DAG.
@@ -330,14 +338,19 @@ public:
     /// Otherwise, any two actions may be combined.
     static ActionsDAG merge(ActionsDAG && first, ActionsDAG && second);
 
+    using NodeMapping = std::unordered_map<const Node *, const Node *>;
     /// The result is similar to merge(*this, second);
     /// Invariant : no nodes are removed from the first (this) DAG.
     /// So that pointers to nodes are kept valid.
     void mergeInplace(ActionsDAG && second);
+    void mergeInplace(ActionsDAG && second, NodeMapping & inputs_map, bool remove_dangling_inputs);
 
     /// Merge current nodes with specified dag nodes.
     /// *out_outputs is filled with pointers to the nodes corresponding to second.getOutputs().
     void mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs = nullptr);
+
+    /// Union current nodes with second dag without any matching of inputs and outputs.
+    void unite(ActionsDAG && second);
 
     struct SplitResult;
 
@@ -459,6 +472,10 @@ public:
     UInt64 getHash() const;
     void updateHash(SipHash & hash_state) const;
 
+    static std::optional<ActionsForFilterPushDown> createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
+
+    bool containsNode(const Node * node);
+
 private:
     NodeRawConstPtrs getParents(const Node * target) const;
 
@@ -475,8 +492,6 @@ private:
 #if USE_EMBEDDED_COMPILER
     void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
-
-    static std::optional<ActionsForFilterPushDown> createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
 
     void removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter);
 };

@@ -12,6 +12,9 @@
 namespace DB
 {
 
+class StorageSystemNumbers;
+struct StorageID;
+
 class ReadFromSystemNumbersStep final : public SourceStepWithFilter
 {
 public:
@@ -30,7 +33,14 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
+    UInt64 getNumberOfRows() const;
+
+    String getColumnName() const;
+    StorageID getStorageID() const;
+
 private:
+    const StorageSystemNumbers & getStorage() const;
+
     /// Fail fast if estimated number of rows to read exceeds the limit
     void checkLimits(size_t rows);
 
