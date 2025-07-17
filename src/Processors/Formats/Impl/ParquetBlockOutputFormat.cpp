@@ -76,7 +76,7 @@ namespace
     }
 }
 
-ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
+ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
     : IOutputFormat(header_, out_), format_settings{format_settings_}
 {
     if (format_settings.parquet.use_custom_encoder)
@@ -114,7 +114,7 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Blo
         options.bloom_filter_flush_threshold_bytes = format_settings.parquet.bloom_filter_flush_threshold_bytes;
         options.write_geometadata = format_settings.parquet.write_geometadata;
 
-        schema = convertSchema(header_, options);
+        schema = convertSchema(*header_, options);
     }
 }
 
@@ -591,7 +591,7 @@ void registerOutputFormatParquet(FormatFactory & factory)
            const Block & sample,
            const FormatSettings & format_settings)
         {
-            return std::make_shared<ParquetBlockOutputFormat>(buf, sample, format_settings);
+            return std::make_shared<ParquetBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings);
         });
     factory.markFormatHasNoAppendSupport("Parquet");
     factory.markOutputFormatNotTTYFriendly("Parquet");

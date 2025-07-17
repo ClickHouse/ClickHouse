@@ -1468,6 +1468,7 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     const Block & header_,
     const std::string & format_name_,
     const FormatSettings & format_settings_,
+    const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse_,
     bool allow_missing_columns_,
     bool null_as_default_,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
@@ -1485,6 +1486,7 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     , case_insensitive_matching(case_insensitive_matching_)
     , is_stream(is_stream_)
     , enable_json_parsing(enable_json_parsing_)
+    , parquet_columns_to_clickhouse(parquet_columns_to_clickhouse_)
 {
 }
 
@@ -1504,12 +1506,14 @@ Chunk ArrowColumnToCHColumn::arrowTableToCHChunk(
 
         auto arrow_field = table->schema()->GetFieldByName(column_name);
 
+        if (parquet_columns_to_clickhouse)
+            column_name = parquet_columns_to_clickhouse->at(column_name);
+
         if (case_insensitive_matching)
             boost::to_lower(column_name);
 
         name_to_arrow_column[std::move(column_name)] = {std::move(arrow_column), std::move(arrow_field)};
     }
-
     return arrowColumnsToCHChunk(name_to_arrow_column, num_rows, metadata, block_missing_values);
 }
 

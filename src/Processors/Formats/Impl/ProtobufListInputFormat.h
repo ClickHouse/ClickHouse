@@ -27,7 +27,7 @@ class ProtobufListInputFormat final : public IRowInputFormat
 public:
     ProtobufListInputFormat(
         ReadBuffer & in_,
-        const Block & header_,
+        SharedHeader header_,
         const Params & params_,
         const ProtobufSchemaInfo & schema_info_,
         bool flatten_google_wrappers_,

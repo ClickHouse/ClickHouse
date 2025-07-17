@@ -18,7 +18,7 @@ class AggregatingSortedTransform final : public IMergingTransform<AggregatingSor
 {
 public:
     AggregatingSortedTransform(
-        const Block & header,
+        SharedHeader header,
         size_t num_inputs,
         SortDescription description_,
         size_t max_block_size_rows,
