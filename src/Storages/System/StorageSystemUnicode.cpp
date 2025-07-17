@@ -160,7 +160,16 @@ Block StorageSystemUnicode::getFilterSampleBlock() const
     };
 }
 
-static Block getFilteredCodePoints(const ActionsDAG::Node * predicate, ContextPtr context)
+static void toUTF8(UChar32 code, IColumn & column, Poco::UTF8Encoding & encoding)
+{
+    uint8_t utf8[4]{};
+    int res = encoding.convert(code, utf8, 4);
+    if (!res || res > 4)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert code point {} to UTF-8", code);
+    assert_cast<ColumnString &>(column).insertData(reinterpret_cast<const char *>(utf8), res);
+}
+
+static Block getFilteredCodePoints(const ActionsDAG::Node * predicate, ContextPtr context, Poco::UTF8Encoding & encoding)
 {
     icu::UnicodeSet all_assigned;
     UErrorCode status = U_ZERO_ERROR;
@@ -171,16 +180,11 @@ static Block getFilteredCodePoints(const ActionsDAG::Node * predicate, ContextPt
     auto code_point_column = ColumnString::create();
     auto code_point_value_column = ColumnInt32::create();
 
-    uint8_t buf[4]{};
-    Poco::UTF8Encoding encoding;
     icu::UnicodeSetIterator iter(all_assigned);
     while (iter.next())
     {
         UChar32 code = iter.getCodepoint();
-        int res = encoding.convert(code, buf, 4);
-        if (!res || res > 4)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert code point {} to UTF-8", code);
-        code_point_column->insertData(reinterpret_cast<const char *>(buf), res);
+        toUTF8(code, *code_point_column, encoding);
         code_point_value_column->getData().push_back(code);
     }
 
@@ -196,6 +200,8 @@ static Block getFilteredCodePoints(const ActionsDAG::Node * predicate, ContextPt
 
 void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
 {
+    Poco::UTF8Encoding encoding;
+
     /// Common buffers/err_code used for ICU API calls
     UChar buffer[32];
     char char_name_buffer[100];
@@ -204,7 +210,7 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr con
     auto prop_names = getPropNames();
 
     /// Get filtered code points based on the predicate.
-    Block filtered_block = getFilteredCodePoints(predicate, context);
+    Block filtered_block = getFilteredCodePoints(predicate, context, encoding);
     size_t num_filtered_code_points = filtered_block.rows();
 
     res_columns[0] = IColumn::mutate(std::move(filtered_block.getByPosition(0).column));
@@ -333,7 +339,6 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr con
             if (prop >= UCHAR_STRING_LIMIT)
                 break;
 
-            String ret;
             if (prop == UCHAR_AGE)
             {
                 UVersionInfo version_info;
@@ -341,13 +346,12 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr con
                 // format version info to string
                 char uvbuf[U_MAX_VERSION_STRING_LENGTH];
                 u_versionToString(version_info, uvbuf);
-                ret = String(uvbuf);
+                assert_cast<ColumnString &>(*res_columns[column_index++]).insertData(uvbuf, strlen(uvbuf));
             }
             else if (prop == UCHAR_BIDI_MIRRORING_GLYPH)
             {
                 auto cm = u_charMirror(code);
-                icu::UnicodeString str(cm);
-                str.toUTF8String(ret);
+                toUTF8(cm, *res_columns[column_index++], encoding);
             }
             else if (prop == UCHAR_CASE_FOLDING)
             {
@@ -357,7 +361,9 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr con
                 U16_APPEND_UNSAFE(s, length, code);
                 u_strFoldCase(buffer, 32, s, length, U_FOLD_CASE_DEFAULT, &err_code);
                 icu::UnicodeString str(buffer);
+                String ret;
                 str.toUTF8String(ret);
+                assert_cast<ColumnString &>(*res_columns[column_index++]).insert(ret);
             }
             else if (prop == UCHAR_LOWERCASE_MAPPING)
             {
@@ -367,37 +373,35 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr con
                 U16_APPEND_UNSAFE(s, length, code);
                 u_strToLower(buffer, 32, s, length, "", &err_code);
                 icu::UnicodeString str(buffer);
+                String ret;
                 str.toUTF8String(ret);
+                assert_cast<ColumnString &>(*res_columns[column_index++]).insert(ret);
             }
             else if (prop == UCHAR_NAME)
             {
                 auto len = u_charName(code, U_UNICODE_CHAR_NAME, char_name_buffer, sizeof(char_name_buffer), &err_code);
-                ret.assign(char_name_buffer, len);
+                assert_cast<ColumnString &>(*res_columns[column_index++]).insertData(char_name_buffer, len);
             }
             else if (prop == UCHAR_SIMPLE_CASE_FOLDING)
             {
                 auto cp = u_foldCase(code, U_FOLD_CASE_DEFAULT);
-                icu::UnicodeString str(cp);
-                str.toUTF8String(ret);
+                toUTF8(cp, *res_columns[column_index++], encoding);
             }
             else if (prop == UCHAR_SIMPLE_LOWERCASE_MAPPING)
             {
                 auto cp = u_tolower(code);
-                icu::UnicodeString str(cp);
-                str.toUTF8String(ret);
+                toUTF8(cp, *res_columns[column_index++], encoding);
             }
             // Now there is no code point where the two properties are different
             else if (prop == UCHAR_SIMPLE_TITLECASE_MAPPING || prop == UCHAR_TITLECASE_MAPPING)
             {
                 auto cp = u_totitle(code);
-                icu::UnicodeString str(cp);
-                str.toUTF8String(ret);
+                toUTF8(cp, *res_columns[column_index++], encoding);
             }
             else if (prop == UCHAR_SIMPLE_UPPERCASE_MAPPING)
             {
                 auto cp = u_toupper(code);
-                icu::UnicodeString str(cp);
-                str.toUTF8String(ret);
+                toUTF8(cp, *res_columns[column_index++], encoding);
             }
             else if (prop == UCHAR_UPPERCASE_MAPPING)
             {
@@ -406,17 +410,24 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr con
                 int32_t length = 0;
                 U16_APPEND_UNSAFE(s, length, code);
                 u_strToUpper(buffer, 32, s, length, "", &err_code);
+                String ret;
                 icu::UnicodeString str(buffer);
                 str.toUTF8String(ret);
+                assert_cast<ColumnString &>(*res_columns[column_index++]).insert(ret);
             }
             else if (prop == UCHAR_BIDI_PAIRED_BRACKET)
             {
                 auto cp = u_getBidiPairedBracket(code);
+                String ret;
                 icu::UnicodeString str(cp);
                 str.toUTF8String(ret);
+                assert_cast<ColumnString &>(*res_columns[column_index++]).insert(ret);
+            }
+            else
+            {
+                assert_cast<ColumnString &>(*res_columns[column_index++]).insertDefault();
             }
 
-            assert_cast<ColumnString &>(*res_columns[column_index++]).insert(ret);
             ++prop_index;
         }
 
@@ -444,7 +455,7 @@ void StorageSystemUnicode::fillData(MutableColumns & res_columns, ContextPtr con
 
             // NOT handle UCHAR_IDENTIFIER_TYPE
 
-            prop_index++;
+            ++prop_index;
         }
     }
 }
