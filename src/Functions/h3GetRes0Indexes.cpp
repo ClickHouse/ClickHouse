@@ -84,7 +84,6 @@ Returns an array of all the resolution 0 [H3](#h3-index) indices.
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-    
     factory.registerFunction<FunctionH3GetRes0Indexes>(documentation);
 }
 

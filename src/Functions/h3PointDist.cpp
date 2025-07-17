@@ -180,7 +180,6 @@ distance between pairs of GeoCoord points (latitude/longitude) in meters.
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-    
     factory.registerFunction<FunctionH3PointDist<H3PointDistM>>(documentation);
 }
 REGISTER_FUNCTION(H3PointDistKm)
@@ -214,7 +213,6 @@ distance between pairs of GeoCoord points (latitude/longitude) in kilometers.
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-    
     factory.registerFunction<FunctionH3PointDist<H3PointDistKm>>(documentation);
 }
 REGISTER_FUNCTION(H3PointDistRads)
@@ -248,7 +246,6 @@ distance between pairs of GeoCoord points (latitude/longitude) in radians.
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-    
     factory.registerFunction<FunctionH3PointDist<H3PointDistRads>>(documentation);
 }
 
