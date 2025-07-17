@@ -402,9 +402,6 @@ public:
         /// Whether the right table reranged by key
         bool sorted = false;
 
-        bool all_values_unique = true;
-        bool all_join_was_promoted_to_right_any = false;
-
         size_t avgPerKeyRows() const
         {
             if (keys_to_join == 0)
@@ -412,6 +409,9 @@ public:
             return rows_to_join / keys_to_join;
         }
     };
+
+    bool all_values_unique = true;
+    bool all_join_was_promoted_to_right_any = false;
 
     using RightTableDataPtr = std::shared_ptr<RightTableData>;
 
