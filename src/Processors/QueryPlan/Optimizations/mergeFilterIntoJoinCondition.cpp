@@ -187,7 +187,7 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
             if ((lhs_side == ExpressionSide::LEFT && rhs_side == ExpressionSide::RIGHT)
              || (lhs_side == ExpressionSide::RIGHT && rhs_side == ExpressionSide::LEFT))
             {
-                result.emplace_back(ActionsDAG::cloneSubDAG({ lhs, rhs }, true));
+                result.emplace_back(ActionsDAG::cloneSubDAG({ conjunct }, true));
                 conjuncts_to_replace.insert(conjunct);
                 continue;
             }

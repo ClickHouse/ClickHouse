@@ -923,7 +923,8 @@ void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
             lookup_step->optimize(optimization_settings);
     }
 
-    if (!optimization_settings.optimize_join_order)
+    if (!optimization_settings.optimize_join_order ||
+        join_step->getJoinOperator().strictness != JoinStrictness::All)
     {
         /// TODO: we still can try swap tables if query_plan_join_swap_table is enabled
         join_step->setOptimized();
