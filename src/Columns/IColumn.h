@@ -272,11 +272,15 @@ public:
     /// Return pointer to the end of the serialization data.
     virtual char * serializeValueIntoMemory(size_t /* n */, char * /* memory */) const;
 
+    virtual void batchSerializeValueIntoMemory(std::vector<char *> & /* memories */) const;
+
     /// Nullable variant to avoid calling virtualized method inside ColumnNullable.
     virtual StringRef
     serializeValueIntoArenaWithNull(size_t /* n */, Arena & /* arena */, char const *& /* begin */, const UInt8 * /* is_null */) const;
 
     virtual char * serializeValueIntoMemoryWithNull(size_t /* n */, char * /* memory */, const UInt8 * /* is_null */) const;
+
+    virtual void batchSerializeValueIntoMemoryWithNull(std::vector<char *> & /* memories */, const UInt8 * /* is_null */) const;
 
     /// Calculate all the sizes of serialized data in column, then added to `sizes`.
     /// If `is_null` is not nullptr, also take null bit into account.
@@ -823,8 +827,12 @@ private:
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const override;
-    StringRef serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const override;
+    void batchSerializeValueIntoMemoryWithNull(std::vector<char *> & memories, const UInt8 * is_null) const override;
+
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
+    void batchSerializeValueIntoMemory(std::vector<char *> & memories) const override;
+
+    StringRef serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
 };
 

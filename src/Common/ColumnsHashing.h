@@ -349,7 +349,13 @@ struct HashMethodSerialized
     ColumnRawPtrs key_columns;
     size_t keys_size;
     std::vector<const UInt8 *> null_maps;
+
+    /// Below fields are used only if prealloc is true.
+    std::atomic<bool> initialized{false};
+
     PaddedPODArray<UInt64> row_sizes;
+    size_t total_size = 0;
+    std::vector<StringRef> serialized_keys;
 
     HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
         : key_columns(key_columns_), keys_size(key_columns_.size())
@@ -370,9 +376,44 @@ struct HashMethodSerialized
         if constexpr (prealloc)
         {
             null_maps.resize(keys_size);
+
+            /// Calculate serialized value size for each key column in each row.
             for (size_t i = 0; i < keys_size; ++i)
                 key_columns[i]->collectSerializedValueSizes(row_sizes, null_maps[i]);
+
+            for (auto row_size : row_sizes)
+                total_size += row_size;
         }
+    }
+
+    void lazyInitialize(Arena & pool)
+    requires(prealloc)
+    {
+        const char * begin = nullptr;
+        char * memory = pool.allocContinue(total_size, begin);
+
+        size_t rows = row_sizes.size();
+        std::vector<char *> memories(rows);
+        serialized_keys.resize(rows);
+        for (size_t i = 0; i < row_sizes.size(); ++i)
+        {
+            memories[i] = memory;
+            serialized_keys[i].data = memory;
+            serialized_keys[i].size = row_sizes[i];
+
+            memory += row_sizes[i];
+        }
+
+        for (size_t i = 0; i < keys_size; ++i)
+        {
+            if constexpr (nullable)
+                key_columns[i]->batchSerializeValueIntoMemoryWithNull(memories, null_maps[i]);
+
+            else
+                key_columns[i]->batchSerializeValueIntoMemory(memories);
+        }
+
+        initialized = true;
     }
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
@@ -381,19 +422,10 @@ struct HashMethodSerialized
     {
         if constexpr (prealloc)
         {
-            const char * begin = nullptr;
+            if (!initialized) [[unlikely]]
+                lazyInitialize(pool);
 
-            char * memory = pool.allocContinue(row_sizes[row], begin);
-            StringRef key(memory, row_sizes[row]);
-            for (size_t j = 0; j < keys_size; ++j)
-            {
-                if constexpr (nullable)
-                    memory = key_columns[j]->serializeValueIntoMemoryWithNull(row, memory, null_maps[j]);
-                else
-                    memory = key_columns[j]->serializeValueIntoMemory(row, memory);
-            }
-
-            return SerializedKeyHolder{key, pool};
+            return SerializedKeyHolder{serialized_keys[row], pool};
         }
         else if constexpr (nullable)
         {

@@ -146,6 +146,11 @@ char * IColumn::serializeValueIntoMemory(size_t /* n */, char * /* memory */) co
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemory is not supported for {}", getName());
 }
 
+void IColumn::batchSerializeValueIntoMemory(std::vector<char *> & /* memories */) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method batchSerializeValueIntoMemory is not supported for {}", getName());
+}
+
 StringRef
 IColumn::serializeValueIntoArenaWithNull(size_t /* n */, Arena & /* arena */, char const *& /* begin */, const UInt8 * /* is_null */) const
 {
@@ -155,6 +160,11 @@ IColumn::serializeValueIntoArenaWithNull(size_t /* n */, Arena & /* arena */, ch
 char * IColumn::serializeValueIntoMemoryWithNull(size_t /* n */, char * /* memory */, const UInt8 * /* is_null */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemoryWithNull is not supported for {}", getName());
+}
+
+void IColumn::batchSerializeValueIntoMemoryWithNull(std::vector<char *> & /* memories */, const UInt8 * /* is_null */) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method batchSerializeValueIntoMemoryWithNull is not supported for {}", getName());
 }
 
 void IColumn::collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */) const
@@ -580,6 +590,17 @@ char * IColumnHelper<Derived, Parent>::serializeValueIntoMemoryWithNull(size_t n
 }
 
 template <typename Derived, typename Parent>
+void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemoryWithNull(std::vector<char *> & memories, const UInt8 * is_null) const
+{
+    const auto & self = static_cast<const Derived &>(*this);
+
+    for (size_t i = 0; i < self.size(); ++i)
+    {
+        memories[i] = self.serializeValueIntoMemoryWithNull(i, memories[i], is_null);
+    }
+}
+
+template <typename Derived, typename Parent>
 char * IColumnHelper<Derived, Parent>::serializeValueIntoMemory(size_t n, char * memory) const
 {
     if constexpr (!std::is_base_of_v<ColumnFixedSizeHelper, Derived>)
@@ -589,6 +610,16 @@ char * IColumnHelper<Derived, Parent>::serializeValueIntoMemory(size_t n, char *
     auto raw_data = self.getDataAt(n);
     memcpy(memory, raw_data.data, raw_data.size);
     return memory + raw_data.size;
+}
+
+template <typename Derived, typename Parent>
+void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemory(std::vector<char *> & memories) const
+{
+    const auto & self = static_cast<const Derived &>(*this);
+    for (size_t i = 0; i < self.size(); ++i)
+    {
+        memories[i] = self.serializeValueIntoMemory(i, memories[i]);
+    }
 }
 
 template <typename Derived, typename Parent>
