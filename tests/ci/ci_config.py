@@ -362,7 +362,7 @@ class CI:
             required_builds=[BuildNames.PACKAGE_MSAN], release_only=True
         ),
         JobNames.UPGRADE_TEST_ASAN: CommonJobConfigs.UPGRADE_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_AARCH64_ASAN],
+            required_builds=[BuildNames.PACKAGE_ASAN],
             random_bucket="upgrade_with_sanitizer",
             pr_only=True,
         ),

@@ -3940,8 +3940,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         if (merging_params.mode != MergingParams::Mode::Ordinary
             && (*settings_from_storage)[MergeTreeSetting::deduplicate_merge_projection_mode] == DeduplicateMergeProjectionMode::THROW)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Projection is fully supported in {} with deduplicate_merge_projection_mode = throw. "
-                "Use 'drop' or 'rebuild' option of deduplicate_merge_projection_mode.",
+                "ADD PROJECTION is not supported in {} with deduplicate_merge_projection_mode = throw. "
+                "Please set setting 'deduplicate_merge_projection_mode' to 'drop' or 'rebuild'",
                 getName());
     }
 
@@ -9404,12 +9404,12 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
 
     pipeline_builder.resize(1);
     pipeline_builder.addTransform(std::make_shared<SimpleSquashingChunksTransform>(
-        pipeline_builder.getHeader(),
+        pipeline_builder.getSharedHeader(),
         query_context->getSettingsRef()[Setting::min_insert_block_size_rows],
         query_context->getSettingsRef()[Setting::min_insert_block_size_bytes]));
 
     /// Required by MergeTree sinks.
-    pipeline_builder.addSimpleTransform([&](const Block & header) -> ProcessorPtr
+    pipeline_builder.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
     {
         return std::make_shared<DeduplicationToken::AddTokenInfoTransform>(header);
     });

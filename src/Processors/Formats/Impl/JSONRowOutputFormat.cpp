@@ -12,12 +12,12 @@ namespace DB
 
 JSONRowOutputFormat::JSONRowOutputFormat(
     WriteBuffer & out_,
-    const Block & header,
+    SharedHeader header,
     const FormatSettings & settings_,
     bool yield_strings_)
     : RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>(header, out_, settings_.json.valid_output_on_exception, true), settings(settings_), yield_strings(yield_strings_)
 {
-    names = JSONUtils::makeNamesValidJSONStrings(header.getNames(), settings, true);
+    names = JSONUtils::makeNamesValidJSONStrings(header->getNames(), settings, true);
     ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
     settings.json.pretty_print_indent = '\t';
     settings.json.pretty_print_indent_multiplier = 1;
@@ -153,7 +153,7 @@ void registerOutputFormatJSON(FormatFactory & factory)
         const Block & sample,
         const FormatSettings & format_settings)
     {
-        return std::make_shared<JSONRowOutputFormat>(buf, sample, format_settings, false);
+        return std::make_shared<JSONRowOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings, false);
     });
 
     factory.markOutputFormatSupportsParallelFormatting("JSON");
@@ -165,7 +165,7 @@ void registerOutputFormatJSON(FormatFactory & factory)
         const Block & sample,
         const FormatSettings & format_settings)
     {
-        return std::make_shared<JSONRowOutputFormat>(buf, sample, format_settings, true);
+        return std::make_shared<JSONRowOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings, true);
     });
 
     factory.markOutputFormatSupportsParallelFormatting("JSONStrings");

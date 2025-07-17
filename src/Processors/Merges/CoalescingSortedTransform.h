@@ -16,7 +16,7 @@ class CoalescingSortedTransform final : public IMergingTransform<SummingSortedAl
 public:
 
     CoalescingSortedTransform(
-        const Block & header, size_t num_inputs,
+        SharedHeader header, size_t num_inputs,
         SortDescription description_,
         const Names & partition_and_sorting_required_columns,
         const Names & partition_key_columns,
