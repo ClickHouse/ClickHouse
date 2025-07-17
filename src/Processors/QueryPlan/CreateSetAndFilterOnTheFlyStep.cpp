@@ -98,7 +98,7 @@ CreateSetAndFilterOnTheFlyStep::CrosswiseConnectionPtr CreateSetAndFilterOnTheFl
 }
 
 CreateSetAndFilterOnTheFlyStep::CreateSetAndFilterOnTheFlyStep(
-    const Header & input_header_,
+    const SharedHeader & input_header_,
     const Names & column_names_,
     size_t max_rows_in_set_,
     CrosswiseConnectionPtr crosswise_connection_,
@@ -117,13 +117,13 @@ CreateSetAndFilterOnTheFlyStep::CreateSetAndFilterOnTheFlyStep(
     if (input_headers.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Step requires exactly one input stream, got {}", input_headers.size());
 
-    own_set->setHeader(getColumnSubset(input_headers[0], column_names));
+    own_set->setHeader(getColumnSubset(*input_headers[0], column_names));
 }
 
 void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     size_t num_streams = pipeline.getNumStreams();
-    pipeline.addSimpleTransform([this, num_streams](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+    pipeline.addSimpleTransform([this, num_streams](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;
@@ -163,7 +163,7 @@ void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pi
         for (size_t i = 0; i < outputs.size() - 1; ++i)
         {
             auto & port = *output_it++;
-            auto transform = std::make_shared<FilterBySetOnTheFlyTransform>(port.getHeader(), column_names, filtering_set);
+            auto transform = std::make_shared<FilterBySetOnTheFlyTransform>(port.getSharedHeader(), column_names, filtering_set);
             transform->setDescription("Filter rows using other join table side's set");
             connect(port, transform->getInputPort());
             result_transforms.emplace_back(std::move(transform));
@@ -197,7 +197,7 @@ void CreateSetAndFilterOnTheFlyStep::updateOutputHeader()
     if (input_headers.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} requires exactly one input stream, got {}", getName(), input_headers.size());
 
-    own_set->setHeader(getColumnSubset(input_headers[0], column_names));
+    own_set->setHeader(getColumnSubset(*input_headers[0], column_names));
 
     output_header = input_headers.front();
 }

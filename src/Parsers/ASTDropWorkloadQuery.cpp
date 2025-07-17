@@ -12,13 +12,12 @@ ASTPtr ASTDropWorkloadQuery::clone() const
 
 void ASTDropWorkloadQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "DROP WORKLOAD ";
+    ostr << "DROP WORKLOAD ";
 
     if (if_exists)
         ostr << "IF EXISTS ";
 
-    ostr << (settings.hilite ? hilite_none : "");
-    ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(workload_name) << (settings.hilite ? hilite_none : "");
+    ostr << backQuoteIfNeed(workload_name);
     formatOnCluster(ostr, settings);
 }
 

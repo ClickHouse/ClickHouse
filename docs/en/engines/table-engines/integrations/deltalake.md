@@ -7,11 +7,11 @@ slug: /engines/table-engines/integrations/deltalake
 title: 'DeltaLake Table Engine'
 ---
 
-# DeltaLake Table Engine
+# DeltaLake table engine
 
 This engine provides a read-only integration with existing [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3.
 
-## Create Table {#create-table}
+## Create table {#create-table}
 
 Note that the Delta Lake table must already exist in S3, this command does not take DDL parameters to create a new table.
 

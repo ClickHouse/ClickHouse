@@ -23,31 +23,31 @@ To implement the JDBC connection, ClickHouse uses the separate program [clickhou
 
 This engine supports the [Nullable](../../../sql-reference/data-types/nullable.md) data type.
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
 (
     columns list...
 )
-ENGINE = JDBC(datasource_uri, external_database, external_table)
+ENGINE = JDBC(datasource, external_database, external_table)
 ```
 
 **Engine Parameters**
 
 
-- `datasource_uri` — URI or name of an external DBMS.
+- `datasource` — URI or name of an external DBMS.
 
     URI Format: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
     Example for MySQL: `jdbc:mysql://localhost:3306/?user=root&password=root`.
 
-- `external_database` — Database in an external DBMS.
+- `external_database` — Name of a database in an external DBMS, or, instead, an explicitly defined table schema (see examples).
 
-- `external_table` — Name of the table in `external_database` or a select query like `select * from table1 where column1=1`.
+- `external_table` — Name of the table in an external database or a select query like `select * from table1 where column1=1`.
 
 - These parameters can also be passed using [named collections](operations/named-collections.md).
 
-## Usage Example {#usage-example}
+## Usage example {#usage-example}
 
 Creating a table in MySQL server by connecting directly with it's console client:
 
@@ -102,6 +102,6 @@ SELECT toInt32(number), toFloat32(number * 1.0)
 FROM system.numbers
 ```
 
-## See Also {#see-also}
+## See also {#see-also}
 
 - [JDBC table function](../../../sql-reference/table-functions/jdbc.md).
