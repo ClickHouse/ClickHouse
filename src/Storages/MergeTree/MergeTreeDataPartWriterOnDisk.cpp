@@ -435,7 +435,7 @@ void MergeTreeDataPartWriterOnDisk::fillPrimaryIndexChecksums(MergeTreeData::Dat
 
     if (index_file_hashing_stream)
     {
-        if (write_final_mark && last_index_block)
+        if (write_final_mark && !last_index_block.empty())
         {
             MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
             calculateAndSerializePrimaryIndexRow(last_index_block, last_index_block.rows() - 1);

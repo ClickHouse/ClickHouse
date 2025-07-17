@@ -16,10 +16,10 @@ TEST(Processors, PortsConnected)
     columns.emplace_back(std::move(col));
     Chunk chunk(std::move(columns), 1);
 
-    Block header = {ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "x")};
+    SharedHeader header = std::make_shared<Block>(Block{ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "x")});
 
     auto source = std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk));
-    auto sink = std::make_shared<NullSink>(source->getPort().getHeader());
+    auto sink = std::make_shared<NullSink>(source->getPort().getSharedHeader());
 
     connect(source->getPort(), sink->getPort());
 
@@ -39,10 +39,10 @@ TEST(Processors, PortsNotConnected)
     columns.emplace_back(std::move(col));
     Chunk chunk(std::move(columns), 1);
 
-    Block header = {ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "x")};
+    SharedHeader header = std::make_shared<Block>(Block{ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "x")});
 
     auto source = std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk));
-    auto sink = std::make_shared<NullSink>(source->getPort().getHeader());
+    auto sink = std::make_shared<NullSink>(source->getPort().getSharedHeader());
 
     /// connect(source->getPort(), sink->getPort());
 
