@@ -218,9 +218,9 @@ void collectSymbolsFromProgramHeaders(
                         continue;
 
                     SymbolIndex::Symbol symbol;
-                    symbol.address_begin = reinterpret_cast<const void *>(
+                    symbol.offset_begin = reinterpret_cast<const void *>(
                         elf_sym[sym_index].value);
-                    symbol.address_end = reinterpret_cast<const void *>(
+                    symbol.offset_end = reinterpret_cast<const void *>(
                         elf_sym[sym_index].value + elf_sym[sym_index].size);
                     symbol.name = sym_name;
 
@@ -285,9 +285,9 @@ void collectSymbolsFromELFSymbolTable(
             continue;
 
         SymbolIndex::Symbol symbol;
-        symbol.address_begin = reinterpret_cast<const void *>(
+        symbol.offset_begin = reinterpret_cast<const void *>(
             symbol_table_entry->value);
-        symbol.address_end = reinterpret_cast<const void *>(
+        symbol.offset_end = reinterpret_cast<const void *>(
             symbol_table_entry->value + symbol_table_entry->size);
         symbol.name = symbol_name;
 
