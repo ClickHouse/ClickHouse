@@ -93,7 +93,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_join_shard_by_pk_ranges", false, false, "New setting"},
             {"parallel_replicas_insert_select_local_pipeline", false, true, "Use local pipeline during distributed INSERT SELECT with parallel replicas"},
             {"parallel_hash_join_threshold", 0, 0, "New setting"},
-            {"function_date_trunc_return_type_behavior", 1, 0, "Change the result type for dateTrunc function for DateTime64/Date32 arguments to DateTime64/Date32 regardless of time unit to get correct result for negative values"}
+            {"function_date_trunc_return_type_behavior", 1, 0, "Change the result type for dateTrunc function for DateTime64/Date32 arguments to DateTime64/Date32 regardless of time unit to get correct result for negative values"},
+            {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             /// Release closed. Please use 25.5
         });
         addSettingsChanges(settings_changes_history, "25.3",
