@@ -28,18 +28,18 @@ Lz4InflatingReadBuffer::~Lz4InflatingReadBuffer()
 
 bool Lz4InflatingReadBuffer::nextImpl()
 {
-    while (!out_eof)
+    while (true)
     {
         if (!in_eof)
             in_eof = in->eof();
 
+        void * in_data = reinterpret_cast<void *>(in->position());
         size_t in_available = in->available();
         chassert(in_available > 0 || in_eof);
 
-        size_t out_available = internal_buffer.size();
-
-        void * in_data = reinterpret_cast<void *>(in->position());
         void * out_data = reinterpret_cast<void *>(internal_buffer.begin());
+        size_t out_available = internal_buffer.size();
+        chassert(out_available > 0);
 
         size_t bytes_read = in_available;
         size_t bytes_written = out_available;
@@ -56,15 +56,17 @@ bool Lz4InflatingReadBuffer::nextImpl()
 
         in->position() += bytes_read;
 
-        out_eof = ret == 0 && in_eof;
-
         if (bytes_written > 0)
         {
             working_buffer.resize(bytes_written);
             return true;
         }
-    }
 
-    return false;
+        if (bytes_read == 0)
+        {
+            chassert(in_eof);
+            return false;
+        }
+    }
 }
 }

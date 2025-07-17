@@ -28,7 +28,6 @@ private:
     LZ4F_dctx* dctx;
 
     bool in_eof = false;
-    bool out_eof = false;
 };
 
 }
