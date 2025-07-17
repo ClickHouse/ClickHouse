@@ -69,7 +69,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.7",
         {
-            {"optimize_rewrite_regexp_functions", "false", "true", "A new setting"},
+            {"optimize_rewrite_regexp_functions", false, true, "A new setting"},
             {"format_schema_source", "file", "file", "New setting"},
             {"format_schema_message_name", "", "", "New setting"},
             {"output_format_parquet_geometadata", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."},
