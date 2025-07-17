@@ -249,8 +249,8 @@ Chunk KafkaSource::generateImpl()
                 const auto time_now = std::chrono::system_clock::now();
                 auto storage_id = storage.getStorageID();
 
-                auto dead_letter = context->getDeadLetterQueue();
-                dead_letter->add(DeadLetterQueueElement{
+                auto dead_letter_queue = context->getDeadLetterQueue();
+                dead_letter_queue->add(DeadLetterQueueElement{
                         .table_engine = DeadLetterQueueElement::StreamType::Kafka,
                         .event_time = timeInSeconds(time_now),
                         .event_time_microseconds = timeInMicroseconds(time_now),
