@@ -264,7 +264,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
                 return false;
 
             /// the first argument of the function is the previous element, the second is the next one
-            auto function = makeASTFunction(it[1], node, elem);
+            auto function = makeASTOperator(it[1], node, elem);
 
             /** special exception for the access operator to the element of the array `x[y]`, which
               * contains the infix part '[' and the suffix ''] '(specified as' [')
