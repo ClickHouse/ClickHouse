@@ -917,8 +917,14 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
         for (const ColumnWithTypeAndName & right_column : join.sample_block_with_columns_to_add)
             dst_columns.emplace_back(right_column.column->cloneEmpty());
 
+        size_t to_reserve = 0;
+        if (common::mulOverflow(block.rows(), join.data->rows_to_join, to_reserve))
+            to_reserve = join.max_joined_block_rows;
+
+        to_reserve = std::min(join.max_joined_block_rows, to_reserve);
+
         for (auto & dst : dst_columns)
-            dst->reserve(join.max_joined_block_rows);
+            dst->reserve(to_reserve);
     }
 
     size_t rows_total = block.rows();

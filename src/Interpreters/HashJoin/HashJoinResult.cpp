@@ -242,7 +242,7 @@ HashJoinResult::HashJoinResult(
 
 static size_t getAvgBytesPerRow(const Block & block)
 {
-    return block.allocatedBytes() / std::max<size_t>(1, block.allocatedBytes());
+    return block.allocatedBytes() / std::max<size_t>(1, block.rows());
 }
 
 IJoinResult::JoinResultBlock HashJoinResult::next()
