@@ -21,14 +21,11 @@ struct Inserter
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
 
         if (emplace_result.isInserted() || join.anyTakeLastRow())
-        {
             new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_columns, i);
-            return true;
-        }
-        return false;
+        return emplace_result.isInserted();
     }
 
-    static ALWAYS_INLINE void
+    static ALWAYS_INLINE bool
     insertAll(const HashJoin &, HashMap & map, KeyGetter & key_getter, const Columns * stored_columns, size_t i, Arena & pool)
     {
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
@@ -40,9 +37,10 @@ struct Inserter
             /// The first element of the list is stored in the value of the hash table, the rest in the pool.
             emplace_result.getMapped().insert({stored_columns, i}, pool);
         }
+        return emplace_result.isInserted();
     }
 
-    static ALWAYS_INLINE void insertAsof(
+    static ALWAYS_INLINE bool insertAsof(
         HashJoin & join,
         HashMap & map,
         KeyGetter & key_getter,
@@ -58,6 +56,7 @@ struct Inserter
         if (emplace_result.isInserted())
             time_series_map = new (time_series_map) typename HashMap::mapped_type(createAsofRowRef(asof_type, join.getAsofInequality()));
         (*time_series_map)->insert(asof_column, stored_columns, i);
+        return emplace_result.isInserted();
     }
 };
 
@@ -77,7 +76,8 @@ public:
         ConstNullMapPtr null_map,
         const JoinCommon::JoinMask & join_mask,
         Arena & pool,
-        bool & is_inserted);
+        bool & is_inserted,
+        bool & all_values_unique);
 
     using MapsTemplateVector = std::vector<const MapsTemplate *>;
 
@@ -110,7 +110,8 @@ private:
         ConstNullMapPtr null_map,
         const JoinCommon::JoinMask & join_mask,
         Arena & pool,
-        bool & is_inserted);
+        bool & is_inserted,
+        bool & all_values_unique);
 
     template <typename AddedColumns>
     static void switchJoinRightColumns(
