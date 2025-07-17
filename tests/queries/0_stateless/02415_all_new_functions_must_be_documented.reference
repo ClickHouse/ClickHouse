@@ -163,6 +163,7 @@ formatReadableTimeDelta
 formatRow
 formatRowNoNewline
 fragment
+fromDaysSinceYearZero32
 fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
 fromUnixTimestamp64Nano
