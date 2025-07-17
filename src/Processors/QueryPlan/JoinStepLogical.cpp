@@ -505,6 +505,7 @@ bool tryAddDisjunctiveConditions(
     if (!join_expression.isFunction(JoinConditionOperator::Or))
         return false;
 
+    size_t initial_clauses_num = table_join_clauses.size();
     std::vector<JoinActionRef> disjunctive_conditions = join_expression.getArguments();
     bool has_residual_condition = false;
     for (const auto & expr : disjunctive_conditions)
@@ -515,11 +516,14 @@ bool tryAddDisjunctiveConditions(
 
         auto & table_join_clause = table_join_clauses.emplace_back();
         bool has_keys = addJoinPredicatesToTableJoin(join_condition, table_join_clause, used_expressions, actions_after_join_map);
-        if (!has_keys && throw_on_error)
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}",
-                formatJoinCondition({expr}));
-        if (!has_keys && !throw_on_error)
-            return false;
+        if (!has_keys)
+        {
+            table_join_clauses.resize(initial_clauses_num);
+            if (!throw_on_error)
+                return false;
+
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}", formatJoinCondition({expr}));
+        }
 
         if (auto left_pre_filter_condition = concatConditions(join_condition, JoinTableSide::Left))
         {
