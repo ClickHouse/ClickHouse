@@ -1,7 +1,9 @@
 #pragma once
 
+#include <memory>
 #include <Disks/IDiskTransaction.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -143,6 +145,33 @@ public:
     void truncateFile(const std::string & /* src_path */, size_t /* target_size */) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Operation `truncateFile` is not implemented");
+    }
+
+    std::vector<std::string> listUncommittedDirectoryInTransaction(const std::string & path) const override
+    {
+        std::vector<std::string> result;
+        disk.listFiles(path, result);
+        return result;
+    }
+
+    std::unique_ptr<ReadBufferFromFileBase> readUncommittedFileInTransaction(
+        const String & path,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override
+    {
+        return disk.readFile(path, settings, read_hint, file_size);
+    }
+
+    bool isTransactional() const override
+    {
+        return false; // FakeDiskTransaction does not support transactions.
+    }
+
+    void validateTransaction(std::function<void (IDiskTransaction&)> check_function) override
+    {
+        // No transaction checks needed for FakeDiskTransaction.
+        check_function(*this);
     }
 
 private:

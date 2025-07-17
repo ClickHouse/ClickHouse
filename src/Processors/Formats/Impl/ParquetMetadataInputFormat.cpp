@@ -136,7 +136,7 @@ static std::shared_ptr<parquet::FileMetaData> getFileMetadata(
     return parquet::ReadMetaData(arrow_file);
 }
 
-ParquetMetadataInputFormat::ParquetMetadataInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
+ParquetMetadataInputFormat::ParquetMetadataInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_)
     : IInputFormat(std::move(header_), &in_), format_settings(format_settings_)
 {
     checkHeader(getPort().getHeader());
@@ -508,10 +508,9 @@ void registerInputFormatParquetMetadata(FormatFactory & factory)
             const FormatSettings & settings,
             const ReadSettings &,
             bool /* is_remote_fs */,
-            size_t /* max_download_threads */,
-            size_t /* max_parsing_threads */)
+            FormatParserGroupPtr)
         {
-            return std::make_shared<ParquetMetadataInputFormat>(buf, sample, settings);
+            return std::make_shared<ParquetMetadataInputFormat>(buf, std::make_shared<const Block>(sample), settings);
         });
     factory.markFormatSupportsSubsetOfColumns("ParquetMetadata");
 }

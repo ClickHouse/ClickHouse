@@ -11,15 +11,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static size_t getTotalBytesInColumns(const Columns & columns)
-{
-    size_t total_bytes = 0;
-    for (const auto & column : columns)
-        if (column)
-            total_bytes += column->byteSize();
-    return total_bytes;
-}
-
 MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_, MergeTreePatchReaders patch_readers_)
     : range_readers(std::move(range_readers_))
     , patch_readers(std::move(patch_readers_))
@@ -48,9 +39,10 @@ size_t MergeTreeReadersChain::currentMark() const
     return range_readers.empty() ? 0 : range_readers.back().currentMark();
 }
 
-Block MergeTreeReadersChain::getSampleBlock() const
+const Block & MergeTreeReadersChain::getSampleBlock() const
 {
-    return range_readers.empty() ? Block{} : range_readers.back().getSampleBlock();
+    static const Block empty_block;
+    return range_readers.empty() ? empty_block : range_readers.back().getSampleBlock();
 }
 
 bool MergeTreeReadersChain::isCurrentRangeFinished() const
@@ -74,7 +66,6 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(size_t max_rows, M
 
     auto & first_reader = range_readers.front();
     auto read_result = first_reader.startReadingChain(max_rows, ranges);
-    read_result.addNumBytesRead(getTotalBytesInColumns(read_result.columns));
 
     LOG_TEST(log, "First reader returned: {}, requested columns: {}", read_result.dumpInfo(), first_reader.getSampleBlock().dumpNames());
 
@@ -91,9 +82,9 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(size_t max_rows, M
     {
         size_t num_read_rows = 0;
         auto columns = range_readers[i].continueReadingChain(read_result, num_read_rows);
-        read_result.addNumBytesRead(getTotalBytesInColumns(columns));
 
         /// Even if number of read rows is 0 we need to apply all steps to produce a block with correct structure.
+        /// It's also needed to properly advancing streams in later steps.
         if (read_result.num_rows == 0)
             continue;
 
@@ -136,7 +127,20 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     bool should_evaluate_missing_defaults = false;
     merge_tree_reader->fillMissingColumns(read_columns, should_evaluate_missing_defaults, num_read_rows);
 
-    if (result.total_rows_per_granule == num_read_rows && result.num_rows != num_read_rows)
+    if (result.total_rows_per_granule != num_read_rows)
+    {
+        /// This can only happen when all columns are missing during the current read step,
+        /// and num_read_rows is inferred from a previous read.
+        if (result.num_rows != num_read_rows)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Mismatch in expected row count: total_rows_per_granule={}, num_rows={}, num_read_rows={}. "
+                "This indicates an inconsistency in row filling logic when all columns are missing",
+                result.total_rows_per_granule,
+                result.num_rows,
+                num_read_rows);
+    }
+    else if (result.num_rows != num_read_rows)
     {
         /// We have filter applied from the previous step
         /// So we need to apply it to the newly read rows
@@ -178,7 +182,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     if (should_evaluate_missing_defaults)
     {
         Block additional_columns;
-        if (previous_header)
+        if (!previous_header.empty())
             additional_columns = previous_header.cloneWithColumns(result.columns);
 
         for (const auto & col : result.additional_columns)

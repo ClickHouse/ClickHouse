@@ -163,4 +163,20 @@ ORDER BY L2Distance(vec, [1.0, 1.0])
 LIMIT 3
 SETTINGS vector_search_postfilter_multiplier = -1.0; -- { serverError INVALID_SETTING_VALUE }
 
+SELECT '-- Zero parameter values throw an exception';
+SELECT id
+FROM tab
+WHERE date = '2025-01-03' AND attr2 >= 1008
+ORDER BY L2Distance(vec, [1.0, 1.0])
+LIMIT 3
+SETTINGS vector_search_postfilter_multiplier = 0.0; -- { serverError INVALID_SETTING_VALUE }
+
+SELECT '-- Too large parameter values throw an exception';
+SELECT id
+FROM tab
+WHERE date = '2025-01-03' AND attr2 >= 1008
+ORDER BY L2Distance(vec, [1.0, 1.0])
+LIMIT 3
+SETTINGS vector_search_postfilter_multiplier = 1001.0; -- { serverError INVALID_SETTING_VALUE }
+
 DROP TABLE tab;

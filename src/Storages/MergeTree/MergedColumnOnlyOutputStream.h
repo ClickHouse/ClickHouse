@@ -27,7 +27,7 @@ public:
 
     void write(const Block & block) override;
 
-    MergeTreeData::DataPart::Checksums
+    std::pair<MergeTreeData::DataPart::Checksums, NameSet>
     fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums);
 
     const Block & getColumnsSample() const { return writer->getColumnsSample(); }

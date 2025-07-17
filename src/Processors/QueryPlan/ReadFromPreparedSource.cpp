@@ -7,7 +7,7 @@ namespace DB
 {
 
 ReadFromPreparedSource::ReadFromPreparedSource(Pipe pipe_)
-    : ISourceStep(pipe_.getHeader())
+    : ISourceStep(pipe_.getSharedHeader())
     , pipe(std::move(pipe_))
 {
 }

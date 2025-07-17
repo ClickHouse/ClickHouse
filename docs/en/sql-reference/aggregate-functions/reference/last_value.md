@@ -25,7 +25,7 @@ ENGINE = Memory;
 INSERT INTO test_data (a, b) VALUES (1,null), (2,3), (4, 5), (6,null)
 ```
 
-### example1 {#example1}
+### Example 1 {#example1}
 The NULL value is ignored at default.
 ```sql
 SELECT last_value(b) FROM test_data
@@ -37,7 +37,7 @@ SELECT last_value(b) FROM test_data
 └────────────────────────────┘
 ```
 
-### example2 {#example2}
+### Example 2 {#example2}
 The NULL value is ignored.
 ```sql
 SELECT last_value(b) ignore nulls FROM test_data
@@ -49,7 +49,7 @@ SELECT last_value(b) ignore nulls FROM test_data
 └────────────────────────────┘
 ```
 
-### example3 {#example3}
+### Example 3 {#example3}
 The NULL value is accepted.
 ```sql
 SELECT last_value(b) respect nulls FROM test_data
@@ -61,7 +61,7 @@ SELECT last_value(b) respect nulls FROM test_data
 └─────────────────────────────┘
 ```
 
-### example4 {#example4}
+### Example 4 {#example4}
 Stabilized result using the sub-query with `ORDER BY`.
 ```sql
 SELECT

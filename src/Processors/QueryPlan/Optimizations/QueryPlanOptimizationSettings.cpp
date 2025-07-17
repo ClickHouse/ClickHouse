@@ -53,11 +53,24 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
+    extern const SettingsBool make_distributed_plan;
+    extern const SettingsUInt64 distributed_plan_default_shuffle_join_bucket_count;
+    extern const SettingsUInt64 distributed_plan_default_reader_bucket_count;
+    extern const SettingsBool distributed_plan_optimize_exchanges;
+    extern const SettingsString distributed_plan_force_exchange_kind;
+    extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
+    extern const SettingsBool distributed_plan_force_shuffle_aggregation;
+    extern const SettingsBool distributed_aggregation_memory_efficient;
 }
 
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
+}
+
+namespace ErrorCodes
+{
+    extern const int UNSUPPORTED_METHOD;
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
@@ -103,6 +116,21 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_use_implicit_projections = optimize_projection && from[Setting::optimize_use_implicit_projections];
     force_use_projection = optimize_projection && from[Setting::force_optimize_projection];
     force_projection_name = optimize_projection ? from[Setting::force_optimize_projection_name].value : "";
+
+    make_distributed_plan = from[Setting::make_distributed_plan];
+    distributed_plan_default_shuffle_join_bucket_count = from[Setting::distributed_plan_default_shuffle_join_bucket_count];
+    distributed_plan_default_reader_bucket_count = from[Setting::distributed_plan_default_reader_bucket_count];
+    distributed_plan_optimize_exchanges = from[Setting::distributed_plan_optimize_exchanges];
+#ifdef OS_LINUX
+    distributed_plan_force_exchange_kind = from[Setting::distributed_plan_force_exchange_kind].value;
+#else
+    if (from[Setting::distributed_plan_force_exchange_kind].changed && from[Setting::distributed_plan_force_exchange_kind].value != "Persisted")
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Only Persisted exchange is supported");
+    distributed_plan_force_exchange_kind = "Persisted";
+#endif
+    distributed_plan_max_rows_to_broadcast = from[Setting::distributed_plan_max_rows_to_broadcast];
+    distributed_plan_force_shuffle_aggregation = from[Setting::distributed_plan_force_shuffle_aggregation];
+    distributed_aggregation_memory_efficient = from[Setting::distributed_aggregation_memory_efficient];
 
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization];
     max_limit_for_lazy_materialization = from[Setting::query_plan_max_limit_for_lazy_materialization];

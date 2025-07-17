@@ -42,7 +42,11 @@ private:
     using Base = CacheBase<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>;
 
 public:
-    MarkCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
+    MarkCache(const String & cache_policy,
+        CurrentMetrics::Metric size_in_bytes_metric,
+        CurrentMetrics::Metric count_metric,
+        size_t max_size_in_bytes,
+        double size_ratio);
 
     /// Calculate key from path to file.
     static UInt128 hash(const String & path_to_file);
