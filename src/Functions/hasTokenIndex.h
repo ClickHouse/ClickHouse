@@ -209,8 +209,9 @@ public:
             index_ranges.push_back(index_range);
         }
 
-
-        PostingsCacheForStore cache_in_store(index_helper->getFileName(), part->getDataPartStoragePtr());
+        //PostingsCacheForStore cache_in_store(index_helper->getFileName(), part->getDataPartStoragePtr());
+        auto [cache_in_store, cache_in_store_mutex] = context->getPostingsCacheForStore(part_idx, index_name);
+        chassert(cache_in_store);
 
         const size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
 
@@ -259,7 +260,7 @@ public:
                 if (!granule_gin)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "GinFilter index condition got a granule with the wrong type.");
 
-                const std::vector<uint32_t> matching_rows = granule_gin->gin_filter.getIndices(filter.get(), cache_in_store);
+                const std::vector<uint32_t> matching_rows = granule_gin->gin_filter.getIndices(filter.get(), cache_in_store.get());
 
                 /// col_part_offset_vector may have some "holes" but will be always strictly increasing, so in the worst case the distance
                 /// to the next mark start will be smaller or equal to mark_size.

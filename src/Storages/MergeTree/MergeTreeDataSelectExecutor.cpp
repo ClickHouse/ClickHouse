@@ -1,4 +1,6 @@
+#include <memory>
 #include <optional>
+#include <unordered_map>
 #include <unordered_set>
 #include <boost/rational.hpp> /// For calculations related to sampling coefficients.
 
@@ -802,6 +804,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 size_t total_granules = ranges.ranges.getNumberOfMarks();
                 stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
 
+                std::shared_ptr<PostingsCacheForStore> cache_in_store;
+
                 ranges.ranges = filterMarksUsingIndex(
                     index_and_condition.index,
                     index_and_condition.condition,
@@ -812,7 +816,18 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     mark_cache.get(),
                     uncompressed_cache.get(),
                     vector_similarity_index_cache.get(),
-                    log);
+                    log,
+                    cache_in_store);
+
+                /// Remember this function takes a lock, don't abuse of it.
+                if (cache_in_store)
+                {
+                    const String &index_name = index_and_condition.index->index.name;
+                    if (!context->emplacePostingsCacheForStore(part_index, index_name, cache_in_store))
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Trying to overwrite posting cache for part_idx: {} index: {}", part_index, index_name);
+                }
 
                 stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
                 if (ranges.ranges.empty())
@@ -1598,7 +1613,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
     VectorSimilarityIndexCache * vector_similarity_index_cache,
-    LoggerPtr log)
+    LoggerPtr log,
+    std::shared_ptr<PostingsCacheForStore> &cache_in_store)
 {
     if (!index_helper->getDeserializedFormat(part->getDataPartStorage(), index_helper->getFileName()))
     {
@@ -1708,9 +1724,9 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         MergeTreeIndexGranulePtr granule = nullptr;
         size_t last_index_mark = 0;
 
-        PostingsCacheForStore cache_in_store;
         if (dynamic_cast<const MergeTreeIndexGin *>(index_helper.get())) {
-            cache_in_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->getDataPartStoragePtr());
+            cache_in_store = std::make_shared<PostingsCacheForStore>(index_helper->getFileName(), part->getDataPartStoragePtr());
+
             std::println("GinIndexStoreFactory(file_name: {}, part_storage: {})",
                 index_helper->getFileName(),
                 part->getDataPartStoragePtr()->getRelativePath()
@@ -1754,8 +1770,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                 {
                     bool result = false;
                     if (const auto gin_filter_condition = std::dynamic_pointer_cast<const MergeTreeIndexConditionGin>(condition))
-                        result = cache_in_store.store
-                            ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, cache_in_store)
+                        result = cache_in_store
+                            ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, *cache_in_store)
                             : true;
                     else
                         result = condition->mayBeTrueOnGranule(granule);

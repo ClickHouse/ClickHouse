@@ -583,10 +583,18 @@ PostingsCacheForStore::PostingsCacheForStore(const String & name, DataPartStorag
     chassert(store);
 }
 
-GinPostingsCachePtr PostingsCacheForStore::getPostings(const GinFilter & filter) const
+GinPostingsCachePtr PostingsCacheForStore::getCachedPostings(const GinFilter & filter) const
 {
     if (auto it = cache.find(filter.getQueryString()); it != cache.end())
         return it->second;
+
+    return nullptr;
+}
+
+GinPostingsCachePtr PostingsCacheForStore::getPostings(const GinFilter & filter) const
+{
+    if (auto cached_posting = this->getCachedPostings(filter))
+        return cached_posting;
 
     GinIndexStoreDeserializer reader(store);
     GinPostingsCachePtr postings_cache = reader.createPostingsCacheFromTerms(filter.getTerms());

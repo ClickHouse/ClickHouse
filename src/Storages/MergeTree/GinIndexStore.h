@@ -302,6 +302,9 @@ struct PostingsCacheForStore
     /// map of <query, postings lists>
     mutable std::unordered_map<String, GinPostingsCachePtr> cache;
 
+    /// Get postings lists for query string IF cached, return nullptr if not found
+    GinPostingsCachePtr getCachedPostings(const GinFilter & filter) const;
+
     /// Get postings lists for query string, return nullptr if not found
     GinPostingsCachePtr getPostings(const GinFilter & filter) const;
 };

@@ -221,12 +221,12 @@ bool GinFilter::contains(const GinFilter & filter, PostingsCacheForStore & cache
 }
 
 
-std::vector<uint32_t> GinFilter::getIndices(const GinFilter *filter, PostingsCacheForStore & cache_store) const
+std::vector<uint32_t> GinFilter::getIndices(const GinFilter *filter, const PostingsCacheForStore *cache_store) const
 {
     if (filter->getTerms().empty())
         return {};
 
-    const GinPostingsCachePtr postings_cache = cache_store.getPostings(*filter);
+    const GinPostingsCachePtr postings_cache = cache_store->getCachedPostings(*filter);
 
     GinIndexPostingsList range_bitset;
 

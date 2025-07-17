@@ -15,6 +15,7 @@ namespace DB
 class KeyCondition;
 struct QueryIdHolder;
 class VectorSimilarityIndexCache;
+struct PostingsCacheForStore;
 
 /** Executes SELECT queries on data from the merge tree.
   */
@@ -96,7 +97,8 @@ private:
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
-        LoggerPtr log);
+        LoggerPtr log,
+        std::shared_ptr<PostingsCacheForStore> &cache_in_store);
 
     static MarkRanges filterMarksUsingMergedIndex(
         MergeTreeIndices indices,

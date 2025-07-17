@@ -33,6 +33,7 @@
 #include <optional>
 #include <shared_mutex>
 #include <tuple>
+#include <utility>
 
 
 namespace Poco::Net
@@ -269,6 +270,7 @@ using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 struct UsefulSkipIndexes;
 struct RangesInDataParts;
+struct PostingsCacheForStore;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -569,7 +571,11 @@ protected:
     mutable std::shared_mutex skip_indexes_mutex;
     mutable std::shared_ptr<const UsefulSkipIndexes> skip_indexes;
     mutable std::shared_ptr<const RangesInDataParts> ranges_in_parts;
-    
+
+    using PostingsCacheCache = std::map<size_t, std::unordered_map<String, std::shared_ptr<const PostingsCacheForStore>>>;
+    mutable std::shared_mutex postings_cache_for_store_part_mutex;
+    mutable PostingsCacheCache postings_cache_for_store_part_cache;
+
     PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
     PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
 
@@ -1476,6 +1482,31 @@ public:
         skip_indexes = _skip_indexes;
         ranges_in_parts = _ranges_in_parts;
     }
+
+
+    /// TODO: JAM This can be used to set a size limit and stop caching.
+    bool emplacePostingsCacheForStore(size_t part_idx, String index_name, std::shared_ptr<const PostingsCacheForStore> postings_cache_for_store) const
+    {
+        std::lock_guard lk(postings_cache_for_store_part_mutex);
+        auto [it, emplaced] = postings_cache_for_store_part_cache[part_idx].emplace(index_name, postings_cache_for_store);
+        return emplaced;
+    }
+
+    std::pair<
+        std::shared_ptr<const PostingsCacheForStore>,
+        std::shared_lock<std::shared_mutex>> getPostingsCacheForStore(size_t part_idx, const String &index_name) const
+    {
+        try {
+            auto lock = std::shared_lock(postings_cache_for_store_part_mutex);
+            std::shared_ptr<const PostingsCacheForStore> postings_cache = postings_cache_for_store_part_cache.at(part_idx).at(index_name);
+            return std::make_pair(postings_cache, std::move(lock));
+        }
+        catch(const std::out_of_range&)
+        {
+            return std::make_pair(nullptr, std::shared_lock<std::shared_mutex>{});
+        }
+    }
+
 
     /// Query parameters for prepared statements.
     bool hasQueryParameters() const;
