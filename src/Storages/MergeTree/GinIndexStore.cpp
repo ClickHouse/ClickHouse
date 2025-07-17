@@ -111,9 +111,7 @@ GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer & buffer
         UInt64 num_entries = (header >> 1);
         std::vector<UInt32> values(num_entries);
         for (size_t i = 0; i < num_entries; ++i)
-        {
             readVarUInt(values[i], buffer);
-        }
 
         GinIndexPostingsListPtr postings_list = std::make_shared<GinIndexPostingsList>();
         postings_list->addMany(values.size(), values.data());

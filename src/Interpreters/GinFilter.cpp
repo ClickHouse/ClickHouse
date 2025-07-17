@@ -17,7 +17,9 @@ namespace DB
 {
 
 GinFilterParameters::GinFilterParameters(
-    String tokenizer_, std::optional<UInt64> ngram_size_, std::optional<std::vector<String>> separators_)
+    String tokenizer_,
+    std::optional<UInt64> ngram_size_,
+    std::optional<std::vector<String>> separators_)
     : tokenizer(std::move(tokenizer_))
     , ngram_size(ngram_size_)
     , separators(separators_)
