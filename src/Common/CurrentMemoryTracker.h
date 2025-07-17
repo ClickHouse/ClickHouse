@@ -18,5 +18,6 @@ struct CurrentMemoryTracker
     static void injectFault();
 
 private:
-    [[nodiscard]] static AllocationTrace allocImpl(Int64 size, bool throw_if_memory_exceeded);
+    template <bool throw_if_memory_exceeded>
+    [[nodiscard]] static AllocationTrace allocImpl(Int64 size);
 };

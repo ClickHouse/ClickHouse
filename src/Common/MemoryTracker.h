@@ -111,7 +111,8 @@ private:
 
     /// allocImpl(...) and free(...) should not be used directly
     friend struct CurrentMemoryTracker;
-    [[nodiscard]] AllocationTrace allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr, double _sample_probability = -1.0);
+    template <bool throw_if_memory_exceeded>
+    [[nodiscard]] AllocationTrace allocImpl(Int64 size, MemoryTracker * query_tracker = nullptr, double _sample_probability = -1.0);
     [[nodiscard]] AllocationTrace free(Int64 size, double _sample_probability = -1.0);
 public:
 
