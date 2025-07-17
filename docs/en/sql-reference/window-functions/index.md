@@ -758,7 +758,6 @@ https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/window_fu
 
 https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/01591_window_functions.sql
 
-
 https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/01591_window_functions.sql
 
 ### Postgres Docs {#postgres-docs}
