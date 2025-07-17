@@ -20,7 +20,7 @@ ORDER BY L2Distance(vec, reference_vec)
 LIMIT 3
 SETTINGS vector_search_with_rescoring = 0;
 
-SELECT 'Expect column "_distance" in EXPLAIN. Column "vec" is not expected for ReadFromMergeTree.';
+SELECT '-- Expect column "_distance" in EXPLAIN. Column "vec" is not expected for ReadFromMergeTree.';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN header = 1
     WITH [0.0, 2.0] AS reference_vec
@@ -38,7 +38,7 @@ ORDER BY L2Distance(vec, reference_vec)
 LIMIT 3
 SETTINGS vector_search_with_rescoring = 1;
 
-SELECT 'Dont expect column "_distance" in EXPLAIN.';
+SELECT '-- Dont expect column "_distance" in EXPLAIN.';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN header = 1
     WITH [0.0, 2.0] AS reference_vec
@@ -50,8 +50,8 @@ SELECT trimLeft(explain) AS explain FROM (
 WHERE (explain LIKE '%_distance%');
 
 SELECT 'Test "SELECT id, vec" without and with rescoring';
--- SELECTing vec explicitly disables the optimization
 
+-- SELECTing vec explicitly disables the optimization
 WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec
 FROM tab
@@ -59,7 +59,7 @@ ORDER BY L2Distance(vec, reference_vec)
 LIMIT 3
 SETTINGS vector_search_with_rescoring = 0;
 
-SELECT 'Dont expect column "_distance" in EXPLAIN.';
+SELECT '-- Dont expect column "_distance" in EXPLAIN.';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN header = 1
     WITH [0.0, 2.0] AS reference_vec
@@ -77,7 +77,7 @@ ORDER BY L2Distance(vec, reference_vec)
 LIMIT 3
 SETTINGS vector_search_with_rescoring = 1;
 
-SELECT 'Dont expect column "_distance" in EXPLAIN.';
+SELECT '-- Dont expect column "_distance" in EXPLAIN.';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN header = 1
     WITH [0.0, 2.0] AS reference_vec
@@ -88,8 +88,9 @@ SELECT trimLeft(explain) AS explain FROM (
     SETTINGS vector_search_with_rescoring = 1)
 WHERE (explain LIKE '%_distance%');
 
--- Test vector search optimization and presence of other predicates
-SELECT 'Output will be 0,1,2';
+SELECT 'Test optimization in the presence of other predicates';
+
+-- Output will be 0,1,2
 WITH [1.0, 0.0] AS reference_vec
 SELECT id
 FROM tab
@@ -98,9 +99,7 @@ ORDER BY L2Distance(vec, reference_vec)
 LIMIT 3
 SETTINGS vector_search_with_rescoring = 0;
 
--- Since filter will select partial ranges from part, brute-force search
--- will select 4,5,6
-SELECT 'Expect 4,5,6 due to brute force';
+-- Since filter will select partial ranges from part, brute-force search will select 4,5,6
 WITH [1.0, 0.0] AS reference_vec
 SELECT id, attr1
 FROM tab
@@ -109,9 +108,9 @@ ORDER BY L2Distance(vec, reference_vec)
 LIMIT 3
 SETTINGS vector_search_with_rescoring = 0;
 
--- Test for filter that selects full part, optimization will take effect.
+SELECT 'Test for filter that selects full part, optimization will take effect';
 
-SELECT 'Expect column "_distance" in EXPLAIN. Column "vec" is not expected for ReadFromMergeTree.';
+SELECT '-- Expect column "_distance" in EXPLAIN. Column "vec" is not expected for ReadFromMergeTree.';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN header = 1
     WITH [0.0, 2.0] AS reference_vec
@@ -123,7 +122,7 @@ SELECT trimLeft(explain) AS explain FROM (
     SETTINGS vector_search_with_rescoring = 0)
 WHERE (explain LIKE '%_distance%' OR explain LIKE '%vec%Array%') AND explain NOT LIKE '%L2Distance%';
 
-SELECT 'Expect 5,6,7,8,9';
+-- Output will be 5,6,7,8,9
 WITH [0.0, 2.0] AS reference_vec
 SELECT id
 FROM tab
@@ -132,7 +131,8 @@ ORDER BY L2Distance(vec, reference_vec)
 LIMIT 5
 SETTINGS vector_search_with_rescoring = 0;
 
-SELECT 'Predicate on non-PK attribute, Output will be 0,1,2,3,4';
+SELECT 'Predicate on non-PK attribute';
+-- Output will be 0,1,2,3,4
 WITH [1.0, 0.0] AS reference_vec
 SELECT id, attr1
 FROM tab
