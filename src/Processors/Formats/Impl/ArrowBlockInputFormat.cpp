@@ -174,6 +174,7 @@ void ArrowBlockInputFormat::prepareReader()
         getPort().getHeader(),
         "Arrow",
         format_settings,
+        std::nullopt,
         format_settings.arrow.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.date_time_overflow_behavior,

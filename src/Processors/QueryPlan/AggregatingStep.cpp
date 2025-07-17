@@ -892,6 +892,38 @@ std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(Deserialization & c
     return aggregating_step;
 }
 
+QueryPlanStepPtr AggregatingStep::clone() const
+{
+    return std::make_unique<AggregatingStep>(
+        input_headers.front(),
+        params,
+        grouping_sets_params,
+        final,
+        max_block_size,
+        aggregation_in_order_max_block_bytes,
+        merge_threads,
+        temporary_data_merge_threads,
+        storage_has_evenly_distributed_read,
+        group_by_use_nulls,
+        sort_description_for_merging,
+        group_by_sort_description,
+        should_produce_results_in_order_of_bucket_number,
+        memory_bound_merging_of_aggregation_results_enabled,
+        explicit_sorting_required_for_aggregation_in_order
+    );
+}
+
+void AggregatingStep::setFinal(bool new_value)
+{
+    if (new_value == final)
+        return;
+
+    final = new_value;
+
+    /// Output header is different for partial and final result, so it needs to be updated when we switch between them.
+    updateOutputHeader();
+}
+
 void registerAggregatingStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Aggregating", AggregatingStep::deserialize);

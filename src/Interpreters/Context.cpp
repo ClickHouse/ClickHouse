@@ -836,6 +836,9 @@ struct ContextSharedPart : boost::noncopyable
         std::unique_ptr<DDLWorker> delete_ddl_worker;
         std::unique_ptr<AccessControl> delete_access_control;
 
+        scope_guard delete_dictionaries_xmls;
+        scope_guard delete_user_defined_executable_functions_xmls;
+
         /// Delete DDLWorker before zookeeper.
         /// Cause it can call Context::getZooKeeper and resurrect it.
 
@@ -907,17 +910,8 @@ struct ContextSharedPart : boost::noncopyable
             /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
             /// TODO: Get rid of this.
 
-            /// Dictionaries may be required:
-            /// - for storage shutdown (during final flush of the Buffer engine)
-            /// - before storage startup (because of some streaming of, i.e. Kafka, to
-            ///   the table with materialized column that has dictGet)
-            ///
-            /// So they should be created before any storages and preserved until storages will be terminated.
-            ///
-            /// But they cannot be created before storages since they may required table as a source,
-            /// but at least they can be preserved for storage termination.
-            dictionaries_xmls.reset();
-            user_defined_executable_functions_xmls.reset();
+            delete_dictionaries_xmls = std::move(dictionaries_xmls);
+            delete_user_defined_executable_functions_xmls = std::move(user_defined_executable_functions_xmls);
 
             delete_system_logs = std::move(system_logs);
             delete_embedded_dictionaries = std::move(embedded_dictionaries);
@@ -938,6 +932,18 @@ struct ContextSharedPart : boost::noncopyable
             /// Stop zookeeper connection
             zookeeper.reset();
         }
+
+        /// Dictionaries may be required:
+        /// - for storage shutdown (during final flush of the Buffer engine)
+        /// - before storage startup (because of some streaming of, i.e. Kafka, to
+        ///   the table with materialized column that has dictGet)
+        ///
+        /// So they should be created before any storages and preserved until storages will be terminated.
+        ///
+        /// But they cannot be created before storages since they may required table as a source,
+        /// but at least they can be preserved for storage termination.
+        delete_dictionaries_xmls.reset();
+        delete_user_defined_executable_functions_xmls.reset();
 
         /// Can be removed without context lock
         delete_system_logs.reset();
