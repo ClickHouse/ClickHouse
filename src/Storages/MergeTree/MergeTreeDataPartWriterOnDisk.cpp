@@ -518,6 +518,7 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
             checksums.files[filename_without_extension + GinIndexStore::GIN_POSTINGS_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
             checksums.files[filename_without_extension + GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
             checksums.files[filename_without_extension + GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
+            checksums.files[filename_without_extension + GinIndexStore::GIN_FILTER_FILE_TYPE] = MergeTreeDataPartChecksums::Checksum();
         }
     }
 }

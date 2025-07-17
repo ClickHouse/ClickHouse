@@ -362,6 +362,12 @@ private:
     std::mutex mutex;
 };
 
-bool isGinFile(const String & file_name);
-
+ALWAYS_INLINE inline bool isGinFile(const String & file_name)
+{
+    return file_name.ends_with(GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE)
+        || file_name.ends_with(GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE)
+        || file_name.ends_with(GinIndexStore::GIN_DICTIONARY_FILE_TYPE)
+        || file_name.ends_with(GinIndexStore::GIN_POSTINGS_FILE_TYPE)
+        || file_name.ends_with(GinIndexStore::GIN_FILTER_FILE_TYPE);
+}
 }
