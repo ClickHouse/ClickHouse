@@ -410,7 +410,8 @@ void HashJoin::dataMapInit(MapsVariant & map)
 
 bool HashJoin::preferUseMapsAll() const
 {
-    return table_join->getMixedJoinExpression() != nullptr || data->all_join_was_promoted_to_right_any;
+    auto res = table_join->getMixedJoinExpression() != nullptr || all_join_was_promoted_to_right_any;
+    return res;
 }
 
 bool HashJoin::empty() const
@@ -768,7 +769,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                             join_mask_col,
                             data->pool,
                             is_inserted,
-                            data->all_values_unique);
+                            all_values_unique);
 
                         if (flag_per_row)
                             used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(&stored_columns->columns);
@@ -1786,10 +1787,10 @@ void HashJoin::onBuildPhaseFinish()
         }
     }
 
-    if (data->all_values_unique && strictness == JoinStrictness::All && kind == JoinKind::Inner)
+    if (all_values_unique && strictness == JoinStrictness::All && kind == JoinKind::Inner)
     {
         strictness = JoinStrictness::RightAny;
-        data->all_join_was_promoted_to_right_any = true;
+        all_join_was_promoted_to_right_any = true;
 
         LOG_DEBUG(log, "Promoting join strictness to RightAny, because all values in the right table are unique");
     }
