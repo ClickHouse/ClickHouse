@@ -123,8 +123,8 @@ Converts a region to a federal district (type 4 in the geobase).
 │ Wallonia                                               │
 └────────────────────────────────────────────────────────┘
             )"
-            };
-        };
+	    }
+	};
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::EmbeddedDictionary;
         FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
