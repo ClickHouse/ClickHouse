@@ -65,18 +65,24 @@ node1 = cluster.add_instance(
     main_configs=["configs/cluster.xml"],
     user_configs=["configs/users.xml"],
     with_minio=True,
+    with_zookeeper=True,
+    macros={"replica": "node1"},
 )
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/cluster.xml"],
     user_configs=["configs/users.xml"],
     stay_alive=True,
+    with_zookeeper=True,
+    macros={"replica": "node2"},
 )
 node3 = cluster.add_instance(
     "node3",
     main_configs=["configs/cluster.xml"],
     user_configs=["configs/users.xml"],
     stay_alive=True,
+    with_zookeeper=True,
+    macros={"replica": "node3"},
 )
 
 @pytest.fixture(scope="module")
@@ -192,3 +198,91 @@ def test_reconnect_after_nodes_restart_no_wait(started_cluster):
 
     # avoid leaving the test w/o started node, so next test will start with fully runnning cluster
     node2.wait_for_start(30)
+
+
+def createTable(table, missing_table):
+    node1.query(
+        f"""
+    CREATE TABLE {table} (a String, b UInt64)
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/f15b1936-ae89-416b-8626-7c88d9fbe6a3/{table}', '{{replica}}')
+    ORDER BY (a, b);
+        """
+    )
+    node2.query(
+        f"""
+    CREATE TABLE {table} (a String, b UInt64)
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/f15b1936-ae89-416b-8626-7c88d9fbe6a3/{table}', '{{replica}}')
+    ORDER BY (a, b);
+        """
+    )
+    if (not missing_table):
+        node3.query(
+            f"""
+        CREATE TABLE {table} (a String, b UInt64)
+        ENGINE=ReplicatedMergeTree('/clickhouse/tables/f15b1936-ae89-416b-8626-7c88d9fbe6a3/{table}', '{{replica}}')
+        ORDER BY (a, b);
+            """
+        )
+
+
+@pytest.mark.parametrize(
+    "wait_restart, missing_table",
+    [
+        pytest.param(False, False),
+        pytest.param(False, True),
+        pytest.param(True, False),
+        pytest.param(True, True),
+    ],
+)
+def test_insert_select(started_cluster, wait_restart, missing_table):
+    table = 't_rmt_target'
+
+    node1.query(
+        f"""DROP TABLE IF EXISTS {table} ON CLUSTER 'cluster_simple' SYNC;"""
+    )
+
+    createTable(table, missing_table);
+
+    if (wait_restart):
+        node2.restart_clickhouse()
+    else:
+        node2.stop()
+        node2.start()
+
+    uuid = str(uuid4())
+    node1.query(
+        f"""
+        INSERT INTO {table} SELECT * FROM s3Cluster(
+            'cluster_simple',
+            'http://minio1:9001/root/data/generated/*.csv', 'minio', '{minio_secret_key}', 'CSV','a String, b UInt64'
+        ) SETTINGS parallel_distributed_insert_select=1;
+        """
+        , query_id = uuid
+    )
+
+    # Check whether we inserted at least something
+    assert (
+        int(
+            node1.query(
+                f"""SELECT count(*) FROM {table};"""
+            ).strip()
+        )
+        != 0
+    )
+
+    if (not wait_restart):
+        node1.query("SYSTEM FLUSH LOGS query_log");
+        assert ( node1.query(f"select ProfileEvents['DistributedConnectionFailTry'] from system.query_log where query_id = '{uuid}' and type = 'QueryFinish'") == "1\n")
+
+
+    if (missing_table):
+        node1.query("SYSTEM FLUSH LOGS query_log");
+        assert ( node1.query(f"select ProfileEvents['DistributedConnectionMissingTable'] from system.query_log where query_id = '{uuid}' and type = 'QueryFinish'") == "1\n")
+
+
+    if (wait_restart):
+        node2.wait_for_start(30)
+
+    node1.query(
+        f"""DROP TABLE IF EXISTS {table} ON CLUSTER 'cluster_simple' SYNC;"""
+    )
