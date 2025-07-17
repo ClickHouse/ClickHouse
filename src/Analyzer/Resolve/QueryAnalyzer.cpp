@@ -843,11 +843,14 @@ void QueryAnalyzer::convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, Ide
     auto * nearest_query_scope = scope.getNearestQueryScope();
     auto & source_expression = constant_node->getSourceExpression();
 
-    // do not convert in WHERE expression since it can prevent primary key optimization
     if (nearest_query_scope)
     {
         auto * query_node = nearest_query_scope->scope_node->as<QueryNode>();
+        // do not convert in the WHERE expression since it can prevent primary key optimization
         if (isNodeInSubtree(source_expression.get(), query_node->getWhere().get()))
+            return;
+        // do not convert in table function
+        if (isNodeInSubtree(source_expression.get(), query_node->getJoinTree().get()))
             return;
     }
 
