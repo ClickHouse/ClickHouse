@@ -51,6 +51,7 @@ struct SummingSortedAlgorithm::AggregateDescription
     /// use the aggregate function from itself instead of 'function' above.
     bool is_agg_func_type = false;
     bool is_simple_agg_func_type = false;
+    bool remove_default_values;
 
     void init(const char * function_name, const DataTypes & argument_types)
     {
@@ -232,7 +233,8 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     const SortDescription & description,
     const Names & column_names_to_sum,
     const Names & partition_and_sorting_required_columns,
-    const String & sum_function_name)
+    const String & sum_function_name,
+    bool remove_default_values)
 {
     size_t num_columns = header.columns();
     SummingSortedAlgorithm::ColumnsDefinition def;
@@ -292,6 +294,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
             {
                 // Create aggregator to sum this column
                 SummingSortedAlgorithm::AggregateDescription desc;
+                desc.remove_default_values = remove_default_values;
                 desc.is_agg_func_type = is_agg_func;
                 desc.column_numbers = {i};
 
@@ -609,7 +612,20 @@ void SummingSortedAlgorithm::SummingMergedData::finishGroup()
                 try
                 {
                     desc.function->insertResultInto(desc.state.data(), *desc.merged_column, def.arena.get());
-                    current_row_is_zero = false;
+                    /// Update zero status of current row
+                    if (!desc.is_simple_agg_func_type && desc.column_numbers.size() == 1 && desc.remove_default_values)
+                    {
+                        // Flag row as non-empty if at least one column number if non-zero
+                        current_row_is_zero = current_row_is_zero
+                                            && desc.merged_column->isDefaultAt(desc.merged_column->size() - 1);
+                    }
+                    else
+                    {
+                        /// It is sumMapWithOverflow aggregate function.
+                        /// Assume that the row isn't empty in this case
+                        ///   (just because it is compatible with previous version)
+                        current_row_is_zero = false;
+                    }                
                 }
                 catch (...)
                 {
@@ -719,10 +735,11 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
     const Names & partition_and_sorting_required_columns,
     size_t max_block_size_rows,
     size_t max_block_size_bytes,
-    const String & sum_function_name)
+    const String & sum_function_name,
+    bool remove_default_values)
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, std::move(description_))
     , columns_definition(
-          defineColumns(header_, description, column_names_to_sum, partition_and_sorting_required_columns, sum_function_name))
+          defineColumns(header_, description, column_names_to_sum, partition_and_sorting_required_columns, sum_function_name, remove_default_values))
     , merged_data(max_block_size_rows, max_block_size_bytes, columns_definition)
 {
 }

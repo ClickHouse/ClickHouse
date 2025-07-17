@@ -11,7 +11,7 @@ ORDER BY key;
 
 INSERT INTO test_table Values(1,0,'');
 
-SELECT * FROM test_table;
+SELECT count() FROM test_table;
 
 DROP TABLE IF EXISTS test_table;
 
@@ -26,4 +26,4 @@ ORDER BY key;
 
 INSERT INTO test_table Values(1,0,'');
 
-SELECT * FROM test_table;
+SELECT count() FROM test_table;

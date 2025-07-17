@@ -32,7 +32,8 @@ public:
             partition_key_columns,
             max_block_size_rows,
             max_block_size_bytes,
-            "last_value")
+            "last_value",
+            false)
     {
     }
 
