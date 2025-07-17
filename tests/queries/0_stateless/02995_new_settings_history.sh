@@ -22,17 +22,17 @@ then
 fi
 
 # Note that this is a broad check. A per version check is done in the upgrade test
-# Baselines generated with v25.2.3.14 (pre-release)
-# clickhouse local --query "select name, default from system.settings order by name format TSV" > 02995_settings_25_6_1.tsv
-# clickhouse local --query "select name, value from system.merge_tree_settings order by name format TSV" > 02995_merge_tree_settings_settings_25_6_1.tsv
+# Baselines generated with v25.7.1 (pre-release)
+# clickhouse local --query "select name, default from system.settings order by name format TSV" > 02995_settings_25_7_1.tsv
+# clickhouse local --query "select name, value from system.merge_tree_settings order by name format TSV" > 02995_merge_tree_settings_settings_25_7_1.tsv
 $CLICKHOUSE_LOCAL --query "
     WITH old_settings AS
     (
-        SELECT * FROM file('${CUR_DIR}/02995_settings_25_6_1.tsv', 'TSV', 'name String, default String')
+        SELECT * FROM file('${CUR_DIR}/02995_settings_25_7_1.tsv', 'TSV', 'name String, default String')
     ),
     old_merge_tree_settings AS
     (
-        SELECT * FROM file('${CUR_DIR}/02995_merge_tree_settings_settings_25_6_1.tsv', 'TSV', 'name String, default String')
+        SELECT * FROM file('${CUR_DIR}/02995_merge_tree_settings_settings_25_7_1.tsv', 'TSV', 'name String, default String')
     ),
     new_settings AS
     (
