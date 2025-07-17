@@ -861,7 +861,7 @@ namespace
                 {
                     write_function = [this](std::string_view str) { writeStr(str); };
                     read_function = [this](PaddedPODArray<UInt8> & str) { readStrAndAppend(str); };
-                    default_function = [this]() -> String { return field_descriptor.default_value_string(); };
+                    default_function = [this]() -> String { return std::string(field_descriptor.default_value_string()); };
                     break;
                 }
 
@@ -869,7 +869,7 @@ namespace
                 {
                     write_function = [this](std::string_view str) { writeInt(stringToProtobufEnumValue(str)); };
                     read_function = [this](PaddedPODArray<UInt8> & str) { protobufEnumValueToStringAppend(static_cast<int>(readInt()), str); };
-                    default_function = [this]() -> String { return field_descriptor.default_value_enum()->name(); };
+                    default_function = [this]() -> String { return std::string(field_descriptor.default_value_enum()->name()); };
                     break;
                 }
 
@@ -1049,7 +1049,7 @@ namespace
         }
 
         std::string_view enumDataTypeValueToString(NumberType value) const { return std::string_view{enum_data_type->getNameForValue(value)}; }
-        NumberType stringToEnumDataTypeValue(const String & str) const { return enum_data_type->getValue(str); }
+        NumberType stringToEnumDataTypeValue(const absl::string_view & str) const { return enum_data_type->getValue(std::string(str)); }
 
         void prepareEnumMapping()
         {
@@ -1387,7 +1387,7 @@ namespace
                 writeText(decimal, scale, buf, false);
         }
 
-        DecimalType stringToDecimal(const String & str) const
+        DecimalType stringToDecimal(const absl::string_view & str) const
         {
             ReadBufferFromString buf(str);
             DecimalType decimal{0};
@@ -1478,7 +1478,7 @@ namespace
             writeText(date, buf);
         }
 
-        static DayNum stringToDate(const String & str)
+        static DayNum stringToDate(const absl::string_view & str)
         {
             DayNum date;
             ReadBufferFromString buf{str};
@@ -1554,7 +1554,7 @@ namespace
             writeDateText(date, buf);
         }
 
-        static ExtendedDayNum stringToDate(const String & str)
+        static ExtendedDayNum stringToDate(const absl::string_view & str)
         {
             ExtendedDayNum date;
             ReadBufferFromString buf{str};
@@ -1630,7 +1630,7 @@ namespace
             writeIPv4Text(value, buf);
         }
 
-        static IPv4 stringToIPv4(const String & str)
+        static IPv4 stringToIPv4(const absl::string_view & str)
         {
             IPv4 value;
             ReadBufferFromString buf{str};
@@ -1698,7 +1698,7 @@ namespace
 
                     default_function = [this]() -> UInt32
                     {
-                        return static_cast<UInt32>(stringToDateTime(field_descriptor.default_value_string(), date_lut));
+                        return static_cast<UInt32>(stringToDateTime(std::string(field_descriptor.default_value_string()), date_lut));
                     };
                     break;
                 }
@@ -1928,7 +1928,7 @@ namespace
                 return;
 
             Arena & arena = column_af.createOrGetArena();
-            AggregateDataPtr data = stringToData(field_descriptor.default_value_string(), arena);
+            AggregateDataPtr data = stringToData(std::string(field_descriptor.default_value_string()), arena);
             column_af.getData().push_back(data);
         }
 
@@ -3462,7 +3462,7 @@ namespace
                 for (int i : collections::range(message_descriptor.field_count()))
                 {
                     const auto & field_descriptor = *message_descriptor.field(i);
-                    if (field_descriptor.is_required() && !field_descriptors_in_use.count(&field_descriptor))
+                    if (field_descriptor.is_required() && !field_descriptors_in_use.contains(&field_descriptor))
                         throw Exception(
                             ErrorCodes::NO_COLUMN_SERIALIZED_TO_REQUIRED_PROTOBUF_FIELD,
                             "Field {} is required to be set",
@@ -3579,7 +3579,7 @@ namespace
                         /// }
                         if (field_descriptor.message_type() && field_descriptor.message_type()->field_count() == 1)
                         {
-                            Names column_names = {field_descriptor.message_type()->field(0)->name()};
+                            Names column_names = {std::string(field_descriptor.message_type()->field(0)->name())};
                             DataTypes data_types = {data_type};
                             /// Try to serialize as a nested message.
                             std::vector<size_t> used_column_indices;
@@ -3639,7 +3639,7 @@ namespace
                                     field_count,
                                     size_of_tuple);
                             for (size_t i = 0; i != field_count; ++i)
-                                element_names.push_back(message_type->field(static_cast<int>(i))->name());
+                                element_names.push_back(std::string(message_type->field(static_cast<int>(i))->name()));
                         }
 
                         /// Try to serialize as a nested message.
@@ -3766,26 +3766,26 @@ namespace
             case FieldTypeId::TYPE_SFIXED32:
             case FieldTypeId::TYPE_SINT32:
             case FieldTypeId::TYPE_INT32:
-                return NameAndTypePair{field_descriptor->name(), std::make_shared<DataTypeInt32>()};
+                return NameAndTypePair{std::string(field_descriptor->name()), std::make_shared<DataTypeInt32>()};
             case FieldTypeId::TYPE_SFIXED64:
             case FieldTypeId::TYPE_SINT64:
             case FieldTypeId::TYPE_INT64:
-                return NameAndTypePair{field_descriptor->name(), std::make_shared<DataTypeInt64>()};
+                return NameAndTypePair{std::string(field_descriptor->name()), std::make_shared<DataTypeInt64>()};
             case FieldTypeId::TYPE_BOOL:
-                return NameAndTypePair{field_descriptor->name(), std::make_shared<DataTypeUInt8>()};
+                return NameAndTypePair{std::string(field_descriptor->name()), std::make_shared<DataTypeUInt8>()};
             case FieldTypeId::TYPE_FLOAT:
-                return NameAndTypePair{field_descriptor->name(), std::make_shared<DataTypeFloat32>()};
+                return NameAndTypePair{std::string(field_descriptor->name()), std::make_shared<DataTypeFloat32>()};
             case FieldTypeId::TYPE_DOUBLE:
-                return NameAndTypePair{field_descriptor->name(), std::make_shared<DataTypeFloat64>()};
+                return NameAndTypePair{std::string(field_descriptor->name()), std::make_shared<DataTypeFloat64>()};
             case FieldTypeId::TYPE_UINT32:
             case FieldTypeId::TYPE_FIXED32:
-                return NameAndTypePair{field_descriptor->name(), std::make_shared<DataTypeUInt32>()};
+                return NameAndTypePair{std::string(field_descriptor->name()), std::make_shared<DataTypeUInt32>()};
             case FieldTypeId::TYPE_UINT64:
             case FieldTypeId::TYPE_FIXED64:
-                return NameAndTypePair{field_descriptor->name(), std::make_shared<DataTypeUInt64>()};
+                return NameAndTypePair{std::string(field_descriptor->name()), std::make_shared<DataTypeUInt64>()};
             case FieldTypeId::TYPE_BYTES:
             case FieldTypeId::TYPE_STRING:
-                return NameAndTypePair{field_descriptor->name(), std::make_shared<DataTypeString>()};
+                return NameAndTypePair{std::string(field_descriptor->name()), std::make_shared<DataTypeString>()};
             case FieldTypeId::TYPE_ENUM:
             {
                 const auto * enum_descriptor = field_descriptor->enum_type();
@@ -3799,9 +3799,9 @@ namespace
                 for (int i = 1; i != enum_descriptor->value_count(); ++i)
                     max_abs = std::max(std::abs(enum_descriptor->value(i)->number()), max_abs);
                 if (max_abs < 128)
-                    return NameAndTypePair{field_descriptor->name(), getEnumDataType<Int8>(enum_descriptor)};
+                    return NameAndTypePair{std::string(field_descriptor->name()), getEnumDataType<Int8>(enum_descriptor)};
                 if (max_abs < 32768)
-                    return NameAndTypePair{field_descriptor->name(), getEnumDataType<Int16>(enum_descriptor)};
+                    return NameAndTypePair{std::string(field_descriptor->name()), getEnumDataType<Int16>(enum_descriptor)};
 
                 if (skip_unsupported_fields)
                     return std::nullopt;
@@ -3835,7 +3835,7 @@ namespace
                     if (!nested_name_and_type)
                         return std::nullopt;
                     unresolved_descriptors.erase(nested_field_descriptor);
-                    return NameAndTypePair{field_descriptor->name() + "_" + nested_name_and_type->name, nested_name_and_type->type};
+                    return NameAndTypePair{fmt::format("{}_{}", field_descriptor->name(), nested_name_and_type->name), nested_name_and_type->type};
                 }
 
                 DataTypes nested_types;
@@ -3864,7 +3864,9 @@ namespace
                     return std::nullopt;
 
                 return NameAndTypePair{
-                    field_descriptor->name(), std::make_shared<DataTypeTuple>(std::move(nested_types), std::move(nested_names))};
+                    std::string(field_descriptor->name()),
+                    std::make_shared<DataTypeTuple>(std::move(nested_types), std::move(nested_names))
+                };
             }
         }
 

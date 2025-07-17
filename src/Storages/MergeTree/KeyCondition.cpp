@@ -3476,10 +3476,10 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(
 {
     for (auto & rpn_element : rpn)
     {
-        // this would be a problem for `where negate(x) = -58`.
-        // It would perform a bf search on `-58`, and possibly miss row groups containing this data.
         if (!rpn_element.monotonic_functions_chain.empty())
         {
+            /// We could apply the inverse functions to get the key value when possible.
+            /// This is currently not implemented.
             continue;
         }
 
@@ -3519,6 +3519,11 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(
 
             for (auto i = 0u; i < ordered_set.size(); i++)
             {
+                if (!indexes_mapping[i].functions.empty())
+                {
+                    continue;
+                }
+
                 const auto & set_column = ordered_set[i];
 
                 auto hashes_for_column_opt = hash_many(indexes_mapping[i].key_index, set_column);
