@@ -141,6 +141,8 @@ public:
     bool structureEquals(const IColumn & rhs) const override;
     bool isCollationSupported() const override;
     ColumnPtr compress(bool force_compression) const override;
+    ColumnPtr updateFrom(const Patch & patch) const override;
+    void updateInplaceFrom(const Patch & patch) override;
     double getRatioOfDefaultRows(double sample_ratio) const override;
     UInt64 getNumberOfDefaultRows() const override;
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;

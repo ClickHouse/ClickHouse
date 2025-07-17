@@ -1,3 +1,5 @@
+SET use_legacy_to_time = 0;
+
 -- Between time/time64 data types, we shouldn't support time zone change as it relates values with date only, so while converting from Time to Time, it shouldn't change
 -- We will probably forbid using timezones with Time/Time64 types
 

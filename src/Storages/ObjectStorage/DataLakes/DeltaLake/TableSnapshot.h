@@ -10,8 +10,8 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include "KernelPointerWrapper.h"
-#include "KernelHelper.h"
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <boost/noncopyable.hpp>
 #include "delta_kernel_ffi.hpp"
 
@@ -25,8 +25,6 @@ namespace DeltaLake
 class TableSnapshot
 {
 public:
-    using ConfigurationWeakPtr = DB::StorageObjectStorage::ConfigurationObserverPtr;
-
     explicit TableSnapshot(
         KernelHelperPtr helper_,
         DB::ObjectStoragePtr object_storage_,

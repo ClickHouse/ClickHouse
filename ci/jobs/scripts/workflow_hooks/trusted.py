@@ -17,6 +17,15 @@ TRUSTED_CONTRIBUTORS = {
 CAN_BE_TESTED = "can be tested"
 
 
+def user_in_trusted_org(user_name: str) -> bool:
+    """Check if the user is in a trusted organization."""
+    lines = Shell.get_output(
+        "gh api orgs/ClickHouse/members --paginate --cache=1h --jq='.[].login'",
+        verbose=True,
+    )
+    return user_name in [line.strip() for line in lines.splitlines() if line.strip()]
+
+
 def can_be_trusted():
     info = Info()
     if info.repo_name == Info().fork_name:
@@ -31,10 +40,7 @@ def can_be_trusted():
     ):
         print("It's approved by 'can be tested' label")
         return ""
-    orgs = Shell.get_output(
-        f"gh api users/{Info().user_name}/orgs --jq '.[].login'", verbose=True
-    )
-    if "ClickHouse" in [line.strip() for line in orgs.splitlines() if line.strip()]:
+    if user_in_trusted_org(info.user_name):
         print("It's an internal contributor using fork")
         return ""
 

@@ -28,7 +28,7 @@ bool ClickHouseIntegratedDatabase::performIntegration(
 {
     const String str_tname = getTableName(db, tname);
 
-    if (performQuery(fmt::format("DROP TABLE IF EXISTS {};", str_tname)))
+    if (!performQuery(fmt::format("DROP TABLE IF EXISTS {};", str_tname)))
     {
         String buf;
         bool first = true;
@@ -49,7 +49,7 @@ bool ClickHouseIntegratedDatabase::performIntegration(
                 ((entry.nullable.has_value() && entry.nullable.value()) || hasType<Nullable>(false, false, false, tp)) ? "" : "NOT ");
             first = false;
         }
-        return performQuery(fmt::format("CREATE TABLE {}({});", str_tname, buf));
+        return !performQuery(fmt::format("CREATE TABLE {}({});", str_tname, buf));
     }
     return false;
 }
@@ -57,7 +57,7 @@ bool ClickHouseIntegratedDatabase::performIntegration(
 bool ClickHouseIntegratedDatabase::dropPeerTableOnRemote(const SQLTable & t)
 {
     chassert(t.hasDatabasePeer());
-    return performQuery(fmt::format("DROP TABLE IF EXISTS {};", getTableName(t.db, t.tname)));
+    return !performQuery(fmt::format("DROP TABLE IF EXISTS {};", getTableName(t.db, t.tname)));
 }
 
 void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, CreateTable & newt)
@@ -233,7 +233,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             t.db->setName(newd.mutable_database());
             t.db->finishDatabaseSpecification(deng);
             CreateDatabaseToString(buf, newd);
-            res &= performQuery(buf + ";");
+            res &= !performQuery(buf + ";");
         }
         if (res)
         {
@@ -253,7 +253,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             }
 
             CreateTableToString(buf, newt);
-            res &= performQuery(buf + ";");
+            res &= !performQuery(buf + ";");
         }
     }
     else if (res)
@@ -266,7 +266,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
 bool ClickHouseIntegratedDatabase::truncatePeerTableOnRemote(const SQLTable & t)
 {
     chassert(t.hasDatabasePeer());
-    return performQuery(fmt::format("{} {};", truncateStatement(), getTableName(t.db, t.tname)));
+    return !performQuery(fmt::format("{} {};", truncateStatement(), getTableName(t.db, t.tname)));
 }
 
 bool ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableDatabase pt, const String & query)
@@ -277,7 +277,7 @@ bool ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableD
         case PeerTableDatabase::MySQL:
         case PeerTableDatabase::PostgreSQL:
         case PeerTableDatabase::SQLite:
-            return performQuery(query);
+            return !performQuery(query);
         case PeerTableDatabase::None:
             return fc.processServerQuery(false, query);
     }
@@ -303,7 +303,7 @@ MySQLIntegration::testAndAddMySQLConnection(FuzzConfig & fcc, const ServerCreden
     }
     else if (!mysql_real_connect(
                  mcon,
-                 scc.hostname.empty() ? nullptr : scc.hostname.c_str(),
+                 scc.client_hostname.empty() ? nullptr : scc.client_hostname.c_str(),
                  scc.user.empty() ? nullptr : scc.user.c_str(),
                  scc.password.empty() ? nullptr : scc.password.c_str(),
                  nullptr,
@@ -320,8 +320,8 @@ MySQLIntegration::testAndAddMySQLConnection(FuzzConfig & fcc, const ServerCreden
             = std::make_unique<MySQLIntegration>(fcc, scc, server == "ClickHouse", MySQLUniqueKeyPtr(mcon, closeMySQLConnection));
 
         if (read_log
-            || (mysql->performQuery("DROP DATABASE IF EXISTS " + scc.database + ";")
-                && mysql->performQuery("CREATE DATABASE " + scc.database + ";")))
+            || (!mysql->performQuery("DROP DATABASE IF EXISTS " + scc.database + ";")
+                && !mysql->performQuery("CREATE DATABASE " + scc.database + ";")))
         {
             LOG_INFO(fcc.log, "Connected to {}", server);
             return mysql;
@@ -336,7 +336,7 @@ void MySQLIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase & b,
     {
         te->add_params()->set_svalue("MySQL");
     }
-    te->add_params()->set_svalue(sc.hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
+    te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
     te->add_params()->set_svalue(sc.database);
     te->add_params()->set_svalue(tname);
     te->add_params()->set_svalue(sc.user);
@@ -373,18 +373,18 @@ bool MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const 
     return true;
 }
 
-bool MySQLIntegration::performQuery(const String & query)
+int MySQLIntegration::performQuery(const String & query)
 {
     if (!mysql_connection)
     {
         LOG_ERROR(fc.log, "Not connected to MySQL");
-        return false;
+        return 1;
     }
     out_file << query << std::endl;
     if (mysql_query(mysql_connection.get(), query.c_str()))
     {
         LOG_ERROR(fc.log, "MySQL query: {} Error: {}", query, mysql_error(mysql_connection.get()));
-        return false;
+        return static_cast<int>(mysql_errno(mysql_connection.get()));
     }
     else
     {
@@ -394,7 +394,7 @@ bool MySQLIntegration::performQuery(const String & query)
             ;
         mysql_free_result(result);
     }
-    return true;
+    return 0;
 }
 
 String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, const bool is_deterministic, SQLType * tp) const
@@ -531,9 +531,9 @@ PostgreSQLIntegration::testAndAddPostgreSQLIntegration(FuzzConfig & fcc, const S
     String connection_str;
     bool has_something = false;
 
-    if (!scc.unix_socket.empty() || !scc.hostname.empty())
+    if (!scc.unix_socket.empty() || !scc.client_hostname.empty())
     {
-        connection_str += fmt::format("host='{}'", scc.unix_socket.empty() ? scc.hostname : scc.unix_socket);
+        connection_str += fmt::format("host='{}'", scc.unix_socket.empty() ? scc.client_hostname : scc.unix_socket);
         has_something = true;
     }
     if (scc.port)
@@ -559,7 +559,7 @@ PostgreSQLIntegration::testAndAddPostgreSQLIntegration(FuzzConfig & fcc, const S
         std::unique_ptr<PostgreSQLIntegration> psql = std::make_unique<PostgreSQLIntegration>(
             fcc, scc, PostgreSQLUniqueKeyPtr(new pqxx::connection(connection_str), closePostgreSQLConnection));
 
-        if (read_log || (psql->performQuery("DROP SCHEMA IF EXISTS test CASCADE;") && psql->performQuery("CREATE SCHEMA test;")))
+        if (read_log || (!psql->performQuery("DROP SCHEMA IF EXISTS test CASCADE;") && !psql->performQuery("CREATE SCHEMA test;")))
         {
             LOG_INFO(fcc.log, "Connected to PostgreSQL");
             return psql;
@@ -578,7 +578,7 @@ void PostgreSQLIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase
     {
         te->add_params()->set_svalue("PostgreSQL");
     }
-    te->add_params()->set_svalue(sc.hostname + ":" + std::to_string(sc.port));
+    te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.port));
     te->add_params()->set_svalue(sc.database);
     te->add_params()->set_svalue(tname);
     te->add_params()->set_svalue(sc.user);
@@ -600,12 +600,33 @@ String PostgreSQLIntegration::truncateStatement()
     return "TRUNCATE";
 }
 
-bool PostgreSQLIntegration::performQuery(const String & query)
+int PostgreSQLIntegration::sqlstateToInt(const String & sqlstate)
+{
+    /// Convert the 5-character SQLSTATE to an integer
+    /// This treats it as a base-36 number or you can create your own scheme
+    int result = 0;
+
+    for (char c : sqlstate)
+    {
+        result = result * 36;
+        if (c >= '0' && c <= '9')
+        {
+            result += c - '0';
+        }
+        else if (c >= 'A' && c <= 'Z')
+        {
+            result += c - 'A' + 10;
+        }
+    }
+    return result;
+}
+
+int PostgreSQLIntegration::performQuery(const String & query)
 {
     if (!postgres_connection)
     {
         LOG_ERROR(fc.log, "Not connected to PostgreSQL");
-        return false;
+        return 1;
     }
     try
     {
@@ -616,12 +637,17 @@ bool PostgreSQLIntegration::performQuery(const String & query)
         const auto u = w.exec(query);
         UNUSED(u);
         w.commit();
-        return true;
+        return 0;
     }
-    catch (std::exception const & e)
+    catch (const pqxx::sql_error & e)
     {
         LOG_ERROR(fc.log, "PostgreSQL query: {} Error: {}", query, e.what());
-        return false;
+        return sqlstateToInt(e.sqlstate());
+    }
+    catch (const std::exception & e)
+    {
+        LOG_ERROR(fc.log, "PostgreSQL query: {} Error: {}", query, e.what());
+        return 1;
     }
 }
 
@@ -751,23 +777,24 @@ String SQLiteIntegration::truncateStatement()
     return "DELETE FROM";
 }
 
-bool SQLiteIntegration::performQuery(const String & query)
+int SQLiteIntegration::performQuery(const String & query)
 {
+    int res = 0;
     char * err_msg = nullptr;
 
     if (!sqlite_connection)
     {
         LOG_ERROR(fc.log, "Not connected to SQLite");
-        return false;
+        return 1;
     }
     out_file << query << std::endl;
-    if (sqlite3_exec(sqlite_connection.get(), query.c_str(), nullptr, nullptr, &err_msg) != SQLITE_OK)
+    if ((res = sqlite3_exec(sqlite_connection.get(), query.c_str(), nullptr, nullptr, &err_msg) != SQLITE_OK))
     {
         LOG_ERROR(fc.log, "SQLite query: {} Error: {}", query, err_msg);
         sqlite3_free(err_msg);
-        return false;
+        return res;
     }
-    return true;
+    return 0;
 }
 
 String SQLiteIntegration::columnTypeAsString(RandomGenerator & rg, const bool is_deterministic, SQLType * tp) const
@@ -816,7 +843,7 @@ std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegratio
 
 void RedisIntegration::setEngineDetails(RandomGenerator & rg, const SQLBase &, const String &, TableEngine * te)
 {
-    te->add_params()->set_svalue(sc.hostname + ":" + std::to_string(sc.port));
+    te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.port));
     te->add_params()->set_num(rg.nextBool() ? 0 : rg.nextLargeNumber() % 16);
     te->add_params()->set_svalue(sc.password);
     te->add_params()->set_num(rg.nextBool() ? 16 : rg.nextLargeNumber() % 33);
@@ -837,7 +864,7 @@ std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegra
     {
         connection_str += fmt::format("{}{}@", scc.user, scc.password.empty() ? "" : (":" + scc.password));
     }
-    connection_str += fmt::format("{}:{}", scc.hostname, scc.port);
+    connection_str += fmt::format("{}:{}", scc.client_hostname, scc.port);
 
     try
     {
@@ -884,7 +911,7 @@ std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegra
 
 void MongoDBIntegration::setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te)
 {
-    te->add_params()->set_svalue(sc.hostname + ":" + std::to_string(sc.port));
+    te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.port));
     te->add_params()->set_svalue(sc.database);
     te->add_params()->set_svalue(tname);
     te->add_params()->set_svalue(sc.user);
@@ -970,7 +997,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
         }
         else
         {
-            std::uniform_int_distribution<uint32_t> next_dist(0, 8);
+            std::uniform_int_distribution<uint32_t> next_dist(0, 76);
             const uint32_t left = next_dist(rg.generator);
             const uint32_t right = next_dist(rg.generator);
 
@@ -1042,7 +1069,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else if ((stp = dynamic_cast<StringType *>(tp)))
     {
-        const uint32_t limit = stp->precision.value_or(rg.nextRandomUInt32() % 1009);
+        const uint32_t limit = stp->precision.value_or(rg.nextStrlen());
 
         if (rg.nextBool())
         {
@@ -1395,7 +1422,7 @@ bool MinIOIntegration::sendRequest(const String & resource)
         LOG_ERROR(fc.log, "Buffer size was to small to fit result");
         return false;
     }
-    if ((error = getaddrinfo(sc.hostname.c_str(), buffer, &hints, &result)) != 0)
+    if ((error = getaddrinfo(sc.client_hostname.c_str(), buffer, &hints, &result)) != 0)
     {
         if (error == EAI_SYSTEM)
         {
@@ -1505,21 +1532,21 @@ bool MinIOIntegration::sendRequest(const String & resource)
     return true;
 }
 
-String MinIOIntegration::getConnectionURL()
+String MinIOIntegration::getConnectionURL(const bool client)
 {
-    return "http://" + sc.hostname + ":" + std::to_string(sc.port) + sc.database + "/";
+    return "http://" + (client ? sc.client_hostname : sc.server_hostname) + ":" + std::to_string(sc.port) + sc.database + "/";
 }
 
 void MinIOIntegration::setEngineDetails(RandomGenerator &, const SQLBase & b, const String & tname, TableEngine * te)
 {
-    te->add_params()->set_svalue(getConnectionURL() + "file" + tname.substr(1) + (b.isS3QueueEngine() ? "/*" : ""));
+    te->add_params()->set_svalue(getConnectionURL(false) + "file" + tname.substr(1) + (b.isS3QueueEngine() ? "/*" : ""));
     te->add_params()->set_svalue(sc.user);
     te->add_params()->set_svalue(sc.password);
 }
 
 void MinIOIntegration::setBackupDetails(const String & filename, BackupRestore * br)
 {
-    br->add_out_params(getConnectionURL() + filename);
+    br->add_out_params(getConnectionURL(false) + filename);
     br->add_out_params(sc.user);
     br->add_out_params(sc.password);
 }
@@ -1532,7 +1559,7 @@ bool MinIOIntegration::performIntegration(
 
 void AzuriteIntegration::setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te)
 {
-    te->add_params()->set_svalue(sc.hostname);
+    te->add_params()->set_svalue(sc.server_hostname);
     te->add_params()->set_svalue(sc.container);
     te->add_params()->set_svalue("file" + tname.substr(1));
     te->add_params()->set_svalue(sc.user);
@@ -1541,7 +1568,7 @@ void AzuriteIntegration::setEngineDetails(RandomGenerator &, const SQLBase &, co
 
 void AzuriteIntegration::setBackupDetails(const String & filename, BackupRestore * br)
 {
-    br->add_out_params(sc.hostname);
+    br->add_out_params(sc.server_hostname);
     br->add_out_params(sc.container);
     br->add_out_params(filename);
     br->add_out_params(sc.user);
@@ -1554,14 +1581,14 @@ bool AzuriteIntegration::performIntegration(
     return true;
 }
 
-String HTTPIntegration::getConnectionURL()
+String HTTPIntegration::getConnectionURL(const bool client)
 {
-    return "http://" + sc.hostname + ":" + std::to_string(sc.port) + "/";
+    return "http://" + (client ? sc.client_hostname : sc.server_hostname) + ":" + std::to_string(sc.port) + "/";
 }
 
 void HTTPIntegration::setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te)
 {
-    te->add_params()->set_svalue(getConnectionURL() + "file" + tname.substr(1));
+    te->add_params()->set_svalue(getConnectionURL(false) + "file" + tname.substr(1));
 }
 
 bool HTTPIntegration::performIntegration(
@@ -1747,7 +1774,7 @@ void ExternalIntegrations::setBackupDetails(const IntegrationCall dc, const Stri
     }
 }
 
-bool ExternalIntegrations::performQuery(const PeerTableDatabase pt, const String & query)
+int ExternalIntegrations::performQuery(const PeerTableDatabase pt, const String & query)
 {
     switch (pt)
     {
@@ -1760,7 +1787,7 @@ bool ExternalIntegrations::performQuery(const PeerTableDatabase pt, const String
         case PeerTableDatabase::SQLite:
             return sqlite->performQuery(query);
         case PeerTableDatabase::None:
-            return false;
+            return 1;
     }
 }
 

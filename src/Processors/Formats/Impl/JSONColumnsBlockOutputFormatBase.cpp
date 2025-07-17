@@ -9,10 +9,10 @@ namespace DB
 {
 
 JSONColumnsBlockOutputFormatBase::JSONColumnsBlockOutputFormatBase(
-    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool validate_utf8)
+    WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, bool validate_utf8)
     : OutputFormatWithUTF8ValidationAdaptor(header_, out_, validate_utf8)
     , format_settings(format_settings_)
-    , serializations(header_.getSerializations())
+    , serializations(header_->getSerializations())
 {
     ostr = OutputFormatWithUTF8ValidationAdaptor::getWriteBufferPtr();
 }
