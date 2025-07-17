@@ -29,6 +29,7 @@ namespace ErrorCodes
 {
     extern const int AZURE_BLOB_STORAGE_ERROR;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
 struct WriteBufferFromAzureBlobStorage::PartData
@@ -108,6 +109,7 @@ WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
 
 void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void(size_t)> func, size_t num_tries, size_t cost)
 {
+    size_t sleep_time_with_backoff_milliseconds = 100;
     for (size_t i = 0; i < num_tries; ++i)
     {
         try
@@ -123,10 +125,20 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void(size_t)> 
                 throw;
 
             LOG_DEBUG(log, "Write at attempt {} for blob `{}` failed: {} {}", i + 1, blob_path, e.what(), e.Message);
+            sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
+            sleep_time_with_backoff_milliseconds *= 2;
         }
         catch (...)
         {
-            throw;
+            if (getCurrentExceptionCode() == ErrorCodes::CANNOT_ALLOCATE_MEMORY)
+                throw;
+
+            if (i == num_tries - 1)
+                throw;
+
+            LOG_DEBUG(log, "Write at attempt {} for blob `{}` failed: {}", i + 1, blob_path, getCurrentExceptionMessage(false));
+            sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
+            sleep_time_with_backoff_milliseconds *= 2;
         }
     }
 }

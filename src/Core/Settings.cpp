@@ -562,7 +562,7 @@ Idleness timeout for sending and receiving data to/from azure. Fail if a single 
 Connection timeout for host from azure disks.
 )", 0) \
     DECLARE(Bool, azure_sdk_use_native_client, true, R"(
-Maximum number of retries in azure sdk
+Use clickhouse native HTTP client for Azure SDK.
 )", 0) \
     DECLARE(Bool, s3_validate_request_settings, true, R"(
 Enables s3 request settings validation.

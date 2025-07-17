@@ -65,7 +65,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"azure_use_adaptive_timeouts", true, true, "New setting"},
             {"azure_request_timeout_ms", 30000, 30000, "New setting"},
             {"azure_connect_timeout_ms", 1000, 1000, "New setting"},
-            {"azure_sdk_use_native_client", true, true, "New setting"},
+            {"azure_sdk_use_native_client", false, true, "New setting"},
             {"table_engine_read_through_distributed_cache", false, false, "New setting"},
             {"distributed_cache_alignment", 0, 0, "Rename of distributed_cache_read_alignment"},
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},

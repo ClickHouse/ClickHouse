@@ -434,7 +434,7 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
         }
 
         // Set timeouts for receiving response
-        setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte=*/true));
+        setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte=*/false));
 
         // Get response
         Poco::Net::HTTPResponse poco_response;
