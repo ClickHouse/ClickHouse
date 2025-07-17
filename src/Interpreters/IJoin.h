@@ -3,7 +3,7 @@
 #include <memory>
 
 #include <Core/Block.h>
-#include <Core/Block_fwd.h>
+#include <Core/Names.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Common/Exception.h>
 
@@ -62,20 +62,16 @@ public:
         return false;
     }
 
-    /// Clone underlying JOIN algorithm using table join, left sample block, right sample block
+    /// Clone underlyhing JOIN algorithm using table join, left sample block, right sample block
     virtual std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
-        SharedHeader left_sample_block_,
-        SharedHeader right_sample_block_) const
+        const Block & left_sample_block_,
+        const Block & right_sample_block_) const
     {
         (void)(table_join_);
         (void)(left_sample_block_);
         (void)(right_sample_block_);
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Clone method is not supported for {}", getName());
     }
-
-    virtual std::shared_ptr<IJoin> cloneNoParallel(const std::shared_ptr<TableJoin> & table_join_,
-        SharedHeader left_sample_block_,
-        SharedHeader right_sample_block_) const { return clone(table_join_, left_sample_block_, right_sample_block_); }
 
     /// Add block of data from right hand of JOIN.
     /// @returns false, if some limit was exceeded and you should not insert more data.
@@ -147,7 +143,7 @@ public:
         if (finished)
             return {};
 
-        if (Block res = nextImpl(); !res.empty())
+        if (Block res = nextImpl())
             return res;
 
         finished = true;

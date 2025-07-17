@@ -1,4 +1,4 @@
-#include <Storages/System/StorageSystemLatencyBuckets.h>
+#include "StorageSystemLatencyBuckets.h"
 
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>

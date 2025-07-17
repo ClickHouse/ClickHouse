@@ -25,8 +25,6 @@ struct MergeTreeIndexGranuleBloomFilterText final : public IMergeTreeIndexGranul
 
     bool empty() const override { return !has_elems; }
 
-    size_t memoryUsageBytes() const override;
-
     const String index_name;
     const BloomFilterParameters params;
 
@@ -96,7 +94,6 @@ private:
             FUNCTION_NOT_IN,
             FUNCTION_MULTI_SEARCH,
             FUNCTION_HAS_ANY,
-            FUNCTION_HAS_ALL,
             FUNCTION_UNKNOWN, /// Can take any value.
             /// Operators of the logical expression.
             FUNCTION_NOT,

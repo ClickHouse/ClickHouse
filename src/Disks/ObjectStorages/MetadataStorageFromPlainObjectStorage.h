@@ -12,7 +12,6 @@
 #include <memory>
 #include <string>
 #include <unordered_set>
-#include <vector>
 #include <Poco/Timestamp.h>
 
 
@@ -48,7 +47,6 @@ protected:
 
     ObjectStoragePtr object_storage;
     const String storage_path_prefix;
-    const String storage_path_full;
 
     mutable std::optional<CacheBase<UInt128, ObjectMetadataEntry>> object_metadata_cache;
 
@@ -89,7 +87,6 @@ public:
 
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
-    bool supportsPartitionCommand(const PartitionCommand & command) const override;
 
 protected:
     /// Get the object storage prefix for storing metadata files.
@@ -120,16 +117,10 @@ public:
 
     void addBlobToMetadata(const std::string & /* path */, ObjectStorageKey /* object_key */, uint64_t /* size_in_bytes */) override
     {
-        /// Noop
+        // Noop
     }
 
     void setLastModified(const String &, const Poco::Timestamp &) override
-    {
-        /// Noop
-    }
-
-    /// Required for MergeTree backups.
-    void setReadOnly(const std::string & /*path*/) override
     {
         /// Noop
     }
@@ -147,18 +138,7 @@ public:
     void unlinkFile(const std::string & path) override;
     void removeDirectory(const std::string & path) override;
 
-    /// Hard links are simulated using server-side copying.
-    void createHardLink(const std::string & path_from, const std::string & path_to) override;
-
-    void moveFile(const std::string & path_from, const std::string & path_to) override;
-
-    void replaceFile(const std::string & path_from, const std::string & path_to) override;
-
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
-
-    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
-
-    std::vector<std::string> listUncommittedDirectory(const std::string & path) const override;
 
     void commit() override;
 

@@ -1,9 +1,7 @@
 #pragma once
 
-#include <Core/SettingsEnums.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActionsSettings.h>
-#include <QueryPipeline/SizeLimits.h>
 
 #include <cstddef>
 
@@ -12,17 +10,13 @@ namespace DB
 
 struct Settings;
 
-class PreparedSetsCache;
-using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
-
 struct QueryPlanOptimizationSettings
 {
     explicit QueryPlanOptimizationSettings(
         const Settings & from,
         UInt64 max_entries_for_hash_table_stats_,
         String initial_query_id_,
-        ExpressionActionsSettings actions_settings_,
-        PreparedSetsCachePtr prepared_sets_cache_);
+        ExpressionActionsSettings actions_settings_);
 
     explicit QueryPlanOptimizationSettings(ContextPtr from);
 
@@ -54,8 +48,6 @@ struct QueryPlanOptimizationSettings
     bool aggregate_partitions_independently;
     bool remove_redundant_distinct;
     bool try_use_vector_search;
-    bool convert_join_to_in;
-    bool merge_filter_into_join_condition;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
@@ -69,22 +61,10 @@ struct QueryPlanOptimizationSettings
     bool optimize_sorting_by_input_stream_properties;
     bool aggregation_in_order;
     bool optimize_projection;
-    bool use_query_condition_cache;
-    bool query_condition_cache_store_conditions_as_plaintext;
+    bool use_query_condition_cache = false;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
-    bool query_plan_join_shard_by_pk_ranges;
-
-    bool make_distributed_plan = false;
-    bool distributed_plan_singe_stage = false;  /// For debugging purposes: force distributed plan to be single-stage
-    UInt64 distributed_plan_default_shuffle_join_bucket_count = 8;
-    UInt64 distributed_plan_default_reader_bucket_count = 8; /// Default bucket count for read steps in distributed query plan
-    bool distributed_plan_optimize_exchanges = true; /// Removes unnecessary exchanges in distributed query plan
-    String distributed_plan_force_exchange_kind; /// Force exchange kind for all exchanges in distributed query plan
-    UInt64 distributed_plan_max_rows_to_broadcast = 20000; /// Max number of rows to broadcast in distributed query plan
-    bool distributed_plan_force_shuffle_aggregation = false; /// Force Shuffle strategy instead of PartialAggregation + Merge for distributed aggregation
-    bool distributed_aggregation_memory_efficient = true; /// Is the memory-saving mode of distributed aggregation enabled
 
     /// ------------------------------------------------------
 
@@ -93,19 +73,7 @@ struct QueryPlanOptimizationSettings
     bool optimize_use_implicit_projections;
     bool force_use_projection;
     String force_projection_name;
-
-    /// If lazy materialization optimisation is enabled
-    bool optimize_lazy_materialization = false;
-    size_t max_limit_for_lazy_materialization = 0;
-
-    VectorSearchFilterStrategy vector_search_filter_strategy;
-    size_t max_limit_for_vector_search_queries;
-
-    /// Setting needed for Sets (JOIN -> IN optimization)
-
-    SizeLimits network_transfer_limits;
-    size_t use_index_for_in_with_subqueries_max_values;
-    PreparedSetsCachePtr prepared_sets_cache;
+    size_t max_limit_for_ann_queries;
 
     /// This is needed for conversion JoinLogical -> Join
 

@@ -2,7 +2,6 @@
 
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -61,8 +60,8 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsNonZeroUInt64 max_block_size;
-    extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_block_size;
+    extern const SettingsUInt64 max_insert_block_size;
     extern const SettingsUInt64 output_format_avro_rows_in_file;
     extern const SettingsMilliseconds stream_flush_interval_ms;
     extern const SettingsMilliseconds stream_poll_timeout_ms;
@@ -260,7 +259,7 @@ SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & 
 
     const Settings & settings = getContext()->getSettingsRef();
     size_t poll_timeout = settings[Setting::stream_poll_timeout_ms].totalMilliseconds();
-    auto header = metadata_snapshot->getSampleBlockNonMaterialized();
+    const auto & header = metadata_snapshot->getSampleBlockNonMaterialized();
 
     auto producer = std::make_unique<KafkaProducer>(
         std::make_shared<cppkafka::Producer>(conf), topics[0], std::chrono::milliseconds(poll_timeout), shutdown_called, header);
@@ -272,7 +271,7 @@ SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & 
     if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
         max_rows = local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].value;
     return std::make_shared<MessageQueueSink>(
-        std::make_shared<const Block>(std::move(header)), getFormatName(), max_rows, std::move(producer), getName(), modified_context);
+        header, getFormatName(), max_rows, std::move(producer), getName(), modified_context);
 }
 
 
@@ -322,6 +321,13 @@ void StorageKafka::shutdown(bool)
         Stopwatch watch;
         cleanConsumers();
         LOG_TRACE(log, "Consumers closed in {} ms.", watch.elapsedMilliseconds());
+    }
+
+    {
+        LOG_TRACE(log, "Waiting for final cleanup");
+        Stopwatch watch;
+        rd_kafka_wait_destroyed(KAFKA_CLEANUP_TIMEOUT_MS);
+        LOG_TRACE(log, "Final cleanup finished in {} ms (timeout {} ms).", watch.elapsedMilliseconds(), KAFKA_CLEANUP_TIMEOUT_MS);
     }
 }
 
@@ -406,7 +412,7 @@ KafkaConsumerPtr StorageKafka::popConsumer(std::chrono::milliseconds timeout)
     {
         ret_consumer_ptr = consumers[*closed_consumer_index];
 
-        cppkafka::Configuration consumer_config = getConsumerConfiguration(*closed_consumer_index, ret_consumer_ptr);
+        cppkafka::Configuration consumer_config = getConsumerConfiguration(*closed_consumer_index);
         /// It should be OK to create consumer under lock, since it should be fast (without subscribing).
         ret_consumer_ptr->createConsumer(consumer_config);
         LOG_TRACE(log, "Created #{} consumer", *closed_consumer_index);
@@ -457,7 +463,7 @@ KafkaConsumerPtr StorageKafka::createKafkaConsumer(size_t consumer_number)
         topics);
     return kafka_consumer_ptr;
 }
-cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_number, IKafkaExceptionInfoSinkPtr exception_info_sink_ptr)
+cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_number)
 {
     KafkaConfigLoader::ConsumerConfigParams params{
         {getContext()->getConfigRef(), collection_name, topics, log},
@@ -467,7 +473,7 @@ cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_n
         consumer_number,
         client_id,
         getMaxBlockSize()};
-    return KafkaConfigLoader::getConsumerConfiguration(*this, params, exception_info_sink_ptr);
+    return KafkaConfigLoader::getConsumerConfiguration(*this, params);
 }
 
 cppkafka::Configuration StorageKafka::getProducerConfiguration()
@@ -593,9 +599,6 @@ void StorageKafka::threadFunc(size_t idx)
                 }
             }
         }
-        else
-            LOG_DEBUG(log, "No attached views");
-
     }
     catch (...)
     {

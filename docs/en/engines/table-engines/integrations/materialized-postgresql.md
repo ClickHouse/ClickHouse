@@ -31,9 +31,9 @@ SET allow_experimental_materialized_postgresql_table=1
 
 If more than one table is required, it is highly recommended to use the [MaterializedPostgreSQL](../../../engines/database-engines/materialized-postgresql.md) database engine instead of the table engine and use the `materialized_postgresql_tables_list` setting, which specifies the tables to be replicated (will also be possible to add database `schema`). It will be much better in terms of CPU, fewer connections and fewer replication slots inside the remote PostgreSQL database.
 
-## Creating a table {#creating-a-table}
+## Creating a Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)
 ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_table', 'postgres_user', 'postgres_password')
 PRIMARY KEY key;
@@ -68,7 +68,7 @@ PRIMARY KEY key;
 These columns do not need to be added when a table is created. They are always accessible in `SELECT` query.
 `_version` column equals `LSN` position in `WAL`, so it might be used to check how up-to-date replication is.
 
-```sql
+``` sql
 CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)
 ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres_user', 'postgres_password')
 PRIMARY KEY key;

@@ -11,11 +11,11 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Scheduler/IResourceManager.h>
+#include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
-#include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
@@ -29,7 +29,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DISK_INDEX;
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_RMDIR;
 }
 
 
@@ -46,19 +45,19 @@ ObjectStoragePtr DiskObjectStorage::getObjectStorage()
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
 {
     return std::make_shared<DiskObjectStorageTransaction>(
-        *this,
         *object_storage,
-        *metadata_storage);
+        *metadata_storage,
+        send_metadata ? metadata_helper.get() : nullptr);
 }
 
-DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDisk(DiskObjectStorage & to_disk)
+DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDisk(DiskObjectStorage& to_disk)
 {
     return std::make_shared<MultipleDisksObjectStorageTransaction>(
-        *this,
         *object_storage,
         *metadata_storage,
         *to_disk.getObjectStorage(),
-        *to_disk.getMetadataStorage());
+        *to_disk.getMetadataStorage(),
+        send_metadata ? metadata_helper.get() : nullptr);
 }
 
 
@@ -74,8 +73,10 @@ DiskObjectStorage::DiskObjectStorage(
     , log(getLogger("DiskObjectStorage(" + name + ")"))
     , metadata_storage(std::move(metadata_storage_))
     , object_storage(std::move(object_storage_))
+    , send_metadata(config.getBool(config_prefix + ".send_metadata", false))
     , read_resource_name_from_config(config.getString(config_prefix + ".read_resource", ""))
     , write_resource_name_from_config(config.getString(config_prefix + ".write_resource", ""))
+    , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}, WriteSettings{}))
     , remove_shared_recursive_file_limit(config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT))
 {
     data_source_description = DataSourceDescription{
@@ -122,18 +123,16 @@ DiskObjectStorage::DiskObjectStorage(
                             {
                                 switch (mode)
                                 {
-                                    case ResourceAccessMode::DiskRead: new_read_resource_name_from_sql_any.insert(resource_name); break;
-                                    case ResourceAccessMode::DiskWrite: new_write_resource_name_from_sql_any.insert(resource_name); break;
-                                    default: break;
+                                    case ASTCreateResourceQuery::AccessMode::Read: new_read_resource_name_from_sql_any.insert(resource_name); break;
+                                    case ASTCreateResourceQuery::AccessMode::Write: new_write_resource_name_from_sql_any.insert(resource_name); break;
                                 }
                             }
                             else if (*disk == name)
                             {
                                 switch (mode)
                                 {
-                                    case ResourceAccessMode::DiskRead: new_read_resource_name_from_sql.insert(resource_name); break;
-                                    case ResourceAccessMode::DiskWrite: new_write_resource_name_from_sql.insert(resource_name); break;
-                                    default: break;
+                                    case ASTCreateResourceQuery::AccessMode::Read: new_read_resource_name_from_sql.insert(resource_name); break;
+                                    case ASTCreateResourceQuery::AccessMode::Write: new_write_resource_name_from_sql.insert(resource_name); break;
                                 }
                             }
                         }
@@ -218,13 +217,20 @@ size_t DiskObjectStorage::getFileSize(const String & path) const
 
 void DiskObjectStorage::moveDirectory(const String & from_path, const String & to_path)
 {
+    if (send_metadata)
+        sendMoveMetadata(from_path, to_path);
+
     auto transaction = createObjectStorageTransaction();
     transaction->moveDirectory(from_path, to_path);
     transaction->commit();
 }
 
-void DiskObjectStorage::moveFile(const String & from_path, const String & to_path)
+void DiskObjectStorage::moveFile(const String & from_path, const String & to_path, bool should_send_metadata)
 {
+
+    if (should_send_metadata)
+        sendMoveMetadata(from_path, to_path);
+
     auto transaction = createObjectStorageTransaction();
     transaction->moveFile(from_path, to_path);
     transaction->commit();
@@ -262,6 +268,11 @@ void DiskObjectStorage::copyFile( /// NOLINT
     }
 }
 
+void DiskObjectStorage::moveFile(const String & from_path, const String & to_path)
+{
+    moveFile(from_path, to_path, send_metadata);
+}
+
 void DiskObjectStorage::replaceFile(const String & from_path, const String & to_path)
 {
     if (existsFile(to_path))
@@ -273,27 +284,6 @@ void DiskObjectStorage::replaceFile(const String & from_path, const String & to_
     else
         moveFile(from_path, to_path);
 }
-
-void DiskObjectStorage::renameExchange(const std::string & old_path, const std::string & new_path)
-{
-    if (existsFile(new_path))
-    {
-        auto temp_old_path = old_path + "_tmp_rename_exchange";
-        auto transaction = createObjectStorageTransaction();
-        transaction->moveFile(old_path, temp_old_path);
-        transaction->moveFile(new_path, old_path);
-        transaction->moveFile(temp_old_path, new_path);
-        transaction->commit();
-    }
-    else
-        moveFile(old_path, new_path);
-}
-
-bool DiskObjectStorage::renameExchangeIfSupported(const std::string &, const std::string &)
-{
-    return false;
-}
-
 
 void DiskObjectStorage::removeSharedFile(const String & path, bool delete_metadata_only)
 {
@@ -334,12 +324,29 @@ bool DiskObjectStorage::checkUniqueId(const String & id) const
     return object_storage->exists(object);
 }
 
-void DiskObjectStorage::createHardLink(const String & src_path, const String & dst_path)
+void DiskObjectStorage::createHardLink(const String & src_path, const String & dst_path, bool should_send_metadata)
 {
+    if (should_send_metadata && !dst_path.starts_with("shadow/"))
+    {
+        auto revision = metadata_helper->revision_counter + 1;
+        metadata_helper->revision_counter += 1;
+        const ObjectAttributes object_metadata {
+            {"src_path", src_path},
+            {"dst_path", dst_path}
+        };
+        metadata_helper->createFileOperationObject("hardlink", revision, object_metadata);
+    }
+
     auto transaction = createObjectStorageTransaction();
     transaction->createHardLink(src_path, dst_path);
     transaction->commit();
 }
+
+void DiskObjectStorage::createHardLink(const String & src_path, const String & dst_path)
+{
+    createHardLink(src_path, dst_path, send_metadata);
+}
+
 
 void DiskObjectStorage::setReadOnly(const String & path)
 {
@@ -377,20 +384,11 @@ void DiskObjectStorage::clearDirectory(const String & path)
 
 void DiskObjectStorage::removeDirectory(const String & path)
 {
-    if (!isDirectoryEmpty(path))
-        throw Exception(ErrorCodes::CANNOT_RMDIR, "Unable to remove directory '{}', the directory is not empty", path);
-
     auto transaction = createObjectStorageTransaction();
     transaction->removeDirectory(path);
     transaction->commit();
 }
 
-void DiskObjectStorage::removeDirectoryIfExists(const String & path)
-{
-    if (!existsDirectory(path))
-        return;
-    removeDirectory(path);
-}
 
 DirectoryIteratorPtr DiskObjectStorage::iterateDirectory(const String & path) const
 {
@@ -447,10 +445,12 @@ void DiskObjectStorage::shutdown()
     LOG_INFO(log, "Disk {} shut down", name);
 }
 
-void DiskObjectStorage::startupImpl()
+void DiskObjectStorage::startupImpl(ContextPtr context)
 {
     LOG_INFO(log, "Starting up disk {}", name);
     object_storage->startup();
+
+    restoreMetadataIfNeeded(context->getConfigRef(), "storage_configuration.disks." + name, context);
 
     LOG_INFO(log, "Disk {} started up", name);
 }
@@ -577,6 +577,15 @@ bool DiskObjectStorage::tryReserve(UInt64 bytes)
 
     return false;
 }
+void DiskObjectStorage::sendMoveMetadata(const String & from_path, const String & to_path)
+{
+    chassert(send_metadata);
+    auto revision = metadata_helper->revision_counter + 1;
+    metadata_helper->revision_counter += 1;
+
+    const ObjectAttributes object_metadata{{"from_path", from_path}, {"to_path", to_path}};
+    metadata_helper->createFileOperationObject("rename", revision, object_metadata);
+}
 
 bool DiskObjectStorage::supportsCache() const
 {
@@ -601,11 +610,6 @@ bool DiskObjectStorage::isWriteOnce() const
 bool DiskObjectStorage::supportsHardLinks() const
 {
     return !isWriteOnce() && !object_storage->isPlain();
-}
-
-bool DiskObjectStorage::supportsPartitionCommand(const PartitionCommand & command) const
-{
-    return !isWriteOnce() && metadata_storage->supportsPartitionCommand(command);
 }
 
 DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
@@ -672,17 +676,6 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     std::optional<size_t> file_size) const
 {
     const auto storage_objects = metadata_storage->getStorageObjects(path);
-    return readFileFromStorageObjects(storage_objects, path, settings, read_hint, file_size);
-}
-
-
-std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFileFromStorageObjects(
-    const StoredObjects & storage_objects,
-    const String & path,
-    const ReadSettings & settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
-{
     auto global_context = Context::getGlobalContextInstance();
 
     if (storage_objects.empty())
@@ -738,7 +731,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFileFromStorageOb
         && read_settings.enable_filesystem_cache;
 
     size_t buffer_size = prefer_bigger_buffer_size
-        ? std::max<size_t>(settings.remote_fs_buffer_size, settings.prefetch_buffer_size)
+        ? std::max<size_t>(settings.remote_fs_buffer_size, DBMS_DEFAULT_BUFFER_SIZE)
         : settings.remote_fs_buffer_size;
 
     size_t total_objects_size = file_size ? *file_size : getTotalSize(storage_objects);
@@ -852,6 +845,31 @@ void DiskObjectStorage::applyNewSettings(
     remove_shared_recursive_file_limit = config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT);
 
     IDisk::applyNewSettings(config, context_, config_prefix, disk_map);
+}
+
+void DiskObjectStorage::restoreMetadataIfNeeded(
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
+{
+    if (send_metadata)
+    {
+        metadata_helper->restore(config, config_prefix, context);
+
+        auto current_schema_version = DB::DiskObjectStorageRemoteMetadataRestoreHelper::readSchemaVersion(object_storage.get(), object_key_prefix);
+        if (current_schema_version < DiskObjectStorageRemoteMetadataRestoreHelper::RESTORABLE_SCHEMA_VERSION)
+            metadata_helper->migrateToRestorableSchema();
+
+        metadata_helper->findLastRevision();
+    }
+}
+
+void DiskObjectStorage::syncRevision(UInt64 revision)
+{
+    metadata_helper->syncRevision(revision);
+}
+
+UInt64 DiskObjectStorage::getRevision() const
+{
+    return metadata_helper->getRevision();
 }
 
 #if USE_AWS_S3

@@ -1,11 +1,10 @@
-#include <Disks/ObjectStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
+#include "MetadataStorageFromStaticFilesWebServer.h"
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/StaticDirectoryIterator.h>
-#include <IO/WriteHelpers.h>
-#include <Storages/PartitionCommands.h>
-#include <Common/escapeForFileName.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
+#include <Common/escapeForFileName.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -109,11 +108,6 @@ std::optional<StoredObjects> MetadataStorageFromStaticFilesWebServer::getStorage
     return std::nullopt;
 }
 
-bool MetadataStorageFromStaticFilesWebServer::supportsPartitionCommand(const PartitionCommand & /*command*/) const
-{
-    return false;
-}
-
 std::vector<std::string> MetadataStorageFromStaticFilesWebServer::listDirectory(const std::string & path) const
 {
     std::vector<std::string> result;
@@ -153,17 +147,4 @@ void MetadataStorageFromStaticFilesWebServerTransaction::createDirectoryRecursiv
     /// Noop.
 }
 
-std::optional<StoredObjects>
-MetadataStorageFromStaticFilesWebServerTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
-{
-    if (metadata_storage.existsFileOrDirectory(path))
-        return metadata_storage.getStorageObjects(path);
-    return std::nullopt;
-}
-
-std::vector<std::string> MetadataStorageFromStaticFilesWebServerTransaction::listUncommittedDirectory(const std::string & path) const
-{
-    chassert(!metadata_storage.isTransactional());
-    return metadata_storage.listDirectory(path);
-}
 }

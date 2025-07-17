@@ -1,5 +1,4 @@
-#include <Coordination/RaftServerConfig.h>
-
+#include "RaftServerConfig.h"
 #include <unordered_set>
 #include <IO/ReadHelpers.h>
 #include <base/find_symbols.h>

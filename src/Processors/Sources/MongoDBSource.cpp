@@ -1,7 +1,7 @@
 #include "config.h"
 
 #if USE_MONGODB
-#include <Processors/Sources/MongoDBSource.h>
+#include "MongoDBSource.h"
 
 #include <vector>
 
@@ -157,17 +157,15 @@ MongoDBSource::MongoDBSource(
     const std::string & collection_name,
     const bsoncxx::document::view_or_value & query,
     const mongocxx::options::find & options,
-    SharedHeader sample_block_,
+    const Block & sample_block_,
     const UInt64 & max_block_size_)
     : ISource{sample_block_}
     , client{uri}
     , database{client.database(uri.database())}
     , collection{database.collection(collection_name)}
     , cursor{collection.find(query, options)}
-    , sample_block{*sample_block_}
+    , sample_block{sample_block_}
     , max_block_size{max_block_size_}
-    , db_json_format_settings{.json= {.max_depth = 0, .quote_64bit_integers = false}}
-    , json_format_settings{db_json_format_settings, 0, true, true}
 {
     for (const auto & idx : collections::range(0, sample_block.columns()))
     {

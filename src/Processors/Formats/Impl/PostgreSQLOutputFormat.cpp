@@ -1,4 +1,4 @@
-#include <Processors/Formats/Impl/PostgreSQLOutputFormat.h>
+#include "PostgreSQLOutputFormat.h"
 
 #include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
@@ -9,7 +9,7 @@
 namespace DB
 {
 
-PostgreSQLOutputFormat::PostgreSQLOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
+PostgreSQLOutputFormat::PostgreSQLOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
     : IOutputFormat(header_, out_)
     , format_settings(settings_)
     , message_transport(&out)
@@ -71,9 +71,8 @@ void registerOutputFormatPostgreSQLWire(FormatFactory & factory)
         "PostgreSQLWire",
         [](WriteBuffer & buf,
            const Block & sample,
-           const FormatSettings & settings) { return std::make_shared<PostgreSQLOutputFormat>(buf, std::make_shared<const Block>(sample), settings); });
+           const FormatSettings & settings) { return std::make_shared<PostgreSQLOutputFormat>(buf, sample, settings); });
     factory.markOutputFormatNotTTYFriendly("PostgreSQLWire");
-    factory.setContentType("PostgreSQLWire", "application/octet-stream");
 }
 
 }

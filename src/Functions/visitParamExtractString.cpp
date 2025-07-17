@@ -30,14 +30,10 @@ REGISTER_FUNCTION(VisitParamExtractString)
         There is currently no support for code points in the format \uXXXX\uYYYY that are not from the basic multilingual plane (they are converted to CESU-8 instead of UTF-8).)",
         .syntax = "simpleJSONExtractString(json, field_name)",
         .arguments
-        = {{"json", "The JSON in which the field is searched for.", {"String"}},
-           {"field_name", "The name of the field to search for.", {"const String"}}},
-        .returned_value = {R"(
-Returns the value of a field as a String, including separators.
-The value is unescaped.
-It returns an empty String: if the field doesn't contain a double quoted string,
-if unescaping fails or if the field doesn't exist.
-)"},
+        = {{"json", "The JSON in which the field is searched for. String."},
+           {"field_name", "The name of the field to search for. String literal."}},
+        .returned_value = "It returns the value of a field as a String, including separators. The value is unescaped. It returns an empty "
+                          "String: if the field doesn't contain a double quoted string, if unescaping fails or if the field doesn't exist.",
         .examples
         = {{.name = "simple",
             .query = R"(CREATE TABLE jsons
@@ -56,7 +52,7 @@ SELECT simpleJSONExtractString(json, 'foo') FROM jsons ORDER BY json;)",
 
 ☺
 )"}},
-        .category = FunctionDocumentation::Category::JSON});
+        .category{"JSON"}});
     factory.registerAlias("visitParamExtractString", "simpleJSONExtractString");
 }
 

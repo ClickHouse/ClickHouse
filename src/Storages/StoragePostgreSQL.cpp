@@ -1,4 +1,4 @@
-#include <Storages/StoragePostgreSQL.h>
+#include "StoragePostgreSQL.h"
 
 #if USE_LIBPQXX
 #include <Processors/Sources/PostgreSQLSource.h>
@@ -133,7 +133,7 @@ public:
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        SharedHeader sample_block,
+        Block sample_block,
         size_t max_block_size_,
         String remote_table_schema_,
         String remote_table_name_,
@@ -208,7 +208,7 @@ void StoragePostgreSQL::read(
         query_info,
         storage_snapshot,
         local_context,
-        std::make_shared<const Block>(sample_block),
+        sample_block,
         max_block_size,
         remote_table_schema,
         remote_table_name,
@@ -229,7 +229,7 @@ public:
         const String & remote_table_name_,
         const String & remote_table_schema_,
         const String & on_conflict_)
-        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , metadata_snapshot(metadata_snapshot_)
         , connection_holder(std::move(connection_holder_))
         , remote_table_name(remote_table_name_)
@@ -617,7 +617,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
     factory.registerStorage("PostgreSQL", [](const StorageFactory::Arguments & args)
     {
         auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext());
-        const auto & settings = args.getLocalContext()->getSettingsRef();
+        const auto & settings = args.getContext()->getSettingsRef();
         auto pool = std::make_shared<postgres::PoolWithFailover>(
             configuration,
             settings[Setting::postgresql_connection_pool_size],
@@ -639,7 +639,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
     },
     {
         .supports_schema_inference = true,
-        .source_access_type = AccessTypeObjects::Source::POSTGRES,
+        .source_access_type = AccessType::POSTGRES,
     });
 }
 
