@@ -171,8 +171,6 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
-    std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & /*query*/, ContextPtr /*context*/) override;
-
     bool optimize(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
@@ -553,8 +551,6 @@ private:
     };
 
     std::unordered_map<String, ZeroCopyLockDescription> existing_zero_copy_locks;
-
-    static std::optional<QueryPipeline> distributedWriteFromClusterStorage(const std::shared_ptr<IStorageCluster> & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context);
 
     void readLocalImpl(
         QueryPlan & query_plan,
