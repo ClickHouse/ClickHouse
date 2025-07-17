@@ -41,7 +41,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.8",
         {
-
+            {"promql_database_name", "", "", "New experimental setting"},
+            {"promql_table_name", "", "", "New experimental setting"},
+            {"promql_evaluation_time", 0, 0, "New experimental setting"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {

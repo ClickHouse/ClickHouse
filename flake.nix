@@ -237,5 +237,6 @@
     contrib-ai-sdk-cpp = { url = "github:ClickHouse/ai-sdk-cpp/77f13e60ca3603c675e5184bf508b1c5f353aeb3"; flake = false; };
     contrib-nlohmann-json = { url = "github:nlohmann/json/55f93686c01528224f448c19128836e7df245f72"; flake = false; };
     contrib-crc32c = { url = "github:google/crc32c/02e65f4fd3065d27b2e29324800ca6d04df16126"; flake = false; };
+    contrib-antlr4-cpp-runtime = { url = "github:antlr/antlr4/b91cecf6d06600433a12a12271a7985d2845d7aa"; flake = false; };
   };
 }

@@ -6,10 +6,17 @@ add_headers_and_sources(clickhouse_parsers ./MySQL)
 add_headers_and_sources(clickhouse_parsers ./Kusto)
 add_headers_and_sources(clickhouse_parsers ./PRQL)
 add_headers_and_sources(clickhouse_parsers ./Kusto/KustoFunctions)
+add_headers_and_sources(clickhouse_parsers ./Prometheus)
+
 add_library(clickhouse_parsers ${clickhouse_parsers_headers} ${clickhouse_parsers_sources})
 target_link_libraries(clickhouse_parsers PUBLIC clickhouse_common_io clickhouse_common_access)
+
 if (TARGET ch_rust::prql)
     target_link_libraries(clickhouse_parsers PRIVATE ch_rust::prql)
+endif ()
+
+if (TARGET ch_contrib::antlr4_grammars)
+    target_link_libraries(clickhouse_parsers PRIVATE ch_contrib::antlr4_grammars)
 endif ()
 
 if(ENABLE_EXAMPLES)

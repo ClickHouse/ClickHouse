@@ -8,6 +8,8 @@
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/TableFunctionTimeSeriesSelector.h>
+#include <TableFunctions/TableFunctionPrometheusQuery.h>
 
 
 namespace DB
@@ -121,6 +123,18 @@ void registerTableFunctionTimeSeries(TableFunctionFactory & factory)
         {.documentation = {
             .description=R"(Provides direct access to the 'metrics' target table for a specified TimeSeries table.)",
             .examples{{"timeSeriesMetrics", "SELECT * from timeSeriesMetrics('mydb', 'time_series_table');", ""}},
+            .category = FunctionDocumentation::Category::TableFunction}
+        });
+    factory.registerFunction<TableFunctionTimeSeriesSelector>(
+        {.documentation = {
+            .description=R"(Reads time series from a specified TimeSeries table.)",
+            .examples{{"timeSeriesMetrics", "SELECT * from timeSeriesSelector('mydb', 'time_series_table', 'http_requests{job=\"prometheus\"}', now() - INTERVAL 10 MINUTES, now());", ""}},
+            .category = FunctionDocumentation::Category::TableFunction}
+        });
+    factory.registerFunction<TableFunctionPrometheusQuery>(
+        {.documentation = {
+            .description=R"(Evaluates a prometheus query using data from a specified TimeSeries table.)",
+            .examples{{"prometheusQuery", "SELECT * from prometheusQuery('mydb', 'time_series_table', 'rate(http_requests_total[5m])[30m:1m]', now() - INTERVAL 10 MINUTES);", ""}},
             .category = FunctionDocumentation::Category::TableFunction}
         });
 }
