@@ -181,7 +181,7 @@ Converts a date or date with time value from one time zone to UTC timezone times
 toUTCTimestamp(datetime, time_zone)
     )";
     FunctionDocumentation::Arguments arguments_toUTCTimestamp = {
-        {"datetime", "A date or date with time type const value or an expression.", {"DateTime", "DateTIme64"}},
+        {"datetime", "A date or date with time type const value or an expression.", {"DateTime", "DateTime64"}},
         {"time_zone", "A String type const value or an expression representing the time zone.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toUTCTimestamp = {"Returns a date or date with time in UTC timezone.", {"DateTime", "DateTime64"}};
