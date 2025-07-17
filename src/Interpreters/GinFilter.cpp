@@ -109,8 +109,13 @@ bool hasAlwaysMatchFlag(const GinIndexPostingsList & posting_bitset)
     return posting_bitset.cardinality() == 1 && posting_bitset.minimum() == UINT32_MAX;
 }
 
+
+template <GinSearchMode search_mode>
+bool matchInRangeInternal(const GinPostingsCache & postings_cache, UInt32 segment_id, UInt32 range_start, UInt32 range_end);
+
 /// Helper method to check if all terms in postings list cache has intersection with given row ID range
-bool matchAllInRange(const GinPostingsCache & postings_cache, UInt32 segment_id, UInt32 range_start, UInt32 range_end)
+template <>
+bool matchInRangeInternal<GinSearchMode::All>(const GinPostingsCache & postings_cache, UInt32 segment_id, UInt32 range_start, UInt32 range_end)
 {
     /// Check for each term
     GinIndexPostingsList range_bitset;
@@ -142,7 +147,8 @@ bool matchAllInRange(const GinPostingsCache & postings_cache, UInt32 segment_id,
 }
 
 /// Helper method to check if any term in postings list cache has intersection with given row ID range
-bool matchAnyInRange(const GinPostingsCache & postings_cache, UInt32 segment_id, UInt32 range_start, UInt32 range_end)
+template <>
+bool matchInRangeInternal<GinSearchMode::Any>(const GinPostingsCache & postings_cache, UInt32 segment_id, UInt32 range_start, UInt32 range_end)
 {
     /// Check for each term
     GinIndexPostingsList postings_bitset;
@@ -167,44 +173,10 @@ bool matchAnyInRange(const GinPostingsCache & postings_cache, UInt32 segment_id,
     return range_bitset.intersect(postings_bitset);
 }
 
+}
 
 template <GinSearchMode search_mode>
-bool matchInRange(const GinSegmentWithRowIdRangeVector & rowid_ranges, const GinPostingsCache & postings_cache)
-{
-    if (hasEmptyPostingsList(postings_cache))
-        switch (search_mode)
-        {
-            case GinSearchMode::Any: {
-                if (postings_cache.size() == 1)
-                    /// Definitely no match when there is a single term in ANY search mode and the term does not exists in FST.
-                    return false;
-                break;
-            }
-            case GinSearchMode::All:
-                return false;
-        }
-
-    /// Check for each row ID ranges
-    for (const auto & rowid_range : rowid_ranges)
-        switch (search_mode)
-        {
-            case GinSearchMode::Any: {
-                if (matchAnyInRange(postings_cache, rowid_range.segment_id, rowid_range.range_start, rowid_range.range_end))
-                    return true;
-                break;
-            }
-            case GinSearchMode::All: {
-                if (matchAllInRange(postings_cache, rowid_range.segment_id, rowid_range.range_start, rowid_range.range_end))
-                    return true;
-                break;
-            }
-        }
-    return false;
-}
-
-}
-
-bool GinFilter::contains(const GinFilter & filter, PostingsCacheForStore & cache_store, GinSearchMode search_mode) const
+bool GinFilter::contains(const GinFilter & filter, PostingsCacheForStore & cache_store) const
 {
     if (filter.getTerms().empty())
         return true;
@@ -217,15 +189,33 @@ bool GinFilter::contains(const GinFilter & filter, PostingsCacheForStore & cache
         cache_store.cache[filter.getQueryString()] = postings_cache;
     }
 
-    switch (search_mode)
+
+    if (hasEmptyPostingsList(*postings_cache))
     {
-        case GinSearchMode::Any:
-            return matchInRange<GinSearchMode::Any>(rowid_ranges, *postings_cache);
-        case GinSearchMode::All:
-            return matchInRange<GinSearchMode::All>(rowid_ranges, *postings_cache);
+        if constexpr (search_mode == GinSearchMode::Any)
+        {
+            if (postings_cache->size() == 1)
+                /// Definitely no match when there is a single term in ANY search mode and the term does not exists in FST.
+                return false;
+        }
+        else if constexpr (search_mode == GinSearchMode::All)
+        {
+            return false;
+        }
     }
+
+    /// Check for each row ID ranges
+    for (const auto & rowid_range : rowid_ranges)
+        if (matchInRangeInternal<search_mode>(*postings_cache, rowid_range.segment_id, rowid_range.range_start, rowid_range.range_end))
+            return true;
+
+    return false;
 }
 
+template bool GinFilter::contains<GinSearchMode::Any>(const GinFilter & filter, PostingsCacheForStore & cache_store) const;
+template bool GinFilter::contains<GinSearchMode::All>(const GinFilter & filter, PostingsCacheForStore & cache_store) const;
+
 }
+
 
 // NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)
