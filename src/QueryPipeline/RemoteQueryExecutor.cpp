@@ -173,27 +173,6 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
-    std::shared_ptr<Connection> connection_ptr,
-    const String & query_,
-    SharedHeader header_,
-    ContextPtr context_,
-    ThrottlerPtr throttler,
-    const Scalars & scalars_,
-    const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_,
-    std::optional<Extension> extension_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, nullptr, extension_)
-{
-    create_connections = [this, connection_ptr, throttler, extension_](AsyncCallback)
-    {
-        auto res = std::make_unique<MultiplexedConnections>(connection_ptr, context, throttler);
-        if (extension_ && extension_->replica_info)
-            res->setReplicaInfo(*extension_->replica_info);
-        return res;
-    };
-}
-
-RemoteQueryExecutor::RemoteQueryExecutor(
     std::vector<IConnectionPool::Entry> && connections_,
     const String & query_,
     SharedHeader header_,
