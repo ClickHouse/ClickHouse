@@ -1,4 +1,5 @@
 from ci.jobs.scripts.clickhouse_proc import ClickHouseLight
+from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
@@ -21,7 +22,6 @@ def main():
                 ch.install()
                 and ch.clickbench_config_tweaks()
                 and ch.fuzzer_config_tweaks()
-                and ch.start_log_exports(check_start_time=stop_watch.start_time)
             )
 
         results.append(
@@ -33,7 +33,11 @@ def main():
         print("Start ClickHouse")
 
         def start():
-            return ch.start()
+            return ch.start() and (
+                ch.start_log_exports(check_start_time=stop_watch.start_time)
+                if not Info().is_local_run
+                else True
+            )
 
         log_export_config = f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --config-logs-export-cluster {ch.config_path}/config.d/system_logs_export.yaml"
         setup_logs_replication = f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --setup-logs-replication"
