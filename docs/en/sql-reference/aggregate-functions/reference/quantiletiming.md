@@ -51,7 +51,7 @@ For calculating page loading time quantiles, this function is more effective and
 Type: `Float32`.
 
 :::note
-If no values are passed to the function (when using `quantileTimingIf`), [NaN](/sql-reference/data-types/float#nan-and-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](/sql-reference/statements/select/order-by) for notes on sorting `NaN` values.
+If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../../sql-reference/data-types/float#nan-and-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../../../sql-reference/statements/select/order-by) for notes on sorting `NaN` values.
 :::
 
 **Example**

@@ -57,8 +57,6 @@ When creating tables, numeric parameters for floating point numbers can be set (
 
 - Computations with floating-point numbers might produce a rounding error.
 
-<!---->
-
 ```sql
 SELECT 1 - 0.9
 
@@ -77,8 +75,6 @@ In contrast to standard SQL, ClickHouse supports the following categories of flo
 
 - `Inf` – Infinity.
 
-<!---->
-
 ```sql
 SELECT 0.5 / 0
 
@@ -89,8 +85,6 @@ SELECT 0.5 / 0
 
 - `-Inf` — Negative infinity.
 
-<!---->
-
 ```sql
 SELECT -0.5 / 0
 
@@ -100,8 +94,6 @@ SELECT -0.5 / 0
 ```
 
 - `NaN` — Not a number.
-
-<!---->
 
 ```sql
 SELECT 0 / 0

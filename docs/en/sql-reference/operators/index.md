@@ -381,8 +381,6 @@ ClickHouse supports the `IS NULL` and `IS NOT NULL` operators.
 
 Can be optimized by enabling the [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NULL FROM table` transforms to `SELECT n.null FROM TABLE`.
 
-<!---->
-
 ```sql
 SELECT x+100 FROM t_null WHERE y IS NULL
 ```
@@ -393,14 +391,12 @@ SELECT x+100 FROM t_null WHERE y IS NULL
 └──────────────┘
 ```
 
-### IS NOT NULL {#is_not_null}
+### IS NOT NULL {#is-not-null}
 
 - For [Nullable](../../sql-reference/data-types/nullable.md) type values, the `IS NOT NULL` operator returns:
 - `0`, if the value is `NULL`.
 - `1` otherwise.
 - For other values, the `IS NOT NULL` operator always returns `1`.
-
-<!---->
 
 ```sql
 SELECT * FROM t_null WHERE y IS NOT NULL
