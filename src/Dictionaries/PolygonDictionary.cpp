@@ -238,7 +238,7 @@ Pipe IPolygonDictionary::read(const Names & column_names, size_t, size_t) const
         result_columns.emplace_back(column_with_type);
     }
 
-    auto source = std::make_shared<SourceFromSingleChunk>(Block(result_columns));
+    auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(Block(result_columns)));
     return Pipe(std::move(source));
 }
 

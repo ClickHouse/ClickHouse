@@ -109,8 +109,6 @@ set(EXTERNAL_GOOGLEAPIS_PROTO_FILES
     "google/type/quaternion.proto"
     "google/type/timeofday.proto")
 
-include(GoogleCloudCppCommonOptions)
-
 # Set EXTERNAL_GOOGLEAPIS_SOURCE in the parent directory, as it is used by all
 # the generated libraries.  The Conan packages (https://conan.io), will need to
 # patch this value.  Setting the value in a single place makes such patching
@@ -372,98 +370,3 @@ google_cloud_cpp_grpcpp_library(
 external_googleapis_set_version_and_alias(cloud_common_common_protos)
 target_link_libraries(google_cloud_cpp_cloud_common_common_protos
                       PUBLIC ${cloud_common_deps})
-
-# Install the libraries and headers in the locations determined by
-# GNUInstallDirs
-# include(GNUInstallDirs)
-
-# install(
-#     TARGETS ${external_googleapis_installed_libraries_list}
-#     EXPORT googleapis-targets
-#     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-#             COMPONENT google_cloud_cpp_runtime
-#     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-#             COMPONENT google_cloud_cpp_runtime
-#             NAMELINK_COMPONENT google_cloud_cpp_development
-#     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-#             COMPONENT google_cloud_cpp_development)
-
-# foreach (target ${external_googleapis_installed_libraries_list})
-#     google_cloud_cpp_install_proto_library_headers("${target}")
-#     google_cloud_cpp_install_proto_library_protos(
-#         "${target}" "${EXTERNAL_GOOGLEAPIS_SOURCE}")
-# endforeach ()
-
-# Create and install the pkg-config files.
-# foreach (target ${external_googleapis_installed_libraries_list})
-#     external_googleapis_install_pc("${target}")
-# endforeach ()
-
-# Create and install the googleapis pkg-config file for backwards compatibility.
-# set(GOOGLE_CLOUD_CPP_PC_LIBS "")
-# google_cloud_cpp_set_pkgconfig_paths()
-# set(GOOGLE_CLOUD_CPP_PC_NAME "The Google APIS C++ Proto Library")
-# set(GOOGLE_CLOUD_CPP_PC_DESCRIPTION
-#     "Provides C++ APIs to access Google Cloud Platforms.")
-# # This list is for backwards compatibility purposes only. DO NOT add new
-# # libraries to it.
-# string(
-#     JOIN
-#     " "
-#     GOOGLE_CLOUD_CPP_PC_REQUIRES
-#     "google_cloud_cpp_bigtable_protos"
-#     "google_cloud_cpp_cloud_bigquery_protos"
-#     "google_cloud_cpp_iam_protos"
-#     "google_cloud_cpp_pubsub_protos"
-#     "google_cloud_cpp_storage_protos"
-#     "google_cloud_cpp_logging_protos"
-#     "google_cloud_cpp_iam_v1_iam_policy_protos"
-#     "google_cloud_cpp_iam_v1_options_protos"
-#     "google_cloud_cpp_iam_v1_policy_protos"
-#     "google_cloud_cpp_longrunning_operations_protos"
-#     "google_cloud_cpp_api_auth_protos"
-#     "google_cloud_cpp_api_annotations_protos"
-#     "google_cloud_cpp_api_client_protos"
-#     "google_cloud_cpp_api_field_behavior_protos"
-#     "google_cloud_cpp_api_http_protos"
-#     "google_cloud_cpp_rpc_status_protos"
-#     "google_cloud_cpp_rpc_error_details_protos"
-#     "google_cloud_cpp_type_expr_protos"
-#     "grpc++"
-#     "grpc"
-#     "openssl"
-#     "protobuf"
-#     "zlib"
-#     "libcares")
-# set(GOOGLE_CLOUD_CPP_PC_LIBS "")
-# google_cloud_cpp_set_pkgconfig_paths()
-# configure_file("${PROJECT_SOURCE_DIR}/cmake/templates/config.pc.in"
-#                "googleapis.pc" @ONLY)
-# install(
-#     FILES "${CMAKE_CURRENT_BINARY_DIR}/googleapis.pc"
-#     DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig"
-#     COMPONENT google_cloud_cpp_development)
-
-# Create and install the CMake configuration files.
-# include(CMakePackageConfigHelpers)
-
-# configure_file("${CMAKE_CURRENT_LIST_DIR}/config.cmake.in"
-#                "google_cloud_cpp_googleapis-config.cmake" @ONLY)
-# write_basic_package_version_file(
-#     "google_cloud_cpp_googleapis-config-version.cmake"
-#     VERSION ${PROJECT_VERSION}
-#     COMPATIBILITY ExactVersion)
-
-# Export the CMake targets to make it easy to create configuration files.
-# install(
-#     EXPORT googleapis-targets
-#     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/google_cloud_cpp_googleapis"
-#     COMPONENT google_cloud_cpp_development)
-# install(
-#     FILES
-#         "${CMAKE_CURRENT_BINARY_DIR}/google_cloud_cpp_googleapis-config.cmake"
-#         "${CMAKE_CURRENT_BINARY_DIR}/google_cloud_cpp_googleapis-config-version.cmake"
-#         "${PROJECT_SOURCE_DIR}/cmake/FindgRPC.cmake"
-#         "${PROJECT_SOURCE_DIR}/cmake/CompileProtos.cmake"
-#     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/google_cloud_cpp_googleapis"
-#     COMPONENT google_cloud_cpp_development)
