@@ -130,7 +130,7 @@ static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_colu
 
 HashJoin::HashJoin(
     std::shared_ptr<TableJoin> table_join_,
-    const Block & right_sample_block_,
+    SharedHeader right_sample_block_,
     bool any_take_last_row_,
     size_t reserve_num_,
     const String & instance_id_,
@@ -144,7 +144,7 @@ HashJoin::HashJoin(
     , asof_inequality(table_join->getAsofInequality())
     , data(std::make_shared<RightTableData>())
     , tmp_data(table_join_->getTempDataOnDisk())
-    , right_sample_block(right_sample_block_)
+    , right_sample_block(*right_sample_block_)
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
@@ -155,7 +155,7 @@ HashJoin::HashJoin(
             column.column = column.type->createColumn();
     }
 
-    LOG_TRACE(
+    LOG_TEST(
         log,
         "{}Keys: {}, datatype: {}, kind: {}, strictness: {}, right header: {}",
         instance_log_id,
@@ -655,7 +655,7 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
             || (max_rows_in_join && getTotalRowCount() + block_to_save.rows() >= max_rows_in_join)))
     {
         if (!tmp_stream)
-            tmp_stream.emplace(right_sample_block, tmp_data.get());
+            tmp_stream.emplace(std::make_shared<const Block>(right_sample_block), tmp_data.get());
 
         chassert(!source_block.wasScattered()); /// We don't run parallel_hash for cross join
         tmp_stream.value()->write(block_to_save);
@@ -967,7 +967,7 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
             if (!reader)
                 reader = tmp_stream->getReadStream();
 
-            while (auto block_right = reader.value()->read())
+            for (auto block_right = reader.value()->read(); !block_right.empty(); block_right = reader.value()->read())
             {
                 ++block_number;
                 process_right_block(block_right.getColumns());
@@ -1619,6 +1619,10 @@ bool HashJoin::isUsed(const Columns * columns_ptr, size_t row_idx) const
 
 bool HashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const
 {
+    // It would be better to check the cross join first, as it has an empty disjunct list.
+    if (table_join_->kind() == JoinKind::Cross)
+        return false;
+
     if (!table_join_->oneDisjunct())
         return true;
     /// If it'a a all right join with inequal conditions, we need to mark each row

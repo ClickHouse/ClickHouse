@@ -2,6 +2,7 @@
 import json
 import logging
 import os
+import platform
 import sys
 import time
 from pathlib import Path
@@ -279,6 +280,26 @@ def download_clickhouse_binary(
     download_builds_filter(
         check_name, reports_path, result_path, lambda x: x.endswith("clickhouse")
     )
+
+
+def download_clickhouse_master(result_path: Path, full: bool = False) -> None:
+    if platform.system() not in ("Linux", "Darwin"):
+        raise DownloadException(
+            f"Unsupported platform {platform.system()} for downloading ClickHouse master build"
+        )
+    arch = "amd64"
+    if platform.system() == "Darwin":
+        arch = "macos"
+    if platform.machine() in ("aarch64", "arm64"):
+        arch = "aarch64"
+        if platform.system() == "Darwin":
+            arch = "macos-aarch64"
+
+    url = (
+        f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/{arch}/clickhouse"
+        f"{'-full' if full else ''}"
+    )
+    download_build_with_progress(url, result_path / "clickhouse")
 
 
 def get_clickhouse_binary_url(

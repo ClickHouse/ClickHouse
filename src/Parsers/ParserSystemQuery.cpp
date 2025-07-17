@@ -327,6 +327,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             if (!parseDatabaseAsAST(pos, expected, res->database))
                 return false;
+            if (ParserKeyword{Keyword::STRICT}.ignore(pos, expected))
+                res->sync_replica_mode = SyncReplicaMode::STRICT;
             break;
         }
         case Type::RESTART_DISK:
@@ -526,17 +528,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         {
             ParserLiteral parser;
             ASTPtr ast;
-            if (parser.parse(pos, ast, expected))
-            {
-                res->distributed_cache_server_id = ast->as<ASTLiteral>()->value.safeGet<String>();
-            }
-            else if (ParserKeyword{Keyword::CONNECTIONS}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::CONNECTIONS}.ignore(pos, expected))
             {
                 res->distributed_cache_drop_connections = true;
             }
-            else
+            else if (parser.parse(pos, ast, expected))
             {
-                return false;
+                res->distributed_cache_server_id = ast->as<ASTLiteral>()->value.safeGet<String>();
             }
 
             break;

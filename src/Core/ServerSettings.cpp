@@ -93,6 +93,19 @@ namespace DB
     A value of `0` means unlimited.
     :::
     )", 0) \
+    DECLARE(UInt64, max_format_parsing_thread_pool_size, 100, R"(
+    Maximum total number of threads to use for parsing input.
+    )", 0) \
+    DECLARE(UInt64, max_format_parsing_thread_pool_free_size, 0, R"(
+    Maximum number of idle standby threads to keep in the thread pool for parsing input.
+    )", 0) \
+    DECLARE(UInt64, format_parsing_thread_pool_queue_size, 10000, R"(
+    The maximum number of jobs that can be scheduled on thread pool for parsing input.
+
+    :::note
+    A value of `0` means unlimited.
+    :::
+    )", 0) \
     DECLARE(UInt64, max_fetch_partition_thread_pool_size, 64, R"(The number of threads for ALTER TABLE FETCH PARTITION.)", 0) \
     DECLARE(UInt64, max_active_parts_loading_thread_pool_size, 64, R"(The number of threads to load active set of data parts (Active ones) at startup.)", 0) \
     DECLARE(UInt64, max_outdated_parts_loading_thread_pool_size, 32, R"(The number of threads to load inactive set of data parts (Outdated ones) at startup.)", 0) \
@@ -994,6 +1007,8 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, threadpool_writer_queue_size, 1000000, R"(Number of tasks which is possible to push into background pool for write requests to object storages)", 0) \
     DECLARE(UInt64, iceberg_catalog_threadpool_pool_size, 50, R"(Size of background pool for iceberg catalog)", 0) \
     DECLARE(UInt64, iceberg_catalog_threadpool_queue_size, 1000000, R"(Number of tasks which is possible to push into iceberg catalog pool)", 0) \
+    DECLARE(UInt64, drop_distributed_cache_pool_size, 8, R"(The size of the threadpool used for dropping distributed cache.)", 0) \
+    DECLARE(UInt64, drop_distributed_cache_queue_size, 1000, R"(The queue size of the threadpool used for dropping distributed cache.)", 0) \
     DECLARE(UInt32, allow_feature_tier, 0, R"(
     Controls if the user can change settings related to the different feature tiers.
 
@@ -1065,6 +1080,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     See [Controlling behavior on server CPU overload](/operations/settings/server-overload) for more details.
     )", 0) \
     DECLARE(Float, distributed_cache_keep_up_free_connections_ratio, 0.1f, "Soft limit for number of active connection distributed cache will try to keep free. After the number of free connections goes below distributed_cache_keep_up_free_connections_ratio * max_connections, connections with oldest activity will be closed until the number goes above the limit.", 0) \
+    DECLARE(Bool, skip_binary_checksum_checks, false, R"(Skips ClickHouse binary checksum integrity checks)", 0) \
 
 
 // clang-format on
@@ -1250,6 +1266,12 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
              {getMergeTreePrefixesDeserializationThreadPool().isInitialized() ? std::to_string(getMergeTreePrefixesDeserializationThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"prefixes_deserialization_thread_pool_thread_pool_queue_size",
              {getMergeTreePrefixesDeserializationThreadPool().isInitialized() ? std::to_string(getMergeTreePrefixesDeserializationThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_format_parsing_thread_pool_size",
+             {getFormatParsingThreadPool().isInitialized() ? std::to_string(getFormatParsingThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_format_parsing_thread_pool_free_size",
+             {getFormatParsingThreadPool().isInitialized() ? std::to_string(getFormatParsingThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"format_parsing_thread_pool_queue_size",
+             {getFormatParsingThreadPool().isInitialized() ? std::to_string(getFormatParsingThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
     };
 
     if (context->areBackgroundExecutorsInitialized())

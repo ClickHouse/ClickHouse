@@ -5,6 +5,7 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/filesystemHelpers.h>
+#include <Core/Names.h>
 #include <Formats/MarkInCompressedFile.h>
 
 #include <Compression/CompressedReadBuffer.h>
@@ -239,6 +240,9 @@ private:
 
         UInt64 prev_elapsed_ms{0};
 
+        /// Current merge may or may not reduce number of rows. It's not known until the horizontal stage is finished.
+        bool merge_may_reduce_rows{false};
+
         // will throw an exception if merge was cancelled in any way.
         void checkOperationIsNotCanceled() const;
         bool isCancelled() const;
@@ -367,6 +371,7 @@ private:
         size_t max_delayed_streams = 0;
         bool use_prefetch = false;
         std::list<std::unique_ptr<MergedColumnOnlyOutputStream>> delayed_streams;
+        NameSet removed_files;
         size_t column_elems_written{0};
         QueryPipeline column_parts_pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;

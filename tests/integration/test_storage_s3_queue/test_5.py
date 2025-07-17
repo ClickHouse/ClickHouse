@@ -23,6 +23,7 @@ from helpers.s3_queue_common import (
     create_mv,
     generate_random_string,
 )
+from helpers.config_cluster import minio_secret_key
 
 AVAILABLE_MODES = ["unordered", "ordered"]
 
@@ -872,3 +873,94 @@ def test_shutdown_logs(started_cluster):
     )
     assert 1 == check_in_text_log("Shutting down system logs", "DatabaseCatalog")
     assert 0 == check_in_text_log("Shutting down system databases", "DatabaseCatalog")
+
+
+def test_shutdown_order(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_shutdown_order_{generate_random_string()}"
+    dst_table_name = f"a_{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    format = "column1 Int32, column2 String"
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        format=format,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "polling_max_timeout_ms": 0,
+            "polling_min_timeout_ms": 0,
+        },
+    )
+
+    def insert():
+        files_to_generate = 10
+        table_name_suffix = f"{uuid.uuid4()}"
+        for i in range(files_to_generate):
+            file_name = f"file_{table_name}_{table_name_suffix}_{i}.csv"
+            s3_function = f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{files_path}/{file_name}', 'minio', '{minio_secret_key}')"
+            node.query(
+                f"INSERT INTO FUNCTION {s3_function} select number, randomString(100) FROM numbers(5000000)"
+            )
+
+    insert()
+
+    mv_table_name = f"{table_name}_mv"
+    create_mv(
+        node,
+        table_name,
+        dst_table_name,
+        mv_name=mv_table_name,
+        format=format,
+        dst_table_engine=f"ReplicatedMergeTree('/clickhouse/tables/{table_name}', 'node')",
+    )
+
+    node.restart_clickhouse()
+
+    def check_in_text_log(message, logger_name):
+        return int(
+            node.query(
+                f"SELECT count() FROM system.text_log WHERE logger_name ilike '%{logger_name}%' and message ilike '%{message}%'"
+            )
+        )
+
+    assert 0 == check_in_text_log(
+        "Failed to process data", f"StorageS3Queue(default.{table_name})"
+    )
+    assert 0 == int(
+        node.query(
+            f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Failed'"
+        )
+    )
+    new_table_name = f"{table_name}_new"
+    new_mv_table_name = f"{new_table_name}_mv"
+    node.query(f"DROP TABLE {mv_table_name} SYNC")
+    node.query(f"RENAME TABLE {table_name} to {new_table_name}")
+
+    create_mv(
+        node,
+        new_table_name,
+        dst_table_name,
+        mv_name=new_mv_table_name,
+        format=format,
+        dst_table_exists=True,
+    )
+    insert()
+    time.sleep(0.1)
+
+    node.restart_clickhouse()
+    assert 0 == check_in_text_log(
+        "Failed to process data", f"StorageS3Queue(default.{table_name})"
+    )
+    assert 0 == int(
+        node.query(
+            f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Failed'"
+        )
+    )
+
+    node.query(f"DROP TABLE {new_table_name} SYNC")
