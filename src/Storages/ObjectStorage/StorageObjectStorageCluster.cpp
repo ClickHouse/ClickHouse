@@ -402,7 +402,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
             {"s3", "s3Cluster"},
             {"azureBlobStorage", "azureBlobStorageCluster"},
             {"hdfs", "hdfsCluster"},
-            {"iceberg", "icebergS3Cluster"},
+            {"iceberg", "icebergCluster"},
             {"icebergS3", "icebergS3Cluster"},
             {"icebergAzure", "icebergAzureCluster"},
             {"icebergHDFS", "icebergHDFSCluster"},
