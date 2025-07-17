@@ -2,8 +2,7 @@ import csv
 import logging
 import os
 import shutil
-import time
-from email.errors import HeaderParseError
+import uuid
 
 import pytest
 
@@ -636,20 +635,20 @@ def test_distributed_s3_table_engine(started_cluster):
     node = started_cluster.instances["s0_0_0"]
 
     resp_def = node.query(
-        """
+        f"""
         SELECT * from s3Cluster(
             'cluster_simple',
-            'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV',
+            'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
             'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') ORDER BY (name, value, polygon)
         """
     )
 
     node.query("DROP TABLE IF EXISTS single_node");
     node.query(
-        """
+        f"""
         CREATE TABLE single_node
             (name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64))))
-            ENGINE=S3('http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV')
+            ENGINE=S3('http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV')
         """
     )
     query_id_engine_single_node = str(uuid.uuid4())
@@ -663,10 +662,10 @@ def test_distributed_s3_table_engine(started_cluster):
 
     node.query("DROP TABLE IF EXISTS distributed");
     node.query(
-        """
+       f"""
         CREATE TABLE distributed
             (name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64))))
-            ENGINE=S3('http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV')
+            ENGINE=S3('http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV')
             SETTINGS object_storage_cluster='cluster_simple'
         """
     )

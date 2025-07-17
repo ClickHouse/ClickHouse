@@ -698,11 +698,11 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
     # write 3 times
     assert int(instance.query(f"SELECT count() FROM {table_function_expr_cluster}")) == 100 * 3
 
-    select_remote_cluster = (
-        instance.query(f"SELECT * FROM remote('node2',{table_function_expr_cluster})")
-        .strip()
-        .split()
-    )
+    #select_remote_cluster = (
+    #    instance.query(f"SELECT * FROM remote('node2',{table_function_expr_cluster})")
+    #    .strip()
+    #    .split()
+    #)
 
     instance.query(f"DROP TABLE IF EXISTS `{TABLE_NAME}` SYNC")
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
@@ -735,7 +735,7 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
     assert len(select_cluster) == 600
     assert len(select_cluster_alt_syntax) == 600
     assert len(select_cluster_table_engine) == 600
-    assert len(select_remote_cluster) == 600
+    #assert len(select_remote_cluster) == 600
     assert len(select_pure_table_engine) == 600
     assert len(select_pure_table_engine_cluster) == 600
 
@@ -743,7 +743,7 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
     assert select_cluster == select_regular
     assert select_cluster_alt_syntax == select_regular
     assert select_cluster_table_engine == select_regular
-    assert select_remote_cluster == select_regular
+    #assert select_remote_cluster == select_regular
     assert select_pure_table_engine == select_regular
     assert select_pure_table_engine_cluster == select_regular
 

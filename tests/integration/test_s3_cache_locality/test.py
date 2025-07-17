@@ -7,6 +7,7 @@ import uuid
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import minio_secret_key
 
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
@@ -81,7 +82,7 @@ def check_s3_gets(cluster, node, expected_result, cluster_first, cluster_second,
     result_first = node.query(
         f"""
         SELECT count(*)
-          FROM s3Cluster('{cluster_first}', 'http://minio1:9001/root/data/generated/*', 'minio', 'minio123', 'CSV', 'a String, b UInt64')
+          FROM s3Cluster('{cluster_first}', 'http://minio1:9001/root/data/generated/*', 'minio', '{minio_secret_key}', 'CSV', 'a String, b UInt64')
           WHERE b=42
         SETTINGS
           enable_filesystem_cache={enable_filesystem_cache},
@@ -95,7 +96,7 @@ def check_s3_gets(cluster, node, expected_result, cluster_first, cluster_second,
     result_second = node.query(
         f"""
         SELECT count(*)
-          FROM s3Cluster('{cluster_second}', 'http://minio1:9001/root/data/generated/*', 'minio', 'minio123', 'CSV', 'a String, b UInt64')
+          FROM s3Cluster('{cluster_second}', 'http://minio1:9001/root/data/generated/*', 'minio', '{minio_secret_key}', 'CSV', 'a String, b UInt64')
           WHERE b=42
         SETTINGS
           enable_filesystem_cache={enable_filesystem_cache},
@@ -148,9 +149,9 @@ def test_cache_locality(started_cluster):
     node = started_cluster.instances["clickhouse0"]
 
     expected_result = node.query(
-        """
+        f"""
         SELECT count(*)
-          FROM s3('http://minio1:9001/root/data/generated/*', 'minio', 'minio123', 'CSV', 'a String, b UInt64')
+          FROM s3('http://minio1:9001/root/data/generated/*', 'minio', '{minio_secret_key}', 'CSV', 'a String, b UInt64')
           WHERE b=42
         """
     )
