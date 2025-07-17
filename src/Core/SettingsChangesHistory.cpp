@@ -57,6 +57,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             {"output_format_parquet_enum_as_byte_array", false, false, "Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM"},
             {"distributed_plan_force_shuffle_aggregation", 0, 0, "New experimental setting"},
+            {"allow_experimental_insert_into_iceberg", false, false, "New setting."},
             {"optimize_const_array_and_tuple_to_scalar_size", -1, -1, "Enables conversion of a constant array or tuple to scalar"},
         });
         addSettingsChanges(settings_changes_history, "25.6",
