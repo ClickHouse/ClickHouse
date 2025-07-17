@@ -138,7 +138,7 @@ subDate(datetime, interval)
         {"datetime", "The date or date with time from which `interval` is subtracted.", {"Date", "Date32", "DateTime", "DateTime64"}},
         {"interval", "Interval to subtract.", {"Interval"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_subDate = {"Returns date or date with time obtained by subtracting `interval` from `datetime`.", {"Date", "Date32", "DateTime", "DateTime64"};
+    FunctionDocumentation::ReturnedValue returned_value_subDate = {"Returns date or date with time obtained by subtracting `interval` from `datetime`.", {"Date", "Date32", "DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples_subDate = {
         {"Subtract interval from date", R"(
 SELECT subDate(toDate('2018-01-01'), INTERVAL 3 YEAR)

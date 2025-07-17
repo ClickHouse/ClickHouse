@@ -2069,11 +2069,11 @@ formatDateTime(datetime, format[, timezone])
     )";
     FunctionDocumentation::Arguments arguments_formatDateTime =
     {
-        {"datetime", "A date or date time to format. [`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
-        {"format", "Format string with replacement fields. [`String`](../data-types/string.md)."},
-        {"timezone", "Optional. Timezone name for the formatted time. [`String`](../data-types/string.md)."}
+        {"datetime", "A date or date time to format.", {"Date", "Date32", "DateTime", "DateTime64"}},
+        {"format", "Format string with replacement fields.", {"String"}},
+        {"timezone", "Optional. Timezone name for the formatted time.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_formatDateTime = "Returns time and date values according to the determined format. [`String`](../data-types/string.md).";
+    FunctionDocumentation::ReturnedValue returned_value_formatDateTime = {"Returns time and date values according to the determined format.", {"String"}};
     FunctionDocumentation::Examples examples_formatDateTime =
     {
         {"Format date with year placeholder", R"(
@@ -2118,16 +2118,7 @@ LIMIT 10
     };
     FunctionDocumentation::IntroducedIn introduced_in_formatDateTime = {1, 1};
     FunctionDocumentation::Category category_formatDateTime = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_formatDateTime =
-    {
-        description_formatDateTime,
-        syntax_formatDateTime,
-        arguments_formatDateTime,
-        returned_value_formatDateTime,
-        examples_formatDateTime,
-        introduced_in_formatDateTime,
-        category_formatDateTime
-    };
+    FunctionDocumentation documentation_formatDateTime = {description_formatDateTime, syntax_formatDateTime, arguments_formatDateTime, returned_value_formatDateTime, examples_formatDateTime, introduced_in_formatDateTime, category_formatDateTime};
 
     factory.registerFunction<FunctionFormatDateTime>(documentation_formatDateTime);
     factory.registerAlias("DATE_FORMAT", FunctionFormatDateTime::name, FunctionFactory::Case::Insensitive);
@@ -2147,11 +2138,11 @@ fromUnixTimestamp(timestamp[, format[, timezone]])
     )";
     FunctionDocumentation::Arguments arguments_fromUnixTimestamp =
     {
-        {"timestamp", "Unix timestamp or date/date with time value. [`Integer`](../data-types/int-uint.md)/[`Date`](../data-types/date.md)/[`Date32`](../data-types/date32.md)/[`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)."},
-        {"format", "Optional. Constant format string for output formatting. [`String`](../data-types/string.md)."},
-        {"timezone", "Optional. Constant time zone string. [`String`](../data-types/string.md)."}
+        {"timestamp", "Unix timestamp or date/date with time value.", {"(U)Int*", "Date", "Date32", "DateTime", "DateTime64"}},
+        {"format", "Optional. Constant format string for output formatting.", {"String"}},
+        {"timezone", "Optional. Constant time zone string.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_fromUnixTimestamp = "Returns [`DateTime`](../data-types/datetime.md) when called with one argument, or [`String`](../data-types/string.md) when called with two or three arguments.";
+    FunctionDocumentation::ReturnedValue returned_value_fromUnixTimestamp = {"Returns `DateTime` of the timestamp when called with one argument, or a String  when called with two or three arguments.", {"DateTime", "String"}};
     FunctionDocumentation::Examples examples_fromUnixTimestamp =
     {
         {"Convert Unix timestamp to DateTime", R"(
@@ -2174,15 +2165,7 @@ SELECT fromUnixTimestamp(1234334543, '%Y-%m-%d %R:%S') AS DateTime
     FunctionDocumentation::IntroducedIn introduced_in_fromUnixTimestamp = {20, 8};
     FunctionDocumentation::Category category_fromUnixTimestamp = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation_fromUnixTimestamp =
-    {
-        description_fromUnixTimestamp,
-        syntax_fromUnixTimestamp,
-        arguments_fromUnixTimestamp,
-        returned_value_fromUnixTimestamp,
-        examples_fromUnixTimestamp,
-        introduced_in_fromUnixTimestamp,
-        category_fromUnixTimestamp
-    };
+    {description_fromUnixTimestamp, syntax_fromUnixTimestamp, arguments_fromUnixTimestamp, returned_value_fromUnixTimestamp, examples_fromUnixTimestamp, introduced_in_fromUnixTimestamp, category_fromUnixTimestamp};
 
     factory.registerFunction<FunctionFromUnixTimestamp>(documentation_fromUnixTimestamp);
     factory.registerAlias("FROM_UNIXTIME", FunctionFromUnixTimestamp::name, FunctionFactory::Case::Insensitive);

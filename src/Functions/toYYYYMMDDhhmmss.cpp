@@ -22,7 +22,7 @@ toYYYYMMDDhhmmss(datetime[, timezone])
         {"datetime", "Date or date with time to convert.", {"Date", "Date32", "DateTime", "DateTime64"}},
         {"timezone", "Optional. Timezone for the conversion. If provided, the timezone must be a string constant.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns a `UInt64` number containing the year, month, day, hour, minute and second (YYYY * 10000000000 + MM * 100000000 + DD * 1000000 + hh * 10000 + mm * 100 + ss).", {"UInt64"};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a `UInt64` number containing the year, month, day, hour, minute and second (YYYY * 10000000000 + MM * 100000000 + DD * 1000000 + hh * 10000 + mm * 100 + ss).", {"UInt64"}};
     FunctionDocumentation::Examples examples = {
         {"Convert current date and time to YYYYMMDDhhmmss format", R"(
 SELECT toYYYYMMDDhhmmss(now(), 'US/Eastern')
