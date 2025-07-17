@@ -93,7 +93,7 @@ private:
 
     std::optional<RemoteQueryExecutor::Extension> extension;
 
-    void createExtension(const ActionsDAG::Node * predicate, size_t number_of_replicas);
+    void createExtension(const ActionsDAG::Node * predicate);
     ContextPtr updateSettings(const Settings & settings);
 };
 
@@ -105,14 +105,10 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
 
-    auto max_replicas_to_use = static_cast<UInt64>(cluster->getShardsInfo().size());
-    if (context->getSettingsRef()[Setting::max_parallel_replicas] > 1)
-        max_replicas_to_use = std::min(max_replicas_to_use, context->getSettingsRef()[Setting::max_parallel_replicas].value);
-
-    createExtension(predicate, max_replicas_to_use);
+    createExtension(predicate);
 }
 
-void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate, size_t number_of_replicas)
+void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
 {
     if (extension)
         return;
