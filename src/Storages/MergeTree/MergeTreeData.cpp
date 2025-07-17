@@ -5874,6 +5874,7 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesIfNeeded(DataPartsLock 
         DataParts data_parts;
         {
             auto parts_lock = lockParts();
+            /// Take into account only committed parts
             auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
             data_parts.insert(committed_parts_range.begin(), committed_parts_range.end());
         }
@@ -5896,6 +5897,7 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesIfNeededWithPartsLocked
 
     column_sizes.clear();
 
+    /// Take into account only committed parts
     auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
     for (const auto & part : committed_parts_range)
         addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
