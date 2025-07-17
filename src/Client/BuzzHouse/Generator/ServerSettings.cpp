@@ -66,6 +66,7 @@ std::unordered_map<String, CHSetting> hotSettings
 
 std::unordered_map<String, CHSetting> performanceSettings
     = {{"allow_aggregate_partitions_independently", trueOrFalseSetting},
+       {"allow_execute_multiif_columnar", trueOrFalseSetting},
        {"allow_experimental_query_deduplication", trueOrFalseSetting},
        {"allow_general_join_planning", trueOrFalseSetting},
        {"allow_hyperscan", trueOrFalseSetting},
@@ -230,8 +231,10 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"add_http_cors_header", trueOrFalseSettingNoOracle},
     {"aggregate_functions_null_for_empty", trueOrFalseSettingNoOracle},
     {"aggregation_memory_efficient_merge_threads", threadSetting},
+    {"allow_archive_path_syntax", trueOrFalseSettingNoOracle},
     {"allow_asynchronous_read_from_io_pool_for_merge_tree", trueOrFalseSetting},
     {"allow_changing_replica_until_first_data_packet", trueOrFalseSettingNoOracle},
+    {"allow_get_client_http_header", trueOrFalseSettingNoOracle},
     {"allow_introspection_functions", trueOrFalseSetting},
     {"allow_special_bool_values_inside_variant", trueOrFalseSettingNoOracle},
     {"alter_move_to_space_execute_async", trueOrFalseSettingNoOracle},
@@ -246,6 +249,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          },
          {},
          false)},
+    {"allow_unrestricted_reads_from_keeper", trueOrFalseSettingNoOracle},
     {"analyze_index_with_space_filling_curves", trueOrFalseSetting},
     {"analyzer_compatibility_join_using_top_level_identifier", trueOrFalseSetting},
     /// {"apply_deleted_mask", trueOrFalseSettingNoOracle}, gives issue with dump table oracle
@@ -391,6 +395,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"enable_filesystem_cache_on_write_operations", trueOrFalseSettingNoOracle},
     {"enable_filesystem_read_prefetches_log", trueOrFalseSetting},
     {"enable_global_with_statement", trueOrFalseSettingNoOracle},
+    {"enable_hdfs_pread", trueOrFalseSettingNoOracle},
     {"enable_http_compression", trueOrFalseSettingNoOracle},
     {"enable_job_stack_trace", trueOrFalseSettingNoOracle},
     {"enable_memory_bound_merging_of_aggregation_results", trueOrFalseSetting},
@@ -583,7 +588,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg)
          {
-             const DB::Strings & choices = {"'ALL'", "'ANY'", "'ASOF'", "''"};
+             const DB::Strings & choices = {"'ALL'", "'ANY'", "''"};
              return rg.pickRandomly(choices);
          },
          {},
