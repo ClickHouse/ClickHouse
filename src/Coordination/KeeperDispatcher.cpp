@@ -266,7 +266,7 @@ void KeeperDispatcher::requestThread()
                     if (current_batch_bytes_size == max_batch_bytes_size)
                         ProfileEvents::increment(ProfileEvents::KeeperBatchMaxTotalSize, 1);
 
-                    LOG_TRACE(log, "Processing requests batch, size: {}, bytes: {}", current_batch.size(), current_batch_bytes_size);
+                    LOG_TEST(log, "Processing requests batch, size: {}, bytes: {}", current_batch.size(), current_batch_bytes_size);
 
                     auto result = server->putRequestBatch(current_batch);
 

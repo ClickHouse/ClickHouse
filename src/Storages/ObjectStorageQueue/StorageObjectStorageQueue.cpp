@@ -162,7 +162,7 @@ namespace
 
 StorageObjectStorageQueue::StorageObjectStorageQueue(
     std::unique_ptr<ObjectStorageQueueSettings> queue_settings_,
-    const ConfigurationPtr configuration_,
+    const StorageObjectStorageConfigurationPtr configuration_,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
@@ -332,7 +332,7 @@ public:
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        Block sample_block,
+        SharedHeader sample_block,
         ReadFromFormatInfo info_,
         std::shared_ptr<StorageObjectStorageQueue> storage_,
         size_t max_block_size_)
@@ -408,7 +408,7 @@ void StorageObjectStorageQueue::read(
         query_info,
         storage_snapshot,
         local_context,
-        read_from_format_info.source_header,
+        std::make_shared<const Block>(read_from_format_info.source_header),
         read_from_format_info,
         std::move(this_ptr),
         max_block_size);
@@ -439,7 +439,7 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
-        pipe = Pipe(std::make_shared<NullSource>(info.source_header));
+        pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
 
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
@@ -509,9 +509,8 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
         return;
 
     const auto storage_id = getStorageID();
-    const auto & settings = getContext()->getServerSettings();
 
-    if (settings[ServerSetting::s3queue_disable_streaming])
+    if (getContext()->getS3QueueDisableStreaming())
     {
         static constexpr auto disabled_streaming_reschedule_period = 5000;
 

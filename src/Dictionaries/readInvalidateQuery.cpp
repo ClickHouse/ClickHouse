@@ -1,6 +1,7 @@
 #include <Dictionaries/readInvalidateQuery.h>
 
 #include <Columns/IColumn.h>
+#include <Core/Block.h>
 #include <DataTypes/IDataType.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -24,10 +25,10 @@ std::string readInvalidateQuery(QueryPipeline pipeline)
 
     Block block;
     while (executor.pull(block))
-        if (block)
+        if (!block.empty())
             break;
 
-    if (!block)
+    if (block.empty())
         throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "Empty response");
 
     auto columns = block.columns();

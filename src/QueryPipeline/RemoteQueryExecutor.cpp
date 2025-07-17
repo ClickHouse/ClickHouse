@@ -64,7 +64,7 @@ namespace ErrorCodes
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     const String & query_,
-    const Block & header_,
+    SharedHeader header_,
     ContextPtr context_,
     const Scalars & scalars_,
     const Tables & external_tables_,
@@ -90,7 +90,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 RemoteQueryExecutor::RemoteQueryExecutor(
     ConnectionPoolPtr pool,
     const String & query_,
-    const Block & header_,
+    SharedHeader header_,
     ContextPtr context_,
     ThrottlerPtr throttler,
     const Scalars & scalars_,
@@ -154,7 +154,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 RemoteQueryExecutor::RemoteQueryExecutor(
     Connection & connection,
     const String & query_,
-    const Block & header_,
+    SharedHeader header_,
     ContextPtr context_,
     ThrottlerPtr throttler,
     const Scalars & scalars_,
@@ -173,30 +173,9 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
-    std::shared_ptr<Connection> connection_ptr,
-    const String & query_,
-    const Block & header_,
-    ContextPtr context_,
-    ThrottlerPtr throttler,
-    const Scalars & scalars_,
-    const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_,
-    std::optional<Extension> extension_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, nullptr, extension_)
-{
-    create_connections = [this, connection_ptr, throttler, extension_](AsyncCallback)
-    {
-        auto res = std::make_unique<MultiplexedConnections>(connection_ptr, context, throttler);
-        if (extension_ && extension_->replica_info)
-            res->setReplicaInfo(*extension_->replica_info);
-        return res;
-    };
-}
-
-RemoteQueryExecutor::RemoteQueryExecutor(
     std::vector<IConnectionPool::Entry> && connections_,
     const String & query_,
-    const Block & header_,
+    SharedHeader header_,
     ContextPtr context_,
     const ThrottlerPtr & throttler,
     const Scalars & scalars_,
@@ -218,7 +197,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 RemoteQueryExecutor::RemoteQueryExecutor(
     const ConnectionPoolWithFailoverPtr & pool,
     const String & query_,
-    const Block & header_,
+    SharedHeader header_,
     ContextPtr context_,
     const ThrottlerPtr & throttler,
     const Scalars & scalars_,
@@ -328,7 +307,7 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
 static Block adaptBlockStructure(const Block & block, const Block & header)
 {
     /// Special case when reader doesn't care about result structure. Deprecated and used only in Benchmark, PerformanceTest.
-    if (!header)
+    if (header.empty())
         return block;
 
     Block res;
@@ -671,8 +650,8 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             /// Note: `packet.block.rows() > 0` means it's a header block.
             /// We can actually return it, and the first call to RemoteQueryExecutor::read
             /// will return earlier. We should consider doing it.
-            if (packet.block && (packet.block.rows() > 0))
-                return ReadResult(adaptBlockStructure(packet.block, header));
+            if (!packet.block.empty() && (packet.block.rows() > 0))
+                return ReadResult(adaptBlockStructure(packet.block, *header));
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
         case Protocol::Server::Exception:
@@ -708,14 +687,14 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
 
         case Protocol::Server::Totals:
             totals = packet.block;
-            if (totals)
-                totals = adaptBlockStructure(totals, header);
+            if (!totals.empty())
+                totals = adaptBlockStructure(totals, *header);
             break;
 
         case Protocol::Server::Extremes:
             extremes = packet.block;
-            if (extremes)
-                extremes = adaptBlockStructure(packet.block, header);
+            if (!extremes.empty())
+                extremes = adaptBlockStructure(packet.block, *header);
             break;
 
         case Protocol::Server::Log:
@@ -940,7 +919,7 @@ void RemoteQueryExecutor::sendExternalTables()
                     auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context));
 
                     builder->resize(1);
-                    builder->addTransform(std::make_shared<LimitsCheckingTransform>(builder->getHeader(), limits));
+                    builder->addTransform(std::make_shared<LimitsCheckingTransform>(builder->getSharedHeader(), limits));
 
                     return builder;
                 };

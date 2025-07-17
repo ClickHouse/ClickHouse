@@ -21,7 +21,7 @@ class FilterTransform : public ISimpleTransform
 {
 public:
     FilterTransform(
-        const Block & header_, ExpressionActionsPtr expression_, String filter_column_name_,
+        SharedHeader header_, ExpressionActionsPtr expression_, String filter_column_name_,
         bool remove_filter_column_, bool on_totals_ = false, std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr,
         std::optional<std::pair<UInt64, String>> condition_ = std::nullopt);
 

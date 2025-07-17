@@ -154,7 +154,7 @@ public:
         std::optional<size_t> number_of_current_replica_ = std::nullopt);
 
     ReadFromMergeTree(const ReadFromMergeTree &) = default;
-    ReadFromMergeTree(ReadFromMergeTree &&) = default;
+    ReadFromMergeTree(ReadFromMergeTree &&) noexcept = default;
 
     std::unique_ptr<ReadFromMergeTree> createLocalParallelReplicasReadingStep(
         AnalysisResultPtr analyzed_result_ptr_,
@@ -230,10 +230,6 @@ public:
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
     void updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_read_info_value);
     bool isQueryWithSampling() const;
-
-    /// Special stuff for vector search - replace vector column in read list with virtual "_distance" column
-    void replaceVectorColumnWithDistanceColumn(const String & vector_column);
-    bool isVectorColumnReplaced() const;
 
     /// Returns true if the optimization is applicable (and applies it then).
     bool requestOutputEachPartitionThroughSeparatePort();

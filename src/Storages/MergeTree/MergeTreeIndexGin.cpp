@@ -36,7 +36,6 @@ namespace ErrorCodes
 static const String ARGUMENT_TOKENIZER = "tokenizer";
 static const String ARGUMENT_NGRAM_SIZE = "ngram_size";
 static const String ARGUMENT_SEPARATORS = "separators";
-static const String ARGUMENT_MAX_ROWS = "max_rows_per_postings_list";
 
 MergeTreeIndexGranuleGin::MergeTreeIndexGranuleGin(
     const String & index_name_,
@@ -781,9 +780,7 @@ MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index)
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Tokenizer {} not supported", tokenizer);
 
-    UInt64 max_rows_per_postings_list = getOption<UInt64>(options, ARGUMENT_MAX_ROWS).value_or(DEFAULT_MAX_ROWS_PER_POSTINGS_LIST);
-
-    GinFilterParameters params(tokenizer, max_rows_per_postings_list, ngram_size, separators);
+    GinFilterParameters params(tokenizer, ngram_size, separators);
     return std::make_shared<MergeTreeIndexGin>(index, params, std::move(token_extractor));
 }
 
@@ -833,16 +830,8 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
         }
     }
 
-    /// Check that max_rows_per_postings_list is valid (if present)
-    UInt64 max_rows_per_postings_list = getOption<UInt64>(options, ARGUMENT_MAX_ROWS).value_or(DEFAULT_MAX_ROWS_PER_POSTINGS_LIST);
-    if (max_rows_per_postings_list != UNLIMITED_ROWS_PER_POSTINGS_LIST && max_rows_per_postings_list < MIN_ROWS_PER_POSTINGS_LIST)
-        throw Exception(
-            ErrorCodes::INCORRECT_QUERY,
-            "Text index '{}' should not be less than {}", ARGUMENT_MAX_ROWS, MIN_ROWS_PER_POSTINGS_LIST);
-
     GinFilterParameters gin_filter_params(
         tokenizer.value(),
-        max_rows_per_postings_list,
         ngram_size,
         getOptionAsStringArray(options, ARGUMENT_SEPARATORS).value_or(std::vector<String>{" "})); /// Just validate
 
