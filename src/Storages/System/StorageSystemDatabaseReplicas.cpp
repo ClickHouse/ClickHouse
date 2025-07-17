@@ -131,7 +131,7 @@ public:
 
             auto get_status_task = [this, req, thread_group = CurrentThread::getGroup()]() mutable
             {
-                ThreadGroupSwitcher switcher(thread_group, "SysDbReplicas");
+                ThreadGroupSwitcher switcher(thread_group, "DBReplicas");
 
                 auto & [_, database, promise, with_zk_fields] = req;
                 try

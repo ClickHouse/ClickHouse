@@ -213,7 +213,7 @@ void DatabaseReplicated::getStatus(ReplicatedDatabaseStatus& response, const boo
 
         response.max_log_ptr = max_log_pointer_str.empty() ? 0 : parse<UInt32>(max_log_pointer_str);
         paths.clear();
-        
+
         paths.push_back(fs::path(zookeeper_path) / "replicas");
 
         auto children_result = zookeeper->getChildren(paths);
