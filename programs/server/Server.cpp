@@ -327,17 +327,11 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
     extern const ServerSettingsFloat min_os_cpu_wait_time_ratio_to_drop_connection;
     extern const ServerSettingsFloat max_os_cpu_wait_time_ratio_to_drop_connection;
-}
-
-namespace ErrorCodes
-{
-    extern const int STARTUP_SCRIPTS_ERROR;
     extern const ServerSettingsUInt64 object_storage_list_objects_cache_size;
     extern const ServerSettingsUInt64 object_storage_list_objects_cache_max_entries;
     extern const ServerSettingsUInt64 object_storage_list_objects_cache_ttl;
 }
 
-}
 
 namespace CurrentMetrics
 {
@@ -417,6 +411,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int CORRUPTED_DATA;
     extern const int BAD_ARGUMENTS;
+    extern const int STARTUP_SCRIPTS_ERROR;
 }
 
 
