@@ -2050,11 +2050,13 @@ private:
                 LOG_TEST(ctx->log, "MutateSomePartColumnsTask: removed_files {} for part {}",
                     fmt::join(files_to_remove_after_finish, ", "), ctx->new_data_part->name);
 
-                auto changed_columns_substreams = only_outputstream->getColumnsSubstreams();
-                auto new_columns_substreams = ColumnsSubstreams::merge(changed_columns_substreams, ctx->new_data_part->getColumnsSubstreams(), ctx->new_data_part->getColumns().getNames());
+                auto new_columns_substreams = ctx->new_data_part->getColumnsSubstreams();
                 if (!new_columns_substreams.empty())
+                {
+                    auto changed_columns_substreams = only_outputstream->getColumnsSubstreams();
+                    new_columns_substreams = ColumnsSubstreams::merge(changed_columns_substreams, ctx->new_data_part->getColumnsSubstreams(), ctx->new_data_part->getColumns().getNames());
                     ctx->new_data_part->setColumnsSubstreams(new_columns_substreams);
-
+                }
                 only_outputstream->finish(ctx->need_sync);
                 ctx->new_data_part->checksums.add(std::move(changed_checksums));
             }
