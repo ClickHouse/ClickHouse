@@ -38,7 +38,7 @@ function configure
     cp -av --dereference "$repo_dir"/tests/config/config.d/listen.xml $CONFIG_DIR/config.d
     cp -av --dereference "$repo_dir"/tests/config/users.d/ci_logs_sender.yaml $CONFIG_DIR/users.d
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml $CONFIG_DIR/users.d
-    cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/allow-nullable-key.xml $CONFIG_DIR/config.d
+    cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/fuzz-server-settings.xml $CONFIG_DIR/config.d
 
     cat > $CONFIG_DIR/config.d/max_server_memory_usage_to_ram_ratio.xml <<EOL
 <clickhouse>

@@ -1,0 +1,14 @@
+<clickhouse>
+    <!-- Allow merge tree settings to avoid errors while fuzzing definitions of tables -->
+    <merge_tree>
+        <allow_coalescing_columns_in_partition_or_order_key>1</allow_coalescing_columns_in_partition_or_order_key>
+        <allow_experimental_reverse_key>1</allow_experimental_reverse_key>
+        <allow_nullable_key>1</allow_nullable_key>
+        <allow_summing_columns_in_partition_or_order_key>1</allow_summing_columns_in_partition_or_order_key>
+        <enable_block_number_column>1</enable_block_number_column>
+        <enable_block_offset_column>1</enable_block_offset_column>
+    </merge_tree>
+    <!-- Definitions to be used by BuzzHouse -->
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+    <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+</clickhouse>
