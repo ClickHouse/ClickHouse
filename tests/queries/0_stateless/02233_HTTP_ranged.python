@@ -55,9 +55,12 @@ EXPECTED_ANSWER = """{\\n\\t"login": "ClickHouse",\\n\\t"id": 54801242,\\n\\t"na
 #####################################################################################
 
 # IP-address of this host accessible from the outside world. Get the first one
-HTTP_SERVER_HOST = (
-    subprocess.check_output(["hostname", "-i"]).decode("utf-8").strip().split()[0]
-)
+try:
+    HTTP_SERVER_HOST = (
+        subprocess.check_output(["hostname", "-i"]).decode("utf-8").strip().split()[0]
+    )
+except:
+    HTTP_SERVER_HOST = "127.0.0.1"
 IS_IPV6 = is_ipv6(HTTP_SERVER_HOST)
 HTTP_SERVER_PORT = get_local_port(HTTP_SERVER_HOST, IS_IPV6)
 
