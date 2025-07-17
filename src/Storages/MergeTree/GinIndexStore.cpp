@@ -16,7 +16,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
-#include <boost/dynamic_bitset/dynamic_bitset.hpp>
 #include <vector>
 #include <unordered_map>
 #include <algorithm>
@@ -55,16 +54,16 @@ UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer)
     UInt64 header = 0;
 
     const auto & codec = DB::GinIndexCompressionFactory::zstdCodec();
-    return GinIndexPostingsListAsTurboPForGolombBuilder::serialize(rowid_bitmap, header, codec, buffer);
+    return GinIndexPostingsListAsGolombBuilder::serialize(rowid_bitmap, header, codec, buffer);
 }
 
 GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer & buffer)
 {
-    UInt64 header;
+    UInt64 header = 0;
     readVarUInt(header, buffer);
 
     const auto & codec = DB::GinIndexCompressionFactory::zstdCodec();
-    return GinIndexPostingsListAsTurboPForGolombBuilder::deserialize(header, codec, buffer);
+    return GinIndexPostingsListAsGolombBuilder::deserialize(header, codec, buffer);
 }
 
 GinIndexStore::GinIndexStore(const String & name_, DataPartStoragePtr storage_)

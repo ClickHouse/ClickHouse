@@ -381,3 +381,6 @@
 [submodule "contrib/SIMDCompressionAndIntersection"]
 	path = contrib/SIMDCompressionAndIntersection
 	url = https://github.com/fast-pack/SIMDCompressionAndIntersection
+[submodule "contrib/FastPFOR"]
+	path = contrib/FastPFOR
+	url = git@github.com:fast-pack/FastPFOR.git

@@ -140,12 +140,12 @@ public:
     IColumn & getOffsetsColumn() { return *offsets; }
     const IColumn & getOffsetsColumn() const { return *offsets; }
 
-    Offsets & ALWAYS_INLINE getOffsets()
+    Offsets & getOffsets()
     {
         return assert_cast<ColumnOffsets &>(*offsets).getData();
     }
 
-    const Offsets & ALWAYS_INLINE getOffsets() const
+    const Offsets & getOffsets() const
     {
         return assert_cast<const ColumnOffsets &>(*offsets).getData();
     }
@@ -222,8 +222,8 @@ private:
     WrappedPtr data;
     WrappedPtr offsets;
 
-    size_t ALWAYS_INLINE offsetAt(ssize_t i) const { return getOffsets()[i - 1]; }
-    size_t ALWAYS_INLINE sizeAt(ssize_t i) const { return getOffsets()[i] - getOffsets()[i - 1]; }
+    size_t offsetAt(ssize_t i) const { return getOffsets()[i - 1]; }
+    size_t sizeAt(ssize_t i) const { return getOffsets()[i] - getOffsets()[i - 1]; }
 
 
     /// Multiply values if the nested column is ColumnVector<T>.
