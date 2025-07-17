@@ -98,11 +98,6 @@ bool hasEmptyPostingsList(const GinPostingsCache & postings_cache)
     return false;
 }
 
-bool hasAlwaysMatchFlag(const GinIndexPostingsList & posting_bitset)
-{
-    return posting_bitset.cardinality() == 1 && posting_bitset.minimum() == UINT32_MAX;
-}
-
 /// Helper method to check if all terms in postings list cache has intersection with given row ID range
 bool matchAllInRange(const GinPostingsCache & postings_cache, UInt32 segment_id, UInt32 range_start, UInt32 range_end)
 {
@@ -119,10 +114,6 @@ bool matchAllInRange(const GinPostingsCache & postings_cache, UInt32 segment_id,
             return false;
         auto min_in_container = container_it->second->minimum();
         auto max_in_container = container_it->second->maximum();
-
-        /// Check if the postings list has always match flag
-        if (hasAlwaysMatchFlag(*container_it->second))
-            continue;
 
         if (range_start > max_in_container || min_in_container > range_end)
             return false;
@@ -145,15 +136,7 @@ bool matchAnyInRange(const GinPostingsCache & postings_cache, UInt32 segment_id,
         /// Check if it is in the same segment by searching for segment_id
         const GinSegmentedPostingsListContainer & container = term_postings.second;
         if (auto container_it = container.find(segment_id); container_it != container.cend())
-        {
-            const GinIndexPostingsList & segment_posting_bitset = *container_it->second;
-
-            /// Check if the postings list has always match flag
-            if (hasAlwaysMatchFlag(segment_posting_bitset))
-                return true;
-
-            postings_bitset |= segment_posting_bitset;
-        }
+            postings_bitset |= *container_it->second;
     }
 
     GinIndexPostingsList range_bitset;
