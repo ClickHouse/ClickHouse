@@ -345,6 +345,9 @@ void GinIndexStore::finalize()
 
     if (postings_file_stream)
         postings_file_stream->finalize();
+
+    if (filter_file_stream)
+        filter_file_stream->finalize();
 }
 
 void GinIndexStore::cancel() noexcept
@@ -357,6 +360,9 @@ void GinIndexStore::cancel() noexcept
 
     if (postings_file_stream)
         postings_file_stream->cancel();
+
+    if (filter_file_stream)
+        filter_file_stream->cancel();
 }
 
 void GinIndexStore::initSegmentId()
@@ -386,10 +392,12 @@ void GinIndexStore::initFileStreams()
     String metadata_file_name = getName() + GIN_SEGMENT_METADATA_FILE_TYPE;
     String dict_file_name = getName() + GIN_DICTIONARY_FILE_TYPE;
     String postings_file_name = getName() + GIN_POSTINGS_FILE_TYPE;
+    String filter_file_name = getName() + GIN_FILTER_FILE_TYPE;
 
     metadata_file_stream = data_part_storage_builder->writeFile(metadata_file_name, 4096, WriteMode::Append, {});
     dict_file_stream = data_part_storage_builder->writeFile(dict_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
     postings_file_stream = data_part_storage_builder->writeFile(postings_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
+    filter_file_stream = data_part_storage_builder->writeFile(filter_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
 }
 
 void GinIndexStore::writeSegmentId()
@@ -410,6 +418,9 @@ void GinIndexStore::writeSegment()
     if (metadata_file_stream == nullptr)
         initFileStreams();
 
+    /// Write segment
+    metadata_file_stream->write(reinterpret_cast<char *>(&current_segment), sizeof(GinIndexSegment));
+
     using TokenPostingsBuilderPair = std::pair<std::string_view, GinIndexPostingsBuilderPtr>;
     using TokenPostingsBuilderPairs = std::vector<TokenPostingsBuilderPair>;
 
@@ -422,14 +433,6 @@ void GinIndexStore::writeSegment()
         token_postings_list_pairs.push_back({token, postings_list});
         bloom_filter.add(token.data(), token.size());
     }
-
-    // FST part is relative to the data
-    const auto bloom_filter_in_bytes = bloom_filter.serialize(*dict_file_stream);
-    current_segment.fst_start_offset = bloom_filter_in_bytes;
-    /// Write segment
-    metadata_file_stream->write(reinterpret_cast<char *>(&current_segment), sizeof(GinIndexSegment));
-
-    current_segment.dict_start_offset += bloom_filter_in_bytes;
 
     /// Sort token-postings list pairs since all tokens have to be added in FST in sorted order
     std::sort(token_postings_list_pairs.begin(), token_postings_list_pairs.end(),
@@ -450,7 +453,10 @@ void GinIndexStore::writeSegment()
         current_segment.postings_start_offset += posting_list_byte_size;
     }
 
-    ///write item dictionary
+    /// Write bloom filter
+    current_segment.filter_start_offset += bloom_filter.serialize(*filter_file_stream);
+
+    /// Write item dictionary
     std::vector<UInt8> buffer;
     WriteBufferFromVector<std::vector<UInt8>> write_buf(buffer);
     FST::FstBuilder fst_builder(write_buf);
@@ -504,6 +510,7 @@ void GinIndexStore::writeSegment()
     metadata_file_stream->sync();
     dict_file_stream->sync();
     postings_file_stream->sync();
+    filter_file_stream->sync();
 }
 
 GinIndexStoreDeserializer::GinIndexStoreDeserializer(const GinIndexStorePtr & store_)
@@ -517,10 +524,12 @@ void GinIndexStoreDeserializer::initFileStreams()
     String metadata_file_name = store->getName() + GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE;
     String dict_file_name = store->getName() + GinIndexStore::GIN_DICTIONARY_FILE_TYPE;
     String postings_file_name = store->getName() + GinIndexStore::GIN_POSTINGS_FILE_TYPE;
+    String filter_file_name = store->getName() + GinIndexStore::GIN_FILTER_FILE_TYPE;
 
     metadata_file_stream = store->storage->readFile(metadata_file_name, {}, std::nullopt, std::nullopt);
     dict_file_stream = store->storage->readFile(dict_file_name, {}, std::nullopt, std::nullopt);
     postings_file_stream = store->storage->readFile(postings_file_name, {}, std::nullopt, std::nullopt);
+    filter_file_stream = store->storage->readFile(filter_file_name, {}, std::nullopt, std::nullopt);
 }
 void GinIndexStoreDeserializer::readSegments()
 {
@@ -559,7 +568,7 @@ void GinIndexStoreDeserializer::readSegments()
             auto seg_dict = std::make_shared<GinSegmentDictionary>();
             seg_dict->postings_start_offset = segments[i].postings_start_offset;
             seg_dict->dict_start_offset = segments[i].dict_start_offset;
-            seg_dict->fst_start_offset = segments[i].fst_start_offset;
+            seg_dict->filter_start_offset = segments[i].filter_start_offset;
             store->segment_dictionaries[segments[i].segment_id] = seg_dict;
         }
     }
@@ -578,18 +587,21 @@ void GinIndexStoreDeserializer::readSegmentDictionary(UInt32 segment_id)
     if (it == store->segment_dictionaries.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid segment id {}", segment_id);
 
-    /// Set file pointer of dictionary file
-    assert(dict_file_stream != nullptr);
-    dict_file_stream->seek(it->second->dict_start_offset, SEEK_SET);
-
+    const GinSegmentDictionaryPtr & seg_dict = it->second;
     switch (auto version = store->getVersion(); version)
     {
         case GinIndexStore::Format::v1:
-            /// V1 does not support bloom filters
+            /// V1 does not support bloom filters, so read dictionaries directly
+            readSegmentFST(seg_dict);
             break;
         case GinIndexStore::Format::v2: {
-            it->second->bloom_filter = std::make_unique<GinSegmentDictionaryBloomFilter>();
-            it->second->bloom_filter->deserialize(*dict_file_stream);
+            /// V2 supports bloom filter, so we can delay reading a segment until it's needed.
+
+            /// Set file pointer of filter file
+            assert(filter_file_stream != nullptr);
+            filter_file_stream->seek(it->second->filter_start_offset, SEEK_SET);
+            seg_dict->bloom_filter = std::make_unique<GinSegmentDictionaryBloomFilter>();
+            seg_dict->bloom_filter->deserialize(*filter_file_stream);
             break;
         }
         default:
@@ -618,9 +630,6 @@ void GinIndexStoreDeserializer::readSegmentFST(GinSegmentDictionaryPtr segment_d
             break;
         }
         case GinIndexStore::Format::v2: {
-            /// FST start offset is relative to the data start offset
-            dict_file_stream->seek(segment_dictionary->fst_start_offset, SEEK_CUR);
-
             /// Read FST size header
             UInt64 fst_size_header;
             readVarUInt(fst_size_header, *dict_file_stream);

@@ -110,11 +110,11 @@ struct GinIndexSegment
     /// .gin_post file offset of this segment's postings lists
     UInt64 postings_start_offset = 0;
 
-    /// .gin_dict file offset of this segment's dictionary data (header)
+    /// .gin_dict file offset of this segment's dictionaries
     UInt64 dict_start_offset = 0;
 
-    /// offset of this segment's term dictionaries relative to the data start offset
-    UInt64 fst_start_offset = 0;
+    /// .gin_filter file offset of this segment's filter
+    UInt64 filter_start_offset = 0;
 };
 
 class GinSegmentDictionaryBloomFilter
@@ -143,11 +143,11 @@ struct GinSegmentDictionary
     /// .gin_post file offset of this segment's postings lists
     UInt64 postings_start_offset;
 
-    /// .gin_dict file offset of this segment's dictionary data (header)
+    /// .gin_dict file offset of this segment's dictionaries
     UInt64 dict_start_offset;
 
-    /// .gin_dict file offset of this segment's term dictionaries
-    UInt64 fst_start_offset;
+    /// .gin_filter file offset of this segment's filter
+    UInt64 filter_start_offset;
 
     /// (Minimized) Finite State Transducer, which can be viewed as a map of <term, offset>, where offset is the
     /// offset to the term's posting list in postings list file
@@ -264,11 +264,13 @@ private:
     std::unique_ptr<WriteBufferFromFileBase> metadata_file_stream;
     std::unique_ptr<WriteBufferFromFileBase> dict_file_stream;
     std::unique_ptr<WriteBufferFromFileBase> postings_file_stream;
+    std::unique_ptr<WriteBufferFromFileBase> filter_file_stream;
 
     static constexpr auto GIN_SEGMENT_ID_FILE_TYPE = ".gin_sid";
     static constexpr auto GIN_SEGMENT_METADATA_FILE_TYPE = ".gin_seg";
     static constexpr auto GIN_DICTIONARY_FILE_TYPE = ".gin_dict";
     static constexpr auto GIN_POSTINGS_FILE_TYPE = ".gin_post";
+    static constexpr auto GIN_FILTER_FILE_TYPE = ".gin_filter";
 };
 
 using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
@@ -315,6 +317,7 @@ private:
     std::unique_ptr<ReadBufferFromFileBase> metadata_file_stream;
     std::unique_ptr<ReadBufferFromFileBase> dict_file_stream;
     std::unique_ptr<ReadBufferFromFileBase> postings_file_stream;
+    std::unique_ptr<ReadBufferFromFileBase> filter_file_stream;
 
     /// Current segment, used in building index
     GinIndexSegment current_segment;
