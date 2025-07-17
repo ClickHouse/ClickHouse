@@ -213,8 +213,6 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
 
         for (size_t i = 0; i < slots; ++i)
         {
-            if (!hash_joins[i]->data)
-                continue;
             // Hash tables destruction may be very time-consuming.
             // Without the following code, they would be destroyed in the current thread (i.e. sequentially).
             pool->scheduleOrThrow(
@@ -236,12 +234,9 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
                     };
                     const auto & right_data = getData(join);
                     std::visit([&](auto & maps) { return clear_space_in_buckets(maps, right_data->type, i); }, right_data->maps.at(0));
-                    if (i != 0)
-                        hash_joins[i].reset();
                 });
         }
         pool->wait();
-        hash_joins[0].reset();
     }
     catch (...)
     {
