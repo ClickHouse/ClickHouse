@@ -551,7 +551,7 @@ By default, this limit is `1024`, but you can change it in the type declaration 
 
 When the limit is reached, all new paths inserted to a `JSON` column will be stored in a single shared data structure. 
 It's still possible to read such paths as sub-columns, 
-but it might be less efficient ([see section about shared data](#shared-data-structure-shared-data-structure)). 
+but it might be less efficient ([see section about shared data](#shared-data-structure)). 
 This limit is needed to avoid having an enormous number of different sub-columns that can make the table unusable.
 
 Let's see what happens when the limit is reached in a few different scenarios.

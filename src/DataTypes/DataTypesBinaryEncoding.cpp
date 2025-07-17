@@ -625,7 +625,7 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
         case BinaryTypeIndex::Date32:
             return getDataTypesCache().getType("Date32");
         case BinaryTypeIndex::DateTimeUTC:
-            return getDataTypesCache().getType("DateTime");
+            return std::make_shared<DataTypeDateTime>();
         case BinaryTypeIndex::DateTimeWithTimezone:
         {
             String time_zone;
