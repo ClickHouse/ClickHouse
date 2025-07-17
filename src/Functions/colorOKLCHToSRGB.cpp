@@ -58,11 +58,11 @@ public:
         const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(first_arg);
         const auto & tuple_inner_types  = tuple_type->getElements();
 
-        if (tuple_inner_types.size() != channels)
+        if (tuple_inner_types.size() != ColorConversion::channels)
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument of function {} must be a tuple of size {}, a tuple of size {} was provided",
-                getName(), channels, tuple_inner_types.size());
+                getName(), ColorConversion::channels, tuple_inner_types.size());
 
         for (const auto & tuple_inner_type : tuple_inner_types)
         {
@@ -80,13 +80,13 @@ public:
                     getName());
 
         auto float64_type = std::make_shared<DataTypeFloat64>();
-        return std::make_shared<DataTypeTuple>(DataTypes(channels, float64_type));
+        return std::make_shared<DataTypeTuple>(DataTypes(ColorConversion::channels, float64_type));
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto float64_type = std::make_shared<DataTypeFloat64>();
-        auto tuple_f64_type = std::make_shared<DataTypeTuple>(DataTypes(channels, float64_type));
+        auto tuple_f64_type = std::make_shared<DataTypeTuple>(DataTypes(ColorConversion::channels, float64_type));
 
         auto tuple_f64_arg = castColumn(arguments[0], tuple_f64_type);
         auto rgb_cols = getTupleElements(*tuple_f64_arg);
@@ -114,9 +114,9 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            Color lch_data{lightness_data[row], chroma_data[row], hue_data[row]};
-            Float64 gamma_cur = gamma_data ? (*gamma_data)[row] : default_gamma;
-            Color res = convertOklchToSrgb(lch_data, gamma_cur);
+            ColorConversion::Color lch_data{lightness_data[row], chroma_data[row], hue_data[row]};
+            Float64 gamma_cur = gamma_data ? (*gamma_data)[row] : ColorConversion::default_gamma;
+            ColorConversion::Color res = convertOklchToSrgb(lch_data, gamma_cur);
             red_data.push_back(res[0]);
             green_data.push_back(res[1]);
             blue_data.push_back(res[2]);
@@ -127,36 +127,36 @@ public:
 
 private:
     /// OKLCH -> sRGB. Follows the step-by-step pipeline described in Ottosson’s article. See ColorConversion.h
-    Color convertOklchToSrgb(const Color & oklch, Float64 gamma) const
+    ColorConversion::Color convertOklchToSrgb(const ColorConversion::Color & oklch, Float64 gamma) const
     {
         Float64 chroma = oklch[1];
-        Float64 hue_rad = oklch[2] * deg2rad;
+        Float64 hue_rad = oklch[2] * ColorConversion::deg2rad;
 
-        Color oklab = oklch;
+        ColorConversion::Color oklab = oklch;
 
         oklab[1] = chroma * std::cos(hue_rad);
         oklab[2] = chroma * std::sin(hue_rad);
 
-        Color lms{};
-        for (size_t i = 0; i < channels; ++i)
+        ColorConversion::Color lms{};
+        for (size_t i = 0; i < ColorConversion::channels; ++i)
         {
-            for (size_t channel = 0; channel < channels; ++channel)
-                lms[i] = std::fma(oklab[channel], oklab_to_lms_base[(3 * i) + channel], lms[i]);
+            for (size_t channel = 0; channel < ColorConversion::channels; ++channel)
+                lms[i] = std::fma(oklab[channel], ColorConversion::oklab_to_lms_base[(3 * i) + channel], lms[i]);
             lms[i] = lms[i] * lms[i] * lms[i];
         }
 
-        Color rgb{};
-        for (size_t i = 0; i < channels; ++i)
+        ColorConversion::Color rgb{};
+        for (size_t i = 0; i < ColorConversion::channels; ++i)
         {
-            for (size_t channel = 0; channel < channels; ++channel)
-                rgb[i] = std::fma(lms[channel], lms_to_linear_base[(3 * i) + channel], rgb[i]);
+            for (size_t channel = 0; channel < ColorConversion::channels; ++channel)
+                rgb[i] = std::fma(lms[channel], ColorConversion::lms_to_linear_base[(3 * i) + channel], rgb[i]);
         }
 
         if (gamma == 0)
-            gamma = gamma_fallback;
+            gamma = ColorConversion::gamma_fallback;
 
         Float64 power = 1 / gamma;
-        for (size_t i = 0; i < channels; ++i)
+        for (size_t i = 0; i < ColorConversion::channels; ++i)
         {
             rgb[i] = std::clamp(rgb[i], 0.0, 1.0);
             rgb[i] = std::pow(rgb[i], power) * 255.0;
