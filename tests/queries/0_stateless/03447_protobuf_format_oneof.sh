@@ -105,3 +105,14 @@ ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO oneof_repeated_3447 from INFILE '$CURDIR/data_protobuf/OneofRepeated' SETTINGS format_schema='$SCHEMADIR/03447_oneof_repeated.proto:TestOneOfRepeated' FORMAT ProtobufSingle;
 SELECT * FROM oneof_repeated_3447 FORMAT Vertical;
 EOF
+
+# string1: "string1"
+# string2: "string2"
+# string_oneof column does not contain tag 2
+$CLICKHOUSE_CLIENT <<EOF
+SET input_format_protobuf_oneof_presence=true;
+DROP TABLE IF EXISTS string_or_string_expception_3447;
+SELECT '>> string_or_string_exception';
+CREATE TABLE string_or_string_exception_3447 ( string1 String, string2 String, string_oneof Enum('no'=0, 'hello' = 1, 'world' = 42))  Engine=MergeTree ORDER BY tuple();
+INSERT INTO string_or_string_exception_3447 from INFILE '$CURDIR/data_protobuf/String1' SETTINGS format_schema='$SCHEMADIR/03447_string_or_string.proto:StringOrString' FORMAT ProtobufSingle; -- { clientError DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD }
+EOF

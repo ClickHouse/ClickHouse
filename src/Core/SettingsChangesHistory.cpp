@@ -52,6 +52,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"min_joined_block_size_rows", 0, DEFAULT_BLOCK_SIZE, "New setting."},
             {"table_engine_read_through_distributed_cache", false, false, "New setting"},
             {"distributed_cache_alignment", 0, 0, "Rename of distributed_cache_read_alignment"},
+            {"input_format_protobuf_oneof_presence", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
@@ -768,7 +769,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.7",
         {
-            {"input_format_protobuf_oneof_presence", false, false, "New setting"},
+
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.6",
         {

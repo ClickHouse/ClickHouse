@@ -68,3 +68,4 @@ items.name:         ['item1','item2']
 items.int_value:    [10,0]
 items.string_value: ['','foo']
 items.value:        ['int_value','string_value']
+>> string_or_string_exception

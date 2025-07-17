@@ -1975,9 +1975,9 @@ namespace
     class ProtobufSerializerOneOf : public ProtobufSerializer
     {
     public:
-        explicit ProtobufSerializerOneOf(std::unique_ptr<ProtobufSerializer> nested_serializer_, std::string_view one_of_column_name_, size_t column_idx_, int field_tag_)
+        explicit ProtobufSerializerOneOf(std::unique_ptr<ProtobufSerializer> nested_serializer_, std::string_view oneof_column_name_, size_t column_idx_, int field_tag_)
             : nested_serializer(std::move(nested_serializer_))
-            , one_of_column_name(one_of_column_name_)
+            , oneof_column_name(oneof_column_name_)
             , column_idx(column_idx_)
             , field_tag(field_tag_)
         {
@@ -2015,10 +2015,6 @@ namespace
         void writeRow([[maybe_unused]] size_t row_num) override
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "OneOf is not implemented for writes");
-            // Should be as simple as
-            //   if (static_cast<int>(presence_column->getInt(row_num)) == field_tag)
-            //       nested_serializer->writeRow(row_num);
-            // but disabled so far
         }
 
         void readRow(size_t row_num) override
@@ -2040,14 +2036,13 @@ namespace
 
         void describeTree(WriteBuffer & out, size_t indent) const override
         {
-            writeIndent(out, indent) << "ProtobufSerializerOneOf " << one_of_column_name << ", idx " << column_idx << "->\n";
+            writeIndent(out, indent) << "ProtobufSerializerOneOf " << oneof_column_name << ", idx " << column_idx << "->\n";
             nested_serializer->describeTree(out, indent + 1);
         }
 
     private:
         const std::unique_ptr<ProtobufSerializer> nested_serializer;
-        ColumnPtr column; // ???
-        std::string_view one_of_column_name;  // Is it safe?
+        std::string_view oneof_column_name;
         size_t column_idx;
         int field_tag;
         MutableColumnPtr presence_column;
@@ -3443,6 +3438,37 @@ namespace
                 }
             };
 
+            /// oneof presence indicator contains all tags
+            ///   although it is Ok if there is discrepancy in names
+            auto check_enum = [](const auto * data_type_enum, const OneofDescriptor * oneof_descriptor)
+            {
+                int64_t expected_size = data_type_enum->getValues().size();
+
+                if (expected_size == oneof_descriptor->field_count() + 1)
+                {
+                    boost::container::flat_set<size_t> enum_values_sorted;
+                    enum_values_sorted.reserve(expected_size);
+                    boost::container::flat_set<size_t> oneof_values_sorted;
+                    oneof_values_sorted.reserve(expected_size);
+
+                    for (const auto & elem : data_type_enum->getValues())
+                        enum_values_sorted.insert(elem.second);
+                    for (int fnum = 0; fnum < oneof_descriptor->field_count(); ++fnum)
+                        oneof_values_sorted.insert(oneof_descriptor->field(fnum)->number());
+
+                    oneof_values_sorted.insert(0); // 'omitted' marker
+
+                    if (oneof_values_sorted == enum_values_sorted)
+                        return;
+                }
+
+                throw Exception(
+                    ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD,
+                    "Column `{}` is not suitable as OneOf presence indicator. Ensure that Enum has all tags and there is one extra with "
+                    "value 0 that indicates absence of the element.",
+                    oneof_descriptor->name());
+            };
+
             auto maybe_add_oneof_wrapper = [&](std::unique_ptr<ProtobufSerializer> & serializer_ptr_ref,
                                               const OneofDescriptor * oneof_descriptor,
                                               int field_tag,
@@ -3460,13 +3486,34 @@ namespace
                         auto name = column_names_[idx];
                         auto data_type_id = data_types_[idx]->getTypeId();
 
-                        if (ColumnNameWithProtobufFieldNameComparator::equals(name, expected_name) && (data_type_id == TypeIndex::Enum8 || data_type_id == TypeIndex::Enum16 || data_type_id == TypeIndex::Int8 || data_type_id == TypeIndex::Int16))
+                        if (ColumnNameWithProtobufFieldNameComparator::equals(name, expected_name))
                         {
+                            if ((data_type_id == TypeIndex::Enum8 || data_type_id == TypeIndex::Enum16 || data_type_id == TypeIndex::Int8
+                                 || data_type_id == TypeIndex::Int16))
+                            {
+                                if (data_type_id == TypeIndex::Enum8)
+                                {
+                                    const auto * data_type_enum8 = typeid_cast<const DataTypeEnum8 *>(data_types_[idx].get());
+                                    assert(data_type_enum);
 
-                            serializer_ptr_ref = std::make_unique<ProtobufSerializerOneOf>(std::move(serializer_ptr_ref), oneof_descriptor->name(), used_columns_for_field.size(), field_tag);
+                                    check_enum(data_type_enum8, oneof_descriptor);
+                                }
 
-                            used_columns_for_field.push_back(idx);
-                            return;
+
+                                if (data_type_id == TypeIndex::Enum16)
+                                {
+                                    const auto * data_type_enum16 = typeid_cast<const DataTypeEnum16 *>(data_types_[idx].get());
+                                    assert(data_type_enum);
+
+                                    check_enum(data_type_enum16, oneof_descriptor);
+                                }
+
+                                serializer_ptr_ref = std::make_unique<ProtobufSerializerOneOf>(
+                                    std::move(serializer_ptr_ref), oneof_descriptor->name(), used_columns_for_field.size(), field_tag);
+
+                                used_columns_for_field.push_back(idx);
+                                return;
+                            }
                         }
                     }
                 }
