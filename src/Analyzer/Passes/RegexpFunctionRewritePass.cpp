@@ -35,7 +35,7 @@ public:
             return;
 
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || !function_node->isOrdinaryFunction() || !function_node->getResultType()->equals(DataTypeString()))
+        if (!function_node || !function_node->isOrdinaryFunction() || !isString(function_node->getResultType()))
             return;
 
         auto function_name = function_node->getFunctionName();
