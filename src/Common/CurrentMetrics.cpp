@@ -423,6 +423,8 @@
     \
     M(SharedCatalogDropDetachLocalTablesErrors, "Number of errors that occurred when attempting to drop or detach local tables in Shared Catalog.") \
     \
+    M(SharedCatalogNumberOfObjectsInState, "Number of objects in the current state of Shared Catalog.") \
+    \
     M(MetadataFromKeeperCacheObjects, "Number of objects in disk metadata cache.") \
     \
     M(LicenseRemainingSeconds, "Remaining seconds of the license validity period.") \
