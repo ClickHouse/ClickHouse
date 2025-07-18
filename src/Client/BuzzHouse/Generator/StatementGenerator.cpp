@@ -370,25 +370,26 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             t.setName(cmvt->mutable_est(), false);
             if (next.has_with_cols)
             {
-                for (const auto & col : t.cols)
+                chassert(this->ids.empty());
+                for (const auto & [key, val] : t.cols)
                 {
-                    if (col.second.canBeInserted())
+                    if (val.canBeInserted())
                     {
-                        filtered_columns.emplace_back(std::ref<const SQLColumn>(col.second));
+                        this->ids.push_back(key);
                     }
                 }
                 if (rg.nextBool())
                 {
-                    std::shuffle(filtered_columns.begin(), filtered_columns.end(), rg.generator);
+                    std::shuffle(this->ids.begin(), this->ids.end(), rg.generator);
                 }
                 for (uint32_t i = 0; i < view_ncols; i++)
                 {
-                    SQLColumn col = filtered_columns[i].get();
+                    SQLColumn col = t.cols.at(this->ids[i]);
 
                     addTableColumnInternal(rg, t, col.cname, false, false, ColumnSpecial::NONE, col, cmvt->add_col_list());
                     next.cols.insert(col.cname);
                 }
-                filtered_columns.clear();
+                this->ids.clear();
             }
         }
         if (!replace && (next.is_refreshable = rg.nextBool()))
