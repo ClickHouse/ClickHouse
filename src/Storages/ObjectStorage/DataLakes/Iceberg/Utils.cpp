@@ -1,7 +1,6 @@
 
 #include <memory>
 #include <sstream>
-#include <typeinfo>
 #include <Poco/Dynamic/Var.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -9,18 +8,18 @@
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
 #include <Parsers/ASTFunction.h>
-#include "Core/Settings.h"
-#include "Core/TypeId.h"
-#include "DataTypes/DataTypeArray.h"
-#include "DataTypes/DataTypeMap.h"
-#include "DataTypes/DataTypeTuple.h"
-#include "IO/CompressionMethod.h"
-#include "Interpreters/Context_fwd.h"
-#include "Parsers/ASTExpressionList.h"
-#include "Parsers/ASTIdentifier.h"
-#include "Parsers/ASTLiteral.h"
-#include "Storages/ColumnsDescription.h"
-#include "base/types.h"
+#include <Core/Settings.h>
+#include <Core/TypeId.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <IO/CompressionMethod.h>
+#include <Interpreters/Context_fwd.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Storages/ColumnsDescription.h>
+#include <base/types.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <config.h>
@@ -461,33 +460,37 @@ std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
     ASTPtr partition_by,
     const std::unordered_map<String, Int32> & column_name_to_source_id)
 {
-    
     Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
     result->set(Iceberg::f_spec_id, 0);
     
     Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
-    const auto * partition_function = partition_by->as<ASTFunction>();
-    if (!partition_function)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected function in partitioning");
-
     Int32 partition_iter = 1000;
-    if (partition_function->name == "tuple")
+    if (partition_by)
     {
-        for (const auto & child : partition_function->children)
+        const auto * partition_function = partition_by->as<ASTFunction>();
+        if (!partition_function)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected function in partitioning");
+
+        if (partition_function->name == "tuple")
         {
-            const auto * expression_list = child->as<ASTExpressionList>();
-            for (const auto & expression_list_child : expression_list->children)
+            for (const auto & child : partition_function->children)
             {
-                auto partition_field = getPartitionField(expression_list_child, column_name_to_source_id, partition_iter);
-                fields->add(partition_field);
+                const auto * expression_list = child->as<ASTExpressionList>();
+                for (const auto & expression_list_child : expression_list->children)
+                {
+                    auto partition_field = getPartitionField(expression_list_child, column_name_to_source_id, partition_iter);
+                    fields->add(partition_field);
+                }
             }
-        }   
+        }
+        else
+        {
+            auto partition_field = getPartitionField(partition_by, column_name_to_source_id, partition_iter);
+            fields->add(partition_field);
+        }
     }
     else
-    {
-        auto partition_field = getPartitionField(partition_by, column_name_to_source_id, partition_iter);
-        fields->add(partition_field);
-    }
+        partition_iter = 0;
 
     result->set(Iceberg::f_fields, fields);
     return {result, partition_iter};
@@ -535,7 +538,7 @@ String createEmptyMetadataFile(
     Poco::JSON::Array::Ptr schema_array = new Poco::JSON::Array;
     schema_array->add(schema_representation);
     new_metadata_file_content->set(Iceberg::f_schemas, schema_array);
-    
+
     new_metadata_file_content->set(Iceberg::f_default_spec_id, 0);
     Poco::JSON::Object::Ptr partition_spec = new Poco::JSON::Object;
     partition_spec->set(Iceberg::f_spec_id, 0);
@@ -552,7 +555,7 @@ String createEmptyMetadataFile(
     main_branch->set(Iceberg::f_metadata_snapshot_id, -1);
     main_branch->set(Iceberg::f_type, "branch");
     refs->set(Iceberg::f_main, main_branch);
-    
+
     new_metadata_file_content->set(Iceberg::f_refs, refs);
     new_metadata_file_content->set(Iceberg::f_snapshots, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     new_metadata_file_content->set(Iceberg::f_statistics, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
@@ -568,7 +571,7 @@ String createEmptyMetadataFile(
     sort_orders->add(sort_order);
     new_metadata_file_content->set(Iceberg::f_sort_orders, sort_orders);
 
-    std::ostringstream oss;
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::JSON::Stringifier::stringify(new_metadata_file_content, oss, 4);
     return removeEscapedSlashes(oss.str());
 }

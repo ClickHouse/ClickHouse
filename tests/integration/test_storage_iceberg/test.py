@@ -4578,8 +4578,8 @@ def test_writes_from_zero(started_cluster, format_version, storage_type):
     assert len(df) == 2
 
 
-@pytest.mark.parametrize("format_version", ["2"])
-@pytest.mark.parametrize("storage_type", ["s3"])
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_writes_with_partitioned_table(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -4605,7 +4605,7 @@ def test_writes_with_partitioned_table(started_cluster, format_version, storage_
                 event_time TIMESTAMP
             )
             USING iceberg
-            PARTITIONED BY (identity(id))
+            PARTITIONED BY (bucket(3, id), bucket(2, name), bucket(5, created_at), bucket(3, event_time))
             OPTIONS('format-version'='{format_version}')
         """
     )

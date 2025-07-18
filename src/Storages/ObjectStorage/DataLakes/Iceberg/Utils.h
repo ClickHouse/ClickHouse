@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Storages/ColumnsDescription.h"
 #include "config.h"
 
 #include <string>
@@ -12,6 +11,7 @@
 
 #if USE_AVRO
 
+#include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
