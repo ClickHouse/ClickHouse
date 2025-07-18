@@ -1091,12 +1091,12 @@ void SocketImpl::throttleSend(size_t length, bool blocking)
 		if (blocking)
 		{
 			if (_sndTimeout.totalMicroseconds() != 0) // Avoid throttling over socket send timeout
-				_sndThrottler->throttle(amount, _sndTimeout.totalMicroseconds() / 2);
+				_sndThrottler->throttle(amount, _sndTimeout.totalMicroseconds() * 1000 / 2);
 			else
 				_sndThrottler->throttle(amount);
 		}
 		else
-			_sndThrottler->throttleNonBlocking(amount);
+			_sndThrottler->throttle(amount, 0);
 		_sndThrottlerBudget += amount;
 	}
 }
@@ -1110,12 +1110,12 @@ void SocketImpl::throttleRecv(size_t length, bool blocking)
 		if (blocking)
 		{
 			if (_recvTimeout.totalMicroseconds() != 0) // Avoid throttling over socket receive timeout
-				_recvThrottler->throttle(amount, _recvTimeout.totalMicroseconds() / 2);
+				_recvThrottler->throttle(amount, _recvTimeout.totalMicroseconds() * 1000 / 2);
 			else
 				_recvThrottler->throttle(amount);
 		}
 		else
-			_recvThrottler->throttleNonBlocking(amount);
+			_recvThrottler->throttle(amount, 0);
 		_recvThrottlerBudget += amount;
 	}
 }

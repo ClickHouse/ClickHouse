@@ -52,7 +52,7 @@ Throttler::Throttler(size_t max_speed_, size_t limit_, const char * limit_exceed
     , parent(parent_)
 {}
 
-bool Throttler::throttle(size_t amount, size_t max_block_us)
+bool Throttler::throttle(size_t amount, size_t max_block_ns)
 {
     // Values obtained under lock to be checked after release
     size_t count_value = 0;
@@ -66,7 +66,7 @@ bool Throttler::throttle(size_t amount, size_t max_block_us)
         throw Exception::createDeprecated(limit_exceeded_exception_message + std::string(" Maximum: ") + toString(limit), ErrorCodes::LIMIT_EXCEEDED);
 
     /// Wait unless there is positive amount of tokens - throttling
-    bool block = max_speed_value && tokens_value < 0;
+    bool block = max_block_ns > 0 && max_speed_value && tokens_value < 0;
     if (block)
     {
         block_count.fetch_add(1, std::memory_order_relaxed);
@@ -81,29 +81,16 @@ bool Throttler::throttle(size_t amount, size_t max_block_us)
             timer2.emplace(profile_events.timer(event_sleep_us));
 
         // Note that throwing exception from the following blocking call is safe. It is important for query cancellation.
-        Int64 block_ns = static_cast<Int64>(-tokens_value / max_speed_value * NS);
-        sleepForNanoseconds(std::min<Int64>(max_block_us * 1000, block_ns));
+        Int64 block_ns = std::min<Int64>(max_block_ns, static_cast<Int64>(-tokens_value / max_speed_value * NS));
+        if (block_ns > 0)
+            sleepForNanoseconds(block_ns);
     }
 
     bool parent_block = false;
     if (parent)
-        parent_block = parent->throttle(amount, max_block_us);
+        parent_block = parent->throttle(amount, max_block_ns);
 
     return block || parent_block;
-}
-
-void Throttler::throttleNonBlocking(size_t amount)
-{
-    size_t count_value = 0;
-    double tokens_value = 0.0;
-    size_t max_speed_value = 0;
-    throttleImpl(amount, count_value, tokens_value, max_speed_value);
-
-    if (event_amount != ProfileEvents::end())
-        ProfileEvents::increment(event_amount, amount);
-
-    if (parent)
-        parent->throttleNonBlocking(amount);
 }
 
 void Throttler::throttleImpl(size_t amount, size_t & count_value, double & tokens_value)

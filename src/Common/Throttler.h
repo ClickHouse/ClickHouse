@@ -51,10 +51,7 @@ public:
 
     /// Use `amount` tokens, sleeps if required or throws exception on limit overflow.
     /// Returns true if blocking was applied, false if no blocking was needed.
-    bool throttle(size_t amount, size_t max_block_us) override;
-
-    /// Updates token bucket, but does not sleep.
-    void throttleNonBlocking(size_t amount) override;
+    bool throttle(size_t amount, size_t max_block_ns) override;
 
     /// Not thread safe
     void setParent(const ThrottlerPtr & parent_)

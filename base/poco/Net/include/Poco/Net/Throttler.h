@@ -16,18 +16,17 @@ namespace Net
     public:
         virtual ~Throttler() = default;
 
-        virtual bool throttle(size_t amount, size_t max_block_us) = 0;
+        virtual bool throttle(size_t amount, size_t max_block_ns) = 0;
         /// Throttle the transfer of `amount` bytes.
         /// This method should block until it is safe to continue sending or receiving data.
         /// Returns true if blocking was applied, false if no blocking was needed.
+        /// It never blocks longer than `max_block_ns` nanoseconds.
 
-        virtual void throttleNonBlocking(size_t amount) = 0;
-        /// Throttle the transfer of `amount` bytes in a non-blocking manner.
-        /// It never blocks, but updates the internal state of the throttler.
+        static constexpr size_t unlimited_block_ns = static_cast<size_t>(-1);
 
         bool throttle(size_t amount)
         {
-            return throttle(amount, size_t(-1));
+            return throttle(amount, unlimited_block_ns);
         }
     };
 
