@@ -23,13 +23,13 @@ SELECT (number % 5) * (number % 5) AS k FROM numbers(10000000) GROUP BY number %
 0
 1
 4
-SELECT avg(log(2) * number) AS k
+SELECT avg(multiply(log(2), number)) AS k
 FROM numbers(10000000)
 GROUP BY
-    (number % 2) * (number % 3),
-    number % 3,
-    number % 2
-HAVING avg(log(2) * number) > 3465735.3
+    multiply(modulo(number, 2), modulo(number, 3)),
+    modulo(number, 3),
+    modulo(number, 2)
+HAVING greater(avg(multiply(log(2), number)), 3465735.3)
 ORDER BY k ASC
 SELECT avg(log(2) * number) AS k
 FROM numbers(10000000)
@@ -109,12 +109,12 @@ QUERY id: 0
                   ARGUMENTS
                     LIST id: 44, nodes: 1
                       COLUMN id: 45, column_name: number, result_type: UInt64, source_id: 11
-SELECT avg(log(2) * number) AS k
+SELECT avg(multiply(log(2), number)) AS k
 FROM numbers(10000000)
 GROUP BY
-    number % 5,
-    (number % 5) * (number % 5)
-HAVING ((number % 5) * (number % 5)) < 5
+    modulo(number, 5),
+    multiply(modulo(number, 5), modulo(number, 5))
+HAVING less(multiply(modulo(number, 5), modulo(number, 5)), 5)
 ORDER BY k ASC
 SELECT avg(log(2) * number) AS k
 FROM numbers(10000000)
@@ -187,12 +187,12 @@ QUERY id: 0
                   ARGUMENTS
                     LIST id: 41, nodes: 1
                       COLUMN id: 42, column_name: number, result_type: UInt64, source_id: 11
-SELECT (number % 5) * (number % 5) AS k
+SELECT multiply(modulo(number, 5), modulo(number, 5)) AS k
 FROM numbers(10000000)
 GROUP BY
-    number % 5,
-    (number % 5) * (number % 5)
-HAVING ((number % 5) * (number % 5)) < 5
+    modulo(number, 5),
+    multiply(modulo(number, 5), modulo(number, 5))
+HAVING less(multiply(modulo(number, 5), modulo(number, 5)), 5)
 ORDER BY k ASC
 SELECT (number % 5) * (number % 5) AS k
 FROM numbers(10000000)
@@ -274,13 +274,13 @@ QUERY id: 0
 0
 1
 4
-SELECT avg(log(2) * number) AS k
+SELECT avg(multiply(log(2), number)) AS k
 FROM numbers(10000000)
 GROUP BY
-    (number % 2) * (number % 3),
-    number % 3,
-    number % 2
-HAVING avg(log(2) * number) > 3465735.3
+    multiply(modulo(number, 2), modulo(number, 3)),
+    modulo(number, 3),
+    modulo(number, 2)
+HAVING greater(avg(multiply(log(2), number)), 3465735.3)
 ORDER BY k ASC
 QUERY id: 0
   PROJECTION COLUMNS
@@ -365,17 +365,17 @@ QUERY id: 0
                   ARGUMENTS
                     LIST id: 54, nodes: 1
                       COLUMN id: 55, column_name: number, result_type: UInt64, source_id: 11
-SELECT avg(log(2) * number) AS k
+SELECT avg(multiply(log(2), number)) AS k
 FROM numbers(10000000)
 GROUP BY
-    number % 5,
-    (number % 5) * (number % 5)
-HAVING ((number % 5) * (number % 5)) < 5
+    modulo(number, 5),
+    multiply(modulo(number, 5), modulo(number, 5))
+HAVING less(multiply(modulo(number, 5), modulo(number, 5)), 5)
 ORDER BY k ASC
-SELECT (number % 5) * (number % 5) AS k
+SELECT multiply(modulo(number, 5), modulo(number, 5)) AS k
 FROM numbers(10000000)
 GROUP BY
-    number % 5,
-    (number % 5) * (number % 5)
-HAVING ((number % 5) * (number % 5)) < 5
+    modulo(number, 5),
+    multiply(modulo(number, 5), modulo(number, 5))
+HAVING less(multiply(modulo(number, 5), modulo(number, 5)), 5)
 ORDER BY k ASC
