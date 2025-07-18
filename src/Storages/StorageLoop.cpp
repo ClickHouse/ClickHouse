@@ -20,6 +20,12 @@ namespace DB
         setInMemoryMetadata(storage_metadata);
     }
 
+    QueryProcessingStage::Enum StorageLoop::getQueryProcessingStage(
+        ContextPtr local_context, QueryProcessingStage::Enum to_stage, const StorageSnapshotPtr &, SelectQueryInfo & query_info) const
+    {
+        auto storage_snapshot = inner_storage->getStorageSnapshot(inner_storage->getInMemoryMetadataPtr(), local_context);
+        return inner_storage->getQueryProcessingStage(local_context, to_stage, storage_snapshot, query_info);
+    }
 
     void StorageLoop::read(
             QueryPlan & query_plan,

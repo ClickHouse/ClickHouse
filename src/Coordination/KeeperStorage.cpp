@@ -3311,6 +3311,7 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
             {
                 auto responses = processWatchesImpl(delta.path, watches, list_watches, sessions_and_watchers, Coordination::Event::DELETED);
                 results.insert(results.end(), responses.begin(), responses.end());
+                total_watches_count -= results.size();
             }
         }
 
@@ -3596,24 +3597,13 @@ void KeeperStorageBase::clearDeadWatches(int64_t session_id)
 
     for (const auto [watch_path, is_list_watch] : watches_it->second)
     {
-        if (is_list_watch)
-        {
-            auto list_watch = list_watches.find(watch_path);
-            chassert(list_watch != list_watches.end());
-            auto & list_watches_for_path = list_watch->second;
-            list_watches_for_path.erase(session_id);
-            if (list_watches_for_path.empty())
-                list_watches.erase(list_watch);
-        }
-        else
-        {
-            auto watch = watches.find(watch_path);
-            chassert(watch != watches.end());
-            auto & watches_for_path = watch->second;
-            watches_for_path.erase(session_id);
-            if (watches_for_path.empty())
-                watches.erase(watch);
-        }
+        auto & current_watches = is_list_watch ? list_watches : watches;
+        auto watch = current_watches.find(watch_path);
+        chassert(watch != current_watches.end());
+        auto & watches_for_path = watch->second;
+        watches_for_path.erase(session_id);
+        if (watches_for_path.empty())
+            current_watches.erase(watch);
     }
 
     total_watches_count -= watches_it->second.size();

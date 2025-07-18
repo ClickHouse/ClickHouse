@@ -10,7 +10,7 @@ namespace DB
 class CheckSortedTransform : public ISimpleTransform
 {
 public:
-    CheckSortedTransform(const Block & header, const SortDescription & sort_description);
+    CheckSortedTransform(SharedHeader header, const SortDescription & sort_description);
 
     String getName() const override { return "CheckSortedTransform"; }
     void setDescription(const String & str) { description = str; }

@@ -47,7 +47,7 @@ namespace DB
                 .pool_size = config.getUInt(redis_config_prefix + ".pool_size", DEFAULT_REDIS_POOL_SIZE),
             };
 
-            return std::make_unique<RedisDictionarySource>(dict_struct, configuration, sample_block);
+            return std::make_unique<RedisDictionarySource>(dict_struct, configuration, std::make_shared<const Block>(std::move(sample_block)));
         };
 
         factory.registerSource("redis", create_table_source);
@@ -56,7 +56,7 @@ namespace DB
     RedisDictionarySource::RedisDictionarySource(
         const DictionaryStructure & dict_struct_,
         const RedisConfiguration & configuration_,
-        const Block & sample_block_)
+        SharedHeader sample_block_)
         : dict_struct{dict_struct_}
         , configuration(configuration_)
         , pool(std::make_shared<RedisPool>(configuration.pool_size))

@@ -24,7 +24,7 @@ public:
     MongoDBDictionarySource(
         const DictionaryStructure & dict_struct_,
         std::shared_ptr<MongoDBConfiguration> configuration_,
-        Block sample_block_);
+        SharedHeader sample_block_);
 
     MongoDBDictionarySource(const MongoDBDictionarySource & other);
 
@@ -58,7 +58,7 @@ private:
 
     const DictionaryStructure dict_struct;
     const std::shared_ptr<MongoDBConfiguration> configuration;
-    Block sample_block;
+    SharedHeader sample_block;
 };
 
 }

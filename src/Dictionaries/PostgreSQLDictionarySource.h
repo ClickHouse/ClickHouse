@@ -34,7 +34,7 @@ public:
         const DictionaryStructure & dict_struct_,
         const Configuration & configuration_,
         postgres::PoolWithFailoverPtr pool_,
-        const Block & sample_block_);
+        SharedHeader sample_block_);
 
     /// copy-constructor is provided in order to support cloneability
     PostgreSQLDictionarySource(const PostgreSQLDictionarySource & other);
@@ -60,7 +60,7 @@ private:
     const DictionaryStructure dict_struct;
     const Configuration configuration;
     postgres::PoolWithFailoverPtr pool;
-    Block sample_block;
+    SharedHeader sample_block;
     LoggerPtr log;
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
