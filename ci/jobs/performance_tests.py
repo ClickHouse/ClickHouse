@@ -489,7 +489,7 @@ def main():
                 cmds.append(
                     f'wget -nv -nd -c "{dataset_path}" -O- | tar --extract --verbose -C {db_path}'
                 )
-            res = Shell.check_parallel(cmds, verbose=True)
+            res = Shell.check(cmds, verbose=True)
             results.append(
                 Result(
                     name="Download datasets",

@@ -343,7 +343,9 @@ def main():
                 extra_args=runner_options,
             )
         else:
-            run_specific_tests(tests=tests, runs=50 if is_flaky_check else 1, extra_args=runner_options)
+            run_specific_tests(
+                tests=tests, runs=50 if is_flaky_check else 1, extra_args=runner_options
+            )
 
         if not info.is_local_run:
             CH.stop_log_exports()

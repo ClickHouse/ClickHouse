@@ -59,7 +59,11 @@ def should_skip_job(job_name):
         print("WARNING: no changed files found for PR - do not filter jobs")
         return False, ""
 
-    if Labels.CI_BUILD in _info_cache.pr_labels and "build" not in job_name.lower() and job_name not in PRELIMINARY_JOBS:
+    if (
+        Labels.CI_BUILD in _info_cache.pr_labels
+        and "build" not in job_name.lower()
+        and job_name not in PRELIMINARY_JOBS
+    ):
         return True, f"Skipped, labeled with '{Labels.CI_BUILD}'"
 
     if Labels.DO_NOT_TEST in _info_cache.pr_labels and job_name not in DO_NOT_TEST_JOBS:
