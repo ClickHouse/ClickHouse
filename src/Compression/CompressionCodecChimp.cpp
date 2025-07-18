@@ -370,7 +370,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
                 curr_value = prev_value;
                 break;
             default:
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Illegal flag value {}", flag);
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Illegal flag value {}", static_cast<int>(flag));
         }
         unalignedStoreLittleEndian<T>(dest, curr_value);
         dest += sizeof(curr_value);
