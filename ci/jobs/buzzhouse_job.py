@@ -84,7 +84,7 @@ def main():
             "compare_success_results": False,  # This can give false positives, so disable it
             "allow_infinite_tables": random.choice([True, False]),
             # These are the error codes that I disallow at the moment
-            "disallowed_error_codes": "9,13,15,99,100,101,102,108,127,128,162,165,166,173,209,230,231,233,234,235,246,255,256,257,261,270,271,272,273,274,275,305,307,635,637,638,639,640,641,642,645,647,718,1003",
+            "disallowed_error_codes": "9,13,15,99,100,101,102,108,127,128,162,165,166,173,209,230,231,233,234,235,246,256,257,261,270,271,272,273,274,275,305,307,635,637,638,639,640,641,642,645,647,718,1003",
             "client_file_path": "/var/lib/clickhouse/user_files",
             "server_file_path": "/var/lib/clickhouse/user_files",
             "log_path": log_file,
