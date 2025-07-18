@@ -1230,6 +1230,7 @@ YYYYMMDDToDate
 YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
+YTsaurus
 ZCurve
 ZSTDQAT
 Zabbix
@@ -3347,6 +3348,7 @@ xz
 yaml
 yandex
 youtube
+ytsaurus
 zLib
 zLinux
 zabbix
