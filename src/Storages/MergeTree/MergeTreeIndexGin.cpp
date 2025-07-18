@@ -37,11 +37,8 @@ static const String ARGUMENT_TOKENIZER = "tokenizer";
 static const String ARGUMENT_NGRAM_SIZE = "ngram_size";
 static const String ARGUMENT_SEPARATORS = "separators";
 
-MergeTreeIndexGranuleGin::MergeTreeIndexGranuleGin(
-    const String & index_name_,
-    const GinFilterParameters & gin_filter_params_)
+MergeTreeIndexGranuleGin::MergeTreeIndexGranuleGin(const String & index_name_)
     : index_name(index_name_)
-    , gin_filter_params(gin_filter_params_)
     , gin_filter()
     , has_elems(false)
 {
@@ -91,20 +88,18 @@ MergeTreeIndexAggregatorGin::MergeTreeIndexAggregatorGin(
     GinIndexStorePtr store_,
     const Names & index_columns_,
     const String & index_name_,
-    const GinFilterParameters & gin_filter_params_,
     TokenExtractorPtr token_extractor_)
     : store(store_)
     , index_columns(index_columns_)
     , index_name (index_name_)
-    , gin_filter_params(gin_filter_params_)
     , token_extractor(token_extractor_)
-    , granule(std::make_shared<MergeTreeIndexGranuleGin>(index_name, gin_filter_params))
+    , granule(std::make_shared<MergeTreeIndexGranuleGin>(index_name))
 {
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorGin::getGranuleAndReset()
 {
-    auto new_granule = std::make_shared<MergeTreeIndexGranuleGin>(index_name, gin_filter_params);
+    auto new_granule = std::make_shared<MergeTreeIndexGranuleGin>(index_name);
     new_granule.swap(granule);
     return new_granule;
 }
@@ -681,7 +676,7 @@ MergeTreeIndexGin::MergeTreeIndexGin(
 
 MergeTreeIndexGranulePtr MergeTreeIndexGin::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeIndexGranuleGin>(index.name, gin_filter_params);
+    return std::make_shared<MergeTreeIndexGranuleGin>(index.name);
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexGin::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
@@ -693,7 +688,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexGin::createIndexAggregator(const Merge
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexGin::createIndexAggregatorForPart(const GinIndexStorePtr & store, const MergeTreeWriterSettings & /*settings*/) const
 {
-    return std::make_shared<MergeTreeIndexAggregatorGin>(store, index.column_names, index.name, gin_filter_params, token_extractor.get());
+    return std::make_shared<MergeTreeIndexAggregatorGin>(store, index.column_names, index.name, token_extractor.get());
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexGin::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
