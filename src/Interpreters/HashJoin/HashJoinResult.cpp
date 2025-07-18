@@ -167,10 +167,8 @@ static Block generateBlock(
 
     /// Note: need_filter flag cannot be replaced with !added_columns.need_filter.empty()
     /// This is because e.g. for ALL LEFT JOIN filter is used to replace non-matched right keys to defaults.
-    /// TODO: Technically, filter can be restored from the offsets.
-    //        We can check if this faster vs building filter in main join loop.
     if (properties.need_filter)
-        scattered_block.getSelector() = ScatteredBlock::Selector(std::move(new_selector));
+        scattered_block.filter(*new_selector);
 
     scattered_block.filterBySelector();
 
