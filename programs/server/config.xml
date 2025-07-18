@@ -1548,13 +1548,24 @@
         <!-- <host_name>replica</host_name> -->
     </distributed_ddl>
 
-    <!-- Used to regulate how resources are utilized and shared between merges, mutations and other workloads.
+    <!-- Workload scheduling: used to regulate how resources are utilized and shared between merges, mutations and other workloads.
          Specified value is used as `workload` setting value for background merge or mutation.
     -->
     <!--
     <merge_workload>merges_and_mutations</merge_workload>
     <mutation_workload>merges_and_mutations</mutation_workload>
-    <throw_on_unknown_workload>true</throw_on_unknown_workload>
+    -->
+
+    <!-- Workload scheduling: throw or provide unlimited access to resource given unknown `workload` query setting -->
+    <!-- <throw_on_unknown_workload>true</throw_on_unknown_workload> -->
+
+    <!-- Workload scheduling: if enabled during CPU overloaded periods, long-running queries will downscale to lower number of threads dynamically.
+         Ensures more fair CPU resource distribution.
+    -->
+    <!--
+    <cpu_slot_preemption>true</cpu_slot_preemption>
+    <cpu_slot_quantum_ns>10000000</cpu_slot_quantum_ns>
+    <cpu_slot_preemption_timeout_ms>1000</cpu_slot_preemption_timeout_ms>
     -->
 
     <!-- Settings to fine-tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
@@ -1809,4 +1820,11 @@
 
     <!-- If set true ClickHouse will wait for running queries finish before shutdown. -->
     <!-- <shutdown_wait_unfinished_queries>false</shutdown_wait_unfinished_queries> -->
+
+    <!-- Disables the checksum of the clickhouse-server binary when performing integrity checks.
+        Not recommended in production environments, but there may be legitimate use-cases, such as
+        when instrumenting ClickHouse via eBPF probes.
+
+    <skip_binary_checksum_checks>false</skip_binary_checksum_checks>
+    -->
 </clickhouse>

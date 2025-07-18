@@ -70,7 +70,7 @@ public:
         StorageMemory & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         ContextPtr context)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , storage(storage_)
         , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_, context))
     {
@@ -427,7 +427,7 @@ namespace
                 auto data_file_path = temp_dir / fs::path{file_paths[data_bin_pos]}.filename();
                 auto data_out_compressed = temp_disk->writeFile(data_file_path);
                 auto data_out = std::make_unique<CompressedWriteBuffer>(*data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
-                NativeWriter block_out{*data_out, 0, metadata_snapshot->getSampleBlock(), std::nullopt, false, &index};
+                NativeWriter block_out{*data_out, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()), std::nullopt, false, &index};
                 for (const auto & block : *blocks)
                     block_out.write(block);
                 data_out->finalize();
@@ -573,7 +573,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
         CompressedReadBufferFromFile compressed_in{std::move(in_from_file)};
         NativeReader block_in{compressed_in, 0, index.blocks.begin(), index.blocks.end()};
 
-        while (auto block = block_in.read())
+        for (auto block = block_in.read(); !block.empty(); block = block_in.read())
         {
             if ((*memory_settings)[MemorySetting::compress])
             {
