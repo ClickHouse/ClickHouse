@@ -615,15 +615,6 @@ toLowCardinality
 toModifiedJulianDay
 toModifiedJulianDayOrNull
 toNullable
-toRelativeDayNum
-toRelativeHourNum
-toRelativeMinuteNum
-toRelativeMonthNum
-toRelativeQuarterNum
-toRelativeSecondNum
-toRelativeWeekNum
-toRelativeYearNum
-toStartOfInterval
 toStartOfMillisecond
 toString
 toStringCutToZero
@@ -633,7 +624,6 @@ toTime64OrNull
 toTime64OrZero
 toTimeOrNull
 toTimeOrZero
-toTimeWithFixedDate
 toTypeName
 toUInt128
 toUInt128OrNull

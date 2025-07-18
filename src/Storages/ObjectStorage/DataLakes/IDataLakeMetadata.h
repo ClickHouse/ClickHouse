@@ -2,7 +2,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <boost/noncopyable.hpp>
-#include "Interpreters/ActionsDAG.h"
+#include <Interpreters/ActionsDAG.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
 
@@ -35,9 +35,9 @@ public:
     /// Read schema is the schema of actual data files,
     /// which can differ from table schema from data lake metadata.
     /// Return nothing if read schema is the same as table schema.
-    virtual DB::ReadFromFormatInfo prepareReadingFromFormat(
+    virtual ReadFromFormatInfo prepareReadingFromFormat(
         const Strings & requested_columns,
-        const DB::StorageSnapshotPtr & storage_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context,
         bool supports_subset_of_columns);
 

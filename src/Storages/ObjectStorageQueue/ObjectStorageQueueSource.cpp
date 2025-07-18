@@ -78,7 +78,7 @@ ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObject
 ObjectStorageQueueSource::FileIterator::FileIterator(
     std::shared_ptr<ObjectStorageQueueMetadata> metadata_,
     ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
+    StorageObjectStorageConfigurationPtr configuration_,
     const StorageID & storage_id_,
     size_t list_objects_batch_size_,
     const ActionsDAG::Node * predicate_,
@@ -405,7 +405,7 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
         if (shutdown_called)
         {
-            LOG_TEST(log, "Shutdown was called, stopping file iterator");
+            LOG_DEBUG(log, "Shutdown was called, stopping file iterator");
             return {};
         }
 
@@ -717,11 +717,12 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     String name_,
     size_t processor_id_,
     std::shared_ptr<FileIterator> file_iterator_,
-    ConfigurationPtr configuration_,
+    StorageObjectStorageConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
     ProcessingProgressPtr progress_,
     const ReadFromFormatInfo & read_from_format_info_,
     const std::optional<FormatSettings> & format_settings_,
+    FormatParserGroupPtr parser_group_,
     const CommitSettings & commit_settings_,
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
     ContextPtr context_,
@@ -742,6 +743,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , progress(progress_)
     , read_from_format_info(read_from_format_info_)
     , format_settings(format_settings_)
+    , parser_group(std::move(parser_group_))
     , commit_settings(commit_settings_)
     , files_metadata(files_metadata_)
     , max_block_size(max_block_size_)
@@ -795,6 +797,11 @@ Chunk ObjectStorageQueueSource::generateImpl()
             /// Are there any started, but not finished files?
             if (processed_files.empty() || processed_files.back().state != FileState::Processing)
             {
+                LOG_DEBUG(
+                    log, "Reader was cancelled "
+                    "(processed files: {}, last processed file state: {})",
+                    processed_files.size(),
+                    processed_files.empty() ? "None" : magic_enum::enum_name(processed_files.back().state));
                 /// No unfinished files, just stop processing.
                 break;
             }
@@ -812,11 +819,16 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
         if (shutdown_called)
         {
-            LOG_TEST(log, "Shutdown was called");
+            LOG_TEST(log, "Shutdown was called"); /// test_drop_table depends on this log message
 
             /// Are there any started, but not finished files?
             if (processed_files.empty() || processed_files.back().state != FileState::Processing)
             {
+                LOG_DEBUG(
+                    log, "Shutdown was called "
+                    "(processed files: {}, last processed file state: {})",
+                    processed_files.size(),
+                    processed_files.empty() ? "None" : magic_enum::enum_name(processed_files.back().state));
                 /// No unfinished files, just stop processing.
                 break;
             }
@@ -854,7 +866,11 @@ Chunk ObjectStorageQueueSource::generateImpl()
         {
             if (shutdown_called)
             {
-                LOG_TEST(log, "Shutdown called");
+                LOG_DEBUG(
+                    log, "Shutdown was called "
+                    "(processed files: {}, last processed file state: {})",
+                    processed_files.size(),
+                    processed_files.empty() ? "None" : magic_enum::enum_name(processed_files.back().state));
                 /// Stop processing.
                 break;
             }
@@ -867,12 +883,11 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 object_storage,
                 read_from_format_info,
                 format_settings,
-                nullptr,
                 context,
                 nullptr,
                 log,
                 max_block_size,
-                context->getSettingsRef()[Setting::max_parsing_threads].value,
+                parser_group,
                 /* need_only_count */ false);
 
             if (!reader)

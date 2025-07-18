@@ -138,9 +138,9 @@ public:
 
     void forceConnected(const ConnectionTimeouts & timeouts) override;
 
-    bool isConnected() const override { return connected; }
+    bool isConnected() const override { return connected && in && out && !in->isCanceled() && !out->isCanceled(); }
 
-    bool checkConnected(const ConnectionTimeouts & timeouts) override { return connected && ping(timeouts); }
+    bool checkConnected(const ConnectionTimeouts & timeouts) override { return isConnected() && ping(timeouts); }
 
     void disconnect() override;
 

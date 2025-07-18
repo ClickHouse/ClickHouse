@@ -13,8 +13,8 @@ namespace ErrorCodes
 
 std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
     const IObjectStorage & object_storage,
-    const StorageObjectStorage::Configuration & configuration,
-    const StorageObjectStorage::QuerySettings & settings,
+    const StorageObjectStorageConfiguration & configuration,
+    const StorageObjectStorageQuerySettings & settings,
     const String & key,
     size_t sequence_number)
 {
@@ -48,7 +48,7 @@ void resolveSchemaAndFormat(
     ColumnsDescription & columns,
     std::string & format,
     ObjectStoragePtr object_storage,
-    const StorageObjectStorage::ConfigurationPtr & configuration,
+    const StorageObjectStorageConfigurationPtr & configuration,
     std::optional<FormatSettings> format_settings,
     std::string & sample_path,
     const ContextPtr & context)
@@ -97,7 +97,7 @@ void resolveSchemaAndFormat(
 
 void validateSupportedColumns(
     ColumnsDescription & columns,
-    const StorageObjectStorage::Configuration & configuration)
+    const StorageObjectStorageConfiguration & configuration)
 {
     if (!columns.hasOnlyOrdinary())
     {
