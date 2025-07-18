@@ -1,11 +1,12 @@
-#include <algorithm>
 #include <IO/S3/Client.h>
+
+#if USE_AWS_S3
+
+#include <algorithm>
 #include <aws/core/utils/crypto/Hash.h>
 #include <Poco/MD5Engine.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
-
-#if USE_AWS_S3
 
 #include <aws/core/Aws.h>
 #include <aws/core/client/CoreErrors.h>
