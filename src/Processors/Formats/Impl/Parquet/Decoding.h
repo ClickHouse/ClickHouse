@@ -6,6 +6,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
+#include <Processors/Formats/Impl/ArrowGeoTypes.h>
 
 namespace DB::ErrorCodes
 {
@@ -302,6 +303,15 @@ struct Int96Converter : public FixedSizeConverter
     Int96Converter();
 
     void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
+};
+
+struct GeoConverter : public StringConverter
+{
+    GeoColumnMetadata geo_metadata;
+
+    explicit GeoConverter(const GeoColumnMetadata & geo_metadata_) : geo_metadata(geo_metadata_) {}
+
+    void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
 };
 
 

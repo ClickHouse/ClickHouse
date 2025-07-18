@@ -1400,4 +1400,28 @@ void Int96Converter::convertColumn(std::span<const char> data, size_t num_values
     }
 }
 
+void GeoConverter::convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const
+{
+    col.reserve(col.size() + num_values);
+    chassert(chars.size() >= offsets[num_values - 1]);
+    for (size_t i = 0; i < num_values; ++i)
+    {
+        char * ptr = const_cast<char*>(chars.data() + offsets[i - 1]);
+        size_t length = offsets[i] - offsets[i - 1] - separator_bytes;
+        ReadBuffer in_buffer(ptr, length, 0);
+
+        GeometricObject result_object;
+        switch (geo_metadata.encoding)
+        {
+            case GeoEncoding::WKB:
+                result_object = parseWKBFormat(in_buffer);
+                break;
+            case GeoEncoding::WKT:
+                result_object = parseWKTFormat(in_buffer);
+                break;
+        }
+        appendObjectToGeoColumn(result_object, geo_metadata.type, col);
+    }
+}
+
 }

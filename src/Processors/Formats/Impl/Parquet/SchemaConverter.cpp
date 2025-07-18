@@ -31,7 +31,20 @@ namespace DB::ErrorCodes
 namespace DB::Parquet
 {
 
-SchemaConverter::SchemaConverter(const parq::FileMetaData & file_metadata_, const ReadOptions & options_, const Block * sample_block_) : file_metadata(file_metadata_), options(options_), sample_block(sample_block_), levels {LevelInfo {.def = 0, .rep = 0, .is_array = true}} {}
+SchemaConverter::SchemaConverter(const parq::FileMetaData & file_metadata_, const ReadOptions & options_, const Block * sample_block_) : file_metadata(file_metadata_), options(options_), sample_block(sample_block_), levels {LevelInfo {.def = 0, .rep = 0, .is_array = true}}
+{
+    if (options.format.parquet.allow_geoparquet_parser)
+    {
+        for (const auto & kv : file_metadata.key_value_metadata)
+        {
+            if (kv.key == "geo")
+            {
+                geo_columns = parseGeoMetadataEncoding(&kv.value);
+                break;
+            }
+        }
+    }
+}
 
 void SchemaConverter::checkHasColumns()
 {
@@ -282,19 +295,25 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
             }
             else if (options.schema_inference_force_nullable)
             {
-                /// Historically, the setting schema_inference_make_columns_nullable wasn't applied
-                /// to JSON columns (presumably because Nullable(Object) used to not be allowed).
-                /// Keep this behavior for compatibility.
-                output_nullable_if_not_json = true;
+                if (options.format.schema_inference_make_json_columns_nullable)
+                    output_nullable = true;
+                else
+                    /// Historically, the setting schema_inference_make_columns_nullable wasn't applied
+                    /// to JSON columns (presumably because Nullable(Object) used to not be allowed).
+                    /// Keep this behavior for compatibility.
+                    output_nullable_if_not_json = true;
             }
         }
+
+        auto geo_it = geo_columns.find(name);
+        auto geo_metadata = geo_it == geo_columns.end() ? std::nullopt : std::optional(geo_it->second);
 
         DataTypePtr inferred_type;
         DataTypePtr raw_decoded_type;
         PageDecoderInfo decoder;
         try
         {
-            processPrimitiveColumn(element, primitive_type_hint, decoder, raw_decoded_type, inferred_type);
+            processPrimitiveColumn(element, primitive_type_hint, decoder, raw_decoded_type, inferred_type, geo_metadata);
         }
         catch (Exception & e)
         {
@@ -308,6 +327,13 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
                 e.addMessage("column '" + name + "'");
                 throw;
             }
+        }
+
+        /// GeoParquet types like Point or Polygon can't be inside Nullable.
+        if (typeid_cast<const DataTypeArray *>(inferred_type.get()) || typeid_cast<const DataTypeTuple *>(inferred_type.get()))
+        {
+            output_nullable = false;
+            output_nullable_if_not_json = false;
         }
 
         size_t primitive_idx = primitive_columns.size();
@@ -617,7 +643,7 @@ std::optional<size_t> SchemaConverter::processSubtree(String name, bool requeste
 void SchemaConverter::processPrimitiveColumn(
     const parq::SchemaElement & element, DataTypePtr type_hint,
     PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,
-    DataTypePtr & out_inferred_type) const
+    DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata) const
 {
     /// Inputs:
     ///  * Parquet Type ("physical type"),
@@ -746,6 +772,20 @@ void SchemaConverter::processPrimitiveColumn(
             out_decoder.fixed_size_converter = std::move(converter);
             return;
         }
+    }
+
+    /// GeoParquet.
+    /// Spec says "Geometry columns MUST be at the root of the schema", but we allow them to be
+    /// nested in tuples etc, why not.
+    /// If type hint is String, ignore geoparquet and return raw bytes.
+    if (geo_metadata.has_value() && (!type_hint || !typeid_cast<const DataTypeString *>(type_hint.get())))
+    {
+        if (type != parq::Type::BYTE_ARRAY)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type of GeoParquet column: {}", thriftToString(type));
+
+        out_inferred_type = getGeoDataType(geo_metadata->type);
+        out_decoder.string_converter = std::make_shared<GeoConverter>(*geo_metadata);
+        return;
     }
 
     if (logical.__isset.STRING || logical.__isset.JSON || logical.__isset.BSON ||

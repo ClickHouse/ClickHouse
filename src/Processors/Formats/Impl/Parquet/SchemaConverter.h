@@ -25,6 +25,8 @@ struct SchemaConverter
     size_t primitive_column_idx = 0;
     std::vector<LevelInfo> levels;
 
+    std::unordered_map<String, GeoColumnMetadata> geo_columns;
+
     SchemaConverter(const parq::FileMetaData &, const ReadOptions &, const Block *);
 
     void prepareForReading();
@@ -54,7 +56,7 @@ private:
     void processPrimitiveColumn(
         const parq::SchemaElement & element, DataTypePtr type_hint,
         PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,
-        DataTypePtr & out_inferred_type) const;
+        DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata) const;
 };
 
 }

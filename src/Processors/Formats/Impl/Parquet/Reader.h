@@ -148,6 +148,9 @@ struct Reader
         bool is_array = false;
     };
 
+    /// Primitive (e.g. integer or string) parquet column that we need to read.
+    /// Note that the resulting clickhouse column is not necessarily primitive, e.g. we may parse
+    /// json or geoparquet column from parquet string column.
     struct PrimitiveColumnInfo
     {
         /// Primitive column index in parquet file. NOT index in primitive_columns array.
