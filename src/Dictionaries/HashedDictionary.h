@@ -1199,7 +1199,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::loadDataImpl(QueryP
     }
 
     if (parallel_loader)
-            parallel_loader->finish();
+        parallel_loader->finish();
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
