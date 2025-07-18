@@ -486,7 +486,6 @@ ChunkPartitioner::ChunkPartitioner(
             id_to_column[field->getValue<Int32>(Iceberg::f_id)] = field->getValue<String>(Iceberg::f_name);
         }
     }
-    std::cerr << "partition_specification->size() " << partition_specification->size() << '\n';
     for (size_t i = 0; i != partition_specification->size(); ++i)
     {
         auto partition_specification_field = partition_specification->getObject(static_cast<UInt32>(i));
@@ -505,7 +504,6 @@ ChunkPartitioner::ChunkPartitioner(
         if (!transform_and_argument)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown transform {}", transform_name);
 
-        std::cerr << "transform name " << transform_and_argument->transform_name << '\n';
         functions.push_back(factory.get(transform_and_argument->transform_name, context));
         function_params.push_back(transform_and_argument->argument);
         columns_to_apply.push_back(column_name);
@@ -563,10 +561,8 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
     IColumn::Selector selector;
     ColumnRawPtrs raw_columns;
     for (const auto & column : chunk.getColumns())
-    {
-        std::cerr << "column size " << column->size() << '\n';
         raw_columns.push_back(column.get());
-    }
+
     buildScatterSelector(raw_columns, partition_num_to_first_row, selector, 0, Context::getGlobalContextInstance());
 
     size_t partitions_count = partition_num_to_first_row.size();
@@ -743,7 +739,6 @@ void IcebergStorageSink::cancelBuffers()
 bool IcebergStorageSink::initializeMetadata()
 {
     auto metadata_name = filename_generator.generateMetadataName();
-    Poco::JSON::Stringifier::stringify(metadata, std::cerr, 4);
 
     Int64 parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
     auto [new_snapshot, manifest_list_name] = MetadataGenerator(metadata).generateNextMetadata(

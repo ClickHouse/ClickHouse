@@ -115,8 +115,6 @@ IcebergMetadata::IcebergMetadata(
 
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object)
 {
-    std::cerr << "foo\n";
-    Poco::JSON::Stringifier::stringify(metadata_object, std::cerr, 4);
     Poco::JSON::Object::Ptr schema;
     if (!metadata_object->has(f_current_schema_id))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in metadata", f_current_schema_id);
