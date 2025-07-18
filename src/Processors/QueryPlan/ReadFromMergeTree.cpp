@@ -1848,11 +1848,12 @@ static void buildIndexes(
     {
         bool l_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(l.index.get());
         bool r_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(r.index.get());
-        if (l_is_minmax == r_is_minmax) {
-	  const auto l_granularity = l.index->getGranularity();
-	  const auto r_granularity = r.index->getGranularity();
-	  return l_granularity > r_granularity;
-	}
+        if (l_is_minmax == r_is_minmax)
+        {
+            const auto l_granularity = l.index->getGranularity();
+            const auto r_granularity = r.index->getGranularity();
+            return l_granularity > r_granularity;
+        }
 
 #if USE_USEARCH
         // A vector similarity index (if present) is the most selective, hence move it to front
