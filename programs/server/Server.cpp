@@ -306,6 +306,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 total_memory_profiler_step;
     extern const ServerSettingsDouble total_memory_tracker_sample_probability;
     extern const ServerSettingsBool throw_on_unknown_workload;
+    extern const ServerSettingsBool cpu_slot_preemption;
+    extern const ServerSettingsUInt64 cpu_slot_quantum_ns;
+    extern const ServerSettingsUInt64 cpu_slot_preemption_timeout_ms;
     extern const ServerSettingsString uncompressed_cache_policy;
     extern const ServerSettingsUInt64 uncompressed_cache_size;
     extern const ServerSettingsDouble uncompressed_cache_size_ratio;
@@ -330,6 +333,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
     extern const ServerSettingsFloat min_os_cpu_wait_time_ratio_to_drop_connection;
     extern const ServerSettingsFloat max_os_cpu_wait_time_ratio_to_drop_connection;
+    extern const ServerSettingsBool skip_binary_checksum_checks;
 }
 
 namespace ErrorCodes
@@ -1441,7 +1445,11 @@ try
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
 
-    if (!executable_path.empty())
+    if (server_settings[ServerSetting::skip_binary_checksum_checks])
+    {
+        LOG_WARNING(log, "Binary checksum checks disabled due to skip_binary_checksum_checks - not recommended for production deployments");
+    }
+    else if (!executable_path.empty())
     {
         /// Integrity check based on checksum of the executable code.
         /// Note: it is not intended to protect from malicious party,
@@ -2149,6 +2157,10 @@ try
             global_context->setMergeWorkload(new_server_settings[ServerSetting::merge_workload]);
             global_context->setMutationWorkload(new_server_settings[ServerSetting::mutation_workload]);
             global_context->setThrowOnUnknownWorkload(new_server_settings[ServerSetting::throw_on_unknown_workload]);
+            global_context->setCPUSlotPreemption(
+                new_server_settings[ServerSetting::cpu_slot_preemption],
+                new_server_settings[ServerSetting::cpu_slot_quantum_ns],
+                new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
 
             if (config->has("resources"))
             {

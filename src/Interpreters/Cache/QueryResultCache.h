@@ -4,7 +4,6 @@
 #include <Common/logger_useful.h>
 #include <Interpreters/Cache/QueryResultCacheUsage.h>
 #include <Interpreters/Context_fwd.h>
-#include <Core/Block.h>
 #include <Parsers/IASTHash.h>
 #include <Processors/Chunk.h>
 #include <Processors/Sources/SourceFromChunks.h>
@@ -58,7 +57,7 @@ public:
         /// Additional stuff data stored in the key, not hashed:
 
         /// Result metadata for constructing the pipe.
-        const Block header;
+        SharedHeader header;
 
         /// The id and current roles of the user who executed the query.
         /// These members are necessary to ensure that a (non-shared, see below) entry can only be written and read by the same user with
@@ -99,7 +98,7 @@ public:
         Key(ASTPtr ast_,
             const String & current_database,
             const Settings & settings,
-            Block header_,
+            SharedHeader header_,
             const String & query_id_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
             bool is_shared_,
@@ -253,7 +252,7 @@ private:
     using Cache = QueryResultCache::Cache;
 
     QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &);
-    void buildSourceFromChunks(Block header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
+    void buildSourceFromChunks(SharedHeader header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
     std::unique_ptr<SourceFromChunks> source_from_chunks;
     std::unique_ptr<SourceFromChunks> source_from_chunks_totals;
     std::unique_ptr<SourceFromChunks> source_from_chunks_extremes;

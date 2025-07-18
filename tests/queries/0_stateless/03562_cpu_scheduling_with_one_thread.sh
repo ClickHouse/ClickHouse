@@ -12,8 +12,8 @@ $CLICKHOUSE_CLIENT -nm -q "
 "
 
 # run benchmark with max_threads and workload
-$CLICKHOUSE_BENCHMARK --randomize --timelimit 10 --continue_on_errors --concurrency 10 >& /dev/null <<EOL
-SELECT sum(number) FROM numbers(100000000) settings max_threads = 1 , workload = '03562_wl';
+$CLICKHOUSE_BENCHMARK --randomize --timelimit 5 --continue_on_errors --concurrency 10 >& /dev/null <<EOL
+SELECT sum(number) FROM numbers(50000000) SETTINGS max_rows_to_read = 0, max_threads = 1 , workload = '03562_wl';
 EOL
 
 # server is alive

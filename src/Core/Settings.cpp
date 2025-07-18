@@ -112,7 +112,7 @@ The `max_block_size` setting indicates the recommended maximum number of rows to
 
 The block size should not be too small to avoid noticeable costs when processing each block. It should also not be too large to ensure that queries with a LIMIT clause execute quickly after processing the first block. When setting `max_block_size`, the goal should be to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
 )", 0) \
-    DECLARE(UInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, R"(
+    DECLARE(NonZeroUInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, R"(
 The size of blocks (in a count of rows) to form for insertion into a table.
 This setting only applies in cases when the server forms the blocks.
 For example, for an INSERT via the HTTP interface, the server parses the data format and forms blocks of the specified size.
@@ -2344,6 +2344,9 @@ Possible values:
     DECLARE(Bool, opentelemetry_trace_processors, false, R"(
 Collect OpenTelemetry spans for processors.
 )", 0) \
+    DECLARE(Bool, opentelemetry_trace_cpu_scheduling, false, R"(
+Collect OpenTelemetry spans for workload preemptive CPU scheduling.
+)", 0) \
     DECLARE(Bool, prefer_column_name_to_alias, false, R"(
 Enables or disables using the original column names instead of aliases in query expressions and clauses. It especially matters when alias is the same as the column name, see [Expression Aliases](/sql-reference/syntax#notes-on-usage). Enable this setting to make aliases syntax rules in ClickHouse more compatible with most other database engines.
 
@@ -4496,6 +4499,11 @@ Allow to execute alters which affects not only tables metadata, but also data on
 )", 0) \
     DECLARE(Bool, enable_global_with_statement, true, R"(
 Propagate WITH statements to UNION queries and all subqueries
+)", 0) \
+    DECLARE(Bool, enable_scopes_for_with_statement, true, R"(
+If disabled, declarations in parent WITH cluases will behave the same scope as they declared in the current scope.
+
+Note that this is a compatibility setting for new analyzer to allow running some invalid queries that old analyzer could execute.
 )", 0) \
     DECLARE(Bool, aggregate_functions_null_for_empty, false, R"(
 Enables or disables rewriting all aggregate functions in a query, adding [-OrNull](/sql-reference/aggregate-functions/combinators#-ornull) suffix to them. Enable it for SQL standard compatibility.
@@ -6857,6 +6865,9 @@ Trigger processor to spill data into external storage adpatively. grace join is 
     DECLARE(Bool, allow_experimental_delta_kernel_rs, true, R"(
 Allow experimental delta-kernel-rs implementation.
 )", BETA) \
+    DECLARE(Bool, allow_experimental_insert_into_iceberg, false, R"(
+Allow to execute `insert` queries into iceberg.
+)", EXPERIMENTAL) \
     DECLARE(Bool, make_distributed_plan, false, R"(
 Make distributed query plan.
 )", EXPERIMENTAL) \
@@ -6883,6 +6894,9 @@ Possible values:
 )", EXPERIMENTAL) \
     DECLARE(UInt64, distributed_plan_max_rows_to_broadcast, 20000, R"(
 Maximum rows to use broadcast join instead of shuffle join in distributed query plan.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
+Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
 )", EXPERIMENTAL) \
     \
     /** Experimental timeSeries* aggregate functions. */ \
