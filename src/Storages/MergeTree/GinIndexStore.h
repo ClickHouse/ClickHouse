@@ -106,7 +106,7 @@ struct GinIndexSegment
 class GinSegmentDictionaryBloomFilter
 {
 public:
-    GinSegmentDictionaryBloomFilter(size_t bits_per_rows_, size_t num_hashes_);
+    GinSegmentDictionaryBloomFilter(UInt64 unique_count_, size_t bits_per_rows_, size_t num_hashes_);
 
     /// Adds the token into `BloomFilter`
     void add(std::string_view token);
@@ -121,6 +121,8 @@ public:
     static std::unique_ptr<GinSegmentDictionaryBloomFilter> deserialize(ReadBuffer & read_buffer);
 
 private:
+    /// Estimated unique count of data
+    const UInt64 unique_count;
     /// Number of bits are used in BloomFilter
     const UInt64 bits_per_row;
     /// Number of hash functions used in BloomFilter
@@ -203,6 +205,8 @@ public:
 
     UInt32 getCurrentSegmentID() const { return current_segment.segment_id; }
 
+    void setEstimatedUniqueCount(UInt64 estimated_unique_count) { segment_estimated_unique_count = estimated_unique_count; }
+
     /// Do last segment writing
     void finalize();
     void cancel() noexcept;
@@ -256,6 +260,8 @@ private:
     GinIndexSegment current_segment;
     UInt64 current_size = 0;
     const UInt64 max_digestion_size = 0;
+
+    UInt64 segment_estimated_unique_count = 0;
 
     /// File streams for segment, dictionaries and postings lists
     std::unique_ptr<WriteBufferFromFileBase> metadata_file_stream;
