@@ -1169,7 +1169,7 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), paths.empty() ? "" : paths[0], format_settings));
     setInMemoryMetadata(storage_metadata);
 
-    supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(format_name, args.getContext(), format_settings);
+    supports_prewhere = format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsPrewhere(format_name, args.getContext(), format_settings);
 }
 
 static std::chrono::seconds getLockTimeout(const ContextPtr & context)

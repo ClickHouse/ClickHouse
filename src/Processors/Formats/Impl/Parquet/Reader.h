@@ -27,9 +27,10 @@ namespace DB::Parquet
 
 // TODO [parquet]:
 //  * column_mapper
+//  * allow_geoparquet_parser
+//  * test on files from https://github.com/apache/parquet-testing
 //  * check fields for false sharing, add cacheline padding as needed
 //  * make sure userspace page cache read buffer supports readBigAt
-//  * allow_geoparquet_parser
 //  * assert that memory usage is zero at the end, the reset()s are easy to miss
 //  * support newer parquet versions: https://github.com/apache/parquet-format/blob/master/CHANGES.md
 //  * make writer write DataPageV2
