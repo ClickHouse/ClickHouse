@@ -27,7 +27,7 @@
         <policies>
             <azure>
                 <volumes>
-                    <main><disk>cached_azure_encrypted</disk></main>
+                    <main><disk>azure</disk></main>
                 </volumes>
             </azure>
             <azure_cache>
@@ -35,6 +35,11 @@
                     <main><disk>cached_azure</disk></main>
                 </volumes>
             </azure_cache>
+            <azure_encrypted>
+                <volumes>
+                    <main><disk>cached_azure_encrypted</disk></main>
+                </volumes>
+            </azure_encrypted>
         </policies>
     </storage_configuration>
 </clickhouse>

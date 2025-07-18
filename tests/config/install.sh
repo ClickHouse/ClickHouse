@@ -260,14 +260,15 @@ if [[ -n "$USE_DATABASE_ORDINARY" ]] && [[ "$USE_DATABASE_ORDINARY" -eq 1 ]]; th
     ln -sf $SRC_PATH/users.d/database_ordinary.xml $DEST_SERVER_PATH/users.d/
 fi
 
-if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
-    object_key_types_options=("generate-suffix" "generate-full-key" "generate-template-key")
-    object_key_type="${object_key_types_options[0]}"
+object_key_types_options=("generate-suffix" "generate-full-key" "generate-template-key")
+object_key_type="${object_key_types_options[0]}"
 
-    if [[ -n "$RANDOMIZE_OBJECT_KEY_TYPE" ]] && [[ "$RANDOMIZE_OBJECT_KEY_TYPE" -eq 1 ]]; then
-      object_key_type="${object_key_types_options[$(($RANDOM % ${#object_key_types_options[@]}))]}"
-    fi
+if [[ -n "$RANDOMIZE_OBJECT_KEY_TYPE" ]] && [[ "$RANDOMIZE_OBJECT_KEY_TYPE" -eq 1 ]]; then
+    object_key_type="${object_key_types_options[$(($RANDOM % ${#object_key_types_options[@]}))]}"
+fi
 
+function setup_storage_policy()
+{
     case $object_key_type in
         "generate-full-key")
             ln -sf $SRC_PATH/config.d/storage_metadata_with_full_object_key.xml $DEST_SERVER_PATH/config.d/
@@ -281,8 +282,22 @@ if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
             ln -sf $SRC_PATH/config.d/s3_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
             ;;
     esac
+}
+
+if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
+    setup_storage_policy
+
+    if [[ "$USE_ENCRYPTED_STORAGE" == "1" ]]; then
+        ln -sf $SRC_PATH/config.d/s3_encrypted_storage_policy_for_merge_tree_by_default.xml $DEST_SERVER_PATH/config.d/
+    else
+        ln -sf $SRC_PATH/config.d/s3_storage_policy_for_merge_tree_by_default.xml $DEST_SERVER_PATH/config.d/
+    fi
 elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
-    ln -sf $SRC_PATH/config.d/azure_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
+    if [[ "$USE_ENCRYPTED_STORAGE" == "1" ]]; then
+        ln -sf $SRC_PATH/config.d/azure_encrypted_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
+    else
+        ln -sf $SRC_PATH/config.d/azure_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
+    fi
 fi
 
 if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
