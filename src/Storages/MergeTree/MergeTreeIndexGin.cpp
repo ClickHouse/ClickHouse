@@ -134,24 +134,29 @@ void MergeTreeIndexAggregatorGin::update(const Block & block, size_t * pos, size
     const auto & index_column_name = index_columns[0];
     const auto & index_column = block.getByName(index_column_name);
 
-    /// Compute column hashes from a sample (10%) of column data to have an estimated unique count ratio
-    const auto bf_sample_rate = 0.1; /// 10%
-    const auto bf_sample_size = static_cast<size_t>(rows_read * bf_sample_rate);
-    const ColumnPtr index_column_with_bf = BloomFilterHash::hashWithColumn(index_column.type, index_column.column, *pos, bf_sample_size);
-    const auto & index_col = checkAndGetColumn<const ColumnUInt64>(*index_column_with_bf);
+    static const auto bloom_filter_sample_threshold = 1000;
+    static const auto bloom_filter_sample_rate = 0.1; /// 10%
 
-    HashSet<UInt64> column_hashes;
-    const auto & index_data = index_col.getData();
-    for (const auto & hash : index_data)
-        column_hashes.insert(hash);
+    if (rows_read >= bloom_filter_sample_threshold)
+    {
+        /// Compute column hashes from a sample (10%) of column data to have an estimated unique count ratio
+        const auto bloom_filter_sample_size = static_cast<size_t>(rows_read * bloom_filter_sample_rate);
+        const ColumnPtr index_column_sample
+            = BloomFilterHash::hashWithColumn(index_column.type, index_column.column, *pos, bloom_filter_sample_size);
+        const auto & sample_col = checkAndGetColumn<const ColumnUInt64>(*index_column_sample);
 
-    const double unique_count_ratio = static_cast<double>(bf_sample_size) / column_hashes.size();
-    const auto estimated_unique_count = static_cast<UInt64>(rows_read * unique_count_ratio);
-    if (estimated_unique_count == 0)
+        HashSet<UInt64> sample_hashes;
+        const auto & sample_data = sample_col.getData();
+        for (const auto & hash : sample_data)
+            sample_hashes.insert(hash);
+
+        const double unique_count_ratio = static_cast<double>(bloom_filter_sample_size) / sample_hashes.size();
+        const auto estimated_unique_count = static_cast<UInt64>(rows_read * unique_count_ratio);
+        store->setEstimatedUniqueCount(estimated_unique_count);
+    }
+    else
         /// In case rows_read is small, assume all entries are unique
         store->setEstimatedUniqueCount(rows_read);
-    else
-        store->setEstimatedUniqueCount(estimated_unique_count);
 
     auto start_row_id = store->getNextRowIDRange(rows_read);
 
