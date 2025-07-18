@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.8",
         {
             {"use_skip_indexes_on_data_read", false, false, "New setting"},
+            {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
