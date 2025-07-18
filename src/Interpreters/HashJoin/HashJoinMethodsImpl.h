@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/AddedColumns.h>
