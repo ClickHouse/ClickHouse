@@ -111,7 +111,7 @@ public:
     /// Adds the token into `BloomFilter`
     void add(std::string_view token);
 
-    /// Checks the token existance in `BloomFilter`
+    /// Checks the token existence in `BloomFilter`
     bool contains(std::string_view token);
 
     /// Serialize the BloomFilter into WriteBuffer
