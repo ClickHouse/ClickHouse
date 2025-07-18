@@ -2979,7 +2979,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     /// Replace IN (subquery)
-    /// NOTE: the resulting subquery in the arment of EXISTS will have correlated column x, that's why this rewriting has to be before handling
+    /// NOTE: the resulting subquery in the argument of EXISTS will have correlated column x, that's why this rewriting has to be before handling
     /// EXISTS which is done below in 'if (is_special_function_exists)' case.
     if (is_special_function_in && function_name == "in" && scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
     {
