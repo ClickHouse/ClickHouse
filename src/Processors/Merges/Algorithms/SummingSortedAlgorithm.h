@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block_fwd.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 
@@ -16,7 +17,7 @@ class SummingSortedAlgorithm final : public IMergingAlgorithmWithDelayedChunk
 {
 public:
     SummingSortedAlgorithm(
-        const Block & header, size_t num_inputs,
+        SharedHeader header, size_t num_inputs,
         SortDescription description_,
         /// List of columns to be summed. If empty, all numeric columns that are not in the description are taken.
         const Names & column_names_to_sum,
@@ -90,7 +91,9 @@ public:
 
         bool is_group_started = false;
 
-        std::vector<ColumnPtr> current_row;
+        Row current_row;
+        /// Some types like Dynamic/JSON doesn't work well with Fields, for them we save values in IColumn.
+        std::vector<ColumnPtr> current_row_columns;
         bool current_row_is_zero = true;    /// Are all summed columns zero (or empty)? It is updated incrementally.
 
         void addRowImpl(ColumnRawPtrs & raw_columns, size_t row);

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/CurrentThread.h>
-#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 
@@ -22,9 +22,6 @@ class QueryPlan;
 using QueryPlanRawPtrs = std::list<QueryPlan *>;
 
 struct QueryPlanSerializationSettings;
-
-using Header = Block;
-using Headers = std::vector<Header>;
 
 struct ExplainPlanOptions;
 
@@ -53,10 +50,10 @@ public:
     ///   or pipeline should be completed otherwise.
     virtual QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) = 0;
 
-    const Headers & getInputHeaders() const { return input_headers; }
+    const SharedHeaders & getInputHeaders() const { return input_headers; }
 
-    bool hasOutputHeader() const { return output_header.has_value(); }
-    const Header & getOutputHeader() const;
+    bool hasOutputHeader() const { return output_header != nullptr; }
+    const SharedHeader & getOutputHeader() const;
 
     /// Methods to describe what this step is needed for.
     const std::string & getStepDescription() const { return step_description; }
@@ -111,16 +108,16 @@ public:
     String getUniqID() const;
 
     /// (e.g. you correctly remove / add columns).
-    void updateInputHeaders(Headers input_headers_);
-    void updateInputHeader(Header input_header, size_t idx = 0);
+    void updateInputHeaders(SharedHeaders input_headers_);
+    void updateInputHeader(SharedHeader input_header, size_t idx = 0);
 
     virtual bool hasCorrelatedExpressions() const;
 
 protected:
     virtual void updateOutputHeader() = 0;
 
-    Headers input_headers;
-    std::optional<Header> output_header;
+    SharedHeaders input_headers;
+    SharedHeader output_header;
 
     /// Text description about what current step does.
     std::string step_description;

@@ -21,11 +21,9 @@ struct ObjectStorageQueueSettings;
 class StorageObjectStorageQueue : public IStorage, WithContext
 {
 public:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
-
     StorageObjectStorageQueue(
         std::unique_ptr<ObjectStorageQueueSettings> queue_settings_,
-        ConfigurationPtr configuration_,
+        StorageObjectStorageConfigurationPtr configuration_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -57,6 +55,8 @@ public:
         ContextPtr local_context,
         AlterLockHolder & table_lock_holder) override;
 
+    void renameInMemory(const StorageID & new_table_id) override;
+
     const auto & getFormatName() const { return configuration->format; }
 
     const fs::path & getZooKeeperPath() const { return zk_path; }
@@ -67,6 +67,10 @@ public:
 
     /// Can setting be changed via ALTER TABLE MODIFY SETTING query.
     static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode);
+
+    /// Generate id for the S3(Azure/etc)Queue commit.
+    /// Used for system.s3(azure/etc)_queue_log.
+    static UInt64 generateCommitID();
 
     static String chooseZooKeeperPath(
         const ContextPtr & context_,
@@ -101,7 +105,7 @@ private:
 
     std::unique_ptr<ObjectStorageQueueMetadata> temp_metadata;
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
-    ConfigurationPtr configuration;
+    StorageObjectStorageConfigurationPtr configuration;
     ObjectStoragePtr object_storage;
 
     const std::optional<FormatSettings> format_settings;
@@ -133,6 +137,7 @@ private:
     std::shared_ptr<ObjectStorageQueueSource> createSource(
         size_t processor_id,
         const ReadFromFormatInfo & info,
+        FormatParserGroupPtr parser_group,
         ProcessingProgressPtr progress_,
         std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
         size_t max_block_size,
@@ -152,6 +157,7 @@ private:
         bool insert_succeeded,
         size_t inserted_rows,
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
+        time_t transaction_start_time,
         const std::string & exception_message = {},
         int error_code = 0) const;
 

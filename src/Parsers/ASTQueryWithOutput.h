@@ -2,7 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <IO/Operators.h>
-#include "Parsers/IAST_fwd.h"
+#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
@@ -56,10 +56,9 @@ public:
     }
 
 protected:
-    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const override
     {
-        ostr << (settings.hilite ? hilite_keyword : "")
-            << ASTIDAndQueryNames::Query << (settings.hilite ? hilite_none : "");
+        ostr << ASTIDAndQueryNames::Query;
     }
 };
 
