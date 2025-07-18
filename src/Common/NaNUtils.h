@@ -43,8 +43,9 @@ T NaNOrZero()
 {
     if constexpr (std::is_floating_point_v<T>)
         return std::numeric_limits<T>::quiet_NaN();
-    else
-        return {};
+    if constexpr (std::is_same_v<T, BFloat16>)
+        return BFloat16(std::numeric_limits<Float32>::quiet_NaN());
+    return {};
 }
 
 template <typename T>
