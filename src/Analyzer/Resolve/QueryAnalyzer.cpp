@@ -3743,25 +3743,24 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     /** Create SET column for special function IN to allow constant folding
-      * if left and right arguments are constants.
+      * if right arguments is a constant.
       *
       * Example: SELECT * FROM test_table LIMIT 1 IN 1;
       */
     if (is_special_function_in)
     {
-        const auto * first_argument_constant_node = function_arguments[0]->as<ConstantNode>();
         const auto * second_argument_constant_node = function_arguments[1]->as<ConstantNode>();
 
-        if (first_argument_constant_node && second_argument_constant_node)
+        if (second_argument_constant_node)
         {
-            const auto & first_argument_constant_type = first_argument_constant_node->getResultType();
+            const auto & first_argument_type = function_arguments[0]->getResultType();
             const auto second_argument_constant_literal = second_argument_constant_node->getValue();
             const auto & second_argument_constant_type = second_argument_constant_node->getResultType();
 
             const auto & settings = scope.context->getSettingsRef();
 
             auto result_block = getSetElementsForConstantValue(
-                first_argument_constant_type, second_argument_constant_literal, second_argument_constant_type,
+                first_argument_type, second_argument_constant_literal, second_argument_constant_type,
                 GetSetElementParams{
                     .transform_null_in = settings[Setting::transform_null_in],
                     .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
