@@ -20,6 +20,9 @@ struct JSONExtractInsertSettings
     /// If false, JSON value will be inserted into column only if type of the value is
     /// the same as column type (no conversions like Integer -> String, Integer -> Float, etc).
     bool allow_type_conversion = true;
+    /// If true, during insert into Dynamic column we first try to insert value into existing variants
+    /// and only if failed we try to infer the new variant type.
+    bool try_existing_variants_in_dynamic_first = true;
 };
 
 template <typename JSONParser>

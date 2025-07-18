@@ -91,4 +91,8 @@ using DataTypeInt256 = DataTypeNumber<Int256>;
 
 bool isUInt64ThatCanBeInt64(const DataTypePtr & type);
 
+/// Function helper to create a type for column that contains indexes.
+/// It chooses the smallest numeric type based on the desired number of indexes.
+DataTypePtr getSmallestIndexesType(size_t num_indexes);
+
 }

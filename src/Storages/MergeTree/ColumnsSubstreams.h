@@ -30,6 +30,8 @@ public:
     size_t getFirstSubstreamPosition(size_t column_position) const;
     size_t getLastSubstreamPosition(size_t column_position) const;
 
+    const std::vector<String> & getAllColumnSubstreams(const String & column) const;
+
     void writeText(WriteBuffer & buf) const;
     void readText(ReadBuffer & buf);
 
