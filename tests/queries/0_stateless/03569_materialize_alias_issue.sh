@@ -24,11 +24,13 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO customer_dbt_materialize SELECT number F
 # will also do nothing with data parts (because `value` is ALIAS, not PHYSICAL column).
 #
 # And the last MATERIALIZE COLUMN will trigger real mutation which will rewrite data part and leave incorrect checksum on disk.
-$CLICKHOUSE_CLIENT --query "ALTER TABLE customer_dbt_materialize MODIFY COLUMN value Array(Tuple(transaction_hash String, instruction_sig_hash String)) ALIAS array((toString(key), toString(key)))"
+$CLICKHOUSE_CLIENT --query "ALTER TABLE customer_dbt_materialize MODIFY COLUMN value Array(Tuple(transaction_hash String, instruction_sig_hash String)) ALIAS array((toString(key), toString(key))) SETTINGS mutations_sync = 2"
 
-$CLICKHOUSE_CLIENT --query "ALTER TABLE customer_dbt_materialize MODIFY COLUMN value Array(Tuple(transaction_hash String, transaction_index_data String)) MATERIALIZED array((toString(key), toString(key)))"
+$CLICKHOUSE_CLIENT --query "ALTER TABLE customer_dbt_materialize MODIFY COLUMN value Array(Tuple(transaction_hash String, transaction_index_data String)) MATERIALIZED array((toString(key), toString(key)))  SETTINGS mutations_sync = 2"
 
 $CLICKHOUSE_CLIENT --query "ALTER TABLE customer_dbt_materialize MATERIALIZE COLUMN value"
+
+$CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA customer_dbt_materialize"
 
 $CLICKHOUSE_CLIENT --query "CHECK TABLE customer_dbt_materialize"
 
