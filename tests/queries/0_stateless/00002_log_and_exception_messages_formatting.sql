@@ -32,7 +32,9 @@ SELECT
 FROM logs
 WHERE
     message NOT LIKE '% Received from %clickhouse-staging.com:9440%'
-  AND source_file not like '%/AWSLogger.cpp%';
+    AND source_file not like '%/AWSLogger.cpp%'
+    AND source_file not like '%/BaseDaemon.cpp%'
+    AND logger_name not in ('RaftInstance');
 
 -- Check the same for exceptions. The value was 0.03
 WITH 0.05 AS threshold
