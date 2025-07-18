@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/Timestamp.h>
-#include "QueryPipeline/BlockIO.h"
+#include <QueryPipeline/BlockIO.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>

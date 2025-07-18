@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Dictionaries/CassandraHelpers.h>
-#include "QueryPipeline/BlockIO.h"
+#include <QueryPipeline/BlockIO.h>
 
 #if USE_CASSANDRA
 

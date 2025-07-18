@@ -2,7 +2,7 @@
 
 #include <BridgeHelper/ExternalDictionaryLibraryBridgeHelper.h>
 #include <Common/LocalDateTime.h>
-#include "QueryPipeline/BlockIO.h"
+#include <QueryPipeline/BlockIO.h>
 #include <Core/UUID.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Core/ExternalResultDescription.h>

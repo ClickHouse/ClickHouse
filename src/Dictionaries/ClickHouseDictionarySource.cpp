@@ -16,7 +16,7 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
-#include "QueryPipeline/BlockIO.h"
+#include <QueryPipeline/BlockIO.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Dictionaries/DictionarySourceFactory.h>

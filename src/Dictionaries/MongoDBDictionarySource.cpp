@@ -1,5 +1,5 @@
 #include "Core/BlockInfo.h"
-#include "QueryPipeline/BlockIO.h"
+#include <QueryPipeline/BlockIO.h>
 #include "config.h"
 
 #include <Dictionaries/DictionarySourceFactory.h>

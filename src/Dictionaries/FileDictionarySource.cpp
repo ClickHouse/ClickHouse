@@ -2,7 +2,7 @@
 #include <Common/logger_useful.h>
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
-#include "QueryPipeline/BlockIO.h"
+#include <QueryPipeline/BlockIO.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/IInputFormat.h>

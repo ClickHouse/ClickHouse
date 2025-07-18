@@ -1,6 +1,6 @@
 #pragma once
 
-#include "QueryPipeline/BlockIO.h"
+#include <QueryPipeline/BlockIO.h>
 #include "config.h"
 
 #if USE_MONGODB

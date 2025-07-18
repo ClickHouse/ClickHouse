@@ -2,7 +2,7 @@
 
 #include <memory>
 #include <Poco/Logger.h>
-#include "QueryPipeline/BlockIO.h"
+#include <QueryPipeline/BlockIO.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Interpreters/Context_fwd.h>
 #include <Dictionaries/DictionaryStructure.h>
