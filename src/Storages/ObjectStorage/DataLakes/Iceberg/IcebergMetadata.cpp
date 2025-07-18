@@ -1,5 +1,7 @@
+#include "Storages/ColumnsDescription.h"
 #include "config.h"
 #include <memory>
+#include <optional>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
 #include <Formats/FormatParserGroup.h>
@@ -113,6 +115,8 @@ IcebergMetadata::IcebergMetadata(
 
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object)
 {
+    std::cerr << "foo\n";
+    Poco::JSON::Stringifier::stringify(metadata_object, std::cerr, 4);
     Poco::JSON::Object::Ptr schema;
     if (!metadata_object->has(f_current_schema_id))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in metadata", f_current_schema_id);
@@ -235,7 +239,7 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
     std::lock_guard lock(mutex);
 
     const auto [metadata_version, metadata_file_path, compression_method]
-        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, manifest_cache, local_context, log.get());
+        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, manifest_cache, local_context, log.get(), std::nullopt, nullptr);
 
     bool metadata_file_changed = false;
     if (last_metadata_version != metadata_version)
@@ -452,7 +456,9 @@ std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String da
 DataLakeMetadataPtr IcebergMetadata::create(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationWeakPtr & configuration,
-    const ContextPtr & local_context)
+    const ContextPtr & local_context,
+    const std::optional<ColumnsDescription> & columns,
+    ASTPtr partition_by)
 {
     auto configuration_ptr = configuration.lock();
 
@@ -464,7 +470,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
     else
         LOG_TRACE(log, "Not using in-memory cache for iceberg metadata files, because the setting use_iceberg_metadata_files_cache is false.");
 
-    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, cache_ptr, local_context, log.get());
+    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, cache_ptr, local_context, log.get(), columns, partition_by);
 
     Poco::JSON::Object::Ptr object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, cache_ptr, local_context, log, compression_method);
 
@@ -536,7 +542,7 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
 {
     auto configuration_ptr = configuration.lock();
 
-    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, manifest_cache, local_context, log.get());
+    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, manifest_cache, local_context, log.get(), std::nullopt, nullptr);
 
     chassert([&]()
     {

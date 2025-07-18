@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Storages/ColumnsDescription.h"
 #include "config.h"
 
 #if USE_PARQUET
@@ -49,7 +50,9 @@ public:
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
         StorageObjectStorageConfigurationWeakPtr configuration,
-        ContextPtr local_context);
+        ContextPtr local_context,
+        const std::optional<ColumnsDescription> & columns,
+        ASTPtr partition_by);
 
     static DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
     static DataTypePtr getSimpleTypeByName(const String & type_name);

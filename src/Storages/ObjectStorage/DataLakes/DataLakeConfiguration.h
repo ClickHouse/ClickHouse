@@ -59,16 +59,18 @@ public:
         ObjectStoragePtr object_storage,
         ContextPtr local_context,
         bool if_not_updated_before,
-        bool check_consistent_with_previous_metadata) override
+        bool check_consistent_with_previous_metadata,
+        const std::optional<ColumnsDescription> & columns,
+        ASTPtr partition_by) override
     {
         const bool updated_before = current_metadata != nullptr;
         if (updated_before && if_not_updated_before)
             return false;
 
         BaseStorageConfiguration::update(
-            object_storage, local_context, if_not_updated_before, check_consistent_with_previous_metadata);
+            object_storage, local_context, if_not_updated_before, check_consistent_with_previous_metadata, columns, partition_by);
 
-        const bool changed = updateMetadataIfChanged(object_storage, local_context);
+        const bool changed = updateMetadataIfChanged(object_storage, local_context, columns, partition_by);
         if (!changed)
             return true;
 
@@ -195,7 +197,9 @@ private:
             current_metadata = DataLakeMetadata::create(
                 object_storage,
                 weak_from_this(),
-                local_context);
+                local_context,
+                std::nullopt,
+                nullptr);
         }
         return current_metadata->prepareReadingFromFormat(
             requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
@@ -203,14 +207,18 @@ private:
 
     bool updateMetadataIfChanged(
         ObjectStoragePtr object_storage,
-        ContextPtr context)
+        ContextPtr context,
+        const std::optional<ColumnsDescription> & columns,
+        ASTPtr partition_by)
     {
         if (!current_metadata)
         {
             current_metadata = DataLakeMetadata::create(
                 object_storage,
                 weak_from_this(),
-                context);
+                context,
+                columns,
+                partition_by);
             return true;
         }
 
@@ -222,7 +230,9 @@ private:
         auto new_metadata = DataLakeMetadata::create(
             object_storage,
             weak_from_this(),
-            context);
+            context,
+            columns,
+            partition_by);
 
         if (*current_metadata == *new_metadata)
             return false;

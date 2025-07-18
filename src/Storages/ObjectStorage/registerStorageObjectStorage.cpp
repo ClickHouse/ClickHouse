@@ -187,6 +187,7 @@ void registerStorageIceberg(StorageFactory & factory)
         },
         {
             .supports_settings = true,
+            .supports_sort_order = true,
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
@@ -202,6 +203,7 @@ void registerStorageIceberg(StorageFactory & factory)
         },
         {
             .supports_settings = true,
+            .supports_sort_order = true,
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
@@ -218,6 +220,7 @@ void registerStorageIceberg(StorageFactory & factory)
         },
         {
             .supports_settings = true,
+            .supports_sort_order = true,
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::AZURE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
@@ -234,6 +237,7 @@ void registerStorageIceberg(StorageFactory & factory)
         },
         {
             .supports_settings = true,
+            .supports_sort_order = true,
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::HDFS,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
@@ -249,6 +253,7 @@ void registerStorageIceberg(StorageFactory & factory)
         },
         {
             .supports_settings = true,
+            .supports_sort_order = true,
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::FILE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,

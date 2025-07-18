@@ -201,7 +201,6 @@ void generateManifestFile(
         set_versioned_field(sequence_number, Iceberg::f_file_sequence_number);
     }
     avro::GenericRecord & data_file = manifest.field(Iceberg::f_data_file).value<avro::GenericRecord>();
-
     if (version > 1)
         data_file.field(Iceberg::f_content) = avro::GenericDatum(0);
     data_file.field(Iceberg::f_file_path) = avro::GenericDatum(data_file_name);
@@ -487,6 +486,7 @@ ChunkPartitioner::ChunkPartitioner(
             id_to_column[field->getValue<Int32>(Iceberg::f_id)] = field->getValue<String>(Iceberg::f_name);
         }
     }
+    std::cerr << "partition_specification->size() " << partition_specification->size() << '\n';
     for (size_t i = 0; i != partition_specification->size(); ++i)
     {
         auto partition_specification_field = partition_specification->getObject(static_cast<UInt32>(i));
@@ -505,6 +505,7 @@ ChunkPartitioner::ChunkPartitioner(
         if (!transform_and_argument)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown transform {}", transform_name);
 
+        std::cerr << "transform name " << transform_and_argument->transform_name << '\n';
         functions.push_back(factory.get(transform_and_argument->transform_name, context));
         function_params.push_back(transform_and_argument->argument);
         columns_to_apply.push_back(column_name);
@@ -562,7 +563,10 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
     IColumn::Selector selector;
     ColumnRawPtrs raw_columns;
     for (const auto & column : chunk.getColumns())
+    {
+        std::cerr << "column size " << column->size() << '\n';
         raw_columns.push_back(column.get());
+    }
     buildScatterSelector(raw_columns, partition_num_to_first_row, selector, 0, Context::getGlobalContextInstance());
 
     size_t partitions_count = partition_num_to_first_row.size();
@@ -574,9 +578,16 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
 
     for (size_t col = 0; col < chunk.getNumColumns(); ++col)
     {
-        MutableColumns scattered = chunk.getColumns()[col]->scatter(partitions_count, selector);
-        for (size_t i = 0; i < partitions_count; ++i)
-            result_columns[i].second[col] = std::move(scattered[i]);
+        if (partitions_count > 1)
+        {
+            MutableColumns scattered = chunk.getColumns()[col]->scatter(partitions_count, selector);
+            for (size_t i = 0; i < partitions_count; ++i)
+                result_columns[i].second[col] = std::move(scattered[i]);
+        }
+        else
+        {
+            result_columns[0].second[col] = chunk.getColumns()[col]->cloneFinalized();
+        }
     }
 
     std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>> result;
@@ -603,10 +614,10 @@ IcebergStorageSink::IcebergStorageSink(
     , format_settings(format_settings_)
     , filename_generator(configuration_->getPath())
 {
-    configuration->update(object_storage, context, true, false);
+    configuration->update(object_storage, context, true, false, std::nullopt, nullptr);
     auto log = getLogger("IcebergWrites");
     auto [last_version, metadata_path, compression_method]
-        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_, nullptr, context_, log.get());
+        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_, nullptr, context_, log.get(), std::nullopt, nullptr);
 
     filename_generator.setVersion(last_version + 1);
     metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, log, compression_method);
@@ -732,6 +743,7 @@ void IcebergStorageSink::cancelBuffers()
 bool IcebergStorageSink::initializeMetadata()
 {
     auto metadata_name = filename_generator.generateMetadataName();
+    Poco::JSON::Stringifier::stringify(metadata, std::cerr, 4);
 
     Int64 parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
     auto [new_snapshot, manifest_list_name] = MetadataGenerator(metadata).generateNextMetadata(

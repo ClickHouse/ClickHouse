@@ -73,7 +73,9 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
         object_storage,
         context_,
         /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
+        /* check_consistent_with_previous_metadata */true,
+        columns_,
+        nullptr);
 
     ColumnsDescription columns{columns_};
     std::string sample_path;
@@ -103,7 +105,9 @@ std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_co
         object_storage,
         query_context,
         /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
+        /* check_consistent_with_previous_metadata */true,
+        std::nullopt,
+        nullptr);
     return configuration->totalRows(query_context);
 }
 
@@ -113,7 +117,9 @@ std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_c
         object_storage,
         query_context,
         /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
+        /* check_consistent_with_previous_metadata */true,
+        std::nullopt,
+        nullptr);
     return configuration->totalBytes(query_context);
 }
 

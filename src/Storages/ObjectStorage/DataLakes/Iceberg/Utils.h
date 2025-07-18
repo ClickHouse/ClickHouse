@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Storages/ColumnsDescription.h"
 #include "config.h"
 
 #include <string>
@@ -58,7 +59,9 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     StorageObjectStorageConfigurationPtr configuration_ptr,
     IcebergMetadataFilesCachePtr cache_ptr,
     const ContextPtr & local_context,
-    Poco::Logger * log);
+    Poco::Logger * log,
+    const std::optional<ColumnsDescription> & columns,
+    ASTPtr partition_by);
 
 }
 
