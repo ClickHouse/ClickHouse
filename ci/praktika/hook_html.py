@@ -266,7 +266,7 @@ class HtmlRunnerHooks:
             print("Update workflow results with new info")
             new_result_info = info_str
 
-        if not result.is_ok():
+        if not result.is_ok() and not result.skip_dependee_jobs_dropping():
             print(
                 "Current job failed - find dependee jobs in the workflow and set their statuses to dropped"
             )

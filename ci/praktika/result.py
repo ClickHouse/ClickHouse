@@ -6,7 +6,6 @@ import json
 import random
 import sys
 import time
-from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -535,9 +534,14 @@ class Result(MetaClasses.Serializable):
             files=[log_file] if with_log else None,
         )
 
+    def skip_dependee_jobs_dropping(self):
+        return self.ext.get("skip_dependee_jobs_dropping", False)
+
     def complete_job(self, with_job_summary_in_info=True, force_ok_exit=False):
         if with_job_summary_in_info:
             self._add_job_summary_to_info()
+        if force_ok_exit:
+            self.ext["skip_dependee_jobs_dropping"] = True
         self.dump()
         print(self.to_stdout_formatted())
         if not self.is_ok() and not force_ok_exit:
