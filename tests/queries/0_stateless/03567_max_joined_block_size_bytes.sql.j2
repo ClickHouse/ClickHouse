@@ -130,7 +130,7 @@ SETTINGS max_joined_block_size_bytes = '1Gi', join_algorithm = '{{ join_algorith
 {% endfor -%}
 {% endfor -%}
 
-SELECT if(max(bs) > ((128 * 128) * 4), 'ok', toString(max(bs)))
+SELECT if(max(bs) >= ((128 * 128) * 4), 'ok', toString(max(bs)))
 FROM
 (
     SELECT blockSize() AS bs
