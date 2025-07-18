@@ -42,7 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.8",
         {
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
-            {"vector_search_with_rescoring", true, false, "New setting."},
+            {"vector_search_with_rescoring", true, true, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
