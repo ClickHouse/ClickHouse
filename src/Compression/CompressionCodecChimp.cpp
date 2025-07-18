@@ -48,7 +48,7 @@ protected:
 
     std::string getDescription() const override
     {
-        return "XOR-based floating-point compression algorithm.";
+        return "XOR-based floating-point compression algorithm, particularly effective on datasets where values exhibit local correlation such as time series.";
     }
 
 private:
@@ -57,7 +57,9 @@ private:
 
 namespace LeadingZero
 {
+    // bit length for leading zero binary representation
     static const auto BIT_LENGTH = 3;
+    // array to map leading zero lengths to eight discrete values
     static const Int16 round[65] =
     {
         0, 0, 0, 0, 0, 0, 0, 0,
@@ -69,6 +71,7 @@ namespace LeadingZero
         24, 24, 24, 24, 24, 24, 24, 24,
         24, 24, 24, 24, 24, 24, 24, 24, 24
     };
+    // array to map leading zero lengths to eight discrete binary representations
     static const Int16 binaryRepresentation[65] =
     {
         0, 0, 0, 0, 0, 0, 0, 0,
@@ -80,6 +83,7 @@ namespace LeadingZero
         7, 7, 7, 7, 7, 7, 7, 7,
         7, 7, 7, 7, 7, 7, 7, 7, 7
     };
+    // array to convert the binary representation of leading zero lengths to the respective discrete value
     static const Int16 reverseBinaryRepresentation[8] = {0, 8, 12, 16, 18, 20, 22, 24};
 }
 
@@ -353,9 +357,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
                 curr_xored_info.leading_zero_bits = LeadingZero::reverseBinaryRepresentation[reader.readBits(LeadingZero::BIT_LENGTH)];
                 curr_xored_info.data_bits = reader.readBits(DATA_BIT_LENGTH);
                 if (curr_xored_info.data_bits == 0)
-                {
                     curr_xored_info.data_bits = sizeof(T) * 8;
-                }
                 curr_xored_info.trailing_zero_bits = sizeof(T) * 8 - curr_xored_info.leading_zero_bits - curr_xored_info.data_bits;
                 xored_data = static_cast<T>(reader.readBits(curr_xored_info.data_bits));
                 xored_data <<= curr_xored_info.trailing_zero_bits;
@@ -368,7 +370,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
                 curr_value = prev_value;
                 break;
             default:
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Illegal flag value");
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Illegal flag value {}", flag);
         }
         unalignedStoreLittleEndian<T>(dest, curr_value);
         dest += sizeof(curr_value);
