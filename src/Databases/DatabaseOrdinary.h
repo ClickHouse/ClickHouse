@@ -87,6 +87,9 @@ public:
     static void setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr context, bool replicated);
 
 protected:
+    void
+    doAlterTable(ContextPtr context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, bool validate_new_create_query);
+
     virtual void commitAlterTable(
         const StorageID & table_id,
         const String & table_metadata_tmp_path,

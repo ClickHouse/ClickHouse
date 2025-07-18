@@ -58,14 +58,10 @@ public:
     void dropTable(ContextPtr, const String & table_name, bool sync) override;
     void renameTable(ContextPtr context, const String & table_name, IDatabase & to_database,
                      const String & to_table_name, bool exchange, bool dictionary) override;
-    void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
-                           const String & table_metadata_tmp_path, const String & table_metadata_path,
-                           ContextPtr query_context) override;
-    void commitAlterTable(const StorageID & table_id,
-                          const String & table_metadata_tmp_path, const String & table_metadata_path,
-                          const String & statement, ContextPtr query_context) override;
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
     void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach) override;
+
+    void alterTable(ContextPtr context, const StorageID & table_id, const StorageInMemoryMetadata & metadata) override;
 
     bool waitForReplicaToProcessAllEntries(UInt64 timeout_ms, SyncReplicaMode mode = SyncReplicaMode::DEFAULT);
 
@@ -113,6 +109,15 @@ public:
 
     friend struct DatabaseReplicatedTask;
     friend class DatabaseReplicatedDDLWorker;
+
+protected:
+    void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
+                           const String & table_metadata_tmp_path, const String & table_metadata_path,
+                           ContextPtr query_context) override;
+    void commitAlterTable(const StorageID & table_id,
+                          const String & table_metadata_tmp_path, const String & table_metadata_path,
+                          const String & statement, ContextPtr query_context) override;
+
 private:
     void tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel mode);
     bool createDatabaseNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
