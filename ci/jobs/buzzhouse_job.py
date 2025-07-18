@@ -1,8 +1,9 @@
 from ci.jobs.scripts.clickhouse_proc import ClickHouseLight
 from ci.praktika.info import Info
 from ci.praktika.result import Result
-from ci.praktika.utils import Shell, Utils
+from ci.praktika.utils import Utils
 
+from pathlib import Path
 import json, random
 
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
@@ -13,6 +14,11 @@ def main():
     results = []
     stop_watch = Utils.Stopwatch()
     ch = ClickHouseLight()
+    log_file = f"{temp_dir}/fuzzer_out.sql"
+    buzz_config_file = f"{temp_dir}/fuzz.json"
+
+    Path(log_file).touch()
+    Path(buzz_config_file).touch()
 
     if res:
         print("Install ClickHouse")
@@ -51,9 +57,6 @@ def main():
 
     if res:
         print("Buzzing")
-
-        log_file = f"{temp_dir}/fuzzer_out.sql"
-        buzz_config_file = f"{temp_dir}/fuzz.json"
 
         # Generate configuration file
         min_nested_rows = random.randint(0, 10)
@@ -103,14 +106,9 @@ def main():
         )
         res = results[-1].is_ok()
 
-        Result.create_from(
-            results=results,
-            stopwatch=stop_watch,
-            files=[buzz_config_file, log_file],
-            info=results[-1].info(),
-        ).complete_job()
-
-    Result.create_from(results=results, stopwatch=stop_watch, files=[]).complete_job()
+    Result.create_from(
+        results=results, stopwatch=stop_watch, files=[buzz_config_file, log_file]
+    ).complete_job()
 
 
 if __name__ == "__main__":
