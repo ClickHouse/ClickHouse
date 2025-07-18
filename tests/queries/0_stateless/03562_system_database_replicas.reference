@@ -1,11 +1,11 @@
 -----------------------
 simple SELECT
-db_1	0	1
-db_2	0	1
-db_3	0	1
-db_4	0	1
-db_5	0	1
-db_6	0	1
+db_1	0	1	replica1	/test/db_1/replicas/shard1|replica1	/test/db_1	shard1	1	1		0
+db_2	0	1	replica1	/test/db_2/replicas/shard1|replica1	/test/db_2	shard1	1	1		0
+db_3	0	1	replica1	/test/db_3/replicas/shard1|replica1	/test/db_3	shard1	1	1		0
+db_4	0	1	replica1	/test/db_4/replicas/shard1|replica1	/test/db_4	shard1	1	1		0
+db_5	0	1	replica1	/test/db_5/replicas/shard1|replica1	/test/db_5	shard1	1	1		0
+db_6	0	1	replica1	/test/db_6/replicas/shard1|replica1	/test/db_6	shard1	0	1		0
 db_1
 db_2
 db_3
@@ -18,49 +18,49 @@ count
 6
 -----------------------
 SELECT with LIMIT
-db_1	0	1
-db_1	0	1
-db_2	0	1
-db_3	0	1
-db_4	0	1
-db_5	0	1
-db_6	0	1
-db_1	0	1
-db_2	0	1
-db_3	0	1
-db_4	0	1
-db_5	0	1
-db_6	0	1
+db_1	0	1	replica1	/test/db_1/replicas/shard1|replica1	/test/db_1	shard1	1	1		0
+db_1	0	1	replica1	/test/db_1/replicas/shard1|replica1	/test/db_1	shard1	1	1		0
+db_2	0	1	replica1	/test/db_2/replicas/shard1|replica1	/test/db_2	shard1	1	1		0
+db_3	0	1	replica1	/test/db_3/replicas/shard1|replica1	/test/db_3	shard1	1	1		0
+db_4	0	1	replica1	/test/db_4/replicas/shard1|replica1	/test/db_4	shard1	1	1		0
+db_5	0	1	replica1	/test/db_5/replicas/shard1|replica1	/test/db_5	shard1	1	1		0
+db_6	0	1	replica1	/test/db_6/replicas/shard1|replica1	/test/db_6	shard1	1	1		0
+db_1	0	1	replica1	/test/db_1/replicas/shard1|replica1	/test/db_1	shard1	1	1		0
+db_2	0	1	replica1	/test/db_2/replicas/shard1|replica1	/test/db_2	shard1	1	1		0
+db_3	0	1	replica1	/test/db_3/replicas/shard1|replica1	/test/db_3	shard1	1	1		0
+db_4	0	1	replica1	/test/db_4/replicas/shard1|replica1	/test/db_4	shard1	1	1		0
+db_5	0	1	replica1	/test/db_5/replicas/shard1|replica1	/test/db_5	shard1	1	1		0
+db_6	0	1	replica1	/test/db_6/replicas/shard1|replica1	/test/db_6	shard1	1	1		0
 -----------------------
 SELECT with max_block
-db_1	0	1
-db_2	0	1
-db_3	0	1
-db_4	0	1
-db_5	0	1
-db_6	0	1
-db_1	0	1
-db_2	0	1
-db_3	0	1
-db_4	0	1
-db_5	0	1
-db_6	0	1
+db_1	0	1	replica1	/test/db_1/replicas/shard1|replica1	/test/db_1	shard1	1	1		0
+db_2	0	1	replica1	/test/db_2/replicas/shard1|replica1	/test/db_2	shard1	1	1		0
+db_3	0	1	replica1	/test/db_3/replicas/shard1|replica1	/test/db_3	shard1	1	1		0
+db_4	0	1	replica1	/test/db_4/replicas/shard1|replica1	/test/db_4	shard1	1	1		0
+db_5	0	1	replica1	/test/db_5/replicas/shard1|replica1	/test/db_5	shard1	1	1		0
+db_6	0	1	replica1	/test/db_6/replicas/shard1|replica1	/test/db_6	shard1	1	1		0
+db_1	0	1	replica1	/test/db_1/replicas/shard1|replica1	/test/db_1	shard1	1	1		0
+db_2	0	1	replica1	/test/db_2/replicas/shard1|replica1	/test/db_2	shard1	1	1		0
+db_3	0	1	replica1	/test/db_3/replicas/shard1|replica1	/test/db_3	shard1	1	1		0
+db_4	0	1	replica1	/test/db_4/replicas/shard1|replica1	/test/db_4	shard1	1	1		0
+db_5	0	1	replica1	/test/db_5/replicas/shard1|replica1	/test/db_5	shard1	1	1		0
+db_6	0	1	replica1	/test/db_6/replicas/shard1|replica1	/test/db_6	shard1	1	1		0
 -----------------------
 SELECT with WHERE
-db_1	0	1
-db_2	0	1
-db_3	0	1
-db_4	0	1
-db_5	0	1
-db_6	0	1
+db_1	0	1	replica1	/test/db_1/replicas/shard1|replica1	/test/db_1	shard1	1	1		0
+db_2	0	1	replica1	/test/db_2/replicas/shard1|replica1	/test/db_2	shard1	1	1		0
+db_3	0	1	replica1	/test/db_3/replicas/shard1|replica1	/test/db_3	shard1	1	1		0
+db_4	0	1	replica1	/test/db_4/replicas/shard1|replica1	/test/db_4	shard1	1	1		0
+db_5	0	1	replica1	/test/db_5/replicas/shard1|replica1	/test/db_5	shard1	1	1		0
+db_6	0	1	replica1	/test/db_6/replicas/shard1|replica1	/test/db_6	shard1	1	1		0
 0
 -----------------------
 DROP DATABASE
-db_2	0	1
-db_3	0	1
-db_4	0	1
-db_5	0	1
-db_6	0	1
+db_2	0	1	replica1	/test/db_2/replicas/shard1|replica1	/test/db_2	shard1	1	1		0
+db_3	0	1	replica1	/test/db_3/replicas/shard1|replica1	/test/db_3	shard1	1	1		0
+db_4	0	1	replica1	/test/db_4/replicas/shard1|replica1	/test/db_4	shard1	1	1		0
+db_5	0	1	replica1	/test/db_5/replicas/shard1|replica1	/test/db_5	shard1	1	1		0
+db_6	0	1	replica1	/test/db_6/replicas/shard1|replica1	/test/db_6	shard1	1	1		0
 -----------------------
 SELECT max_log_ptr
 shard1	replica1	OK	0	0

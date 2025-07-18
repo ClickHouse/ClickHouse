@@ -1737,7 +1737,7 @@ def test_system_database_replicas_with_ro(started_cluster):
         [database_1, 1, 1],
     ])
     assert (
-        main_node.query("SELECT * FROM system.database_replicas") == expected
+        main_node.query("SELECT database, is_readonly, max_log_ptr FROM system.database_replicas") == expected
     )
 
     database_2 = "test_system_database_replicas_2"
@@ -1750,7 +1750,7 @@ def test_system_database_replicas_with_ro(started_cluster):
         [database_2, 0, 1],
     ])
     assert (
-        main_node.query("SELECT * FROM system.database_replicas ORDER BY database") == expected
+        main_node.query("SELECT database, is_readonly, max_log_ptr FROM system.database_replicas ORDER BY database") == expected
     )
 
 
@@ -1769,28 +1769,28 @@ def test_block_system_database_replicas(started_cluster):
         ["db_6", 0, 1],
     ])
     assert (
-        main_node.query("SET max_block_size=2; SELECT * FROM system.database_replicas ORDER BY database") == expected
+        main_node.query("SET max_block_size=2; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas ORDER BY database") == expected
     )
 
     assert (
-        main_node.query("SET max_block_size=4; SELECT * FROM system.database_replicas ORDER BY database") == expected
+        main_node.query("SET max_block_size=4; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas ORDER BY database") == expected
     )
 
     assert (
-        main_node.query("SET max_block_size=7; SELECT * FROM system.database_replicas ORDER BY database") == expected
+        main_node.query("SET max_block_size=7; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas ORDER BY database") == expected
     )
 
     assert (
-        main_node.query("SET max_block_size=2; SELECT * FROM system.database_replicas WHERE is_readonly=0 ORDER BY database") == expected
+        main_node.query("SET max_block_size=2; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE is_readonly=0 ORDER BY database") == expected
     )
 
     assert (
-        main_node.query("SET max_block_size=2; SELECT * FROM system.database_replicas WHERE is_readonly=1 ORDER BY database") == ""
+        main_node.query("SET max_block_size=2; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE is_readonly=1 ORDER BY database") == ""
     )
 
     expected = TSV([["db_1", 0, 1]])
     assert (
-        main_node.query("SET max_block_size=2; SELECT * FROM system.database_replicas ORDER BY database LIMIT 1") == expected
+        main_node.query("SET max_block_size=2; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas ORDER BY database LIMIT 1") == expected
     )
 
     expected = TSV([
@@ -1798,7 +1798,7 @@ def test_block_system_database_replicas(started_cluster):
         ["db_2", 0, 1],
     ])
     assert (
-        main_node.query("SET max_block_size=2; SELECT * FROM system.database_replicas ORDER BY database LIMIT 2") == expected
+        main_node.query("SET max_block_size=2; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas ORDER BY database LIMIT 2") == expected
     )
 
     zk = cluster.get_kazoo_client("zoo1")
@@ -1824,7 +1824,7 @@ def test_block_system_database_replicas(started_cluster):
     ])
 
     assert (
-        main_node.query("SET max_block_size=2; SELECT * FROM system.database_replicas ORDER BY database") == expected
+        main_node.query("SET max_block_size=2; SELECT database, is_readonly, max_log_ptr FROM system.database_replicas ORDER BY database") == expected
     )
 
     assert (

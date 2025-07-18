@@ -15,6 +15,7 @@
 #include <Storages/System/StorageSystemDatabaseReplicas.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/logger_useful.h>
+#include <Parsers/Kusto/KustoFunctions/KQLDataTypeFunctions.h>
 #include <Interpreters/ProcessList.h>
 #include <Columns/ColumnsNumber.h>
 #include <Processors/Sources/NullSource.h>
@@ -278,6 +279,14 @@ Chunk SystemDatabaseReplicasSource::generate()
 
         res_columns[col_num++]->insert(status->is_readonly);
         res_columns[col_num++]->insert(status->max_log_ptr);
+        res_columns[col_num++]->insert(status->replica_name);
+        res_columns[col_num++]->insert(status->replica_path);
+        res_columns[col_num++]->insert(status->zookeeper_path);
+        res_columns[col_num++]->insert(status->shard_name);
+        res_columns[col_num++]->insert(status->log_ptr);
+        res_columns[col_num++]->insert(status->total_replicas);
+        res_columns[col_num++]->insert(status->zookeeper_exception);
+        res_columns[col_num++]->insert(status->is_session_expired);
 
         rows_added = true;
     }
@@ -411,7 +420,15 @@ StorageSystemDatabaseReplicas::StorageSystemDatabaseReplicas(const StorageID & t
     ColumnsDescription description = {
         { "database", std::make_shared<DataTypeString>(),   "Database name."},
         { "is_readonly", std::make_shared<DataTypeUInt8>(),   "is_readonly"},
-        { "max_log_ptr", std::make_shared<DataTypeInt32>(),   "max_log_ptr"}
+        { "max_log_ptr", std::make_shared<DataTypeInt32>(),   "max_log_ptr"},
+        { "replica_name", std::make_shared<DataTypeString>(),   "replica_name"},
+        { "replica_path", std::make_shared<DataTypeString>(),   "replica_path"},
+        { "zookeeper_path", std::make_shared<DataTypeString>(),   "zookeeper_path"},
+        { "shard_name", std::make_shared<DataTypeString>(),   "shard_name"},
+        { "log_ptr", std::make_shared<DataTypeInt32>(),   "log_ptr"},
+        { "total_replicas", std::make_shared<DataTypeUInt32>(),   "total_replicas"},
+        { "zookeeper_exception", std::make_shared<DataTypeString>(),   "zookeeper_exception"},
+        { "is_session_expired", std::make_shared<DataTypeUInt8>(),   "is_session_expired"}
     };
 
     StorageInMemoryMetadata storage_metadata;

@@ -192,8 +192,13 @@ void DatabaseReplicated::getStatus(ReplicatedDatabaseStatus& response, const boo
 
     response.is_readonly = is_readonly;
     response.is_session_expired = !zookeeper || zookeeper->expired();
-    response.replica_path = replica_path;
     response.max_log_ptr = 0;
+
+    response.replica_name = replica_name;
+    response.replica_path = replica_path;
+    response.shard_name = shard_name;
+    response.zookeeper_path = zookeeper_path;
+
     response.total_replicas = 0;
 
     if (!with_zk_fields || response.is_session_expired)
@@ -220,7 +225,15 @@ void DatabaseReplicated::getStatus(ReplicatedDatabaseStatus& response, const boo
         const auto & all_replicas = children_result[0].names;
 
         response.total_replicas = UInt32(all_replicas.size());
+        paths.clear();
 
+        paths.push_back(fs::path(replica_path) / "log_ptr");
+        auto get_result_log_ptr = zookeeper->tryGet(paths);
+        const auto & log_ptr_str = get_result_log_ptr[0].data;
+        if (get_result_log_ptr[0].error == Coordination::Error::ZNONODE)
+            throw zkutil::KeeperException(get_result_log_ptr[0].error);
+
+        response.log_ptr = log_ptr_str.empty() ? 0 : parse<UInt32>(log_ptr_str);
         paths.clear();
     }
     catch (const Coordination::Exception &)
