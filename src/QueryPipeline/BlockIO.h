@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <Common/CurrentThread.h>
 #include <QueryPipeline/QueryPipeline.h>
 
 
@@ -30,6 +31,9 @@ struct BlockIO
 
     /// When it is true, don't bother sending any non-empty blocks to the out stream
     bool null_format = false;
+
+    /// Needed to optionally detach from the thread group on destruction
+    std::unique_ptr<CurrentThread::QueryScope> query_scope_holder;
 
     void onFinish(std::chrono::system_clock::time_point finish_time = std::chrono::system_clock::now());
     void onException(bool log_as_error=true);

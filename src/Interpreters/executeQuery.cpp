@@ -629,14 +629,14 @@ void logQueryFinishImpl(
         elem.query_result_cache_usage = query_result_cache_usage;
 
         elem.is_internal = internal;
-
+        
         if (log_queries && elem.type >= settings[Setting::log_queries_min_type]
             && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
         {
             if (auto query_log = context->getQueryLog())
                 query_log->add(elem);
         }
-
+        
     }
 
     if (query_span && query_span->isTraceEnabled())
@@ -1277,7 +1277,7 @@ static BlockIO executeQueryImpl(
         }
 
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
-        if (!internal && !(out_ast && out_ast->as<ASTShowProcesslistQuery>()))
+        if (!(out_ast && out_ast->as<ASTShowProcesslistQuery>()))
         {
             /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
             process_list_entry = context->getProcessList().insert(query_for_logging, normalized_query_hash, out_ast.get(), context, start_watch.getStart());

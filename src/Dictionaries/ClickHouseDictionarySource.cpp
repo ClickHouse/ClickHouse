@@ -1,6 +1,8 @@
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <memory>
 #include <Client/ConnectionPool.h>
+#include <Common/CurrentThread.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/RemoteHostFilter.h>
 #include <Processors/Sources/RemoteSource.h>
@@ -25,6 +27,7 @@
 #include <Dictionaries/readInvalidateQuery.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -183,6 +186,16 @@ BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
 
     if (configuration.is_local)
     {
+        /// If the load is triggered by the dictionary itself, the thread is not attached to any thread group.
+        /// And the thread has to be attached to a thread group
+        /// for data like profile counters or memory usage to be collected in QueryStatus.
+        if (!CurrentThread::getGroup())
+        {
+            io.query_scope_holder = std::make_unique<CurrentThread::QueryScope>(context_copy);
+        }
+
+        context_copy->setCurrentQueryId(fmt::format("ClickHouseDictionarySource::%s", getRandomASCIIString(16)));
+
         io = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second;
         io.pipeline.convertStructureTo(empty_sample_block->getColumnsWithTypeAndName());
     }
