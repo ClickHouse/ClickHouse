@@ -15,16 +15,16 @@ namespace DB
 class NativeInputFormat final : public IInputFormat
 {
 public:
-    NativeInputFormat(ReadBuffer & buf, const Block & header_, const FormatSettings & settings_)
+    NativeInputFormat(ReadBuffer & buf, SharedHeader header_, const FormatSettings & settings_)
         : IInputFormat(header_, &buf)
         , reader(std::make_unique<NativeReader>(
               buf,
-              header_,
+              *header_,
               0,
               settings_,
               settings_.defaults_for_omitted_fields ? &block_missing_values : nullptr))
         , header(header_)
-        , block_missing_values(header.columns())
+        , block_missing_values(header->columns())
         , settings(settings_)
         {
         }
@@ -44,7 +44,7 @@ public:
         auto block = reader->read();
         approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(*in) - block_start;
 
-        if (!block)
+        if (block.empty())
             return {};
 
         assertBlocksHaveEqualStructure(getPort().getHeader(), block, getName());
@@ -56,7 +56,7 @@ public:
 
     void setReadBuffer(ReadBuffer & in_) override
     {
-        reader = std::make_unique<NativeReader>(in_, header, 0, settings, settings.defaults_for_omitted_fields ? &block_missing_values : nullptr);
+        reader = std::make_unique<NativeReader>(in_, *header, 0, settings, settings.defaults_for_omitted_fields ? &block_missing_values : nullptr);
         IInputFormat::setReadBuffer(in_);
     }
 
@@ -66,7 +66,7 @@ public:
 
 private:
     std::unique_ptr<NativeReader> reader;
-    Block header;
+    SharedHeader header;
     BlockMissingValues block_missing_values;
     const FormatSettings settings;
     size_t approx_bytes_read_for_chunk = 0;
@@ -75,7 +75,7 @@ private:
 class NativeOutputFormat final : public IOutputFormat
 {
 public:
-    NativeOutputFormat(WriteBuffer & buf, const Block & header, const FormatSettings & settings, UInt64 client_protocol_version = 0)
+    NativeOutputFormat(WriteBuffer & buf, SharedHeader header, const FormatSettings & settings, UInt64 client_protocol_version = 0)
         : IOutputFormat(header, buf)
         , writer(buf, client_protocol_version, header, settings)
     {
@@ -123,7 +123,7 @@ void registerInputFormatNative(FormatFactory & factory)
         const RowInputFormatParams &,
         const FormatSettings & settings)
     {
-        return std::make_shared<NativeInputFormat>(buf, sample, settings);
+        return std::make_shared<NativeInputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });
     factory.markFormatSupportsSubsetOfColumns("Native");
 }
@@ -135,7 +135,7 @@ void registerOutputFormatNative(FormatFactory & factory)
         const Block & sample,
         const FormatSettings & settings)
     {
-        return std::make_shared<NativeOutputFormat>(buf, sample, settings, settings.client_protocol_version);
+        return std::make_shared<NativeOutputFormat>(buf, std::make_shared<const Block>(sample), settings, settings.client_protocol_version);
     });
     factory.markOutputFormatNotTTYFriendly("Native");
     factory.setContentType("Native", "application/octet-stream");

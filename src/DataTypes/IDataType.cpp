@@ -4,8 +4,8 @@
 #include <Columns/ColumnSparse.h>
 
 #include <Common/Exception.h>
-#include <Common/SipHash.h>
 #include <Common/quoteString.h>
+#include <Common/SipHash.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -43,6 +43,20 @@ String IDataType::getPrettyName(size_t indent) const
     if (custom_name)
         return custom_name->getName();
     return doGetPrettyName(indent);
+}
+
+void IDataType::updateHash(SipHash & hash) const
+{
+    if (custom_name)
+    {
+        hash.update(custom_name->getName().size());
+        hash.update(custom_name->getName());
+    }
+    else
+        hash.update(size_t(0));
+
+    hash.update(getTypeId());
+    updateHashImpl(hash);
 }
 
 void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint)

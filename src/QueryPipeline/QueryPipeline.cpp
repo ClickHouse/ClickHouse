@@ -403,7 +403,7 @@ QueryPipeline::QueryPipeline(Chain chain)
     for (auto processor : chain.getProcessors())
         processors->emplace_back(std::move(processor));
 
-    auto sink = std::make_shared<EmptySink>(chain.getOutputPort().getHeader());
+    auto sink = std::make_shared<EmptySink>(chain.getOutputPort().getSharedHeader());
     connect(chain.getOutputPort(), sink->getPort());
     processors->emplace_back(std::move(sink));
 
@@ -419,14 +419,14 @@ QueryPipeline::QueryPipeline(std::shared_ptr<IOutputFormat> format)
 
     if (!totals)
     {
-        auto source = std::make_shared<NullSource>(format_totals.getHeader());
+        auto source = std::make_shared<NullSource>(format_totals.getSharedHeader());
         totals = &source->getPort();
         processors->emplace_back(std::move(source));
     }
 
     if (!extremes)
     {
-        auto source = std::make_shared<NullSource>(format_extremes.getHeader());
+        auto source = std::make_shared<NullSource>(format_extremes.getSharedHeader());
         extremes = &source->getPort();
         processors->emplace_back(std::move(source));
     }
@@ -448,7 +448,7 @@ static void drop(OutputPort *& port, Processors & processors)
     if (!port)
         return;
 
-    auto null_sink = std::make_shared<NullSink>(port->getHeader());
+    auto null_sink = std::make_shared<NullSink>(port->getSharedHeader());
     connect(*port, null_sink->getPort());
 
     processors.emplace_back(std::move(null_sink));
@@ -484,7 +484,7 @@ void QueryPipeline::complete(Chain chain)
     for (auto processor : chain.getProcessors())
         processors->emplace_back(std::move(processor));
 
-    auto sink = std::make_shared<EmptySink>(chain.getOutputPort().getHeader());
+    auto sink = std::make_shared<EmptySink>(chain.getOutputPort().getSharedHeader());
     connect(*output, chain.getInputPort());
     connect(chain.getOutputPort(), sink->getPort());
     processors->emplace_back(std::move(sink));
@@ -516,7 +516,7 @@ static void addMaterializing(OutputPort *& output, Processors & processors)
     if (!output)
         return;
 
-    auto materializing = std::make_shared<MaterializingTransform>(output->getHeader());
+    auto materializing = std::make_shared<MaterializingTransform>(output->getSharedHeader());
     connect(*output, materializing->getInputPort());
     output = &materializing->getOutputPort();
     processors.emplace_back(std::move(materializing));
@@ -540,14 +540,14 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
 
     if (!totals)
     {
-        auto source = std::make_shared<NullSource>(format_totals.getHeader());
+        auto source = std::make_shared<NullSource>(format_totals.getSharedHeader());
         totals = &source->getPort();
         processors->emplace_back(std::move(source));
     }
 
     if (!extremes)
     {
-        auto source = std::make_shared<NullSource>(format_extremes.getHeader());
+        auto source = std::make_shared<NullSource>(format_extremes.getSharedHeader());
         extremes = &source->getPort();
         processors->emplace_back(std::move(source));
     }
@@ -583,6 +583,15 @@ Block QueryPipeline::getHeader() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Header is available only for pushing or pulling QueryPipeline");
 }
 
+SharedHeader QueryPipeline::getSharedHeader() const
+{
+    if (input)
+        return input->getSharedHeader();
+    if (output)
+        return output->getSharedHeader();
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Header is available only for pushing or pulling QueryPipeline");
+}
+
 void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
 {
     progress_callback = callback;
@@ -613,7 +622,7 @@ void QueryPipeline::setLimitsAndQuota(const StreamLocalLimits & limits, std::sha
             ErrorCodes::LOGICAL_ERROR,
             "It is possible to set limits and quota only to pulling QueryPipeline");
 
-    auto transform = std::make_shared<LimitsCheckingTransform>(output->getHeader(), limits);
+    auto transform = std::make_shared<LimitsCheckingTransform>(output->getSharedHeader(), limits);
     transform->setQuota(quota_);
     connect(*output, transform->getInputPort());
     output = &transform->getOutputPort();
@@ -724,7 +733,7 @@ static void addExpression(OutputPort *& port, ExpressionActionsPtr actions, Proc
 {
     if (port)
     {
-        auto transform = std::make_shared<ExpressionTransform>(port->getHeader(), actions);
+        auto transform = std::make_shared<ExpressionTransform>(port->getSharedHeader(), actions);
         connect(*port, transform->getInputPort());
         port = &transform->getOutputPort();
         processors.emplace_back(std::move(transform));

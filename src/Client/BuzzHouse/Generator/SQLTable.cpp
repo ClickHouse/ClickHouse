@@ -218,20 +218,21 @@ void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow
     this->levels[this->current_level].rels.emplace_back(rel);
 }
 
-SQLRelation StatementGenerator::createViewRelation(const String & rel_name, const size_t ncols)
+SQLRelation StatementGenerator::createViewRelation(const String & rel_name, const SQLView & v)
 {
     SQLRelation rel(rel_name);
 
-    for (size_t i = 0; i < ncols; i++)
+    assert(!v.cols.empty());
+    for (const auto & entry : v.cols)
     {
-        rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(i)}));
+        rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(entry)}));
     }
     return rel;
 }
 
 void StatementGenerator::addViewRelation(const String & rel_name, const SQLView & v)
 {
-    const SQLRelation rel = createViewRelation(rel_name, v.cols.size());
+    const SQLRelation rel = createViewRelation(rel_name, v);
 
     if (rel_name.empty())
     {
@@ -308,14 +309,14 @@ void StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl
                 if (rg.nextBool())
                 {
                     std::uniform_int_distribution<uint32_t> next_dist(1, 12);
-                    cp->add_params(next_dist(rg.generator));
+                    cp->add_params()->set_ival(next_dist(rg.generator));
                 }
                 break;
             case COMP_ZSTD:
                 if (rg.nextBool())
                 {
                     std::uniform_int_distribution<uint32_t> next_dist(1, 22);
-                    cp->add_params(next_dist(rg.generator));
+                    cp->add_params()->set_ival(next_dist(rg.generator));
                 }
                 break;
             case COMP_Delta:
@@ -324,15 +325,26 @@ void StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl
                 if (rg.nextBool())
                 {
                     std::uniform_int_distribution<uint32_t> next_dist(0, 3);
-                    cp->add_params(UINT32_C(1) << next_dist(rg.generator));
+                    cp->add_params()->set_ival(UINT32_C(1) << next_dist(rg.generator));
                 }
                 break;
             case COMP_FPC:
                 if (rg.nextBool())
                 {
                     std::uniform_int_distribution<uint32_t> next_dist1(1, 28);
-                    cp->add_params(next_dist1(rg.generator));
-                    cp->add_params(rg.nextBool() ? 4 : 9);
+                    cp->add_params()->set_ival(next_dist1(rg.generator));
+                    cp->add_params()->set_ival(rg.nextBool() ? 4 : 9);
+                }
+                break;
+            case COMP_SZ3:
+                if (rg.nextBool())
+                {
+                    static const DB::Strings & algorithms = {"ALGO_LORENZO_REG", "ALGO_INTERP_LORENZO", "ALGO_INTERP"};
+                    static const DB::Strings & errorBounds = {"ABS", "REL", "PSNR", "ABS_AND_REL"};
+
+                    cp->add_params()->set_sval(rg.pickRandomly(algorithms));
+                    cp->add_params()->set_sval(rg.pickRandomly(errorBounds));
+                    cp->add_params()->set_dval(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 1.0));
                 }
                 break;
             default:
@@ -375,7 +387,7 @@ void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::
         filtered_entries.clear();
         if (t.has_value() && !t.value().cols.empty())
         {
-            addTableRelation(rg, false, "", t.value());
+            addTableRelation(rg, true, "", t.value());
         }
         this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
         this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
@@ -423,7 +435,7 @@ void StatementGenerator::generateNextTTL(
 
                     if (t.has_value() && !t.value().cols.empty())
                     {
-                        addTableRelation(rg, false, "", t.value());
+                        addTableRelation(rg, true, "", t.value());
                     }
                     this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
                     this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
@@ -465,7 +477,7 @@ void StatementGenerator::generateNextTTL(
                 columnPathRef(entries[j], tset->mutable_col());
                 if (t.has_value() && !t.value().cols.empty())
                 {
-                    addTableRelation(rg, false, "", t.value());
+                    addTableRelation(rg, true, "", t.value());
                 }
                 /// Use global aggregate most of the time
                 this->levels[this->current_level].global_aggregate = rg.nextSmallNumber() < 9;
@@ -1297,14 +1309,13 @@ void StatementGenerator::addTableColumnInternal(
     const bool modify,
     const bool is_pk,
     const ColumnSpecial special,
-    const uint32_t col_tp_mask,
     SQLColumn & col,
     ColumnDef * cd)
 {
     SQLType * tp = nullptr;
 
     col.cname = cname;
-    cd->mutable_col()->set_column("c" + std::to_string(cname));
+    cd->mutable_col()->mutable_col()->set_column("c" + std::to_string(cname));
     if (special == ColumnSpecial::SIGN || special == ColumnSpecial::IS_DELETED)
     {
         tp = new IntType(8, special == ColumnSpecial::IS_DELETED);
@@ -1313,37 +1324,29 @@ void StatementGenerator::addTableColumnInternal(
     }
     else if (special == ColumnSpecial::VERSION)
     {
-        if (((col_tp_mask & (allow_dates | allow_datetimes)) == 0) || rg.nextBool())
+        if (((this->next_type_mask & (allow_dates | allow_datetimes)) == 0) || rg.nextBool())
         {
             Integers nint;
 
-            std::tie(tp, nint) = randomIntType(rg, col_tp_mask);
+            std::tie(tp, nint) = randomIntType(rg, this->next_type_mask);
             cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_integers(nint);
         }
-        else if (((col_tp_mask & allow_datetimes) == 0) || rg.nextBool())
+        else if (((this->next_type_mask & allow_datetimes) == 0) || rg.nextBool())
         {
             Dates dd;
 
-            std::tie(tp, dd) = randomDateType(rg, col_tp_mask);
+            std::tie(tp, dd) = randomDateType(rg, this->next_type_mask);
             cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_dates(dd);
         }
         else
         {
-            const uint32_t type_mask_backup = this->next_type_mask;
-
-            this->next_type_mask = col_tp_mask;
             tp = randomDateTimeType(
                 rg, this->next_type_mask, cd->mutable_type()->mutable_type()->mutable_non_nullable()->mutable_datetimes());
-            this->next_type_mask = type_mask_backup;
         }
     }
     else
     {
-        const uint32_t type_mask_backup = this->next_type_mask;
-
-        this->next_type_mask = col_tp_mask;
         tp = randomNextType(rg, this->next_type_mask, t.col_counter, cd->mutable_type()->mutable_type());
-        this->next_type_mask = type_mask_backup;
     }
     col.tp = tp;
     col.special = special;
@@ -1375,7 +1378,7 @@ void StatementGenerator::addTableColumnInternal(
 
             if (!t.cols.empty())
             {
-                addTableRelation(rg, false, "", t);
+                addTableRelation(rg, true, "", t);
             }
             this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
             this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
@@ -1425,49 +1428,50 @@ void StatementGenerator::addTableColumn(
 {
     SQLColumn col;
     auto & to_add = staged ? t.staged_cols : t.cols;
+    const uint32_t type_mask_backup = this->next_type_mask;
 
-    uint32_t col_tp_mask = fc.type_mask;
     if ((t.isMySQLEngine() && (t.is_deterministic || rg.nextSmallNumber() < 4)) || t.hasMySQLPeer())
     {
-        col_tp_mask &= ~(
+        this->next_type_mask &= ~(
             allow_int128 | allow_dynamic | allow_JSON | allow_array | allow_map | allow_tuple | allow_variant | allow_nested | allow_geo
             | set_no_decimal_limit);
     }
     if ((t.isPostgreSQLEngine() && (t.is_deterministic || rg.nextSmallNumber() < 4)) || t.hasPostgreSQLPeer())
     {
-        col_tp_mask &= ~(
+        this->next_type_mask &= ~(
             allow_int128 | allow_unsigned_int | allow_dynamic | allow_JSON | allow_map | allow_tuple | allow_variant | allow_nested
             | allow_geo);
         if (t.hasPostgreSQLPeer())
         {
             /// Datetime must have 6 digits precision
-            col_tp_mask &= ~(set_any_datetime_precision);
+            this->next_type_mask &= ~(set_any_datetime_precision);
         }
     }
     if ((t.isSQLiteEngine() && (t.is_deterministic || rg.nextSmallNumber() < 4)) || t.hasSQLitePeer())
     {
-        col_tp_mask &= ~(
+        this->next_type_mask &= ~(
             allow_int128 | allow_unsigned_int | allow_dynamic | allow_JSON | allow_array | allow_map | allow_tuple | allow_variant
             | allow_nested | allow_geo);
         if (t.hasSQLitePeer())
         {
             /// For bool it maps to int type, then it outputs 0 as default instead of false
             /// For decimal it prints as text
-            col_tp_mask &= ~(allow_bool | allow_decimals);
+            this->next_type_mask &= ~(allow_bool | allow_decimals);
         }
     }
     if ((t.isMongoDBEngine() && (t.is_deterministic || rg.nextSmallNumber() < 4)))
     {
-        col_tp_mask &= ~(allow_dynamic | allow_map | allow_tuple | allow_variant | allow_nested);
+        this->next_type_mask &= ~(allow_dynamic | allow_map | allow_tuple | allow_variant | allow_nested);
     }
     if (t.hasDatabasePeer())
     {
         /// ClickHouse's UUID sorting order is different from other databases
-        col_tp_mask &= ~(allow_uuid);
+        this->next_type_mask &= ~(allow_uuid);
     }
-    addTableColumnInternal(rg, t, cname, modify, is_pk, special, col_tp_mask, col, cd);
+    addTableColumnInternal(rg, t, cname, modify, is_pk, special, col, cd);
 
     to_add[cname] = std::move(col);
+    this->next_type_mask = type_mask_backup;
 }
 
 void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const bool staged, IndexDef * idef)
@@ -1585,13 +1589,6 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
                 buf += "]";
                 idef->add_params()->set_unescaped_sval(std::move(buf));
             }
-            if (rg.nextBool())
-            {
-                std::uniform_int_distribution<uint32_t> next_dist(8192, 4194304);
-
-                idef->add_params()->set_unescaped_sval(
-                    "max_rows_per_postings_list = " + std::to_string(rg.nextSmallNumber() < 3 ? 0 : next_dist(rg.generator)));
-            }
         }
         break;
         case IndexType::IDX_vector_similarity:
@@ -1640,7 +1637,7 @@ void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, 
     this->inside_projection = true;
     if (!t.cols.empty())
     {
-        addTableRelation(rg, false, "", t);
+        addTableRelation(rg, true, "", t);
     }
     generateSelect(rg, true, false, ncols, allow_groupby | allow_orderby, pdef->mutable_select());
     this->levels.clear();
@@ -1659,7 +1656,7 @@ void StatementGenerator::addTableConstraint(RandomGenerator & rg, SQLTable & t, 
     cdef->mutable_constr()->set_constraint("c" + std::to_string(crname));
     if (!t.cols.empty())
     {
-        addTableRelation(rg, false, "", t);
+        addTableRelation(rg, true, "", t);
     }
     this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
     this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
@@ -1961,6 +1958,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         {
             CreateTableSelect * cts = ct->mutable_as_select_stmt();
 
+            cts->set_paren(rg.nextSmallNumber() < 9);
             cts->set_empty(rg.nextSmallNumber() < 3);
             this->levels[this->current_level] = QueryLevel(this->current_level);
             generateSelect(
@@ -1969,7 +1967,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
                 false,
                 static_cast<uint32_t>(next.numberOfInsertableColumns()),
                 std::numeric_limits<uint32_t>::max(),
-                cts->mutable_sel());
+                cts->mutable_select());
             this->levels.clear();
         }
     }
@@ -2276,7 +2274,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
         sv->set_property("SIZE_IN_CELLS");
         sv->set_value(
-            std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.2, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))));
+            std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024))));
     }
 
     /// Add Primary Key
