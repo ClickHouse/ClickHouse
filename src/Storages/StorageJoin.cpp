@@ -596,7 +596,7 @@ protected:
                 join->kind,
                 join->strictness,
                 join->data->maps.front(),
-                join->table_join->getMixedJoinExpression() != nullptr,
+                join->preferUseMapsAll(),
                 [&](auto kind, auto strictness, auto & map) { chunk = createChunk<kind, strictness>(map); }))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JOIN strictness");
         return chunk;

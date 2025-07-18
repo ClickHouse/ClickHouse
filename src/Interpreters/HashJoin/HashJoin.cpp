@@ -1771,7 +1771,7 @@ void HashJoin::tryRerangeRightTableData()
         kind,
         strictness,
         data->maps.front(),
-        /*prefer_use_maps_all*/ false,
+        preferUseMapsAll(),
         [&](auto kind_, auto strictness_, auto & map_) { tryRerangeRightTableDataImpl<kind_, decltype(map_), strictness_>(map_); });
     chassert(result);
     data->sorted = true;
