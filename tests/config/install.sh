@@ -19,6 +19,7 @@ USE_ASYNC_INSERT=${USE_ASYNC_INSERT:0}
 BUGFIX_VALIDATE_CHECK=0
 NO_AZURE=0
 KEEPER_INJECT_AUTH=1
+USE_ENCRYPTED_STORAGE=0
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -109,7 +110,11 @@ ln -sf $SRC_PATH/config.d/tcp_with_proxy.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/prometheus.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/top_level_domains_lists.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/top_level_domains_path.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/transactions.xml $DEST_SERVER_PATH/config.d/
+
+if [[ "$USE_ENCRYPTED_STORAGE" == "0" ]]; then
+    ln -sf $SRC_PATH/config.d/transactions.xml $DEST_SERVER_PATH/config.d/
+fi
+
 ln -sf $SRC_PATH/config.d/encryption.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zookeeper_log.xml $DEST_SERVER_PATH/config.d/
 
@@ -353,10 +358,12 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     cat $DEST_SERVER_PATH/config.d/macros.xml | sed "s|<replica>r1</replica>|<replica>r2</replica>|" > $ch_server_1_path/config.d/macros.xml
     cat $DEST_SERVER_PATH/config.d/macros.xml | sed "s|<shard>s1</shard>|<shard>s2</shard>|" > $ch_server_2_path/config.d/macros.xml
 
-    rm $ch_server_1_path/config.d/transactions.xml
-    rm $ch_server_2_path/config.d/transactions.xml
-    cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn1|" > $ch_server_1_path/config.d/transactions.xml
-    cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn2|" > $ch_server_2_path/config.d/transactions.xml
+    if [[ "$USE_ENCRYPTED_STORAGE" == "0" ]]; then
+        rm $ch_server_1_path/config.d/transactions.xml
+        rm $ch_server_2_path/config.d/transactions.xml
+        cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn1|" > $ch_server_1_path/config.d/transactions.xml
+        cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn2|" > $ch_server_2_path/config.d/transactions.xml
+    fi
 
 #    ch_server_lib_1=$DEST_SERVER_PATH/../../var/lib/clickhouse1
 #    ch_server_lib_2=$DEST_SERVER_PATH/../../var/lib/clickhouse2
