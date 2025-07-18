@@ -485,13 +485,11 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractCo
 #if USE_AZURE_BLOB_STORAGE
     if (config.has(config_prefix + ".curl_ip_resolve"))
     {
-        using CurlOptions = Azure::Core::Http::CurlTransportOptions;
-
         auto value = config.getString(config_prefix + ".curl_ip_resolve");
         if (value == "ipv4")
-            settings->curl_ip_resolve = CurlOptions::CURL_IPRESOLVE_V4;
+            settings->curl_ip_resolve = RequestSettings::CurlOptions::CURL_IPRESOLVE_V4;
         else if (value == "ipv6")
-            settings->curl_ip_resolve = CurlOptions::CURL_IPRESOLVE_V6;
+            settings->curl_ip_resolve = RequestSettings::CurlOptions::CURL_IPRESOLVE_V6;
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value for option 'curl_ip_resolve': {}. Expected one of 'ipv4' or 'ipv6'", value);
     }
@@ -566,5 +564,3 @@ std::optional<AzureBlobStorage::RequestSettings> AzureSettingsByEndpoint::getSet
 }
 
 }
-
-

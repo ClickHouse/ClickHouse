@@ -23,7 +23,7 @@ In string values, the characters `<` and `&` are escaped as `<` and `&`.
 
 Arrays are output as `<array><elem>Hello</elem><elem>World</elem>...</array>`,and tuples as `<tuple><elem>Hello</elem><elem>World</elem>...</tuple>`.
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
 Example:
 
@@ -89,6 +89,6 @@ Example:
 </result>
 ```
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}
 
 ## XML {#xml}

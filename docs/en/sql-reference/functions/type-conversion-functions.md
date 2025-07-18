@@ -1,14 +1,13 @@
 ---
 description: 'Documentation for Type Conversion Functions'
-sidebar_label: 'Type Conversion'
-sidebar_position: 185
+sidebar_label: 'Type conversion'
 slug: /sql-reference/functions/type-conversion-functions
 title: 'Type Conversion Functions'
 ---
 
-# Type Conversion Functions
+# Type conversion functions
 
-## Common Issues with Data Conversion {#common-issues-with-data-conversion}
+## Common issues with data conversion {#common-issues-with-data-conversion}
 
 ClickHouse generally uses the [same behavior as C++ programs](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
@@ -6247,7 +6246,7 @@ reinterpret(x, type)
 **Arguments**
 
 - `x` — Any type.
-- `type` — Destination type. [String](../data-types/string.md).
+- `type` — Destination type. If it is an array, then the array element type must be a fixed length type.
 
 **Returned value**
 
@@ -6268,6 +6267,19 @@ Result:
 ┌─int_to_uint─┬─int_to_float─┬─string_to_int─┐
 │         255 │        1e-45 │            49 │
 └─────────────┴──────────────┴───────────────┘
+```
+
+Query:
+```sql
+SELECT reinterpret(x'3108b4403108d4403108b4403108d440', 'Array(Float32)') AS string_to_array_of_Float32;
+```
+
+Result:
+
+```text
+┌─string_to_array_of_Float32─┐
+│ [5.626,6.626,5.626,6.626]  │
+└────────────────────────────┘
 ```
 
 ## CAST {#cast}

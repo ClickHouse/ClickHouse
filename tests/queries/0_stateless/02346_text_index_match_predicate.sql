@@ -1,6 +1,6 @@
 -- Tags: no-parallel-replicas
 
--- Tests that match() utilizes the inverted index
+-- Tests that match() utilizes the text index
 
 SET use_query_condition_cache = 0;
 

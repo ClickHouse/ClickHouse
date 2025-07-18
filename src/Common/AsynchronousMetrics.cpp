@@ -8,6 +8,7 @@
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
 #include <Common/Jemalloc.h>
+#include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -41,6 +42,8 @@ namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
     extern const int CANNOT_SYSCONF;
+    extern const int CANNOT_OPEN_FILE;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 
@@ -48,24 +51,62 @@ namespace ErrorCodes
 
 static constexpr size_t small_buffer_size = 4096;
 
-static void openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out)
+void AsynchronousMetrics::openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out)
 {
-    /// Ignoring time of check is not time of use cases, as procfs/sysfs files are fairly persistent.
-
     std::error_code ec;
     if (std::filesystem::is_regular_file(filename, ec))
-        out.emplace(filename, small_buffer_size);
+    {
+        try
+        {
+            out.emplace(filename, small_buffer_size);
+        }
+        catch (const ErrnoException & e)
+        {
+            if (e.code() == ErrorCodes::CANNOT_OPEN_FILE)
+            {
+                LOG_INFO(log, "Can't open file for monitoring: {}", e.message());
+            }
+            else if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+            {
+                LOG_INFO(log, "Can't open file for monitoring, because it has disappeared at this moment: {}", e.message());
+            }
+            else
+            {
+                throw;
+            }
+        }
+    }
 }
 
-static std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::string & filename)
+std::unique_ptr<ReadBufferFromFilePRead> AsynchronousMetrics::openFileIfExists(const std::string & filename)
 {
     std::error_code ec;
     if (std::filesystem::is_regular_file(filename, ec))
-        return std::make_unique<ReadBufferFromFilePRead>(filename, small_buffer_size);
+    {
+        try
+        {
+            return std::make_unique<ReadBufferFromFilePRead>(filename, small_buffer_size);
+        }
+        catch (const ErrnoException & e)
+        {
+            if (e.code() == ErrorCodes::CANNOT_OPEN_FILE)
+            {
+                LOG_INFO(log, "Can't open file for monitoring: {}", e.message());
+            }
+            else if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+            {
+                LOG_INFO(log, "Can't open file for monitoring, because it has disappeared at this moment: {}", e.message());
+            }
+            else
+            {
+                throw;
+            }
+        }
+    }
     return {};
 }
 
-static void openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
+void AsynchronousMetrics::openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
 {
     if (auto path = getCgroupsV2PathContainingFile(filename))
         openFileIfExists((path.value() + filename).c_str(), out);
@@ -180,10 +221,10 @@ void AsynchronousMetrics::openBlockDevices() TSA_REQUIRES(data_mutex)
         return;
 
     block_devices_rescan_delay.restart();
-
     block_devs.clear();
 
-    for (const auto & device_dir : std::filesystem::directory_iterator("/sys/block"))
+    for (const auto & device_dir : std::filesystem::directory_iterator("/sys/block",
+        std::filesystem::directory_options::skip_permission_denied))
     {
         String device_name = device_dir.path().filename();
 
@@ -944,6 +985,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 #endif
+
+    new_values["TrackedMemory"] = { total_memory_tracker.get(), "Memory tracked by ClickHouse (should be equal to MemoryTracking metric), in bytes." };
 
 #if defined(OS_LINUX)
     if (loadavg)

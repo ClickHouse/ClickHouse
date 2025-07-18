@@ -812,19 +812,20 @@ The location and format of log messages.
 
 **Keys**:
 
-| Key                       | Description                                                                                                                                                                         |
-|---------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `level`                   | Log level. Acceptable values: `none` (turn logging off), `fatal`, `critical`, `error`, `warning`, `notice`, `information`,`debug`, `trace`, `test`                                  |
-| `log`                     | The path to the log file.                                                                                                                                                           |
-| `errorlog`                | The path to the error log file.                                                                                                                                                     |
-| `size`                    | Rotation policy: Maximum size of the log files in bytes. Once the log file size exceeds this threshold, it is renamed and archived, and a new log file is created.                  |
-| `count`                   | Rotation policy: How many historical log files Clickhouse are kept at most.                                                                                                         |
-| `stream_compress`         | Compress log messages using LZ4. Set to `1` or `true` to enable.                                                                                                                    |
-| `console`                 | Do not write log messages to log files, instead print them in the console. Set to `1` or `true` to enable. Default is `1` if Clickhouse does not run in daemon mode, `0` otherwise. |
-| `console_log_level`       | Log level for console output. Defaults to `level`.                                                                                                                                  |
-| `formatting`              | Log format for console output. Currently, only `json` is supported                                                                                                                  |
-| `use_syslog`              | Also forward log output to syslog.                                                                                                                                                  |
-| `syslog_level`            | Log level for logging to syslog.                                                                                                                                                    |
+| Key                 | Description                                                                                                                                                                         |
+|---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `level`             | Log level. Acceptable values: `none` (turn logging off), `fatal`, `critical`, `error`, `warning`, `notice`, `information`,`debug`, `trace`, `test`                                  |
+| `log`               | The path to the log file.                                                                                                                                                           |
+| `errorlog`          | The path to the error log file.                                                                                                                                                     |
+| `size`              | Rotation policy: Maximum size of the log files in bytes. Once the log file size exceeds this threshold, it is renamed and archived, and a new log file is created.                  |
+| `count`             | Rotation policy: How many historical log files Clickhouse are kept at most.                                                                                                         |
+| `stream_compress`   | Compress log messages using LZ4. Set to `1` or `true` to enable.                                                                                                                    |
+| `console`           | Do not write log messages to log files, instead print them in the console. Set to `1` or `true` to enable. Default is `1` if Clickhouse does not run in daemon mode, `0` otherwise. |
+| `console_log_level` | Log level for console output. Defaults to `level`.                                                                                                                                  |
+| `formatting`        | Log format for console output. Currently, only `json` is supported                                                                                                                  |
+| `use_syslog`        | Also forward log output to syslog.                                                                                                                                                  |
+| `syslog_level`      | Log level for logging to syslog.                                                                                                                                                    |
+| `async`             | When `true` (default) logging will happen asynchronously (one background thread per output channel). Otherwise it will log inside the thread calling LOG                            |
 
 **Log format specifiers**
 
