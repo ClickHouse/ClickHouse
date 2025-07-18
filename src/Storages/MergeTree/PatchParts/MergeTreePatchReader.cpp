@@ -1,8 +1,10 @@
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
+#include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <base/range.h>
@@ -59,7 +61,7 @@ MergeTreePatchReaderMerge::MergeTreePatchReaderMerge(PatchPartInfoForReader patc
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected patch with mode Merge, got {}", patch_part.mode);
 }
 
-MergeTreePatchReader::PatchReadResultPtr MergeTreePatchReaderMerge::readPatch(MarkRanges & ranges)
+MergeTreePatchReader::PatchReadResultPtr MergeTreePatchReaderMerge::readPatch(MarkRanges & ranges, const Block & /*result_block*/)
 {
     if (ranges.empty())
         return std::make_shared<PatchReadResult>(ReadResult(nullptr), std::make_shared<PatchMergeSharedData>());
@@ -145,10 +147,32 @@ MergeTreePatchReaderJoin::MergeTreePatchReaderJoin(PatchPartInfoForReader patch_
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected patch with mode Join, got {}", patch_part.mode);
 }
 
-MergeTreePatchReader::PatchReadResultPtr MergeTreePatchReaderJoin::readPatch(MarkRanges & ranges)
+static PatchRangesStats getBlockNumberStats(const Block & result_block)
 {
+    const auto & block_number_column = result_block.getByName(BlockNumberColumn::name).column;
+
+    Field min_value;
+    Field max_value;
+
+    block_number_column->getExtremes(min_value, max_value);
+    return {min_value.safeGet<UInt64>(), max_value.safeGet<UInt64>()};
+}
+
+MergeTreePatchReader::PatchReadResultPtr MergeTreePatchReaderJoin::readPatch(MarkRanges & ranges, const Block & result_block)
+{
+    const auto * loaded_part_info = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(patch_part.part.get());
+    if (!loaded_part_info)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Applying patch parts is supported only for loaded data parts");
+
     MarkRanges ranges_to_read = ranges;
     ranges.clear();
+    auto stats = getPatchRangesStats(loaded_part_info->getDataPart(), ranges_to_read);
+
+    if (stats.has_value())
+    {
+        auto result_stats = getBlockNumberStats(result_block);
+        ranges_to_read = filterPatchRanges(ranges_to_read, stats.value(), result_stats);
+    }
 
     auto read_patch = [&]
     {

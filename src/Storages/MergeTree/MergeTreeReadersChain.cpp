@@ -71,6 +71,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(size_t max_rows, M
 
     if (read_result.num_rows != 0)
     {
+        first_reader.getReader()->fillVirtualColumns(read_result.columns, read_result.num_rows);
         readPatches(first_reader.getReadSampleBlock(), patch_ranges, read_result);
         executeActionsBeforePrewhere(read_result, read_result.columns, first_reader, {}, read_result.num_rows);
 
@@ -258,7 +259,7 @@ void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector
 
         while (!patch_ranges[i].empty() && (patch_results.empty() || patch_readers[i]->needNewPatch(read_result, *patch_results.back())))
         {
-            patch_results.emplace_back(patch_readers[i]->readPatch(patch_ranges[i]));
+            patch_results.emplace_back(patch_readers[i]->readPatch(patch_ranges[i], result_block));
         }
     }
 }

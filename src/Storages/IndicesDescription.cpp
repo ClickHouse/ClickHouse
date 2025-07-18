@@ -260,4 +260,16 @@ Names IndicesDescription::getAllRegisteredNames() const
     }
     return result;
 }
+
+IndexDescription createImplicitMinMaxIndexDescription(const String & column_name, const ColumnsDescription & columns, ContextPtr context)
+{
+    auto index_type = makeASTFunction("minmax");
+    auto index_ast = std::make_shared<ASTIndexDeclaration>(
+        std::make_shared<ASTIdentifier>(column_name), index_type,
+        IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name);
+
+    index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
+    return IndexDescription::getIndexFromAST(index_ast, columns, context);
+}
+
 }

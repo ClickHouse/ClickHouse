@@ -2,6 +2,10 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/IndicesDescription.h>
+#include <Storages/MergeTree/MergeTreeIndexMinMax.h>
+#include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/ProfileEvents.h>
@@ -232,6 +236,89 @@ std::set<MarkRange> RangesInPatchParts::getIntersectingRanges(const String & pat
     }
 
     return res;
+}
+
+static std::pair<UInt64, UInt64> getMinMaxValues(const IMergeTreeIndexGranule & granule)
+{
+    const auto & minmax_granule = assert_cast<const MergeTreeIndexGranuleMinMax &>(granule);
+    chassert(minmax_granule.hyperrectangle.size() == 1);
+
+    UInt64 min = minmax_granule.hyperrectangle[0].left.safeGet<UInt64>();
+    UInt64 max = minmax_granule.hyperrectangle[0].right.safeGet<UInt64>();
+
+    return {min, max};
+}
+
+MaybePatchRangesStats getPatchRangesStats(const DataPartPtr & patch_part, const MarkRanges & ranges)
+{
+    auto metadata_snapshot = patch_part->getMetadataSnapshot();
+    const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
+    auto it = std::ranges::find_if(secondary_indices, [](const auto & index) { return index.name ==  IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + BlockNumberColumn::name; });
+
+    if (it == secondary_indices.end())
+        return {};
+
+    if (it->type != "minmax")
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected minmax index for {} column, got: {}", BlockNumberColumn::name, it->type);
+
+    auto index_ptr = MergeTreeIndexFactory::instance().get(*it);
+    if (!index_ptr->getDeserializedFormat(patch_part->getDataPartStorage(), index_ptr->getFileName()))
+        return {};
+
+    size_t total_marks_without_final = patch_part->index_granularity->getMarksCountWithoutFinal();
+    MarkRanges index_mark_ranges = {{0, total_marks_without_final}};
+
+    MergeTreeIndexReader reader(
+        index_ptr,
+        patch_part,
+        total_marks_without_final,
+        index_mark_ranges,
+        /*mark_cache=*/ nullptr,
+        /*uncompressed_cache=*/ nullptr,
+        /*vector_similarity_index_cache=*/ nullptr,
+        /*settings_=*/ {});
+
+    MergeTreeIndexGranulePtr granule = nullptr;
+    std::vector<PatchRangesStats> result(ranges.size());
+
+    for (size_t i = 0; i < ranges.size(); ++i)
+    {
+        auto & stats = result[i];
+        size_t last_mark = std::min(ranges[i].end, total_marks_without_final);
+
+        if (ranges[i].begin == last_mark)
+            continue;
+
+        reader.read(ranges[i].begin, granule);
+        std::tie(stats.min_block_number, stats.max_block_number) = getMinMaxValues(*granule);
+
+        for (size_t j = ranges[i].begin + 1; j < last_mark; ++j)
+        {
+            reader.read(j, granule);
+            auto [min, max] = getMinMaxValues(*granule);
+
+            stats.min_block_number = std::min(stats.min_block_number, min);
+            stats.max_block_number = std::max(stats.max_block_number, max);
+        }
+    }
+
+    return result;
+}
+
+MarkRanges filterPatchRanges(const MarkRanges & ranges, const std::vector<PatchRangesStats> & patch_stats, const PatchRangesStats & result_stats)
+{
+    chassert(ranges.size() == patch_stats.size());
+
+    MarkRanges result;
+    for (size_t i = 0; i < ranges.size(); ++i)
+    {
+        if (result_stats.max_block_number < patch_stats[i].min_block_number || result_stats.min_block_number > patch_stats[i].max_block_number)
+            continue;
+
+        result.push_back(ranges[i]);
+    }
+
+    return result;
 }
 
 }

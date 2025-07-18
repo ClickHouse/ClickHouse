@@ -32,7 +32,7 @@ public:
     MergeTreePatchReader(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_);
     virtual ~MergeTreePatchReader() = default;
 
-    virtual PatchReadResultPtr readPatch(MarkRanges & ranges) = 0;
+    virtual PatchReadResultPtr readPatch(MarkRanges & ranges, const Block & result_block) = 0;
     virtual PatchToApplyPtr applyPatch(const Block & result_block, const PatchReadResult & patch_result) const = 0;
 
     /// Returns true if we need to read a new patch part for main_result.
@@ -69,7 +69,7 @@ class MergeTreePatchReaderMerge : public MergeTreePatchReader
 public:
     MergeTreePatchReaderMerge(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_);
 
-    PatchReadResultPtr readPatch(MarkRanges & ranges) override;
+    PatchReadResultPtr readPatch(MarkRanges & ranges, const Block & result_block) override;
     PatchToApplyPtr applyPatch(const Block & result_block, const PatchReadResult & patch_result) const override;
     bool needNewPatch(const ReadResult & main_result, const PatchReadResult & old_patch) const override;
     bool needOldPatch(const ReadResult & main_result, const PatchReadResult & old_patch) const override;
@@ -80,7 +80,7 @@ class MergeTreePatchReaderJoin : public MergeTreePatchReader
 public:
     MergeTreePatchReaderJoin(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_, PatchReadResultCache * read_result_cache_);
 
-    PatchReadResultPtr readPatch(MarkRanges & ranges) override;
+    PatchReadResultPtr readPatch(MarkRanges & ranges, const Block & result_block) override;
     PatchToApplyPtr applyPatch(const Block & result_block, const PatchReadResult & patch_result) const override;
     /// Return true because we need to read all data in range for Join mode.
     bool needNewPatch(const ReadResult &, const PatchReadResult &) const override { return true; }
