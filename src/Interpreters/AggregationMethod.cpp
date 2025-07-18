@@ -190,6 +190,7 @@ template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel, fa
 template <typename TData, bool nullable, bool prealloc>
 void AggregationMethodSerialized<TData, nullable, prealloc>::insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
 {
+    std::cout << "deserialize key into columns size:" << key.size << " data:" << key.toString() << "|" << std::endl;
     const auto * pos = key.data;
     for (auto & column : key_columns)
         pos = column->deserializeAndInsertFromArena(pos);

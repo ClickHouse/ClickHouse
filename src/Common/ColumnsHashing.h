@@ -19,6 +19,7 @@
 #include <Core/Defines.h>
 #include <memory>
 #include <cassert>
+#include <iostream>
 
 namespace DB
 {
@@ -362,7 +363,7 @@ struct HashMethodSerialized
     {
         if constexpr (nullable)
         {
-            null_maps.resize(keys_size);
+            null_maps.resize(keys_size, nullptr);
             for (size_t i = 0; i < keys_size; ++i)
             {
                 if (const auto * nullable_column = dynamic_cast<const ColumnNullable *>(key_columns[i]))
@@ -375,11 +376,19 @@ struct HashMethodSerialized
 
         if constexpr (prealloc)
         {
-            null_maps.resize(keys_size);
+            std::cout << "null map old size:" << null_maps.size() << std::endl;
+            null_maps.resize(keys_size, nullptr);
 
             /// Calculate serialized value size for each key column in each row.
             for (size_t i = 0; i < keys_size; ++i)
+            {
+                if (null_maps[i] == nullptr)
+                    std::cout << "nullmap " << i << " is nullptr" << std::endl;
+                else
+                    std::cout << "nullmap " << i << " is not nullptr" << std::endl;
+
                 key_columns[i]->collectSerializedValueSizes(row_sizes, null_maps[i]);
+            }
 
             for (auto row_size : row_sizes)
                 total_size += row_size;
@@ -391,6 +400,8 @@ struct HashMethodSerialized
     {
         const char * begin = nullptr;
         char * memory = pool.allocContinue(total_size, begin);
+        // std::cout << "allocate total size:" << total_size << " bytes for serialized keys" << std::endl;
+        // std::cout << "total rows: " << row_sizes.size() << std::endl;
 
         size_t rows = row_sizes.size();
         std::vector<char *> memories(rows);
@@ -404,6 +415,8 @@ struct HashMethodSerialized
             memory += row_sizes[i];
         }
 
+        std::vector<char *> memories_copy = memories;
+
         for (size_t i = 0; i < keys_size; ++i)
         {
             if constexpr (nullable)
@@ -411,6 +424,23 @@ struct HashMethodSerialized
 
             else
                 key_columns[i]->batchSerializeValueIntoMemory(memories);
+        }
+
+        for (size_t i = 0; i < rows; ++i)
+        {
+            size_t sz = memories[i] - memories_copy[i];
+            if (sz != serialized_keys[i].size)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Serialized key size mismatch: row {} expected {}, got {}", i, serialized_keys[i].size, sz);
+
+            for (const auto & column : key_columns)
+            {
+                auto strref = column->getDataAt(i);
+                std::cout << "column:" << column->getName() << " size:" << strref.size << " data:" << std::string(strref.data, strref.size)
+                          << "|" << std::endl;
+            }
+            std::cout << "row:" << i << " serializedkey size:" << serialized_keys[i].size << " data:"
+                      << std::string(serialized_keys[i].data, serialized_keys[i].size) << "|" << std::endl;
         }
 
         initialized = true;
