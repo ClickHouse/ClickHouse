@@ -293,7 +293,7 @@ public:
         const ffi::Stats * stats,
         const ffi::DvInfo * /* dv_info */,
         const ffi::Expression * transform,
-        const struct ffi::CStringMap * partition_map)
+        const struct ffi::CStringMap * /* partition_map */)
     {
         auto * context = static_cast<TableSnapshot::Iterator *>(engine_context);
         if (context->shutdown)
@@ -305,41 +305,11 @@ public:
         std::string full_path = fs::path(context->data_prefix) / DB::unescapeForFileName(KernelUtils::fromDeltaString(path));
         auto object = std::make_shared<DB::ObjectInfo>(std::move(full_path));
 
-        std::vector<std::pair<DB::NameAndTypePair, DB::Field>> partition_values;
-        for (const auto & partition_column : context->partition_columns)
-        {
-            std::string * value = static_cast<std::string *>(ffi::get_from_string_map(
-                partition_map,
-                KernelUtils::toDeltaString(partition_column),
-                KernelUtils::allocateString));
-
-            SCOPE_EXIT({ delete value; });
-
-            if (value)
-            {
-                auto name_and_type = context->expression_schema.tryGetByName(partition_column);
-                if (!name_and_type)
-                {
-                    throw DB::Exception(
-                        DB::ErrorCodes::LOGICAL_ERROR,
-                        "Cannot find column `{}` in schema, there are only columns: `{}`",
-                        partition_column, fmt::join(context->expression_schema.getNames(), ", "));
-                }
-                partition_values.emplace_back(
-                    name_and_type.value(),
-                    DB::parseFieldFromString(*value, name_and_type->type));
-            }
-        }
-
-        object->data_lake_metadata = DB::DataLakeObjectMetadata{};
-        object->data_lake_metadata->partition_values = partition_values;
-        if (transform)
-            object->data_lake_metadata->transformm = transform;
-
         if (transform && !context->partition_columns.empty())
         {
             auto parsed_transform = visitScanCallbackExpression(transform, context->expression_schema);
-            //object->data_lake_metadata = DB::DataLakeObjectMetadata{ .transform = parsed_transform };
+
+            object->data_lake_metadata = DB::DataLakeObjectMetadata{};
             object->data_lake_metadata->transform = parsed_transform;
 
             LOG_TEST(
@@ -355,14 +325,6 @@ public:
                 "Scanned file: {}, size: {}, num records: {}",
                 object->getPath(), size, stats ? DB::toString(stats->num_records) : "Unknown");
         }
-
-        //if (context->pruner.has_value() && context->pruner->canBePruned(*object))
-        //{
-        //    ProfileEvents::increment(ProfileEvents::DeltaLakePartitionPrunedFiles);
-
-        //    LOG_TEST(context->log, "Skipping * file {} according to partition pruning", object->getPath());
-        //    return;
-        //}
 
         {
             std::lock_guard lock(context->next_mutex);

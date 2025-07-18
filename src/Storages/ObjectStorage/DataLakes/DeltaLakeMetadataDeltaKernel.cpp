@@ -62,7 +62,7 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     auto info = DB::prepareReadingFromFormat(requested_columns, storage_snapshot, context, supports_subset_of_columns);
 
     info.format_header.clear();
-    for (const auto & [column_name, column_type] : table_snapshot->getTableSchema())
+    for (const auto & [column_name, column_type] : table_snapshot->getReadSchema())
         info.format_header.insert({column_type->createColumn(), column_type, column_name});
 
     /// Read schema is different from table schema in case:
@@ -75,7 +75,7 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     /// Update requested columns to reference actual physical column names.
     if (!physical_names_map.empty())
     {
-        for (auto & [column_name, column_type] : info.requested_columns)
+        for (auto & [column_name, _] : info.requested_columns)
         {
             column_name = DeltaLake::getPhysicalName(column_name, physical_names_map);
         }
