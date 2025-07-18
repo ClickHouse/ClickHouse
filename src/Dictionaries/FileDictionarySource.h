@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Poco/Timestamp.h>
+#include "QueryPipeline/BlockIO.h"
 #include <Dictionaries/IDictionarySource.h>
 #include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
@@ -21,7 +22,7 @@ public:
 
     FileDictionarySource(const FileDictionarySource & other);
 
-    QueryPipeline loadAll() override;
+    BlockIO loadAll() override;
 
     QueryPipeline loadUpdatedAll() override
     {

@@ -8,6 +8,7 @@
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryHelpers.h>
+#include "QueryPipeline/QueryPipeline.h"
 
 
 namespace DB
@@ -139,6 +140,7 @@ private:
     void setup();
     void blockToAttributes(const Block & block);
     void loadData();
+    void loadDataImpl(QueryPipeline & pipeline);
 
     void calculateBytesAllocated();
 

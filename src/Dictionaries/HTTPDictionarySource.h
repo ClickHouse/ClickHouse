@@ -43,7 +43,7 @@ public:
     HTTPDictionarySource(const HTTPDictionarySource & other);
     HTTPDictionarySource & operator=(const HTTPDictionarySource &) = delete;
 
-    QueryPipeline loadAll() override;
+    BlockIO loadAll() override;
 
     QueryPipeline loadUpdatedAll() override;
 

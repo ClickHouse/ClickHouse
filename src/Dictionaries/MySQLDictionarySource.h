@@ -52,7 +52,7 @@ public:
     MySQLDictionarySource(const MySQLDictionarySource & other);
     MySQLDictionarySource & operator=(const MySQLDictionarySource &) = delete;
 
-    QueryPipeline loadAll() override;
+    BlockIO loadAll() override;
 
     QueryPipeline loadUpdatedAll() override;
 

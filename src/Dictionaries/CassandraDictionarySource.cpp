@@ -141,12 +141,14 @@ void CassandraDictionarySource::maybeAllowFiltering(String & query) const
     query += " ALLOW FILTERING;";
 }
 
-QueryPipeline CassandraDictionarySource::loadAll()
+BlockIO CassandraDictionarySource::loadAll()
 {
     String query = query_builder.composeLoadAllQuery();
     maybeAllowFiltering(query);
     LOG_INFO(log, "Loading all using query: {}", query);
-    return QueryPipeline(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size));
+    BlockIO io;
+    io.pipeline = QueryPipeline(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size));
+    return io;
 }
 
 std::string CassandraDictionarySource::toString() const

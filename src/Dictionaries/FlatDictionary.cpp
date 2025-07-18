@@ -494,13 +494,17 @@ void FlatDictionary::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        QueryPipeline pipeline(source_ptr->loadAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
-
-        Block block;
-        while (executor.pull(block))
-            blockToAttributes(block);
+        BlockIO io = source_ptr->loadAll();
+        try
+        {
+            loadDataImpl(io.pipeline);
+            io.onFinish();
+        }
+        catch (...)
+        {
+            io.onException();
+            throw;
+        }
     }
     else
         updateData();
@@ -513,6 +517,16 @@ void FlatDictionary::loadData()
 
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
+}
+
+void FlatDictionary::loadDataImpl(QueryPipeline & pipeline)
+{
+    DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+    pipeline.setConcurrencyControl(false);
+
+    Block block;
+    while (executor.pull(block))
+        blockToAttributes(block);
 }
 
 void FlatDictionary::buildHierarchyParentToChildIndexIfNeeded()

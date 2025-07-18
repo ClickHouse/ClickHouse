@@ -49,7 +49,7 @@ public:
     XDBCDictionarySource(const XDBCDictionarySource & other);
     XDBCDictionarySource & operator=(const XDBCDictionarySource &) = delete;
 
-    QueryPipeline loadAll() override;
+    BlockIO loadAll() override;
 
     QueryPipeline loadUpdatedAll() override;
 

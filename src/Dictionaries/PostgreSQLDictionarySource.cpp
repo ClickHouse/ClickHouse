@@ -91,10 +91,12 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(const PostgreSQLDictionar
 }
 
 
-QueryPipeline PostgreSQLDictionarySource::loadAll()
+BlockIO PostgreSQLDictionarySource::loadAll()
 {
     LOG_TRACE(log, fmt::runtime(load_all_query));
-    return loadBase(load_all_query);
+    BlockIO io;
+    io.pipeline = loadBase(load_all_query);
+    return io;
 }
 
 

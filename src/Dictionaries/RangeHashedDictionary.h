@@ -234,6 +234,7 @@ private:
     void createAttributes();
 
     void loadData();
+    void loadDataImpl(QueryPipeline & pipeline);
 
     void calculateBytesAllocated();
 
@@ -545,14 +546,16 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        QueryPipeline pipeline(source_ptr->loadAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
-        Block block;
-
-        while (executor.pull(block))
+        BlockIO io = source_ptr->loadAll();
+        try
         {
-            blockToAttributes(block);
+            loadDataImpl(io.pipeline);
+            io.onFinish();
+        }
+        catch (...)
+        {
+            io.onException();
+            throw;
         }
     }
     else
@@ -575,6 +578,19 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
             "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
+}
+
+template <DictionaryKeyType dictionary_key_type>
+void RangeHashedDictionary<dictionary_key_type>::loadDataImpl(QueryPipeline & pipeline)
+{
+    DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+    pipeline.setConcurrencyControl(false);
+    Block block;
+
+    while (executor.pull(block))
+    {
+        blockToAttributes(block);
+    }
 }
 
 template <DictionaryKeyType dictionary_key_type>

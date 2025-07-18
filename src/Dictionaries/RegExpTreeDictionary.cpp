@@ -319,82 +319,95 @@ void RegExpTreeDictionary::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        QueryPipeline pipeline(source_ptr->loadAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
-
-        Block block;
-        while (executor.pull(block))
+        BlockIO io = source_ptr->loadAll();
+        try
         {
-            initRegexNodes(block);
+            loadDataImpl(io.pipeline);
+            io.onFinish();
         }
-        initGraph();
-        if (simple_regexps.empty() && complex_regexp_nodes.empty())
-            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "There are no available regular expression. Please check your config");
-        LOG_INFO(logger, "There are {} simple regexps and {} complex regexps", simple_regexps.size(), complex_regexp_nodes.size());
-        /// If all the regexps cannot work with hyperscan, we should set this flag off to avoid exceptions.
-        if (simple_regexps.empty())
-            use_vectorscan = false;
-        if (!use_vectorscan)
-            return;
-
-#if USE_VECTORSCAN
-        std::vector<const char *> patterns;
-        std::vector<unsigned int> flags;
-        std::vector<size_t> lengths;
-
-        // Notes:
-        // - Always set HS_FLAG_SINGLEMATCH because we only care about whether a pattern matches at least once
-        // - HS_FLAG_CASELESS is supported by hs_compile_lit_multi, so we should set it if flag_case_insensitive is set.
-        // - HS_FLAG_DOTALL is not supported by hs_compile_lit_multi, but the '.' wildcard can't appear in any of the simple regexps
-        //   anyway, so even if flag_dotall is set, we only need to configure the RE2 searcher, and don't need to set any Hyperscan flags.
-        unsigned int flag_bits = HS_FLAG_SINGLEMATCH;
-        if (flag_case_insensitive)
-            flag_bits |= HS_FLAG_CASELESS;
-
-        for (const std::string & simple_regexp : simple_regexps)
+        catch (...)
         {
-            patterns.push_back(simple_regexp.data());
-            lengths.push_back(simple_regexp.size());
-            flags.push_back(flag_bits);
+            io.onException();
+            throw;
         }
-
-        hs_database_t * db = nullptr;
-        hs_compile_error_t * compile_error;
-
-        std::unique_ptr<unsigned int[]> ids;
-        ids.reset(new unsigned int[patterns.size()]);
-        for (size_t i = 0; i < patterns.size(); i++)
-            ids[i] = static_cast<unsigned>(i+1);
-
-        hs_error_t err = hs_compile_lit_multi(patterns.data(), flags.data(), ids.get(), lengths.data(), static_cast<unsigned>(patterns.size()), HS_MODE_BLOCK, nullptr, &db, &compile_error);
-        origin_db.reset(db);
-        if (err != HS_SUCCESS)
-        {
-            /// CompilerError is a unique_ptr, so correct memory free after the exception is thrown.
-            MultiRegexps::CompilerErrorPtr error(compile_error);
-
-            if (error->expression < 0)
-                throw Exception::createRuntime(ErrorCodes::LOGICAL_ERROR, String(error->message));
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Pattern '{}' failed with error '{}'", patterns[error->expression], String(error->message));
-        }
-
-        /// We allocate the scratch space only once, then copy it across multiple threads with hs_clone_scratch
-        /// function which is faster than allocating scratch space each time in each thread.
-        hs_scratch_t * scratch = nullptr;
-        err = hs_alloc_scratch(db, &scratch);
-        origin_scratch.reset(scratch);
-        /// If not HS_SUCCESS, it is guaranteed that the memory would not be allocated for scratch.
-        if (err != HS_SUCCESS)
-            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not allocate scratch space for vectorscan");
-#endif
-
     }
     else
     {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Dictionary {} does not support updating manual fields", name);
     }
+}
+
+void RegExpTreeDictionary::loadDataImpl(QueryPipeline & pipeline)
+{
+    DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+    pipeline.setConcurrencyControl(false);
+
+    Block block;
+    while (executor.pull(block))
+    {
+        initRegexNodes(block);
+    }
+    initGraph();
+    if (simple_regexps.empty() && complex_regexp_nodes.empty())
+        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "There are no available regular expression. Please check your config");
+    LOG_INFO(logger, "There are {} simple regexps and {} complex regexps", simple_regexps.size(), complex_regexp_nodes.size());
+    /// If all the regexps cannot work with hyperscan, we should set this flag off to avoid exceptions.
+    if (simple_regexps.empty())
+        use_vectorscan = false;
+    if (!use_vectorscan)
+        return;
+
+#if USE_VECTORSCAN
+    std::vector<const char *> patterns;
+    std::vector<unsigned int> flags;
+    std::vector<size_t> lengths;
+
+    // Notes:
+    // - Always set HS_FLAG_SINGLEMATCH because we only care about whether a pattern matches at least once
+    // - HS_FLAG_CASELESS is supported by hs_compile_lit_multi, so we should set it if flag_case_insensitive is set.
+    // - HS_FLAG_DOTALL is not supported by hs_compile_lit_multi, but the '.' wildcard can't appear in any of the simple regexps
+    //   anyway, so even if flag_dotall is set, we only need to configure the RE2 searcher, and don't need to set any Hyperscan flags.
+    unsigned int flag_bits = HS_FLAG_SINGLEMATCH;
+    if (flag_case_insensitive)
+        flag_bits |= HS_FLAG_CASELESS;
+
+    for (const std::string & simple_regexp : simple_regexps)
+    {
+        patterns.push_back(simple_regexp.data());
+        lengths.push_back(simple_regexp.size());
+        flags.push_back(flag_bits);
+    }
+
+    hs_database_t * db = nullptr;
+    hs_compile_error_t * compile_error;
+
+    std::unique_ptr<unsigned int[]> ids;
+    ids.reset(new unsigned int[patterns.size()]);
+    for (size_t i = 0; i < patterns.size(); i++)
+        ids[i] = static_cast<unsigned>(i+1);
+
+    hs_error_t err = hs_compile_lit_multi(patterns.data(), flags.data(), ids.get(), lengths.data(), static_cast<unsigned>(patterns.size()), HS_MODE_BLOCK, nullptr, &db, &compile_error);
+    origin_db.reset(db);
+    if (err != HS_SUCCESS)
+    {
+        /// CompilerError is a unique_ptr, so correct memory free after the exception is thrown.
+        MultiRegexps::CompilerErrorPtr error(compile_error);
+
+        if (error->expression < 0)
+            throw Exception::createRuntime(ErrorCodes::LOGICAL_ERROR, String(error->message));
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Pattern '{}' failed with error '{}'", patterns[error->expression], String(error->message));
+    }
+
+    /// We allocate the scratch space only once, then copy it across multiple threads with hs_clone_scratch
+    /// function which is faster than allocating scratch space each time in each thread.
+    hs_scratch_t * scratch = nullptr;
+    err = hs_alloc_scratch(db, &scratch);
+    origin_scratch.reset(scratch);
+    /// If not HS_SUCCESS, it is guaranteed that the memory would not be allocated for scratch.
+    if (err != HS_SUCCESS)
+        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not allocate scratch space for vectorscan");
+#endif
 }
 
 RegExpTreeDictionary::RegExpTreeDictionary(

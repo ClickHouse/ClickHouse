@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
+#include "QueryPipeline/BlockIO.h"
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <filesystem>
@@ -105,10 +106,12 @@ bool LibraryDictionarySource::supportsSelectiveLoad() const
 }
 
 
-QueryPipeline LibraryDictionarySource::loadAll()
+BlockIO LibraryDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
-    return bridge_helper->loadAll();
+    BlockIO io;
+    io.pipeline = bridge_helper->loadAll();
+    return io;
 }
 
 

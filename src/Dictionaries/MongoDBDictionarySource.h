@@ -1,5 +1,6 @@
 #pragma once
 
+#include "QueryPipeline/BlockIO.h"
 #include "config.h"
 
 #if USE_MONGODB
@@ -29,7 +30,7 @@ public:
 
     ~MongoDBDictionarySource() override;
 
-    QueryPipeline loadAll() override;
+    BlockIO loadAll() override;
 
     QueryPipeline loadUpdatedAll() override
     {

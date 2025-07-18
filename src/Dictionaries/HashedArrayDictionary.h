@@ -191,6 +191,7 @@ private:
     void updateData();
 
     void loadData();
+    void loadDataImpl(QueryPipeline & pipeline, DictionaryParallelLoaderType * parallel_loader);
 
     void buildHierarchyParentToChildIndexIfNeeded();
 

@@ -2,6 +2,7 @@
 
 #include <Columns/IColumn_fwd.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/BlockIO.h>
 
 #include <vector>
 
@@ -20,7 +21,7 @@ class IDictionarySource
 public:
 
     /// Returns a pipe with all the data available from this source.
-    virtual QueryPipeline loadAll() = 0;
+    virtual BlockIO loadAll() = 0;
 
     /// Returns a pipe with updated data available from this source.
     virtual QueryPipeline loadUpdatedAll() = 0;

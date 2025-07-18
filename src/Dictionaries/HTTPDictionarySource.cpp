@@ -86,7 +86,7 @@ void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
     }
 }
 
-QueryPipeline HTTPDictionarySource::loadAll()
+BlockIO HTTPDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
 
@@ -99,8 +99,9 @@ QueryPipeline HTTPDictionarySource::loadAll()
                    .withHeaders(configuration.header_entries)
                    .withDelayInit(false)
                    .create(credentials);
-
-    return createWrappedBuffer(std::move(buf));
+    BlockIO io;
+    io.pipeline = createWrappedBuffer(std::move(buf));
+    return io;
 }
 
 QueryPipeline HTTPDictionarySource::loadUpdatedAll()
