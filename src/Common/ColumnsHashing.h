@@ -351,12 +351,11 @@ struct HashMethodSerialized
     size_t keys_size;
     std::vector<const UInt8 *> null_maps;
 
-    /// Below fields are used only if prealloc is true.
-    mutable std::atomic<bool> initialized{false};
-
+    /// Only used if prealloc is true.
     PaddedPODArray<UInt64> row_sizes;
     size_t total_size = 0;
-    mutable std::vector<StringRef> serialized_keys;
+    std::unique_ptr<char[]> serialized_buffer;
+    std::vector<StringRef> serialized_keys;
 
     HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
         : key_columns(key_columns_), keys_size(key_columns_.size())
@@ -376,88 +375,109 @@ struct HashMethodSerialized
 
         if constexpr (prealloc)
         {
-            std::cout << "null map old size:" << null_maps.size() << std::endl;
             null_maps.resize(keys_size, nullptr);
 
             /// Calculate serialized value size for each key column in each row.
             for (size_t i = 0; i < keys_size; ++i)
-            {
-                if (null_maps[i] == nullptr)
-                    std::cout << "nullmap " << i << " is nullptr" << std::endl;
-                else
-                    std::cout << "nullmap " << i << " is not nullptr" << std::endl;
-
                 key_columns[i]->collectSerializedValueSizes(row_sizes, null_maps[i]);
-            }
 
             for (auto row_size : row_sizes)
                 total_size += row_size;
-        }
-    }
 
-    void lazyInitialize(Arena & pool) const
-    requires(prealloc)
-    {
-        const char * begin = nullptr;
-        char * memory = pool.allocContinue(total_size, begin);
-        // std::cout << "allocate total size:" << total_size << " bytes for serialized keys" << std::endl;
-        // std::cout << "total rows: " << row_sizes.size() << std::endl;
+            serialized_buffer = std::make_unique<char[]>(total_size);
 
-        size_t rows = row_sizes.size();
-        std::vector<char *> memories(rows);
-        serialized_keys.resize(rows);
-        for (size_t i = 0; i < row_sizes.size(); ++i)
-        {
-            memories[i] = memory;
-            serialized_keys[i].data = memory;
-            serialized_keys[i].size = row_sizes[i];
+            // const char * begin = nullptr;
+            // char * memory = pool.allocContinue(total_size, begin);
+            // std::cout << "allocate total size:" << total_size << " bytes for serialized keys" << std::endl;
+            // std::cout << "total rows: " << row_sizes.size() << std::endl;
+            // std::vector<char *> memories_copy = memories;
+            const size_t rows = row_sizes.size();
+            char * memory = serialized_buffer.get();
 
-            memory += row_sizes[i];
-        }
-
-        std::vector<char *> memories_copy = memories;
-
-        for (size_t i = 0; i < keys_size; ++i)
-        {
-            if constexpr (nullable)
-                key_columns[i]->batchSerializeValueIntoMemoryWithNull(memories, null_maps[i]);
-
-            else
-                key_columns[i]->batchSerializeValueIntoMemory(memories);
-        }
-
-        for (size_t i = 0; i < rows; ++i)
-        {
-            size_t sz = memories[i] - memories_copy[i];
-            if (sz != serialized_keys[i].size)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Serialized key size mismatch: row {} expected {}, got {}", i, serialized_keys[i].size, sz);
-
-            for (const auto & column : key_columns)
+            std::vector<char *> memories(rows);
+            serialized_keys.resize(rows);
+            for (size_t i = 0; i < row_sizes.size(); ++i)
             {
-                auto strref = column->getDataAt(i);
-                std::cout << "column:" << column->getName() << " size:" << strref.size << " data:" << std::string(strref.data, strref.size)
-                          << "|" << std::endl;
-            }
-            std::cout << "row:" << i << " serializedkey size:" << serialized_keys[i].size << " data:"
-                      << std::string(serialized_keys[i].data, serialized_keys[i].size) << "|" << std::endl;
-        }
+                memories[i] = memory;
+                serialized_keys[i].data = memory;
+                serialized_keys[i].size = row_sizes[i];
 
-        initialized = true;
+                memory += row_sizes[i];
+            }
+
+            for (size_t i = 0; i < keys_size; ++i)
+            {
+                if constexpr (nullable)
+                    key_columns[i]->batchSerializeValueIntoMemoryWithNull(memories, null_maps[i]);
+                else
+                    key_columns[i]->batchSerializeValueIntoMemory(memories);
+            }
+        }
     }
+
+    // void lazyInitialize(Arena & pool) const
+    // requires(prealloc)
+    // {
+    //     const char * begin = nullptr;
+    //     char * memory = pool.allocContinue(total_size, begin);
+    //     // std::cout << "allocate total size:" << total_size << " bytes for serialized keys" << std::endl;
+    //     // std::cout << "total rows: " << row_sizes.size() << std::endl;
+
+    //     size_t rows = row_sizes.size();
+    //     std::vector<char *> memories(rows);
+    //     serialized_keys.resize(rows);
+    //     for (size_t i = 0; i < row_sizes.size(); ++i)
+    //     {
+    //         memories[i] = memory;
+    //         serialized_keys[i].data = memory;
+    //         serialized_keys[i].size = row_sizes[i];
+
+    //         memory += row_sizes[i];
+    //     }
+
+    //     std::vector<char *> memories_copy = memories;
+
+    //     for (size_t i = 0; i < keys_size; ++i)
+    //     {
+    //         if constexpr (nullable)
+    //             key_columns[i]->batchSerializeValueIntoMemoryWithNull(memories, null_maps[i]);
+
+    //         else
+    //             key_columns[i]->batchSerializeValueIntoMemory(memories);
+    //     }
+
+    //     for (size_t i = 0; i < rows; ++i)
+    //     {
+    //         size_t sz = memories[i] - memories_copy[i];
+    //         if (sz != serialized_keys[i].size)
+    //             throw Exception(
+    //                 ErrorCodes::LOGICAL_ERROR, "Serialized key size mismatch: row {} expected {}, got {}", i, serialized_keys[i].size, sz);
+
+    //         for (const auto & column : key_columns)
+    //         {
+    //             auto strref = column->getDataAt(i);
+    //             std::cout << "column:" << column->getName() << " size:" << strref.size << " data:" << std::string(strref.data, strref.size)
+    //                       << "|" << std::endl;
+    //         }
+    //         std::cout << "row:" << i << " serializedkey size:" << serialized_keys[i].size << " data:"
+    //                   << std::string(serialized_keys[i].data, serialized_keys[i].size) << "|" << std::endl;
+    //     }
+
+    //     initialized = true;
+    // }
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
-    ALWAYS_INLINE SerializedKeyHolder getKeyHolder(size_t row, Arena & pool) const
+    ALWAYS_INLINE ArenaKeyHolder getKeyHolder(size_t row, Arena & pool) const
+    requires(prealloc)
     {
-        if constexpr (prealloc)
-        {
-            if (!initialized) [[unlikely]]
-                lazyInitialize(pool);
+        return ArenaKeyHolder{serialized_keys[row], pool};
+    }
 
-            return SerializedKeyHolder{serialized_keys[row], pool};
-        }
-        else if constexpr (nullable)
+    ALWAYS_INLINE SerializedKeyHolder getKeyHolder(size_t row, Arena & pool) const
+    requires(!prealloc)
+    {
+        if constexpr (nullable)
         {
             const char * begin = nullptr;
 
