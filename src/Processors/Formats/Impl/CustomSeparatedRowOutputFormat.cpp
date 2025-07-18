@@ -11,7 +11,7 @@ namespace DB
 {
 
 CustomSeparatedRowOutputFormat::CustomSeparatedRowOutputFormat(
-    const Block & header_, WriteBuffer & out_, const FormatSettings & format_settings_, bool with_names_, bool with_types_)
+    SharedHeader header_, WriteBuffer & out_, const FormatSettings & format_settings_, bool with_names_, bool with_types_)
     : IRowOutputFormat(header_, out_)
     , with_names(with_names_)
     , with_types(with_types_)
@@ -89,7 +89,7 @@ void registerOutputFormatCustomSeparated(FormatFactory & factory)
             const Block & sample,
             const FormatSettings & settings)
         {
-            return std::make_shared<CustomSeparatedRowOutputFormat>(sample, buf, settings, with_names, with_types);
+            return std::make_shared<CustomSeparatedRowOutputFormat>(std::make_shared<const Block>(sample), buf, settings, with_names, with_types);
         });
 
         factory.markOutputFormatSupportsParallelFormatting(format_name);

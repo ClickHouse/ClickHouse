@@ -81,44 +81,15 @@ class JobConfigs:
         command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
         run_in_docker="clickhouse/binary-builder+--network=host",
         timeout=3600 * 4,
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./src",
-                "./contrib/",
-                "./CMakeLists.txt",
-                "./PreLoad.cmake",
-                "./cmake",
-                "./base",
-                "./programs",
-                "./rust",
-                "./ci/jobs/build_clickhouse.py",
-            ],
-            with_git_submodules=True,
-        ),
-    ).parametrize(
-        parameter=[
-            BuildTypes.AMD_TIDY,
-        ],
-        provides=[[]],  # [ArtifactNames.CH_TIDY_BIN],
-        runs_on=[
-            RunnerLabels.BUILDER_AMD,
-        ],
-    )
-    tidy_arm_build_jobs = Job.Config(
-        name=JobNames.BUILD,
-        runs_on=[],  # from parametrize()
-        requires=["Build (amd_tidy)"],
-        command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
-        # --network=host required for ec2 metadata http endpoint to work
-        run_in_docker="clickhouse/binary-builder+--network=host",
-        timeout=3600 * 4,
-        allow_merge_on_failure=True,
         digest_config=build_digest_config,
     ).parametrize(
         parameter=[
+            BuildTypes.AMD_TIDY,
             BuildTypes.ARM_TIDY,
         ],
+        provides=[[], []],
         runs_on=[
+            RunnerLabels.BUILDER_AMD,
             RunnerLabels.BUILDER_ARM,
         ],
     )
@@ -541,19 +512,19 @@ class JobConfigs:
         allow_merge_on_failure=True,
     ).parametrize(
         parameter=[
-            "arm_asan",
+            "amd_asan",
             "amd_tsan",
             "amd_msan",
             "amd_debug",
         ],
         runs_on=[
-            RunnerLabels.FUNC_TESTER_ARM,
+            RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
-            ["Build (arm_asan)"],
+            ["Build (amd_asan)"],
             ["Build (amd_tsan)"],
             ["Build (amd_msan)"],
             ["Build (amd_debug)"],

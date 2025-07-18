@@ -1,7 +1,11 @@
 #pragma once
+
+#include <ranges>
 #include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/RowRefs.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
+#include <Interpreters/RowRefs.h>
+#include <Common/HashTable/HashMap.h>
+
 namespace DB
 {
 
@@ -15,7 +19,7 @@ template<>
 class KnownRowsHolder<true>
 {
 public:
-    using Type = std::pair<const Columns *, DB::RowRef::SizeT>;
+    using Type = PairNoInit<const Columns *, DB::RowRef::SizeT>;
 
 private:
     static const size_t MAX_LINEAR = 16; // threshold to switch from Array to Set
@@ -34,14 +38,13 @@ public:
     {
     }
 
-
     template<class InputIt>
     void add(InputIt from, InputIt to)
     {
         const size_t new_items = std::distance(from, to);
         if (items + new_items <= MAX_LINEAR)
         {
-            std::copy(from, to, &array_holder[items]);
+            std::copy(from, to, std::begin(array_holder) + items);
         }
         else
         {
@@ -97,19 +100,17 @@ void addFoundRowAll(
 
     if constexpr (flag_per_row)
     {
-        std::unique_ptr<std::vector<KnownRowsHolder<true>::Type>> new_known_rows_ptr;
+        using Pair = typename KnownRowsHolder<flag_per_row>::Type;
+        std::vector<Pair> new_known_rows_ptr;
 
         for (auto it = mapped.begin(); it.ok(); ++it)
         {
-            if (!known_rows.isKnown(std::make_pair(it->columns, it->row_num)))
+            if (!known_rows.isKnown(makePairNoInit(it->columns, it->row_num)))
             {
                 added.appendFromBlock(*it, false);
                 ++current_offset;
-                if (!new_known_rows_ptr)
-                {
-                    new_known_rows_ptr = std::make_unique<std::vector<KnownRowsHolder<true>::Type>>();
-                }
-                new_known_rows_ptr->push_back(std::make_pair(it->columns, it->row_num));
+                new_known_rows_ptr.emplace_back(it->columns, it->row_num);
+
                 if (used_flags)
                 {
                     used_flags->JoinStuff::JoinUsedFlags::setUsedOnce<true, flag_per_row>(
@@ -118,10 +119,7 @@ void addFoundRowAll(
             }
         }
 
-        if (new_known_rows_ptr)
-        {
-            known_rows.add(std::cbegin(*new_known_rows_ptr), std::cend(*new_known_rows_ptr));
-        }
+        known_rows.add(std::cbegin(new_known_rows_ptr), std::cend(new_known_rows_ptr));
     }
     else if constexpr (AddedColumns::isLazy())
     {

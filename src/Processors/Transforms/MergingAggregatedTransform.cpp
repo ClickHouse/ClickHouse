@@ -64,19 +64,19 @@ static ActionsDAG makeReorderingActions(const Block & in_header, const GroupingS
 MergingAggregatedTransform::~MergingAggregatedTransform() = default;
 
 MergingAggregatedTransform::MergingAggregatedTransform(
-    Block header_, Aggregator::Params params, bool final, GroupingSetsParamsList grouping_sets_params)
-    : IAccumulatingTransform(header_, appendGroupingIfNeeded(header_, params.getHeader(header_, final)))
+    SharedHeader header_, Aggregator::Params params, bool final, GroupingSetsParamsList grouping_sets_params)
+    : IAccumulatingTransform(header_, std::make_shared<const Block>(appendGroupingIfNeeded(*header_, params.getHeader(*header_, final))))
 {
     if (!grouping_sets_params.empty())
     {
-        if (!header_.has("__grouping_set"))
+        if (!header_->has("__grouping_set"))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Cannot find __grouping_set column in header of MergingAggregatedTransform with grouping sets."
-                "Header {}", header_.dumpStructure());
+                "Header {}", header_->dumpStructure());
 
-        auto in_header = header_;
-        in_header.erase(header_.getPositionByName("__grouping_set"));
-        auto out_header = params.getHeader(header_, final);
+        auto in_header = *header_;
+        in_header.erase(header_->getPositionByName("__grouping_set"));
+        auto out_header = params.getHeader(*header_, final);
 
         grouping_sets.reserve(grouping_sets_params.size());
         for (const auto & grouping_set_params : grouping_sets_params)
@@ -92,7 +92,7 @@ MergingAggregatedTransform::MergingAggregatedTransform(
                 params.max_block_size,
                 params.min_hit_rate_to_use_consecutive_keys_optimization);
 
-            auto transform_params = std::make_shared<AggregatingTransformParams>(reordering.updateHeader(in_header), std::move(set_params), final);
+            auto transform_params = std::make_shared<AggregatingTransformParams>(std::make_shared<const Block>(reordering.updateHeader(in_header)), std::move(set_params), final);
 
             auto creating = AggregatingStep::makeCreatingMissingKeysForGroupingSetDAG(
                 transform_params->getHeader(),
