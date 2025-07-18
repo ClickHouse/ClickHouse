@@ -340,7 +340,7 @@ def test_alter_settings(started_cluster):
         enable_hash_ring_filtering=false,
         list_objects_batch_size=1234,
         min_insert_block_size_rows_for_materialized_views=123,
-        min_insert_block_size_bytes_for_materialized_views=321,
+        min_insert_block_size_bytes_for_materialized_views=321
     """
     )
 
