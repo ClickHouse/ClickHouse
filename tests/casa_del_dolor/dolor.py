@@ -7,6 +7,7 @@ import pathlib
 import random
 import tempfile
 import time
+import signal
 import sys
 
 sys.path.append("..")
@@ -430,6 +431,12 @@ def dolor_cleanup():
             pass
 
 
+def my_signal_handler(sig, frame):
+    dolor_cleanup()
+    sys.exit(0)
+
+
+signal.signal(signal.SIGINT, my_signal_handler)
 atexit.register(dolor_cleanup)
 time.sleep(3)
 
