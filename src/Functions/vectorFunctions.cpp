@@ -1785,7 +1785,7 @@ SELECT L2Norm((1, 2))
 
     /// L2SquaredNorm documentation
     FunctionDocumentation::Description description_l2_squared_norm = R"(
-Calculates the square root of the sum of the squares of the vector values (the [`L2Norm`](#l2norm)) squared.
+Calculates the square root of the sum of the squares of the vector values (the [`L2Norm`](#L2Norm)) squared.
     )";
     FunctionDocumentation::Syntax syntax_l2_squared_norm = "L2SquaredNorm(vector)";
     FunctionDocumentation::Arguments arguments_l2_squared_norm = {

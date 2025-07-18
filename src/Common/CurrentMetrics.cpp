@@ -391,6 +391,7 @@
     M(ConcurrencyControlAcquired, "Total number of acquired CPU slots") \
     M(ConcurrencyControlAcquiredNonCompeting, "Total number of acquired CPU slots that are not considered competing (the first thread if fair_round_robin scheduler is in use)") \
     M(ConcurrencyControlSoftLimit, "Value of soft limit on number of CPU slots") \
+    M(ConcurrencyControlPreempted, "Total number of preempted threads waiting for CPU slot") \
     \
     M(ConcurrentQueryScheduled, "Total number of query slot requests are being scheduled currently") \
     M(ConcurrentQueryAcquired, "Total number of acquired query slots") \
