@@ -12,7 +12,7 @@ namespace ErrorCodes
 }
 
 SquashingTransform::SquashingTransform(
-    const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
+    SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes)
     : ExceptionKeepingTransform(header, header, false)
     , squashing(header, min_block_size_rows, min_block_size_bytes)
 {
@@ -55,7 +55,7 @@ void SquashingTransform::work()
 }
 
 SimpleSquashingChunksTransform::SimpleSquashingChunksTransform(
-    const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
+    SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes)
     : IInflatingTransform(header, header)
     , squashing(header, min_block_size_rows, min_block_size_bytes)
 {

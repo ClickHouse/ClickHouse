@@ -6,9 +6,6 @@ Test ngram_size argument.
 Test separators argument.
 -- separators must be array.
 -- separators must be an array of strings.
-Test max_rows_per_postings_list argument.
--- max_rows_per_posting_list is set to unlimited rows.
--- max_rows_per_posting_list should be at least 8192.
 Parameters are shuffled.
 Types are incorrect.
 Same argument appears >1 times.

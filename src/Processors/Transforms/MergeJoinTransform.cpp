@@ -432,7 +432,7 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
     JoinKind kind_,
     JoinStrictness strictness_,
     const TableJoin::JoinOnClause & on_clause_,
-    const Blocks & input_headers,
+    SharedHeaders & input_headers,
     size_t max_block_size_)
     : kind(kind_)
     , strictness(strictness_)
@@ -458,14 +458,14 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm does not support ON filter conditions");
 
     cursors = {
-        createCursor(input_headers[0], on_clause_.key_names_left, strictness),
-        createCursor(input_headers[1], on_clause_.key_names_right, strictness),
+        createCursor(*input_headers[0], on_clause_.key_names_left, strictness),
+        createCursor(*input_headers[1], on_clause_.key_names_right, strictness),
     };
 }
 
 MergeJoinAlgorithm::MergeJoinAlgorithm(
     JoinPtr join_ptr,
-    const Blocks & input_headers,
+    SharedHeaders & input_headers,
     size_t max_block_size_)
     : MergeJoinAlgorithm(
         join_ptr->getTableJoin().kind(),
@@ -476,8 +476,8 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
 {
     for (const auto & [left_key, right_key] : join_ptr->getTableJoin().leftToRightKeyRemap())
     {
-        size_t left_idx = input_headers[0].getPositionByName(left_key);
-        size_t right_idx = input_headers[1].getPositionByName(right_key);
+        size_t left_idx = input_headers[0]->getPositionByName(left_key);
+        size_t right_idx = input_headers[1]->getPositionByName(right_key);
         left_to_right_key_remap[left_idx] = right_idx;
     }
 
@@ -1245,8 +1245,8 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
 
 MergeJoinTransform::MergeJoinTransform(
         JoinPtr table_join,
-        const Blocks & input_headers,
-        const Block & output_header,
+        SharedHeaders & input_headers,
+        SharedHeader output_header,
         size_t max_block_size,
         UInt64 limit_hint_)
     : IMergingTransform<MergeJoinAlgorithm>(
@@ -1264,8 +1264,8 @@ MergeJoinTransform::MergeJoinTransform(
         JoinKind kind_,
         JoinStrictness strictness_,
         const TableJoin::JoinOnClause & on_clause_,
-        const Blocks & input_headers,
-        const Block & output_header,
+        SharedHeaders & input_headers,
+        SharedHeader output_header,
         size_t max_block_size,
         UInt64 limit_hint_)
     : IMergingTransform<MergeJoinAlgorithm>(

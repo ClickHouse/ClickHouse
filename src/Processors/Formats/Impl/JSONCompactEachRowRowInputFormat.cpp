@@ -19,7 +19,7 @@ namespace DB
 {
 
 JSONCompactEachRowRowInputFormat::JSONCompactEachRowRowInputFormat(
-    const Block & header_,
+    SharedHeader header_,
     ReadBuffer & in_,
     Params params_,
     bool with_names_,
@@ -259,7 +259,7 @@ void registerInputFormatJSONCompactEachRow(FormatFactory & factory)
                 IRowInputFormat::Params params,
                 const FormatSettings & settings)
             {
-                return std::make_shared<JSONCompactEachRowRowInputFormat>(sample, buf, std::move(params), with_names, with_types, yield_strings, settings);
+                return std::make_shared<JSONCompactEachRowRowInputFormat>(std::make_unique<const Block>(sample), buf, std::move(params), with_names, with_types, yield_strings, settings);
             });
         };
 
