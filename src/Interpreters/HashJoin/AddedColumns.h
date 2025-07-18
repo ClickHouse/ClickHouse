@@ -190,7 +190,7 @@ public:
     MutableColumns columns;
     IColumn::Offsets offsets_to_replicate;
     IColumn::Filter filter;
-    ScatteredBlock::IndexesPtr new_selector;
+    IColumn::Offsets matched_rows;
 
     /// for lazy
     // The default row is represented by an empty RowRef, so that fixed-size blocks can be generated sequentially,

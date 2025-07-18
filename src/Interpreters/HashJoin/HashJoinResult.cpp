@@ -166,7 +166,7 @@ static Block generateBlock(
     const HashJoinResult::Properties & properties,
     const IColumn::Offsets & offsets,
     const IColumn::Filter & filter,
-    ScatteredBlock::IndexesPtr && new_selector)
+    std::span<UInt64> matched_rows)
 {
     const auto * off_data = lazy_output.row_refs.data();
     Stopwatch watch4;
@@ -185,7 +185,7 @@ static Block generateBlock(
     if (properties.need_filter)
     {
         Stopwatch watch5;
-        scattered_block.filter(*new_selector);
+        scattered_block.filter(matched_rows);
         ProfileEvents::increment(ProfileEvents::JoinApplyingFilter, watch5.elapsedMicroseconds());
     }
 
@@ -238,7 +238,7 @@ HashJoinResult::HashJoinResult(
     MutableColumns columns_,
     IColumn::Offsets offsets_,
     IColumn::Filter filter_,
-    ScatteredBlock::IndexesPtr && new_selector_,
+    IColumn::Offsets && matched_rows_,
     ScatteredBlock && block_,
     Properties properties_)
     : lazy_output(std::move(lazy_output_))
@@ -247,7 +247,7 @@ HashJoinResult::HashJoinResult(
     , columns(std::move(columns_))
     , offsets(std::move(offsets_))
     , filter(std::move(filter_))
-    , new_selector(std::move(new_selector_))
+    , matched_rows(std::move(matched_rows_))
 {
 }
 
@@ -269,7 +269,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
             properties,
             offsets,
             filter,
-            std::move(new_selector));
+            std::span<UInt64>{matched_rows});
 
         scattered_block.reset();
         return {std::move(block), true};
@@ -320,16 +320,15 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     }
 
     IColumn::Filter partial_filter;
-    auto partial_selector = ScatteredBlock::Indexes::create();
+    std::span<UInt64> partial_selector;
     if (!filter.empty())
     {
         partial_filter.resize(num_lhs_rows);
         memcpySmallAllowReadWriteOverflow15(partial_filter.data(), filter.data() + next_row, num_lhs_rows);
         const size_t old_selector_it = next_selector_it;
-        while (next_selector_it < new_selector->size() && (*new_selector)[next_selector_it] < next_row + num_lhs_rows)
-
+        while (next_selector_it < matched_rows.size() && matched_rows[next_selector_it] < next_row + num_lhs_rows)
             ++next_selector_it;
-        partial_selector->insertRangeFrom(*new_selector, old_selector_it, next_selector_it - old_selector_it);
+        partial_selector = std::span<UInt64>{matched_rows.begin() + old_selector_it, matched_rows.begin() + next_selector_it};
     }
 
     const auto row_ref_start = next_row_ref;
@@ -371,7 +370,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         properties,
         partial_offsets,
         partial_filter,
-        std::move(partial_selector));
+        partial_selector);
 
     columns = std::move(next_columns);
     if (is_last)
