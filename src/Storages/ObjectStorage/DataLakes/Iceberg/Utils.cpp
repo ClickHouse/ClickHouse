@@ -462,7 +462,7 @@ std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
 {
     Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
     result->set(Iceberg::f_spec_id, 0);
-    
+
     Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
     Int32 partition_iter = 1000;
     if (partition_by)

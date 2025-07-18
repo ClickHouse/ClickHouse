@@ -1,12 +1,12 @@
 #pragma once
 
-#include "Storages/ColumnsDescription.h"
 #include "config.h"
 
 #if USE_PARQUET
 
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
