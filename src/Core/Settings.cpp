@@ -414,6 +414,21 @@ The maximum number of retries in case of unexpected errors during S3 write.
     DECLARE(UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(
 Max number of S3 redirects hops allowed.
 )", 0) \
+    DECLARE(UInt64, azure_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(
+Max number of azure redirects hops allowed.
+)", 0) \
+    DECLARE(UInt64, azure_max_get_rps, 0, R"(
+Limit on Azure GET request per second rate before throttling. Zero means unlimited.
+)", 0) \
+    DECLARE(UInt64, azure_max_get_burst, 0, R"(
+Max number of requests that can be issued simultaneously before hitting request per second limit. By default (0) equals to `azure_max_get_rps`
+)", 0) \
+    DECLARE(UInt64, azure_max_put_rps, 0, R"(
+Limit on Azure PUT request per second rate before throttling. Zero means unlimited.
+)", 0) \
+    DECLARE(UInt64, azure_max_put_burst, 0, R"(
+Max number of requests that can be issued simultaneously before hitting request per second limit. By default (0) equals to `azure_max_put_rps`
+)", 0) \
     DECLARE(UInt64, s3_max_connections, S3::DEFAULT_MAX_CONNECTIONS, R"(
 The maximum number of connections per server.
 )", 0) \
@@ -434,6 +449,10 @@ Maximum number of files that could be returned in batch by ListObject request
 )", 0) \
     DECLARE(Bool, s3_use_adaptive_timeouts, S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS, R"(
 When set to `true` than for all s3 requests first two attempts are made with low send and receive timeouts.
+When set to `false` than all attempts are made with identical timeouts.
+)", 0) \
+    DECLARE(Bool, azure_use_adaptive_timeouts, S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS, R"(
+When set to `true` than for all azure requests first two attempts are made with low send and receive timeouts.
 When set to `false` than all attempts are made with identical timeouts.
 )", 0) \
     DECLARE(Bool, s3_slow_all_threads_after_network_error, true, R"(
@@ -536,9 +555,17 @@ Minimal backoff between retries in azure sdk
     DECLARE(UInt64, azure_sdk_retry_max_backoff_ms, 1000, R"(
 Maximal backoff between retries in azure sdk
 )", 0) \
+    DECLARE(UInt64, azure_request_timeout_ms, S3::DEFAULT_REQUEST_TIMEOUT_MS, R"(
+Idleness timeout for sending and receiving data to/from azure. Fail if a single TCP read or write call blocks for this long.
+)", 0) \
+    DECLARE(UInt64, azure_connect_timeout_ms, S3::DEFAULT_CONNECT_TIMEOUT_MS, R"(
+Connection timeout for host from azure disks.
+)", 0) \
+    DECLARE(Bool, azure_sdk_use_native_client, true, R"(
+Use clickhouse native HTTP client for Azure SDK.
+)", 0) \
     DECLARE(Bool, s3_validate_request_settings, true, R"(
 Enables s3 request settings validation.
-
 Possible values:
 - 1 — validate settings.
 - 0 — do not validate settings.

@@ -279,12 +279,22 @@ def parse_args():
 
 def find_prev_build(info, build_type):
     commits = info.get_custom_data("previous_commits_sha") or []
-
+    assert commits, "No commits found to fetch reference build"
     for sha in commits:
         link = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/{build_type}/clickhouse"
         if Shell.check(f"curl -sfI {link} > /dev/null"):
             return link
 
+    return None
+
+
+def find_base_release_build(info, build_type):
+    commits = info.get_custom_data("release_branch_base_sha_with_predecessors") or []
+    assert commits, "No commits found to fetch reference build"
+    for sha in commits:
+        link = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/{build_type}/clickhouse"
+        if Shell.check(f"curl -sfI {link} > /dev/null"):
+            return link
     return None
 
 
@@ -300,7 +310,7 @@ def main():
             batch_num, total_batches = map(int, test_option.split("/"))
         if "master_head" in test_option:
             compare_against_master = True
-        elif "prev_release" in test_option:
+        elif "release_base" in test_option:
             compare_against_release = True
 
     batch_num -= 1
@@ -308,7 +318,7 @@ def main():
 
     assert (
         compare_against_master or compare_against_release
-    ), "test option: head_master or prev_release must be selected"
+    ), "test option: head_master or release_base must be selected"
 
     # release_version = CHVersion.get_release_version_as_dict()
     info = Info()
@@ -321,9 +331,8 @@ def main():
             else:
                 link_for_ref_ch = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
         elif compare_against_release:
-            # TODO:
-            # link_for_ref_ch = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/{release_version['major']}.{release_version['minor']-1}/{release_version['githash']}/build_arm_release/clickhouse"
-            assert False
+            link_for_ref_ch = find_base_release_build(info, "build_arm_release")
+            assert link_for_ref_ch, "reference clickhouse build has not been found"
         else:
             assert False
     elif Utils.is_amd():
@@ -334,13 +343,29 @@ def main():
             else:
                 link_for_ref_ch = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
         elif compare_against_release:
-            # TODO:
-            # link_for_ref_ch = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/{release_version['major']}.{release_version['minor']-1}/{release_version['githash']}/build_amd_release/clickhouse"
-            assert False
+            link_for_ref_ch = find_base_release_build(info, "build_amd_release")
+            assert link_for_ref_ch, "reference clickhouse build has not been found"
         else:
             assert False
     else:
         Utils.raise_with_error(f"Unknown processor architecture")
+
+    if compare_against_release:
+        print("It's a comparison against latest release baseline")
+        print(
+            "Unshallow and Checkout on baseline sha to drop new queries that might be not supported by old version"
+        )
+        reference_sha = info.get_custom_data(
+            "release_branch_base_sha_with_predecessors"
+        )[0]
+        Shell.check(
+            f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin {info.git_branch} ||:", verbose=True
+        )
+        Shell.check(
+            f"rm -rf ./tests/performance && git checkout {reference_sha} ./tests/performance",
+            verbose=True,
+            strict=True,
+        )
 
     test_keyword = args.test
 
@@ -636,7 +661,7 @@ def main():
 
         res = results[-1].is_ok()
 
-    if res and not info.is_local_run:
+    if res and not info.is_local_run and not compare_against_release:
 
         def insert_historical_data():
             cidb = CIDBCluster()
