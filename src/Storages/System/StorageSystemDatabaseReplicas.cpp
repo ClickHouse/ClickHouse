@@ -457,8 +457,7 @@ void StorageSystemDatabaseReplicas::read(
         if (!dynamic_cast<const DatabaseReplicated *>(db_data.get()))
             continue;
 
-        const bool check_access_for_db = !access->isGranted(AccessType::SHOW_DATABASES, db_name);
-        if (need_to_check_access_for_databases && !check_access_for_db)
+        if (need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, db_name))
             continue;
 
         replicated_databases[db_name] = db_data;
