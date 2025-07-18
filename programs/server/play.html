@@ -29,7 +29,6 @@
     Also, it can provide visual indication that credentials are correct.
 
     Nice to have:
-    - resizable columns
     - display totals
     - show/hide the editor
     - check for readonly
@@ -450,6 +449,12 @@
             width: 100%;
             border-spacing: 0;
             background-color: var(--element-background-color);
+            table-layout: fixed;
+        }
+
+        #data-table.transposed
+        {
+            table-layout: auto;
         }
 
         /* Will be displayed when user specified custom format. */
@@ -515,6 +520,20 @@
             display: inline-block;
         }
 
+        .resizer {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 5px;
+            cursor: col-resize;
+            user-select: none;
+            height: 100%;
+        }
+
+        .resizer:hover {
+            background-color: var(--border-color-selected);
+        }
+
         /* The row under mouse pointer is highlight for better legibility. */
         tr:hover
         {
@@ -556,10 +575,11 @@
 
         .row-number
         {
-            width: 1%;
             text-align: right;
+            text-overflow: unset;
             background-color: var(--table-header-color);
             color: var(--misc-text-color);
+            width: var(--row-number-width);
         }
 
         div.empty-result
@@ -1171,23 +1191,10 @@ async function postImpl(posted_request_num, query)
         return;
     }
 
-    if (is_explain_graph) {
-        await renderGraph();
-    } else {
-        if (extremes['min'] && extremes['max']) renderExtremes();
-        if (is_table) transposeTableIfNeeded();
-    }
+    finalizeRendering(query, is_table, is_explain_graph, extremes);
 
-    document.getElementById('check-mark').style.display = 'inline-block';
-    document.getElementById('hourglass').style.display = 'none';
-
-    if (is_raw) {
-        elapsed_ns = 1e6 * (performance.now() - last_query_start);
-    }
-
+    elapsed_ns = 1e6 * (performance.now() - last_query_start);
     updateProgressText();
-    document.documentElement.style.setProperty('--progress', '0');
-    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
 
     if (posted_request_num != request_num) { return; }
 
@@ -1276,21 +1283,10 @@ async function restoreFromHistory(state) {
         updateRaw(state.data);
     }
 
-    if (is_explain_graph) {
-        await renderGraph();
-    } else {
-        if (extremes['min'] && extremes['max']) renderExtremes();
-        if (is_table) transposeTableIfNeeded();
-    }
-
-    document.getElementById('check-mark').style.display = 'inline-block';
-    document.getElementById('hourglass').style.display = 'none';
-
-    if (is_raw) elapsed_ns = state.elapsed_ns;
-
+    finalizeRendering(query, is_table, is_explain_graph, extremes);
+    
+    elapsed_ns = state.elapsed_ns;
     updateProgressText();
-    document.documentElement.style.setProperty('--progress', '0');
-    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
 }
 
 let query_area = document.getElementById('query');
@@ -1405,6 +1401,7 @@ function clear()
     clearElement('error');
     clearElement('progress');
 
+    document.getElementById('data-table').classList.remove('transposed');
     document.getElementById('check-mark').display = 'none';
     document.getElementById('hourglass').display = 'none';
     document.getElementById('stats').innerText = '';
@@ -1531,6 +1528,8 @@ function transposeTableIfNeeded()
     let table = document.getElementById('data-table');
     if (Object.keys(header).length == 0 || table.rows.length > 1 || table.rows[0]?.cells.length <= 5) return;
 
+    table.classList.add('transposed');
+
     let heads = table.tHead.childNodes;
     let values = table.rows[0]?.cells;
     let num_cols = heads.length - 1;
@@ -1563,6 +1562,25 @@ function transposeTableIfNeeded()
     table.removeChild(table.tHead);
     table.removeChild(table.tBodies[0]);
     table.appendChild(new_tbody);
+}
+
+async function finalizeRendering(query, is_table, is_explain_graph, extremes) {
+    if (is_explain_graph) {
+        await renderGraph();
+    } else {
+        if (extremes['min'] && extremes['max']) renderExtremes();
+        if (is_table) transposeTableIfNeeded();
+        if (row_idx > 0) {
+            const width = String(row_idx).length + 2;
+            document.getElementById('data-table').style.setProperty('--row-number-width', `${width}ch`);
+        }
+    }
+
+    document.getElementById('check-mark').style.display = 'inline-block';
+    document.getElementById('hourglass').style.display = 'none';
+
+    document.documentElement.style.setProperty('--progress', '0');
+    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
 }
 
 function update(json, fragment) {
@@ -1652,6 +1670,32 @@ function updateProgress(progress) {
         rows && total_rows ? (100 * rows / total_rows) + '%' : '0');
 }
 
+function appendHeaderResizer(header) {
+    const resizer = document.createElement('div');
+    resizer.className = 'resizer';
+    resizer.addEventListener('mousedown', (e) => {
+        let x = 0;
+        let w = 0;
+
+        const mouseMoveHandler = (e) => {
+            const dx = e.clientX - x;
+            header.style.width = `${w + dx}px`;
+        };
+
+        const mouseUpHandler = () => {
+            document.removeEventListener('mousemove', mouseMoveHandler);
+            document.removeEventListener('mouseup', mouseUpHandler);
+        };
+
+        x = e.clientX;
+        w = header.offsetWidth;
+        document.addEventListener('mousemove', mouseMoveHandler);
+        document.addEventListener('mouseup', mouseUpHandler);
+    });
+
+    header.appendChild(resizer);
+}
+
 function appendHeader(meta) {
     if (meta.length == 0) { return; }
     header = meta;
@@ -1671,6 +1715,7 @@ function appendHeader(meta) {
         type_hint.className = 'type-hint';
         type_hint.appendChild(document.createTextNode(elem.type));
         th.appendChild(type_hint);
+        appendHeaderResizer(th);
         thead.appendChild(th);
 
         column_is_number[elem.name] = !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/);
