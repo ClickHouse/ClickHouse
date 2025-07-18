@@ -155,10 +155,10 @@ GinIndexPostingsListPtr GinIndexPostingsBuilder::deserialize(ReadBuffer & buffer
     }
 }
 
-GinSegmentDictionaryBloomFilter::GinSegmentDictionaryBloomFilter(size_t bits_per_rows_, size_t hashes_)
+GinSegmentDictionaryBloomFilter::GinSegmentDictionaryBloomFilter(size_t bits_per_rows_, size_t num_hashes_)
     : bits_per_row(bits_per_rows_)
-    , hashes(hashes_)
-    , bloom_filter((bits_per_row + sizeof(BloomFilter::UnderType) - 1) / sizeof(BloomFilter::UnderType), hashes, 0)
+    , num_hashes(num_hashes_)
+    , bloom_filter((bits_per_row + sizeof(BloomFilter::UnderType) - 1) / sizeof(BloomFilter::UnderType), num_hashes, 0)
 {
 }
 
@@ -177,23 +177,23 @@ UInt64 GinSegmentDictionaryBloomFilter::serialize(WriteBuffer & write_buffer)
     const size_t filter_size_bytes = bloom_filter.getFilter().size() * sizeof(BloomFilter::UnderType);
 
     writeVarUInt(bits_per_row, write_buffer);
-    writeVarUInt(hashes, write_buffer);
+    writeVarUInt(num_hashes, write_buffer);
     writeVarUInt(filter_size_bytes, write_buffer);
     write_buffer.write(reinterpret_cast<const char *>(bloom_filter.getFilter().data()), filter_size_bytes);
 
-    return getLengthOfVarUInt(bits_per_row) + getLengthOfVarUInt(hashes) + getLengthOfVarUInt(filter_size_bytes) + filter_size_bytes;
+    return getLengthOfVarUInt(bits_per_row) + getLengthOfVarUInt(num_hashes) + getLengthOfVarUInt(filter_size_bytes) + filter_size_bytes;
 }
 
 std::unique_ptr<GinSegmentDictionaryBloomFilter> GinSegmentDictionaryBloomFilter::deserialize(ReadBuffer & read_buffer)
 {
     size_t bits_per_row = 0;
-    size_t hashes = 0;
+    size_t num_hashes = 0;
     size_t filter_size_bytes = 0;
     readVarUInt(bits_per_row, read_buffer);
-    readVarUInt(hashes, read_buffer);
+    readVarUInt(num_hashes, read_buffer);
     readVarUInt(filter_size_bytes, read_buffer);
 
-    auto gin_bloom_filter = std::make_unique<GinSegmentDictionaryBloomFilter>(bits_per_row, hashes);
+    auto gin_bloom_filter = std::make_unique<GinSegmentDictionaryBloomFilter>(bits_per_row, num_hashes);
     read_buffer.readStrict(reinterpret_cast<char *>(gin_bloom_filter->bloom_filter.getFilter().data()), filter_size_bytes);
 
     return gin_bloom_filter;
@@ -440,7 +440,7 @@ void GinIndexStore::writeSegment()
     }
 
     /// Write bloom filter
-    current_segment.filter_start_offset += bloom_filter.serialize(*bloom_filter_file_stream);
+    current_segment.bloom_filter_start_offset += bloom_filter.serialize(*bloom_filter_file_stream);
 
     /// Write item dictionary
     std::vector<UInt8> buffer;
@@ -554,7 +554,7 @@ void GinIndexStoreDeserializer::readSegments()
             auto seg_dict = std::make_shared<GinSegmentDictionary>();
             seg_dict->postings_start_offset = segments[i].postings_start_offset;
             seg_dict->dict_start_offset = segments[i].dict_start_offset;
-            seg_dict->filter_start_offset = segments[i].filter_start_offset;
+            seg_dict->bloom_filter_start_offset = segments[i].bloom_filter_start_offset;
             store->segment_dictionaries[segments[i].segment_id] = seg_dict;
         }
     }
@@ -585,7 +585,7 @@ void GinIndexStoreDeserializer::readSegmentDictionary(UInt32 segment_id)
 
             /// Set file pointer of filter file
             assert(bloom_filter_file_stream != nullptr);
-            bloom_filter_file_stream->seek(it->second->filter_start_offset, SEEK_SET);
+            bloom_filter_file_stream->seek(it->second->bloom_filter_start_offset, SEEK_SET);
             seg_dict->bloom_filter = GinSegmentDictionaryBloomFilter::deserialize(*bloom_filter_file_stream);
             break;
         default:

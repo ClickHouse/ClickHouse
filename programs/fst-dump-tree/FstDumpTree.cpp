@@ -200,7 +200,7 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
                 auto seg_dict = std::make_shared<DB::GinSegmentDictionary>();
                 seg_dict->postings_start_offset = segments[i].postings_start_offset;
                 seg_dict->dict_start_offset = segments[i].dict_start_offset;
-                seg_dict->filter_start_offset = segments[i].filter_start_offset;
+                seg_dict->bloom_filter_start_offset = segments[i].bloom_filter_start_offset;
                 segment_dictionaries[segments[i].segment_id] = seg_dict;
             }
         }
@@ -243,17 +243,17 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
                         "[Segment {}]: term dictionary (FST) offset = {}, bloom filter offset = {}, postings offset = {}",
                         segment_id,
                         segment_dict->dict_start_offset,
-                        segment_dict->filter_start_offset,
+                        segment_dict->bloom_filter_start_offset,
                         segment_dict->postings_start_offset);
 
                     /// Read bloom filter
-                    filter_read_buffer->seek(segment_dict->filter_start_offset, SEEK_SET);
+                    filter_read_buffer->seek(segment_dict->bloom_filter_start_offset, SEEK_SET);
                     segment_dict->bloom_filter = DB::GinSegmentDictionaryBloomFilter::deserialize(*filter_read_buffer);
 
                     fmt::println(
                         "[Segment {}]: bloom filter size = {}",
                         segment_id,
-                        formatReadableSizeWithBinarySuffix(filter_read_buffer->getPosition() - segment_dict->filter_start_offset));
+                        formatReadableSizeWithBinarySuffix(filter_read_buffer->getPosition() - segment_dict->bloom_filter_start_offset));
 
 
                     /// Read FST size header

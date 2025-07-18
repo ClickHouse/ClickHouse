@@ -98,7 +98,7 @@ struct GinIndexSegment
     UInt64 dict_start_offset = 0;
 
     /// .gin_bflt file offset of this segment's bloom filter
-    UInt64 filter_start_offset = 0;
+    UInt64 bloom_filter_start_offset = 0;
 };
 
 /// This class encapsulates an instance of `BloomFilter` class.
@@ -106,7 +106,7 @@ struct GinIndexSegment
 class GinSegmentDictionaryBloomFilter
 {
 public:
-    explicit GinSegmentDictionaryBloomFilter(size_t bits_per_rows_, size_t hashes_);
+    GinSegmentDictionaryBloomFilter(size_t bits_per_rows_, size_t num_hashes_);
 
     /// Adds the token into `BloomFilter`
     void add(std::string_view token);
@@ -117,14 +117,14 @@ public:
     /// Serialize the BloomFilter into WriteBuffer
     UInt64 serialize(WriteBuffer & write_buffer);
 
-    /// Deerialize the BloomFilter from ReadBuffer
+    /// Deserialize the BloomFilter from ReadBuffer
     static std::unique_ptr<GinSegmentDictionaryBloomFilter> deserialize(ReadBuffer & read_buffer);
 
 private:
     /// Number of bits are used in BloomFilter
     const UInt64 bits_per_row;
     /// Number of hash functions used in BloomFilter
-    const UInt64 hashes;
+    const UInt64 num_hashes;
     /// Encapsulated BloomFilter instance
     BloomFilter bloom_filter;
 };
@@ -138,7 +138,7 @@ struct GinSegmentDictionary
     UInt64 dict_start_offset;
 
     /// .gin_bflt file offset of this segment's bloom filter
-    UInt64 filter_start_offset;
+    UInt64 bloom_filter_start_offset;
 
     /// (Minimized) Finite State Transducer, which can be viewed as a map of <term, offset>, where offset is the
     /// offset to the term's posting list in postings list file
