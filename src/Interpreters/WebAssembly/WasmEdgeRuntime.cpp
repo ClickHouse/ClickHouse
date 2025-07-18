@@ -1,4 +1,9 @@
 #include <Interpreters/WebAssembly/WasmEdgeRuntime.h>
+#include "config.h"
+
+#include <Common/Exception.h>
+
+#if USE_WASMEDGE
 
 #include <Interpreters/WebAssembly/HostApi.h>
 #include <Interpreters/WebAssembly/WasmMemory.h>
@@ -677,3 +682,28 @@ void WasmEdgeRuntime::setLogLevel(LogsLevel level)
 
 
 }
+
+#else
+
+namespace DB::ErrorCodes
+{
+extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace DB::WebAssembly
+{
+
+WasmEdgeRuntime::WasmEdgeRuntime() = default;
+
+std::unique_ptr<WasmModule> WasmEdgeRuntime::createModule(std::string_view /* wasm_code */) const
+{
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "WasmEdge support is disabled");
+}
+
+void WasmEdgeRuntime::setLogLevel(LogsLevel /* level */)
+{
+}
+
+}
+
+#endif

@@ -1,6 +1,7 @@
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
 
 #include <ranges>
+#include <base/hex.h>
 
 #include <Columns/ColumnVector.h>
 
@@ -313,7 +314,7 @@ public:
         auto wmm = std::make_unique<WasmMemoryManagerV1>(compartment);
 
         WasmTypedMemoryHolder<WasmBuffer> wasm_data = nullptr;
-        if (block)
+        if (!block.empty())
         {
             WriteBufferFromOwnString buf;
             auto out = context->getOutputFormat(format_name, buf, block.cloneEmpty());

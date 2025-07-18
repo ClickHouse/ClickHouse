@@ -3359,7 +3359,7 @@ void Context::initWasmModuleManager()
         return;
 
     auto user_scripts_disk = std::make_shared<DiskLocal>("user_scripts", shared->user_scripts_path);
-    user_scripts_disk->startup(shared_from_this(), /* skip_access_check */ true);
+    user_scripts_disk->startup(/* skip_access_check */ true);
     shared->wasm_module_manager = std::make_unique<WasmModuleManager>(std::move(user_scripts_disk), "");
 }
 

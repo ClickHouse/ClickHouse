@@ -1,17 +1,22 @@
+#include <Interpreters/WebAssembly/WasmTimeRuntime.h>
+#include "config.h"
+
+#include <Common/Exception.h>
+
+#if USE_WASMTIME
+
 #include <cstdint>
 #include <ranges>
 #include <span>
 #include <variant>
-#include <Interpreters/WebAssembly/WasmTimeRuntime.h>
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 #include <wasmtime.hh>
-#include "Common/ElapsedTimeProfileEventIncrement.h"
-#include "Common/logger_useful.h"
-#include <Common/Exception.h>
-#include "Interpreters/WebAssembly/HostApi.h"
-#include "Interpreters/WebAssembly/WasmEngine.h"
-#include "Interpreters/WebAssembly/WasmTypes.h"
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/logger_useful.h>
+#include <Interpreters/WebAssembly/HostApi.h>
+#include <Interpreters/WebAssembly/WasmEngine.h>
+#include <Interpreters/WebAssembly/WasmTypes.h>
 
 namespace ProfileEvents
 {
@@ -524,3 +529,28 @@ std::unique_ptr<WasmModule> WasmTimeRuntime::createModule(std::string_view wasm_
 };
 
 }
+
+#else
+
+namespace DB::ErrorCodes
+{
+extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace DB::WebAssembly
+{
+
+WasmTimeRuntime::WasmTimeRuntime() = default;
+
+std::unique_ptr<WasmModule> WasmTimeRuntime::createModule(std::string_view /* wasm_code */) const
+{
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Wasmtime support is disabled");
+}
+
+void WasmTimeRuntime::setLogLevel(LogsLevel /* level */)
+{
+}
+
+}
+
+#endif

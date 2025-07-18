@@ -44,10 +44,8 @@ ASTPtr ASTCreateWasmFunctionQuery::clone() const
 
 void ASTCreateWasmFunctionQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    const auto *current_hilite = settings.hilite ? hilite_keyword : "";
-    const auto *reset_hilite = settings.hilite ? hilite_none : "";
 
-    ostr << current_hilite << "CREATE ";
+    ostr << "CREATE ";
 
     if (or_replace)
         ostr << "OR REPLACE ";
@@ -57,55 +55,54 @@ void ASTCreateWasmFunctionQuery::formatImpl(WriteBuffer & ostr, const FormatSett
     if (if_not_exists)
         ostr << "IF NOT EXISTS ";
 
-    ostr << reset_hilite;
 
     if (function_name_ast)
         function_name_ast->format(ostr, settings, state, frame);
 
     formatOnCluster(ostr, settings);
 
-    ostr << current_hilite << " LANGUAGE WASM" << reset_hilite;
+    ostr << " LANGUAGE WASM";
 
     if (arguments_ast)
     {
-        ostr << current_hilite << " ARGUMENTS " << reset_hilite << "(";
+        ostr << " ARGUMENTS " << "(";
         arguments_ast->format(ostr, settings, state, frame);
-        ostr << current_hilite << ")" << reset_hilite;
+        ostr << ")";
     }
 
     if (result_type_ast)
     {
-        ostr << current_hilite << " RETURNS " << reset_hilite;
+        ostr << " RETURNS ";
         result_type_ast->format(ostr, settings, state, frame);
     }
 
     if (module_name_ast)
     {
-        ostr << current_hilite << " FROM " << reset_hilite;
+        ostr << " FROM ";
         module_name_ast->format(ostr, settings, state, frame);
 
         if (source_function_name_ast)
         {
-            ostr << current_hilite << " :: " << reset_hilite;
+            ostr << " :: ";
             source_function_name_ast->format(ostr, settings, state, frame);
         }
     }
 
     if (module_hash_ast)
     {
-        ostr << current_hilite << " SHA256_HASH " << reset_hilite;
+        ostr << " SHA256_HASH ";
         module_hash_ast->format(ostr, settings, state, frame);
     }
 
     if (abi_ast)
     {
-        ostr << current_hilite << " ABI " << reset_hilite;
+        ostr << " ABI ";
         abi_ast->format(ostr, settings, state, frame);
     }
 
     if (!function_settings.empty())
     {
-        ostr << current_hilite << " SETTINGS " << reset_hilite;
+        ostr << " SETTINGS ";
 
         auto settings_changes_ast = std::make_shared<ASTSetQuery>();
         settings_changes_ast->changes = function_settings;

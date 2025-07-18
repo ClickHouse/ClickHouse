@@ -44,8 +44,8 @@ ColumnsDescription StorageSystemWasmModules::getColumnsDescription()
 class WasmModulesSink final : public SinkToStorage
 {
 public:
-    WasmModulesSink(Block header_, WasmModuleManager & wasm_module_manager_)
-        : SinkToStorage(header_)
+    WasmModulesSink(SharedHeader header_, WasmModuleManager & wasm_module_manager_)
+        : SinkToStorage(std::move(header_))
         , wasm_module_manager(wasm_module_manager_)
     {}
 
@@ -82,12 +82,12 @@ StorageSystemWasmModules::StorageSystemWasmModules(const StorageID & table_id_, 
 
 SinkToStoragePtr StorageSystemWasmModules::write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr /* context */, bool /*async_insert*/)
 {
-    Block write_header;
+    auto write_header = std::make_shared<Block>();
     for (const auto & [name, type] : StorageSystemWasmModules::getColumnsDescription().getInsertable())
     {
-        write_header.insert(ColumnWithTypeAndName(type, name));
+        write_header->insert(ColumnWithTypeAndName(type, name));
     }
-    return std::make_shared<WasmModulesSink>(write_header, wasm_module_manager);
+    return std::make_shared<WasmModulesSink>(std::move(write_header), wasm_module_manager);
 }
 
 void StorageSystemWasmModules::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8> columns_mask) const
