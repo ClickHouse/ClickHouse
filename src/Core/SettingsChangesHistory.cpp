@@ -42,6 +42,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.8",
         {
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
+            {"output_format_parquet_max_dictionary_size", 1024 * 1024, 1024 * 1024, "New setting"},
+            {"input_format_parquet_use_native_reader_v3", false, true, "New setting"},
+            {"input_format_parquet_memory_low_watermark", 2ul << 20, 2ul << 20, "New setting"},
+            {"input_format_parquet_memory_high_watermark", 4ul << 30, 4ul << 30, "New setting"},
+            {"input_format_parquet_page_filter_push_down", true, true, "New setting (no effect when input_format_parquet_use_native_reader_v3 is disabled)"},
+            {"input_format_parquet_use_offset_index", true, true, "New setting (no effect when input_format_parquet_use_native_reader_v3 is disabled)"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
@@ -52,12 +58,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"cluster_function_process_archive_on_multiple_nodes", true, true, "New setting"},
             {"enable_vector_similarity_index", false, false, "Added an alias for setting `allow_experimental_vector_similarity_index`"},
             {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
-            {"output_format_parquet_max_dictionary_size", 1024 * 1024, 1024 * 1024, "New setting"},
-            {"input_format_parquet_use_native_reader_v3", false, true, "New setting"},
-            {"input_format_parquet_memory_low_watermark", 2ul << 20, 2ul << 20, "New setting"},
-            {"input_format_parquet_memory_high_watermark", 4ul << 30, 4ul << 30, "New setting"},
-            {"input_format_parquet_page_filter_push_down", true, true, "New setting (no effect when input_format_parquet_use_native_reader_v3 is disabled)"},
-            {"input_format_parquet_use_offset_index", true, true, "New setting (no effect when input_format_parquet_use_native_reader_v3 is disabled)"},
             {"output_format_json_map_as_array_of_tuples", false, false, "New setting"},
             {"input_format_json_map_as_array_of_tuples", false, false, "New setting"},
             {"parallel_distributed_insert_select", 0, 2, "Enable parallel distributed insert select by default"},
