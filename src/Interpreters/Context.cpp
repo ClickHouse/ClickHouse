@@ -4969,7 +4969,6 @@ std::shared_ptr<PartLog> Context::getPartLog(const String & part_database) const
     return shared->system_logs->part_log;
 }
 
-
 std::shared_ptr<TraceLog> Context::getTraceLog() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -5158,6 +5157,15 @@ std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
     if (!shared->system_logs)
         return {};
     return shared->system_logs->blob_storage_log;
+}
+
+std::shared_ptr<DeadLetterQueue> Context::getDeadLetterQueue() const
+{
+    SharedLockGuard lock(shared->mutex);
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->dead_letter_queue;
 }
 
 SystemLogs Context::getSystemLogs() const
