@@ -97,6 +97,7 @@ static struct InitFiu
     REGULAR(plain_object_storage_copy_fail_on_file_move) \
     REGULAR(database_replicated_delay_recovery) \
     REGULAR(database_replicated_delay_entry_execution) \
+    REGULAR(remove_merge_tree_part_delay) \
     REGULAR(plain_object_storage_copy_temp_source_file_fail_on_file_move) \
     REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move) \
     REGULAR(output_format_sleep_on_progress) \
