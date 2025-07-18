@@ -1834,3 +1834,17 @@ def test_block_system_database_replicas(started_cluster):
     assert (
         main_node.query("SELECT is_readonly FROM system.database_replicas WHERE database='db_11'") == ""
     )
+
+
+def test_implicit_index(started_cluster):
+    competing_node.query("DROP DATABASE IF EXISTS implicit_index")
+    dummy_node.query("DROP DATABASE IF EXISTS implicit_index")
+
+    competing_node.query(
+        "CREATE DATABASE implicit_index ENGINE = Replicated('/clickhouse/databases/implicit_index', 'shard1', 'replica1');"
+        "CREATE TABLE implicit_index.t0 (c0 Int) ENGINE = ReplicatedMergeTree() ORDER BY tuple() SETTINGS add_minmax_index_for_numeric_columns = 1;"
+        "ALTER TABLE implicit_index.t0 MODIFY SETTING replicated_can_become_leader = 0;"
+    )
+    dummy_node.query(
+        "CREATE DATABASE implicit_index ENGINE = Replicated('/clickhouse/databases/implicit_index', 'shard1', 'replica2');"
+        "SYSTEM SYNC DATABASE REPLICA implicit_index;"
