@@ -787,8 +787,6 @@ public:
     DataPartsVector grabActivePartsToRemoveForDropRange(
         MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock);
 
-    void checkChecksumsFileIsConsistentWithFileSystem(MutableDataPartPtr & part);
-
     /// This wrapper is required to restrict access to parts in Deleting state
     class PartToRemoveFromZooKeeper
     {
