@@ -26,7 +26,7 @@ namespace DB
 
         ~RedisDictionarySource() override;
 
-        QueryPipeline loadAll() override;
+        BlockIO loadAll() override;
 
         QueryPipeline loadUpdatedAll() override
         {
