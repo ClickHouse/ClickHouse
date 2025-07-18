@@ -1,11 +1,11 @@
 ---
 description: 'Documentation for cluster discovery in ClickHouse'
-sidebar_label: 'Cluster Discovery'
+sidebar_label: 'Cluster discovery'
 slug: /operations/cluster-discovery
-title: 'Cluster Discovery'
+title: 'Cluster discovery'
 ---
 
-# Cluster Discovery
+# Cluster discovery
 
 ## Overview {#overview}
 
@@ -25,9 +25,9 @@ To enable it include the `allow_experimental_cluster_discovery` setting in your 
 ```
 :::
 
-## Remote Servers Configuration {#remote-servers-configuration}
+## Remote servers configuration {#remote-servers-configuration}
 
-### Traditional Manual Configuration {#traditional-manual-configuration}
+### Traditional manual configuration {#traditional-manual-configuration}
 
 Traditionally, in ClickHouse, each shard and replica in the cluster needed to be manually specified in the configuration:
 
@@ -59,7 +59,7 @@ Traditionally, in ClickHouse, each shard and replica in the cluster needed to be
 
 ```
 
-### Using Cluster Discovery {#using-cluster-discovery}
+### Using cluster discovery {#using-cluster-discovery}
 
 With Cluster Discovery, rather than defining each node explicitly, you simply specify a path in ZooKeeper. All nodes that register under this path in ZooKeeper will be automatically discovered and added to the cluster.
 
@@ -164,7 +164,7 @@ Limitations:
 
 
 
-## Use-Cases and Limitations {#use-cases-and-limitations}
+## Use cases and limitations {#use-cases-and-limitations}
 
 As nodes are added or removed from the specified ZooKeeper path, they are automatically discovered or removed from the cluster without the need for configuration changes or server restarts.
 

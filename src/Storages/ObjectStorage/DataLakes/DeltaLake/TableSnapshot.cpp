@@ -20,10 +20,10 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 
-#include "getSchemaFromSnapshot.h"
-#include "PartitionPruner.h"
-#include "KernelUtils.h"
-#include "ExpressionVisitor.h"
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/PartitionPruner.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/ExpressionVisitor.h>
 #include <delta_kernel_ffi.hpp>
 #include <fmt/ranges.h>
 

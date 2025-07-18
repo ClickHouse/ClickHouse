@@ -198,6 +198,14 @@ $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @
 └───┘
 ```
 
+You can use POST method with parameterized queries. The parameters are specified using curly braces with the parameter name and type, like `{name:Type}`. The parameter values are passed with the `param_name`:
+
+```bash
+$ curl -X POST -F 'query=select {p1:UInt8} + {p2:UInt8}' -F "param_p1=3" -F "param_p2=4" 'http://localhost:8123/'
+
+7
+```
+
 ## Insert queries over HTTP/HTTPS {#insert-queries}
 
 The `POST` method of transmitting data is necessary for `INSERT` queries. In this case, you can write the beginning of the query in the URL parameter, and use POST to pass the data to insert. The data to insert could be, for example, a tab-separated dump from MySQL. In this way, the `INSERT` query replaces `LOAD DATA LOCAL INFILE` from MySQL.
@@ -326,7 +334,7 @@ curl -sS "http://localhost:8123/?enable_http_compression=1" \
 2
 ```
 
-## Default Database {#default-database}
+## Default database {#default-database}
 
 You can use the `database` URL parameter or the `X-ClickHouse-Database` header to specify the default database.
 
@@ -444,7 +452,7 @@ The following optional parameters exist:
 
 The HTTP interface allows passing external data (external temporary tables) for querying. For more information, see ["External data for query processing"](/engines/table-engines/special/external-data).
 
-## Response Buffering {#response-buffering}
+## Response buffering {#response-buffering}
 
 Response buffering can be enabled on the server-side. The following URL parameters are provided for this purpose:
 - `buffer_size`
@@ -526,7 +534,7 @@ You can mitigate this problem by enabling `wait_end_of_query=1` ([Response Buffe
 The only way to catch all errors is to analyze the HTTP body before parsing it using the required format.
 :::
 
-## Queries with Parameters {#cli-queries-with-parameters}
+## Queries with parameters {#cli-queries-with-parameters}
 
 You can create a query with parameters and pass values for them from the corresponding HTTP request parameters. For more information, see [Queries with Parameters for CLI](../interfaces/cli.md#cli-queries-with-parameters).
 
@@ -945,7 +953,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 * Connection #0 to host localhost left intact
 ```
 
-## HTTP Response Headers {#http-response-headers}
+## HTTP response headers {#http-response-headers}
 
 ClickHouse allows you to configure custom HTTP response headers that can be applied to any kind of handler that can be configured. These headers can be set using the `http_response_headers` setting, which accepts key-value pairs representing header names and their values. This feature is particularly useful for implementing custom security headers, CORS policies, or any other HTTP header requirements across your ClickHouse HTTP interface.
 

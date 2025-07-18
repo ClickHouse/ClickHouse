@@ -14,7 +14,7 @@ The engine is based on the [Atomic](../../engines/database-engines/atomic.md) en
 
 One ClickHouse server can have multiple replicated databases running and updating at the same time. But there can't be multiple replicas of the same replicated database.
 
-## Creating a Database {#creating-a-database}
+## Creating a database {#creating-a-database}
 ```sql
 CREATE DATABASE testdb ENGINE = Replicated('zoo_path', 'shard_name', 'replica_name') [SETTINGS ...]
 ```
@@ -27,7 +27,7 @@ CREATE DATABASE testdb ENGINE = Replicated('zoo_path', 'shard_name', 'replica_na
 
 For [ReplicatedMergeTree](/engines/table-engines/mergetree-family/replication) tables if no arguments provided, then default arguments are used: `/clickhouse/tables/{uuid}/{shard}` and `{replica}`. These can be changed in the server settings [default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path) and [default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name). Macro `{uuid}` is unfolded to table's uuid, `{shard}` and `{replica}` are unfolded to values from server config, not from database engine arguments. But in the future, it will be possible to use `shard_name` and `replica_name` of Replicated database.
 
-## Specifics and Recommendations {#specifics-and-recommendations}
+## Specifics and recommendations {#specifics-and-recommendations}
 
 DDL queries with `Replicated` database work in a similar way to [ON CLUSTER](../../sql-reference/distributed-ddl.md) queries, but with minor differences.
 
@@ -43,7 +43,7 @@ When creating a new replica of the database, this replica creates tables by itse
 
 In case you need only configure a cluster without maintaining table replication, refer to [Cluster Discovery](../../operations/cluster-discovery.md) feature.
 
-## Usage Example {#usage-example}
+## Usage example {#usage-example}
 
 Creating a cluster with three hosts:
 

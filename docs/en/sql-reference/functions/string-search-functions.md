@@ -1,7 +1,6 @@
 ---
 description: 'Documentation for Functions for Searching in Strings'
-sidebar_label: 'Searching in Strings'
-sidebar_position: 160
+sidebar_label: 'String search'
 slug: /sql-reference/functions/string-search-functions
 title: 'Functions for Searching in Strings'
 ---
@@ -775,7 +774,7 @@ searchAny(input, ['needle1', 'needle2', ..., 'needleN'])
 - `needles` — tokens to be searched and supports a max of 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 :::note
-This function must be used only with a [full-text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
+This function must be used only with a [text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
 The input data is tokenized by the tokenizer from the index definition.
 :::
 
@@ -834,7 +833,7 @@ searchAll(input, ['needle1', 'needle2', ..., 'needleN'])
 - `needles` — tokens to be searched and supports a max of 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
 
 :::note
-This function must be used only with a [full-text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
+This function must be used only with a [text index][/engines/table-engines/mergetree-family/invertedindexes.md] column.
 The input data is tokenized by the tokenizer from the index definition.
 :::
 

@@ -1,7 +1,5 @@
 #include <Dictionaries/CacheDictionaryUpdateQueue.h>
 
-#include <Dictionaries/CacheDictionaryUpdateQueue.h>
-
 #include <Common/CurrentMetrics.h>
 #include <Common/setThreadName.h>
 
