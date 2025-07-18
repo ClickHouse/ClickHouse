@@ -7,6 +7,14 @@
 namespace BuzzHouse
 {
 
+enum class DumpOracleStrategy
+{
+    DUMP_TABLE = 1,
+    OPTIMIZE = 2,
+    REATTACH = 3,
+    BACKUP_RESTORE = 4
+};
+
 class QueryOracle
 {
 private:
@@ -28,6 +36,9 @@ private:
     void addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, uint32_t ncols, SelectStatementCore * ssc) const;
     void
     insertOnTableOrCluster(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, bool remote, TableOrFunction * tof) const;
+    void generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, bool test_content, const SQLTable & t, SQLQuery & sq2);
+    void
+    generateImportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const;
 
 public:
     explicit QueryOracle(const FuzzConfig & ffc)
@@ -52,11 +63,14 @@ public:
     void generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
 
     /// Dump and read table oracle
-    void dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1);
-    void generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, bool test_content, const SQLTable & t, SQLQuery & sq2);
-    void dumpOracleIntermediateStep(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, bool use_optimize, SQLQuery & sq3);
-    void
-    generateImportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const;
+    void dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, bool test_content, const SQLTable & t, SQLQuery & sq1);
+    void dumpOracleIntermediateSteps(
+        RandomGenerator & rg,
+        StatementGenerator & gen,
+        const SQLTable & t,
+        DumpOracleStrategy strategy,
+        bool test_content,
+        std::vector<SQLQuery> & intermediate_queries);
 
     /// Run query with different settings oracle
     bool generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1);
