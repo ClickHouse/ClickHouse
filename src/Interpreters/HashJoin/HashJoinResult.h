@@ -44,6 +44,7 @@ private:
     ScatteredBlock::IndexesPtr new_selector;
 
     size_t next_row = 0;
+    size_t next_selector_it = 0;
     size_t next_row_ref = 0;
     size_t num_joined_rows = 0;
 };

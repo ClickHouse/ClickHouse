@@ -1797,11 +1797,10 @@ void HashJoin::onBuildPhaseFinish()
         }
     }
 
-    if (all_values_unique && strictness == JoinStrictness::All && kind == JoinKind::Inner)
+    if (all_values_unique && strictness == JoinStrictness::All && isInnerOrLeft(kind))
     {
         strictness = JoinStrictness::RightAny;
         all_join_was_promoted_to_right_any = true;
-
         LOG_DEBUG(log, "Promoting join strictness to RightAny, because all values in the right table are unique");
     }
 }
