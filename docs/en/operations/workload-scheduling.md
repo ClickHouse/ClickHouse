@@ -364,7 +364,7 @@ Do not set `throw_on_unknown_workload` to `true` unless `CREATE WORKLOAD default
 *[mutation_workload](/operations/server-configuration-parameters/settings.md#mutation_workload) global server setting
 *[workload_path](/operations/server-configuration-parameters/settings.md#workload_path) global server setting
 *[workload_zookeeper_path](/operations/server-configuration-parameters/settings.md#workload_zookeeper_path) global server setting
-*[cpu_slot_preemption](/operations/server-configuration-parameters/settings.md#cpu_slot_preemption) global server setting
-*[cpu_slot_quantum_ns](/operations/server-configuration-parameters/settings.md#cpu_slot_quantum_ns) global server setting
-*[cpu_slot_preemption_timeout_ms](/operations/server-configuration-parameters/settings.md#cpu_slot_preemption_timeout_ms) global server setting
+*[cpu_slot_preemption](/operations/server-configuration-parameters/settings/#cpu_slot_preemption) global server setting
+*[cpu_slot_quantum_ns](/operations/server-configuration-parameters/settings/#cpu_slot_quantum_ns) global server setting
+*[cpu_slot_preemption_timeout_ms](/operations/server-configuration-parameters/settings/#cpu_slot_preemption_timeout_ms) global server setting
 
