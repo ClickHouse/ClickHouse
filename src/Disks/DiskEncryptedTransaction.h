@@ -1,11 +1,9 @@
 #pragma once
 
-#include <IO/ReadBufferFromFileBase.h>
-#include <config.h>
+#include "config.h"
 
 #if USE_SSL
 
-#include <Common/JemallocNodumpSTLAllocator.h>
 #include <Disks/IDiskTransaction.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFile.h>
@@ -20,17 +18,17 @@ struct DiskEncryptedSettings
 {
     DiskPtr wrapped_disk;
     String disk_path;
-    NoDumpString current_key;
+    String current_key;
     UInt128 current_key_fingerprint;
     FileEncryption::Algorithm current_algorithm;
-    std::unordered_map<UInt128 /* fingerprint */, NoDumpString /* key */> all_keys;
+    std::unordered_map<UInt128 /* fingerprint */, String /* key */> all_keys;
 
     /// Returns an encryption key found by its fingerprint.
-    NoDumpString findKeyByFingerprint(UInt128 key_fingerprint, const String & path_for_logs) const;
+    String findKeyByFingerprint(UInt128 key_fingerprint, const String & path_for_logs) const;
 };
 
 
-class DiskEncryptedTransaction : public IDiskTransaction, public std::enable_shared_from_this<DiskEncryptedTransaction>
+class DiskEncryptedTransaction : public IDiskTransaction
 {
 public:
     static String wrappedPath(const String disk_path, const String & path)
@@ -253,37 +251,9 @@ public:
         delegate_transaction->truncateFile(wrapped_path, target_size);
     }
 
-    std::vector<std::string> listUncommittedDirectoryInTransaction(const std::string & path) const override
-    {
-        auto wrapped_path = wrappedPath(path);
-        return delegate_transaction->listUncommittedDirectoryInTransaction(wrapped_path);
-    }
-
-    std::unique_ptr<ReadBufferFromFileBase> readUncommittedFileInTransaction(
-        const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override
-    {
-        auto wrapped_path = wrappedPath(path);
-        return delegate_transaction->readUncommittedFileInTransaction(wrapped_path, settings, read_hint, file_size);
-    }
-
-    bool isTransactional() const override
-    {
-        return delegate_transaction->isTransactional();
-    }
-
-    void validateTransaction(std::function<void (IDiskTransaction&)> check_function) override
-    {
-        auto wrapped = [tx = shared_from_this(), moved_func = std::move(check_function)] (IDiskTransaction&)
-        {
-            moved_func(*tx);
-        };
-        delegate_transaction->validateTransaction(std::move(wrapped));
-    }
 
 private:
+
     String wrappedPath(const String & path) const
     {
         return wrappedPath(disk_path, path);

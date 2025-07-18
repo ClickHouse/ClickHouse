@@ -39,8 +39,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "25.8",
+        {
+            {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
+        });
         addSettingsChanges(settings_changes_history, "25.7",
         {
+            /// RELEASE CLOSED
             {"correlated_subqueries_substitute_equivalent_expressions", false, true, "New setting to correlated subquery planning optimization."},
             {"function_date_trunc_return_type_behavior", 0, 0, "Add new setting to preserve old behaviour of dateTrunc function"},
             {"output_format_parquet_geometadata", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."},
@@ -57,6 +62,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             {"output_format_parquet_enum_as_byte_array", false, false, "Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM"},
             {"distributed_plan_force_shuffle_aggregation", 0, 0, "New experimental setting"},
+            {"allow_experimental_insert_into_iceberg", false, false, "New setting."},
+            /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
@@ -774,9 +781,13 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "25.7",
+        addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
 
+        });
+        addSettingsChanges(merge_tree_settings_changes_history, "25.7",
+        {
+            /// RELEASE CLOSED
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.6",
         {
