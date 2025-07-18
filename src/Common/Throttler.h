@@ -81,7 +81,7 @@ private:
     const UInt64 limit{0}; /// 0 - not limited.
     const char * limit_exceeded_exception_message = nullptr;
     mutable std::mutex mutex;
-    std::atomic<UInt64> block_count{0}; // number of threads currently under throttling
+    std::atomic<UInt64> block_count{0}; // Number of threads currently under throttling
     double tokens{0}; /// Amount of tokens available in token bucket. Updated in `throttle` method.
     UInt64 prev_ns{0}; /// Previous `throttle` call time (in nanoseconds).
 
