@@ -184,7 +184,7 @@ def main():
         config_installs_args += " --no-azure"
 
     if (is_azure_storage or is_s3_storage) and is_encrypted_storage:
-        config_isntalls_args += " --encrypted-storage"
+        config_installs_args += " --encrypted-storage"
         runner_options += f" --encrypted-storage"
 
     ch_path = args.ch_path
