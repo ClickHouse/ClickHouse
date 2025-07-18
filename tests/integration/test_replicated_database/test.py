@@ -1848,3 +1848,4 @@ def test_implicit_index(started_cluster):
     dummy_node.query(
         "CREATE DATABASE implicit_index ENGINE = Replicated('/clickhouse/databases/implicit_index', 'shard1', 'replica2');"
         "SYSTEM SYNC DATABASE REPLICA implicit_index;"
+    )
