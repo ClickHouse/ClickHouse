@@ -312,7 +312,8 @@ class JobConfigs:
             "amd_debug, distributed plan, s3 storage, parallel",
             "amd_debug, distributed plan, s3 storage, sequential",
             "amd_tsan, s3 storage, parallel",
-            "amd_tsan, s3 storage, sequential",
+            "amd_tsan, s3 storage, sequential, 1/2",
+            "amd_tsan, s3 storage, sequential, 2/2",
             "arm_binary, parallel",
             "arm_binary, sequential",
         ],
@@ -341,7 +342,8 @@ class JobConfigs:
             RunnerLabels.FUNC_TESTER_AMD,  # amd_debug, distributed plan, s3 storage, parallel
             RunnerLabels.FUNC_TESTER_AMD,  # amd_debug, distributed plan, s3 storage, sequential
             RunnerLabels.FUNC_TESTER_AMD,  # amd_tsan, s3 storage, parallel
-            RunnerLabels.FUNC_TESTER_AMD,  # amd_tsan, s3 storage, sequential
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_tsan, s3 storage, 1/2, sequential
+            RunnerLabels.FUNC_TESTER_AMD,  # amd_tsan, s3 storage, 2/2, sequential
             RunnerLabels.FUNC_TESTER_ARM,  # arm_binary, parallel
             RunnerLabels.FUNC_TESTER_ARM,  # arm_binary, sequential
         ],
@@ -420,7 +422,10 @@ class JobConfigs:
             ],  # amd_tsan, s3 storage, parallel
             [
                 ArtifactNames.CH_AMD_TSAN,
-            ],  # amd_tsan, s3 storage, sequential
+            ],  # amd_tsan, s3 storage, 1/2, sequential
+            [
+                ArtifactNames.CH_AMD_TSAN,
+            ],  # amd_tsan, s3 storage, 2/2, sequential
             [
                 ArtifactNames.CH_ARM_BINARY,
             ],  # arm_binary, parallel
