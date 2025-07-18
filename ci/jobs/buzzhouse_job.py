@@ -103,6 +103,13 @@ def main():
         )
         res = results[-1].is_ok()
 
+        Result.create_from(
+            results=results,
+            stopwatch=stop_watch,
+            files=[buzz_config_file, log_file],
+            info=results[-1].info(),
+        ).complete_job()
+
     Result.create_from(results=results, stopwatch=stop_watch, files=[]).complete_job()
 
 
