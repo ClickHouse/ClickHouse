@@ -1,4 +1,5 @@
 #include <Client/AI/AIClientFactory.h>
+#include <Client/AI/AIPrompts.h>
 #include <Client/AI/AISQLGenerator.h>
 #include <Client/AI/AIToolExecutionDisplay.h>
 #include <base/terminalColors.h>
@@ -13,10 +14,10 @@ extern const int LOGICAL_ERROR;
 extern const int NETWORK_ERROR;
 }
 
-AISQLGenerator::AISQLGenerator(const AIConfiguration & config_, QueryExecutor executor, std::ostream & output_stream_)
+AISQLGenerator::AISQLGenerator(const AIConfiguration & config_, ai::Client client_, QueryExecutor executor, std::ostream & output_stream_)
     : config(config_)
-    , client(AIClientFactory::createClient(config))
-    , schema_tools(std::make_unique<SchemaExplorationTools>(std::move(executor)))
+    , client(std::move(client_))
+    , schema_tools(config_.enable_schema_access ? std::make_unique<SchemaExplorationTools>(std::move(executor)) : nullptr)
     , output_stream(output_stream_)
 {
 }
@@ -38,7 +39,8 @@ std::string AISQLGenerator::generateSQL(const std::string & prompt)
         options.temperature = config.temperature;
         options.max_tokens = config.max_tokens;
         options.max_steps = config.max_steps;
-        options.tools = schema_tools->getToolSet();
+        if (schema_tools)
+            options.tools = schema_tools->getToolSet();
 
         // Set up callbacks to display tool calls in real-time
         options.on_tool_call_start = [&display](const ai::ToolCall & tool_call)
@@ -67,10 +69,13 @@ std::string AISQLGenerator::generateSQL(const std::string & prompt)
         };
 
         // Show thinking indicator
-        display.showThinking();
+        display.startThinking();
 
         // Generate SQL with multi-step support
         auto result = client.generate_text(options);
+
+        // Stop thinking animation
+        display.stopThinking();
 
         if (!result)
         {
@@ -83,8 +88,6 @@ std::string AISQLGenerator::generateSQL(const std::string & prompt)
         std::string sql = cleanSQL(result.text);
         if (!sql.empty())
         {
-            display.showGeneratedQuery(sql);
-            display.showSeparator();
             display.showProgress("✨ SQL query generated successfully!");
         }
         else
@@ -115,75 +118,30 @@ std::string AISQLGenerator::buildSystemPrompt() const
     if (!config.system_prompt.empty())
         return config.system_prompt;
 
-    return R"(You are a ClickHouse SQL expert. Your task is to convert natural language queries into valid ClickHouse SQL.
-
-You have access to functions that help you explore the database schema:
-- list_databases(): Lists all available databases
-- list_tables_in_database(database): Lists all tables in a specific database
-- get_schema_for_table(database, table): Gets the CREATE TABLE statement for a specific table
-
-Your workflow should be:
-1. Use list_databases() to see available databases
-2. Use list_tables_in_database(database) to find relevant tables
-3. Use get_schema_for_table(database, table) to understand the table structure
-4. Based on the discovered schema, generate the appropriate SQL query
-
-CRITICAL RESPONSE FORMAT:
-- During schema exploration: Use tool calls with arguments
-- After exploring the schema: You MUST provide a final text response containing ONLY the SQL query
-- For final response: Return ONLY the executable SQL query with NO explanations, NO markdown, NO additional text
-- If no existing tables are suitable, CREATE a new table as requested
-
-EXAMPLES OF CORRECT FINAL RESPONSES:
-
-User: "Show me all users from the users table"
-Assistant: SELECT * FROM users;
-
-User: "Count how many orders were placed yesterday"
-Assistant: SELECT COUNT(*) FROM orders WHERE date = yesterday();
-
-User: "Insert 5 rows from S3 into salesforce_data table"
-Assistant: INSERT INTO salesforce_data SELECT * FROM s3('s3://bucket/file.csv', 'CSV') LIMIT 5;
-
-User: "Get top 10 customers by revenue"
-Assistant: SELECT customer_id, SUM(amount) as revenue FROM orders GROUP BY customer_id ORDER BY revenue DESC LIMIT 10;
-
-IMPORTANT RULES:
-- Always explore the schema first before writing SQL
-- You can ignore information_schema and system databases typically unless user asks for them
-- The functions return actual results that you should use to inform your query
-- Pay attention to the actual column names and types discovered in the schema
-- Your final SQL query MUST be executable by ClickHouse
-- DO NOT include explanations, markdown formatting, or any text other than the SQL query in your final response
-- DO NOT say "Here's the SQL query:" or similar phrases
-- DO NOT wrap SQL in code blocks or markdown
-
-Remember: You are in an interactive session. Each function call returns real data about the database that you should use to construct accurate queries.)";
+    if (config.enable_schema_access)
+        return AIPrompts::SQL_GENERATOR_WITH_SCHEMA_ACCESS;
+    else
+        return AIPrompts::SQL_GENERATOR_WITHOUT_SCHEMA_ACCESS;
 }
 
 std::string AISQLGenerator::buildCompletePrompt(const std::string & user_prompt) const
 {
-    return "Convert this to a ClickHouse SQL query: " + user_prompt;
+    return std::string(AIPrompts::USER_PROMPT_PREFIX) + user_prompt;
 }
 
 std::string AISQLGenerator::cleanSQL(const std::string & sql)
 {
     std::string cleaned = sql;
 
-    // Remove markdown code blocks if present
-    if (cleaned.starts_with("```sql"))
+    // Extract SQL from <sql> tags
+    size_t start_tag = cleaned.find("<sql>");
+    size_t end_tag = cleaned.find("</sql>");
+
+    if (start_tag != std::string::npos && end_tag != std::string::npos)
     {
-        cleaned = cleaned.substr(6);
-        auto end_pos = cleaned.find("```");
-        if (end_pos != std::string::npos)
-            cleaned = cleaned.substr(0, end_pos);
-    }
-    else if (cleaned.starts_with("```"))
-    {
-        cleaned = cleaned.substr(3);
-        auto end_pos = cleaned.find("```");
-        if (end_pos != std::string::npos)
-            cleaned = cleaned.substr(0, end_pos);
+        // Extract content between tags
+        start_tag += 5; // Length of "<sql>"
+        cleaned = cleaned.substr(start_tag, end_tag - start_tag);
     }
 
     // Trim whitespace
@@ -199,7 +157,10 @@ std::string AISQLGenerator::cleanSQL(const std::string & sql)
 
 std::string AISQLGenerator::getModelString() const
 {
-    return config.model;
+    if (config.model.empty())
+        return client.default_model();
+    else
+        return config.model;
 }
 
 }

@@ -374,18 +374,6 @@ class ArtifactNames:
     FUZZERS = "FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
 
-    PERF_REPORTS_AMD_1 = "PERF_REPORTS_AMD_1"
-    PERF_REPORTS_AMD_2 = "PERF_REPORTS_AMD_2"
-    PERF_REPORTS_AMD_3 = "PERF_REPORTS_AMD_3"
-    PERF_REPORTS_ARM_1 = "PERF_REPORTS_ARM_1"
-    PERF_REPORTS_ARM_2 = "PERF_REPORTS_ARM_2"
-    PERF_REPORTS_ARM_3 = "PERF_REPORTS_ARM_3"
-    PERF_REPORTS_AMD_1_WITH_RELEASE = "PERF_REPORTS_AMD_1_WITH_RELEASE"
-    PERF_REPORTS_AMD_2_WITH_RELEASE = "PERF_REPORTS_AMD_2_WITH_RELEASE"
-    PERF_REPORTS_AMD_3_WITH_RELEASE = "PERF_REPORTS_AMD_3_WITH_RELEASE"
-
-    PERF_REPORTS_ARM = "PERF_REPORTS_ARM"
-
 
 class ArtifactConfigs:
     clickhouse_binaries = Artifact.Config(
@@ -481,21 +469,4 @@ class ArtifactConfigs:
         name=ArtifactNames.FUZZERS_CORPUS,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/programs/*_seed_corpus.zip",
-    )
-    performance_reports = Artifact.Config(
-        name="*",
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/perf_wd/*.html",
-    ).parametrize(
-        names=[
-            ArtifactNames.PERF_REPORTS_AMD_1,
-            ArtifactNames.PERF_REPORTS_AMD_2,
-            ArtifactNames.PERF_REPORTS_AMD_3,
-            ArtifactNames.PERF_REPORTS_ARM_1,
-            ArtifactNames.PERF_REPORTS_ARM_2,
-            ArtifactNames.PERF_REPORTS_ARM_3,
-            ArtifactNames.PERF_REPORTS_AMD_1_WITH_RELEASE,
-            ArtifactNames.PERF_REPORTS_AMD_2_WITH_RELEASE,
-            ArtifactNames.PERF_REPORTS_AMD_3_WITH_RELEASE,
-        ]
     )
