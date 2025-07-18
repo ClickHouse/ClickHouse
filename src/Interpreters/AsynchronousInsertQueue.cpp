@@ -496,7 +496,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         auto & data = queue_it->second.data;
         size_t entry_data_size = entry->chunk.byteSize();
 
-        assert(data);
+        chassert(data);
         auto size_in_bytes = data->size_in_bytes;
         data->size_in_bytes += entry_data_size;
         /// We rely on the fact that entries are being added to the list in order of creation time in `scheduleDataProcessingJob()`
@@ -992,12 +992,12 @@ try
     try
     {
         Chunk chunk;
-        auto header = pipeline.getHeader();
+        auto header = pipeline.getSharedHeader();
 
         if (key.data_kind == AsynchronousInsertQueueDataKind::Parsed)
-            chunk = processEntriesWithParsing(key, data, header, insert_context, log, add_entry_to_asynchronous_insert_log);
+            chunk = processEntriesWithParsing(key, data, *header, insert_context, log, add_entry_to_asynchronous_insert_log);
         else
-            chunk = processPreprocessedEntries(data, header, add_entry_to_asynchronous_insert_log);
+            chunk = processPreprocessedEntries(data, *header, add_entry_to_asynchronous_insert_log);
 
         ProfileEvents::increment(ProfileEvents::AsyncInsertRows, chunk.getNumRows());
 
@@ -1072,7 +1072,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
         const auto & columns = metadata_snapshot->getColumns();
         if (columns.hasDefaults())
-            adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(header, columns, *format, insert_context);
+            adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(std::make_shared<const Block>(header), columns, *format, insert_context);
     }
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)

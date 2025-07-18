@@ -19,7 +19,7 @@ Thus, `ReplacingMergeTree` is suitable for clearing out duplicate data in the ba
 A detailed guide on ReplacingMergeTree, including best practices and how to optimize performance, is available [here](/guides/replacing-merge-tree).
 :::
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -41,9 +41,9 @@ For a description of request parameters, see [statement description](../../../sq
 Uniqueness of rows is determined by the `ORDER BY` table section, not `PRIMARY KEY`.
 :::
 
-## ReplacingMergeTree Parameters {#replacingmergetree-parameters}
+## ReplacingMergeTree parameters {#replacingmergetree-parameters}
 
-### ver {#ver}
+### `ver` {#ver}
 
 `ver` — column with the version number. Type `UInt*`, `Date`, `DateTime` or `DateTime64`. Optional parameter.
 
@@ -95,7 +95,7 @@ SELECT * FROM mySecondReplacingMT FINAL;
 └─────┴─────────┴─────────────────────┘
 ```
 
-### is_deleted {#is_deleted}
+### `is_deleted` {#is_deleted}
 
 `is_deleted` —  Name of a column used during a merge to determine whether the data in this row represents the state or is to be deleted; `1` is a "deleted" row, `0` is a "state" row.
 

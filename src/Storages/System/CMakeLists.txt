@@ -33,7 +33,7 @@ set(GENERATED_LICENSES_SRC "${CMAKE_CURRENT_BINARY_DIR}/StorageSystemLicenses.ge
 
 add_custom_command(
     OUTPUT StorageSystemLicenses.generated.cpp
-    COMMAND ./StorageSystemLicenses.sh > ${GENERATED_LICENSES_SRC}
+    COMMAND ./StorageSystemLicenses.sh "${CMAKE_SOURCE_DIR}" > ${GENERATED_LICENSES_SRC}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 list (APPEND storages_system_sources ${GENERATED_LICENSES_SRC})
