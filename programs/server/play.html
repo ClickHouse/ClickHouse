@@ -501,6 +501,11 @@
             border: 1px solid var(--border-color);
         }
 
+        th:hover
+        {
+            z-index: 1;
+        }
+
         .type-hint
         {
             display: none;
@@ -528,6 +533,7 @@
             cursor: col-resize;
             user-select: none;
             height: 100%;
+            transform: translateX(50%);
         }
 
         .resizer:hover {
