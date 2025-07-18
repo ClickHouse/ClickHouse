@@ -489,6 +489,8 @@ public:
 
     static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path);
     static String getFileNameForStream(const String & name_in_storage, const SubstreamPath & path);
+    static String getFileNameForRenamedColumnStream(const NameAndTypePair & column_from, const NameAndTypePair & column_to, const String & file_name);
+    static String getFileNameForRenamedColumnStream(const String & name_from, const String & name_to, const String & file_name);
 
     static String getSubcolumnNameForStream(const SubstreamPath & path);
     static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len);
