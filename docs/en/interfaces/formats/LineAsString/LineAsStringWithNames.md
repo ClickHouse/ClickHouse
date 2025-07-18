@@ -16,7 +16,7 @@ title: 'LineAsStringWithNames'
 
 The `LineAsStringWithNames` format is similar to the [`LineAsString`](./LineAsString.md) format but prints the header row with column names.
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
 ```sql title="Query"
 CREATE TABLE example (
@@ -37,4 +37,4 @@ Jane    25
 Peter    35
 ```
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}

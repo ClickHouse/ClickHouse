@@ -52,7 +52,7 @@ class MergeTreeSequentialSource : public ISource
 {
 public:
     MergeTreeSequentialSource(
-        Block result_header,
+        SharedHeader result_header,
         MergeTreeSequentialSourceType type,
         const MergeTreeData & storage_,
         StorageSnapshotPtr storage_snapshot_,
@@ -100,7 +100,7 @@ private:
 };
 
 MergeTreeSequentialSource::MergeTreeSequentialSource(
-    Block result_header,
+    SharedHeader result_header,
     MergeTreeSequentialSourceType type,
     const MergeTreeData & storage_,
     StorageSnapshotPtr storage_snapshot_,
@@ -328,7 +328,7 @@ Pipe createMergeTreeSequentialSource(
         info->mutation_steps.push_back(createLightweightDeleteStep(!has_filter_column));
     }
 
-    auto result_header = storage_snapshot->getSampleBlockForColumns(columns_to_read);
+    auto result_header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(columns_to_read));
     LoadedMergeTreeDataPartInfoForReader info_for_reader(info->data_part, info->alter_conversions);
 
     info->task_columns = getReadTaskColumnsForMerge(info_for_reader, storage_snapshot, columns_to_read, info->mutation_steps);
@@ -365,7 +365,7 @@ Pipe createMergeTreeSequentialSource(
     /// Add filtering step that discards deleted rows
     if (need_to_filter_deleted_rows)
     {
-        pipe.addSimpleTransform([filtered_rows_count, has_filter_column](const Block & header)
+        pipe.addSimpleTransform([filtered_rows_count, has_filter_column](const SharedHeader & header)
         {
             return std::make_shared<FilterTransform>(
                 header, nullptr, RowExistsColumn::name, !has_filter_column, false, filtered_rows_count);
@@ -398,7 +398,7 @@ public:
         bool prefetch_,
         ContextPtr context_,
         LoggerPtr log_)
-        : ISourceStep(storage_snapshot_->getSampleBlockForColumns(columns_to_read_))
+        : ISourceStep(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns_to_read_)))
         , type(type_)
         , storage(storage_)
         , storage_snapshot(storage_snapshot_)
@@ -444,7 +444,7 @@ public:
 
             if (mark_ranges && mark_ranges->empty())
             {
-                pipeline.init(Pipe(std::make_unique<NullSource>(*output_header)));
+                pipeline.init(Pipe(std::make_unique<NullSource>(output_header)));
                 return;
             }
         }

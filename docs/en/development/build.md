@@ -27,7 +27,7 @@ The minimum recommended Ubuntu version for development is 24.04 LTS.
 
 The tutorial assumes that you have the ClickHouse repository and all submodules locally checked out.
 
-## Install Prerequisites {#install-prerequisites}
+## Install prerequisites {#install-prerequisites}
 
 First, see the generic [prerequisites documentation](developer-instruction.md).
 
@@ -139,7 +139,7 @@ If you get `Connection refused` message on macOS or FreeBSD, try specifying host
 clickhouse client --host 127.0.0.1
 ```
 
-## Advanced Options {#advanced-options}
+## Advanced options {#advanced-options}
 
 ### Minimal Build {#minimal-build}
 

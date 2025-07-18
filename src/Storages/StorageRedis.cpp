@@ -45,14 +45,14 @@ class RedisDataSource : public ISource
 public:
     RedisDataSource(
         StorageRedis & storage_,
-        const Block & header,
+        SharedHeader header,
         FieldVectorPtr keys_,
         FieldVector::const_iterator begin_,
         FieldVector::const_iterator end_,
         const size_t max_block_size_)
         : ISource(header)
         , storage(storage_)
-        , primary_key_pos(getPrimaryKeyPos(header, storage.getPrimaryKey()))
+        , primary_key_pos(getPrimaryKeyPos(*header, storage.getPrimaryKey()))
         , keys(keys_)
         , begin(begin_)
         , end(end_)
@@ -61,10 +61,10 @@ public:
     {
     }
 
-    RedisDataSource(StorageRedis & storage_, const Block & header, const size_t max_block_size_, const String & pattern_ = "*")
+    RedisDataSource(StorageRedis & storage_, SharedHeader header, const size_t max_block_size_, const String & pattern_ = "*")
         : ISource(header)
         , storage(storage_)
-        , primary_key_pos(getPrimaryKeyPos(header, storage.getPrimaryKey()))
+        , primary_key_pos(getPrimaryKeyPos(*header, storage.getPrimaryKey()))
         , iterator(-1)
         , pattern(pattern_)
         , max_block_size(max_block_size_)
@@ -164,7 +164,7 @@ private:
 };
 
 RedisSink::RedisSink(StorageRedis & storage_, const StorageMetadataPtr & metadata_snapshot_)
-    : SinkToStorage(metadata_snapshot_->getSampleBlock())
+    : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
 {
@@ -233,7 +233,7 @@ public:
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        Block sample_block,
+        SharedHeader sample_block,
         StorageRedis & storage_,
         size_t max_block_size_,
         size_t num_streams_)
@@ -251,7 +251,7 @@ private:
     size_t num_streams;
 
     FieldVectorPtr keys;
-    bool all_scan = false;
+    bool all_scan = true;
 };
 
 void StorageRedis::read(
@@ -265,7 +265,7 @@ void StorageRedis::read(
         size_t num_streams)
 {
     storage_snapshot->check(column_names);
-    Block sample_block = storage_snapshot->metadata->getSampleBlock();
+    auto sample_block = std::make_shared<const Block>(storage_snapshot->metadata->getSampleBlock());
 
     auto reading = std::make_unique<ReadFromRedis>(
         column_names, query_info, storage_snapshot, context_, std::move(sample_block), *this, max_block_size, num_streams);
@@ -322,8 +322,8 @@ void ReadFromRedis::applyFilters(ActionDAGNodes added_filter_nodes)
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
 
     const auto & sample_block = getOutputHeader();
-    auto primary_key_data_type = sample_block.getByName(storage.primary_key).type;
-    std::tie(keys, all_scan) = getFilterKeys(storage.primary_key, primary_key_data_type, filter_actions_dag, context);
+    auto primary_key_data_type = sample_block->getByName(storage.primary_key).type;
+    std::tie(keys, all_scan) = getFilterKeys(storage.primary_key, primary_key_data_type, filter_actions_dag.get(), context);
 }
 
 void ReadFromRedis::describeActions(FormatSettings & format_settings) const

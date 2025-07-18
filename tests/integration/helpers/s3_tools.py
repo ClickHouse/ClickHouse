@@ -74,6 +74,47 @@ class LocalUploader(CloudUploader):
         self.clickhouse_node.copy_file_to_container(local_path, remote_blob_path)
 
 
+class LocalDownloader:
+    def __init__(self, clickhouse_node, use_relpath=False):
+        self.use_relpath = use_relpath
+        self.clickhouse_node = clickhouse_node
+
+    def download_file(self, local_path, remote_blob_path):
+        dir_path = os.path.dirname(local_path)
+        if dir_path != "":
+            self.clickhouse_node.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    "mkdir -p {}".format(dir_path),
+                ]
+            )
+        self.clickhouse_node.copy_file_from_container(remote_blob_path, local_path)
+
+    def download_directory(self, local_path, remote_blob_path, **kwargs):
+        result_files = []
+        for remote_file in self.clickhouse_node.get_files_list_in_container(remote_blob_path):
+            result_remote_path = remote_file
+            result_local_path = os.path.join(
+                remote_blob_path,
+                (
+                    os.path.relpath(remote_file, start=local_path)
+                    if self.use_relpath
+                    else remote_file
+                ),
+            )
+            if self.clickhouse_node.file_exists_in_container(result_remote_path):
+                self.download_file(result_local_path, result_remote_path, **kwargs)
+                result_files.append(result_local_path)
+            else:
+                files = self.download_directory(
+                    result_local_path, result_local_path, **kwargs
+                )
+                result_files.extend(files)
+
+        return result_files
+
+
 class AzureUploader(CloudUploader):
 
     def __init__(self, blob_service_client, container_name):

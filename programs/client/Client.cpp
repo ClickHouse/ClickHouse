@@ -234,7 +234,7 @@ std::vector<String> Client::loadWarningMessages()
         switch (packet.type)
         {
             case Protocol::Server::Data:
-                if (packet.block)
+                if (!packet.block.empty())
                 {
                     const ColumnString & column = typeid_cast<const ColumnString &>(*packet.block.getByPosition(0).column);
 
@@ -323,6 +323,10 @@ void Client::initialize(Poco::Util::Application & self)
     const char * env_password = getenv("CLICKHOUSE_PASSWORD"); // NOLINT(concurrency-mt-unsafe)
     if (env_password && !config().has("password"))
         config().setString("password", env_password);
+
+    const char * env_host = getenv("CLICKHOUSE_HOST"); // NOLINT(concurrency-mt-unsafe)
+    if (env_host && !config().has("host"))
+        config().setString("host", env_host);
 
     /// settings and limits could be specified in config file, but passed settings has higher priority
     for (const auto & setting : client_context->getSettingsRef().getUnchangedNames())

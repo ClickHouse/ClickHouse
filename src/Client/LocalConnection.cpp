@@ -32,7 +32,7 @@ namespace Setting
     extern const SettingsDialect dialect;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
-    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -240,7 +240,7 @@ void LocalConnection::sendQuery(
         auto columns_description = metadata_snapshot->getColumns();
         if (columns_description.hasDefaults())
         {
-            pipe.addSimpleTransform([&](const Block & header)
+            pipe.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<AddingDefaultsTransform>(header, columns_description, *source, context);
             });
@@ -345,7 +345,7 @@ void LocalConnection::sendQueryPlan(const QueryPlan &)
 
 void LocalConnection::sendData(const Block & block, const String &, bool)
 {
-    if (!block)
+    if (block.empty())
         return;
 
     if (state->pushing_async_executor)
@@ -494,7 +494,7 @@ bool LocalConnection::poll(size_t)
         if (state->executor)
             totals = state->executor->getTotalsBlock();
 
-        if (totals)
+        if (!totals.empty())
         {
             next_packet_type = Protocol::Server::Totals;
             state->block.emplace(totals);
@@ -510,7 +510,7 @@ bool LocalConnection::poll(size_t)
         if (state->executor)
             extremes = state->executor->getExtremesBlock();
 
-        if (extremes)
+        if (!extremes.empty())
         {
             next_packet_type = Protocol::Server::Extremes;
             state->block.emplace(extremes);
@@ -550,7 +550,7 @@ bool LocalConnection::poll(size_t)
         return true;
     }
 
-    if (state->block && state->block.value())
+    if (state->block && !state->block.value().empty())
     {
         next_packet_type = Protocol::Server::Data;
         return true;
@@ -618,11 +618,11 @@ bool LocalConnection::pollImpl()
     Block block;
     auto next_read = pullBlock(block);
 
-    if (!block && next_read)
+    if (block.empty() && next_read)
     {
         return true;
     }
-    if (block && !state->io.null_format)
+    if (!block.empty() && !state->io.null_format)
     {
         state->block.emplace(block);
     }
@@ -666,7 +666,7 @@ Packet LocalConnection::receivePacket()
         case Protocol::Server::Data:
         case Protocol::Server::ProfileEvents:
         {
-            if (state->block && state->block.value())
+            if (state->block && !state->block.value().empty())
             {
                 packet.block = std::move(state->block.value());
                 state->block.reset();
