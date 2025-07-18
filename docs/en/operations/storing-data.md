@@ -754,6 +754,60 @@ DESCRIBE FILESYSTEM CACHE 's3_cache'
 |                           |                            | `CachedReadBufferCacheWriteBytes`, `CachedReadBufferCacheWriteMicroseconds`               |
 |                           |                            | `CachedWriteBufferCacheWriteBytes`, `CachedWriteBufferCacheWriteMicroseconds`             |
 
+### Split local cache {#split-local-cache}
+It is possible to split local cache into two parts: system cache (stores system information: metadata, index, etc.) and data cache (stores table data information). The settings for both caches could be independently defined.
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>...</endpoint>
+                ... s3 configuration ...
+            </s3>
+            <s3_cache>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/s3_cache/</path>
+                <cache_policy>LRU</cache_policy>
+                <split_cache>1</split_cache>
+                <system_cache_settings>
+                    <max_size>1Gi</max_size>
+                    ... other settings ...
+                </system_cache_settings>
+                <data_cache_settings>
+                    <max_size>9Gi</max_size>
+                    <cache_policy>SLRU</cache_policy>
+                    ... other settings ...
+                </data_cache_settings>
+            </cache>
+        </disks>
+        <policies>
+            <s3_cache>
+                <volumes>
+                    <main>
+                        <disk>cache</disk>
+                    </main>
+                </volumes>
+            </s3_cache>
+        </policies>
+    </storage_configuration>
+```
+
+In the example above, splitting the cache creates two separate caches named `s3_cache_system` and `s3_cache_data` (derived from the base disk name "s3_cache" with "_system" and "_data" suffixes):
+
+```txt
+:) SHOW FILESYSTEM CACHE
+   ┌─Caches──────────────────────┐
+1. │ s3_cache_system             │
+2. │ s3_cache_data               │
+   └─────────────────────────────┘
+```
+
+
+The system cache is allocated 1Gi, while the data cache is allocated 9Gi. Each cache can have its own independent configuration. Parameters not explicitly specified within `<system_cache_settings>` or `<data_cache_settings>` will inherit from the parent cache configuration. In this example, the system cache inherits the LRU cache policy from the base configuration, while the data cache overrides it with the SLRU policy.
+
+
 ### Using static Web storage (read-only) {#web-storage}
 
 This is a read-only disk. Its data is only read and never modified. A new table 
