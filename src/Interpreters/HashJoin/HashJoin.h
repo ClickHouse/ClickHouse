@@ -410,6 +410,8 @@ public:
         }
     };
 
+    /// For INNER/LEFT ALL JOINs, if the right side has no duplicates inside the join key columns,
+    /// we can switch from ALL to RightAny strictness for better performance.
     bool all_values_unique = true;
     bool all_join_was_promoted_to_right_any = false;
 
