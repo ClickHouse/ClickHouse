@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/Common/SQLSecurityDefs.h>
+#include <Access/Common/SQLInterceptMode.h>
 #include <Core/Joins.h>
 #include <Core/LoadBalancing.h>
 #include <Core/LogsLevel.h>
@@ -420,5 +421,13 @@ enum class GeoToH3ArgumentOrder : uint8_t
 };
 
 DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
+
+enum class SQLInterceptMode : uint8_t
+{
+    LOG,
+    THROW,
+};
+
+DECLARE_SETTING_ENUM(SQLInterceptMode)
 
 }
