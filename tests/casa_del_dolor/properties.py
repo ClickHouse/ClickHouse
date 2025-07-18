@@ -76,6 +76,15 @@ threads_lambda = lambda: random.randint(0, multiprocessing.cpu_count())
 no_zero_threads_lambda = lambda: random.randint(1, multiprocessing.cpu_count())
 
 
+rocksdb_properties = {
+    "rocksdb": {
+        "options": {
+            "max_background_jobs": threshold_generator(0.2, 0.2, 0, 100),
+        }
+    }
+}
+
+
 possible_properties = {
     "access_control_improvements": {
         "on_cluster_queries_require_cluster_grant": true_false_lambda,
@@ -277,6 +286,7 @@ possible_properties = {
             ]
         ),
     },
+    **rocksdb_properties,
 }
 
 distributed_properties = {
@@ -1213,6 +1223,7 @@ keeper_settings = {
     "create_snapshot_on_exit": true_false_lambda,
     "digest_enabled": true_false_lambda,
     "digest_enabled_on_commit": true_false_lambda,
+    "enable_reconfiguration": true_false_lambda,
     "feature_flags": {
         "check_not_exists": true_false_lambda,
         "create_if_not_exists": true_false_lambda,
@@ -1220,6 +1231,12 @@ keeper_settings = {
         "multi_read": true_false_lambda,
         "remove_recursive": true_false_lambda,
     },
+    "force_recovery": true_false_lambda,
+    "hostname_checks_enabled": true_false_lambda,
+    "max_memory_usage_soft_limit": threshold_generator(0.2, 0.2, 0, 1000),
+    "max_memory_usage_soft_limit_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
+    "upload_snapshot_on_exit": true_false_lambda,
+    **rocksdb_properties,
 }
 
 
@@ -1249,16 +1266,28 @@ def modify_keeper_settings(args, is_private_binary: bool) -> list[str]:
         # Set default coordination settings
         coordination_settings_xml = keeper_server_xml.find("coordination_settings")
         if coordination_settings_xml is None:
-            coordination_settings_xml = ET.SubElement(keeper_server_xml, "coordination_settings")
-        operation_timeout_ms_xml = ET.SubElement(coordination_settings_xml, "operation_timeout_ms")
+            coordination_settings_xml = ET.SubElement(
+                keeper_server_xml, "coordination_settings"
+            )
+        operation_timeout_ms_xml = ET.SubElement(
+            coordination_settings_xml, "operation_timeout_ms"
+        )
         operation_timeout_ms_xml.text = "10000"
-        session_timeout_ms_xml = ET.SubElement(coordination_settings_xml, "session_timeout_ms")
+        session_timeout_ms_xml = ET.SubElement(
+            coordination_settings_xml, "session_timeout_ms"
+        )
         session_timeout_ms_xml.text = "15000"
-        raft_logs_level_xml = ET.SubElement(coordination_settings_xml, "raft_logs_level")
+        raft_logs_level_xml = ET.SubElement(
+            coordination_settings_xml, "raft_logs_level"
+        )
         raft_logs_level_xml.text = "trace"
-        election_timeout_lower_bound_ms_xml = ET.SubElement(coordination_settings_xml, "election_timeout_lower_bound_ms")
+        election_timeout_lower_bound_ms_xml = ET.SubElement(
+            coordination_settings_xml, "election_timeout_lower_bound_ms"
+        )
         election_timeout_lower_bound_ms_xml.text = "2000"
-        election_timeout_upper_bound_ms_xml = ET.SubElement(coordination_settings_xml, "election_timeout_upper_bound_ms")
+        election_timeout_upper_bound_ms_xml = ET.SubElement(
+            coordination_settings_xml, "election_timeout_upper_bound_ms"
+        )
         election_timeout_upper_bound_ms_xml.text = "4000"
 
         # Multi read is required for private binary
