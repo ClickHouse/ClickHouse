@@ -1060,7 +1060,11 @@ The server successfully detected this situation and will download merged part fr
     M(ConcurrencyControlSlotsAcquired, "Total number of CPU slots acquired", ValueType::Number) \
     M(ConcurrencyControlSlotsAcquiredNonCompeting, "Total number of noncompeting CPU slot acquired", ValueType::Number) \
     M(ConcurrencyControlQueriesDelayed, "Total number of CPU slot allocations (queries) that were required to wait for slots to upscale", ValueType::Number) \
-    M(ConcurrencyControlWaitMicroseconds, "Total time a query was waiting on resource requests for CPU slots", ValueType::Microseconds) \
+    M(ConcurrencyControlWaitMicroseconds, "Total time a query was waiting on resource requests for CPU slots.", ValueType::Microseconds) \
+    M(ConcurrencyControlPreemptedMicroseconds, "Total time a query was waiting due to preemption of CPU slots.", ValueType::Microseconds) \
+    M(ConcurrencyControlPreemptions, "Total number of CPU preemptions", ValueType::Number) \
+    M(ConcurrencyControlUpscales, "Total number of CPU upscaling events", ValueType::Number) \
+    M(ConcurrencyControlDownscales, "Total number of CPU downscaling events", ValueType::Number) \
     \
     M(ConcurrentQuerySlotsAcquired, "Total number of query slots acquired", ValueType::Number) \
     M(ConcurrentQueryWaitMicroseconds, "Total time a query was waiting for a query slots", ValueType::Microseconds) \
