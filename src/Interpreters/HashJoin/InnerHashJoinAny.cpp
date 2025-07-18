@@ -1,4 +1,3 @@
-
 #include <Interpreters/HashJoin/HashJoinMethodsImpl.h>
 
 namespace DB
