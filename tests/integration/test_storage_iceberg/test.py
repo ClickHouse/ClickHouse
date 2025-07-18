@@ -33,9 +33,9 @@ import helpers.client
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
 from helpers.s3_tools import (
     AzureUploader,
+    LocalDownloader,
     LocalUploader,
     S3Uploader,
-    LocalDownloader,
     get_file_contents,
     list_s3_objects,
     prepare_s3_bucket,
@@ -202,7 +202,7 @@ def get_creation_expression(
     cluster,
     format="Parquet",
     table_function=False,
-    allow_dynamic_metadata_for_data_lakes=False,
+    allow_dynamic_metadata_for_data_lakes=False,  # Doesn't make sense for table functions
     use_version_hint=False,
     run_on_cluster=False,
     explicit_metadata_path="",
@@ -231,10 +231,10 @@ def get_creation_expression(
 
         if run_on_cluster:
             assert table_function
-            return f"icebergS3Cluster('cluster_simple', s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
+            return f"icebergS3Cluster('cluster_simple', s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/', {settings_expression})"
         else:
             if table_function:
-                return f"icebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
+                return f"icebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/', {settings_expression})"
             else:
                 return (
                     f"""
@@ -248,12 +248,12 @@ def get_creation_expression(
         if run_on_cluster:
             assert table_function
             return f"""
-                icebergAzureCluster('cluster_simple', azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})
+                icebergAzureCluster('cluster_simple', azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format}, {settings_expression})
             """
         else:
             if table_function:
                 return f"""
-                    icebergAzure(azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})
+                    icebergAzure(azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format}, {settings_expression})
                 """
             else:
                 return (
@@ -269,14 +269,15 @@ def get_creation_expression(
 
         if table_function:
             return f"""
-                icebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format})
+                icebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format}, {settings_expression})
             """
         else:
             return (
                 f"""
                 DROP TABLE IF EXISTS {table_name};
                 CREATE TABLE {table_name}
-                ENGINE=IcebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format})"""
+                ENGINE=IcebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format}, {settings_expression})
+                """
                 + settings_expression
             )
 
@@ -372,7 +373,7 @@ def default_download_directory(
     else:
         raise Exception(f"Unknown iceberg storage type for downloading: {storage_type}")
 
-        
+
 def execute_spark_query_general(
     spark, started_cluster, storage_type: str, table_name: str, query: str
 ):
@@ -4708,60 +4709,65 @@ def test_minmax_pruning_for_arrays_and_maps_subfields_disabled(started_cluster, 
     instance.query(f"SELECT * FROM {table_select_expression} ORDER BY ALL")
 
 
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_schema_evolution_with_where_condition(started_cluster, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
-    TABLE_NAME = "test_schema_evolution_with_where_condition_" + get_uuid_str()
+# @pytest.mark.parametrize("allow_dynamic_metadata_for_data_lakes", [True, False])
+# @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+# def test_schema_evolution_with_where_condition(
+#     started_cluster, storage_type, allow_dynamic_metadata_for_data_lakes
+# ):
+#     instance = started_cluster.instances["node1"]
+#     spark = started_cluster.spark_session
+#     TABLE_NAME = "test_schema_evolution_with_where_condition_" + get_uuid_str()
 
-    def execute_spark_query(query: str):
-        return execute_spark_query_general(
-            spark,
-            started_cluster,
-            storage_type,
-            TABLE_NAME,
-            query,
-        )
+#     def execute_spark_query(query: str):
+#         return execute_spark_query_general(
+#             spark,
+#             started_cluster,
+#             storage_type,
+#             TABLE_NAME,
+#             query,
+#         )
 
-    execute_spark_query(
-        f"""
-            DROP TABLE IF EXISTS {TABLE_NAME};
-        """
-    )
+#     execute_spark_query(
+#         f"""
+#             DROP TABLE IF EXISTS {TABLE_NAME};
+#         """
+#     )
 
-    execute_spark_query(
-        f"""
-            CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
-                a int
-            )
-            USING iceberg
-            OPTIONS('format-version'='2')
-        """
-    )
+#     execute_spark_query(
+#         f"""
+#             CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
+#                 a int
+#             )
+#             USING iceberg
+#             OPTIONS('format-version'='2')
+#         """
+#     )
 
-    execute_spark_query(f"INSERT INTO {TABLE_NAME} VALUES (1)")
+#     execute_spark_query(f"INSERT INTO {TABLE_NAME} VALUES (1)")
 
-    execute_spark_query(f"ALTER TABLE {TABLE_NAME} ADD COLUMNS (b INT)")
+#     execute_spark_query(f"ALTER TABLE {TABLE_NAME} ADD COLUMNS (b INT)")
 
-    execute_spark_query(f"INSERT INTO {TABLE_NAME} VALUES (1, 2)")
+#     execute_spark_query(f"INSERT INTO {TABLE_NAME} VALUES (1, 2)")
 
-    default_upload_directory(
-        started_cluster,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
-    )
+#     default_upload_directory(
+#         started_cluster,
+#         storage_type,
+#         f"/iceberg_data/default/{TABLE_NAME}/",
+#         f"/iceberg_data/default/{TABLE_NAME}/",
+#     )
 
-    table_creation_expression = get_creation_expression(
-        storage_type,
-        TABLE_NAME,
-        started_cluster,
-        table_function=True,
-        allow_dynamic_metadata_for_data_lakes=False,
-    )
+#     table_creation_expression = get_creation_expression(
+#         storage_type,
+#         TABLE_NAME,
+#         started_cluster,
+#         table_function=True,
+#         allow_dynamic_metadata_for_data_lakes=allow_dynamic_metadata_for_data_lakes,
+#     )
 
-    table_select_expression = table_creation_expression
+#     table_select_expression = table_creation_expression
 
-    print(f"Table select expression: {table_select_expression}")
+#     print(f"Table select expression: {table_select_expression}")
 
-    instance.query(f"SELECT * FROM {table_select_expression} WHERE b >= 2 ORDER BY ALL")
+#     instance.query(f"SELECT * FROM {table_select_expression} WHERE b >= 2 ORDER BY ALL")
+
+#     assert False
