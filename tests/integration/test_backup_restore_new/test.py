@@ -2069,7 +2069,7 @@ def test_rmv_no_definer():
     assert (
         instance.query(
             "SELECT name FROM system.tables where database='test' AND name='rmv'"
-        )
+        ).strip()
         == "rmv"
     )
 
