@@ -137,8 +137,10 @@ def main():
     is_flaky_check = False
     is_bugfix_validation = False
     is_s3_storage = False
+    is_azure_storage = False
     is_database_replicated = False
     is_shared_catalog = False
+    is_encrypted_storage = True # randomize it
     runner_options = ""
     info = Info()
 
@@ -164,6 +166,8 @@ def main():
 
         if "s3 storage" in to:
             is_s3_storage = True
+        if "azure" in to:
+            is_azure_storage = True
         if "DatabaseReplicated" in to:
             is_database_replicated = True
         if "SharedCatalog" in to:
@@ -178,6 +182,10 @@ def main():
     else:
         print("Disable azure for a local run")
         config_installs_args += " --no-azure"
+
+    if (is_azure_storage or is_s3_storage) and is_encrypted_storage:
+        config_isntalls_args += " --encrypted-storage"
+        runner_options += f" --encrypted-storage"
 
     ch_path = args.ch_path
 
