@@ -15,7 +15,6 @@
 
 #include <chrono>
 
-#include <aws/common/external/ittnotify.h>
 #include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>
 
