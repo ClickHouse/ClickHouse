@@ -53,6 +53,8 @@ class GinFilter
 {
 public:
 
+    explicit GinFilter(const GinFilterParameters & params_);
+
     /// Add term (located at 'data' with length 'len') and its row ID to the postings list builder
     /// for building text index for the given store.
     void add(const char * data, size_t len, UInt32 rowID, GinIndexStorePtr & store) const;
@@ -99,6 +101,9 @@ public:
     }
 
 private:
+    /// Filter parameters
+    const GinFilterParameters & params;
+
     /// Query string of the filter
     String query_string;
 
