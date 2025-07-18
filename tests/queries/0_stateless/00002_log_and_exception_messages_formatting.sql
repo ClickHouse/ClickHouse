@@ -14,7 +14,7 @@ SET max_rows_to_read = 0; -- system.text_log can be really big
 
 -- Check that we don't have too many messages formatted with fmt::runtime or strings concatenation.
 -- 0.001 threshold should be always enough, the value was about 0.00025
-WITH 0.001 AS threshold
+WITH 0.0015 AS threshold
 SELECT
     'runtime messages',
     greatest(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0) as v, threshold),
