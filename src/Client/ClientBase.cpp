@@ -1796,8 +1796,8 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     }
     catch (...)
     {
-        sendCancel(std::current_exception());
-        receiveEndOfQueryForInsert();
+        if (sendCancel(std::current_exception()))
+            receiveEndOfQueryForInsert();
         throw;
     }
 }
@@ -2122,7 +2122,7 @@ bool ClientBase::receiveEndOfQueryForInsert()
     }
 }
 
-void ClientBase::sendCancel(std::exception_ptr exception_ptr)
+bool ClientBase::sendCancel(std::exception_ptr exception_ptr)
 {
     if (!connection->isConnected())
     {
@@ -2133,9 +2133,13 @@ void ClientBase::sendCancel(std::exception_ptr exception_ptr)
             error_stream << getExceptionMessage(exception_ptr, /*with_stacktrace=*/ true);
         }
         error_stream << '\n';
+        return false;
     }
     else
+    {
         connection->sendCancel();
+        return true;
+    }
 }
 
 void ClientBase::cancelQuery()
