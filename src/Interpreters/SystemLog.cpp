@@ -1,4 +1,5 @@
 #include <Interpreters/SystemLog.h>
+#include <Daemon/BaseDaemon.h>
 
 #include <base/scope_guard.h>
 #include <Common/Logger.h>
@@ -447,6 +448,9 @@ void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
 
     if (names.empty())
     {
+        if (text_log)
+            BaseDaemon::instance().flushTextLogs();
+
         for (auto * log : getAllLogs())
         {
             auto last_log_index = log->getLastLogIndex();
@@ -477,6 +481,9 @@ void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
             if (it->second == nullptr)
                 /// The log exists but it's not initialized. Nothing to do
                 continue;
+
+            if (it->second == text_log.get())
+                BaseDaemon::instance().flushTextLogs();
 
             auto last_log_index = it->second->getLastLogIndex();
             logs_to_wait.push_back({it->second, it->second->getLastLogIndex()});

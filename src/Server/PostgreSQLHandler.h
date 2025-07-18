@@ -4,7 +4,7 @@
 #include "config.h"
 #include <Core/PostgreSQLProtocol.h>
 #include <Poco/Net/TCPServerConnection.h>
-#include "IServer.h"
+#include <Server/IServer.h>
 
 #if USE_SSL
 #    include <Poco/Net/SSLManager.h>

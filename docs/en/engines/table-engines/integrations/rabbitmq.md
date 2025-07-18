@@ -6,7 +6,7 @@ slug: /engines/table-engines/integrations/rabbitmq
 title: 'RabbitMQ Engine'
 ---
 
-# RabbitMQ Engine
+# RabbitMQ engine
 
 This engine allows integrating ClickHouse with [RabbitMQ](https://www.rabbitmq.com).
 
@@ -15,7 +15,7 @@ This engine allows integrating ClickHouse with [RabbitMQ](https://www.rabbitmq.c
 - Publish or subscribe to data flows.
 - Process streams as they become available.
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -185,7 +185,7 @@ Example:
   SELECT key, value FROM daily ORDER BY key;
 ```
 
-## Virtual Columns {#virtual-columns}
+## Virtual columns {#virtual-columns}
 
 - `_exchange_name` - RabbitMQ exchange name. Data type: `String`.
 - `_channel_id` - ChannelID, on which consumer, who received the message, was declared. Data type: `String`.
@@ -194,7 +194,7 @@ Example:
 - `_message_id` - messageID of the received message; non-empty if was set, when message was published. Data type: `String`.
 - `_timestamp` - timestamp of the received message; non-empty if was set, when message was published. Data type: `UInt64`.
 
-Additional virtual columns when `kafka_handle_error_mode='stream'`:
+Additional virtual columns when `rabbitmq_handle_error_mode='stream'`:
 
 - `_raw_message` - Raw message that couldn't be parsed successfully. Data type: `Nullable(String)`.
 - `_error` - Exception message happened during failed parsing. Data type: `Nullable(String)`.

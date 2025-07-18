@@ -8,6 +8,7 @@
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
 #include <Common/Jemalloc.h>
+#include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -41,6 +42,8 @@ namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
     extern const int CANNOT_SYSCONF;
+    extern const int CANNOT_OPEN_FILE;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 
@@ -48,24 +51,62 @@ namespace ErrorCodes
 
 static constexpr size_t small_buffer_size = 4096;
 
-static void openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out)
+void AsynchronousMetrics::openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out)
 {
-    /// Ignoring time of check is not time of use cases, as procfs/sysfs files are fairly persistent.
-
     std::error_code ec;
     if (std::filesystem::is_regular_file(filename, ec))
-        out.emplace(filename, small_buffer_size);
+    {
+        try
+        {
+            out.emplace(filename, small_buffer_size);
+        }
+        catch (const ErrnoException & e)
+        {
+            if (e.code() == ErrorCodes::CANNOT_OPEN_FILE)
+            {
+                LOG_INFO(log, "Can't open file for monitoring: {}", e.message());
+            }
+            else if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+            {
+                LOG_INFO(log, "Can't open file for monitoring, because it has disappeared at this moment: {}", e.message());
+            }
+            else
+            {
+                throw;
+            }
+        }
+    }
 }
 
-static std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::string & filename)
+std::unique_ptr<ReadBufferFromFilePRead> AsynchronousMetrics::openFileIfExists(const std::string & filename)
 {
     std::error_code ec;
     if (std::filesystem::is_regular_file(filename, ec))
-        return std::make_unique<ReadBufferFromFilePRead>(filename, small_buffer_size);
+    {
+        try
+        {
+            return std::make_unique<ReadBufferFromFilePRead>(filename, small_buffer_size);
+        }
+        catch (const ErrnoException & e)
+        {
+            if (e.code() == ErrorCodes::CANNOT_OPEN_FILE)
+            {
+                LOG_INFO(log, "Can't open file for monitoring: {}", e.message());
+            }
+            else if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+            {
+                LOG_INFO(log, "Can't open file for monitoring, because it has disappeared at this moment: {}", e.message());
+            }
+            else
+            {
+                throw;
+            }
+        }
+    }
     return {};
 }
 
-static void openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
+void AsynchronousMetrics::openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
 {
     if (auto path = getCgroupsV2PathContainingFile(filename))
         openFileIfExists((path.value() + filename).c_str(), out);
@@ -119,6 +160,10 @@ AsynchronousMetrics::AsynchronousMetrics(
     openFileIfExists("/proc/uptime", uptime);
 
     openFileIfExists("/proc/meminfo", meminfo);
+
+    openFileIfExists("/proc/pressure/memory", memory_pressure);
+    openFileIfExists("/proc/pressure/cpu", cpu_pressure);
+    openFileIfExists("/proc/pressure/io", io_pressure);
 
     openFileIfExists("/proc/sys/vm/max_map_count", vm_max_map_count);
     openFileIfExists("/proc/self/maps", vm_maps);
@@ -176,10 +221,10 @@ void AsynchronousMetrics::openBlockDevices() TSA_REQUIRES(data_mutex)
         return;
 
     block_devices_rescan_delay.restart();
-
     block_devs.clear();
 
-    for (const auto & device_dir : std::filesystem::directory_iterator("/sys/block"))
+    for (const auto & device_dir : std::filesystem::directory_iterator("/sys/block",
+        std::filesystem::directory_options::skip_permission_denied))
     {
         String device_name = device_dir.path().filename();
 
@@ -742,6 +787,56 @@ void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
            "non-uniform, and still get the average resource utilization metric."};
 }
+void readPressureFile(
+    AsynchronousMetricValues & new_values, const std::string & type, ReadBufferFromFilePRead & in,
+    std::unordered_map<String, uint64_t> & prev_pressure_vals, bool first_run)
+{
+    in.rewind();
+    /// The shape of this file is:
+    /// some avg10=0.00 avg60=0.00 avg300=0.00 total=0
+    /// full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+
+    /// We need the first field to capture whether it's a partial or total stall.
+    /// We also ignore the time averages as well. Recording the counter (the last field)
+    /// lets us recreate any average, with better identification of any short spikes
+    while (!in.eof())
+    {
+        String stall_type;
+        readStringUntilWhitespace(stall_type, in);
+
+        String skip;
+        // skip avg10=
+        readStringUntilEquals(skip, in);
+        ++in.position();
+        // skip avg60=
+        readStringUntilEquals(skip, in);
+        ++in.position();
+        // skip avg300=
+        readStringUntilEquals(skip, in);
+        ++in.position();
+        // skip total=
+        readStringUntilEquals(skip, in);
+        ++in.position();
+
+        uint64_t counter;
+        readText(counter, in);
+
+        String metric_key = fmt::format("PSI_{}_{}", type, stall_type);
+
+        if (!first_run)
+        {
+            uint64_t prev = prev_pressure_vals[metric_key];
+
+                uint64_t delta = counter - prev;
+            new_values[metric_key] = AsynchronousMetricValue(delta,
+                "Microseconds of stall time since last measurement."
+                "Upstream docs can be found https://docs.kernel.org/accounting/psi.html for the metrics and how to interpret them");
+        }
+
+        prev_pressure_vals[metric_key] = counter;
+        skipToNextLineOrEOF(in);
+    }
+}
 #endif
 
 // Warnings for pending mutations
@@ -977,6 +1072,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 #endif
+
+    new_values["TrackedMemory"] = { total_memory_tracker.get(), "Memory tracked by ClickHouse (should be equal to MemoryTracking metric), in bytes." };
 
 #if defined(OS_LINUX)
     if (loadavg)
@@ -1463,6 +1560,46 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
             openFileIfExists("/proc/cpuinfo", cpuinfo);
+        }
+    }
+
+
+    if (cpu_pressure)
+    {
+        try
+        {
+            readPressureFile(new_values, "CPU", cpu_pressure.value(), prev_pressure_vals, first_run);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/pressure/cpu", memory_pressure);
+        }
+    }
+
+    if (memory_pressure)
+    {
+        try
+        {
+            readPressureFile(new_values, "MEM", memory_pressure.value(), prev_pressure_vals, first_run);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/pressure/memory", memory_pressure);
+        }
+    }
+
+    if (io_pressure)
+    {
+        try
+        {
+            readPressureFile(new_values, "IO", io_pressure.value(), prev_pressure_vals, first_run);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/pressure/io", io_pressure);
         }
     }
 

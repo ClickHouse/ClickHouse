@@ -1,4 +1,4 @@
-#include "NativeORCBlockInputFormat.h"
+#include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
 
 #if USE_ORC
 #include <Columns/ColumnDecimal.h>
@@ -45,7 +45,7 @@
 #include <Common/quoteString.h>
 #include <Common/memory.h>
 
-#include "ArrowBufferedStreams.h"
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 
 #include <boost/algorithm/string.hpp>
 
@@ -958,7 +958,7 @@ updateIncludeTypeIds(DataTypePtr type, const orc::Type * orc_type, bool ignore_c
 }
 
 NativeORCBlockInputFormat::NativeORCBlockInputFormat(
-    ReadBuffer & in_, Block header_, const FormatSettings & format_settings_, bool use_prefetch_, size_t min_bytes_for_seek_, FormatParserGroupPtr parser_group_)
+    ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_, bool use_prefetch_, size_t min_bytes_for_seek_, FormatParserGroupPtr parser_group_)
     : IInputFormat(std::move(header_), &in_)
     , memory_pool(std::make_unique<MemoryPool>())
     , block_missing_values(getPort().getHeader().columns())
@@ -976,7 +976,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
     if (is_stopped)
         return;
 
-    std::call_once(parser_group->init_flag, [&]
+    parser_group->initOnce([&]
         {
             parser_group->initKeyCondition(getPort().getHeader());
         });

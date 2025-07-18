@@ -21,7 +21,7 @@ If you're on ClickHouse Cloud, we recommend using [ClickPipes](/integrations/cli
 - Organize fault-tolerant storage.
 - Process streams as they become available.
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -161,7 +161,7 @@ Example:
   ) ENGINE = SummingMergeTree(day, (day, level), 8192);
 
   CREATE MATERIALIZED VIEW consumer TO daily
-    AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() as total
+    AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() AS total
     FROM queue GROUP BY day, level;
 
   SELECT level, sum(total) FROM daily GROUP BY level;
@@ -240,7 +240,7 @@ Example:
 </kafka>
 ```
 
-## Virtual Columns {#virtual-columns}
+## Virtual columns {#virtual-columns}
 
 - `_topic` — Kafka topic. Data type: `LowCardinality(String)`.
 - `_key` — Key of the message. Data type: `String`.
