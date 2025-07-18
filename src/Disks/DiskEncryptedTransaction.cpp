@@ -10,6 +10,8 @@
 #include <IO/WriteBufferFromEncryptedFile.h>
 #include <Common/quoteString.h>
 
+#include <Common/logger_useful.h>
+
 namespace DB
 {
 
@@ -91,6 +93,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFile( //
         header.init_vector = FileEncryption::InitVector::random();
     }
     auto buffer = delegate_transaction->writeFile(wrapped_path, buf_size, mode, settings, autocommit);
+    LOG_TEST(getLogger("DiskEncryptedTransaction"), "Creating encrypted file with header: {} (version {})", static_cast<size_t>(header.key_fingerprint), header.version);
     return std::make_unique<WriteBufferFromEncryptedFile>(buf_size, std::move(buffer), key, header, old_file_size);
 
 }
