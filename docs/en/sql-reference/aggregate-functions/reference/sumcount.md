@@ -31,10 +31,10 @@ Type: [Tuple](../../../sql-reference/data-types/tuple.md).
 Query:
 
 ```sql
-CREATE TABLE s_table (x Int8) Engine = Log;
+CREATE TABLE s_table (x Int8) ENGINE = Log;
 INSERT INTO s_table SELECT number FROM numbers(0, 20);
 INSERT INTO s_table VALUES (NULL);
-SELECT sumCount(x) from s_table;
+SELECT sumCount(x) FROM s_table;
 ```
 
 Result:

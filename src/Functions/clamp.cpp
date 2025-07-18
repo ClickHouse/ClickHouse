@@ -77,7 +77,7 @@ All arguments must be of comparable types. The result type is the largest compat
         {"min", "The minimum bound."},
         {"max", "The maximum bound."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the value, restricted to the [min, max] range.";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the value, restricted to the [min, max] range."};
     FunctionDocumentation::Examples examples = {
         {"Basic usage", R"(
 SELECT clamp(5, 1, 10) AS result;

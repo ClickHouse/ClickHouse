@@ -123,7 +123,8 @@ UserDefinedSQLFunctionFactory::UserDefinedSQLFunctionFactory()
     : global_context(Context::getGlobalContextInstance())
 {}
 
-void UserDefinedSQLFunctionFactory::checkCanBeRegistered(const ContextPtr & context, const String & function_name, const IAST & create_function_query)
+/// Checks that a specified function can be registered, throws an exception if not.
+static void checkCanBeRegistered(const ContextPtr & context, const String & function_name, const IAST & create_function_query, bool throw_if_exists)
 {
     if (FunctionFactory::instance().hasNameOrAlias(function_name))
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The function '{}' already exists", function_name);

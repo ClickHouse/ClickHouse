@@ -33,13 +33,13 @@ String dumpQueryPlan(const QueryPlan & query_plan);
 String dumpQueryPipeline(const QueryPlan & query_plan);
 
 /// Build common header for UNION query
-Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode union_mode);
+Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUnionMode union_mode);
 
 /// Add converting to common header actions if needed for each plan
 void addConvertingToCommonHeaderActionsIfNeeded(
     std::vector<std::unique_ptr<QueryPlan>> & query_plans,
     const Block & union_common_header,
-    Blocks & query_plans_headers);
+    SharedHeaders & query_plans_headers);
 
 /// Convert query node to ASTSelectQuery
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node, bool set_subquery_cte_name = true);
@@ -108,5 +108,7 @@ void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
 /// if it have any one. Otherwise return empty.
 /// If the window frame is set in sql, use it anyway.
 std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node);
+
+ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate);
 
 }

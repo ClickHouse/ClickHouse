@@ -234,10 +234,10 @@ If the array to sort contains `-Inf`, `NULL`, `NaN`, or `Inf` they will be sorte
         {"arr", "An array to be sorted. [`Array(T)`](/sql-reference/data-types/array)"},
         {"arr1, ..., yN", "Optional. N additional arrays, in the case when `f` accepts multiple arguments."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = R"(
+    FunctionDocumentation::ReturnedValue returned_value = {R"(
 Returns the array `arr` sorted in ascending order if no lambda function is provided, otherwise
 it returns an array sorted according to the logic of the provided lambda function. [`Array(T)`](/sql-reference/data-types/array).
-    )";
+    )"};
     FunctionDocumentation::Examples examples = {
         {"Example 1", "SELECT arraySort([1, 3, 3, 0]);", "[0,1,3,3]"},
         {"Example 2", "SELECT arraySort(['hello', 'world', '!']);", "['!','hello','world']"},
@@ -266,10 +266,10 @@ If the array to sort contains `-Inf`, `NULL`, `NaN`, or `Inf` they will be sorte
 `arrayReverseSort` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions).
     )";
     syntax = "arrayReverseSort([f,] arr [, arr1, ... ,arrN)";
-    returned_value = R"(
+    returned_value = {R"(
 Returns the array `x` sorted in descending order if no lambda function is provided, otherwise
 it returns an array sorted according to the logic of the provided lambda function, and then reversed. [`Array(T)`](/sql-reference/data-types/array).
-    )";
+    )"};
     examples = {
         {"Example 1", "SELECT arrayReverseSort((x, y) -> y, [4, 3, 5], ['a', 'b', 'c']) AS res;", "[5,3,4]"},
         {"Example 2", "SELECT arrayReverseSort((x, y) -> -y, [4, 3, 5], [1, 2, 3]) AS res;", "[4,3,5]"},
@@ -287,21 +287,21 @@ To retain only the sorted elements use `arrayResize`.
     )";
     syntax = "arrayPartialSort([f,] arr [, arr1, ... ,arrN], limit)";
     arguments = {
-        {"f(arr[, arr1, ... ,arrN])", "The lambda function to apply to elements of array `x`."},
-        {"arr", "Array to be sorted. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"arr1, ... ,arrN", "N additional arrays, in the case when `f` accepts multiple arguments. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"limit", "Index value up until which sorting will occur. [`(U)Int*`](/sql-reference/data-types/int-uint)`]"}
+        {"f(arr[, arr1, ... ,arrN])", "The lambda function to apply to elements of array `x`.", {"Lambda function"}},
+        {"arr", "Array to be sorted.", {"Array(T)"}},
+        {"arr1, ... ,arrN", "N additional arrays, in the case when `f` accepts multiple arguments.", {"Array(T)"}},
+        {"limit", "Index value up until which sorting will occur.", {"(U)Int*"}}
     };
-    returned_value = R"(
+    returned_value = {R"(
 Returns an array of the same size as the original array where elements in the range `[1..limit]` are sorted
 in ascending order. The remaining elements `(limit..N]` are in an unspecified order.
-    )";
+    )"};
     examples = {
-        {"simple_int", "SELECT arrayPartialSort(2, [5, 9, 1, 3])", "[1,3,5,9]"},
-        {"simple_string", "SELECT arrayPartialSort(2, ['expenses','lasso','embolism','gladly'])", "['embolism','expenses','gladly','lasso']"},
-        {"retain_sorted", "SELECT arrayResize(arrayPartialSort(2, [5, 9, 1, 3]), 2)", "[1,3]"},
-        {"lambda_simple", "SELECT arrayPartialSort((x) -> -x, 2, [5, 9, 1, 3])", "[9,5,1,3]"},
-        {"lambda_complex", "SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res", "[2,1,0]"}
+        {"simple_int", "SELECT arrayPartialSort(2, [5, 9, 1, 3])", "[1, 3, 5, 9]"},
+        {"simple_string", "SELECT arrayPartialSort(2, ['expenses', 'lasso', 'embolism', 'gladly'])", "['embolism', 'expenses', 'gladly', 'lasso']"},
+        {"retain_sorted", "SELECT arrayResize(arrayPartialSort(2, [5, 9, 1, 3]), 2)", "[1, 3]"},
+        {"lambda_simple", "SELECT arrayPartialSort((x) -> -x, 2, [5, 9, 1, 3])", "[9, 5, 1, 3]"},
+        {"lambda_complex", "SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res", "[2, 1, 0]"}
     };
     introduced_in = {23, 2};
     documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
@@ -316,16 +316,16 @@ To retain only the sorted elements use `arrayResize`.
 :::
     )";
     syntax = "arrayPartialReverseSort([f,] arr [, arr1, ... ,arrN], limit)";
-    returned_value = R"(
+    returned_value = {R"(
 Returns an array of the same size as the original array where elements in the range `[1..limit]` are sorted
 in descending order. The remaining elements `(limit..N]` are in an unspecified order.
-    )";
+    )"};
     examples = {
-        {"simple_int", "SELECT arrayPartialReverseSort(2, [5, 9, 1, 3])", "[9,5,1,3]"},
+        {"simple_int", "SELECT arrayPartialReverseSort(2, [5, 9, 1, 3])", "[9, 5, 1, 3]"},
         {"simple_string", "SELECT arrayPartialReverseSort(2, ['expenses','lasso','embolism','gladly'])", "['lasso','gladly','expenses','embolism']"},
-        {"retain_sorted", "SELECT arrayResize(arrayPartialReverseSort(2, [5, 9, 1, 3]), 2)", "[9,5]"},
-        {"lambda_simple", "SELECT arrayPartialReverseSort((x) -> -x, 2, [5, 9, 1, 3])", "[1,3,5,9]"},
-        {"lambda_complex", "SELECT arrayPartialReverseSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res", "[0,1,2]"}
+        {"retain_sorted", "SELECT arrayResize(arrayPartialReverseSort(2, [5, 9, 1, 3]), 2)", "[9, 5]"},
+        {"lambda_simple", "SELECT arrayPartialReverseSort((x) -> -x, 2, [5, 9, 1, 3])", "[1, 3, 5, 9]"},
+        {"lambda_complex", "SELECT arrayPartialReverseSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res", "[0, 1, 2]"}
     };
     documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 

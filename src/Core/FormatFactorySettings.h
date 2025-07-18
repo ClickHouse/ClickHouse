@@ -891,6 +891,16 @@ When enabled, values of complex data types like Tuple/Array/Map in JSON output f
 
 Enabled by default.
 )", 0) \
+    DECLARE(Bool, output_format_json_map_as_array_of_tuples, false, R"(
+Serialize maps columns as JSON arrays of tuples.
+
+Disabled by default.
+)", 0) \
+    DECLARE(Bool, input_format_json_map_as_array_of_tuples, false, R"(
+Deserialize maps columns as JSON arrays of tuples.
+
+Disabled by default.
+)", 0) \
     \
     DECLARE(String, format_json_object_each_row_column_for_object_name, "", R"(
 The name of column that will be used for storing/writing object names in [JSONObjectEachRow](/interfaces/formats/JSONObjectEachRow) format.
@@ -1024,6 +1034,9 @@ Where in the parquet file to place the bloom filters. Bloom filters will be writ
     DECLARE(Bool, output_format_parquet_datetime_as_uint32, false, R"(
 Write DateTime values as raw unix timestamp (read back as UInt32), instead of converting to milliseconds (read back as DateTime64(3)).
 )", 0) \
+    DECLARE(Bool, output_format_parquet_enum_as_byte_array, false, R"(
+Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM
+)", 0) \
     DECLARE(String, output_format_avro_codec, "", R"(
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.
 )", 0) \
@@ -1081,8 +1094,29 @@ Path of the file used to record errors while reading text formats (CSV, TSV).
 Method to write Errors to text output.
 )", 0) \
     \
+    DECLARE(String, format_schema_source, "file", R"(
+Define the source of `format_schema`.
+Possible values:
+- 'file' (default):: The `format_schema` is the name of a schema file located in the `format_schemas` directory.
+- 'string': The `format_schema` is the literal content of the schema.
+- 'query': The `format_schema` is a query to retrieve the schema.
+When `format_schema_source` is set to 'query', the following conditions apply:
+- The query must return exactly one value: a single row with a single string column.
+- The result of the query is treated as the schema content.
+- This result is cached locally in the `format_schemas` directory.
+- You can clear the local cache using the command: `SYSTEM DROP FORMAT SCHEMA CACHE FOR Files`.
+- Once cached, identical queries are not executed to fetch the schema again until the cache is explicitly cleared
+- In addition to local cache files, Protobuf messages are also cached in memory. Even after clearing the local cache files, the in-memory cache must be cleared using `SYSTEM DROP FORMAT SCHEMA CACHE [FOR Protobuf]` to fully refresh the schema.
+- Run the query `SYSTEM DROP FORMAT SCHEMA CACHE` to clear the cache for both cache files and Protobuf messages schemas at once.
+)", 0) \
     DECLARE(String, format_schema, "", R"(
 This parameter is useful when you are using formats that require a schema definition, such as [Cap'n Proto](https://capnproto.org/) or [Protobuf](https://developers.google.com/protocol-buffers/). The value depends on the format.
+)", 0) \
+    DECLARE(String, format_schema_message_name, "", R"(
+Define the name of the required message in the schema defined in `format_schema`.
+To maintain compatibility with the legacy format_schema format (`file_name:message_name`):
+- If `format_schema_message_name` is not specified, the message name is inferred from the `message_name` part of the legacy `format_schema` value.
+- If `format_schema_message_name` is specified while using the legacy format, an error will be raised.
 )", 0) \
     DECLARE(String, format_template_resultset, "", R"(
 Path to file which contains format string for result set (for Template format)
@@ -1326,6 +1360,9 @@ Limits the size of the blocks formed during data parsing in input formats in byt
 )", 0) \
     DECLARE(Bool, input_format_parquet_allow_geoparquet_parser, true, R"(
 Use geo column parser to convert Array(UInt8) into Point/Linestring/Polygon/MultiLineString/MultiPolygon types
+)", 0) \
+    DECLARE(Bool, output_format_parquet_geometadata, true, R"(
+Allow to write information about geo columns in parquet metadata and encode columns in WKB format.
 )", 0) \
 
 

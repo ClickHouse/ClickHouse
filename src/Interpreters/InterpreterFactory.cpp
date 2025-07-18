@@ -37,6 +37,7 @@
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/ASTTransactionControl.h>
+#include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
@@ -235,7 +236,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTExplainQuery>())
     {
         const auto kind = query->as<ASTExplainQuery>()->getKind();
-        if (kind == ASTExplainQuery::ParsedAST || kind == ASTExplainQuery::AnalyzedSyntax)
+        if (kind == ASTExplainQuery::ParsedAST)
             context->setSetting("allow_experimental_analyzer", false);
 
         interpreter_name = "InterpreterExplainQuery";
@@ -379,6 +380,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTDeleteQuery>())
     {
         interpreter_name = "InterpreterDeleteQuery";
+    }
+    else if (query->as<ASTUpdateQuery>())
+    {
+        interpreter_name = "InterpreterUpdateQuery";
     }
     else if (query->as<ASTParallelWithQuery>())
     {
