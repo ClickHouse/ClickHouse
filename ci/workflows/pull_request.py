@@ -73,6 +73,7 @@ workflow = Workflow.Config(
         *ArtifactConfigs.performance_reports,
     ],
     dockers=DOCKERS,
+    enable_dockers_manifest_merge=True,
     secrets=SECRETS,
     enable_job_filtering_by_changes=True,
     enable_cache=True,
