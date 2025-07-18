@@ -40,12 +40,10 @@ def main():
                 else True
             )
 
-        log_export_config = f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --config-logs-export-cluster {ch.config_path}/config.d/system_logs_export.yaml"
-
         results.append(
             Result.from_commands_run(
                 name="Start ClickHouse",
-                command=[start, log_export_config],
+                command=start,
                 with_log=True,
             )
         )
