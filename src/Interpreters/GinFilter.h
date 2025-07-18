@@ -101,8 +101,6 @@ public:
     }
 
 private:
-    /// Filter parameters
-    const GinFilterParameters & params;
 
     /// Query string of the filter
     String query_string;
