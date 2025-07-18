@@ -14,23 +14,23 @@ Settings are configured in layers, and each subsequent layer redefines the previ
 
 The order of priority for defining a setting is:
 
-1.Applying a setting to a user directly, or within a settings profile
+1. Applying a setting to a user directly, or within a settings profile
 
-    -SQL (recommended)
-    -adding one or more XML or YAML files to `/etc/clickhouse-server/users.d`
+    - SQL (recommended)
+    - adding one or more XML or YAML files to `/etc/clickhouse-server/users.d`
 
-2.Session settings
+2. Session settings
 
-    -Send `SET setting=value` from the ClickHouse Cloud SQL console or
+    - Send `SET setting=value` from the ClickHouse Cloud SQL console or
     `clickhouse client` in interactive mode. Similarly, you can use ClickHouse
     sessions in the HTTP protocol. To do this, you need to specify the
     `session_id` HTTP parameter.
 
-3.Query settings
+3. Query settings
 
-    -When starting `clickhouse client` in non-interactive mode, set the startup
+    - When starting `clickhouse client` in non-interactive mode, set the startup
     parameter `--setting=value`.
-    -When using the HTTP API, pass CGI parameters (`URL?setting_1=value&setting_2=value...`).
+    - When using the HTTP API, pass CGI parameters (`URL?setting_1=value&setting_2=value...`).
     - Define settings in the
 
 
