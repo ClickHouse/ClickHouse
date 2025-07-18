@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.8",
         {
             {"max_joined_block_size_bytes", 0, 4 * 1024 * 1024, "New setting"},
+            {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
