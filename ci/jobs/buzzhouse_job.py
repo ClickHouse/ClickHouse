@@ -91,8 +91,6 @@ def main():
             "max_reconnection_attempts": 3,
             "time_to_sleep_between_reconnects": 5000,
             "keeper_map_path_prefix": "/keeper_map_tables",
-            # Don't use the old analyzer, it crashes sometimes
-            "disable_new_analyzer": False,
         }
         with open(buzz_config_file, "w") as outfile:
             outfile.write(json.dumps(buzz_config))
