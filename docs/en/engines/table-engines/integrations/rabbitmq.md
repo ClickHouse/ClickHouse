@@ -82,9 +82,7 @@ Optional parameters:
 - `rabbitmq_empty_queue_backoff_end` — An end backoff point to reschedule read if the rabbitmq queue is empty.
 - `rabbitmq_handle_error_mode` — How to handle errors for RabbitMQ engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`).
 
-
-
-  * [ ] SSL connection:
+- [ ] SSL connection:
 
 Use either `rabbitmq_secure = 1` or `amqps` in connection address: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`.
 The default behaviour of the used library is not to check if the created TLS connection is sufficiently secure. Whether the certificate is expired, self-signed, missing or invalid: the connection is simply permitted. More strict checking of certificates can possibly be implemented in the future.
@@ -128,9 +126,9 @@ Additional configuration:
 
 `SELECT` is not particularly useful for reading messages (except for debugging), because each message can be read only once. It is more practical to create real-time threads using [materialized views](../../../sql-reference/statements/create/view.md). To do this:
 
-1.  Use the engine to create a RabbitMQ consumer and consider it a data stream.
-2.  Create a table with the desired structure.
-3.  Create a materialized view that converts data from the engine and puts it into a previously created table.
+1.Use the engine to create a RabbitMQ consumer and consider it a data stream.
+2.Create a table with the desired structure.
+3.Create a materialized view that converts data from the engine and puts it into a previously created table.
 
 When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the background. This allows you to continually receive messages from RabbitMQ and convert them to the required format using `SELECT`.
 One RabbitMQ table can have as many materialized views as you like.

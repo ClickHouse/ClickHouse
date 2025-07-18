@@ -32,10 +32,11 @@ The order of priority for defining a setting is:
     parameter `--setting=value`.
     - When using the HTTP API, pass CGI parameters (`URL?setting_1=value&setting_2=value...`).
     - Define settings in the
+
+
     [SETTINGS](../../sql-reference/statements/select/index.md#settings-in-select-query)
     clause of the SELECT query. The setting value is applied only to that query
     and is reset to the default or previous value after the query is executed.
-
 
 ## Converting a setting to its default value {#converting-a-setting-to-its-default-value}
 
@@ -111,7 +112,7 @@ This creates the user `ingester` with the setting `async_inset = 1`:
 ```sql
 CREATE USER ingester
 IDENTIFIED WITH sha256_hash BY '7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3'
--- highlight-next-line
+- - highlight-next-line
 SETTINGS async_insert = 1
 ```
 
@@ -129,6 +130,7 @@ SHOW ACCESS
 │ ...                                                                                │
 └────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
 ### Using SQL to create a settings profile and assign to a user {#using-sql-to-create-a-settings-profile-and-assign-to-a-user}
 
 This creates the profile `log_ingest` with the setting `async_inset = 1`:
@@ -143,10 +145,9 @@ This creates the user `ingester` and assigns the user the settings profile `log_
 ```sql
 CREATE USER ingester
 IDENTIFIED WITH sha256_hash BY '7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3'
--- highlight-next-line
+- - highlight-next-line
 SETTINGS PROFILE log_ingest
 ```
-
 
 ### Using XML to create a settings profile and user {#using-xml-to-create-a-settings-profile-and-user}
 
@@ -212,7 +213,7 @@ SELECT value FROM system.settings where name='async_insert';
 
 ```sql
 INSERT INTO YourTable
--- highlight-next-line
+- - highlight-next-line
 SETTINGS async_insert=1
 VALUES (...)
 ```

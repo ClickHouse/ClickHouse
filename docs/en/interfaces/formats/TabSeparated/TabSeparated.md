@@ -91,9 +91,11 @@ CREATE TABLE nestedt
 )
 ENGINE = TinyLog
 ```
+
 ```sql
 INSERT INTO nestedt VALUES ( 1, [1], ['a'])
 ```
+
 ```sql
 SELECT * FROM nestedt FORMAT TSV
 ```
@@ -180,4 +182,3 @@ The output will be in tab separated format:
 | [`input_format_tsv_detect_header`](/operations/settings/settings-formats.md/#input_format_tsv_detect_header)                                             | automatically detect header with names and types in TSV format.                                                                                                                                                                                | `true`  |
 | [`input_format_tsv_skip_trailing_empty_lines`](/operations/settings/settings-formats.md/#input_format_tsv_skip_trailing_empty_lines)                     | skip trailing empty lines at the end of data.                                                                                                                                                                                                  | `false` |
 | [`input_format_tsv_allow_variable_number_of_columns`](/operations/settings/settings-formats.md/#input_format_tsv_allow_variable_number_of_columns)       | allow variable number of columns in TSV format, ignore extra columns and use default values on missing columns.                                                                                                                                | `false` |
-

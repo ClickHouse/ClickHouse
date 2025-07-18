@@ -138,9 +138,9 @@ Groups are flexible and synced on the cluster. For instance, if you have 10 topi
 
 `SELECT` is not particularly useful for reading messages (except for debugging), because each message can be read only once. It is more practical to create real-time threads using materialized views. To do this:
 
-1.  Use the engine to create a Kafka consumer and consider it a data stream.
-2.  Create a table with the desired structure.
-3.  Create a materialized view that converts data from the engine and puts it into a previously created table.
+1.Use the engine to create a Kafka consumer and consider it a data stream.
+2.Create a table with the desired structure.
+3.Create a materialized view that converts data from the engine and puts it into a previously created table.
 
 When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the background. This allows you to continually receive messages from Kafka and convert them to the required format using `SELECT`.
 One kafka table can have as many materialized views as you like, they do not read data from the kafka table directly, but receive new records (in blocks), this way you can write to several tables with different detail level (with grouping - aggregation and without).
@@ -166,6 +166,7 @@ Example:
 
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
+
 To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size). If the block wasn't formed within [stream_flush_interval_ms](/operations/settings/settings#stream_flush_interval_ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
 
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
@@ -221,7 +222,6 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
   </kafka>
 ```
 
-
 For a list of possible configuration options, see the [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use the underscore (`_`) instead of a dot in the ClickHouse configuration. For example, `check.crcs=true` will be `<check_crcs>true</check_crcs>`.
 
 ### Kerberos support {#kafka-kerberos-support}
@@ -271,8 +271,9 @@ The number of rows in one Kafka message depends on whether the format is row-bas
 <ExperimentalBadge/>
 
 If `allow_experimental_kafka_offsets_storage_in_keeper` is enabled, then two more settings can be specified to the Kafka table engine:
- - `kafka_keeper_path` specifies the path to the table in ClickHouse Keeper
- - `kafka_replica_name` specifies the replica name in ClickHouse Keeper
+
+- `kafka_keeper_path` specifies the path to the table in ClickHouse Keeper
+- `kafka_replica_name` specifies the replica name in ClickHouse Keeper
 
 Either both of the settings must be specified or neither of them. When both of them are specified, then a new, experimental Kafka engine will be used. The new engine doesn't depend on storing the committed offsets in Kafka, but stores them in ClickHouse Keeper. It still tries to commit the offsets to Kafka, but it only depends on those offsets when the table is created. In any other circumstances (table is restarted, or recovered after some error) the offsets stored in ClickHouse Keeper will be used as an offset to continue consuming messages from. Apart from the committed offset, it also stores how many messages were consumed in the last batch, so if the insert fails, the same amount of messages will be consumed, thus enabling deduplication if necessary.
 
@@ -301,10 +302,11 @@ SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
 ### Known limitations {#known-limitations}
 
 As the new engine is experimental, it is not production ready yet. There are few known limitations of the implementation:
- - The biggest limitation is the engine doesn't support direct reading. Reading from the engine using materialized views and writing to the engine work, but direct reading doesn't. As a result, all direct `SELECT` queries will fail.
- - Rapidly dropping and recreating the table or specifying the same ClickHouse Keeper path to different engines might cause issues. As best practice you can use the `{uuid}` in `kafka_keeper_path` to avoid clashing paths.
- - To make repeatable reads, messages cannot be consumed from multiple partitions on a single thread. On the other hand, the Kafka consumers have to be polled regularly to keep them alive. As a result of these two objectives, we decided to only allow creating multiple consumers if `kafka_thread_per_consumer` is enabled, otherwise it is too complicated to avoid issues regarding polling consumers regularly.
- - Consumers created by the new storage engine do not show up in [`system.kafka_consumers`](../../../operations/system-tables/kafka_consumers.md) table.
+
+- The biggest limitation is the engine doesn't support direct reading. Reading from the engine using materialized views and writing to the engine work, but direct reading doesn't. As a result, all direct `SELECT` queries will fail.
+- Rapidly dropping and recreating the table or specifying the same ClickHouse Keeper path to different engines might cause issues. As best practice you can use the `{uuid}` in `kafka_keeper_path` to avoid clashing paths.
+- To make repeatable reads, messages cannot be consumed from multiple partitions on a single thread. On the other hand, the Kafka consumers have to be polled regularly to keep them alive. As a result of these two objectives, we decided to only allow creating multiple consumers if `kafka_thread_per_consumer` is enabled, otherwise it is too complicated to avoid issues regarding polling consumers regularly.
+- Consumers created by the new storage engine do not show up in [`system.kafka_consumers`](../../../operations/system-tables/kafka_consumers.md) table.
 
 **See Also**
 

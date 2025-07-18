@@ -48,6 +48,7 @@ CREATE TABLE my_table ENGINE=TimeSeries
 ```
 
 Then this table can be used with the following protocols (a port must be assigned in the server configuration):
+
 - [prometheus remote-write](../../../interfaces/prometheus.md#remote-write)
 - [prometheus remote-read](../../../interfaces/prometheus.md#remote-read)
 
@@ -74,7 +75,6 @@ The _data_ table must have columns:
 | `id` | [x] | `UUID` | any | Identifies a combination of a metric names and tags |
 | `timestamp` | [x] | `DateTime64(3)` | `DateTime64(X)` | A time point |
 | `value` | [x] | `Float64` | `Float32` or `Float64` | A value associated with the `timestamp` |
-
 
 ### Tags table {#tags-table}
 
@@ -241,10 +241,12 @@ CREATE TABLE my_table ENGINE=TimeSeries SETTINGS = {'instance': 'instance', 'job
 ```
 
 This statement will add columns
+
 ```sql
     `instance` String,
     `job` String
 ```
+
 to the definition of both `my_table` and its inner [tags](#tags-table) target table. In this case the `tags` column will not contain tags `instance` and `job`,
 but the `all_tags` column will contain them. The `all_tags` column is ephemeral and its only purpose to be used in the DEFAULT expression
 for the `id` column.
@@ -259,6 +261,7 @@ ENGINE=TimeSeries SETTINGS = {'instance': 'instance', 'job': 'job'}
 ## Table engines of inner target tables {#inner-table-engines}
 
 By default inner target tables use the following table engines:
+
 - the [data](#data-table) table uses [MergeTree](../mergetree-family/mergetree);
 - the [tags](#tags-table) table uses [AggregatingMergeTree](../mergetree-family/aggregatingmergetree) because the same data is often inserted multiple times to this table so we need a way
 to remove duplicates, and also because it's required to do aggregation for columns `min_time` and `max_time`;
@@ -310,6 +313,7 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 # Functions {#functions}
 
 Here is a list of functions supporting a `TimeSeries` table as an argument:
+
 - [timeSeriesData](../../../sql-reference/table-functions/timeSeriesData.md)
 - [timeSeriesTags](../../../sql-reference/table-functions/timeSeriesTags.md)
 - [timeSeriesMetrics](../../../sql-reference/table-functions/timeSeriesMetrics.md)

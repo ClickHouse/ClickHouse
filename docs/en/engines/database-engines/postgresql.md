@@ -48,7 +48,6 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 | INTEGER          | Nullable([Int32](../../sql-reference/data-types/int-uint.md))|
 | ARRAY            | [Array](../../sql-reference/data-types/array.md)             |
 
-
 ## Examples of use {#examples-of-use}
 
 Database in ClickHouse, exchanging data with the PostgreSQL server:
@@ -117,6 +116,7 @@ As the `use_table_cache` parameter was set to `1` when the database was created,
 ```sql
 DESCRIBE TABLE test_database.test_table;
 ```
+
 ```text
 ┌─name───┬─type──────────────┐
 │ id     │ Nullable(Integer) │
@@ -131,6 +131,7 @@ DETACH TABLE test_database.test_table;
 ATTACH TABLE test_database.test_table;
 DESCRIBE TABLE test_database.test_table;
 ```
+
 ```text
 ┌─name───┬─type──────────────┐
 │ id     │ Nullable(Integer) │

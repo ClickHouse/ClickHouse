@@ -10,15 +10,16 @@ title: 'Permissions for queries'
 
 Queries in ClickHouse can be divided into several types:
 
-1.  Read data queries: `SELECT`, `SHOW`, `DESCRIBE`, `EXISTS`.
-2.  Write data queries: `INSERT`, `OPTIMIZE`.
-3.  Change settings query: `SET`, `USE`.
-4.  [DDL](https://en.wikipedia.org/wiki/Data_definition_language) queries: `CREATE`, `ALTER`, `RENAME`, `ATTACH`, `DETACH`, `DROP` `TRUNCATE`.
-5.  `KILL QUERY`.
+1.Read data queries: `SELECT`, `SHOW`, `DESCRIBE`, `EXISTS`.
+2.Write data queries: `INSERT`, `OPTIMIZE`.
+3.Change settings query: `SET`, `USE`.
+4.[DDL](https://en.wikipedia.org/wiki/Data_definition_language) queries: `CREATE`, `ALTER`, `RENAME`, `ATTACH`, `DETACH`, `DROP` `TRUNCATE`.
+5.`KILL QUERY`.
 
 The following settings regulate user permissions by the type of query:
 
 ## readonly {#readonly}
+
 Restricts permissions for read data, write data, and change settings queries.
 
 When set to 1, allows:
@@ -27,6 +28,7 @@ When set to 1, allows:
 - Queries that modify only session context (like USE).
 
 When set to 2, allows the above plus:
+
 - SET and CREATE TEMPORARY TABLE
 
   :::tip
@@ -49,7 +51,6 @@ When using the `GET` method in the [HTTP interface](../../interfaces/http.md), `
 Setting `readonly = 1` prohibits the user from changing settings. There is a way to prohibit the user from changing only specific settings. Also there is a way to allow changing only specific settings under `readonly = 1` restrictions. For details see [constraints on settings](../../operations/settings/constraints-on-settings.md).
 :::
 
-
 ## allow_ddl {#allow_ddl}
 
 Allows or denies [DDL](https://en.wikipedia.org/wiki/Data_definition_language) queries.
@@ -64,7 +65,6 @@ Default value: 1
 :::note
 You cannot run `SET allow_ddl = 1` if `allow_ddl = 0` for the current session.
 :::
-
 
 :::note KILL QUERY
 `KILL QUERY` can be performed with any combination of readonly and allow_ddl settings.

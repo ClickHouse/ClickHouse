@@ -62,6 +62,7 @@ Result:
 │                         3 │                         1 │
 └───────────────────────────┴───────────────────────────┘
 ```
+
 Note that all floating point values in the example are truncated to 1.0 when converting to `bfloat16`.
 
 **See Also**

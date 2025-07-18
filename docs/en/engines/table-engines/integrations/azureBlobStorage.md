@@ -35,7 +35,6 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 
 Users can use the Azurite emulator for local Azure Storage development. Further details [here](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage). If using a local instance of Azurite, users may need to substitute `http://localhost:10000` for `http://azurite1:10000` in the commands below, where we assume Azurite is available at host `azurite1`.
 
-
 ```sql
 CREATE TABLE test_table (key UInt64, data String)
     ENGINE = AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;', 'testcontainer', 'test_table', 'CSV');
@@ -63,6 +62,7 @@ SELECT * FROM test_table;
 ## Authentication {#authentication}
 
 Currently there are 3 ways to authenticate:
+
 - `Managed Identity` - Can be used by providing an `endpoint`, `connection_string` or `storage_account_url`.
 - `SAS Token` - Can be used by providing an `endpoint`, `connection_string` or `storage_account_url`. It is identified by presence of '?' in the url. See [azureBlobStorage](/sql-reference/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) for examples.
 - `Workload Identity` - Can be used by providing an `endpoint` or `storage_account_url`. If `use_workload_identity` parameter is set in config, ([workload identity](https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#authenticate-azure-hosted-applications)) is used for authentication.
@@ -81,7 +81,7 @@ FROM azureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount
 SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
 ```
 
-1. add the following section to clickhouse configuration file:
+1.add the following section to clickhouse configuration file:
 
 ```xml
 <clickhouse>
@@ -94,7 +94,7 @@ SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
 </clickhouse>
 ```
 
-2. reuse cache configuration (and therefore cache storage) from clickhouse `storage_configuration` section, [described here](/operations/storing-data.md/#using-local-cache)
+2.reuse cache configuration (and therefore cache storage) from clickhouse `storage_configuration` section, [described here](/operations/storing-data.md/#using-local-cache)
 
 ## See also {#see-also}
 

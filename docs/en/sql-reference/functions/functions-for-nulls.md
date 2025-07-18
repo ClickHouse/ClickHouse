@@ -98,7 +98,7 @@ Result:
 
 Returns whether the argument is not [NULL](/operations/settings/formats#input_format_null_as_default).
 
-See also operator [`IS NOT NULL`](../operators/index.md#is_not_null).
+See also operator [`IS NOT NULL`](../operators/index.md#is-not-null).
 
 ```sql
 isNotNull(x)

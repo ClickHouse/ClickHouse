@@ -17,7 +17,7 @@ Approximated query processing can be useful in the following cases:
 - When your raw data is not accurate, so approximation does not noticeably degrade the quality.
 - Business requirements target approximate results (for cost-effectiveness, or to market exact results to premium users).
 
-:::note    
+:::note
 You can only use sampling with the tables in the [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) family, and only if the sampling expression was specified during table creation (see [MergeTree engine](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table)).
 :::
 
@@ -34,7 +34,6 @@ For the `SAMPLE` clause the following syntax is supported:
 | `SAMPLE k`   | Here `k` is the number from 0 to 1. The query is executed on `k` fraction of data. For example, `SAMPLE 0.1` runs the query on 10% of data. [Read more](#sample-k)                                                                             |
 | `SAMPLE n`    | Here `n` is a sufficiently large integer. The query is executed on a sample of at least `n` rows (but not significantly more than this). For example, `SAMPLE 10000000` runs the query on a minimum of 10,000,000 rows. [Read more](#sample-n) |
 | `SAMPLE k OFFSET m`  | Here `k` and `m` are the numbers from 0 to 1. The query is executed on a sample of `k` fraction of the data. The data used for the sample is offset by `m` fraction. [Read more](#sample-k-offset-m)                                           |
-
 
 ## SAMPLE K {#sample-k}
 

@@ -23,6 +23,7 @@ with:
 ```sql
 ENGINE = ReplicatedMergeTree
 ```
+
 :::
 
 Replication is only supported for tables in the MergeTree family:
@@ -110,6 +111,7 @@ ReplicatedMergeTree engine as follows:
 ```sql
 CREATE TABLE table_name ( ... ) ENGINE = ReplicatedMergeTree('zookeeper_name_configured_in_auxiliary_zookeepers:path', 'replica_name') ...
 ```
+
 You can specify any existing ZooKeeper cluster and the system will use a directory on it for its own data (the directory is specified when creating a replicatable table).
 
 If ZooKeeper is not set in the config file, you can't create replicated tables, and any existing replicated tables will be read-only.
@@ -154,7 +156,6 @@ Avoid using `ReplicatedMergeTree` or specifying replication parameters, as repli
 | `zoo_path`      | The path to the table in ClickHouse Keeper.                                  |
 | `replica_name`  | The replica name in ClickHouse Keeper.                                       |
 | `other_parameters` | Parameters of an engine used for creating the replicated version, for example, version in `ReplacingMergeTree`. |
-
 
 Example:
 
@@ -275,10 +276,10 @@ Then restart the server. On start, the server deletes these flags and starts rec
 
 If all data and metadata disappeared from one of the servers, follow these steps for recovery:
 
-1.  Install ClickHouse on the server. Define substitutions correctly in the config file that contains the shard identifier and replicas, if you use them.
-2.  If you had unreplicated tables that must be manually duplicated on the servers, copy their data from a replica (in the directory `/var/lib/clickhouse/data/db_name/table_name/`).
-3.  Copy table definitions located in `/var/lib/clickhouse/metadata/` from a replica. If a shard or replica identifier is defined explicitly in the table definitions, correct it so that it corresponds to this replica. (Alternatively, start the server and make all the `ATTACH TABLE` queries that should have been in the .sql files in `/var/lib/clickhouse/metadata/`.)
-4.  To start recovery, create the ClickHouse Keeper node `/path_to_table/replica_name/flags/force_restore_data` with any content, or run the command to restore all replicated tables: `sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data`
+1.Install ClickHouse on the server. Define substitutions correctly in the config file that contains the shard identifier and replicas, if you use them.
+2.If you had unreplicated tables that must be manually duplicated on the servers, copy their data from a replica (in the directory `/var/lib/clickhouse/data/db_name/table_name/`).
+3.Copy table definitions located in `/var/lib/clickhouse/metadata/` from a replica. If a shard or replica identifier is defined explicitly in the table definitions, correct it so that it corresponds to this replica. (Alternatively, start the server and make all the `ATTACH TABLE` queries that should have been in the .sql files in `/var/lib/clickhouse/metadata/`.)
+4.To start recovery, create the ClickHouse Keeper node `/path_to_table/replica_name/flags/force_restore_data` with any content, or run the command to restore all replicated tables: `sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data`
 
 Then start the server (restart, if it is already running). Data will be downloaded from replicas.
 

@@ -30,7 +30,9 @@ INSERT INTO test_data (a, b) VALUES (1,null), (2,3), (4, 5), (6,null);
 ```
 
 ### Example 1 {#example1}
+
 By default, the NULL value is ignored.
+
 ```sql
 SELECT first_value(b) FROM test_data;
 ```
@@ -42,7 +44,9 @@ SELECT first_value(b) FROM test_data;
 ```
 
 ### Example 2 {#example2}
+
 The NULL value is ignored.
+
 ```sql
 SELECT first_value(b) ignore nulls FROM test_data
 ```
@@ -54,7 +58,9 @@ SELECT first_value(b) ignore nulls FROM test_data
 ```
 
 ### Example 3 {#example3}
+
 The NULL value is accepted.
+
 ```sql
 SELECT first_value(b) respect nulls FROM test_data
 ```
@@ -66,7 +72,9 @@ SELECT first_value(b) respect nulls FROM test_data
 ```
 
 ### Example 4 {#example4}
+
 Stabilized result using the sub-query with `ORDER BY`.
+
 ```sql
 SELECT
     first_value_respect_nulls(b),
@@ -84,4 +92,3 @@ FROM
 │                 ᴺᵁᴸᴸ │      3 │
 └──────────────────────┴────────┘
 ```
-

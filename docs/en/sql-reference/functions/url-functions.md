@@ -209,6 +209,7 @@ svn+ssh://some.svn-hosting.com:80/repo/trunk
 some.svn-hosting.com:80/repo/trunk
 https://clickhouse.com/time/
 ```
+
 :::
 
 **Returned values**
@@ -252,6 +253,7 @@ svn+ssh://some.svn-hosting.com:80/repo/trunk
 some.svn-hosting.com:80/repo/trunk
 https://clickhouse.com/time/
 ```
+
 :::
 
 **Returned values**
@@ -424,7 +426,6 @@ Result:
 │                                                                         │ example.com                                                                │
 └─────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────┘
 ```
-
 
 ### cutToFirstSignificantSubdomainWithWWW {#cuttofirstsignificantsubdomainwithwww}
 
@@ -825,7 +826,7 @@ Example: `/top/news.html?page=2#comments`.
 
 ### protocol {#protocol-1}
 
-Extracts the protocol from a URL. 
+Extracts the protocol from a URL.
 
 **Syntax**
 

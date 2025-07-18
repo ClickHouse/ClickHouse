@@ -55,6 +55,7 @@ Run `OPTIMIZE` to force `TTL` cleanup:
 OPTIMIZE TABLE table_with_ttl FINAL;
 SELECT * FROM table_with_ttl FORMAT PrettyCompact;
 ```
+
 Second row was deleted from table.
 
 ```text

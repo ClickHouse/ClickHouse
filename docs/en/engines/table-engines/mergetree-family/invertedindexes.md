@@ -300,12 +300,12 @@ WHERE hasToken(lower(comment), 'clickhouse')
 We can also search for one or all of multiple terms, i.e., disjunctions or conjunctions:
 
 ```sql
--- multiple OR'ed terms
+- - multiple OR'ed terms
 SELECT count(*)
 FROM hackernews
 WHERE multiSearchAny(lower(comment), ['oltp', 'olap']);
 
--- multiple AND'ed terms
+- - multiple AND'ed terms
 SELECT count(*)
 FROM hackernews
 WHERE hasToken(lower(comment), 'avx') AND hasToken(lower(comment), 'sve');

@@ -45,6 +45,7 @@ This command is a shortcut of:
 ```
 
 ClickHouse knows the file uses a tab-separated format from filename extension. If you need to explicitly specify the format, simply add one of the [many ClickHouse input formats](../../interfaces/formats.md):
+
 ```bash
 ./clickhouse local -q "SELECT * FROM file('reviews.tsv', 'TabSeparated')"
 ```
@@ -174,26 +175,25 @@ NORTHWOOD    THREE RIVERS    184    731609    ███████████�
 When you are ready to insert your files into ClickHouse, startup a ClickHouse server and insert the results of your `file` and `s3` table functions into a `MergeTree` table. View the [Quick Start](/get-started/quick-start) for more details.
 :::
 
-
 ## Format Conversions {#format-conversions}
 
 You can use `clickhouse-local` for converting data between different formats. Example:
 
 ```bash
-$ clickhouse-local --input-format JSONLines --output-format CSV --query "SELECT * FROM table" < data.json > data.csv
+clickhouse-local --input-format JSONLines --output-format CSV --query "SELECT * FROM table" < data.json > data.csv
 ```
 
-Formats are auto-detected from file extensions: 
+Formats are auto-detected from file extensions:
 
 ```bash
-$ clickhouse-local --query "SELECT * FROM table" < data.json > data.csv
+clickhouse-local --query "SELECT * FROM table" < data.json > data.csv
 ```
 
 As a shortcut, you can write it using the `--copy` argument:
-```bash
-$ clickhouse-local --copy < data.json > data.csv
-```
 
+```bash
+clickhouse-local --copy < data.json > data.csv
+```
 
 ## Usage {#usage}
 
@@ -202,13 +202,13 @@ By default `clickhouse-local` has access to data of a ClickHouse server on the s
 Basic usage (Linux):
 
 ```bash
-$ clickhouse-local --structure "table_structure" --input-format "format_of_incoming_data" --query "query"
+clickhouse-local --structure "table_structure" --input-format "format_of_incoming_data" --query "query"
 ```
 
 Basic usage (Mac):
 
 ```bash
-$ ./clickhouse local --structure "table_structure" --input-format "format_of_incoming_data" --query "query"
+./clickhouse local --structure "table_structure" --input-format "format_of_incoming_data" --query "query"
 ```
 
 :::note
@@ -239,7 +239,6 @@ Arguments:
 - `-V`, `--version` — print version information and exit.
 
 Also, there are arguments for each ClickHouse configuration variable which are more commonly used instead of `--config-file`.
-
 
 ## Examples {#examples}
 

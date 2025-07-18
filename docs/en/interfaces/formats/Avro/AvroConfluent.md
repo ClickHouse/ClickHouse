@@ -21,6 +21,7 @@ import DataTypesMatching from './_snippets/data-types-matching.md'
 Each Avro message embeds a schema ID that ClickHouse automatically resolves by querying the configured schema registry. Once resolved, schemas are cached for optimal performance.
 
 <a id="data-types-matching"></a>
+
 ## Data type mapping {#data-type-mapping}
 
 <DataTypesMatching/>

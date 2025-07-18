@@ -10,6 +10,7 @@ title: 'system.settings_profiles'
 Contains properties of configured setting profiles.
 
 Columns:
+
 - `name` ([String](../../sql-reference/data-types/string.md)) — Setting profile name.
 
 - `id` ([UUID](../../sql-reference/data-types/uuid.md)) — Setting profile ID.

@@ -83,7 +83,8 @@ There can be other clauses after the `ENGINE` clause in the query. See detailed 
 
 :::tip
 In ClickHouse Cloud please split this into two steps:
-1. Create the table structure
+
+1.Create the table structure
 
   ```sql
   CREATE TABLE t1
@@ -94,7 +95,7 @@ In ClickHouse Cloud please split this into two steps:
   SELECT ...
   ```
 
-2. Populate the table
+2.Populate the table
 
   ```sql
   INSERT INTO t1
@@ -357,7 +358,7 @@ Defines storage time for values. Can be specified only for MergeTree-family tabl
 
 ## Column Compression Codecs {#column_compression_codec}
 
-By default, ClickHouse applies `lz4` compression in the self-managed version, and `zstd` in ClickHouse Cloud. 
+By default, ClickHouse applies `lz4` compression in the self-managed version, and `zstd` in ClickHouse Cloud.
 
 For `MergeTree`-engine family you can change the default compression method in the [compression](/operations/server-configuration-parameters/settings#compression) section of a server configuration.
 
@@ -490,11 +491,9 @@ These codecs don't actually compress data, but instead encrypt data on disk. The
 
 Encryption codecs:
 
-
 #### AES_128_GCM_SIV {#aes_128_gcm_siv}
 
 `CODEC('AES-128-GCM-SIV')` — Encrypts data with AES-128 in [RFC 8452](https://tools.ietf.org/html/rfc8452) GCM-SIV mode.
-
 
 #### AES-256-GCM-SIV {#aes-256-gcm-siv}
 
@@ -569,13 +568,13 @@ It's possible to use tables with [ENGINE = Memory](../../../engines/table-engine
 The `REPLACE` statement allows you to update a table [atomically](/concepts/glossary#atomicity).
 
 :::note
-This statement is supported for the [`Atomic`](../../../engines/database-engines/atomic.md) and [`Replicated`](../../../engines/database-engines/replicated.md) database engines, 
+This statement is supported for the [`Atomic`](../../../engines/database-engines/atomic.md) and [`Replicated`](../../../engines/database-engines/replicated.md) database engines,
 which are the default database engines for ClickHouse and ClickHouse Cloud respectively.
 :::
 
-Ordinarily, if you need to delete some data from a table, 
-you can create a new table and fill it with a `SELECT` statement that does not retrieve unwanted data, 
-then drop the old table and rename the new one. 
+Ordinarily, if you need to delete some data from a table,
+you can create a new table and fill it with a `SELECT` statement that does not retrieve unwanted data,
+then drop the old table and rename the new one.
 This approach is demonstrated in the example below:
 
 ```sql
@@ -674,10 +673,11 @@ SELECT * FROM base.t1;
 │ 3 │
 └───┘
 ```  
+
 </TabItem>
 <TabItem value="cloud_replace_example" label="Cloud">
 
-Consider the following table on ClickHouse Cloud: 
+Consider the following table on ClickHouse Cloud:
 
 ```sql
 CREATE DATABASE base;
@@ -727,7 +727,8 @@ INSERT INTO base.t1 VALUES (3);
 SELECT * FROM base.t1;
 
 3
-```    
+```
+
 </TabItem>
 </Tabs>
 
@@ -762,7 +763,6 @@ Result:
 │ t1   │ The temporary table │
 └──────┴─────────────────────┘
 ```
-
 
 ## Related content {#related-content}
 

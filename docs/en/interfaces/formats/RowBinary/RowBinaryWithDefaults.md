@@ -25,6 +25,7 @@ Examples:
 ```sql title="Query"
 SELECT * FROM FORMAT('RowBinaryWithDefaults', 'x UInt32 default 42, y UInt32', x'010001000000')
 ```
+
 ```response title="Response"
 ┌──x─┬─y─┐
 │ 42 │ 1 │
@@ -37,5 +38,3 @@ SELECT * FROM FORMAT('RowBinaryWithDefaults', 'x UInt32 default 42, y UInt32', x
 ## Format settings {#format-settings}
 
 <RowBinaryFormatSettings/>
-
-

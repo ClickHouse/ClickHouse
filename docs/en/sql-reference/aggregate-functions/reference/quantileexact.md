@@ -132,6 +132,7 @@ Result:
 │                        4 │
 └──────────────────────────┘
 ```
+
 ## quantileExactHigh {#quantileexacthigh}
 
 Similar to `quantileExact`, this computes the exact [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.

@@ -31,6 +31,7 @@ A table with data parsed from `data` argument according to specified format and 
 Without `structure` argument:
 
 **Query:**
+
 ```sql
 SELECT * FROM format(JSONEachRow,
 $$
@@ -53,6 +54,7 @@ $$)
 ```
 
 **Query:**
+
 ```sql
 DESC format(JSONEachRow,
 $$
@@ -75,6 +77,7 @@ $$)
 With `structure` argument:
 
 **Query:**
+
 ```sql
 SELECT * FROM format(JSONEachRow, 'a String, b UInt32',
 $$
@@ -86,6 +89,7 @@ $$)
 ```
 
 **Result:**
+
 ```response
 ┌─a─────┬───b─┐
 │ Hello │ 111 │

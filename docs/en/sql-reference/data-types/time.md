@@ -47,9 +47,9 @@ ENGINE = TinyLog;
 ```
 
 ``` sql
--- Parse Time
--- - from string,
--- - from integer interpreted as number of seconds since 1970-01-01.
+- - Parse Time
+- - - from string,
+- - - from integer interpreted as number of seconds since 1970-01-01.
 INSERT INTO dt VALUES ('100:00:00', 1), (12453, 3);
 
 SELECT * FROM dt;
@@ -97,7 +97,6 @@ SELECT toTime(now()) AS column, toTypeName(column) AS x
 1. │  18:55:15 │ Time │
    └───────────┴──────┘
 ```
-
 
 ## See Also {#see-also}
 

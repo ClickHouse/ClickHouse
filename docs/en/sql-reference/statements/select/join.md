@@ -71,6 +71,7 @@ Use the `cross_to_inner_join_rewrite` setting to define the behavior when ClickH
 ## ON section conditions {#on-section-conditions}
 
 An `ON` section can contain several conditions combined using the `AND` and `OR` operators. Conditions specifying join keys must:
+
 - reference both left and right tables
 - use the equality operator
 
@@ -127,6 +128,7 @@ Result:
 │ B    │ Text B │     15 │
 └──────┴────────┴────────┘
 ```
+
 Query with `INNER` type of a join and condition with `OR`:
 
 ```sql
@@ -227,7 +229,6 @@ key2    a2    1    1    1            0    0    \N
 key4    f    2    3    4            0    0    \N
 ```
 
-
 ## NULL values in JOIN keys {#null-values-in-join-keys}
 
 `NULL` is not equal to any value, including itself. This means that if a `JOIN` key has a `NULL` value in one table, it won't match a `NULL` value in the other table.
@@ -321,7 +322,7 @@ For example, consider the following tables:
 ```text
          table_1                           table_2
       event   | ev_time | user_id       event   | ev_time | user_id
-    ----------|---------|---------- ----------|---------|----------
+    ----------|---------|--------------------|---------|----------
                   ...                               ...
     event_1_1 |  12:00  |  42         event_2_1 |  11:59  |   42
                   ...                 event_2_2 |  12:30  |   42
@@ -343,6 +344,7 @@ The rows are matched based on their positions in the original tables (the order 
 If the subqueries return a different number of rows, extra rows will be cut.
 
 Example:
+
 ```sql
 SELECT *
 FROM
@@ -409,13 +411,16 @@ Be careful when using `GLOBAL`. For more information, see the [Distributed subqu
 **Example**
 
 Consider the table `t_1`:
+
 ```response
 ┌─a─┬─b─┬─toTypeName(a)─┬─toTypeName(b)─┐
 │ 1 │ 1 │ UInt16        │ UInt8         │
 │ 2 │ 2 │ UInt16        │ UInt8         │
 └───┴───┴───────────────┴───────────────┘
 ```
+
 and the table `t_2`:
+
 ```response
 ┌──a─┬────b─┬─toTypeName(a)─┬─toTypeName(b)───┐
 │ -1 │    1 │ Int16         │ Nullable(Int64) │
@@ -425,10 +430,13 @@ and the table `t_2`:
 ```
 
 The query
+
 ```sql
 SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
 ```
+
 returns the set:
+
 ```response
 ┌──a─┬────b─┬─toTypeName(a)─┬─toTypeName(b)───┐
 │  1 │    1 │ Int32         │ Nullable(Int64) │
@@ -483,7 +491,7 @@ If you need to restrict `JOIN` operation memory consumption use the following se
 - [max_rows_in_join](/operations/settings/settings#max_rows_in_join) — Limits number of rows in the hash table.
 - [max_bytes_in_join](/operations/settings/settings#max_bytes_in_join) — Limits size of the hash table.
 
-When any of these limits is reached, ClickHouse acts as the [join_overflow_mode](/operations/settings/settings#join_overflow_mode) 
+When any of these limits is reached, ClickHouse acts as the [join_overflow_mode](/operations/settings/settings#join_overflow_mode)
 setting instructs.
 
 ## Examples {#examples}

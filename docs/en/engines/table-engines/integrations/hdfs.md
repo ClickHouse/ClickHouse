@@ -70,9 +70,9 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 - Reads and writes can be parallel.
 - Not supported:
-    - `ALTER` and `SELECT...SAMPLE` operations.
-    - Indexes.
-    - [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not recommended.
+- `ALTER` and `SELECT...SAMPLE` operations.
+- Indexes.
+- [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not recommended.
 
   :::note Zero-copy replication is not ready for production
   Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
@@ -91,18 +91,18 @@ Constructions with `{}` are similar to the [remote](../../../sql-reference/table
 
 **Example**
 
-1.  Suppose we have several files in TSV format with the following URIs on HDFS:
+1.Suppose we have several files in TSV format with the following URIs on HDFS:
 
-    - 'hdfs://hdfs1:9000/some_dir/some_file_1'
-    - 'hdfs://hdfs1:9000/some_dir/some_file_2'
-    - 'hdfs://hdfs1:9000/some_dir/some_file_3'
-    - 'hdfs://hdfs1:9000/another_dir/some_file_1'
-    - 'hdfs://hdfs1:9000/another_dir/some_file_2'
-    - 'hdfs://hdfs1:9000/another_dir/some_file_3'
+    -'hdfs://hdfs1:9000/some_dir/some_file_1'
+    -'hdfs://hdfs1:9000/some_dir/some_file_2'
+    -'hdfs://hdfs1:9000/some_dir/some_file_3'
+    -'hdfs://hdfs1:9000/another_dir/some_file_1'
+    -'hdfs://hdfs1:9000/another_dir/some_file_2'
+    -'hdfs://hdfs1:9000/another_dir/some_file_3'
 
-1.  There are several ways to make a table consisting of all six files:
+1.There are several ways to make a table consisting of all six files:
 
-<!-- -->
+<!---->
 
 ```sql
 CREATE TABLE table_with_range (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV')
@@ -131,6 +131,7 @@ Create table with files named `file000`, `file001`, ... , `file999`:
 ```sql
 CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV')
 ```
+
 ## Configuration {#configuration}
 
 Similar to GraphiteMergeTree, the HDFS engine supports extended configuration using the ClickHouse config file. There are two configuration keys that you can use: global (`hdfs`) and user-level (`hdfs_*`). The global configuration is applied first, and then the user-level configuration is applied (if it exists).
@@ -153,7 +154,6 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 
 #### Supported by libhdfs3 {#supported-by-libhdfs3}
 
-
 | **parameter**                                         | **default value**       |
 | -                                                  | -                    |
 | rpc\_client\_connect\_tcpnodelay                      | true                    |
@@ -173,7 +173,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 | input\_connect\_timeout                               | 600 * 1000              |
 | input\_read\_timeout                                  | 3600 * 1000             |
 | input\_write\_timeout                                 | 3600 * 1000             |
-| input\_localread\_default\_buffersize                 | 1 * 1024 * 1024         |
+| input\_localread\_default\_buffersize                 | 1 *1024* 1024         |
 | dfs\_prefetchsize                                     | 10                      |
 | input\_read\_getblockinfo\_retry                      | 3                       |
 | input\_localread\_blockinfo\_cachesize                | 1000                    |
@@ -191,16 +191,14 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 | dfs\_client\_read\_shortcircuit\_streams\_cache\_size | 256                     |
 | dfs\_client\_socketcache\_expiryMsec                  | 3000                    |
 | dfs\_client\_socketcache\_capacity                    | 16                      |
-| dfs\_default\_blocksize                               | 64 * 1024 * 1024        |
+| dfs\_default\_blocksize                               | 64 *1024* 1024        |
 | dfs\_default\_uri                                     | "hdfs://localhost:9000" |
 | hadoop\_security\_authentication                      | "simple"                |
 | hadoop\_security\_kerberos\_ticket\_cache\_path       | ""                      |
 | dfs\_client\_log\_severity                            | "INFO"                  |
 | dfs\_domain\_socket\_path                             | ""                      |
 
-
 [HDFS Configuration Reference](https://hawq.apache.org/docs/userguide/2.3.0.0-incubating/reference/HDFSConfigurationParameterReference.html) might explain some parameters.
-
 
 #### ClickHouse extras {#clickhouse-extras}
 
@@ -211,7 +209,8 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 |libhdfs3\_conf                                         | ""                      |
 
 ### Limitations {#limitations}
-* `hadoop_security_kerberos_ticket_cache_path` and `libhdfs3_conf` can be global only, not user specific
+
+- `hadoop_security_kerberos_ticket_cache_path` and `libhdfs3_conf` can be global only, not user specific
 
 ## Kerberos support {#kerberos-support}
 
@@ -222,6 +221,7 @@ datanode communications are not secured by SASL (`HADOOP_SECURE_DN_USER` is a re
 security approach). Use `tests/integration/test_storage_kerberized_hdfs/hdfs_configs/bootstrap.sh` for reference.
 
 If `hadoop_kerberos_keytab`, `hadoop_kerberos_principal` or `hadoop_security_kerberos_ticket_cache_path` are specified, Kerberos authentication will be used. `hadoop_kerberos_keytab` and `hadoop_kerberos_principal` are mandatory in this case.
+
 ## HDFS Namenode HA support {#namenode-ha}
 
 libhdfs3 support HDFS namenode HA.
@@ -236,7 +236,6 @@ libhdfs3 support HDFS namenode HA.
 ```
 
 - Then use `dfs.nameservices` tag value of `hdfs-site.xml` as the namenode address in the HDFS URI. For example, replace `hdfs://appadmin@192.168.101.11:8020/abc/` with `hdfs://appadmin@my_nameservice/abc/`.
-
 
 ## Virtual columns {#virtual-columns}
 

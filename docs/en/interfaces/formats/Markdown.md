@@ -20,6 +20,7 @@ SELECT
 FROM numbers(5)
 FORMAT Markdown
 ```
+
 ```results
 | number | multiply(number, 2) |
 |-:|-:|

@@ -35,6 +35,7 @@ DROP [TEMPORARY] TABLE [IF EXISTS] [IF EMPTY]  [db1.]name_1[, [db2.]name_2, ...]
 ```
 
 Limitations:
+
 - If the clause `IF EMPTY` is specified, the server checks the emptiness of the table only on the replica which received the query.  
 - Deleting multiple tables at once is not an atomic operation, i.e. if the deletion of a table fails, subsequent tables will not be deleted.
 

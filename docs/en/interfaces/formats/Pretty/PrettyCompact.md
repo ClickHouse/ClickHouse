@@ -16,7 +16,7 @@ import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
 
 ## Description {#description}
 
-Differs from the [`Pretty`](./Pretty.md) format in that the table is displayed with a grid drawn between rows. 
+Differs from the [`Pretty`](./Pretty.md) format in that the table is displayed with a grid drawn between rows.
 Because of this the result is more compact.
 
 :::note

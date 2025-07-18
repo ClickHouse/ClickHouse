@@ -21,7 +21,6 @@ ClickHouse supports:
 - Dictionaries with a [set of functions](../../sql-reference/functions/ext-dict-functions.md).
 - [Embedded dictionaries](#embedded-dictionaries) with a specific [set of functions](../../sql-reference/functions/embedded-dict-functions.md).
 
-
 :::tip Tutorial
 If you are getting started with Dictionaries in ClickHouse we have a tutorial that covers that topic.  Take a look [here](tutorial.md).
 :::
@@ -49,9 +48,10 @@ The [dictionaries](/operations/system-tables/dictionaries) system table contains
 ## Creating a dictionary with a DDL query {#creating-a-dictionary-with-a-ddl-query}
 
 Dictionaries can be created with [DDL queries](../../sql-reference/statements/create/dictionary.md), and this is the recommended method because with DDL created dictionaries:
+
 - No additional records are added to server configuration files.
 - The dictionaries can be worked with as first-class entities, like tables or views.
-- Data can be read directly, using familiar SELECT rather than dictionary table functions. Note that when accessing a dictionary directly via a SELECT statement, cached dictionary will return only cached data, while non-cached dictionary - will return all of the data that it stores. 
+- Data can be read directly, using familiar SELECT rather than dictionary table functions. Note that when accessing a dictionary directly via a SELECT statement, cached dictionary will return only cached data, while non-cached dictionary - will return all of the data that it stores.
 - The dictionaries can be easily renamed.
 
 ## Creating a dictionary with a configuration file {#creating-a-dictionary-with-a-configuration-file}
@@ -81,7 +81,6 @@ The dictionary configuration file has the following format:
 ```
 
 You can [configure](#configuring-a-dictionary) any number of dictionaries in the same file.
-
 
 :::note
 You can convert values for a small dictionary by describing it in a `SELECT` query (see the [transform](../../sql-reference/functions/other-functions.md) function). This functionality is not related to dictionaries.
@@ -180,6 +179,7 @@ Dictionaries without word `complex-key*` in a layout have a key with [UInt64](..
 [UInt64](../../sql-reference/data-types/int-uint.md) keys in XML dictionaries are defined with `<id>` tag.
 
 Configuration example (column key_column has UInt64 type):
+
 ```xml
 ...
 <structure>
@@ -192,6 +192,7 @@ Configuration example (column key_column has UInt64 type):
 Composite `complex` keys XML dictionaries are defined `<key>` tag.
 
 Configuration example of a composite key (key has one element with [String](../../sql-reference/data-types/string.md) type):
+
 ```xml
 ...
 <structure>
@@ -490,6 +491,7 @@ To work with these dictionaries, you need to pass an additional argument to the 
 ```sql
 dictGet('dict_name', 'attr_name', id, date)
 ```
+
 Query example:
 
 ```sql
@@ -581,7 +583,7 @@ SELECT * FROM discounts ORDER BY advertiser_id, discount_start_date;
 │             3 │          1970-01-01 │        2015-01-10 │    0.6 │
 └───────────────┴─────────────────────┴───────────────────┴────────┘
 
--- RANGE_LOOKUP_STRATEGY 'max'
+- - RANGE_LOOKUP_STRATEGY 'max'
 
 CREATE DICTIONARY discounts_dict
 (
@@ -618,7 +620,7 @@ select dictGet('discounts_dict', 'amount', 3, toDate('2015-01-01')) res;
 
 DROP DICTIONARY discounts_dict;
 
--- RANGE_LOOKUP_STRATEGY 'min'
+- - RANGE_LOOKUP_STRATEGY 'min'
 
 CREATE DICTIONARY discounts_dict
 (
@@ -725,10 +727,10 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 
 Set a large enough cache size. You need to experiment to select the number of cells:
 
-1.  Set some value.
-2.  Run queries until the cache is completely full.
-3.  Assess memory consumption using the `system.dictionaries` table.
-4.  Increase or decrease the number of cells until the required memory consumption is reached.
+1.Set some value.
+2.Run queries until the cache is completely full.
+3.Assess memory consumption using the `system.dictionaries` table.
+4.Increase or decrease the number of cells until the required memory consumption is reached.
 
 :::note
 Do not use ClickHouse as a source, because it is slow to process queries with random reads.
@@ -999,7 +1001,8 @@ It is also possible for `Flat`, `Hashed`, `ComplexKeyHashed` dictionaries to onl
 - If the source is HTTP then `update_field` will be added as a query parameter with the last update time as the parameter value.
 - If the source is Executable then `update_field` will be added as an executable script argument with the last update time as the argument value.
 - If the source is ClickHouse, MySQL, PostgreSQL, ODBC there will be an additional part of `WHERE`, where `update_field` is compared as greater or equal with the last update time.
-    - Per default, this `WHERE`-condition is checked at the highest level of the SQL-Query. Alternatively, the condition can be checked in any other `WHERE`-clause within the query using the `{condition}`-keyword. Example:
+- Per default, this `WHERE`-condition is checked at the highest level of the SQL-Query. Alternatively, the condition can be checked in any other `WHERE`-clause within the query using the `{condition}`-keyword. Example:
+
     ```sql
     ...
     SOURCE(CLICKHOUSE(...
@@ -1102,13 +1105,13 @@ Types of sources (`source_type`):
 - [Executable Pool](#executable-pool)
 - [HTTP(S)](#https)
 - DBMS
-    - [ODBC](#odbc)
-    - [MySQL](#mysql)
-    - [ClickHouse](#clickhouse)
-    - [MongoDB](#mongodb)
-    - [Redis](#redis)
-    - [Cassandra](#cassandra)
-    - [PostgreSQL](#postgresql)
+- [ODBC](#odbc)
+- [MySQL](#mysql)
+- [ClickHouse](#clickhouse)
+- [MongoDB](#mongodb)
+- [Redis](#redis)
+- [Cassandra](#cassandra)
+- [PostgreSQL](#postgresql)
 
 ### Local File {#local-file}
 
@@ -1341,7 +1344,7 @@ Ubuntu OS.
 Installing unixODBC and the ODBC driver for PostgreSQL:
 
 ```bash
-$ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
+sudo apt-get install -y unixodbc odbcinst odbc-postgresql
 ```
 
 Configuring `/etc/odbc.ini` (or `~/.odbc.ini` if you signed in under a user that runs ClickHouse):
@@ -1422,7 +1425,7 @@ Ubuntu OS.
 Installing the ODBC driver for connecting to MS SQL:
 
 ```bash
-$ sudo apt-get install tdsodbc freetds-bin sqsh
+sudo apt-get install tdsodbc freetds-bin sqsh
 ```
 
 Configuring the driver:
@@ -1468,6 +1471,7 @@ Configuring the driver:
 ```
 
 Remarks:
+
 - to determine the earliest TDS version that is supported by a particular SQL Server version, refer to the product documentation or look at [MS-TDS Product Behavior](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/135d0ebe-5c4c-4a94-99bf-1811eccb9f4a)
 
 Configuring the dictionary in ClickHouse:
@@ -1575,8 +1579,8 @@ Setting fields:
 
 - `replica` – Section of replica configurations. There can be multiple sections.
 
-        - `replica/host` – The MySQL host.
-        - `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
+        -`replica/host` – The MySQL host.
+        -`replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
 
 - `db` – Name of the database.
 
@@ -1758,7 +1762,6 @@ Setting fields:
 
 [More information about the engine](../../engines/table-engines/integrations/mongodb.md)
 
-
 #### Redis {#redis}
 
 Example of settings:
@@ -1879,9 +1882,9 @@ Setting fields:
 - `user` – Name of the PostgreSQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
 - `password` – Password of the PostgreSQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
 - `replica` – Section of replica configurations. There can be multiple sections:
-    - `replica/host` – The PostgreSQL host.
-    - `replica/port` – The PostgreSQL port.
-    - `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
+- `replica/host` – The PostgreSQL host.
+- `replica/port` – The PostgreSQL port.
+- `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
 - `db` – Name of the database.
 - `table` – Name of the table.
 - `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in PostgreSQL. For example, `id > 10 AND id < 20`. Optional parameter.
@@ -2183,6 +2186,7 @@ Example of a polygon dictionary configuration:
 ```
 
 The corresponding [DDL-query](/sql-reference/statements/create/dictionary):
+
 ```sql
 CREATE DICTIONARY polygon_dict_name (
     key Array(Array(Array(Array(Float64)))),
@@ -2318,7 +2322,7 @@ This config consists of a list of regular expression tree nodes. Each node has t
 
 - **regexp**: the regular expression of the node.
 - **attributes**: a list of user-defined dictionary attributes. In this example, there are two attributes: `name` and `version`. The first node defines both attributes. The second node only defines attribute `name`. Attribute `version` is provided by the child nodes of the second node.
-  - The value of an attribute may contain **back references**, referring to capture groups of the matched regular expression. In the example, the value of attribute `version` in the first node consists of a back-reference `\1` to capture group `(\d+[\.\d]*)` in the regular expression. Back-reference numbers range from 1 to 9 and are written as `$1` or `\1` (for number 1). The back reference is replaced by the matched capture group during query execution.
+- The value of an attribute may contain **back references**, referring to capture groups of the matched regular expression. In the example, the value of attribute `version` in the first node consists of a back-reference `\1` to capture group `(\d+[\.\d]*)` in the regular expression. Back-reference numbers range from 1 to 9 and are written as `$1` or `\1` (for number 1). The back reference is replaced by the matched capture group during query execution.
 - **child nodes**: a list of children of a regexp tree node, each of which has its own attributes and (potentially) children nodes. String matching proceeds in a depth-first fashion. If a string matches a regexp node, the dictionary checks if it also matches the nodes' child nodes. If that is the case, the attributes of the deepest matching node are assigned. Attributes of a child node overwrite equally named attributes of parent nodes. The name of child nodes in YAML files can be arbitrary, e.g. `versions` in above example.
 
 Regexp tree dictionaries only allow access using the functions `dictGet`, `dictGetOrDefault`, and `dictGetAll`.
@@ -2405,6 +2409,7 @@ Result:
 #### Matching Modes {#matching-modes}
 
 Pattern matching behavior can be modified with certain dictionary settings:
+
 - `regexp_dict_flag_case_insensitive`: Use case-insensitive matching (defaults to `false`). Can be overridden in individual expressions with `(?i)` and `(?-i)`.
 - `regexp_dict_flag_dotall`: Allow '.' to match newline characters (defaults to `false`).
 

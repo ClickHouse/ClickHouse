@@ -17,6 +17,7 @@ title: 'PrettyJSONEachRow'
 Differs from [JSONEachRow](./JSONEachRow.md) only in that JSON is pretty formatted with new line delimiters and 4 space indents.
 
 ## Example usage {#example-usage}
+
 ### Inserting data {#inserting-data}
 
 Using a JSON file with the following data, named as `football.json`:
@@ -317,6 +318,4 @@ The output will be in JSON format:
 }  
 ```
 
-
 ## Format settings {#format-settings}
-

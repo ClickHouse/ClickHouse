@@ -36,6 +36,7 @@ $$
 $$
 
 Where:
+
 - `x` is each individual data point in the data set.
 - `mean(x)` is the arithmetic mean of the data set.
 - `n` is the number of data points in the data set.

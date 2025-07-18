@@ -23,7 +23,7 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
 **1.** Fitting
 
-<!-- -->
+<!---->
 
     See the `Fitting` section in the [stochasticLinearRegression](/sql-reference/aggregate-functions/reference/stochasticlinearregression) description.
 
@@ -31,7 +31,7 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
 **2.** Predicting
 
-<!-- -->
+<!---->
 
     Using saved state we can predict probability of object having label `1`.
 

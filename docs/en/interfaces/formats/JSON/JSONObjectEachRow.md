@@ -30,7 +30,7 @@ Given some JSON:
 }
 ```
 
-To use an object name as a column value you can use the special setting [`format_json_object_each_row_column_for_object_name`](/operations/settings/settings-formats.md/#format_json_object_each_row_column_for_object_name). 
+To use an object name as a column value you can use the special setting [`format_json_object_each_row_column_for_object_name`](/operations/settings/settings-formats.md/#format_json_object_each_row_column_for_object_name).
 The value of this setting is set to the name of a column, that is used as JSON key for a row in the resulting object.
 
 #### Output {#output}
@@ -87,7 +87,6 @@ DESCRIBE file('data.json', JSONObjectEachRow) SETTING format_json_object_each_ro
 │ number      │ Nullable(Int64) │
 └─────────────┴─────────────────┘
 ```
-
 
 ### Inserting data {#json-inserting-data}
 

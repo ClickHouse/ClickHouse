@@ -31,6 +31,7 @@ pub unsafe extern "C" fn blake3_apply_shim(
     _size: u32,
     out_char_data: *mut u8,
 ```
+
 ```rust
 #[no_mangle]
 pub unsafe extern "C" fn blake3_apply_shim(

@@ -87,7 +87,6 @@ You can enable it using `sudo sysctl kernel.task_delayacct=1` or by creating a `
 
 In ClickHouse Cloud, system tables provide critical insights into the state and performance of the service, just as they do in self-managed deployments. Some system tables operate at the cluster-wide level, especially those that derive their data from Keeper nodes, which manage distributed metadata. These tables reflect the collective state of the cluster and should be consistent when queried on individual nodes. For example, the [`parts`](/operations/system-tables/parts) should be consistent irrespective of the node it is queried from:
 
-
 ```sql
 SELECT hostname(), count()
 FROM system.parts
@@ -182,7 +181,7 @@ Importantly, these tables are still **local to each node**.
 
 ### Querying across nodes {#querying-across-nodes}
 
-To comprehensively view the entire cluster, users can leverage the [`clusterAllReplicas`](/sql-reference/table-functions/cluster) function in combination with the `merge` function. The `clusterAllReplicas` function allows querying system tables across all replicas within the "default" cluster, consolidating node-specific data into a unified result. When combined with the `merge` function this can be used to target all system data for a specific table in a cluster. 
+To comprehensively view the entire cluster, users can leverage the [`clusterAllReplicas`](/sql-reference/table-functions/cluster) function in combination with the `merge` function. The `clusterAllReplicas` function allows querying system tables across all replicas within the "default" cluster, consolidating node-specific data into a unified result. When combined with the `merge` function this can be used to target all system data for a specific table in a cluster.
 
 This approach is particularly valuable for monitoring and debugging cluster-wide operations, ensuring users can effectively analyze the health and performance of their ClickHouse Cloud deployment.
 

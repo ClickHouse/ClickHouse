@@ -6,8 +6,9 @@ title: 'JSON Functions'
 ---
 
 There are two sets of functions to parse JSON:
-   - [`simpleJSON*` (`visitParam*`)](#simplejson-visitparam-functions) which is made for parsing a limited subset of JSON extremely fast.
-   - [`JSONExtract*`](#jsonextract-functions) which is made for parsing ordinary JSON.
+
+- [`simpleJSON*` (`visitParam*`)](#simplejson-visitparam-functions) which is made for parsing a limited subset of JSON extremely fast.
+- [`JSONExtract*`](#jsonextract-functions) which is made for parsing ordinary JSON.
 
 ## simpleJSON (visitParam) functions {#simplejson-visitparam-functions}
 
@@ -15,10 +16,10 @@ ClickHouse has special functions for working with simplified JSON. All these JSO
 
 The following assumptions are made:
 
-1.  The field name (function argument) must be a constant.
-2.  The field name is somehow canonically encoded in JSON. For example: `simpleJSONHas('{"abc":"def"}', 'abc') = 1`, but `simpleJSONHas('{"\\u0061\\u0062\\u0063":"def"}', 'abc') = 0`
-3.  Fields are searched for on any nesting level, indiscriminately. If there are multiple matching fields, the first occurrence is used.
-4.  The JSON does not have space characters outside of string literals.
+1.The field name (function argument) must be a constant.
+2.The field name is somehow canonically encoded in JSON. For example: `simpleJSONHas('{"abc":"def"}', 'abc') = 1`, but `simpleJSONHas('{"\\u0061\\u0062\\u0063":"def"}', 'abc') = 0`
+3.Fields are searched for on any nesting level, indiscriminately. If there are multiple matching fields, the first occurrence is used.
+4.The JSON does not have space characters outside of string literals.
 
 ### simpleJSONHas {#simplejsonhas}
 
@@ -36,7 +37,6 @@ Alias: `visitParamHas`.
 
 - `json` — The JSON in which the field is searched for. [String](/sql-reference/data-types/string)
 - `field_name` — The name of the field to search for. [String literal](/sql-reference/syntax#string)
-
 
 **Returned value**
 
@@ -65,6 +65,7 @@ Result:
 1
 0
 ```
+
 ### simpleJSONExtractUInt {#simplejsonextractuint}
 
 Parses `UInt64` from the value of the field named `field_name`. If this is a string field, it tries to parse a number from the beginning of the string. If the field does not exist, or it exists but does not contain a number, it returns `0`.
@@ -161,9 +162,9 @@ Result:
 
 ```response
 0
--4
+- 4
 0
--3
+- 3
 5
 ```
 
@@ -212,9 +213,9 @@ Result:
 
 ```response
 0
--4000
+- 4000
 0
--3.4
+- 3.4
 5
 ```
 
@@ -238,9 +239,10 @@ Alias: `visitParamExtractBool`.
 **Returned value**
 
 It returns `1` if the value of the field is `true`, `0` otherwise. This means this function will return `0` including (and not only) in the following cases:
- - If the field doesn't exists.
- - If the field contains `true` as a string, e.g.: `{"field":"true"}`.
- - If the field contains `1` as a numerical value.
+
+- If the field doesn't exists.
+- If the field contains `true` as a string, e.g.: `{"field":"true"}`.
+- If the field contains `1` as a numerical value.
 
 **Example**
 
@@ -315,7 +317,7 @@ Result:
 ```response
 
 "-4e3"
--3.4
+- 3.4
 5
 {"def":[1,2,3]}
 ```
@@ -410,6 +412,7 @@ JSONHas(json [, indices_or_keys]...)
 - `indices_or_keys` — A list of zero or more arguments, each of which can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
 
 `indices_or_keys` type:
+
 - String = access object member by key.
 - Positive integer = access the n-th member/key from the beginning.
 - Negative integer = access the n-th member/key from the end.
@@ -453,6 +456,7 @@ JSONLength(json [, indices_or_keys]...)
 - `indices_or_keys` — A list of zero or more arguments, each of which can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
 
 `indices_or_keys` type:
+
 - String = access object member by key.
 - Positive integer = access the n-th member/key from the beginning.
 - Negative integer = access the n-th member/key from the end.
@@ -484,6 +488,7 @@ JSONType(json [, indices_or_keys]...)
 - `indices_or_keys` — A list of zero or more arguments, each of which can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
 
 `indices_or_keys` type:
+
 - String = access object member by key.
 - Positive integer = access the n-th member/key from the beginning.
 - Negative integer = access the n-th member/key from the end.
@@ -516,6 +521,7 @@ JSONExtractUInt(json [, indices_or_keys]...)
 - `indices_or_keys` — A list of zero or more arguments, each of which can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
 
 `indices_or_keys` type:
+
 - String = access object member by key.
 - Positive integer = access the n-th member/key from the beginning.
 - Negative integer = access the n-th member/key from the end.
@@ -556,6 +562,7 @@ JSONExtractInt(json [, indices_or_keys]...)
 - `indices_or_keys` — A list of zero or more arguments, each of which can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
 
 `indices_or_keys` type:
+
 - String = access object member by key.
 - Positive integer = access the n-th member/key from the beginning.
 - Negative integer = access the n-th member/key from the end.
@@ -596,6 +603,7 @@ JSONExtractFloat(json [, indices_or_keys]...)
 - `indices_or_keys` — A list of zero or more arguments, each of which can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
 
 `indices_or_keys` type:
+
 - String = access object member by key.
 - Positive integer = access the n-th member/key from the beginning.
 - Negative integer = access the n-th member/key from the end.
@@ -636,6 +644,7 @@ JSONExtractBool(json\[, indices_or_keys\]...)
 - `indices_or_keys` — A list of zero or more arguments, each of which can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
 
 `indices_or_keys` type:
+
 - String = access object member by key.
 - Positive integer = access the n-th member/key from the beginning.
 - Negative integer = access the n-th member/key from the end.
@@ -676,6 +685,7 @@ JSONExtractString(json [, indices_or_keys]...)
 - `indices_or_keys` — A list of zero or more arguments, each of which can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
 
 `indices_or_keys` type:
+
 - String = access object member by key.
 - Positive integer = access the n-th member/key from the beginning.
 - Negative integer = access the n-th member/key from the end.
@@ -711,9 +721,10 @@ JSONExtract(json [, indices_or_keys...], return_type)
 
 - `json` — JSON string to parse. [String](../data-types/string.md).
 - `indices_or_keys` — A list of zero or more arguments, each of which can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
-- `return_type` — A string specifying the type of the value to extract. [String](../data-types/string.md). 
+- `return_type` — A string specifying the type of the value to extract. [String](../data-types/string.md).
 
 `indices_or_keys` type:
+
 - String = access object member by key.
 - Positive integer = access the n-th member/key from the beginning.
 - Negative integer = access the n-th member/key from the end.
@@ -736,16 +747,18 @@ SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \
 ```
 
 Referring to a nested values by passing multiple indices_or_keys parameters:
+
 ```sql
 SELECT JSONExtract('{"a":{"b":"hello","c":{"d":[1,2,3],"e":[1,3,7]}}}','a','c','Map(String, Array(UInt8))') AS val, toTypeName(val), val['d'];
 ```
+
 Result:
+
 ```response
 ┌─val───────────────────────┬─toTypeName(val)───────────┬─arrayElement(val, 'd')─┐
 │ {'d':[1,2,3],'e':[1,3,7]} │ Map(String, Array(UInt8)) │ [1,2,3]                │
 └───────────────────────────┴───────────────────────────┴────────────────────────┘
 ```
-
 
 ### JSONExtractKeysAndValues {#jsonextractkeysandvalues}
 
@@ -761,16 +774,17 @@ JSONExtractKeysAndValues(json [, indices_or_keys...], value_type)
 
 - `json` — JSON string to parse. [String](../data-types/string.md).
 - `indices_or_keys` — A list of zero or more arguments, each of which can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
-- `value_type` — A string specifying the type of the value to extract. [String](../data-types/string.md). 
+- `value_type` — A string specifying the type of the value to extract. [String](../data-types/string.md).
 
 `indices_or_keys` type:
+
 - String = access object member by key.
 - Positive integer = access the n-th member/key from the beginning.
 - Negative integer = access the n-th member/key from the end.
 
 **Returned value**
 
-- Returns an array of parsed key-value pairs. [Array](../data-types/array.md)([Tuple](../data-types/tuple.md)(`value_type`)). 
+- Returns an array of parsed key-value pairs. [Array](../data-types/array.md)([Tuple](../data-types/tuple.md)(`value_type`)).
 
 **Example**
 
@@ -829,6 +843,7 @@ JSONExtractRaw(json [, indices_or_keys]...)
 - `indices_or_keys` — A list of zero or more arguments, each of which can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
 
 `indices_or_keys` type:
+
 - String = access object member by key.
 - Positive integer = access the n-th member/key from the beginning.
 - Negative integer = access the n-th member/key from the end.
@@ -859,6 +874,7 @@ JSONExtractArrayRaw(json [, indices_or_keys...])
 - `indices_or_keys` — A list of zero or more arguments, each of which can be either string or integer. [String](../data-types/string.md), [Int*](../data-types/int-uint.md).
 
 `indices_or_keys` type:
+
 - String = access object member by key.
 - Positive integer = access the n-th member/key from the beginning.
 - Negative integer = access the n-th member/key from the end.
@@ -949,7 +965,7 @@ JSON_EXISTS(json, path)
 
 **Parameters**
 
-- `json` — A string with valid JSON. [String](../data-types/string.md). 
+- `json` — A string with valid JSON. [String](../data-types/string.md).
 - `path` — A string representing the path. [String](../data-types/string.md).
 
 :::note
@@ -981,7 +997,7 @@ JSON_QUERY(json, path)
 
 **Parameters**
 
-- `json` — A string with valid JSON. [String](../data-types/string.md). 
+- `json` — A string with valid JSON. [String](../data-types/string.md).
 - `path` — A string representing the path. [String](../data-types/string.md).
 
 :::note
@@ -1029,7 +1045,7 @@ JSON_VALUE(json, path)
 
 **Parameters**
 
-- `json` — A string with valid JSON. [String](../data-types/string.md). 
+- `json` — A string with valid JSON. [String](../data-types/string.md).
 - `path` — A string representing the path. [String](../data-types/string.md).
 
 :::note
@@ -1107,7 +1123,6 @@ Result:
 - [output_format_json_quote_64bit_integers](/operations/settings/formats#output_format_json_quote_64bit_integers)
 - [output_format_json_quote_denormals](/operations/settings/formats#output_format_json_quote_denormals)
 
-
 ### JSONArrayLength {#jsonarraylength}
 
 Returns the number of elements in the outermost JSON array. The function returns NULL if input JSON string is invalid.
@@ -1139,7 +1154,6 @@ SELECT
 │                ᴺᵁᴸᴸ │                          3 │
 └─────────────────────┴────────────────────────────┘
 ```
-
 
 ### jsonMergePatch {#jsonmergepatch}
 

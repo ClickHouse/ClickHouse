@@ -99,6 +99,7 @@ If you want to specify `SETTINGS` for `INSERT` query then you have to do it _bef
 ```sql
 INSERT INTO table SETTINGS ... FORMAT format_name data_set
 ```
+
 :::
 
 ## Constraints {#constraints}
@@ -130,7 +131,6 @@ To insert a default value instead of `NULL` into a column with a non-nullable da
 INSERT INTO x WITH y AS (SELECT * FROM numbers(10)) SELECT * FROM y;
 WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
 ```
-
 
 ## Inserting Data from a File {#inserting-data-from-a-file}
 
@@ -187,6 +187,7 @@ INSERT INTO infile_globs FROM INFILE 'input_*.csv' FORMAT CSV;
 INSERT INTO infile_globs FROM INFILE 'input_{1,2}.csv' FORMAT CSV;
 INSERT INTO infile_globs FROM INFILE 'input_?.csv' FORMAT CSV;
 ```
+
 :::
 
 ## Inserting using a Table Function {#inserting-using-a-table-function}

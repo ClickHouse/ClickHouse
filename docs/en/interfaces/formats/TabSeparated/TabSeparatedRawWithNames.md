@@ -14,7 +14,7 @@ title: 'TabSeparatedRawWithNames'
 
 ## Description {#description}
 
-Differs from the [`TabSeparatedWithNames`](./TabSeparatedWithNames.md) format, 
+Differs from the [`TabSeparatedWithNames`](./TabSeparatedWithNames.md) format,
 in that the rows are written without escaping.
 
 :::note
