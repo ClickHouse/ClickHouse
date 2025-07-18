@@ -41,12 +41,11 @@ def main():
             )
 
         log_export_config = f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --config-logs-export-cluster {ch.config_path}/config.d/system_logs_export.yaml"
-        setup_logs_replication = f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --setup-logs-replication"
 
         results.append(
             Result.from_commands_run(
                 name="Start ClickHouse",
-                command=[start, log_export_config, setup_logs_replication],
+                command=[start, log_export_config],
                 with_log=True,
             )
         )
@@ -107,12 +106,6 @@ def main():
             )
         )
         res = results[-1].is_ok()
-
-    # stop log replication
-    Shell.check(
-        f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --stop-log-replication",
-        verbose=True,
-    )
 
     Result.create_from(results=results, stopwatch=stop_watch, files=[]).complete_job()
 
