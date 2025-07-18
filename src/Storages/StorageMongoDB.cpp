@@ -103,8 +103,9 @@ Pipe StorageMongoDB::read(
 
     auto options = mongocxx::options::find{};
 
-    return Pipe(std::make_shared<MongoDBSource>(*configuration.uri, configuration.collection, buildMongoDBQuery(context, options, query_info, sample_block),
-        std::move(options), sample_block, max_block_size));
+    bsoncxx::document::view_or_value mongo_query = buildMongoDBQuery(context, options, query_info, sample_block);
+    return Pipe(std::make_shared<MongoDBSource>(*configuration.uri, configuration.collection, mongo_query,
+        std::move(options), std::make_shared<const Block>(std::move(sample_block)), max_block_size));
 }
 
 static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, ASTs engine_args, ContextPtr context, bool allow_excessive_path_in_host)

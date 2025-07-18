@@ -21,7 +21,7 @@ If you're on ClickHouse Cloud, we recommend using [ClickPipes](/integrations/cli
 - Organize fault-tolerant storage.
 - Process streams as they become available.
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -240,7 +240,7 @@ Example:
 </kafka>
 ```
 
-## Virtual Columns {#virtual-columns}
+## Virtual columns {#virtual-columns}
 
 - `_topic` — Kafka topic. Data type: `LowCardinality(String)`.
 - `_key` — Key of the message. Data type: `String`.

@@ -112,7 +112,7 @@ The `max_block_size` setting indicates the recommended maximum number of rows to
 
 The block size should not be too small to avoid noticeable costs when processing each block. It should also not be too large to ensure that queries with a LIMIT clause execute quickly after processing the first block. When setting `max_block_size`, the goal should be to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
 )", 0) \
-    DECLARE(UInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, R"(
+    DECLARE(NonZeroUInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, R"(
 The size of blocks (in a count of rows) to form for insertion into a table.
 This setting only applies in cases when the server forms the blocks.
 For example, for an INSERT via the HTTP interface, the server parses the data format and forms blocks of the specified size.
@@ -220,7 +220,7 @@ Respect the server's concurrency control (see the `concurrent_threads_soft_limit
 The maximum number of threads to download data (e.g. for URL engine).
 )", 0) \
     DECLARE(MaxThreads, max_parsing_threads, 0, R"(
-The maximum number of threads to parse data in input formats that support parallel parsing. By default, it is determined automatically
+The maximum number of threads to parse data in input formats that support parallel parsing. By default, it is determined automatically.
 )", 0) \
     DECLARE(UInt64, max_download_buffer_size, 10*1024*1024, R"(
 The maximal size of buffer for parallel downloading (e.g. for URL engine) per each thread.
@@ -1096,16 +1096,18 @@ Possible values:
     If a shard is unavailable, ClickHouse throws an exception.
 )", 0) \
     \
-    DECLARE(UInt64, parallel_distributed_insert_select, 0, R"(
+    DECLARE(UInt64, parallel_distributed_insert_select, 2, R"(
 Enables parallel distributed `INSERT ... SELECT` query.
 
 If we execute `INSERT INTO distributed_table_a SELECT ... FROM distributed_table_b` queries and both tables use the same cluster, and both tables are either [replicated](../../engines/table-engines/mergetree-family/replication.md) or non-replicated, then this query is processed locally on every shard.
 
 Possible values:
 
-- 0 — Disabled.
-- 1 — `SELECT` will be executed on each shard from the underlying table of the distributed engine.
-- 2 — `SELECT` and `INSERT` will be executed on each shard from/to the underlying table of the distributed engine.
+- `0` — Disabled.
+- `1` — `SELECT` will be executed on each shard from the underlying table of the distributed engine.
+- `2` — `SELECT` and `INSERT` will be executed on each shard from/to the underlying table of the distributed engine.
+
+Setting `enable_parallel_replicas = 1` is needed when using this setting.
 )", 0) \
     DECLARE(UInt64, distributed_group_by_no_merge, 0, R"(
 Do not merge aggregation states from different servers for distributed query processing, you can use this in case it is for certain that there are different keys on different shards
@@ -2341,6 +2343,9 @@ Possible values:
 )", 0) \
     DECLARE(Bool, opentelemetry_trace_processors, false, R"(
 Collect OpenTelemetry spans for processors.
+)", 0) \
+    DECLARE(Bool, opentelemetry_trace_cpu_scheduling, false, R"(
+Collect OpenTelemetry spans for workload preemptive CPU scheduling.
 )", 0) \
     DECLARE(Bool, prefer_column_name_to_alias, false, R"(
 Enables or disables using the original column names instead of aliases in query expressions and clauses. It especially matters when alias is the same as the column name, see [Expression Aliases](/sql-reference/syntax#notes-on-usage). Enable this setting to make aliases syntax rules in ClickHouse more compatible with most other database engines.
@@ -4494,6 +4499,11 @@ Allow to execute alters which affects not only tables metadata, but also data on
 )", 0) \
     DECLARE(Bool, enable_global_with_statement, true, R"(
 Propagate WITH statements to UNION queries and all subqueries
+)", 0) \
+    DECLARE(Bool, enable_scopes_for_with_statement, true, R"(
+If disabled, declarations in parent WITH cluases will behave the same scope as they declared in the current scope.
+
+Note that this is a compatibility setting for new analyzer to allow running some invalid queries that old analyzer could execute.
 )", 0) \
     DECLARE(Bool, aggregate_functions_null_for_empty, false, R"(
 Enables or disables rewriting all aggregate functions in a query, adding [-OrNull](/sql-reference/aggregate-functions/combinators#-ornull) suffix to them. Enable it for SQL standard compatibility.
@@ -6855,6 +6865,9 @@ Trigger processor to spill data into external storage adpatively. grace join is 
     DECLARE(Bool, allow_experimental_delta_kernel_rs, true, R"(
 Allow experimental delta-kernel-rs implementation.
 )", BETA) \
+    DECLARE(Bool, allow_experimental_insert_into_iceberg, false, R"(
+Allow to execute `insert` queries into iceberg.
+)", EXPERIMENTAL) \
     DECLARE(Bool, make_distributed_plan, false, R"(
 Make distributed query plan.
 )", EXPERIMENTAL) \
@@ -6881,6 +6894,9 @@ Possible values:
 )", EXPERIMENTAL) \
     DECLARE(UInt64, distributed_plan_max_rows_to_broadcast, 20000, R"(
 Maximum rows to use broadcast join instead of shuffle join in distributed query plan.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
+Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
 )", EXPERIMENTAL) \
     \
     /** Experimental timeSeries* aggregate functions. */ \
