@@ -21,7 +21,7 @@ void IObjectStorageConnectionInfo::writeBinary(size_t protocol_version, WriteBuf
     writeBinaryImpl(protocol_version, out);
 }
 
-ObjectStorageConnectionInfoPtr IObjectStorageConnectionInfo::readBinary(ReadBuffer & in, const std::string & user_id)
+ObjectStorageConnectionInfoPtr IObjectStorageConnectionInfo::readBinary(ReadBuffer & in, const std::string & user_id [[maybe_unused]])
 {
     UInt8 type = 0;
     DB::readBinary(type, in);
