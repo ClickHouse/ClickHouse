@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.8",
         {
+            {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
             {"optimize_const_array_and_tuple_to_scalar_size", -1, -1, "Enables conversion of a constant array or tuple to scalar"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
