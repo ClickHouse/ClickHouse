@@ -472,6 +472,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         Block initial_header = read_from_format_info.format_header;
 
+        bool schema_was_changed = false;
+
         if (auto initial_schema = configuration->getInitialSchemaByPath(context_, object_info->getPath()))
         {
             Block sample_header;
@@ -479,6 +481,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             {
                 sample_header.insert({type->createColumn(), type, name});
             }
+            schema_was_changed = true;
             initial_header = sample_header;
         }
 
@@ -489,7 +492,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             context_,
             max_block_size,
             format_settings,
-            parser_group,
+            !schema_was_changed ? parser_group : nullptr,
             true /* is_remote_fs */,
             compression_method,
             need_only_count);
@@ -509,6 +512,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (transformer)
         {
+            chassert(schema_was_changed);
             auto schema_modifying_actions = std::make_shared<ExpressionActions>(transformer->clone());
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
