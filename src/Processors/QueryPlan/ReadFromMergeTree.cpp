@@ -1795,13 +1795,16 @@ static void buildIndexes(
 
         if (!all_updated_columns.empty())
         {
-            auto required_columns = index_helper->getColumnsRequiredForIndexCalc();
-            auto it = std::ranges::find_if(required_columns, [&](const auto & column_name)
+            auto options = GetColumnsOptions(GetColumnsOptions::Kind::All).withSubcolumns();
+            auto required_columns_names = index_helper->getColumnsRequiredForIndexCalc();
+            auto required_columns_list = metadata_snapshot->getColumns().getByNames(options, required_columns_names);
+
+            auto it = std::ranges::find_if(required_columns_list, [&](const auto & column)
             {
-                return all_updated_columns.contains(column_name);
+                return all_updated_columns.contains(column.getNameInStorage());
             });
 
-            if (it != required_columns.end())
+            if (it != required_columns_list.end())
             {
                 LOG_TRACE(log, "Index {} is not used because it depends on column {} which will be updated on fly", index.name, *it);
                 continue;
