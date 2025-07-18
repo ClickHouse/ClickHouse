@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings
+# Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings, no-encrypted-storage
 # Tag no-fasttest: requires S3
 # Tag no-random-settings, no-random-merge-tree-settings: to avoid creating extra files like serialization.json, this test too exocit anyway
 
@@ -21,7 +21,7 @@ CLICKHOUSE_DATABASE="$new_database"
 
 $CLICKHOUSE_CLIENT -m -q "
     drop table if exists data;
-    create table data (key Int) engine=MergeTree() order by key settings write_marks_for_substreams_in_compact_parts=1, storage_policy='nonencrypted';
+    create table data (key Int) engine=MergeTree() order by key settings write_marks_for_substreams_in_compact_parts=1;
     insert into data values (1);
     select 'data after INSERT', count() from data;
 "

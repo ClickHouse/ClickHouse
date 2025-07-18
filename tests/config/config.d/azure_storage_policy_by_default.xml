@@ -11,4 +11,5 @@
     <merge_tree>
         <storage_policy>azure</storage_policy>
     </merge_tree>
+    <temporary_data_in_cache>cached_azure_encrypted</temporary_data_in_cache>
 </clickhouse>

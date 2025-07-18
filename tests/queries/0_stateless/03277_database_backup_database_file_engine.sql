@@ -1,13 +1,13 @@
--- Tags: no-parallel, no-fasttest, no-flaky-check
+-- Tags: no-parallel, no-fasttest, no-flaky-check, no-encrypted-storage
 -- Because we are creating a backup with fixed path.
 
 DROP DATABASE IF EXISTS 03277_test_database;
 CREATE DATABASE 03277_test_database;
 
-CREATE TABLE 03277_test_database.test_table_1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id SETTINGS storage_policy = 'nonencrypted';
+CREATE TABLE 03277_test_database.test_table_1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO 03277_test_database.test_table_1 SELECT number, number FROM numbers(15000);
 
-CREATE TABLE 03277_test_database.test_table_2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id SETTINGS storage_policy = 'nonencrypted';
+CREATE TABLE 03277_test_database.test_table_2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO 03277_test_database.test_table_2 SELECT number, number FROM numbers(15000);
 
 SELECT (id % 10) AS key, count() FROM 03277_test_database.test_table_1 GROUP BY key ORDER BY key;

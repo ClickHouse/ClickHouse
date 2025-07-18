@@ -26,15 +26,10 @@
                     <main><disk>cached_s3_encrypted</disk></main>
                 </volumes>
             </s3>
-            <nonencrypted>
-                <volumes>
-                    <main><disk>cached_s3</disk></main>
-                </volumes>
-            </nonencrypted>
         </policies>
     </storage_configuration>
     <merge_tree>
         <storage_policy>s3</storage_policy>
     </merge_tree>
-    <temporary_data_in_cache>cached_s3</temporary_data_in_cache>
+    <temporary_data_in_cache>cached_s3_encrypted</temporary_data_in_cache>
 </clickhouse>
