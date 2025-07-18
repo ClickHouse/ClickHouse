@@ -7,6 +7,7 @@ CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_bytes_to_keep = 4096
 SELECT 'TESTING BYTES';
 /* 1. testing oldest block doesn't get deleted because of min-threshold */
 INSERT INTO memory SELECT * FROM numbers(0, 1600);
+-- 1600 * 4 + integerRoundUp(pad_right_) (63 -> 64) + integerRoundUp(pad_left_) (64) = 6400 + 64 + 64 = 6528
 SELECT total_bytes FROM system.tables WHERE name = 'memory' and database = currentDatabase();
 
 /* 2. adding block that doesn't get deleted */

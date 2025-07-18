@@ -1492,6 +1492,8 @@ template <typename FromDataType, typename ToDataType, typename Name,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior>
 struct ConvertImpl
 {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wpass-failed"
     template <typename Additions = void *>
     static ColumnPtr NO_SANITIZE_UNDEFINED execute(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type [[maybe_unused]], size_t input_rows_count,
@@ -2168,14 +2170,13 @@ struct ConvertImpl
                     scale = additions;
                 }
 
-                col_to = ColVecTo::create(0, scale);
+                col_to = ColVecTo::create(input_rows_count, scale);
             }
             else
-                col_to = ColVecTo::create();
+                col_to = ColVecTo::create(input_rows_count);
 
             const auto & vec_from = col_from->getData();
             auto & vec_to = col_to->getData();
-            vec_to.resize(input_rows_count);
 
             ColumnUInt8::MutablePtr col_null_map_to;
             ColumnUInt8::Container * vec_null_map_to [[maybe_unused]] = nullptr;
@@ -2185,18 +2186,26 @@ struct ConvertImpl
                 vec_null_map_to = &col_null_map_to->getData();
             }
 
-            bool result_is_bool = isBool(result_type);
+            if constexpr (std::is_same_v<ToDataType, DataTypeUInt8>)
+            {
+                if (isBool(result_type))
+                {
+                    FromFieldType zero = {};
+
+                    #pragma unroll 16
+                    for (size_t i = 0; i < input_rows_count; ++i)
+                        vec_to[i] = vec_from[i] != zero;
+                    return col_to;
+                }
+            }
+
+#define MAX_HELPER(a, b) ((a) > (b) ? (a) : (b))
+#define MIN_HELPER(a, b) ((a) < (b) ? (a) : (b))
+            #pragma unroll MIN_HELPER(16, (256 / MAX_HELPER(sizeof(ToDataType), sizeof(FromDataType))))
+#undef MIN_HELPER
+#undef MAX_HELPER
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                if constexpr (std::is_same_v<ToDataType, DataTypeUInt8>)
-                {
-                    if (result_is_bool)
-                    {
-                        vec_to[i] = vec_from[i] != FromFieldType(0);
-                        continue;
-                    }
-                }
-
                 if constexpr (std::is_same_v<FromDataType, DataTypeUUID> && std::is_same_v<ToDataType, DataTypeUInt128>)
                 {
                     static_assert(
@@ -2397,6 +2406,7 @@ struct ConvertImpl
                 return col_to;
         }
     }
+#pragma clang diagnostic pop
 };
 
 
