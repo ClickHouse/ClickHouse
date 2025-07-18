@@ -159,6 +159,10 @@ protected:
 
 #if USE_CLIENT_AI
     void initAIProvider();
+
+    /// Check if AI provider usage needs acknowledgment from user
+    /// Returns false if user declined, true otherwise
+    bool checkAIProviderAcknowledgment();
 #endif
 
     using ProgramOptionsDescription = boost::program_options::options_description;
@@ -432,6 +436,12 @@ protected:
 #if USE_CLIENT_AI
     /// Cached AI SQL generator
     std::unique_ptr<AISQLGenerator> ai_generator;
+    /// Whether the user has acknowledged AI provider usage
+    bool ai_provider_acknowledged = false;
+    /// Whether the AI API key was inferred from environment
+    bool ai_inferred_from_env = false;
+    /// The AI provider name (e.g., "openai", "anthropic")
+    std::string ai_provider_name;
 #endif
 
     struct
