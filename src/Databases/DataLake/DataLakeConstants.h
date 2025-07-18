@@ -8,6 +8,7 @@ namespace DataLake
 {
 
 static constexpr auto DATABASE_ENGINE_NAME = "DataLakeCatalog";
+static constexpr auto DATABASE_ALIAS_NAME = "Iceberg";
 static constexpr std::string_view FILE_PATH_PREFIX = "file:/";
 
 /// Some catalogs (Unity or Glue) may store not only Iceberg/DeltaLake tables but other kinds of "tables"

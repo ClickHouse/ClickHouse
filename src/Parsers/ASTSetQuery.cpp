@@ -129,7 +129,8 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
                 return true;
             }
 
-            if (DataLake::DATABASE_ENGINE_NAME == state.create_engine_name)
+            if (DataLake::DATABASE_ENGINE_NAME == state.create_engine_name
+                    || DataLake::DATABASE_ALIAS_NAME == state.create_engine_name)
             {
                 if (DataLake::SETTINGS_TO_HIDE.contains(change.name))
                 {
