@@ -1752,7 +1752,7 @@ static void buildIndexes(
 
     auto all_updated_columns = mutations_snapshot->getAllUpdatedColumns();
 
-    UsefulSkipIndexes skip_indexes;
+    std::shared_ptr<UsefulSkipIndexes> skip_indexes = std::make_shared<UsefulSkipIndexes>();
     using Key = std::pair<String, size_t>;
     std::map<Key, size_t> merged;
 
@@ -1780,14 +1780,14 @@ static void buildIndexes(
 
         if (index_helper->isMergeable())
         {
-            auto [it, inserted] = merged.emplace(Key{index_helper->index.type, index_helper->getGranularity()}, skip_indexes.merged_indices.size());
+            auto [it, inserted] = merged.emplace(Key{index_helper->index.type, index_helper->getGranularity()}, skip_indexes->merged_indices.size());
             if (inserted)
             {
-                skip_indexes.merged_indices.emplace_back();
-                skip_indexes.merged_indices.back().condition = index_helper->createIndexMergedCondition(query_info, metadata_snapshot);
+                skip_indexes->merged_indices.emplace_back();
+                skip_indexes->merged_indices.back().condition = index_helper->createIndexMergedCondition(query_info, metadata_snapshot);
             }
 
-            skip_indexes.merged_indices[it->second].addIndex(index_helper);
+            skip_indexes->merged_indices[it->second].addIndex(index_helper);
             continue;
         }
 
@@ -1810,11 +1810,11 @@ static void buildIndexes(
         }
 
         if (!condition->alwaysUnknownOrTrue())
-            skip_indexes.useful_indices.emplace_back(index_helper, condition);
+            skip_indexes->useful_indices.emplace_back(index_helper, condition);
     }
 
     // Move minmax indices to first positions, so they will be applied first as cheapest ones
-    std::stable_sort(skip_indexes.useful_indices.begin(), skip_indexes.useful_indices.end(), [](const auto & l, const auto & r)
+    std::stable_sort(skip_indexes->useful_indices.begin(), skip_indexes->useful_indices.end(), [](const auto & l, const auto & r)
     {
         bool l_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(l.index.get());
         bool r_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(r.index.get());
@@ -1842,10 +1842,10 @@ static void buildIndexes(
     /// If this finally works, the we can consider to not copy, but create a shared_pointer between both. The issue with that is that
     /// shared_ptr are not thread safe so a thread save approach needs to be implemented to avoid calling the destructor concurrently.
     context->setSkippingIndices(
-        std::make_shared<UsefulSkipIndexes>(skip_indexes),
+        skip_indexes,
         std::make_shared<RangesInDataParts>(parts)
     );
-    indexes->skip_indexes = std::move(skip_indexes);
+    indexes->skip_indexes = skip_indexes;
 }
 
 void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -2002,7 +2002,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
         MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(result.parts_with_ranges, query_info_, context_, log);
 
-        if (indexes->use_skip_indexes && !indexes->skip_indexes.useful_indices.empty() && query_info_.isFinal()
+        if (indexes->use_skip_indexes && !indexes->skip_indexes->useful_indices.empty() && query_info_.isFinal()
             && settings[Setting::use_skip_indexes_if_final_exact_mode])
         {
             result.parts_with_ranges

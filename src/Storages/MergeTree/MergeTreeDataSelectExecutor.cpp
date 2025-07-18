@@ -676,7 +676,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const KeyCondition & key_condition,
     const std::optional<KeyCondition> & part_offset_condition,
     const std::optional<KeyCondition> & total_offset_condition,
-    const UsefulSkipIndexes & skip_indexes,
+    const std::shared_ptr<UsefulSkipIndexes> skip_indexes,
     const MergeTreeReaderSettings & reader_settings,
     LoggerPtr log,
     size_t num_streams,
@@ -704,7 +704,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "No indices parsed from force_data_skipping_indices ('{}')", indices_str);
 
         std::unordered_set<std::string> useful_indices_names;
-        for (const auto & useful_index : skip_indexes.useful_indices)
+        for (const auto & useful_index : skip_indexes->useful_indices)
             useful_indices_names.insert(useful_index.index->index.name);
 
         for (const auto & index_name : forced_indices)
@@ -730,8 +730,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     };
 
     IndexStat pk_stat;
-    std::vector<IndexStat> useful_indices_stat(skip_indexes.useful_indices.size());
-    std::vector<IndexStat> merged_indices_stat(skip_indexes.merged_indices.size());
+    std::vector<IndexStat> useful_indices_stat(skip_indexes->useful_indices.size());
+    std::vector<IndexStat> merged_indices_stat(skip_indexes->merged_indices.size());
 
     std::atomic<size_t> sum_marks_pk = 0;
     std::atomic<size_t> sum_parts_pk = 0;
@@ -791,14 +791,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
             CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
 
-            for (size_t idx = 0; idx < skip_indexes.useful_indices.size(); ++idx)
+            for (size_t idx = 0; idx < skip_indexes->useful_indices.size(); ++idx)
             {
                 if (ranges.ranges.empty())
                     break;
 
                 ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
-                const auto & index_and_condition = skip_indexes.useful_indices[idx];
+                const auto & index_and_condition = skip_indexes->useful_indices[idx];
                 auto & stat = useful_indices_stat[idx];
                 stat.total_parts.fetch_add(1, std::memory_order_relaxed);
                 size_t total_granules = ranges.ranges.getNumberOfMarks();
@@ -836,12 +836,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 skip_index_used_in_part[part_index] = 1; /// thread-safe
             }
 
-            for (size_t idx = 0; idx < skip_indexes.merged_indices.size(); ++idx)
+            for (size_t idx = 0; idx < skip_indexes->merged_indices.size(); ++idx)
             {
                 if (ranges.ranges.empty())
                     break;
 
-                const auto & indices_and_condition = skip_indexes.merged_indices[idx];
+                const auto & indices_and_condition = skip_indexes->merged_indices[idx];
                 auto & stat = merged_indices_stat[idx];
                 stat.total_parts.fetch_add(1, std::memory_order_relaxed);
 
@@ -937,9 +937,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         });
     }
 
-    for (size_t idx = 0; idx < skip_indexes.useful_indices.size(); ++idx)
+    for (size_t idx = 0; idx < skip_indexes->useful_indices.size(); ++idx)
     {
-        const auto & index_and_condition = skip_indexes.useful_indices[idx];
+        const auto & index_and_condition = skip_indexes->useful_indices[idx];
         const auto & stat = useful_indices_stat[idx];
         const auto & index_name = index_and_condition.index->index.name;
         LOG_DEBUG(
@@ -962,9 +962,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             .num_granules_after = stat.total_granules - stat.granules_dropped});
     }
 
-    for (size_t idx = 0; idx < skip_indexes.merged_indices.size(); ++idx)
+    for (size_t idx = 0; idx < skip_indexes->merged_indices.size(); ++idx)
     {
-        const auto & index_and_condition = skip_indexes.merged_indices[idx];
+        const auto & index_and_condition = skip_indexes->merged_indices[idx];
         const auto & stat = merged_indices_stat[idx];
         const auto & index_name = "Merged";
         LOG_DEBUG(
