@@ -124,7 +124,7 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
                     printAndExit("Segment postings file are already initialized at '{}', trying to initialized again at '{}'", postings_read_buffer->getFileName(), path_as_string);
                 postings_read_buffer = std::make_unique<DB::ReadBufferFromFile>(dir_entry.path().string());
             }
-            if (path_as_string.ends_with(DB::GinIndexStore::GIN_FILTER_FILE_TYPE))
+            if (path_as_string.ends_with(DB::GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE))
             {
                 if (filter_read_buffer != nullptr)
                     printAndExit("Segment filter file are already initialized at '{}', trying to initialized again at '{}'", filter_read_buffer->getFileName(), path_as_string);
@@ -248,8 +248,7 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
 
                     /// Read bloom filter
                     filter_read_buffer->seek(segment_dict->filter_start_offset, SEEK_SET);
-                    segment_dict->bloom_filter = std::make_unique<DB::GinSegmentDictionaryBloomFilter>();
-                    segment_dict->bloom_filter->deserialize(*filter_read_buffer);
+                    segment_dict->bloom_filter = DB::GinSegmentDictionaryBloomFilter::deserialize(*filter_read_buffer);
 
                     fmt::println(
                         "[Segment {}]: bloom filter size = {}",

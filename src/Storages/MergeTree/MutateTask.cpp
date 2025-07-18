@@ -748,7 +748,7 @@ static NameSet collectFilesToSkip(
             files_to_skip.insert(index_filename + GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE);
             files_to_skip.insert(index_filename + GinIndexStore::GIN_DICTIONARY_FILE_TYPE);
             files_to_skip.insert(index_filename + GinIndexStore::GIN_POSTINGS_FILE_TYPE);
-            files_to_skip.insert(index_filename + GinIndexStore::GIN_FILTER_FILE_TYPE);
+            files_to_skip.insert(index_filename + GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE);
         }
     }
 
@@ -832,7 +832,7 @@ static NameToNameVector collectFilesForRenames(
                 GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE,
                 GinIndexStore::GIN_DICTIONARY_FILE_TYPE,
                 GinIndexStore::GIN_POSTINGS_FILE_TYPE,
-                GinIndexStore::GIN_FILTER_FILE_TYPE,
+                GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE,
             };
 
             for (const auto & suffix : suffixes)

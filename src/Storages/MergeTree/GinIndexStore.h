@@ -37,7 +37,8 @@
 
 namespace DB
 {
-constexpr static const auto GIN_INDEX_BLOOM_FILTER_DEFAULT_MAX_TOKEN_SIZE = 6;
+/// The default bloom filter false positive rate, which is 0.1%.
+static constexpr auto GIN_INDEX_BLOOM_FILTER_DEFAULT_FALSE_POSITIVE_RATE = 0.001;
 
 /// GinIndexPostingsList which uses 32-bit Roaring
 using GinIndexPostingsList = roaring::Roaring;
@@ -96,29 +97,36 @@ struct GinIndexSegment
     /// .gin_dict file offset of this segment's dictionaries
     UInt64 dict_start_offset = 0;
 
-    /// .gin_filter file offset of this segment's filter
+    /// .gin_bflt file offset of this segment's bloom filter
     UInt64 filter_start_offset = 0;
 };
 
+/// This class encapsulates an instance of `BloomFilter` class.
+/// The main responsibility is handling the serialization.
 class GinSegmentDictionaryBloomFilter
 {
 public:
-    GinSegmentDictionaryBloomFilter() = default;
+    explicit GinSegmentDictionaryBloomFilter(size_t bits_per_rows_, size_t hashes_);
 
-    explicit GinSegmentDictionaryBloomFilter(double max_conflict_probability, UInt64 max_token_size_);
+    /// Adds the token into `BloomFilter`
+    void add(std::string_view token);
 
-    void add(const char * token, UInt64 size);
-    bool contains(const char * token, UInt64 size);
+    /// Checks the token existance in `BloomFilter`
+    bool contains(std::string_view token);
 
+    /// Serialize the BloomFilter into WriteBuffer
     UInt64 serialize(WriteBuffer & write_buffer);
-    void deserialize(ReadBuffer & read_buffer);
+
+    /// Deerialize the BloomFilter from ReadBuffer
+    static std::unique_ptr<GinSegmentDictionaryBloomFilter> deserialize(ReadBuffer & read_buffer);
 
 private:
-    std::unique_ptr<BloomFilter> bloom_filter;
-    UInt64 filter_size;
-    UInt64 hashes;
-    UInt64 first_characters;
-    UInt64 last_characters;
+    /// Number of bits are used in BloomFilter
+    const UInt64 bits_per_row;
+    /// Number of hash functions used in BloomFilter
+    const UInt64 hashes;
+    /// Encapsulated BloomFilter instance
+    BloomFilter bloom_filter;
 };
 
 struct GinSegmentDictionary
@@ -129,7 +137,7 @@ struct GinSegmentDictionary
     /// .gin_dict file offset of this segment's dictionaries
     UInt64 dict_start_offset;
 
-    /// .gin_filter file offset of this segment's filter
+    /// .gin_bflt file offset of this segment's bloom filter
     UInt64 filter_start_offset;
 
     /// (Minimized) Finite State Transducer, which can be viewed as a map of <term, offset>, where offset is the
@@ -150,7 +158,7 @@ public:
     static constexpr auto GIN_SEGMENT_METADATA_FILE_TYPE = ".gin_seg";
     static constexpr auto GIN_DICTIONARY_FILE_TYPE = ".gin_dict";
     static constexpr auto GIN_POSTINGS_FILE_TYPE = ".gin_post";
-    static constexpr auto GIN_FILTER_FILE_TYPE = ".gin_filter";
+    static constexpr auto GIN_BLOOM_FILTER_FILE_TYPE = ".gin_bflt";
 
     /// TODO(ahmadov): clean up versions when full-text search is not experimental feature anymore.
     enum class Format : uint8_t
@@ -253,7 +261,7 @@ private:
     std::unique_ptr<WriteBufferFromFileBase> metadata_file_stream;
     std::unique_ptr<WriteBufferFromFileBase> dict_file_stream;
     std::unique_ptr<WriteBufferFromFileBase> postings_file_stream;
-    std::unique_ptr<WriteBufferFromFileBase> filter_file_stream;
+    std::unique_ptr<WriteBufferFromFileBase> bloom_filter_file_stream;
 };
 
 using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
@@ -300,7 +308,7 @@ private:
     std::unique_ptr<ReadBufferFromFileBase> metadata_file_stream;
     std::unique_ptr<ReadBufferFromFileBase> dict_file_stream;
     std::unique_ptr<ReadBufferFromFileBase> postings_file_stream;
-    std::unique_ptr<ReadBufferFromFileBase> filter_file_stream;
+    std::unique_ptr<ReadBufferFromFileBase> bloom_filter_file_stream;
 
     /// Current segment, used in building index
     GinIndexSegment current_segment;
@@ -343,12 +351,5 @@ private:
     std::mutex mutex;
 };
 
-ALWAYS_INLINE inline bool isGinFile(const String & file_name)
-{
-    return file_name.ends_with(GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE)
-        || file_name.ends_with(GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE)
-        || file_name.ends_with(GinIndexStore::GIN_DICTIONARY_FILE_TYPE)
-        || file_name.ends_with(GinIndexStore::GIN_POSTINGS_FILE_TYPE)
-        || file_name.ends_with(GinIndexStore::GIN_FILTER_FILE_TYPE);
-}
+bool isGinFile(const String & file_name);
 }
