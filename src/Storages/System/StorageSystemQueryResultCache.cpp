@@ -26,7 +26,7 @@ ColumnsDescription StorageSystemQueryResultCache::getColumnsDescription()
         {"compressed", std::make_shared<DataTypeUInt8>(), "If the query cache entry is compressed."},
         {"expires_at", std::make_shared<DataTypeDateTime>(), "When the query cache entry becomes stale."},
         {"key_hash", std::make_shared<DataTypeUInt64>(), "A hash of the query string, used as a key to find query cache entries."},
-        {"storage_level", std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
+        {"type", std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
             {"Memory", static_cast<UInt8>(QueryResultCacheType::Memory)},
             {"Disk", static_cast<UInt8>(QueryResultCacheType::Disk)}
         }), "Where the cache entry is stored: in memory or on disk."}

@@ -1,0 +1,28 @@
+-- first run
+0	abc_0
+1	abc_1
+2	abc_2
+3	abc_3
+4	abc_4
+5	abc_5
+6	abc_6
+7	abc_7
+8	abc_8
+9	abc_9
+-- profile event: QueryCacheDiskHits, QueryCacheDiskMisses
+0	1
+clear memory cache
+SELECT * FROM t ORDER BY id ASC SETTINGS use_query_cache = true, enable_writes_to_query_cache_disk = true, enable_reads_from_query_cache_disk = true	160	Disk
+-- read from disk cache
+0	abc_0
+1	abc_1
+2	abc_2
+3	abc_3
+4	abc_4
+5	abc_5
+6	abc_6
+7	abc_7
+8	abc_8
+9	abc_9
+-- profile event: QueryCacheDiskHits, QueryCacheDiskMisses
+1	0
