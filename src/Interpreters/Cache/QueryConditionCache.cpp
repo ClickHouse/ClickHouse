@@ -90,16 +90,25 @@ void QueryConditionCache::write(
     if (has_final_mark)
         entry->matching_marks[marks_count - 1] = false;
 
+    auto to_string = [](const auto & values)
+    {
+        String str;
+        for (auto val : values)
+            str += std::to_string(val);
+        return str;
+    };
+
     LOG_TEST(
         logger,
-        "{} entry for table_id: {}, part_name: {}, condition_hash: {}, condition: {}, marks_count: {}, has_final_mark: {}",
+        "{} entry for table_id: {}, part_name: {}, condition_hash: {}, condition: {}, marks_count: {}, has_final_mark: {}, mark: {}",
         inserted ? "Inserted" : "Updated",
         table_id,
         part_name,
         condition_hash,
         condition,
         marks_count,
-        has_final_mark);
+        has_final_mark,
+        to_string(entry->matching_marks));
 }
 
 std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(const UUID & table_id, const String & part_name, UInt64 condition_hash)
