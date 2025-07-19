@@ -610,10 +610,10 @@ IcebergStorageSink::IcebergStorageSink(
     , format_settings(format_settings_)
     , filename_generator(configuration_->getPath())
 {
-    configuration->update(object_storage, context, true, false, std::nullopt, nullptr);
+    configuration->update(object_storage, context, true, false);
     auto log = getLogger("IcebergWrites");
     auto [last_version, metadata_path, compression_method]
-        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_, nullptr, context_, log.get(), std::nullopt, nullptr);
+        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_, nullptr, context_, log.get());
 
     filename_generator.setVersion(last_version + 1);
     metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, log, compression_method);

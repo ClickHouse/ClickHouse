@@ -54,12 +54,17 @@ public:
         return iceberg_metadata && getVersion() == iceberg_metadata->getVersion();
     }
 
-    static DataLakeMetadataPtr create(
+    static void createInitial(
         const ObjectStoragePtr & object_storage,
         const StorageObjectStorageConfigurationWeakPtr & configuration,
         const ContextPtr & local_context,
         const std::optional<ColumnsDescription> & columns,
         ASTPtr partition_by);
+
+    static DataLakeMetadataPtr create(
+        const ObjectStoragePtr & object_storage,
+        const StorageObjectStorageConfigurationWeakPtr & configuration,
+        const ContextPtr & local_context);
 
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, const String & data_path) const override;
     std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, const String & data_path) const override;

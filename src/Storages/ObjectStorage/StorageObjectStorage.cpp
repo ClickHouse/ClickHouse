@@ -111,6 +111,16 @@ StorageObjectStorage::StorageObjectStorage(
         && !configuration->isDataLakeConfiguration();
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
 
+    if (columns_.size() > 0)
+    {
+        configuration->create(
+            object_storage,
+            context,
+            columns_,
+            partition_by_
+        );
+    }
+
     bool updated_configuration = false;
     try
     {
@@ -120,9 +130,7 @@ StorageObjectStorage::StorageObjectStorage(
                 object_storage,
                 context,
                 /* if_not_updated_before */is_table_function,
-                /* check_consistent_with_previous_metadata */true,
-                columns_,
-                partition_by);
+                /* check_consistent_with_previous_metadata */true);
             updated_configuration = true;
         }
     }
@@ -207,9 +215,7 @@ IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_c
         object_storage,
         query_context,
         /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */false,
-        std::nullopt,
-        nullptr);
+        /* check_consistent_with_previous_metadata */false);
 
     return configuration->getExternalMetadata();
 }
@@ -220,9 +226,7 @@ bool StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
         object_storage,
         query_context,
         /* if_not_updated_before */true,
-        /* check_consistent_with_previous_metadata */false,
-        std::nullopt,
-        nullptr);
+        /* check_consistent_with_previous_metadata */false);
 
     if (!configuration->hasExternalDynamicMetadata())
         return false;
@@ -234,9 +238,7 @@ bool StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
             object_storage,
             query_context,
             /* if_not_updated_before */false,
-            /* check_consistent_with_previous_metadata */false,
-            std::nullopt,
-            nullptr);
+            /* check_consistent_with_previous_metadata */false);
     }
 
     auto columns = configuration->tryGetTableStructureFromMetadata();
@@ -255,9 +257,7 @@ std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) 
         object_storage,
         query_context,
         /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true,
-        std::nullopt,
-        nullptr);
+        /* check_consistent_with_previous_metadata */true);
 
     return configuration->totalRows(query_context);
 }
@@ -268,9 +268,7 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
         object_storage,
         query_context,
         /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true,
-        std::nullopt,
-        nullptr);
+        /* check_consistent_with_previous_metadata */true);
 
     return configuration->totalBytes(query_context);
 }
@@ -294,9 +292,7 @@ void StorageObjectStorage::read(
             object_storage,
             local_context,
             /* if_not_updated_before */false,
-            /* check_consistent_with_previous_metadata */true,
-            std::nullopt,
-            nullptr);
+            /* check_consistent_with_previous_metadata */true);
     }
 
     if (partition_by && configuration->withPartitionWildcard())
@@ -348,9 +344,7 @@ SinkToStoragePtr StorageObjectStorage::write(
             object_storage,
             local_context,
             /* if_not_updated_before */false,
-            /* check_consistent_with_previous_metadata */true,
-            std::nullopt,
-            nullptr);
+            /* check_consistent_with_previous_metadata */true);
     }
 
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());

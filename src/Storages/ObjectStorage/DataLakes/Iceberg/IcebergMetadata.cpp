@@ -50,6 +50,7 @@ namespace DataLakeStorageSetting
     extern const DataLakeStorageSettingsString iceberg_metadata_table_uuid;
     extern const DataLakeStorageSettingsBool iceberg_recent_metadata_file_by_last_updated_ms_field;
     extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
+    extern const DataLakeStorageSettingsInt64 iceberg_format_version;
 }
 
 namespace ErrorCodes
@@ -237,7 +238,7 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
     std::lock_guard lock(mutex);
 
     const auto [metadata_version, metadata_file_path, compression_method]
-        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, manifest_cache, local_context, log.get(), std::nullopt, nullptr);
+        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, manifest_cache, local_context, log.get());
 
     bool metadata_file_changed = false;
     if (last_metadata_version != metadata_version)
@@ -450,13 +451,31 @@ std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String da
     return std::optional{schema_id};
 }
 
-
-DataLakeMetadataPtr IcebergMetadata::create(
+void IcebergMetadata::createInitial(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationWeakPtr & configuration,
     const ContextPtr & local_context,
     const std::optional<ColumnsDescription> & columns,
     ASTPtr partition_by)
+{
+    auto configuration_ptr = configuration.lock();
+
+    const auto metadata_files = listFiles(*object_storage, *configuration_ptr, "metadata", ".metadata.json");
+    if (!metadata_files.empty())
+        return;
+
+    auto metadata_content = createEmptyMetadataFile(configuration_ptr->getPath(), *columns, partition_by, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
+    auto filename = configuration_ptr->getPath() + "metadata/v1.metadata.json";
+    auto buffer_metadata = object_storage->writeObject(
+        StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, local_context->getWriteSettings());
+    buffer_metadata->write(metadata_content.data(), metadata_content.size());
+    buffer_metadata->finalize();
+}
+
+DataLakeMetadataPtr IcebergMetadata::create(
+    const ObjectStoragePtr & object_storage,
+    const StorageObjectStorageConfigurationWeakPtr & configuration,
+    const ContextPtr & local_context)
 {
     auto configuration_ptr = configuration.lock();
 
@@ -468,7 +487,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
     else
         LOG_TRACE(log, "Not using in-memory cache for iceberg metadata files, because the setting use_iceberg_metadata_files_cache is false.");
 
-    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, cache_ptr, local_context, log.get(), columns, partition_by);
+    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, cache_ptr, local_context, log.get());
 
     Poco::JSON::Object::Ptr object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, cache_ptr, local_context, log, compression_method);
 
@@ -540,7 +559,7 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
 {
     auto configuration_ptr = configuration.lock();
 
-    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, manifest_cache, local_context, log.get(), std::nullopt, nullptr);
+    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_ptr, manifest_cache, local_context, log.get());
 
     chassert([&]()
     {

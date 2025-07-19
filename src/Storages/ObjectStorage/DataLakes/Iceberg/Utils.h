@@ -54,14 +54,18 @@ struct MetadataFileWithInfo
     CompressionMethod compression_method;
 };
 
+String createEmptyMetadataFile(
+    String path_location,
+    const ColumnsDescription & columns,
+    ASTPtr partition_by,
+    UInt64 format_version = 2);
+
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
     StorageObjectStorageConfigurationPtr configuration_ptr,
     IcebergMetadataFilesCachePtr cache_ptr,
     const ContextPtr & local_context,
-    Poco::Logger * log,
-    const std::optional<ColumnsDescription> & columns,
-    ASTPtr partition_by);
+    Poco::Logger * log);
 
 }
 

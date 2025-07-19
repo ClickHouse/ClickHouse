@@ -500,7 +500,7 @@ String createEmptyMetadataFile(
     String path_location,
     const ColumnsDescription & columns,
     ASTPtr partition_by,
-    UInt64 format_version = 2)
+    UInt64 format_version)
 {
     std::unordered_map<String, Int32> column_name_to_source_id;
     static Poco::UUIDGenerator uuid_generator;
@@ -587,9 +587,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersion(
     StorageObjectStorageConfigurationPtr configuration_ptr,
     IcebergMetadataFilesCachePtr cache_ptr,
     const ContextPtr & local_context,
-    const std::optional<String> & table_uuid,
-    const std::optional<ColumnsDescription> & columns,
-    ASTPtr partition_by)
+    const std::optional<String> & table_uuid)
 {
     auto log = getLogger("IcebergMetadataFileResolver");
     MostRecentMetadataFileSelectionWay selection_way
@@ -601,23 +599,8 @@ MetadataFileWithInfo getLatestMetadataFileAndVersion(
     const auto metadata_files = listFiles(*object_storage, *configuration_ptr, "metadata", ".metadata.json");
     if (metadata_files.empty())
     {
-        if (columns)
-        {
-            auto metadata_content = createEmptyMetadataFile(configuration_ptr->getPath(), *columns, partition_by, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
-            auto filename = configuration_ptr->getPath() + "metadata/v1.metadata.json";
-            auto buffer_metadata = object_storage->writeObject(
-                StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, local_context->getWriteSettings());
-            buffer_metadata->write(metadata_content.data(), metadata_content.size());
-            buffer_metadata->finalize();
-            return MetadataFileWithInfo{
-                .version = 1,
-                .path = filename,
-                .compression_method = CompressionMethod::None,
-            };
-        }
-        else
-            throw Exception(
-                ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", configuration_ptr->getPath());
+        throw Exception(
+            ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", configuration_ptr->getPath());
     }
     std::vector<ShortMetadataFileInfo> metadata_files_with_versions;
     metadata_files_with_versions.reserve(metadata_files.size());
@@ -684,9 +667,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     StorageObjectStorageConfigurationPtr configuration_ptr,
     IcebergMetadataFilesCachePtr cache_ptr,
     const ContextPtr & local_context,
-    Poco::Logger * log,
-    const std::optional<ColumnsDescription> & columns,
-    ASTPtr partition_by)
+    Poco::Logger * log)
 {
     const auto & data_lake_settings = configuration_ptr->getDataLakeSettings();
     if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
@@ -715,7 +696,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_table_uuid].changed)
     {
         std::optional<String> table_uuid = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_table_uuid].value;
-        return getLatestMetadataFileAndVersion(object_storage, configuration_ptr, cache_ptr, local_context, table_uuid, columns, partition_by);
+        return getLatestMetadataFileAndVersion(object_storage, configuration_ptr, cache_ptr, local_context, table_uuid);
     }
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
@@ -738,7 +719,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     }
     else
     {
-        return getLatestMetadataFileAndVersion(object_storage, configuration_ptr, cache_ptr, local_context, std::nullopt, columns, partition_by);
+        return getLatestMetadataFileAndVersion(object_storage, configuration_ptr, cache_ptr, local_context, std::nullopt);
     }
 }
 

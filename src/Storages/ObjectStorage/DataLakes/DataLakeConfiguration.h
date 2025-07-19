@@ -59,18 +59,16 @@ public:
         ObjectStoragePtr object_storage,
         ContextPtr local_context,
         bool if_not_updated_before,
-        bool check_consistent_with_previous_metadata,
-        const std::optional<ColumnsDescription> & columns,
-        ASTPtr partition_by) override
+        bool check_consistent_with_previous_metadata) override
     {
         const bool updated_before = current_metadata != nullptr;
         if (updated_before && if_not_updated_before)
             return false;
 
         BaseStorageConfiguration::update(
-            object_storage, local_context, if_not_updated_before, check_consistent_with_previous_metadata, columns, partition_by);
+            object_storage, local_context, if_not_updated_before, check_consistent_with_previous_metadata);
 
-        const bool changed = updateMetadataIfChanged(object_storage, local_context, columns, partition_by);
+        const bool changed = updateMetadataIfChanged(object_storage, local_context);
         if (!changed)
             return true;
 
@@ -82,6 +80,24 @@ public:
                 "Please, retry the query.");
         }
         return true;
+    }
+
+    void create(
+        ObjectStoragePtr object_storage,
+        ContextPtr local_context,
+        const std::optional<ColumnsDescription> & columns,
+        ASTPtr partition_by) override
+    {
+        BaseStorageConfiguration::create(
+            object_storage, local_context, columns, partition_by);
+
+        DataLakeMetadata::createInitial(
+            object_storage,
+            weak_from_this(),
+            local_context,
+            columns,
+            partition_by
+        );
     }
 
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const override
@@ -197,9 +213,7 @@ private:
             current_metadata = DataLakeMetadata::create(
                 object_storage,
                 weak_from_this(),
-                local_context,
-                std::nullopt,
-                nullptr);
+                local_context);
         }
         return current_metadata->prepareReadingFromFormat(
             requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
@@ -207,18 +221,14 @@ private:
 
     bool updateMetadataIfChanged(
         ObjectStoragePtr object_storage,
-        ContextPtr context,
-        const std::optional<ColumnsDescription> & columns,
-        ASTPtr partition_by)
+        ContextPtr context)
     {
         if (!current_metadata)
         {
             current_metadata = DataLakeMetadata::create(
                 object_storage,
                 weak_from_this(),
-                context,
-                columns,
-                partition_by);
+                context);
             return true;
         }
 
@@ -230,9 +240,7 @@ private:
         auto new_metadata = DataLakeMetadata::create(
             object_storage,
             weak_from_this(),
-            context,
-            columns,
-            partition_by);
+            context);
 
         if (*current_metadata == *new_metadata)
             return false;

@@ -135,9 +135,7 @@ ColumnsDescription TableFunctionObjectStorage<
             object_storage,
             context,
             /* if_not_updated_before */true,
-            /* check_consistent_with_previous_metadata */true,
-            std::nullopt,
-            nullptr);
+            /* check_consistent_with_previous_metadata */true);
 
         std::string sample_path;
         ColumnsDescription columns;

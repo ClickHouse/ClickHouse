@@ -47,12 +47,19 @@ public:
             && data_files == deltalake_metadata->data_files;
     }
 
+    static void createInitial(
+        const ObjectStoragePtr & /*object_storage*/,
+        const StorageObjectStorageConfigurationWeakPtr & /*configuration*/,
+        const ContextPtr & /*local_context*/,
+        const std::optional<ColumnsDescription> & /*columns*/,
+        ASTPtr /*partition_by*/)
+    {
+    }
+
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
         StorageObjectStorageConfigurationWeakPtr configuration,
-        ContextPtr local_context,
-        const std::optional<ColumnsDescription> & columns,
-        ASTPtr partition_by);
+        ContextPtr local_context);
 
     static DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
     static DataTypePtr getSimpleTypeByName(const String & type_name);
