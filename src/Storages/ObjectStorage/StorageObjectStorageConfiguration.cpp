@@ -19,7 +19,9 @@ bool StorageObjectStorageConfiguration::update( ///NOLINT
     ObjectStoragePtr object_storage_ptr,
     ContextPtr context,
     bool /* if_not_updated_before */,
-    bool /* check_consistent_with_previous_metadata */)
+    bool /* check_consistent_with_previous_metadata */,
+    const std::optional<ColumnsDescription> & /*columns*/,
+    ASTPtr /*partition_by*/)
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);

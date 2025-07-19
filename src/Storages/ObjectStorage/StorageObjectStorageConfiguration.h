@@ -137,7 +137,9 @@ public:
         ObjectStoragePtr object_storage,
         ContextPtr local_context,
         bool if_not_updated_before,
-        bool check_consistent_with_previous_metadata);
+        bool check_consistent_with_previous_metadata,
+        const std::optional<ColumnsDescription> & columns,
+        ASTPtr partition_by);
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
     {

@@ -11,6 +11,7 @@
 
 #if USE_AVRO
 
+#include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
@@ -58,7 +59,9 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     StorageObjectStorageConfigurationPtr configuration_ptr,
     IcebergMetadataFilesCachePtr cache_ptr,
     const ContextPtr & local_context,
-    Poco::Logger * log);
+    Poco::Logger * log,
+    const std::optional<ColumnsDescription> & columns,
+    ASTPtr partition_by);
 
 }
 

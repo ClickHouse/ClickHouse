@@ -201,7 +201,6 @@ void generateManifestFile(
         set_versioned_field(sequence_number, Iceberg::f_file_sequence_number);
     }
     avro::GenericRecord & data_file = manifest.field(Iceberg::f_data_file).value<avro::GenericRecord>();
-
     if (version > 1)
         data_file.field(Iceberg::f_content) = avro::GenericDatum(0);
     data_file.field(Iceberg::f_file_path) = avro::GenericDatum(data_file_name);
@@ -563,6 +562,7 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
     ColumnRawPtrs raw_columns;
     for (const auto & column : chunk.getColumns())
         raw_columns.push_back(column.get());
+
     buildScatterSelector(raw_columns, partition_num_to_first_row, selector, 0, Context::getGlobalContextInstance());
 
     size_t partitions_count = partition_num_to_first_row.size();
@@ -574,9 +574,16 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
 
     for (size_t col = 0; col < chunk.getNumColumns(); ++col)
     {
-        MutableColumns scattered = chunk.getColumns()[col]->scatter(partitions_count, selector);
-        for (size_t i = 0; i < partitions_count; ++i)
-            result_columns[i].second[col] = std::move(scattered[i]);
+        if (partitions_count > 1)
+        {
+            MutableColumns scattered = chunk.getColumns()[col]->scatter(partitions_count, selector);
+            for (size_t i = 0; i < partitions_count; ++i)
+                result_columns[i].second[col] = std::move(scattered[i]);
+        }
+        else
+        {
+            result_columns[0].second[col] = chunk.getColumns()[col]->cloneFinalized();
+        }
     }
 
     std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>> result;
@@ -603,10 +610,10 @@ IcebergStorageSink::IcebergStorageSink(
     , format_settings(format_settings_)
     , filename_generator(configuration_->getPath())
 {
-    configuration->update(object_storage, context, true, false);
+    configuration->update(object_storage, context, true, false, std::nullopt, nullptr);
     auto log = getLogger("IcebergWrites");
     auto [last_version, metadata_path, compression_method]
-        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_, nullptr, context_, log.get());
+        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_, nullptr, context_, log.get(), std::nullopt, nullptr);
 
     filename_generator.setVersion(last_version + 1);
     metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, log, compression_method);

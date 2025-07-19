@@ -60,6 +60,9 @@ If enabled, the engine would use the metadata file with the most recent last_upd
     DECLARE(Bool, iceberg_use_version_hint, false, R"(
 Get latest metadata path from version-hint.text file.
 )", 0) \
+    DECLARE(Int64, iceberg_format_version, 2, R"(
+Metadata format version.
+)", 0) \
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_delta_kernel_rs, true) \
