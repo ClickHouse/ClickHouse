@@ -52,10 +52,12 @@ function get_inactive_parts_count() {
     "
 }
 
+TIMEOUT=60
 function wait_table_inactive_parts_are_gone() {
     table_name=$1
 
-    while true
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
     do
         count=$(get_inactive_parts_count $table_name)
         if [[ count -gt 0 ]]
@@ -67,9 +69,7 @@ function wait_table_inactive_parts_are_gone() {
     done
 }
 
-export -f get_inactive_parts_count
-export -f wait_table_inactive_parts_are_gone
-timeout 60 bash -c 'wait_table_inactive_parts_are_gone table_with_single_pk'
+wait_table_inactive_parts_are_gone table_with_single_pk
 
 ${CLICKHOUSE_CLIENT} -q 'SYSTEM FLUSH LOGS part_log;'
 ${CLICKHOUSE_CLIENT} -q "
@@ -83,5 +83,3 @@ ${CLICKHOUSE_CLIENT} -q "
     SELECT if(dateDiff('second', toDateTime(time.2), toDateTime(time.1)) = 0, 'ok', 'fail')"
 
 ${CLICKHOUSE_CLIENT} -q 'DROP TABLE table_with_single_pk'
-
-
