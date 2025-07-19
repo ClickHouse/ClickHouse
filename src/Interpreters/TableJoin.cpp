@@ -1021,7 +1021,7 @@ static void addJoinConditionWithAnd(ASTPtr & current_cond, const ASTPtr & new_co
         func->arguments->children.push_back(new_cond);
     else
         /// already have some conditions, unite it with `and`
-        current_cond = makeASTFunction("and", current_cond, new_cond);
+        current_cond = makeASTOperator("and", current_cond, new_cond);
 }
 
 void TableJoin::addJoinCondition(const ASTPtr & ast, bool is_left)

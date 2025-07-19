@@ -78,12 +78,12 @@ FROM t1, t2,
         *,
         *,
         assumeNotNull(materialize(10)),
-        10 IS NOT NULL,
+        isNotNull(10),
         a AS x
     FROM t3__fuzz_0
-    WHERE (toNullable(toUInt256(1)) + a) = b
+    WHERE equals(plus(toNullable(toUInt256(1)), a), b)
 ) AS t3
-WHERE if(t2.b > 0, t2.a, 0) = t1.a
+WHERE equals(if(greater(t2.b, 0), t2.a, 0), t1.a)
 ORDER BY
     t3.x ASC NULLS FIRST,
     t2.a DESC NULLS LAST,

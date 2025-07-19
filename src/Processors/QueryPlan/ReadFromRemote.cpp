@@ -35,7 +35,6 @@
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
 #include <Common/logger_useful.h>
-#include <Common/checkStackSize.h>
 #include <Common/FailPoint.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
