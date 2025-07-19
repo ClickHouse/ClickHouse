@@ -81,9 +81,13 @@ bool Throttler::throttle(size_t amount, size_t max_block_ns)
             timer2.emplace(profile_events.timer(event_sleep_us));
 
         // Note that throwing exception from the following blocking call is safe. It is important for query cancellation.
-        Int64 block_ns = std::min<Int64>(max_block_ns, static_cast<Int64>(-tokens_value / max_speed_value * NS));
+        Int64 block_ns = static_cast<Int64>(-tokens_value / max_speed_value * NS);
         if (block_ns > 0)
+        {
+            if (max_block_ns != Throttler::unlimited_block_ns)
+                block_ns = std::min<Int64>(max_block_ns, block_ns);
             sleepForNanoseconds(block_ns);
+        }
     }
 
     bool parent_block = false;
