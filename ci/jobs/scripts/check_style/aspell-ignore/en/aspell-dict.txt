@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3283 
+personal_ws-1.1 en 3286 
 AArch
 ACLs
 ALTERs
@@ -28,6 +28,7 @@ Akka
 AlertManager
 Alexey
 AnyEvent
+Anthropic
 AppleClang
 Approximative
 ArrayJoin
@@ -624,6 +625,7 @@ MaxThreads
 Mbps
 McNeal
 Memcheck
+memcheck
 MemoryCode
 MemoryDataAndStack
 MemoryResident
@@ -726,6 +728,8 @@ NumericIndexedVectors
 OAuth
 ODBCDriver
 OFNS
+OKLab
+OKLCH
 OLAP
 OLTP
 ORCCompression
@@ -786,10 +790,12 @@ OnTime
 OpenCelliD
 OpenFileForRead
 OpenFileForWrite
+OpenRouter
 OpenSSL
 OpenSUSE
 OpenSky
 OpenStack
+OpenAI
 OpenTelemetry
 OrDefault
 OrNull
@@ -808,8 +814,6 @@ PagerDuty
 ParallelFormattingOutputFormatThreads
 ParallelFormattingOutputFormatThreadsActive
 ParallelParsingInputFormat
-ParallelParsingInputFormatThreads
-ParallelParsingInputFormatThreadsActive
 ParallelReplicasMode
 ParquetCompression
 ParquetMetadata
@@ -952,6 +956,7 @@ ReplicatedSend
 ReplicatedSummingMergeTree
 ReplicatedVersionedCollapsingMergeTree
 Resample
+Rescoring
 RestartReplicaThreads
 RestartReplicaThreadsActive
 RestoreThreads
@@ -1531,6 +1536,7 @@ checksumming
 checksums
 childern
 chproxy
+chroma
 chunksize
 cickhouse
 cipherList
@@ -1559,6 +1565,8 @@ codepoint
 codepoints
 codespell
 collapsingmergetree
+colorOKLCHToSRGB
+colorSRGBToOKLCH
 combinator
 combinators
 compareSubstrings
@@ -2207,6 +2215,7 @@ libuv
 libvirt
 linearizability
 linearizable
+linearize
 linearized
 lineasstring
 linefeeds
@@ -2749,6 +2758,7 @@ representable
 requestor
 requireTLSv
 rerange
+rescoring
 resharding
 reshards
 resolvers
@@ -2794,6 +2804,7 @@ russian
 rustc
 rustup
 rw
+sRGB
 sasl
 satisfiable
 scala

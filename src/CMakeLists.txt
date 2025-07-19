@@ -8,14 +8,6 @@ if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
 
-if(COMPILER_PIPE)
-    set(MAX_COMPILER_MEMORY 2500)
-else()
-    set(MAX_COMPILER_MEMORY 1500)
-endif()
-set(MAX_LINKER_MEMORY 3500)
-include(../cmake/limit_jobs.cmake)
-
 include (../cmake/version.cmake)
 message (STATUS "Will build ${VERSION_FULL} revision ${VERSION_REVISION} ${VERSION_OFFICIAL}")
 include (configure_config.cmake)
@@ -185,6 +177,10 @@ if (ENABLE_BUZZHOUSE)
     add_headers_and_sources(dbms Client/BuzzHouse/AST)
     add_headers_and_sources(dbms Client/BuzzHouse/Generator)
     add_headers_and_sources(dbms Client/BuzzHouse/Utils)
+endif()
+
+if (ENABLE_CLIENT_AI)
+    add_headers_and_sources(dbms Client/AI)
 endif()
 
 if (OS_LINUX)
@@ -522,6 +518,10 @@ if (TARGET OpenSSL::Crypto)
     target_link_libraries (clickhouse_common_io PRIVATE OpenSSL::Crypto)
 endif ()
 
+if (ENABLE_CLIENT_AI AND TARGET ch_contrib::ai-sdk-cpp)
+    dbms_target_link_libraries (PUBLIC ch_contrib::ai-sdk-cpp)
+endif()
+
 if (TARGET ch_contrib::ldap)
     dbms_target_link_libraries (PRIVATE ch_contrib::ldap ch_contrib::lber)
     target_link_libraries (clickhouse_compression PRIVATE ch_contrib::ldap ch_contrib::lber)
@@ -715,8 +715,7 @@ if (ENABLE_TESTS)
         dbms
         clickhouse_common_zookeeper_base
         clickhouse_common_config
-        clickhouse_common_zookeeper
-        hilite_comparator)
+        clickhouse_common_zookeeper)
 
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)

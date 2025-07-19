@@ -207,7 +207,7 @@ BlockIO getDDLOnClusterStatus(const String & node_path, const String & replicas_
 
     if (context->getSettingsRef()[Setting::distributed_ddl_output_mode] == DistributedDDLOutputMode::NONE
         || context->getSettingsRef()[Setting::distributed_ddl_output_mode] == DistributedDDLOutputMode::NONE_ONLY_ACTIVE)
-        io.pipeline.complete(std::make_shared<EmptySink>(io.pipeline.getHeader()));
+        io.pipeline.complete(std::make_shared<EmptySink>(io.pipeline.getSharedHeader()));
 
     return io;
 }

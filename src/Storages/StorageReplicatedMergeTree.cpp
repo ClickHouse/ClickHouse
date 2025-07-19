@@ -281,7 +281,6 @@ namespace ErrorCodes
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_INITIALIZED;
-    extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int TABLE_IS_DROPPED;
     extern const int FAULT_INJECTED;
     extern const int CANNOT_FORGET_PARTITION;
@@ -4165,7 +4164,12 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             partitions_to_merge_in = merger_mutator.getPartitionsThatMayBeMerged(
                 std::make_shared<ReplicatedMergeTreePartsCollector>(*this, local_merge_pred),
                 local_merge_pred,
-                MergeSelectorApplier{max_source_parts_size_for_merge, merge_with_ttl_allowed});
+                MergeSelectorApplier(
+                    /*max_merge_sizes=*/{max_source_parts_size_for_merge},
+                    /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
+                    /*aggressive_=*/false,
+                    /*range_filter_=*/nullptr
+                ));
 
             if (partitions_to_merge_in.empty())
                 can_assign_merge = false;
@@ -4179,12 +4183,18 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             auto select_merge_result = merger_mutator.selectPartsToMerge(
                 std::make_shared<ReplicatedMergeTreePartsCollector>(*this, merge_predicate),
                 merge_predicate,
-                MergeSelectorApplier{max_source_parts_size_for_merge, merge_with_ttl_allowed},
+                MergeSelectorApplier(
+                    /*max_merge_sizes=*/{max_source_parts_size_for_merge},
+                    /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
+                    /*aggressive_=*/false,
+                    /*range_filter_=*/nullptr
+                ),
                 partitions_to_merge_in);
 
             if (select_merge_result.has_value())
             {
-                future_merged_part = constructFuturePart(*this, select_merge_result.value(), {MergeTreeDataPartState::Active});
+                chassert(select_merge_result.value().size() == 1);
+                future_merged_part = constructFuturePart(*this, select_merge_result.value()[0], {MergeTreeDataPartState::Active});
                 if (!future_merged_part)
                 {
                     LOG_DEBUG(log,
@@ -6109,128 +6119,6 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
 }
 
 
-std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClusterStorage(const std::shared_ptr<IStorageCluster> & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context)
-{
-    const auto & settings = local_context->getSettingsRef();
-
-    /// Here we won't check that the cluster formed from table replicas is a subset of a cluster specified in s3Cluster/hdfsCluster table function
-    auto src_cluster = src_storage_cluster->getCluster(local_context);
-
-    /// Actually the query doesn't change, we just serialize it to string
-    String query_str;
-    {
-        WriteBufferFromOwnString buf;
-        IAST::FormatSettings ast_format_settings(
-            /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
-        query.IAST::format(buf, ast_format_settings);
-        query_str = buf.str();
-    }
-
-    QueryPipeline pipeline;
-    ContextMutablePtr query_context = Context::createCopy(local_context);
-    query_context->increaseDistributedDepth();
-
-    auto number_of_replicas = static_cast<UInt64>(src_cluster->getShardsAddresses().size());
-    auto extension = src_storage_cluster->getTaskIteratorExtension(nullptr, nullptr, local_context, number_of_replicas);
-
-    size_t replica_index = 0;
-    for (const auto & replicas : src_cluster->getShardsAddresses())
-    {
-        /// There will be only one replica, because we consider each replica as a shard
-        for (const auto & node : replicas)
-        {
-            auto connection = std::make_shared<Connection>(
-                node.host_name, node.port, query_context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, node.proto_send_chunked, node.proto_recv_chunked,
-                SSHKey(), /*jwt*/"", node.quota_key, node.cluster, node.cluster_secret,
-                "ParallelInsertSelectInititiator",
-                node.compression,
-                node.secure,
-                node.bind_host
-            );
-
-            IConnections::ReplicaInfo replica_info{ .number_of_current_replica = replica_index++ };
-
-            auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                connection,
-                query_str,
-                Block{},
-                query_context,
-                /*throttler=*/nullptr,
-                Scalars{},
-                Tables{},
-                QueryProcessingStage::Complete,
-                RemoteQueryExecutor::Extension{.task_iterator = extension.task_iterator, .replica_info = std::move(replica_info)});
-
-            Pipe pipe{std::make_shared<RemoteSource>(
-                remote_query_executor,
-                false,
-                settings[Setting::async_socket_for_remote],
-                settings[Setting::async_query_sending_for_remote])};
-            pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
-            QueryPipeline remote_pipeline{std::move(pipe)};
-            remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));
-
-            pipeline.addCompletedPipeline(std::move(remote_pipeline));
-        }
-    }
-
-    return pipeline;
-}
-
-std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
-{
-    /// Do not enable parallel distributed INSERT SELECT in case when query probably comes from another server
-    if (local_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
-        return {};
-
-    const Settings & settings = local_context->getSettingsRef();
-    if (settings[Setting::max_distributed_depth] && local_context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
-        throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
-
-    auto & select = query.select->as<ASTSelectWithUnionQuery &>();
-
-    StoragePtr src_storage;
-
-    if (select.list_of_selects->children.size() == 1)
-    {
-        if (auto * select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
-        {
-            JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
-
-            if (joined_tables.tablesCount() == 1)
-            {
-                src_storage = joined_tables.getLeftTableStorage();
-            }
-        }
-    }
-
-    if (!src_storage)
-        return {};
-
-    if (auto src_distributed = std::dynamic_pointer_cast<IStorageCluster>(src_storage))
-    {
-        return distributedWriteFromClusterStorage(src_distributed, query, local_context);
-    }
-    else if (auto src_mt = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(src_storage))
-    {
-        // pipeline will be built outside
-        return {};
-    }
-
-    if (local_context->getClientInfo().distributed_depth == 0)
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Parallel distributed INSERT SELECT is not possible. Reason: distributed "
-            "reading into Replicated table is supported only from *Cluster table functions, but got {} storage",
-            src_storage->getName());
-    }
-
-    return {};
-}
-
-
 bool StorageReplicatedMergeTree::optimize(
     const ASTPtr &,
     const StorageMetadataPtr &,
@@ -6255,8 +6143,8 @@ bool StorageReplicatedMergeTree::optimize(
         && (mode == DeduplicateMergeProjectionMode::THROW || mode == DeduplicateMergeProjectionMode::IGNORE))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "OPTIMIZE DEDUPLICATE query is not supported for table {} as it has projections. "
-                    "User should drop all the projections manually before running the query, "
-                    "or consider drop or rebuild option of deduplicate_merge_projection_mode",
+                    "Please drop all projections manually before running the query, "
+                    "or set setting 'deduplicate_merge_projection_mode' to 'drop' or 'rebuild'",
                     getStorageID().getTableName());
 
     if (cleanup)
@@ -6305,18 +6193,19 @@ bool StorageReplicatedMergeTree::optimize(
             auto merge_predicate = queue.getMergePredicate(zookeeper, std::move(partition_ids_hint));
             auto parts_collector = std::make_shared<ReplicatedMergeTreePartsCollector>(*this, merge_predicate);
 
-            const auto select_merge = [&]() -> std::expected<MergeSelectorChoice, SelectMergeFailure>
+            const auto select_merge = [&]() -> std::expected<MergeSelectorChoices, SelectMergeFailure>
             {
                 if (partition_id.empty())
                 {
                     return merger_mutator.selectPartsToMerge(
                         parts_collector,
                         merge_predicate,
-                        MergeSelectorApplier{
-                            .max_total_size_to_merge = (*storage_settings_ptr)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool],
-                            .merge_with_ttl_allowed = false,
-                            .aggressive = true,
-                        },
+                        MergeSelectorApplier(
+                            /*max_merge_sizes=*/{(*storage_settings_ptr)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool]},
+                            /*merge_with_ttl_allowed=*/false,
+                            /*aggressive=*/true,
+                            /*range_filter_=*/nullptr
+                        ),
                         /*partitions_hint=*/std::nullopt);
                 }
                 else
@@ -6331,8 +6220,11 @@ bool StorageReplicatedMergeTree::optimize(
                 }
             };
 
-            const auto construct_future_part = [&](MergeSelectorChoice choice) -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
+            const auto construct_future_part = [&](MergeSelectorChoices choices) -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
             {
+                chassert(choices.size() == 1);
+                MergeSelectorChoice choice = std::move(choices[0]);
+
                 auto future_part = constructFuturePart(*this, choice, {MergeTreeDataPartState::Active});
                 if (!future_part)
                     return std::unexpected(SelectMergeFailure{

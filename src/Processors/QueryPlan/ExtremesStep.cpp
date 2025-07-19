@@ -21,7 +21,7 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-ExtremesStep::ExtremesStep(const Header & input_header)
+ExtremesStep::ExtremesStep(const SharedHeader & input_header)
     : ITransformingStep(input_header, input_header, getTraits())
 {
 }

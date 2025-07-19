@@ -10,12 +10,11 @@ namespace DB
 class ReadBufferIterator : public IReadBufferIterator, WithContext
 {
 public:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
     using ObjectInfos = StorageObjectStorage::ObjectInfos;
 
     ReadBufferIterator(
         ObjectStoragePtr object_storage_,
-        ConfigurationPtr configuration_,
+        StorageObjectStorageConfigurationPtr configuration_,
         const ObjectIterator & file_iterator_,
         const std::optional<FormatSettings> & format_settings_,
         SchemaCache & schema_cache_,
@@ -45,10 +44,10 @@ private:
         const ObjectInfos::iterator & begin, const ObjectInfos::iterator & end);
 
     ObjectStoragePtr object_storage;
-    const ConfigurationPtr configuration;
+    const StorageObjectStorageConfigurationPtr configuration;
     const ObjectIterator file_iterator;
     const std::optional<FormatSettings> & format_settings;
-    const StorageObjectStorage::QuerySettings query_settings;
+    const StorageObjectStorageQuerySettings query_settings;
     SchemaCache & schema_cache;
     ObjectInfos & read_keys;
     std::optional<String> format;
