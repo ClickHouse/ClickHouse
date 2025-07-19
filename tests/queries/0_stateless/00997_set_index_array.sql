@@ -1,5 +1,7 @@
 -- Tags: no-random-merge-tree-settings
 
+SET use_skip_indexes_on_data_read = 0;
+
 DROP TABLE IF EXISTS set_array;
 
 CREATE TABLE set_array

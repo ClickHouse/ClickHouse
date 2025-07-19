@@ -1,4 +1,5 @@
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
+SET use_skip_indexes_on_data_read = 0;
 
 DROP TABLE IF EXISTS minmax_compact;
 

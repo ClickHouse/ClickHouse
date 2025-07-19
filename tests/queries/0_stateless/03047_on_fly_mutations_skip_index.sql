@@ -1,6 +1,8 @@
 -- Tags: no-shared-catalog
 -- FIXME no-shared-catalog: STOP MERGES will only stop them on the current replica, the second one will continue to merge
 
+SET use_skip_indexes_on_data_read = 0;
+
 DROP TABLE IF EXISTS t_lightweight_mut_3;
 
 SET apply_mutations_on_fly = 1;

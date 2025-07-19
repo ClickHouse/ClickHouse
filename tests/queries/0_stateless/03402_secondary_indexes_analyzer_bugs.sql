@@ -4,6 +4,9 @@
 select 'index is applied while using column alias';
 
 drop table if exists t;
+
+SET use_skip_indexes_on_data_read = 0;
+
 CREATE TABLE t
 (
     `tenant` String,

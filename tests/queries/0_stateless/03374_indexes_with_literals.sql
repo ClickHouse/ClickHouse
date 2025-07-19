@@ -1,6 +1,7 @@
 -- Tags: no-random-settings, no-parallel-replicas
 
 set enable_analyzer=1;
+set use_skip_indexes_on_data_read=0;
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test

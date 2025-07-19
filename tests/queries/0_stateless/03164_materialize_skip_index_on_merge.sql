@@ -1,6 +1,7 @@
 -- Tests merge tree 'setting' materialize_skip_indexes_on_merge
 
 SET enable_analyzer = 1;
+SET use_skip_indexes_on_data_read = 0;
 
 DROP TABLE IF EXISTS tab;
 

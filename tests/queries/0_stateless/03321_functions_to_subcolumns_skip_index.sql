@@ -1,5 +1,7 @@
 -- Tags: no-parallel-replicas
 
+SET use_skip_indexes_on_data_read = 0;
+
 DROP TABLE IF EXISTS bloom_filter_test;
 
 CREATE TABLE bloom_filter_test
