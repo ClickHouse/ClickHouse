@@ -1,3 +1,3 @@
 clickhouse_add_executable(data_type_deserialization_fuzzer data_type_deserialization_fuzzer.cpp ${SRCS})
 
-target_link_libraries(data_type_deserialization_fuzzer PRIVATE clickhouse_aggregate_functions dbms clickhouse_functions_text)
+target_link_libraries(data_type_deserialization_fuzzer PRIVATE clickhouse_aggregate_functions dbms)

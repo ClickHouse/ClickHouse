@@ -14,7 +14,7 @@ MongoDB engine is read-only table engine which allows to read data from a remote
 Only MongoDB v3.6+ servers are supported.
 [Seed list(`mongodb+srv`)](https://www.mongodb.com/docs/manual/reference/glossary/#std-term-seed-list) is not yet supported.
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -152,7 +152,7 @@ This applied for `Date`, `Date32`, `DateTime`, `Bool`, `UUID`.
 :::
 
 
-## Usage Example {#usage-example}
+## Usage example {#usage-example}
 
 
 Assuming MongoDB has [sample_mflix](https://www.mongodb.com/docs/atlas/sample-data/sample-mflix) dataset loaded
@@ -218,9 +218,9 @@ released:  1989-11-22
 
 ```sql
 -- Find top 3 movies based on Cormac McCarthy's books
-SELECT title, toFloat32(JSONExtractString(imdb, 'rating')) as rating
+SELECT title, toFloat32(JSONExtractString(imdb, 'rating')) AS rating
 FROM sample_mflix_table
-WHERE arrayExists(x -> x like 'Cormac McCarthy%', writers)
+WHERE arrayExists(x -> x LIKE 'Cormac McCarthy%', writers)
 ORDER BY rating DESC
 LIMIT 3;
 ```

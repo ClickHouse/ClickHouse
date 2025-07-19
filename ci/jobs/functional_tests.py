@@ -93,13 +93,13 @@ def run_tests(
     Shell.run(command, verbose=True)
 
 
-def run_specific_tests(tests, runs=1):
+def run_specific_tests(tests, runs=1, extra_args=""):
     test_output_file = f"{temp_dir}/test_result.txt"
     nproc = int(Utils.cpu_count() / 2)
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
     command = f"clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --trace \
         --capture-client-stacktrace --queries ./tests/queries --test-runs {runs} \
-        --jobs {nproc} --order=random -- {' '.join(tests)} | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{test_output_file}\""
+        --jobs {nproc} {extra_args} --order=random -- {' '.join(tests)} | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
     Shell.run(command, verbose=True)
@@ -231,7 +231,6 @@ def main():
                 print("skip log export config for local run")
 
         commands = [
-            f"chmod +x {ch_path}/lexer_test || true",
             f"chmod +x {ch_path}/clickhouse",
             f"rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/*",
             # google *.proto files
@@ -249,6 +248,7 @@ def main():
             f"./tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client {config_installs_args}",
             f"clickhouse-server --version",
             f"sed -i 's|>/test/chroot|>{temp_dir}/chroot|' /etc/clickhouse-server**/config.d/*.xml",
+            CH.set_random_timezone,
         ]
 
         if is_flaky_check:
@@ -288,13 +288,6 @@ def main():
 
         def start():
             res = CH.start_minio(test_type="stateless") and CH.start_azurite()
-            time.sleep(7)
-            Shell.check("ps -ef | grep minio", verbose=True)
-            # TODO: sometimes fails with AWS errors, e.g.: Access denied, no such bucket; looks like a conflict with aws infra
-            # res = res and Shell.check(
-            #     "aws s3 ls s3://test --endpoint-url http://localhost:11111/",
-            #     verbose=True,
-            # )
             res = res and CH.start()
             res = res and CH.wait_ready()
             if res:
@@ -350,7 +343,7 @@ def main():
                 extra_args=runner_options,
             )
         else:
-            run_specific_tests(tests=tests, runs=50 if is_flaky_check else 1)
+            run_specific_tests(tests=tests, runs=50 if is_flaky_check else 1, extra_args=runner_options)
 
         if not info.is_local_run:
             CH.stop_log_exports()
@@ -388,7 +381,7 @@ def main():
         results.append(
             Result.create_from(
                 name="Check errors",
-                results=CH.check_fatal_messeges_in_logs(),
+                results=CH.check_fatal_messages_in_logs(),
                 status=Result.Status.SUCCESS,
                 stopwatch=sw_,
             )
@@ -411,7 +404,8 @@ def main():
                 command=collect_logs,
             )
         )
-        results[-1].results = CH.extra_tests_results
+        if test_result and CH.extra_tests_results:
+            test_result.extend_sub_results(CH.extra_tests_results)
 
     Result.create_from(
         results=results,

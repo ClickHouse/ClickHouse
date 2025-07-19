@@ -3,7 +3,7 @@ ARG FROM_TAG=latest
 FROM clickhouse/test-base:$FROM_TAG
 
 # ARG for quick switch to a given ubuntu mirror
-ARG apt_archive="https://archive.ubuntu.com"
+ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i -e "s|http://archive.ubuntu.com|$apt_archive|g" -e "s|https://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 ENV LANG=C.UTF-8

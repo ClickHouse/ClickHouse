@@ -86,7 +86,7 @@ Sorting: a.b.c DESC, a.b.d DESC
 0	((0,'str_0',[]))	Hello, World!
 2	((0,'str_2',[0,1]))	Hello, World!
 Expression ((Project names + Projection))
-Expression
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
@@ -99,7 +99,7 @@ Search Algorithm: binary search
 Ranges: 1
 0	((0,'str_0',[]))	Hello, World!
 Expression ((Project names + Projection))
-Expression
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
@@ -131,7 +131,7 @@ ReadFromPreparedSource (_exact_count_projection)
 Expression ((Project names + Projection))
 Aggregating
 Expression (Before GROUP BY)
-Expression
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
@@ -257,7 +257,7 @@ Sorting: a.b.c DESC, a.b.d DESC
 0	((0,'str_0',[]))	Hello, World!
 2	((0,'str_2',[0,1]))	Hello, World!
 Expression ((Project names + Projection))
-Expression
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
@@ -270,7 +270,7 @@ Search Algorithm: binary search
 Ranges: 1
 0	((0,'str_0',[]))	Hello, World!
 Expression ((Project names + Projection))
-Expression
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
@@ -302,7 +302,7 @@ ReadFromPreparedSource (_exact_count_projection)
 Expression ((Project names + Projection))
 Aggregating
 Expression (Before GROUP BY)
-Expression
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
@@ -402,7 +402,7 @@ Sorting: a.b.c DESC, a.b.d DESC
 0	((0,'str_0',[]))	Hello, World!
 2	((0,'str_2',[0,1]))	Hello, World!
 Expression ((Project names + Projection))
-Expression
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
@@ -415,7 +415,7 @@ Search Algorithm: binary search
 Ranges: 1
 0	((0,'str_0',[]))	Hello, World!
 Expression ((Project names + Projection))
-Expression
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
@@ -447,7 +447,7 @@ ReadFromPreparedSource (_exact_count_projection)
 Expression ((Project names + Projection))
 Aggregating
 Expression (Before GROUP BY)
-Expression
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
@@ -573,7 +573,7 @@ Sorting: a.b.c DESC, a.b.d DESC
 0	((0,'str_0',[]))	Hello, World!
 2	((0,'str_2',[0,1]))	Hello, World!
 Expression ((Project names + Projection))
-Expression
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
@@ -586,7 +586,7 @@ Search Algorithm: binary search
 Ranges: 1
 0	((0,'str_0',[]))	Hello, World!
 Expression ((Project names + Projection))
-Expression
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
@@ -618,7 +618,7 @@ ReadFromPreparedSource (_exact_count_projection)
 Expression ((Project names + Projection))
 Aggregating
 Expression (Before GROUP BY)
-Expression
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
@@ -718,7 +718,7 @@ Sorting: a.b.c DESC, a.b.d DESC
 0	((0,'str_0',[]))	Hello, World!
 2	((0,'str_2',[0,1]))	Hello, World!
 Expression ((Project names + Projection))
-Expression
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
@@ -731,7 +731,7 @@ Search Algorithm: binary search
 Ranges: 1
 0	((0,'str_0',[]))	Hello, World!
 Expression ((Project names + Projection))
-Expression
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
@@ -763,7 +763,7 @@ ReadFromPreparedSource (_exact_count_projection)
 Expression ((Project names + Projection))
 Aggregating
 Expression (Before GROUP BY)
-Expression
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
@@ -889,7 +889,7 @@ Sorting: a.b.c DESC, a.b.d DESC
 0	((0,'str_0',[]))	Hello, World!
 2	((0,'str_2',[0,1]))	Hello, World!
 Expression ((Project names + Projection))
-Expression
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
@@ -902,7 +902,7 @@ Search Algorithm: binary search
 Ranges: 1
 0	((0,'str_0',[]))	Hello, World!
 Expression ((Project names + Projection))
-Expression
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey
@@ -934,7 +934,7 @@ ReadFromPreparedSource (_exact_count_projection)
 Expression ((Project names + Projection))
 Aggregating
 Expression (Before GROUP BY)
-Expression
+Expression ((WHERE + Change column names to column identifiers))
 ReadFromMergeTree (default.test)
 Indexes:
 PrimaryKey

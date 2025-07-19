@@ -2,7 +2,7 @@
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression
+      Expression ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.t_skip_index_insert)
         Indexes:
           Skip
@@ -20,7 +20,7 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression
+      Expression ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.t_skip_index_insert)
         Indexes:
           Skip
@@ -38,7 +38,7 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression
+      Expression ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.t_skip_index_insert)
         Indexes:
           Skip

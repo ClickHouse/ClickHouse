@@ -18,7 +18,8 @@ private:
     PerformanceResult res1, res2;
 
     PeerQuery peer_query = PeerQuery::AllPeers;
-    bool first_success = true, other_steps_sucess = true, can_test_query_success, measure_performance;
+    int first_errcode = 0;
+    bool other_steps_sucess = true, can_test_oracle_result, measure_performance;
 
     std::unordered_set<uint32_t> found_tables;
     DB::Strings nsettings;
@@ -36,15 +37,15 @@ public:
         , qfile_peer(
               ffc.clickhouse_server.has_value() ? (ffc.clickhouse_server.value().user_files_dir / "peer.data")
                                                 : std::filesystem::temp_directory_path())
-        , can_test_query_success(fc.compare_success_results)
+        , can_test_oracle_result(fc.compare_success_results)
         , measure_performance(fc.measure_performance)
     {
     }
 
     void resetOracleValues();
     void setIntermediateStepSuccess(bool success);
-    void processFirstOracleQueryResult(bool success, ExternalIntegrations & ei);
-    void processSecondOracleQueryResult(bool success, ExternalIntegrations & ei, const String & oracle_name);
+    void processFirstOracleQueryResult(int errcode, ExternalIntegrations & ei);
+    void processSecondOracleQueryResult(int errcode, ExternalIntegrations & ei, const String & oracle_name);
 
     /// Correctness query oracle
     void generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);

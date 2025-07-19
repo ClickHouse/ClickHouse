@@ -503,7 +503,7 @@ Result:
 Example of a query without `STALENESS`:
 
 ```sql
-SELECT number as key, 5 * number value, 'original' AS source
+SELECT number AS key, 5 * number value, 'original' AS source
 FROM numbers(16) WHERE key % 5 == 0
 ORDER BY key WITH FILL;
 ```
@@ -534,7 +534,7 @@ Result:
 Same query after applying `STALENESS 3`:
 
 ```sql
-SELECT number as key, 5 * number value, 'original' AS source
+SELECT number AS key, 5 * number value, 'original' AS source
 FROM numbers(16) WHERE key % 5 == 0
 ORDER BY key WITH FILL STALENESS 3;
 ```
@@ -562,7 +562,7 @@ Example of a query without `INTERPOLATE`:
 
 ```sql
 SELECT n, source, inter FROM (
-   SELECT toFloat32(number % 10) AS n, 'original' AS source, number as inter
+   SELECT toFloat32(number % 10) AS n, 'original' AS source, number AS inter
    FROM numbers(10) WHERE number % 3 = 1
 ) ORDER BY n WITH FILL FROM 0 TO 5.51 STEP 0.5;
 ```
@@ -591,7 +591,7 @@ Same query after applying `INTERPOLATE`:
 
 ```sql
 SELECT n, source, inter FROM (
-   SELECT toFloat32(number % 10) AS n, 'original' AS source, number as inter
+   SELECT toFloat32(number % 10) AS n, 'original' AS source, number AS inter
    FROM numbers(10) WHERE number % 3 = 1
 ) ORDER BY n WITH FILL FROM 0 TO 5.51 STEP 0.5 INTERPOLATE (inter AS inter + 1);
 ```
