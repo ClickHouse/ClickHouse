@@ -16,6 +16,9 @@ public:
         const std::vector<String> & required_right_keys_sources;
 
         size_t max_joined_block_rows;
+        size_t max_joined_block_bytes;
+
+        size_t avg_joined_bytes_per_row;
 
         bool need_filter;
         bool is_join_get;
