@@ -8,6 +8,7 @@
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 
+#include <span>
 #include <boost/noncopyable.hpp>
 #include <fmt/ranges.h>
 
@@ -263,14 +264,13 @@ struct ScatteredBlock : private boost::noncopyable
         return block.getByName(name);
     }
 
-    /// Filters selector by mask discarding rows for which filter is false
-    void filter(const IColumnFilter & filter)
+    void filter(std::span<UInt64> matched_rows)
     {
-        chassert(rows() == filter.size());
-        IndexesPtr new_selector = Indexes::create();
-        new_selector->reserve(selector.size());
-        std::copy_if(
-            selector.begin(), selector.end(), std::back_inserter(new_selector->getData()), [&](size_t idx) { return filter[idx]; });
+        IndexesPtr new_selector = Indexes::create(matched_rows.size());
+        auto & data = new_selector->getData();
+        size_t i = 0;
+        for (const auto pos : matched_rows)
+            data[i++] = selector[pos];
         selector = Selector(std::move(new_selector));
     }
 

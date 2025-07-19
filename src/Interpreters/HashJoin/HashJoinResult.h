@@ -26,6 +26,7 @@ public:
         MutableColumns columns_,
         IColumn::Offsets offsets_,
         IColumn::Filter filter_,
+        IColumn::Offsets && matched_rows_,
         ScatteredBlock && block_,
         Properties properties_);
 
@@ -40,8 +41,10 @@ private:
     MutableColumns columns;
     const IColumn::Offsets offsets;
     const IColumn::Filter filter;
+    IColumn::Offsets matched_rows;
 
     size_t next_row = 0;
+    size_t next_selector_it = 0;
     size_t next_row_ref = 0;
     size_t num_joined_rows = 0;
 };
