@@ -311,7 +311,7 @@ StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char co
     return res;
 }
 
-char * ColumnString::serializeValueIntoMemory(size_t n, char * memory) const
+ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * memory) const
 {
     size_t string_size = sizeAt(n);
     size_t offset = offsetAt(n);
