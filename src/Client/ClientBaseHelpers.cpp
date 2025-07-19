@@ -230,17 +230,20 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
                 if (*char_pos == '\\')
                 {
                     ++escaped;
-                    colors[code_point_pos] = replxx::color::bold(Replxx::Color::LIGHTGRAY);
+                    if (code_point_pos < colors.size())
+                        colors[code_point_pos] = replxx::color::bold(Replxx::Color::LIGHTGRAY);
                 }
                 /// The counting of escape characters is quite tricky due to double escaping of string literals + regexps,
                 /// and the special logic of interpreting escape sequences that are not interpreted by the string literals.
                 else if ((escaped % 4 == 0 || escaped % 4 == 3) && nullptr != strchr(metacharacters, *char_pos))
                 {
-                    colors[code_point_pos] = replxx::color::bold(Replxx::Color::BRIGHTMAGENTA);
+                    if (code_point_pos < colors.size())
+                        colors[code_point_pos] = replxx::color::bold(Replxx::Color::BRIGHTMAGENTA);
                 }
                 else
                 {
-                    colors[code_point_pos] = it->second;
+                    if (code_point_pos < colors.size())
+                        colors[code_point_pos] = it->second;
                     escaped = 0;
                 }
 
@@ -426,7 +429,7 @@ String highlighted(const String & query, const Context & context)
     replxx::Replxx::Color prev_color = replxx::Replxx::Color::DEFAULT;
     while (byte_pos < query_size)
     {
-        auto curr_color = colors[code_point_pos];
+        auto curr_color = code_point_pos < colors.size() ? colors[code_point_pos] : replxx::Replxx::Color::DEFAULT;
         if (curr_color != prev_color)
         {
             res += replxx::ansi_color(curr_color);
