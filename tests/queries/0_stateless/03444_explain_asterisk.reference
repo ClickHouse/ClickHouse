@@ -25,8 +25,8 @@ FROM
             a,
             b
         FROM t2
-    ) AS t2 ON if(`_--t2.b` > 0, `_--t2.a`, 0) = `_--t1.a`
-    WHERE if(`_--t2.b` > 0, `_--t2.a`, 0) = `_--t1.a`
+    ) AS t2 ON if((t2.b AS `_--t2.b`) > 0, t2.a AS `_--t2.a`, 0) = (a AS `_--t1.a`)
+    WHERE if((t2.b AS `_--t2.b`) > 0, t2.a AS `_--t2.a`, 0) = (a AS `_--t1.a`)
 ) AS `--.s`
 CROSS JOIN
 (
