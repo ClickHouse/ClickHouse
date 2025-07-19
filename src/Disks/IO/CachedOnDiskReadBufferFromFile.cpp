@@ -1203,7 +1203,7 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
 
     size_t new_pos = offset;
 
-    if (allow_seeks_after_first_read && !use_external_buffer)
+    if (allow_seeks_after_first_read)
     {
         if (whence != SEEK_SET && whence != SEEK_CUR)
         {
