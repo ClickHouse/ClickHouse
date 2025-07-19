@@ -50,6 +50,7 @@ enum class CompressionMethodByte : uint8_t
     GCD             = 0x9a,
     ZSTD_QPL        = 0x9b,
     SZ3             = 0x9c,
+    Chimp           = 0x9d,
 };
 
 }
