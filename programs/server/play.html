@@ -1701,33 +1701,48 @@ function changeTableLayout() {
 
 
 function appendHeaderResizer(header) {
-    const resizer = document.createElement('div');
-    resizer.className = 'resizer';
-    resizer.addEventListener('mousedown', (e) => {
+    let drag_state = {
+        is_dragging: true,
+        offset_x: null,
+        offset_width: null
+    };
+
+    const start = (e) => {
+        if (e.button !== 0) { return;}
 
         changeTableLayout();
-        
-        let x = 0;
-        let w = 0;
-        let table = document.getElementById('data-table');
+        drag_state.offset_x = e.clientX;
+        drag_state.offset_width = header.offsetWidth;
+        drag_state.is_dragging = true;
 
-        const mouseMoveHandler = (e) => {
-            const dx = e.clientX - x;
-            header.style.width = `${w + dx}px`;
-            if(dx < 0) {
-                table.style.setProperty('--table-width', `${table.offsetWidth + dx}px`)};
-            }
+        document.addEventListener('pointermove', move);
+        document.addEventListener('pointerup', stop);
+        document.addEventListener('pointercancel', stop);
+    }
 
-        const mouseUpHandler = () => {
-            document.removeEventListener('mousemove', mouseMoveHandler);
-            document.removeEventListener('mouseup', mouseUpHandler);
+    const move = (e) => {
+        if (!drag_state.is_dragging) { return; }
+
+        const dx = e.clientX - drag_state.offset_x;
+        header.style.width = `${drag_state.offset_width + dx}px`;
+        if(dx < 0) {
+            const table = document.getElementById('data-table');
+            table.style.setProperty('--table-width', `${table.offsetWidth + dx}px`)
         };
+    }
 
-        x = e.clientX;
-        w = header.offsetWidth;
-        document.addEventListener('mousemove', mouseMoveHandler);
-        document.addEventListener('mouseup', mouseUpHandler);
-    });
+    const stop = (e) => {
+        drag_state.is_dragging = false;
+
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', stop);
+        document.removeEventListener('pointercancel', stop);
+    }
+
+    const resizer = document.createElement('div');
+    resizer.className = 'resizer';
+    resizer.addEventListener('pointerdown', start);
+    resizer.addEventListener('touchstart', (e) => e.preventDefault());
 
     header.appendChild(resizer);
 }
