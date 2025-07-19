@@ -501,6 +501,12 @@
             border: 1px solid var(--border-color);
         }
 
+        th .name {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
         th:hover
         {
             z-index: 1;
@@ -1716,7 +1722,10 @@ function appendHeader(meta) {
     meta.forEach(elem => {
         let th = document.createElement('th');
         const name = document.createTextNode(elem.name);
-        th.appendChild(name);
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'name';
+        nameSpan.appendChild(name);
+        th.appendChild(nameSpan);
         let type_hint = document.createElement('span');
         type_hint.className = 'type-hint';
         type_hint.appendChild(document.createTextNode(elem.type));
