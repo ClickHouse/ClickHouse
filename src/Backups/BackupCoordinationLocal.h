@@ -32,7 +32,7 @@ public:
     void setBackupQueryIsSentToOtherHosts() override {}
     bool isBackupQuerySentToOtherHosts() const override { return false; }
     Strings setStage(const String &, const String &, bool) override { return {}; }
-    void setError(std::exception_ptr, bool) override { is_error_set = true; }
+    void setError(std::exception_ptr, bool) override { is_error_set = true; }  /// BackupStarter::onException() has already logged the error.
     bool isErrorSet() const override { return is_error_set; }
     void waitOtherHostsFinish(bool) const override {}
     void finish(bool) override { is_finished = true; }

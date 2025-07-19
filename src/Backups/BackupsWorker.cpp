@@ -456,9 +456,13 @@ struct BackupsWorker::BackupStarter
         /// Let other hosts know that the current host has finished its work.
         backup_coordination->finish(/* throw_if_error = */ true);
 
-        /// If the current host is the last host working on this backup then we can remove the coordination info.
-        if (backup_coordination && backup_coordination->allHostsFinished())
+        if (!is_internal_backup)
+        {
+            /// All the hosts working on this backup have finished their work, so we can remove the coordination info now.
+            if (!backup_coordination->allHostsFinished())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "All hosts should have finished their work by this point");
             backup_coordination->cleanup(/* throw_if_error = */ true);
+        }
 
         backup.reset();
         backup_coordination.reset();
@@ -491,21 +495,21 @@ struct BackupsWorker::BackupStarter
         }
 
         /// Remove files of the corrupted backup.
-        if (backup && backup_is_corrupted && backups_worker.remove_backup_files_after_failure && backup_coordination
-            && backup_coordination->isErrorSet() && backup_coordination->finished()
-            && (!backup_coordination->isBackupQuerySentToOtherHosts() || backup_coordination->allHostsFinished()))
-        {
+        bool should_remove_files_in_backup = backup && backup_is_corrupted && backups_worker.remove_backup_files_after_failure
+            && backup_coordination && backup_coordination->isErrorSet() &&
+            (backup_coordination->isBackupQuerySentToOtherHosts() ? backup_coordination->allHostsFinished() : backup_coordination->finished());
+
+        if (should_remove_files_in_backup)
             backup->tryRemoveAllFiles();
-        }
 
         backup.reset();
 
-        /// If the current host is the last host working on this restore then we can remove the coordination info.
-        if (backup_coordination && backup_coordination->finished() &&
-            (!backup_coordination->isBackupQuerySentToOtherHosts() || backup_coordination->allHostsFinished()))
-        {
+        /// It's fine to remove the coordination info if the current host is the last host which was working on this backup.
+        bool should_cleanup_coordination = backup_coordination && backup_coordination->isErrorSet() &&
+            (backup_coordination->isBackupQuerySentToOtherHosts() ? backup_coordination->allHostsFinished() : backup_coordination->finished());
+
+        if (should_cleanup_coordination)
             backup_coordination->cleanup(/* throw_if_error = */ false);
-        }
 
         backup_coordination.reset();
 
@@ -843,9 +847,13 @@ struct BackupsWorker::RestoreStarter
         /// Let other hosts know that the current host has finished its work.
         restore_coordination->finish(/* throw_if_error = */ true);
 
-        /// If the current host is the last host working on this restore then we can remove the coordination info.
-        if (restore_coordination && restore_coordination->allHostsFinished())
+        if (!is_internal_restore)
+        {
+            /// All the hosts working on this backup have finished their work, so we can remove the coordination info now.
+            if (!restore_coordination->allHostsFinished())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "All hosts should have finished their work by this point");
             restore_coordination->cleanup(/* throw_if_error = */ true);
+        }
 
         restore_coordination.reset();
 
@@ -871,12 +879,12 @@ struct BackupsWorker::RestoreStarter
             restore_coordination->finish(/* throw_if_error = */ false);
         }
 
-        /// If the current host is the last host working on this restore then we can remove the coordination info.
-        if (restore_coordination && restore_coordination->finished() &&
-            (!restore_coordination->isRestoreQuerySentToOtherHosts() || restore_coordination->allHostsFinished()))
-        {
+        /// It's fine to remove the coordination info if the current host is the last host which was working on this restore.
+        bool should_cleanup_coordination = restore_coordination && restore_coordination->isErrorSet() &&
+            (restore_coordination->isRestoreQuerySentToOtherHosts() ? restore_coordination->allHostsFinished() : restore_coordination->finished());
+
+        if (should_cleanup_coordination)
             restore_coordination->cleanup(/* throw_if_error = */ false);
-        }
 
         restore_coordination.reset();
 

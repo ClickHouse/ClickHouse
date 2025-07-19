@@ -281,6 +281,14 @@ void BackupCoordinationStageSync::createStartAndAliveNodesAndCheckConcurrency(Co
             check_concurrency = false;
         }
 
+        if (zookeeper->exists(start_node_path))
+        {
+            /// The "start" node for the current host already exists.
+            /// That can happen if previous attempt failed because of a connection loss but was in fact successful.
+            LOG_INFO(log, "The start node in ZooKeeper for {} already exists", current_host_desc);
+            return;
+        }
+
         Coordination::Requests requests;
         requests.reserve(6);
 
@@ -324,6 +332,11 @@ void BackupCoordinationStageSync::createStartAndAliveNodesAndCheckConcurrency(Co
         {
             bool will_try_again = (attempt_no < max_attempts_after_bad_version);
             LOG_TRACE(log, "{} (attempt #{}){}", message, attempt_no, will_try_again ? ", will try again" : "");
+            if (!will_try_again)
+            {
+                throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
+                                "Couldn't create the start node in ZooKeeper for {} after {} attempts: {}", current_host_desc, attempt_no, message);
+            }
         };
 
         if ((operation_node_pos < responses.size()) &&
@@ -362,8 +375,7 @@ void BackupCoordinationStageSync::createStartAndAliveNodesAndCheckConcurrency(Co
         }
     }
 
-    throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
-                    "Couldn't create node {} in ZooKeeper after {} attempts", start_node_path, max_attempts_after_bad_version);
+    UNREACHABLE();
 }
 
 
@@ -1038,7 +1050,13 @@ void BackupCoordinationStageSync::createFinishNodeAndRemoveAliveNode(Coordinatio
         }
 
         if (finished())
-            return; /// The "finish" node for the current host already exists.
+        {
+            /// The "finish" node for the current host already exists.
+            /// That can happen if previous attempt failed because of a connection loss but was in fact successful.
+            LOG_INFO(log, "The 'finish' node in ZooKeeper for {} already exists. Hosts {} haven't finished yet",
+                     current_host_desc, getHostsDesc(getUnfinishedOtherHosts()));
+            return;
+        }
 
         bool start_node_exists = zookeeper->exists(start_node_path);
 
@@ -1077,14 +1095,8 @@ void BackupCoordinationStageSync::createFinishNodeAndRemoveAliveNode(Coordinatio
 
         if (code == Coordination::Error::ZOK)
         {
-            String hosts_left_desc;
-            if (num_hosts)
-            {
-                if (start_node_exists)
-                    --*num_hosts;
-                hosts_left_desc = (*num_hosts == 0) ? ", no hosts left" : fmt::format(", {} hosts left", *num_hosts);
-            }
-            LOG_INFO(log, "Created the 'finish' node in ZooKeeper for {}{}", current_host_desc, hosts_left_desc);
+            LOG_INFO(log, "Created the 'finish' node in ZooKeeper for {}. Hosts {} haven't finished yet",
+                     current_host_desc, getHostsDesc(getUnfinishedOtherHosts()));
             std::lock_guard lock{mutex};
             state.hosts.at(current_host).finished = true;
             return;
@@ -1104,6 +1116,11 @@ void BackupCoordinationStageSync::createFinishNodeAndRemoveAliveNode(Coordinatio
         {
             bool will_try_again = (attempt_no < max_attempts_after_bad_version);
             LOG_TRACE(log, "{} (attempt #{}){}", message, attempt_no, will_try_again ? ", will try again" : "");
+            if (!will_try_again)
+            {
+                throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
+                                "Couldn't create the 'finish' node for {} after {} attempts: {}", current_host_desc, attempt_no, message);
+            }
         };
 
         if ((alive_node_pos < responses.size()) &&
@@ -1129,9 +1146,7 @@ void BackupCoordinationStageSync::createFinishNodeAndRemoveAliveNode(Coordinatio
         }
     }
 
-    throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
-                    "Couldn't create the 'finish' node for {} after {} attempts",
-                    current_host_desc, max_attempts_after_bad_version);
+    UNREACHABLE();
 }
 
 
