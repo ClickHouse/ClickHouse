@@ -19,6 +19,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Planner/PlannerExpressionAnalysis.h>
@@ -30,6 +31,11 @@
 
 namespace DB
 {
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool exclude_deleted_rows_for_part_size_in_merge;
+    extern const MergeTreeSettingsBool load_existing_rows_count_for_old_parts;
+}
 namespace Setting
 {
     extern const SettingsBool force_optimize_projection;
@@ -364,8 +370,12 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
         if (projection.type == ProjectionDescription::Type::Aggregate)
             agg_projections.push_back(&projection);
 
-    bool can_use_minmax_projection = allow_implicit_projections && metadata->minmax_count_projection
-        && !reading.getMergeTreeData().has_lightweight_delete_parts.load();
+    // If the following MergeTree settings are enabled, lightweight delete masks can be ignored for minmax_projection.
+    bool can_ignore_lwd = ((*reading.getMergeTreeData().getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge] &&
+                       (*reading.getMergeTreeData().getSettings())[MergeTreeSetting::load_existing_rows_count_for_old_parts]);
+
+    bool can_use_minmax_projection = allow_implicit_projections && metadata->minmax_count_projection &&
+                                 (!reading.getMergeTreeData().has_lightweight_delete_parts.load() || can_ignore_lwd);
 
     if (!can_use_minmax_projection && agg_projections.empty())
         return candidates;
@@ -411,6 +421,10 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
         }
         else
         {
+            // Since lightweight delete still impact the following granule-based count optimization,
+            // skipping setting the only_count_column.
+            if (reading.getMergeTreeData().has_lightweight_delete_parts.load())
+                return candidates;
             /// Trivial count optimization only applies after @can_use_minmax_projection.
             if (keys.empty() && aggregates.size() == 1 && typeid_cast<const AggregateFunctionCount *>(aggregates[0].function.get()))
                 candidates.only_count_column = aggregates[0].column_name;
