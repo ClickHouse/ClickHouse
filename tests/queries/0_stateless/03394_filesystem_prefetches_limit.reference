@@ -1,4 +1,8 @@
-SELECT * FROM metric_log_full_wide FORMAT Null SETTINGS filesystem_prefetches_limit = ?;	0
-SELECT * FROM metric_log_packed_wide FORMAT Null SETTINGS filesystem_prefetches_limit = ?;	0
-SELECT * FROM metric_log_full_compact FORMAT Null SETTINGS filesystem_prefetches_limit = ?;	0
-SELECT * FROM metric_log_packed_compact FORMAT Null SETTINGS filesystem_prefetches_limit = ?;	0
+SELECT * FROM data_full_wide FORMAT Null SETTINGS filesystem_prefetches_limit = ?;	5	0
+SELECT * FROM data_full_wide FORMAT Null SETTINGS filesystem_prefetches_limit = ?;	10	10
+SELECT * FROM data_packed_wide FORMAT Null SETTINGS filesystem_prefetches_limit = ?;	5	0
+SELECT * FROM data_packed_wide FORMAT Null SETTINGS filesystem_prefetches_limit = ?;	10	10
+SELECT * FROM data_full_compact FORMAT Null SETTINGS filesystem_prefetches_limit = ?;	5	0
+SELECT * FROM data_full_compact FORMAT Null SETTINGS filesystem_prefetches_limit = ?;	10	0
+SELECT * FROM data_packed_compact FORMAT Null SETTINGS filesystem_prefetches_limit = ?;	5	0
+SELECT * FROM data_packed_compact FORMAT Null SETTINGS filesystem_prefetches_limit = ?;	10	0
