@@ -1376,11 +1376,13 @@ private:
             for (auto & it = *used_position; it != end && rows_added < max_block_size; ++it)
             {
                 const auto & mapped_block = *it;
-                size_t rows = mapped_block.columns.at(0)->size();
 
-                for (size_t row = 0; row < rows; ++row)
+                auto used_flags_holder = parent.getUsedFlagsHolder(&mapped_block.columns);
+
+                for (size_t i = 0; i < mapped_block.selector.size(); ++i)
                 {
-                    if (!parent.isUsed(&mapped_block.columns, row))
+                    size_t row = mapped_block.selector[i];
+                    if (!used_flags_holder->isUsed(row))
                     {
                         for (size_t colnum = 0; colnum < columns_keys_and_right.size(); ++colnum)
                         {
@@ -1404,13 +1406,15 @@ private:
             Iterator & it = std::any_cast<Iterator &>(position);
             auto end = map.end();
 
+            auto used_flags_holder = parent.getUsedFlagsHolder();
             for (; it != end; ++it)
             {
                 const Mapped & mapped = it->getMapped();
 
                 size_t offset = map.offsetInternal(it.getPtr());
-                if (parent.isUsed(offset))
+                if (used_flags_holder->isUsed(offset))
                     continue;
+
                 AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
 
                 if (rows_added >= max_block_size)
@@ -1438,9 +1442,10 @@ private:
             if (it->column)
                 nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
 
-            size_t rows = columns->columns.at(0)->size();
-            for (size_t row = 0; row < rows; ++row)
+            size_t size = columns->selector.size();
+            for (size_t i = 0; i < size; ++i)
             {
+                size_t row = columns->selector[i];
                 if (nullmap && (*nullmap)[row])
                 {
                     for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
@@ -1623,6 +1628,16 @@ bool HashJoin::isUsed(size_t off) const
 bool HashJoin::isUsed(const Columns * columns_ptr, size_t row_idx) const
 {
     return used_flags->getUsedSafe(columns_ptr, row_idx);
+}
+
+std::unique_ptr<JoinStuff::UsedFlagsHolder> HashJoin::getUsedFlagsHolder(const Columns * columns) const
+{
+    return used_flags->getUsedFlagsHolder(columns);
+}
+
+std::unique_ptr<JoinStuff::UsedFlagsHolder> HashJoin::getUsedFlagsHolder() const
+{
+    return used_flags->getUsedFlagsHolder();
 }
 
 bool HashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const
