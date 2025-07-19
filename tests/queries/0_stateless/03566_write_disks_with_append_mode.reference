@@ -1,0 +1,12 @@
+test_local_disk_metadata_local_object_storage
+abc
+abcdef
+test_local_disk_metadata_s3_object_storage
+abc
+abcdef
+test_plain_metadata_s3_object_storage
+abc
+abc
+test_plain_rewriteable_metadata_s3_object_storage
+abc
+abc
