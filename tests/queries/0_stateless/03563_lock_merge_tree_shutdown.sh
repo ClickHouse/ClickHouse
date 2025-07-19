@@ -68,5 +68,14 @@ reattach
 
 $CLICKHOUSE_CLIENT -m << SQL 2>&1
     SYSTEM FLUSH LOGS system.part_log;
-    SELECT max(duration_ms) - min(duration_ms) < 100 FROM system.part_log WHERE database = '$CLICKHOUSE_DATABASE' AND error != 0;
+    SELECT if(
+        (max(duration_ms) / min(duration_ms)) < 3,
+        'Merges cancelled quickly',
+        printf(
+            'Probably merges were cancelled sequentially with global lock held, min: %i, max: %i, ratio: %.2f',
+            min(duration_ms),
+            max(duration_ms),
+            max(duration_ms) / min(duration_ms)
+        )
+    ) FROM system.part_log WHERE database = '$CLICKHOUSE_DATABASE' AND error != 0;
 SQL
