@@ -8,6 +8,7 @@
 #include <base/scope_guard.h>
 
 #include <atomic>
+#include <limits>
 
 namespace ProfileEvents
 {
@@ -65,8 +66,8 @@ bool Throttler::throttle(size_t amount, size_t max_block_ns)
     if (limit && count_value > limit)
         throw Exception::createDeprecated(limit_exceeded_exception_message + std::string(" Maximum: ") + toString(limit), ErrorCodes::LIMIT_EXCEEDED);
 
-    /// Wait unless there is positive amount of tokens - throttling
-    bool block = max_block_ns > 0 && max_speed_value && tokens_value < 0;
+    // Wait unless there is positive amount of tokens - throttling
+    bool block = max_block_ns > 0 && max_speed_value > 0 && tokens_value < 0;
     if (block)
     {
         block_count.fetch_add(1, std::memory_order_relaxed);
@@ -80,14 +81,17 @@ bool Throttler::throttle(size_t amount, size_t max_block_ns)
         if (event_sleep_us != ProfileEvents::end())
             timer2.emplace(profile_events.timer(event_sleep_us));
 
+        // Calculate how long to sleep
+        double block_ns_double = -tokens_value / max_speed_value * NS;
+        chassert(block_ns_double >= 0.0);
+
+        // Clamp to be safe and avoid any UB
+        UInt64 block_ns = block_ns_double >= static_cast<double>(std::numeric_limits<UInt64>::max())
+            ? std::numeric_limits<UInt64>::max()
+            : static_cast<UInt64>(block_ns_double);
+
         // Note that throwing exception from the following blocking call is safe. It is important for query cancellation.
-        Int64 block_ns = static_cast<Int64>(-tokens_value / max_speed_value * NS);
-        if (block_ns > 0)
-        {
-            if (max_block_ns != Throttler::unlimited_block_ns)
-                block_ns = std::min<Int64>(max_block_ns, block_ns);
-            sleepForNanoseconds(block_ns);
-        }
+        sleepForNanoseconds(std::min<UInt64>(max_block_ns, block_ns));
     }
 
     bool parent_block = false;
