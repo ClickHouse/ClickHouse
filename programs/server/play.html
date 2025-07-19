@@ -29,7 +29,6 @@
     Also, it can provide visual indication that credentials are correct.
 
     Nice to have:
-    - resizable columns
     - display totals
     - show/hide the editor
     - check for readonly
@@ -443,6 +442,7 @@
         {
             margin-top: 1rem;
             background-color: var(--element-background-color);
+            width: fit-content;
         }
 
         #data-table
@@ -451,6 +451,12 @@
             border-spacing: 0;
             background-color: var(--element-background-color);
         }
+
+        #data-table.fixed
+        {
+            table-layout: fixed;
+            width: var(--table-width);
+         }
 
         /* Will be displayed when user specified custom format. */
         #data-unparsed
@@ -496,6 +502,17 @@
             border: 1px solid var(--border-color);
         }
 
+        th .name {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        th:hover
+        {
+            z-index: 1;
+        }
+
         .type-hint
         {
             display: none;
@@ -513,6 +530,21 @@
         th:hover .type-hint
         {
             display: inline-block;
+        }
+
+        .resizer {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 5px;
+            cursor: col-resize;
+            user-select: none;
+            height: 100%;
+            transform: translateX(50%);
+        }
+
+        .resizer:hover {
+            background-color: var(--border-color-selected);
         }
 
         /* The row under mouse pointer is highlight for better legibility. */
@@ -1171,23 +1203,10 @@ async function postImpl(posted_request_num, query)
         return;
     }
 
-    if (is_explain_graph) {
-        await renderGraph();
-    } else {
-        if (extremes['min'] && extremes['max']) renderExtremes();
-        if (is_table) transposeTableIfNeeded();
-    }
+    finalizeRendering(query, is_table, is_explain_graph, extremes);
 
-    document.getElementById('check-mark').style.display = 'inline-block';
-    document.getElementById('hourglass').style.display = 'none';
-
-    if (is_raw) {
-        elapsed_ns = 1e6 * (performance.now() - last_query_start);
-    }
-
+    elapsed_ns = 1e6 * (performance.now() - last_query_start);
     updateProgressText();
-    document.documentElement.style.setProperty('--progress', '0');
-    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
 
     if (posted_request_num != request_num) { return; }
 
@@ -1276,21 +1295,10 @@ async function restoreFromHistory(state) {
         updateRaw(state.data);
     }
 
-    if (is_explain_graph) {
-        await renderGraph();
-    } else {
-        if (extremes['min'] && extremes['max']) renderExtremes();
-        if (is_table) transposeTableIfNeeded();
-    }
-
-    document.getElementById('check-mark').style.display = 'inline-block';
-    document.getElementById('hourglass').style.display = 'none';
-
-    if (is_raw) elapsed_ns = state.elapsed_ns;
-
+    finalizeRendering(query, is_table, is_explain_graph, extremes);
+    
+    elapsed_ns = state.elapsed_ns;
     updateProgressText();
-    document.documentElement.style.setProperty('--progress', '0');
-    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
 }
 
 let query_area = document.getElementById('query');
@@ -1405,6 +1413,7 @@ function clear()
     clearElement('error');
     clearElement('progress');
 
+    document.getElementById('data-table').classList.remove('fixed');
     document.getElementById('check-mark').display = 'none';
     document.getElementById('hourglass').display = 'none';
     document.getElementById('stats').innerText = '';
@@ -1565,6 +1574,21 @@ function transposeTableIfNeeded()
     table.appendChild(new_tbody);
 }
 
+async function finalizeRendering(query, is_table, is_explain_graph, extremes) {
+    if (is_explain_graph) {
+        await renderGraph();
+    } else {
+        if (extremes['min'] && extremes['max']) renderExtremes();
+        if (is_table) transposeTableIfNeeded();
+    }
+
+    document.getElementById('check-mark').style.display = 'inline-block';
+    document.getElementById('hourglass').style.display = 'none';
+
+    document.documentElement.style.setProperty('--progress', '0');
+    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
+}
+
 function update(json, fragment) {
     if (json.progress) {
         updateProgress(json.progress);
@@ -1652,6 +1676,77 @@ function updateProgress(progress) {
         rows && total_rows ? (100 * rows / total_rows) + '%' : '0');
 }
 
+function changeTableLayout() {
+    const table = document.getElementById('data-table');
+    const headers = table.querySelectorAll('th');
+
+    console.log(table)
+    console.log(table.style)
+    console.log(table.offsetWidth)
+    console.log(table.width)
+
+    document.getElementById('data-table').style.setProperty('--table-width', `${table.offsetWidth}px`);
+
+    columnWidths = [];
+    headers.forEach(header => {
+        columnWidths.push(header.offsetWidth);
+    });
+
+    table.classList.add('fixed');
+
+    headers.forEach((header, index) => {
+        header.style.width = `${columnWidths[index]}px`;
+    });
+}
+
+
+function appendHeaderResizer(header) {
+    let drag_state = {
+        is_dragging: true,
+        offset_x: null,
+        offset_width: null
+    };
+
+    const start = (e) => {
+        if (e.button !== 0) { return;}
+
+        changeTableLayout();
+        drag_state.offset_x = e.clientX;
+        drag_state.offset_width = header.offsetWidth;
+        drag_state.is_dragging = true;
+
+        document.addEventListener('pointermove', move);
+        document.addEventListener('pointerup', stop);
+        document.addEventListener('pointercancel', stop);
+    }
+
+    const move = (e) => {
+        if (!drag_state.is_dragging) { return; }
+
+        const dx = e.clientX - drag_state.offset_x;
+        header.style.width = `${drag_state.offset_width + dx}px`;
+        if(dx < 0) {
+            const table = document.getElementById('data-table');
+            table.style.setProperty('--table-width', `${table.offsetWidth + dx}px`)
+        };
+    }
+
+    const stop = (e) => {
+        drag_state.is_dragging = false;
+
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', stop);
+        document.removeEventListener('pointercancel', stop);
+    }
+
+    const resizer = document.createElement('div');
+    resizer.className = 'resizer';
+    resizer.addEventListener('pointerdown', start);
+    resizer.addEventListener('touchstart', (e) => e.preventDefault());
+
+    header.appendChild(resizer);
+}
+
 function appendHeader(meta) {
     if (meta.length == 0) { return; }
     header = meta;
@@ -1666,11 +1761,15 @@ function appendHeader(meta) {
     meta.forEach(elem => {
         let th = document.createElement('th');
         const name = document.createTextNode(elem.name);
-        th.appendChild(name);
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'name';
+        nameSpan.appendChild(name);
+        th.appendChild(nameSpan);
         let type_hint = document.createElement('span');
         type_hint.className = 'type-hint';
         type_hint.appendChild(document.createTextNode(elem.type));
         th.appendChild(type_hint);
+        appendHeaderResizer(th);
         thead.appendChild(th);
 
         column_is_number[elem.name] = !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/);
