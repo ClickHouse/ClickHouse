@@ -51,6 +51,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"azure_connect_timeout_ms", 1000, 1000, "New setting"},
             {"azure_sdk_use_native_client", false, true, "New setting"},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
+            {"output_format_parquet_max_dictionary_size", 1024 * 1024, 1024 * 1024, "New setting"},
+            {"input_format_parquet_use_native_reader_v3", false, true, "New setting"},
+            {"input_format_parquet_memory_low_watermark", 2ul << 20, 2ul << 20, "New setting"},
+            {"input_format_parquet_memory_high_watermark", 4ul << 30, 4ul << 30, "New setting"},
+            {"input_format_parquet_page_filter_push_down", true, true, "New setting (no effect when input_format_parquet_use_native_reader_v3 is disabled)"},
+            {"input_format_parquet_use_offset_index", true, true, "New setting (no effect when input_format_parquet_use_native_reader_v3 is disabled)"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {

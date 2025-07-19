@@ -46,6 +46,14 @@ TypeIndex ColumnDecimal<T>::getDataType() const
     return TypeToTypeIndex<T>;
 }
 
+template <is_decimal T>
+std::span<char> ColumnDecimal<T>::insertRawUninitialized(size_t count)
+{
+    size_t start = data.size();
+    data.resize(start + count);
+    return {reinterpret_cast<char *>(data.data() + start), count * sizeof(T)};
+}
+
 
 template <is_decimal T>
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

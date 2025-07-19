@@ -124,7 +124,7 @@
     contrib-google-protobuf = { url = "github:ClickHouse/google-protobuf/74211c0dfc2777318ab53c2cd2c317a2ef9012de"; flake = false; };
     contrib-boost = { url = "github:ClickHouse/boost/ae94606a70f1e298ce2a5718db858079185c4d9c"; flake = false; };
     contrib-arrow = { url = "github:ClickHouse/arrow/210f686ab96733180bed04e36098911825d70345"; flake = false; };
-    contrib-thrift = { url = "github:apache/thrift/2a93df80f27739ccabb5b885cb12a8dc7595ecdf"; flake = false; };
+    contrib-thrift = { url = "github:apache/thrift/327ed53487c9904146c30bb0537c9864b0f7e06a"; flake = false; };
     contrib-libhdfs3 = { url = "github:ClickHouse/libhdfs3/d0ae7d2568151feef61d3ec7896803262f0e0f91"; flake = false; };
     contrib-libxml2 = { url = "github:GNOME/libxml2/4c6b2c3096b1da0d0780fe0b4f147e837140468d"; flake = false; };
     contrib-libgsasl = { url = "github:ClickHouse/libgsasl/2d16b4e0d9435bec4546875ef07d36383bb993a5"; flake = false; };
