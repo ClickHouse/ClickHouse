@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.8",
         {
+            {"optimize_rewrite_regexp_functions", false, true, "A new setting"},
             {"azure_max_redirects", 10, 10, "New setting"},
             {"azure_max_get_rps", 0, 0, "New setting"},
             {"azure_max_get_burst", 0, 0, "New setting"},
