@@ -52,11 +52,12 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
             index_and_condition.condition,
             part.data_part,
             ranges,
+            part.read_hints,
             reader_settings,
             mark_cache.get(),
             uncompressed_cache.get(),
             vector_similarity_index_cache.get(),
-            log);
+            log).first;
     }
 
     for (const auto & indices_and_condition : skip_indexes.merged_indices)
