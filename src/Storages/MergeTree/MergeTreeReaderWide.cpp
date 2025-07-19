@@ -109,7 +109,7 @@ void MergeTreeReaderWide::prefetchForAllColumns(
         ? settings.read_settings.remote_fs_prefetch
         : settings.read_settings.local_fs_prefetch;
 
-    if (!do_prefetch)
+    if (!do_prefetch || num_columns > settings.filesystem_prefetches_limit || all_mark_ranges.getNumberOfMarks() == 0)
         return;
 
     if (deserialize_prefixes)
