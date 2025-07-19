@@ -308,8 +308,8 @@ JoinActionRef predicateToCondition(const JoinPredicate & predicate, const Action
     left_column.column = nullptr;
     right_column.column = nullptr;
 
-    auto & left_node = findOrAddInput(actions_dag, left_column);
-    auto & right_node = findOrAddInput(actions_dag, right_column);
+    const auto & left_node = findOrAddInput(actions_dag, left_column);
+    const auto & right_node = findOrAddInput(actions_dag, right_column);
 
     auto operator_function = FunctionFactory::instance().get(operatorToFunctionName(predicate.op), nullptr);
     const auto & result_node = actions_dag->addFunction(operator_function, {&left_node, &right_node}, {});
