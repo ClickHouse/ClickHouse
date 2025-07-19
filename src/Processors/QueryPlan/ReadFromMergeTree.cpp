@@ -2741,6 +2741,8 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
             if (!search_algorithm.empty())
                 format_settings.out << prefix << indent << indent << "Search Algorithm: " << search_algorithm << "\n";
         }
+
+        format_settings.out << prefix << indent << indent << "Ranges: " << result.selected_ranges << '\n';
     }
 }
 
