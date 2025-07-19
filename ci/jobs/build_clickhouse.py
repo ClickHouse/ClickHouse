@@ -162,6 +162,7 @@ def main():
         res = results[-1].is_ok()
 
     if res and JobStages.BUILD in stages:
+        run_shell("sccache start server", "sccache --start-server", retries=3)
         run_shell("sccache stats", "sccache --show-stats")
         if build_type in BUILD_TYPE_TO_DEB_PACKAGE_TYPE:
             targets = "clickhouse-bundle"
