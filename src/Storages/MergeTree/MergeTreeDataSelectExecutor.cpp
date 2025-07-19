@@ -60,6 +60,8 @@
 #include <Common/ProfileEvents.h>
 #include <Common/quoteString.h>
 
+#include <Interpreters/IndexContextInfo.h>
+
 #include <IO/WriteBufferFromOStream.h>
 
 namespace CurrentMetrics
@@ -736,7 +738,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     std::atomic<size_t> sum_marks_pk = 0;
     std::atomic<size_t> sum_parts_pk = 0;
 
+    /// Some of information will be filled in parallel in  process_part
     std::vector<size_t> skip_index_used_in_part(parts_with_ranges.size(), 0);
+
+    std::vector<std::optional<IndexContextInfo::PartInfo>> part_index_info_vector(parts_with_ranges.size());
 
     size_t num_threads = std::min<size_t>(num_streams, parts_with_ranges.size());
     if (settings[Setting::max_threads_for_indexes])
@@ -791,6 +796,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
             CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
 
+            IndexContextInfo::IndexPostingsCacheForStoreMap postings_cache_for_store_part;
+
             for (size_t idx = 0; idx < skip_indexes->useful_indices.size(); ++idx)
             {
                 if (ranges.ranges.empty())
@@ -822,11 +829,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 /// Remember this function takes a lock, don't abuse of it.
                 if (cache_in_store)
                 {
+                    chassert(index_and_condition.index->index.type == "text");
                     const String &index_name = index_and_condition.index->index.name;
-                    if (!context->emplacePostingsCacheForStore(part_index, index_name, cache_in_store))
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Trying to overwrite posting cache for part_idx: {} index: {}", part_index, index_name);
+                    postings_cache_for_store_part.emplace(index_name, cache_in_store);
                 }
 
                 stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
@@ -858,7 +863,18 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 if (ranges.ranges.empty())
                     stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
             }
-        };
+
+            if (!postings_cache_for_store_part.empty())
+            {
+                part_index_info_vector[part_index].emplace(
+                    IndexContextInfo::PartInfo {
+                        .data_part = parts_with_ranges[part_index].data_part,
+                        .ranges = ranges.ranges,
+                        .postings_cache_for_store_part = postings_cache_for_store_part
+                    }
+                );
+            }
+        }; // process_part
 
         LOG_TRACE(log, "Filtering marks by primary and secondary keys");
 
@@ -985,6 +1001,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             .num_parts_after = stat.total_parts - stat.parts_dropped,
             .num_granules_after = stat.total_granules - stat.granules_dropped});
     }
+
+    context->setIndexInfo(std::make_shared<IndexContextInfo>(
+            IndexContextInfo{
+                .skip_indexes = skip_indexes,
+                .part_info_vector = std::move(part_index_info_vector)
+            })
+    );
 
     return parts_with_ranges;
 }

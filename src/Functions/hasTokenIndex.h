@@ -21,6 +21,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/IndexContextInfo.h>
 
 #include <Storages/MergeTree/MergeTreeIndexGin.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
@@ -149,28 +150,29 @@ public:
         if (input_rows_count == 0)
             return col_res;
 
-        /// Remember that the skip_indexes_mutex is a hold mutex.
-        auto const [skip_indexes, ranges_in_parts, skip_indexes_mutex] = context->getSkippingIndices();
-        chassert(skip_indexes != nullptr);
-        chassert(ranges_in_parts != nullptr);
-
+        // Arguments
         const String index_name = checkAndGetColumnConstStringOrFixedString(index_argument.column.get())->getValue<String>();
         const String token = checkAndGetColumnConstStringOrFixedString(token_argument.column.get())->getValue<String>();
-
         const ColumnUInt64 * col_part_index_vector = extractColumnAndCheck<UInt64>(arguments, 2);
         const ColumnUInt64 * col_part_offset_vector = extractColumnAndCheck<UInt64>(arguments, 3);
 
+        // Now search the part
+        const size_t part_idx = col_part_index_vector->getElement(0);
+
+        /// Remember that the index_info_shared_lock is a shared mutex holded.
+        auto [index_context_info, index_info_shared_lock] = context->getIndexInfo();
+
+        const IndexContextInfo::PartInfo &part_info = index_context_info->part_info_vector[part_idx].value();
+        const std::shared_ptr<const PostingsCacheForStore> cache_in_store = part_info.postings_cache_for_store_part.at(index_name);
+        chassert(cache_in_store);
+
         // Find index and condition iterator
-        const auto [index_helper, gin_filter_condition] = extractIndexAndCondition(skip_indexes, index_name);
-        const std::shared_ptr<const GinFilter> filter = gin_filter_condition->getGinFilter(token);
+        const auto [index_helper, gin_filter_condition] = extractIndexAndCondition(index_context_info->skip_indexes, index_name);
 
         const size_t index_granularity = index_helper->index.granularity;
+        const std::shared_ptr<const GinFilter> filter = gin_filter_condition->getGinFilter(token);
 
-        // Now search the part
-        size_t part_idx = col_part_index_vector->getElement(0);
-
-        const auto & part_ranges = ranges_in_parts->at(part_idx);
-        const DataPartPtr part = part_ranges.data_part;
+        const DataPartPtr part = part_info.data_part;
 
         const UInt64 first_row = col_part_offset_vector->getElement(0);
         const UInt64 last_row = col_part_offset_vector->getElement(input_rows_count - 1);
@@ -195,7 +197,7 @@ public:
         // }
 
         MarkRanges index_ranges;
-        for (const auto & range : part_ranges.ranges)
+        for (const auto & range : part_info.ranges)
         {
             if (range.end < full_input_range.begin)
                 continue;
@@ -208,10 +210,6 @@ public:
                 (range.end + index_granularity - 1) / index_granularity);
             index_ranges.push_back(index_range);
         }
-
-        //PostingsCacheForStore cache_in_store(index_helper->getFileName(), part->getDataPartStoragePtr());
-        auto [cache_in_store, cache_in_store_mutex] = context->getPostingsCacheForStore(part_idx, index_name);
-        chassert(cache_in_store);
 
         const size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
 
@@ -249,8 +247,13 @@ public:
 
                 chassert(mark_size > 0); /// yes let's be paranoiac.
 
+                /// This mark is not consecutive with the last one because some intermediate ones were filtered/skipped
+                /// In that case we assume that there was not a match in that mark and go on
+                while (offset < mark_start)
+                    offset = col_part_offset_vector->getElement(++idx);
+
                 /// This mark FULLY overlaps with a hole in the offsets?
-                if (mark_end < offset)
+                if (offset > mark_end)
                     continue;
 
                 if (index_mark != irange.begin || !granule || last_index_mark != irange.begin)
