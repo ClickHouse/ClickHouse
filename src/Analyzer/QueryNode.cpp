@@ -202,6 +202,9 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     if (is_order_by_all)
         buffer << ", is_order_by_all: " << is_order_by_all;
 
+    if (is_limit_by_all)
+        buffer << ", is_limit_by_all: " << is_limit_by_all;
+
     std::string group_by_type;
     if (is_group_by_with_rollup)
         group_by_type = "rollup";
