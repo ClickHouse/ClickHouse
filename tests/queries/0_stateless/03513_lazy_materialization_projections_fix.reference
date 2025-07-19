@@ -1,0 +1,20 @@
+-- no projection
+LazilyRead (Lazily Read)
+0	0	
+1	1	blob_
+2	2	blob_blob_
+3	3	blob_blob_blob_
+4	4	blob_blob_blob_blob_
+5	5	blob_blob_blob_blob_blob_
+6	6	blob_blob_blob_blob_blob_blob_
+7	7	blob_blob_blob_blob_blob_blob_blob_
+8	8	blob_blob_blob_blob_blob_blob_blob_blob_
+9	9	blob_blob_blob_blob_blob_blob_blob_blob_blob_
+-- projection
+ReadFromMergeTree (proj_v)
+LazilyRead (Lazily Read)
+3	3	blob_blob_blob_
+-- mixed reading
+all_1_1_0	[]
+all_2_2_0	['proj_v']
+Reading steps: 2
