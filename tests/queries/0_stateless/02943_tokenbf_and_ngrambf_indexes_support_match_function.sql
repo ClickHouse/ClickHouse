@@ -1,3 +1,5 @@
+SET use_skip_indexes_on_data_read = 0;
+
 DROP TABLE IF EXISTS tokenbf_tab;
 DROP TABLE IF EXISTS ngrambf_tab;
 

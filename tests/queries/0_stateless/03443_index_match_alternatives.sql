@@ -1,3 +1,5 @@
+SET use_skip_indexes_on_data_read = 0;
+
 DROP TABLE IF EXISTS 03443_data;
 
 CREATE TABLE 03443_data

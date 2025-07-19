@@ -3,6 +3,7 @@ SELECT '';
 DROP TABLE IF EXISTS 03165_token_bf;
 
 SET allow_experimental_full_text_index=1;
+SET use_skip_indexes_on_data_read=0;
 
 CREATE TABLE 03165_token_bf
 (

@@ -1,5 +1,6 @@
-DROP TABLE IF EXISTS data_02771;
+SET use_skip_indexes_on_data_read = 0;
 
+DROP TABLE IF EXISTS data_02771;
 
 CREATE TABLE data_02771
 (
