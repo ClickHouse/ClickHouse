@@ -319,11 +319,11 @@ private:
   * age('unit', t1, t2, [timezone])
   * t1 and t2 can be Date, Date32, DateTime or DateTime64
   *
-  * If timezone is specified, it applied to both arguments.
+  * If timezone is specified, it is applied to both arguments.
   * If not, timezones from datatypes t1 and t2 are used.
-  * If that timezones are not the same, the result is unspecified.
+  * If those timezones are not the same, the result is unspecified.
   *
-  * Timezone matters because days can have different length.
+  * The timezone matters because days can have different lengths.
   */
 template <bool is_relative>
 class FunctionDateDiff : public IFunction
