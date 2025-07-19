@@ -626,7 +626,7 @@ jobs:
           fi
 
   stateless_tests_amd_asan_distributed_plan_parallel_1_2:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, amd-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgcGFyYWxsZWwsIDEvMik=') }}
     name: "Stateless tests (amd_asan, distributed plan, parallel, 1/2)"
@@ -664,7 +664,7 @@ jobs:
           fi
 
   stateless_tests_amd_asan_distributed_plan_parallel_2_2:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, amd-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgcGFyYWxsZWwsIDIvMik=') }}
     name: "Stateless tests (amd_asan, distributed plan, parallel, 2/2)"
@@ -702,7 +702,7 @@ jobs:
           fi
 
   stateless_tests_amd_asan_distributed_plan_sequential:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, amd-small]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgc2VxdWVudGlhbCk=') }}
     name: "Stateless tests (amd_asan, distributed plan, sequential)"
@@ -740,7 +740,7 @@ jobs:
           fi
 
   stress_test_amd_tsan:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKGFtZF90c2FuKQ==') }}
     name: "Stress test (amd_tsan)"
@@ -778,7 +778,7 @@ jobs:
           fi
 
   integration_tests_asan_old_analyzer_1_6:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFzYW4sIG9sZCBhbmFseXplciwgMS82KQ==') }}
     name: "Integration tests (asan, old analyzer, 1/6)"
@@ -816,7 +816,7 @@ jobs:
           fi
 
   integration_tests_asan_old_analyzer_2_6:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFzYW4sIG9sZCBhbmFseXplciwgMi82KQ==') }}
     name: "Integration tests (asan, old analyzer, 2/6)"
@@ -854,7 +854,7 @@ jobs:
           fi
 
   integration_tests_asan_old_analyzer_3_6:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFzYW4sIG9sZCBhbmFseXplciwgMy82KQ==') }}
     name: "Integration tests (asan, old analyzer, 3/6)"
@@ -892,7 +892,7 @@ jobs:
           fi
 
   integration_tests_asan_old_analyzer_4_6:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFzYW4sIG9sZCBhbmFseXplciwgNC82KQ==') }}
     name: "Integration tests (asan, old analyzer, 4/6)"
@@ -930,7 +930,7 @@ jobs:
           fi
 
   integration_tests_asan_old_analyzer_5_6:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFzYW4sIG9sZCBhbmFseXplciwgNS82KQ==') }}
     name: "Integration tests (asan, old analyzer, 5/6)"
@@ -968,7 +968,7 @@ jobs:
           fi
 
   integration_tests_asan_old_analyzer_6_6:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFzYW4sIG9sZCBhbmFseXplciwgNi82KQ==') }}
     name: "Integration tests (asan, old analyzer, 6/6)"
@@ -1006,7 +1006,7 @@ jobs:
           fi
 
   integration_tests_tsan_1_6:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHRzYW4sIDEvNik=') }}
     name: "Integration tests (tsan, 1/6)"
@@ -1044,7 +1044,7 @@ jobs:
           fi
 
   integration_tests_tsan_2_6:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHRzYW4sIDIvNik=') }}
     name: "Integration tests (tsan, 2/6)"
@@ -1082,7 +1082,7 @@ jobs:
           fi
 
   integration_tests_tsan_3_6:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHRzYW4sIDMvNik=') }}
     name: "Integration tests (tsan, 3/6)"
@@ -1120,7 +1120,7 @@ jobs:
           fi
 
   integration_tests_tsan_4_6:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHRzYW4sIDQvNik=') }}
     name: "Integration tests (tsan, 4/6)"
@@ -1158,7 +1158,7 @@ jobs:
           fi
 
   integration_tests_tsan_5_6:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHRzYW4sIDUvNik=') }}
     name: "Integration tests (tsan, 5/6)"
@@ -1196,7 +1196,7 @@ jobs:
           fi
 
   integration_tests_tsan_6_6:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHRzYW4sIDYvNik=') }}
     name: "Integration tests (tsan, 6/6)"
