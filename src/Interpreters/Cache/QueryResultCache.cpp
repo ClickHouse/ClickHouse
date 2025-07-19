@@ -37,6 +37,8 @@ namespace ProfileEvents
 {
     extern const Event QueryCacheHits;
     extern const Event QueryCacheMisses;
+    extern const Event QueryCacheDiskHits;
+    extern const Event QueryCacheDiskMisses;
 }
 
 namespace CurrentMetrics
@@ -50,6 +52,11 @@ namespace DB
 namespace Setting
 {
     extern const SettingsString query_cache_tag;
+}
+
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_TYPE;
 }
 
 namespace
@@ -716,14 +723,22 @@ void QueryResultCacheReader::buildSourceFromChunks(Block header, Chunks && chunk
 QueryResultCacheReader::QueryResultCacheReader(QueryResultCachePtr cache_, const Cache::Key & key, bool enable_reads_from_query_cache_disk, const std::lock_guard<std::mutex> &)
 {
     auto entry = cache_->readFromMemory(key);
+    if (entry.has_value())
+        ProfileEvents::increment(ProfileEvents::QueryCacheHits);
+    else
+        ProfileEvents::increment(ProfileEvents::QueryCacheMisses);
+    
     if (!entry.has_value() && enable_reads_from_query_cache_disk)
+    {
         entry = cache_->readFromDisk(key);
+        if (entry.has_value())
+            ProfileEvents::increment(ProfileEvents::QueryCacheDiskHits);
+        else
+            ProfileEvents::increment(ProfileEvents::QueryCacheDiskMisses);
+    }
 
     if (!entry.has_value())
-    {
-        // LOG_TRACE(logger, "No query result found for query {}", doubleQuoteString(key.query_string));
         return;
-    }
 
     const auto & entry_key = entry->key;
     const auto & entry_mapped = entry->mapped;
@@ -735,11 +750,6 @@ QueryResultCacheReader::QueryResultCacheReader(QueryResultCachePtr cache_, const
 bool QueryResultCacheReader::hasCacheEntryForKey() const
 {
     bool has_entry = (source_from_chunks != nullptr);
-
-    if (has_entry)
-        ProfileEvents::increment(ProfileEvents::QueryCacheHits);
-    else
-        ProfileEvents::increment(ProfileEvents::QueryCacheMisses);
 
     return has_entry;
 }
@@ -769,9 +779,9 @@ QueryResultCache::QueryResultCache(
     DiskPtr & disk_,
     const String & path_)
     : memory_cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, EntryWeight, IsStale>>(
-          std::make_unique<PerUserTTLCachePolicyUserQuota>()))
+        CurrentMetrics::QueryCacheBytes, CurrentMetrics::QueryCacheEntries, std::make_unique<PerUserTTLCachePolicyUserQuota>()))
     , disk_cache(std::make_unique<TTLCachePolicy<Key, DiskEntry, KeyHasher, DiskEntryWeight, IsStale>>(
-        std::make_unique<PerUserTTLCachePolicyUserQuota>()))
+        CurrentMetrics::QueryCacheBytes, CurrentMetrics::QueryCacheEntries, std::make_unique<PerUserTTLCachePolicyUserQuota>()))
     , disk(disk_)
     , path(path_)
 {
@@ -880,6 +890,7 @@ void QueryResultCache::writeDisk(const Key & key, const QueryResultCache::Cache:
     
     serializeEntry(key, entry, disk_entry);
     disk_cache.set(key, disk_entry);
+    LOG_TRACE(logger, "Stored query result of query {} to disk, size {}", doubleQuoteString(key.query_string), disk_cache.count());
 }
 
 std::optional<QueryResultCache::Cache::KeyMapped> QueryResultCache::readFromMemory(const Key & key)
@@ -964,17 +975,11 @@ std::optional<QueryResultCache::Cache::KeyMapped> QueryResultCache::readFromDisk
 void QueryResultCache::serializeEntry(const Key & key, const QueryResultCache::Cache::MappedPtr & entry, QueryResultCache::DiskCache::MappedPtr & disk_entry) const
 {
     auto entry_path = path / key.getKeyPath();
-    auto writeChunk = [](const Chunk & chunk, NativeWriter & writer)
+    auto write_chunk = [](const Chunk & chunk, NativeWriter & writer)
     {
         Block block = writer.getHeader();
         const Columns & columns = chunk.getColumns();
         block.setColumns(columns);
-        // for (size_t i = 0; i < block.columns(); ++i)
-        // {
-        //     auto column = block.getByPosition(i);
-        //     column.column = columns[i];
-        //     block.insert(column);
-        // }
         writer.write(block);
     };
 
@@ -984,11 +989,11 @@ void QueryResultCache::serializeEntry(const Key & key, const QueryResultCache::C
         NativeWriter writer(*compress_out, 0, key.header);
 
         for (const auto & chunk : entry->chunks)
-            writeChunk(chunk, writer);
+            write_chunk(chunk, writer);
 
         compress_out->finalize();
         out->finalize();
-        disk_entry->bytes_on_disk += out->count();
+        disk_entry->bytes_on_disk += compress_out->count();
     }
 
     if (entry->totals.has_value())
@@ -996,10 +1001,10 @@ void QueryResultCache::serializeEntry(const Key & key, const QueryResultCache::C
         auto out = disk->writeFile(entry_path / "totals.bin");
         auto compress_out = std::make_unique<CompressedWriteBuffer>(*out, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
         NativeWriter writer(*compress_out, 0, key.header);
-        writeChunk(*entry->totals, writer);
+        write_chunk(*entry->totals, writer);
         compress_out->finalize();
         out->finalize();
-        disk_entry->bytes_on_disk += out->count();
+        disk_entry->bytes_on_disk += compress_out->count();
     }
 
     if (entry->extremes.has_value())
@@ -1007,10 +1012,10 @@ void QueryResultCache::serializeEntry(const Key & key, const QueryResultCache::C
         auto out = disk->writeFile(entry_path / "extremes.bin");
         auto compress_out = std::make_unique<CompressedWriteBuffer>(*out, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
         NativeWriter writer(*compress_out, 0, key.header);
-        writeChunk(*entry->extremes, writer);
+        write_chunk(*entry->extremes, writer);
         compress_out->finalize();
         out->finalize();
-        disk_entry->bytes_on_disk += out->count();
+        disk_entry->bytes_on_disk += compress_out->count();
     }
 }
 
@@ -1181,16 +1186,38 @@ bool QueryResultCache::checkAccess(const Key & entry_key, const Key & key) const
     return true;
 }
 
-void QueryResultCache::clear(const std::optional<String> & tag)
+void QueryResultCache::clear(const std::optional<String> & type, const std::optional<String> & tag)
 {
-    if (tag)
+    auto clear_cache = [tag](auto & cache) {
+        if (tag)
+        {
+            using CacheType = std::decay_t<decltype(cache)>;
+            using MappedPtr = typename CacheType::MappedPtr;
+            auto predicate = [tag](const Key & key, const MappedPtr &) { return key.tag == tag.value(); };
+            cache.remove(predicate);
+        }
+        else
+        {
+            cache.clear();
+        }
+    };
+
+    if (type)
     {
-        auto predicate = [tag](const Key & key, const Cache::MappedPtr &) { return key.tag == tag.value(); };
-        memory_cache.remove(predicate);
+        switch (parseQueryResultCacheType(*type))
+        {
+            case QueryResultCacheType::Memory:
+                clear_cache(memory_cache);
+                break;
+            case QueryResultCacheType::Disk:
+                clear_cache(disk_cache);
+                break;
+        }
     }
     else
     {
-        memory_cache.clear();
+        clear_cache(memory_cache);
+        clear_cache(disk_cache);
     }
 
     std::lock_guard lock(mutex);
@@ -1226,6 +1253,15 @@ std::vector<QueryResultCache::Cache::KeyMapped> QueryResultCache::dumpMemoryCach
 std::vector<QueryResultCache::DiskCache::KeyMapped> QueryResultCache::dumpDiskCache() const
 {
     return disk_cache.dump();
+}
+
+QueryResultCacheType QueryResultCache::parseQueryResultCacheType(const String & type) const
+{
+    if (type == "Memory")
+        return QueryResultCacheType::Memory;
+    if (type == "Disk")
+        return QueryResultCacheType::Disk;
+    throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown query cache type: {}", type);
 }
 
 }

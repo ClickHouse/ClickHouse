@@ -32,6 +32,12 @@ bool astContainsSystemTables(ASTPtr ast, ContextPtr context);
 class QueryResultCacheWriter;
 class QueryResultCacheReader;
 
+enum class QueryResultCacheType: uint8_t
+{
+    Memory,
+    Disk
+};
+
 /// Maps queries to query results. Useful to avoid repeated query calculation.
 ///
 /// The cache does not aim to be transactionally consistent (which is difficult to get right). For example, the cache is not invalidated
@@ -145,7 +151,7 @@ public:
 
     struct DiskEntry
     {
-        size_t bytes_on_disk;
+        size_t bytes_on_disk = 0;
     };
 
     struct KeyHasher
@@ -212,7 +218,7 @@ public:
 
     bool isStale(const Key & key);
 
-    void clear(const std::optional<String> & tag);
+    void clear(const std::optional<String> & type, const std::optional<String> & tag);
 
     size_t sizeInBytes() const;
     size_t count() const;
@@ -223,6 +229,8 @@ public:
     /// For debugging and system tables
     std::vector<QueryResultCache::Cache::KeyMapped> dumpMemoryCache() const;
     std::vector<QueryResultCache::DiskCache::KeyMapped> dumpDiskCache() const;
+
+    QueryResultCacheType parseQueryResultCacheType(const String & type) const;
 
 private:
     void serializeEntry(const Key & key, const QueryResultCache::Cache::MappedPtr & entry, QueryResultCache::DiskCache::MappedPtr & disk_entry) const;

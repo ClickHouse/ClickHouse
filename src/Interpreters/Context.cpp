@@ -3806,13 +3806,13 @@ QueryResultCachePtr Context::getQueryResultCache() const
     return shared->query_result_cache;
 }
 
-void Context::clearQueryResultCache(const std::optional<String> & tag) const
+void Context::clearQueryResultCache(const std::optional<String> & type, const std::optional<String> & tag) const
 {
     QueryResultCachePtr cache = getQueryResultCache();
 
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
-        cache->clear(tag);
+        cache->clear(type, tag);
 }
 
 void Context::clearCaches() const

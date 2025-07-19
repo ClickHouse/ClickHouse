@@ -496,8 +496,11 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
         case Type::DROP_QUERY_CACHE:
         {
+            ParserLiteral type_parser;
             ParserLiteral tag_parser;
             ASTPtr ast;
+            if (ParserKeyword{Keyword::TYPE}.ignore(pos, expected) && type_parser.parse(pos, ast, expected))
+                res->query_result_cache_type = std::make_optional<String>(ast->as<ASTLiteral>()->value.safeGet<String>());
             if (ParserKeyword{Keyword::TAG}.ignore(pos, expected) && tag_parser.parse(pos, ast, expected))
                 res->query_result_cache_tag = std::make_optional<String>(ast->as<ASTLiteral>()->value.safeGet<String>());
             if (!parseQueryWithOnCluster(res, pos, expected))

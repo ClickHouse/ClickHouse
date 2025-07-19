@@ -12,11 +12,6 @@
 namespace DB
 {
 
-enum class StorageLevel : uint8_t
-{
-    Memory,
-    Disk
-};
 
 ColumnsDescription StorageSystemQueryResultCache::getColumnsDescription()
 {
@@ -32,8 +27,8 @@ ColumnsDescription StorageSystemQueryResultCache::getColumnsDescription()
         {"expires_at", std::make_shared<DataTypeDateTime>(), "When the query cache entry becomes stale."},
         {"key_hash", std::make_shared<DataTypeUInt64>(), "A hash of the query string, used as a key to find query cache entries."},
         {"storage_level", std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
-            {"Memory", static_cast<UInt8>(StorageLevel::Memory)},
-            {"Disk", static_cast<UInt8>(StorageLevel::Disk)}
+            {"Memory", static_cast<UInt8>(QueryResultCacheType::Memory)},
+            {"Disk", static_cast<UInt8>(QueryResultCacheType::Disk)}
         }), "Where the cache entry is stored: in memory or on disk."}
     };
 }
@@ -54,7 +49,7 @@ void StorageSystemQueryResultCache::fillData(MutableColumns & res_columns, Conte
     std::optional<UUID> user_id = context->getUserID();
     std::vector<UUID> current_user_roles = context->getCurrentRoles();
 
-    auto fill_cache_entries = [&](const auto & cache_entries, auto get_weight, StorageLevel storage_level)
+    auto fill_cache_entries = [&](const auto & cache_entries, auto get_weight, QueryResultCacheType type)
     {
         for (const auto & [key, query_result] : cache_entries)
         {
@@ -73,17 +68,17 @@ void StorageSystemQueryResultCache::fillData(MutableColumns & res_columns, Conte
             res_columns[6]->insert(key.is_compressed);
             res_columns[7]->insert(std::chrono::system_clock::to_time_t(key.expires_at));
             res_columns[8]->insert(key.ast_hash.low64); /// query cache considers aliases (issue #56258)
-            res_columns[9]->insert(static_cast<UInt8>(storage_level));
+            res_columns[9]->insert(static_cast<UInt8>(type));
         }
     };
 
     fill_cache_entries(query_result_cache->dumpMemoryCache(),
         QueryResultCache::EntryWeight(),
-        StorageLevel::Memory);
+        QueryResultCacheType::Memory);
         
     fill_cache_entries(query_result_cache->dumpDiskCache(),
         QueryResultCache::DiskEntryWeight(),
-        StorageLevel::Disk);
+        QueryResultCacheType::Disk);
 }
 
 }
