@@ -213,10 +213,10 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
             ostr << ", ";
         }
         limitByLength()->format(ostr, s, state, frame);
-        ostr << (s.hilite ? hilite_keyword : "") << " BY" << (s.hilite ? hilite_none : "");
+        ostr << " BY";
         if (limit_by_all)
         {
-            ostr << (s.hilite ? hilite_keyword : "") << " ALL" << (s.hilite ? hilite_none : "");
+            ostr << " ALL";
         }
         else if (limitBy())
         {
