@@ -26,6 +26,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 max_recursive_cte_evaluation_depth;
+    extern const SettingsUInt64 use_query_condition_cache;
 }
 
 namespace ErrorCodes
@@ -175,6 +176,10 @@ private:
                 "max_recursive_cte_evaluation_depth setting.",
                 recursive_subquery_settings[Setting::max_recursive_cte_evaluation_depth].value,
                 recursive_cte_union_node->formatASTForErrorMessage());
+
+        /// Query condition cache is prohibited in recursive queries, which will cause incorrect query results.
+        if (recursive_step > 0 && recursive_subquery_settings[Setting::use_query_condition_cache])
+            recursive_query_context->setSetting("use_query_condition_cache", false);
 
         auto & query_to_execute = recursive_step > 0 ? recursive_query : non_recursive_query;
         ++recursive_step;
