@@ -25,7 +25,7 @@ SETTINGS use_query_cache = true,enable_writes_to_query_cache_disk=true,enable_re
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
-SELECT 'clear memory cache';
+SELECT '-- clear memory cache';
 SYSTEM DROP QUERY CACHE TYPE 'Memory';
 SELECT query,result_size,type FROM system.query_cache;
 

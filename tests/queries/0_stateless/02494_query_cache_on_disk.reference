@@ -11,7 +11,7 @@
 9	abc_9
 -- profile event: QueryCacheDiskHits, QueryCacheDiskMisses
 0	1
-clear memory cache
+-- clear memory cache
 SELECT * FROM t ORDER BY id ASC SETTINGS use_query_cache = true, enable_writes_to_query_cache_disk = true, enable_reads_from_query_cache_disk = true	160	Disk
 -- read from disk cache
 0	abc_0
