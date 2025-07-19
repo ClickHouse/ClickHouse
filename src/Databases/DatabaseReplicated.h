@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <optional>
 
 #include <Databases/DatabaseAtomic.h>
@@ -27,6 +28,8 @@ using ClusterPtr = std::shared_ptr<Cluster>;
 
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
+
+struct ReplicatedDatabaseStatus;
 
 struct ReplicaInfo
 {
@@ -87,6 +90,8 @@ public:
     static std::pair<String, String> parseFullReplicaName(const String & name);
 
     const String & getZooKeeperPath() const { return zookeeper_path; }
+
+    void getStatus(ReplicatedDatabaseStatus& response, bool with_zk_fields) const;
 
     /// Returns cluster consisting of database replicas
     ClusterPtr tryGetCluster() const;
