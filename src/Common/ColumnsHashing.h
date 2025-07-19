@@ -354,7 +354,8 @@ struct HashMethodSerialized
     /// Only used if prealloc is true.
     PaddedPODArray<UInt64> row_sizes;
     size_t total_size = 0;
-    std::unique_ptr<char[]> serialized_buffer;
+    // std::unique_ptr<char[]> serialized_buffer;
+    PODArray<char> serialized_buffer;
     std::vector<StringRef> serialized_keys;
 
     HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
@@ -384,7 +385,8 @@ struct HashMethodSerialized
             for (auto row_size : row_sizes)
                 total_size += row_size;
 
-            serialized_buffer = std::make_unique<char[]>(total_size);
+            // serialized_buffer = std::make_unique<char[]>(total_size);
+            serialized_buffer.resize(total_size);
 
             // const char * begin = nullptr;
             // char * memory = pool.allocContinue(total_size, begin);
@@ -392,7 +394,8 @@ struct HashMethodSerialized
             // std::cout << "total rows: " << row_sizes.size() << std::endl;
             // std::vector<char *> memories_copy = memories;
             const size_t rows = row_sizes.size();
-            char * memory = serialized_buffer.get();
+            // char * memory = serialized_buffer.get();
+            char * memory = serialized_buffer.data();
 
             std::vector<char *> memories(rows);
             serialized_keys.resize(rows);
