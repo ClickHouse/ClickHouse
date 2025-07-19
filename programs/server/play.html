@@ -31,7 +31,6 @@
     Nice to have:
     - resizable columns
     - display totals
-    - show/hide the editor
     - check for readonly
     - query caching
     - downloads in any format
@@ -354,8 +353,8 @@
             display: grid;
             place-items: center;
             gap: 1rem;
-            grid-template-columns: auto auto auto 1fr auto auto;
-            grid-template-areas: "run hint hourglass progress-bar progress-text theme";
+            grid-template-columns: auto auto auto 1fr auto auto auto;
+            grid-template-areas: "run hint hourglass progress-bar progress-text toggle-editor theme";
         }
 
         #run
@@ -421,6 +420,13 @@
                 transparent 0%,
                 var(--progress-color) var(--progress),
                 transparent var(--progress));
+        }
+
+        #toggle-editor
+        {
+            cursor: pointer;
+            grid-area: toggle-editor;
+            user-select: none;
         }
 
         #theme
@@ -717,11 +723,12 @@
             <div id="query_div"><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea></div>
             <div id="run_div">
                 <button class="shadow" id="run">Run</button>
-                <div id="hint">&nbsp;(Ctrl/Cmd+Enter)</div>
+                <div id="hint">(Ctrl/Cmd+Enter)</div>
                 <div id="hourglass">⧗</div>
                 <div id="check-mark">✔</div>
                 <div id="progress"></div>
                 <div id="stats"></div>
+                <div id="toggle-editor">📝</div>
                 <div id="theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></div>
             </div>
         </div>
@@ -2016,6 +2023,11 @@ if (theme) {
 
 if (run_immediately) {
     post();
+}
+
+document.getElementById('toggle-editor').onclick = function() {
+    const queryDiv = document.getElementById('query_div');
+    queryDiv.style.display = queryDiv.style.display === 'none' ? 'block' : 'none';
 }
 
 document.getElementById('toggle-light').onclick = function() {
