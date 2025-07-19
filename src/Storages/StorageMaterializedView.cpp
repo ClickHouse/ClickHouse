@@ -224,8 +224,14 @@ StorageMaterializedView::StorageMaterializedView(
             /// Sanity-check permissions. This is just for usability, the main checks are done by the
             /// actual CREATE/INSERT/SELECT/EXCHANGE/DROP interpreters during refresh.
             String inner_db_name = has_inner_table ? table_id_.database_name : to_table_id.database_name;
-            auto refresh_context = storage_metadata.getSQLSecurityOverriddenContext(getContext());
-            refresh_context->checkAccess(AccessType::DROP_TABLE | AccessType::CREATE_TABLE | AccessType::SELECT | AccessType::INSERT, inner_db_name);
+
+            /// When restoring from backup, the definer user may not be backed up, which will cause the whole backup to be broken.
+            /// To fix this, we don't check the permissions for the target table for the first time.
+            if (!is_restore_from_backup)
+            {
+                auto refresh_context = storage_metadata.getSQLSecurityOverriddenContext(getContext());
+                refresh_context->checkAccess(AccessType::DROP_TABLE | AccessType::CREATE_TABLE | AccessType::SELECT | AccessType::INSERT, inner_db_name);
+            }
         }
 
         refresher = RefreshTask::create(this, getContext(), *query.refresh_strategy, mode >= LoadingStrictnessLevel::ATTACH, refresh_coordinated, query.is_create_empty, is_restore_from_backup);
