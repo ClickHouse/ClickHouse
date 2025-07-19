@@ -46,6 +46,13 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString server_side_encryption_customer_key_base64;
     extern const S3AuthSettingsBool use_environment_credentials;
     extern const S3AuthSettingsBool use_insecure_imds_request;
+
+    extern const S3AuthSettingsString role_arn;
+    extern const S3AuthSettingsString role_session_name;
+    extern const S3AuthSettingsString http_client;
+    extern const S3AuthSettingsString service_account;
+    extern const S3AuthSettingsString metadata_service;
+    extern const S3AuthSettingsString request_token_path;
 }
 
 namespace S3RequestSetting
@@ -69,6 +76,8 @@ namespace
         const S3::URI & s3_uri,
         const String & access_key_id,
         const String & secret_access_key,
+        String role_arn,
+        String role_session_name,
         const S3Settings & settings,
         const ContextPtr & context)
     {
@@ -83,6 +92,12 @@ namespace
         const auto & request_settings = settings.request_settings;
         const Settings & global_settings = context->getGlobalContext()->getSettingsRef();
         const Settings & local_settings = context->getSettingsRef();
+
+        if (role_arn.empty())
+        {
+            role_arn = settings.auth_settings[S3AuthSetting::role_arn];
+            role_session_name = settings.auth_settings[S3AuthSetting::role_session_name];
+        }
 
         S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
             settings.auth_settings[S3AuthSetting::region],
@@ -108,6 +123,11 @@ namespace
         client_configuration.http_max_field_name_size = request_settings[S3RequestSetting::http_max_field_name_size];
         client_configuration.http_max_field_value_size = request_settings[S3RequestSetting::http_max_field_value_size];
 
+        client_configuration.http_client = settings.auth_settings[S3AuthSetting::http_client];
+        client_configuration.service_account = settings.auth_settings[S3AuthSetting::service_account];
+        client_configuration.metadata_service = settings.auth_settings[S3AuthSetting::metadata_service];
+        client_configuration.request_token_path = settings.auth_settings[S3AuthSetting::request_token_path];
+
         S3::ClientSettings client_settings{
             .use_virtual_addressing = s3_uri.is_virtual_hosted_style,
             .disable_checksum = local_settings[Setting::s3_disable_checksum],
@@ -128,7 +148,10 @@ namespace
                 settings.auth_settings[S3AuthSetting::use_environment_credentials],
                 settings.auth_settings[S3AuthSetting::use_insecure_imds_request],
                 settings.auth_settings[S3AuthSetting::expiration_window_seconds],
-                settings.auth_settings[S3AuthSetting::no_sign_request]
+                settings.auth_settings[S3AuthSetting::no_sign_request],
+                std::move(role_arn),
+                std::move(role_session_name),
+                /*sts_endpoint_override=*/""
             });
     }
 
@@ -150,6 +173,8 @@ BackupReaderS3::BackupReaderS3(
     const S3::URI & s3_uri_,
     const String & access_key_id_,
     const String & secret_access_key_,
+    const String & role_arn,
+    const String & role_session_name,
     bool allow_s3_native_copy,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
@@ -157,7 +182,7 @@ BackupReaderS3::BackupReaderS3(
     bool is_internal_backup)
     : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderS3"))
     , s3_uri(s3_uri_)
-    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false}
+    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false, ""}
 {
     s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
 
@@ -170,7 +195,7 @@ BackupReaderS3::BackupReaderS3(
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
 
-    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, s3_settings, context_);
+    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, s3_settings, context_);
 
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
         blob_storage_log = std::make_shared<BlobStorageLogWriter>(blob_storage_system_log);
@@ -247,6 +272,8 @@ BackupWriterS3::BackupWriterS3(
     const S3::URI & s3_uri_,
     const String & access_key_id_,
     const String & secret_access_key_,
+    const String & role_arn,
+    const String & role_session_name,
     bool allow_s3_native_copy,
     const String & storage_class_name,
     const ReadSettings & read_settings_,
@@ -255,7 +282,7 @@ BackupWriterS3::BackupWriterS3(
     bool is_internal_backup)
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterS3"))
     , s3_uri(s3_uri_)
-    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false}
+    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false, ""}
     , s3_capabilities(getCapabilitiesFromConfig(context_->getConfigRef(), "s3"))
 {
     s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
@@ -270,7 +297,8 @@ BackupWriterS3::BackupWriterS3(
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
     s3_settings.request_settings[S3RequestSetting::storage_class_name] = storage_class_name;
 
-    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, s3_settings, context_);
+    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, s3_settings, context_);
+
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
     {
         blob_storage_log = std::make_shared<BlobStorageLogWriter>(blob_storage_system_log);

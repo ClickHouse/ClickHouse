@@ -59,6 +59,14 @@ add_subdirectory (Processors)
 add_subdirectory (Compression)
 add_subdirectory (Server)
 add_subdirectory (Coordination)
+
+if (ENABLE_CLICKHOUSE_DISTRIBUTED_CACHE)
+    message(STATUS "ClickHouse distributed cache is enabled, will build with it")
+    add_subdirectory (DistributedCache)
+else()
+    message(STATUS "ClickHouse distributed cache is disabled, will build without it")
+endif()
+
 add_subdirectory (Daemon)
 add_subdirectory (Loggers)
 add_subdirectory (Formats)
@@ -198,6 +206,13 @@ endif ()
 
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
+if (ENABLE_CLICKHOUSE_DISTRIBUTED_CACHE)
+    target_compile_definitions(clickhouse_common_io PUBLIC ENABLE_DISTRIBUTED_CACHE=1)
+else()
+    target_compile_definitions(clickhouse_common_io PUBLIC ENABLE_DISTRIBUTED_CACHE=0)
+endif()
+
+
 set_source_files_properties(Common/ThreadFuzzer.cpp PROPERTIES COMPILE_FLAGS "-fomit-frame-pointer -momit-leaf-frame-pointer")
 
 add_library (clickhouse_malloc OBJECT Common/malloc.cpp)
@@ -216,6 +231,9 @@ if (TARGET ch_contrib::azure_sdk)
 endif()
 
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash ch_contrib::incbin)
+if (TARGET ch_contrib::consistent_hashing)
+    target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::consistent_hashing)
+endif()
 
 add_subdirectory(Access/Common)
 add_subdirectory(Common/ZooKeeper)
@@ -272,6 +290,12 @@ add_object_library(clickhouse_client Client)
 # https://github.com/ClickHouse/ClickHouse/issues/65745
 set_source_files_properties(Client/ClientBaseOptimizedParts.cpp PROPERTIES COMPILE_FLAGS "-O3")
 add_object_library(clickhouse_bridge BridgeHelper)
+
+if (ENABLE_CLICKHOUSE_DISTRIBUTED_CACHE)
+    add_object_library(clickhouse_distributed_cache DistributedCache)
+    add_object_library(clickhouse_server_distributed_cache Server/DistributedCache)
+endif()
+
 add_object_library(clickhouse_server Server)
 add_object_library(clickhouse_server_http Server/HTTP)
 if (TARGET ch_contrib::ssh)
@@ -408,6 +432,10 @@ endif()
 if (TARGET ch_contrib::crc32-vpmsum)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::crc32-vpmsum)
  endif()
+
+if (TARGET ch_contrib::jwt-cpp)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::jwt-cpp)
+endif()
 
 if (TARGET ch_contrib::ssh)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::ssh)
