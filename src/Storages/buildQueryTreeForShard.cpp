@@ -280,19 +280,24 @@ public:
             // Do not visit parameters node
             if (function_node->getParametersNode() == child)
                 return false;
-
-            // Do not visit second argument of "in" functions
-            if (isNameOfInFunction(function_node->getFunctionName()))
-                if (function_node->getArguments().getNodes()[1] == child)
-                    return false;
         }
         return true;
     }
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (max_size < 0)
+        // Do not visit second argument of "in" functions
+        if (in_second_argument == node)
+        {
+            in_second_argument.reset();
             return;
+        }
+
+        if (auto * function_node = node->as<FunctionNode>(); function_node && isNameOfInFunction(function_node->getFunctionName()))
+        {
+            in_second_argument = function_node->getArguments().getNodes()[1];
+            return;
+        }
 
         auto * constant_node = node->as<ConstantNode>();
 
@@ -339,7 +344,8 @@ public:
     }
 
 private:
-    Int64 max_size;
+    Int64 max_size = 0;
+    QueryTreeNodePtr in_second_argument;
 };
 
 /** Execute subquery node and put result in mutable context temporary table.
