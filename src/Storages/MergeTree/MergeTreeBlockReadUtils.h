@@ -2,7 +2,6 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
-#include <Storages/MergeTree/MergeTreeRangeReader.h>
 
 #include <algorithm>
 
@@ -13,21 +12,7 @@ namespace DB
 struct MergeTreeReaderSettings;
 class IMergeTreeDataPartInfoForReader;
 
-NameSet injectRequiredColumns(
-    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
-    const StorageSnapshotPtr & storage_snapshot,
-    bool with_subcolumns,
-    Names & columns);
-
 PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column);
-
-void addPatchPartsColumns(
-    MergeTreeReadTaskColumns & result,
-    const StorageSnapshotPtr & storage_snapshot,
-    const GetColumnsOptions & options,
-    const PatchPartsForReader & patch_parts,
-    const Names & all_columns_to_read,
-    bool has_lightweight_delete);
 
 MergeTreeReadTaskColumns getReadTaskColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,

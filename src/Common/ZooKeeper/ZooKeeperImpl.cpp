@@ -28,7 +28,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/DNS.h>
 
-#include <Coordination/KeeperConstants.h>
+#include "Coordination/KeeperConstants.h"
 #include "config.h"
 
 #if USE_SSL
@@ -46,8 +46,6 @@ namespace ProfileEvents
     extern const Event ZooKeeperRemove;
     extern const Event ZooKeeperExists;
     extern const Event ZooKeeperMulti;
-    extern const Event ZooKeeperMultiRead;
-    extern const Event ZooKeeperMultiWrite;
     extern const Event ZooKeeperReconfig;
     extern const Event ZooKeeperGet;
     extern const Event ZooKeeperSet;
@@ -74,7 +72,7 @@ namespace Metrics::ResponseTime
     Histogram::MetricFamily & mf = Histogram::Factory::instance().registerMetric(
         "keeper_response_time_ms",
         "The response time of Keeper, in milliseconds",
-        {1, 2, 5, 10, 25, 50, 75, 100, 125, 150, 200, 250, 300, 500, 1000, 2000},
+        {1, 2, 5, 10, 20, 50, 100},
         {"operation"}
     );
 
@@ -391,7 +389,7 @@ ZooKeeper::ZooKeeper(
     const zkutil::ShuffleHosts & nodes,
     const zkutil::ZooKeeperArgs & args_,
     std::shared_ptr<ZooKeeperLog> zk_log_)
-    : path_acls(args_.path_acls), args(args_)
+    : args(args_)
 {
     log = getLogger("ZooKeeperClient");
     std::atomic_store(&zk_log, std::move(zk_log_));
@@ -1418,17 +1416,7 @@ void ZooKeeper::create(
     request.data = data;
     request.is_ephemeral = is_ephemeral;
     request.is_sequential = is_sequential;
-
-    ACLs final_acls = acls.empty() ? default_acls : acls;
-
-    // Append path-specific ACLs if configured for this path
-    auto path_acls_it = path_acls.find(path);
-    if (path_acls_it != path_acls.end())
-    {
-        final_acls.push_back(path_acls_it->second);
-    }
-
-    request.acls = std::move(final_acls);
+    request.acls = acls.empty() ? default_acls : acls;
 
     Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::create);
 
@@ -1649,28 +1637,6 @@ void ZooKeeper::multi(
     std::span<const RequestPtr> requests,
     MultiCallback callback)
 {
-    // If path_acls is not empty, iterate through requests and apply path-specific ACLs to create requests
-    if (!path_acls.empty())
-    {
-        for (const auto & generic_request : requests)
-        {
-            if (auto * create_request = dynamic_cast<CreateRequest *>(generic_request.get()))
-            {
-                // Check if there's a path-specific ACL for this path
-                auto path_acls_it = path_acls.find(create_request->path);
-                if (path_acls_it != path_acls.end())
-                {
-                    // If ACLs are empty, use default_acls first
-                    if (create_request->acls.empty())
-                        create_request->acls = default_acls;
-
-                    // Append the path-specific ACL
-                    create_request->acls.push_back(path_acls_it->second);
-                }
-            }
-        }
-    }
-
     ZooKeeperMultiRequest request(requests, default_acls);
 
     if (request.getOpNum() == OpNum::MultiRead && !isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
@@ -1682,14 +1648,8 @@ void ZooKeeper::multi(
     request_info.request = std::make_shared<ZooKeeperMultiRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const MultiResponse &>(response)); };
 
-    bool is_read_request = request_info.request->isReadRequest();
     pushRequest(std::move(request_info));
-
     ProfileEvents::increment(ProfileEvents::ZooKeeperMulti);
-    if (is_read_request)
-        ProfileEvents::increment(ProfileEvents::ZooKeeperMultiRead);
-    else
-        ProfileEvents::increment(ProfileEvents::ZooKeeperMultiWrite);
 }
 
 

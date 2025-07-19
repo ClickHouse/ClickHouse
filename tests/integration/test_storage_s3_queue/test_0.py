@@ -5,7 +5,6 @@ import random
 import string
 import time
 import uuid
-from datetime import datetime
 from multiprocessing.dummy import Pool
 
 import pytest
@@ -13,24 +12,17 @@ from kazoo.exceptions import NoNodeError
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from helpers.s3_queue_common import (
-    run_query,
-    random_str,
-    generate_random_files,
-    put_s3_file_content,
-    put_azure_file_content,
-    create_table,
-    create_mv,
-    generate_random_string,
-)
+from helpers.s3_queue_common import run_query, random_str, generate_random_files, put_s3_file_content, put_azure_file_content, create_table, create_mv, generate_random_string, add_instances
 
 AVAILABLE_MODES = ["unordered", "ordered"]
-
 
 @pytest.fixture(autouse=True)
 def s3_queue_setup_teardown(started_cluster):
     instance = started_cluster.instances["instance"]
+    instance_2 = started_cluster.instances["instance2"]
+
     instance.query("DROP DATABASE IF EXISTS default; CREATE DATABASE default;")
+    instance_2.query("DROP DATABASE IF EXISTS default; CREATE DATABASE default;")
 
     minio = started_cluster.minio_client
     objects = list(minio.list_objects(started_cluster.minio_bucket, recursive=True))
@@ -54,18 +46,7 @@ def s3_queue_setup_teardown(started_cluster):
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance(
-            "instance",
-            user_configs=["configs/users.xml"],
-            with_minio=True,
-            with_azurite=True,
-            with_zookeeper=True,
-            main_configs=[
-                "configs/zookeeper.xml",
-                "configs/s3queue_log.xml",
-            ],
-            stay_alive=True,
-        )
+        add_instances(cluster)
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -442,9 +423,6 @@ def test_streaming_to_many_views(started_cluster, mode):
     expect_rows_num = [0]
     files = []
 
-    # ensure that streaming from S3 will be started only once all MVs has been created
-    time.sleep(5)
-
     def generate_files(files_num=20, row_num=100, file_prefix = "a"):
         files.extend(
             [
@@ -508,18 +486,18 @@ def test_streaming_to_many_views(started_cluster, mode):
     )
 
     generate_files(file_prefix = "b")
-    # there is no gurantee what is inserted to other MV because the insert is failed
+    rows_from_last_insert = 100 * 20
+    # we expect duplicates, but exactly certain amount,
+    # which must stop once loading retries limit is reached.
+    check(
+        dst_tables,
+        expect_rows_num[0] + rows_from_last_insert * loading_retries,
+        expect_files_num[0],
+    )
     check([broken_dst_table], 0, 0)
 
     for i in range(20, 40):
         log_message = f"File {files_path}/b_{i}.csv failed at try 2/2, retries node exists: true"
-
-        node.wait_for_log_line(
-            log_message,
-            timeout=30,
-            look_behind_lines=10000,
-        )
-
         assert node.contains_in_log(
             log_message
         ), f"Cannot find log message 1 for path {files_path}/b_{i}.csv: {log_message}"
@@ -617,46 +595,3 @@ def test_multiple_tables_meta_mismatch(started_cluster):
             "keeper_path": keeper_path,
         },
     )
-
-
-def test_virtual_columns(started_cluster):
-    start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    node = started_cluster.instances["instance"]
-    table_name = f"test_s3queue_virtual_columns_{generate_random_string()}"
-    # A unique path is necessary for repeatable tests
-    keeper_path = f"/clickhouse/test_{table_name}"
-    dst_table_name = f"{table_name}_dst"
-    files_path = f"{table_name}_data"
-
-    total_values = generate_random_files(started_cluster, files_path, 1)
-    create_table(
-        started_cluster,
-        node,
-        table_name,
-        "ordered",
-        files_path,
-        additional_settings={"keeper_path": keeper_path},
-    )
-    create_mv(node, table_name, dst_table_name, virtual_columns="_path String, _file String, _size UInt64, _time DateTime")
-    expected_values = set([tuple(i) for i in total_values])
-    for i in range(20):
-        selected_values = {
-            tuple(map(int, l.split()))
-            for l in node.query(
-                f"SELECT column1, column2, column3 FROM {dst_table_name}"
-            ).splitlines()
-        }
-        if selected_values == expected_values:
-            break
-        time.sleep(1)
-    assert selected_values == expected_values
-    virtual_values = node.query(
-        f"SELECT count(), _path, _file, _size, _time FROM {dst_table_name} GROUP BY _path, _file, _size, _time"
-        ).splitlines()
-    assert len(virtual_values) > 0
-    (_, res_path, res_file, res_size, res_time) = virtual_values[0].split("\t")
-    finish_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    assert f"{files_path}/{res_file}" == res_path
-    assert int(res_size) > 0
-    assert start_time <= res_time
-    assert res_time <= finish_time

@@ -25,7 +25,7 @@ git push
 
 If you are not sure what to do, ask a maintainer for help.
 
-## Merge with master {#merge-with-master}
+## Merge with Master {#merge-with-master}
 
 Verifies that the PR can be merged to master.
 If not, it will fail with a message `Cannot fetch mergecommit`.
@@ -38,70 +38,112 @@ It can fail if you changed something in the documentation.
 Most probable reason is that some cross-link in the documentation is wrong.
 Go to the check report and look for `ERROR` and `WARNING` messages.
 
-## Description check {#description-check}
+## Description Check {#description-check}
 
 Check that the description of your pull request conforms to the template [PULL_REQUEST_TEMPLATE.md](https://github.com/ClickHouse/ClickHouse/blob/master/.github/PULL_REQUEST_TEMPLATE.md).
 You have to specify a changelog category for your change (e.g., Bug Fix), and write a user-readable message describing the change for [CHANGELOG.md](../whats-new/changelog/index.md)
 
-## Push to DockerHub {#push-to-dockerhub}
+## Push To DockerHub {#push-to-dockerhub}
 
 Builds docker images used for build and tests, then pushes them to DockerHub.
 
-## Marker check {#marker-check}
+## Marker Check {#marker-check}
 
 This check means that the CI system started to process the pull request.
 When it has 'pending' status, it means that not all checks have been started yet.
 After all checks have been started, it changes status to 'success'.
 
-## Style check {#style-check}
+## Style Check {#style-check}
 
-Performs various style checks on the code base.
+Performs some simple regex-based checks of code style, using the [`utils/check-style/check-style`](https://github.com/ClickHouse/ClickHouse/blob/master/utils/check-style/check-style) binary (note that it can be run locally).
+If it fails, fix the style errors following the [code style guide](style.md).
 
-Basic checks in the Style Check job:
-
-##### cpp {#cpp}
-Performs simple regex-based code style checks using the [`ci/jobs/scripts/check_style/check_cpp.sh`](https://github.com/ClickHouse/ClickHouse/blob/master/ci/jobs/scripts/check_style/check_cpp.sh) script (which can also be run locally).  
-If it fails, fix the style issues according to the [code style guide](style.md).
-
-##### codespell, aspell {#codespell}
-Check for grammatical mistakes and typos.
-
-##### mypy {#mypy}
-Performs static type checking for Python code.
-
-### Running the style check job locally {#running-style-check-locally}
-
-The entire _Style Check_ job can be run locally in a Docker container with:
+#### Running style check locally: {#running-style-check-locally}
 
 ```sh
-python -m ci.praktika run "Style check"
+mkdir -p /tmp/test_output
+# running all checks
+python3 tests/ci/style_check.py --no-push
+
+# run specified check script (e.g.: ./check-mypy)
+docker run --rm --volume=.:/ClickHouse --volume=/tmp/test_output:/test_output -u $(id -u ${USER}):$(id -g ${USER}) --cap-add=SYS_PTRACE --entrypoint= -w/ClickHouse/utils/check-style clickhouse/style-test ./check-mypy
+
+# find all style check scripts under the directory:
+cd ./utils/check-style
+
+# Check duplicate includes
+./check-duplicate-includes.sh
+
+# Check c++ formatting
+./check-style
+
+# Check python formatting with black
+./check-black
+
+# Check python type hinting with mypy
+./check-mypy
+
+# Check python with flake8
+./check-flake8
+
+# Check code with codespell
+./check-typos
+
+# Check docs spelling
+./check-doc-aspell
+
+# Check whitespaces
+./check-whitespaces
+
+# Check github actions workflows
+./check-workflows
+
+# Check submodules
+./check-submodules
+
+# Check shell scripts with shellcheck
+./shellcheck-run.sh
 ```
 
-To run a specific check (e.g., _cpp_ check):
-```sh
-python -m ci.praktika run "Style check" --test cpp
-```
-
-These commands pull the `clickhouse/style-test` Docker image and run the job in a containerized environment.
-No dependencies other than Python 3 and Docker are required.
-
-## Fast test {#fast-test}
+## Fast Test {#fast-test}
 
 Normally this is the first check that is run for a PR.
 It builds ClickHouse and runs most of [stateless functional tests](tests.md#functional-tests), omitting some.
 If it fails, further checks are not started until it is fixed.
 Look at the report to see which tests fail, then reproduce the failure locally as described [here](/development/tests#running-a-test-locally).
 
-#### Running fast test locally: {#running-fast-test-locally}
+#### Running Fast Test locally: {#running-fast-test-locally}
 
 ```sh
-python -m ci.praktika run "Fast test" [--test some_test_name]
+mkdir -p /tmp/test_output
+mkdir -p /tmp/fasttest-workspace
+cd ClickHouse
+# this docker command performs minimal ClickHouse build and run FastTests against it
+docker run --rm --cap-add=SYS_PTRACE -u $(id -u ${USER}):$(id -g ${USER})  --network=host -e FASTTEST_WORKSPACE=/fasttest-workspace -e FASTTEST_OUTPUT=/test_output -e FASTTEST_SOURCE=/ClickHouse --cap-add=SYS_PTRACE -e stage=clone_submodules --volume=/tmp/fasttest-workspace:/fasttest-workspace --volume=.:/ClickHouse --volume=/tmp/test_output:/test_output clickhouse/fasttest
 ```
 
-These commands pull the `clickhouse/fast-test` Docker image and run the job in a containerized environment.
-No dependencies other than Python 3 and Docker are required.
+#### Status Page Files {#status-page-files}
 
-## Build check {#build-check}
+- `runlog.out.log` is the general log that includes all other logs.
+- `test_log.txt`
+- `submodule_log.txt` contains the messages about cloning and checkouting needed submodules.
+- `stderr.log`
+- `stdout.log`
+- `clickhouse-server.log`
+- `clone_log.txt`
+- `install_log.txt`
+- `clickhouse-server.err.log`
+- `build_log.txt`
+- `cmake_log.txt` contains messages about the C/C++ and Linux flags check.
+
+#### Status Page Columns {#status-page-columns}
+
+- *Test name* contains the name of the test (without the path e.g. all types of tests will be stripped to the name).
+- *Test status* -- one of _Skipped_, _Success_, or _Fail_.
+- *Test time, sec.* -- empty on this test.
+
+
+## Build Check {#build-check}
 
 Builds ClickHouse in various configurations for use in further steps.
 You have to fix the builds that fail.
@@ -109,7 +151,7 @@ Build logs often have enough information to fix the error, but you might have to
 The `cmake` options can be found in the build log, grep for `cmake`.
 Use these options and follow the [general build process](../development/build.md).
 
-### Report details {#report-details}
+### Report Details {#report-details}
 
 - **Compiler**: `clang-19`, optionally with the name of a target platform
 - **Build type**: `Debug` or `RelWithDebInfo` (cmake).
@@ -128,7 +170,7 @@ Use these options and follow the [general build process](../development/build.md
   - `performance.tar.zst`: Special package for performance tests.
 
 
-## Special build check {#special-build-check}
+## Special Build Check {#special-build-check}
 Performs static analysis and code style checks using `clang-tidy`. The report is similar to the [build check](#build-check). Fix the errors found in the build log.
 
 #### Running clang-tidy locally: {#running-clang-tidy-locally}
@@ -139,19 +181,19 @@ mkdir build_tidy
 ./docker/packager/packager --output-dir=./build_tidy --package-type=binary --compiler=clang-19 --debug-build --clang-tidy
 ```
 
-## Functional stateless tests {#functional-stateless-tests}
+## Functional Stateless Tests {#functional-stateless-tests}
 Runs [stateless functional tests](tests.md#functional-tests) for ClickHouse binaries built in various configurations -- release, debug, with sanitizers, etc.
 Look at the report to see which tests fail, then reproduce the failure locally as described [here](/development/tests#functional-tests).
 Note that you have to use the correct build configuration to reproduce -- a test might fail under AddressSanitizer but pass in Debug.
-Download the binary from [CI build checks page](/install/advanced), or build it locally.
+Download the binary from [CI build checks page](/install#install-a-ci-generated-binary), or build it locally.
 
-## Functional stateful tests {#functional-stateful-tests}
+## Functional Stateful Tests {#functional-stateful-tests}
 
 Runs [stateful functional tests](tests.md#functional-tests).
 Treat them in the same way as the functional stateless tests.
 The difference is that they require `hits` and `visits` tables from the [clickstream dataset](../getting-started/example-datasets/metrica.md) to run.
 
-## Integration tests {#integration-tests}
+## Integration Tests {#integration-tests}
 Runs [integration tests](tests.md#integration-tests).
 
 ## Bugfix validate check {#bugfix-validate-check}
@@ -159,24 +201,24 @@ Runs [integration tests](tests.md#integration-tests).
 Checks that either a new test (functional or integration) or there some changed tests that fail with the binary built on master branch.
 This check is triggered when pull request has "pr-bugfix" label.
 
-## Stress test {#stress-test}
+## Stress Test {#stress-test}
 Runs stateless functional tests concurrently from several clients to detect concurrency-related errors. If it fails:
 
     * Fix all other test failures first;
     * Look at the report to find the server logs and check them for possible causes
       of error.
 
-## Compatibility check {#compatibility-check}
+## Compatibility Check {#compatibility-check}
 
 Checks that `clickhouse` binary runs on distributions with old libc versions.
 If it fails, ask a maintainer for help.
 
-## AST fuzzer {#ast-fuzzer}
+## AST Fuzzer {#ast-fuzzer}
 Runs randomly generated queries to catch program errors.
 If it fails, ask a maintainer for help.
 
 
-## Performance tests {#performance-tests}
+## Performance Tests {#performance-tests}
 Measure changes in query performance.
 This is the longest check that takes just below 6 hours to run.
 The performance test report is described in detail [here](https://github.com/ClickHouse/ClickHouse/tree/master/docker/test/performance-comparison#how-to-read-the-report).

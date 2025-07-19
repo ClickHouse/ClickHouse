@@ -36,7 +36,6 @@
 - test_replicated_database/
 - test_replicated_fetches_timeouts/
 - test_replicated_merge_tree_wait_on_shutdown/
-- test_server_overload/
 - test_server_reload/
 - test_storage_kafka/
 - test_storage_kerberized_kafka/

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/defines.h>
 #include <base/types.h>
 
 #include <string>
@@ -45,8 +44,8 @@ public:
     using Frames = std::array<Frame, capacity>;
 
     /// Tries to capture stack trace
-    /// NO_INLINE to get correct line of StackTrace() caller in captured stack trace
-    NO_INLINE StackTrace();
+    /// avoid inlining to get correct line of StackTrace() caller in captured stack trace
+    __attribute__((noinline)) StackTrace();
 
     /// Tries to capture stack trace. Fallbacks on parsing caller address from
     /// signal context if no stack trace could be captured

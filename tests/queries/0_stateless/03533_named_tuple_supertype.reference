@@ -1,4 +1,0 @@
-[('y',20)]	Array(Tuple(\n    s String,\n    i Int64))
-[]	Array(Tuple(\n    s String,\n    i Int64))
-('y',10)	Tuple(String, Int64)
-('b',10)	Tuple(String, Int64)

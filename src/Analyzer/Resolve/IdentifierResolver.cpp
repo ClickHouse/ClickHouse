@@ -137,7 +137,7 @@ QueryTreeNodePtr IdentifierResolver::wrapExpressionNodeInTupleElement(QueryTreeN
 /// Resolve identifier functions implementation
 
 /// Try resolve table identifier from database catalog
-std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const Identifier & table_identifier, const ContextPtr & context)
+IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)
 {
     size_t parts_size = table_identifier.getPartsSize();
     if (parts_size < 1 || parts_size > 2)
@@ -187,7 +187,10 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     if (!storage)
         return {};
 
-    storage->updateExternalDynamicMetadataIfExists(context);
+    if (storage->hasExternalDynamicMetadata())
+    {
+        storage->updateExternalDynamicMetadata(context);
+    }
 
     if (!storage_lock)
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -196,15 +199,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     if (is_temporary_table)
         result->setTemporaryTableName(table_name);
 
-    return result;
-}
-
-IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)
-{
-    if (auto result = tryResolveTableIdentifier(table_identifier, context))
-        return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
-
-    return {};
+    return { .resolved_identifier = result, .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
 }
 
 /// Resolve identifier from compound expression
@@ -913,9 +908,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
                 table_expression_node->formatASTForErrorMessage(),
                 identifier_lookup.dump(),
                 scope.scope_node->formatASTForErrorMessage());
-
-        if (!left_resolved_identifier && !right_resolved_identifier)
-            return {};
 
         return {
                 .resolved_identifier = left_resolved_identifier ? left_resolved_identifier : right_resolved_identifier,
