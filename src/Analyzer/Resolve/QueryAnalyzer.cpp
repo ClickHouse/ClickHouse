@@ -1,7 +1,9 @@
 #include <Common/FieldVisitorToString.h>
+#include <Common/logger_useful.h>
 
 #include <Columns/ColumnNullable.h>
 
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -2780,6 +2782,87 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 {
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node_ptr->getFunctionName();
+
+    /* Early short-circuit for logical expressions.
+     * If   or()   already contains a constant TRUE,
+     * or   and()  already contains a constant FALSE,
+     * the result of the whole function is known.
+     * Replace the function with that constant right now,
+     * before we start resolving (and possibly executing)
+     * the remaining arguments – this prevents scalar
+     * sub-queries in those arguments from running.
+     */
+    if (function_name == "or" || function_name == "and")
+    {
+        const auto & args = function_node_ptr->getArguments().getNodes();
+
+        auto isBoolConst = [](const QueryTreeNodePtr & n, bool & out, bool & has_bool_arg)->bool
+        {
+            const auto * lit = n->as<ConstantNode>();
+            if (!lit) return false;
+
+            // Check if this ConstantNode has a Bool result type (indicating it came from a boolean literal)
+            if (lit->getResultType()->getName() == "Bool")
+                has_bool_arg = true;
+
+            UInt64 u = 0;  Int64 i = 0;
+            if (lit->getValue().tryGet<UInt64>(u))
+            {
+                out = (u != 0);
+                return true;
+            }
+            if (lit->getValue().tryGet<Int64>(i))
+            {
+                out = (i != 0);
+                return true;
+            }
+            return false;
+        };
+
+        bool decisive = false;
+        bool found = false;
+        bool has_bool_arg = false;
+
+        for (const auto & a : args)
+        {
+            bool v = false;
+            bool arg_is_bool = false;
+            if (isBoolConst(a, v, arg_is_bool))
+            {
+                has_bool_arg = has_bool_arg || arg_is_bool;
+                if ((function_name == "or"  && v) ||
+                    (function_name == "and" && !v))
+                {
+                    decisive = v;
+                    found = true;
+                    if (has_bool_arg)
+                        break;
+                }
+            }
+        }
+
+        if (found)
+        {
+            DataTypePtr result_type;
+            Field result_field;
+            if (has_bool_arg)
+            {
+                result_type = DataTypeFactory::instance().get("Bool");
+                result_field = Field(decisive);
+            }
+            else
+            {
+                result_type = std::make_shared<DataTypeUInt8>();
+                result_field = Field(decisive ? 1u : 0u);
+            }
+            auto new_const = std::make_shared<ConstantNode>(result_field, result_type);
+            if (!function_node_ptr->getAlias().empty())
+                new_const->setAlias(function_node_ptr->getAlias());
+
+            node = new_const;
+            return ProjectionNames{ new_const->getValueStringRepresentation() };
+        }
+    }
 
     /// Resolve function parameters
 
