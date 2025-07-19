@@ -1041,7 +1041,10 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
             std::move(credentials),
             credentials_configuration);
 
-    client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(client_configuration.s3_retry_attempts);
+    client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(
+        client_configuration.s3_retry_attempts,
+        client_configuration.s3_retry_scale_factor,
+        client_configuration.s3_retry_max_delay_ms);
 
     /// Use virtual addressing if endpoint is not specified.
     if (client_configuration.endpointOverride.empty())
