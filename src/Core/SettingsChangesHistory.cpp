@@ -51,6 +51,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"azure_connect_timeout_ms", 1000, 1000, "New setting"},
             {"azure_sdk_use_native_client", false, true, "New setting"},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
+            {"optimize_if_transform_const_strings_to_lowcardinality", false, false, "New setting to allow optimizing results of const branches from if/multiif/transform into LowCardinality"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
