@@ -391,8 +391,18 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             limit_length = nullptr;
             limit_offset = nullptr;
 
-            if (!exp_list.parse(pos, limit_by_expression_list, expected))
-                return false;
+            if (s_all.ignore(pos, expected))
+            {
+                std::cerr << "DEBUG: Parsed LIMIT BY ALL, setting flag" << std::endl;
+                select_query->limit_by_all = true;  // Use direct member access like other flags
+                // Create empty expression list as placeholder - will be expanded later
+                limit_by_expression_list = std::make_shared<ASTExpressionList>();
+            }
+            else
+            {
+                if (!exp_list.parse(pos, limit_by_expression_list, expected))
+                    return false;
+            }
         }
 
         if (top_length && limit_length)

@@ -1124,8 +1124,13 @@ void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed, const Se
   */
 void QueryAnalyzer::expandLimitByAll(QueryNode & query_tree_node_typed)
 {
+    std::cerr << "DEBUG: QueryAnalyzer::expandLimitByAll called" << std::endl;
     if (!query_tree_node_typed.isLimitByAll())
+    {
+        std::cerr << "DEBUG: isLimitByAll() returned false" << std::endl;
         return;
+    }
+    std::cerr << "DEBUG: QueryAnalyzer expanding LIMIT BY ALL" << std::endl;
 
     auto & limit_by_nodes = query_tree_node_typed.getLimitBy().getNodes();
     auto & projection_list = query_tree_node_typed.getProjection();
@@ -1133,6 +1138,7 @@ void QueryAnalyzer::expandLimitByAll(QueryNode & query_tree_node_typed)
     for (auto & node : projection_list.getNodes())
         recursivelyCollectMaxOrdinaryExpressions(node, limit_by_nodes);
     
+    std::cerr << "DEBUG: QueryAnalyzer collected " << limit_by_nodes.size() << " expressions" << std::endl;
     query_tree_node_typed.setIsLimitByAll(false);
 }
 

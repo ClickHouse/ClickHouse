@@ -856,14 +856,17 @@ void expandOrderByAll(ASTSelectQuery * select_query, [[maybe_unused]] const Tabl
   */
 void expandLimitByAll(ASTSelectQuery * select_query)
 {
+    std::cerr << "DEBUG: expandLimitByAll called, limit_by_all = " << select_query->limit_by_all << std::endl;
     if (!select_query->isLimitByAll())
         return;
 
+    std::cerr << "DEBUG: Expanding LIMIT BY ALL" << std::endl;
     auto limit_by_expression_list = std::make_shared<ASTExpressionList>();
 
     for (const auto & expr : select_query->select()->children)
         recursivelyCollectMaxOrdinaryExpressions(expr, *limit_by_expression_list);
 
+    std::cerr << "DEBUG: Collected " << limit_by_expression_list->children.size() << " expressions" << std::endl;
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY, limit_by_expression_list);
     select_query->setIsLimitByAll(false);
 }
@@ -1412,8 +1415,12 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         expandOrderByAll(select_query, tables_with_columns);
 
     // expand LIMIT BY ALL
-    if (select_query->limit_by_all)
+    if (select_query->limit_by_all) 
+    {
+        std::cerr << "DEBUG: About to call expandLimitByAll" << std::endl;
         expandLimitByAll(select_query);
+    }
+        
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
