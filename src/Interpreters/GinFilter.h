@@ -9,8 +9,6 @@ namespace DB
 static inline constexpr auto TEXT_INDEX_NAME = "text";
 static inline constexpr UInt64 UNLIMITED_ROWS_PER_POSTINGS_LIST = 0;
 static inline constexpr UInt64 DEFAULT_NGRAM_SIZE = 3;
-static inline constexpr UInt64 MIN_ROWS_PER_POSTINGS_LIST = 8 * 1024;
-static inline constexpr UInt64 DEFAULT_MAX_ROWS_PER_POSTINGS_LIST = 64 * 1024;
 
 enum class GinSearchMode : uint8_t
 {
@@ -22,12 +20,10 @@ struct GinFilterParameters
 {
     GinFilterParameters(
         String tokenizer_,
-        UInt64 max_rows_per_postings_list_,
         std::optional<UInt64> ngram_size_,
         std::optional<std::vector<String>> separators_);
 
     String tokenizer;
-    UInt64 max_rows_per_postings_list;
     /// for ngram tokenizer
     std::optional<UInt64> ngram_size;
     /// for split tokenizer
@@ -56,8 +52,6 @@ using GinSegmentWithRowIdRangeVector = std::vector<GinSegmentWithRowIdRange>;
 class GinFilter
 {
 public:
-
-    explicit GinFilter(const GinFilterParameters & params_);
 
     /// Add term (located at 'data' with length 'len') and its row ID to the postings list builder
     /// for building text index for the given store.
@@ -105,9 +99,6 @@ public:
     }
 
 private:
-    /// Filter parameters
-    const GinFilterParameters & params;
-
     /// Query string of the filter
     String query_string;
 

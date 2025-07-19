@@ -51,6 +51,13 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event PatchesAcquireLockTries;
+    extern const Event PatchesAcquireLockMicroseconds;
+}
+
 namespace DB
 {
 
@@ -739,6 +746,9 @@ std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightwei
 
     if (parallel_mode == UpdateParallelMode::SYNC)
     {
+        ProfileEvents::increment(ProfileEvents::PatchesAcquireLockTries);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PatchesAcquireLockMicroseconds);
+
         update_lock->sync_lock = std::unique_lock(lightweight_updates_sync.sync_mutex, std::defer_lock);
         bool res = update_lock->sync_lock.try_lock_for(std::chrono::milliseconds(timeout_ms));
 
@@ -749,6 +759,9 @@ std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightwei
     }
     else if (parallel_mode == UpdateParallelMode::AUTO)
     {
+        ProfileEvents::increment(ProfileEvents::PatchesAcquireLockTries);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PatchesAcquireLockMicroseconds);
+
         auto affected_columns = getUpdateAffectedColumns(commands, local_context);
         lightweight_updates_sync.lockColumns(affected_columns, timeout_ms);
 
@@ -1098,8 +1111,11 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit())));
     };
 
-    const auto construct_future_part = [&](MergeSelectorChoice choice) -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
+    const auto construct_future_part = [&](MergeSelectorChoices choices) -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
     {
+        chassert(choices.size() == 1);
+        MergeSelectorChoice choice = std::move(choices[0]);
+
         auto future_part = [&]()
         {
             if (txn != nullptr)
@@ -1144,7 +1160,12 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
         auto select_result = merger_mutator.selectPartsToMerge(
             parts_collector,
             merge_predicate,
-            MergeSelectorApplier{max_source_parts_size, merge_with_ttl_allowed, aggressive},
+            MergeSelectorApplier(
+                /*max_merge_sizes=*/{max_source_parts_size},
+                /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
+                /*aggressive=*/aggressive,
+                /*range_filter_=*/nullptr
+            ),
             /*partitions_hint=*/std::nullopt);
 
         return select_result.and_then(construct_future_part);
@@ -1733,8 +1754,8 @@ bool StorageMergeTree::optimize(
         && (mode == DeduplicateMergeProjectionMode::THROW || mode == DeduplicateMergeProjectionMode::IGNORE))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "OPTIMIZE DEDUPLICATE query is not supported for table {} as it has projections. "
-                    "User should drop all the projections manually before running the query, "
-                    "or consider drop or rebuild option of deduplicate_merge_projection_mode",
+                    "Please drop all projections manually before running the query, "
+                    "or set setting 'deduplicate_merge_projection_mode' to 'drop' or 'rebuild'",
                     getStorageID().getTableName());
 
     if (deduplicate)
@@ -2301,8 +2322,6 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
         LOG_INFO(log, "Finished attaching part");
     }
 
-    /// New parts with other data may appear in place of deleted parts.
-    local_context->clearCaches();
     return results;
 }
 

@@ -93,15 +93,15 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
         else /// otherwise return only generic codecs and don't use info about data_type
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
 
-        /// If previous stream is not null it means it was Array offsets stream.
-        /// Can't apply lossy compression for offsets.
-        if (prev_stream && prev_stream->compressed_buf.getCodec()->isLossyCompression())
-            prev_stream->compressed_buf.setCodec(CompressionCodecFactory::instance().getDefaultCodec());
-
         UInt64 codec_id = compression_codec->getHash();
         auto & stream = streams_by_codec[codec_id];
         if (!stream)
             stream = std::make_shared<CompressedStream>(plain_hashing, compression_codec);
+
+        /// If previous stream is not null it means it was Array offsets stream.
+        /// Can't apply lossy compression for offsets.
+        if (prev_stream && prev_stream != stream && prev_stream->compressed_buf.getCodec()->isLossyCompression())
+            prev_stream->compressed_buf.setCodec(CompressionCodecFactory::instance().getDefaultCodec());
 
         compressed_streams.emplace(stream_name, stream);
         prev_stream = stream;
@@ -205,7 +205,7 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
 
     result_block = permuteBlockIfNeeded(result_block, permutation);
 
-    if (!header)
+    if (header.empty())
         header = result_block.cloneEmpty();
 
     size_t current_mark_rows = index_granularity->getMarkRows(getCurrentMark());
@@ -222,7 +222,7 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
             flushed_block = header.cloneWithColumns(columns_buffer.releaseColumns());
     }
 
-    if (flushed_block)
+    if (!flushed_block.empty())
     {
         auto granules_to_write = getGranulesToWrite(*index_granularity, flushed_block.rows(), getCurrentMark(), /* last_block = */ false);
         writeDataBlockPrimaryIndexAndSkipIndices(flushed_block, granules_to_write);

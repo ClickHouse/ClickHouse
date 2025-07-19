@@ -334,7 +334,7 @@ curl -sS "http://localhost:8123/?enable_http_compression=1" \
 2
 ```
 
-## Default Database {#default-database}
+## Default database {#default-database}
 
 You can use the `database` URL parameter or the `X-ClickHouse-Database` header to specify the default database.
 
@@ -452,7 +452,7 @@ The following optional parameters exist:
 
 The HTTP interface allows passing external data (external temporary tables) for querying. For more information, see ["External data for query processing"](/engines/table-engines/special/external-data).
 
-## Response Buffering {#response-buffering}
+## Response buffering {#response-buffering}
 
 Response buffering can be enabled on the server-side. The following URL parameters are provided for this purpose:
 - `buffer_size`
@@ -534,7 +534,7 @@ You can mitigate this problem by enabling `wait_end_of_query=1` ([Response Buffe
 The only way to catch all errors is to analyze the HTTP body before parsing it using the required format.
 :::
 
-## Queries with Parameters {#cli-queries-with-parameters}
+## Queries with parameters {#cli-queries-with-parameters}
 
 You can create a query with parameters and pass values for them from the corresponding HTTP request parameters. For more information, see [Queries with Parameters for CLI](../interfaces/cli.md#cli-queries-with-parameters).
 
@@ -953,7 +953,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 * Connection #0 to host localhost left intact
 ```
 
-## HTTP Response Headers {#http-response-headers}
+## HTTP response headers {#http-response-headers}
 
 ClickHouse allows you to configure custom HTTP response headers that can be applied to any kind of handler that can be configured. These headers can be set using the `http_response_headers` setting, which accepts key-value pairs representing header names and their values. This feature is particularly useful for implementing custom security headers, CORS policies, or any other HTTP header requirements across your ClickHouse HTTP interface.
 
