@@ -150,8 +150,6 @@ private:
 
     void evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & query_tree_node, IdentifierResolveScope & scope);
 
-    void convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, IdentifierResolveScope & scope) const;
-
     static void mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope);
 
     void replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope);

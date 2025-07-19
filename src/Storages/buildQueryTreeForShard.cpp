@@ -1,6 +1,7 @@
 
 #include <Storages/buildQueryTreeForShard.h>
 
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Analyzer/FunctionNode.h>
@@ -10,7 +11,10 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -36,6 +40,7 @@ namespace Setting
     extern const SettingsUInt64 min_external_table_block_size_bytes;
     extern const SettingsBool parallel_replicas_prefer_local_join;
     extern const SettingsBool prefer_global_in_and_join;
+    extern const SettingsInt64 optimize_const_array_and_tuple_to_scalar_size;
 }
 
 namespace ErrorCodes
@@ -253,6 +258,90 @@ private:
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
 };
 
+class ReplaceConstArrayAndTupleWithScalarVisitor : public InDepthQueryTreeVisitorWithContext<ReplaceConstArrayAndTupleWithScalarVisitor>
+{
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<ReplaceConstArrayAndTupleWithScalarVisitor>;
+    using Base::Base;
+
+    explicit ReplaceConstArrayAndTupleWithScalarVisitor(const ContextPtr & context, Int64 max_size_)
+        : Base(context)
+        , max_size(max_size_)
+    {}
+
+    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
+    {
+        if (auto * function_node = parent->as<FunctionNode>())
+        {
+            // Do not traverse "getScalar"
+            if (function_node->getFunctionName() == "__getScalar")
+                return false;
+
+            // Do not visit parameters node
+            if (function_node->getParametersNode() == child)
+                return false;
+
+            // Do not visit second argument of "in" functions
+            if (isNameOfInFunction(function_node->getFunctionName()))
+                if (function_node->getArguments().getNodes()[1] == child)
+                    return false;
+        }
+        return true;
+    }
+
+    void enterImpl(QueryTreeNodePtr & node)
+    {
+        if (max_size < 0)
+            return;
+
+        auto * constant_node = node->as<ConstantNode>();
+
+        if (!constant_node)
+            return;
+
+
+        const auto * col_const = typeid_cast<const ColumnConst *>(constant_node->getColumn().get());
+        const auto * col_array = typeid_cast<const ColumnArray *>(&col_const->getDataColumn());
+        const auto * col_tuple = typeid_cast<const ColumnTuple *>(&col_const->getDataColumn());
+        if (!col_array && !col_tuple)
+            return;
+
+        if (col_array && (max_size != 0 && col_array->getSize(0) <= static_cast<UInt64>(max_size)))
+            return;
+
+        if (col_tuple && (max_size != 0 && col_tuple->tupleSize() <= static_cast<UInt64>(max_size)))
+            return;
+
+        const auto & context = getContext();
+
+        auto node_without_alias = constant_node->clone();
+        node_without_alias->removeAlias();
+
+        QueryTreeNodePtrWithHash node_with_hash(node_without_alias);
+        auto str_hash = DB::toString(node_with_hash.hash);
+
+        Block scalar_block({{constant_node->getColumn(), constant_node->getResultType(), "_constant"}});
+
+        context->getQueryContext()->addScalar(str_hash, scalar_block);
+
+        auto scalar_query_hash_string = DB::toString(node_with_hash.hash);
+
+
+        auto scalar_query_hash_constant_node = std::make_shared<ConstantNode>(std::move(scalar_query_hash_string), std::make_shared<DataTypeString>());
+
+        auto get_scalar_function_node = std::make_shared<FunctionNode>("__getScalar");
+        get_scalar_function_node->getArguments().getNodes().push_back(std::move(scalar_query_hash_constant_node));
+
+        auto get_scalar_function = FunctionFactory::instance().get("__getScalar", context);
+        get_scalar_function_node->resolveAsFunction(get_scalar_function->build(get_scalar_function_node->getArgumentColumns()));
+
+        node = std::move(get_scalar_function_node);
+    }
+
+private:
+    Int64 max_size;
+};
+
 /** Execute subquery node and put result in mutable context temporary table.
   * Returns table node that is initialized with temporary table storage.
   */
@@ -458,6 +547,13 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     // are written into the query context and will be sent by the query pipeline.
     if (auto * query_node = query_tree_to_modify->as<QueryNode>())
         query_node->clearSettingsChanges();
+
+    auto max_array_size = planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_array_and_tuple_to_scalar_size];
+    if (max_array_size >= 0)
+    {
+        ReplaceConstArrayAndTupleWithScalarVisitor scalar_visitor(planner_context->getQueryContext(), max_array_size);
+        scalar_visitor.visit(query_tree_to_modify);
+    }
 
     return query_tree_to_modify;
 }

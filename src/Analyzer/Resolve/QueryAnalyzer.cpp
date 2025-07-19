@@ -1,7 +1,5 @@
 #include <Common/FieldVisitorToString.h>
 
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -121,7 +119,6 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsString implicit_table_at_top_level;
-    extern const SettingsInt64 optimize_const_array_and_tuple_to_scalar_size;
 }
 
 
@@ -800,128 +797,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     get_scalar_function_node->getArguments().getNodes().push_back(std::move(scalar_query_hash_constant_node));
 
     auto get_scalar_function = FunctionFactory::instance().get(get_scalar_function_name, mutable_context);
-    get_scalar_function_node->resolveAsFunction(get_scalar_function->build(get_scalar_function_node->getArgumentColumns()));
-
-    node = std::move(get_scalar_function_node);
-}
-
-bool isNodeInSubtree(const IQueryTreeNode * target, const IQueryTreeNode * root)
-{
-    if (!target || !root)
-        return false;
-
-    std::stack<const IQueryTreeNode *> stack;
-    stack.push(root);
-
-    while (!stack.empty())
-    {
-        const auto * current = stack.top();
-        stack.pop();
-
-        if (current == target)
-            return true;
-
-        for (const auto & child : current->getChildren())
-        {
-            if (child)
-                stack.push(child.get());
-        }
-    }
-    return false;
-}
-
-void QueryAnalyzer::convertConstantToScalarIfNeeded(QueryTreeNodePtr & node, IdentifierResolveScope & scope) const
-{
-    auto max_size = scope.context->getSettingsRef()[Setting::optimize_const_array_and_tuple_to_scalar_size];
-    if (max_size < 0)
-        return;
-
-    auto * constant_node = node->as<ConstantNode>();
-    if (!constant_node || !constant_node->hasSourceExpression())
-        return;
-
-    auto * nearest_query_scope = scope.getNearestQueryScope();
-    auto & source_expression = constant_node->getSourceExpression();
-
-    if (nearest_query_scope)
-    {
-        auto * query_node = nearest_query_scope->scope_node->as<QueryNode>();
-        // do not convert in the WHERE expression since it can prevent primary key optimization
-        if (isNodeInSubtree(source_expression.get(), query_node->getWhere().get()))
-            return;
-        // do not convert in table function
-        if (isNodeInSubtree(source_expression.get(), query_node->getJoinTree().get()))
-            return;
-    }
-
-    const auto * col_const = typeid_cast<const ColumnConst *>(constant_node->getColumn().get());
-    const auto * col_array = typeid_cast<const ColumnArray *>(&col_const->getDataColumn());
-    const auto * col_tuple = typeid_cast<const ColumnTuple *>(&col_const->getDataColumn());
-    if (!col_array && !col_tuple)
-        return;
-
-    if (col_array && (max_size != 0 && col_array->getSize(0) <= static_cast<UInt64>(max_size)))
-        return;
-
-    if (col_tuple && (max_size != 0 && col_tuple->tupleSize() <= static_cast<UInt64>(max_size)))
-        return;
-
-    for (int stack_size = scope.expressions_in_resolve_process_stack.size(), i = 1; i < stack_size; ++i)
-    {
-        const auto & parent_node = scope.expressions_in_resolve_process_stack[-i];
-        if (auto * parent_function = parent_node->as<FunctionNode>())
-        {
-            // do not convert second argument of "in" functions
-            if (isNameOfInFunction(parent_function->getFunctionName()) && isNodeInSubtree(source_expression.get(), parent_function->getArguments().getNodes()[1].get()))
-                return;
-            // do not convert functions' parameters
-            if (isNodeInSubtree(source_expression.get(), parent_function->getParametersNode().get()))
-                return;
-        }
-    }
-
-    auto * function = source_expression->as<FunctionNode>();
-
-    std::string get_scalar_function_name = "__getScalar";
-
-    if (!function || function->getFunctionName() == get_scalar_function_name)
-        return;
-
-    if (function->getFunctionName() == "_CAST")
-        return;
-
-    auto & context = scope.context;
-
-    auto node_without_alias = node->clone();
-    node_without_alias->removeAlias();
-
-    QueryTreeNodePtrWithHash node_with_hash(node_without_alias);
-    auto str_hash = DB::toString(node_with_hash.hash);
-
-    Block scalar_block({{constant_node->getColumn(), constant_node->getResultType(), function->getFunctionName()}});
-
-    if (context->hasQueryContext() && !context->getQueryContext()->hasScalar(str_hash))
-        context->getQueryContext()->addScalar(str_hash, scalar_block);
-
-    auto scalar_query_hash_string = DB::toString(node_with_hash.hash) + (only_analyze ? "_analyze" : "");
-
-    if (nearest_query_scope)
-    {
-        auto & nearest_query_scope_query_node = nearest_query_scope->scope_node->as<QueryNode &>();
-        auto & mutable_context = nearest_query_scope_query_node.getMutableContext();
-
-        if (mutable_context->hasQueryContext())
-            mutable_context->getQueryContext()->addScalar(scalar_query_hash_string, scalar_block);
-
-        mutable_context->addScalar(scalar_query_hash_string, scalar_block);
-    }
-
-    auto scalar_query_hash_constant_node = std::make_shared<ConstantNode>(std::move(scalar_query_hash_string), std::make_shared<DataTypeString>());
-
-    auto get_scalar_function_node = std::make_shared<FunctionNode>(get_scalar_function_name);
-    get_scalar_function_node->getArguments().getNodes().push_back(std::move(scalar_query_hash_constant_node));
-
-    auto get_scalar_function = FunctionFactory::instance().get(get_scalar_function_name, context);
     get_scalar_function_node->resolveAsFunction(get_scalar_function->build(get_scalar_function_node->getArgumentColumns()));
 
     node = std::move(get_scalar_function_node);
@@ -4089,7 +3964,6 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
         case QueryTreeNodeType::FUNCTION:
         {
             auto function_projection_names = resolveFunction(node, scope);
-            convertConstantToScalarIfNeeded(node, scope);
 
             if (result_projection_names.empty() || node->getNodeType() == QueryTreeNodeType::LIST)
                 result_projection_names = std::move(function_projection_names);
