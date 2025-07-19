@@ -86,7 +86,16 @@ private:
     /// Tasks.
     std::condition_variable tasks_cond_var;
     std::mutex tasks_mutex;
-    std::deque<TaskInfoPtr> tasks TSA_GUARDED_BY(tasks_mutex);
+
+    struct TasksGroup
+    {
+        size_t num_running = 0;
+        std::optional<size_t> runnable_list_pos;
+        std::deque<TaskInfoPtr> tasks;
+
+    };
+    std::unordered_map<UInt64, TasksGroup> tasks TSA_GUARDED_BY(tasks_mutex);
+    std::vector<UInt64> runnable_task_types TSA_GUARDED_BY(tasks_mutex);
     Threads threads;
 
     /// Delayed tasks.
@@ -101,6 +110,8 @@ private:
     CurrentMetrics::Metric tasks_metric;
     CurrentMetrics::Increment size_metric;
     std::string thread_name;
+
+    size_t max_parallel_tasks_per_type = 500;
 };
 
 
