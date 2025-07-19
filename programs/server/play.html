@@ -442,6 +442,7 @@
         {
             margin-top: 1rem;
             background-color: var(--element-background-color);
+            width: fit-content;
         }
 
         #data-table
@@ -449,13 +450,13 @@
             width: 100%;
             border-spacing: 0;
             background-color: var(--element-background-color);
-            table-layout: fixed;
         }
 
-        #data-table.transposed
+        #data-table.fixed
         {
-            table-layout: auto;
-        }
+            table-layout: fixed;
+            width: var(--table-width);
+         }
 
         /* Will be displayed when user specified custom format. */
         #data-unparsed
@@ -587,11 +588,10 @@
 
         .row-number
         {
+            width: 1%;
             text-align: right;
-            text-overflow: unset;
             background-color: var(--table-header-color);
             color: var(--misc-text-color);
-            width: var(--row-number-width);
         }
 
         div.empty-result
@@ -1413,7 +1413,7 @@ function clear()
     clearElement('error');
     clearElement('progress');
 
-    document.getElementById('data-table').classList.remove('transposed');
+    document.getElementById('data-table').classList.remove('fixed');
     document.getElementById('check-mark').display = 'none';
     document.getElementById('hourglass').display = 'none';
     document.getElementById('stats').innerText = '';
@@ -1540,8 +1540,6 @@ function transposeTableIfNeeded()
     let table = document.getElementById('data-table');
     if (Object.keys(header).length == 0 || table.rows.length > 1 || table.rows[0]?.cells.length <= 5) return;
 
-    table.classList.add('transposed');
-
     let heads = table.tHead.childNodes;
     let values = table.rows[0]?.cells;
     let num_cols = heads.length - 1;
@@ -1582,10 +1580,6 @@ async function finalizeRendering(query, is_table, is_explain_graph, extremes) {
     } else {
         if (extremes['min'] && extremes['max']) renderExtremes();
         if (is_table) transposeTableIfNeeded();
-        if (row_idx > 0) {
-            const width = String(row_idx).length + 2;
-            document.getElementById('data-table').style.setProperty('--row-number-width', `${width}ch`);
-        }
     }
 
     document.getElementById('check-mark').style.display = 'inline-block';
@@ -1682,17 +1676,47 @@ function updateProgress(progress) {
         rows && total_rows ? (100 * rows / total_rows) + '%' : '0');
 }
 
+function changeTableLayout() {
+    const table = document.getElementById('data-table');
+    const headers = table.querySelectorAll('th');
+
+    console.log(table)
+    console.log(table.style)
+    console.log(table.offsetWidth)
+    console.log(table.width)
+
+    document.getElementById('data-table').style.setProperty('--table-width', `${table.offsetWidth}px`);
+
+    columnWidths = [];
+    headers.forEach(header => {
+        columnWidths.push(header.offsetWidth);
+    });
+
+    table.classList.add('fixed');
+
+    headers.forEach((header, index) => {
+        header.style.width = `${columnWidths[index]}px`;
+    });
+}
+
+
 function appendHeaderResizer(header) {
     const resizer = document.createElement('div');
     resizer.className = 'resizer';
     resizer.addEventListener('mousedown', (e) => {
+
+        changeTableLayout();
+        
         let x = 0;
         let w = 0;
+        let table = document.getElementById('data-table');
 
         const mouseMoveHandler = (e) => {
             const dx = e.clientX - x;
             header.style.width = `${w + dx}px`;
-        };
+            if(dx < 0) {
+                table.style.setProperty('--table-width', `${table.offsetWidth + dx}px`)};
+            }
 
         const mouseUpHandler = () => {
             document.removeEventListener('mousemove', mouseMoveHandler);
