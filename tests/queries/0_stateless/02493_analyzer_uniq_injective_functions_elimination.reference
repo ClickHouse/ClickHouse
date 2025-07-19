@@ -6,15 +6,17 @@ QUERY id: 0
       FUNCTION id: 2, function_name: uniqCombined, function_type: aggregate, result_type: UInt64
         ARGUMENTS
           LIST id: 3, nodes: 1
-            FUNCTION id: 4, function_name: __getScalar, function_type: ordinary, result_type: Tuple(String)
-              ARGUMENTS
-                LIST id: 5, nodes: 1
-                  CONSTANT id: 6, constant_value: \'16258381743488751111_5500002079762923858\', constant_value_type: String
+            CONSTANT id: 4, constant_value: Tuple_(\'\'), constant_value_type: Tuple(String)
+              EXPRESSION
+                FUNCTION id: 5, function_name: tuple, function_type: ordinary, result_type: Tuple(String)
+                  ARGUMENTS
+                    LIST id: 6, nodes: 1
+                      CONSTANT id: 7, constant_value: \'\', constant_value_type: String
   JOIN TREE
-    TABLE_FUNCTION id: 7, alias: __table1, table_function_name: numbers
+    TABLE_FUNCTION id: 8, alias: __table1, table_function_name: numbers
       ARGUMENTS
-        LIST id: 8, nodes: 1
-          CONSTANT id: 9, constant_value: UInt64_1, constant_value_type: UInt8
+        LIST id: 9, nodes: 1
+          CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
 1
 QUERY id: 0
   PROJECTION COLUMNS

@@ -29,6 +29,8 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 
+#include <stack>
+
 
 namespace DB
 {
@@ -287,15 +289,15 @@ public:
     void enterImpl(QueryTreeNodePtr & node)
     {
         // Do not visit second argument of "in" functions
-        if (in_second_argument == node)
+        if (!in_second_argument.empty() && in_second_argument.top() == node)
         {
-            in_second_argument.reset();
+            in_second_argument.pop();
             return;
         }
 
         if (auto * function_node = node->as<FunctionNode>(); function_node && isNameOfInFunction(function_node->getFunctionName()))
         {
-            in_second_argument = function_node->getArguments().getNodes()[1];
+            in_second_argument.push(function_node->getArguments().getNodes()[1]);
             return;
         }
 
@@ -345,7 +347,7 @@ public:
 
 private:
     Int64 max_size = 0;
-    QueryTreeNodePtr in_second_argument;
+    std::stack<QueryTreeNodePtr> in_second_argument;
 };
 
 /** Execute subquery node and put result in mutable context temporary table.
