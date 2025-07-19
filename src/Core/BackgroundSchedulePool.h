@@ -111,7 +111,7 @@ private:
     CurrentMetrics::Increment size_metric;
     std::string thread_name;
 
-    size_t max_parallel_tasks_per_type = 128;
+    size_t max_parallel_tasks_per_type = 500;
 };
 
 
