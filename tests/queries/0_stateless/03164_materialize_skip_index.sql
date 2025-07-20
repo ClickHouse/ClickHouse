@@ -1,4 +1,5 @@
 SET use_skip_indexes_on_data_read = 0;
+SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS t_skip_index_insert;
 
