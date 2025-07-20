@@ -1,7 +1,9 @@
 #include <cassert>
 #include <new>
 #include "config.h"
+
 #include <Common/memory.h>
+#include <Common/AllocationInterceptors.h>
 
 #if defined(OS_DARWIN) && (USE_JEMALLOC)
 /// In case of OSX jemalloc register itself as a default zone allocator.
@@ -197,9 +199,9 @@ void operator delete[](void * ptr, std::size_t size, std::align_val_t align) noe
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
-extern "C" void * __wrap_malloc(size_t size)
+extern "C" void * __wrap_malloc(size_t size) // NOLINT
 {
-    extern void * __real_malloc(size_t size);
+    // printf("__wrap_malloc");
     AllocationTrace trace;
     std::size_t actual_size = Memory::trackMemory(size, trace);
     void * ptr = __real_malloc(size);
@@ -207,18 +209,8 @@ extern "C" void * __wrap_malloc(size_t size)
     return ptr;
 }
 
-extern "C" void __wrap_free(void * ptr)
+extern "C" void * __wrap_calloc(size_t number_of_members, size_t size) // NOLINT
 {
-    extern void __real_free(void * ptr);
-    AllocationTrace trace;
-    size_t actual_size = Memory::untrackMemory(ptr, trace);
-    trace.onFree(ptr, actual_size);
-    __real_free(ptr);
-}
-
-extern "C" void * __wrap_calloc(size_t number_of_members, size_t size)
-{
-    extern void * __real_calloc(size_t number_of_members, size_t size);
     AllocationTrace trace;
     size_t actual_size = Memory::trackMemory(number_of_members * size, trace);
     void * res = __real_calloc(number_of_members, size);
@@ -226,9 +218,8 @@ extern "C" void * __wrap_calloc(size_t number_of_members, size_t size)
     return res;
 }
 
-extern "C" void * __wrap_realloc(void * ptr, size_t size)
+extern "C" void * __wrap_realloc(void * ptr, size_t size) // NOLINT
 {
-    extern void * __real_realloc(void * ptr, size_t size);
     if (ptr)
     {
         AllocationTrace trace;
@@ -242,9 +233,8 @@ extern "C" void * __wrap_realloc(void * ptr, size_t size)
     return res;
 }
 
-extern "C" int __wrap_posix_memalign(void ** memptr, size_t alignment, size_t size)
+extern "C" int __wrap_posix_memalign(void ** memptr, size_t alignment, size_t size) // NOLINT
 {
-    extern int __real_posix_memalign(void ** memptr, size_t alignment, size_t size);
     AllocationTrace trace;
     size_t actual_size = Memory::trackMemory(size, trace);
     int res = __real_posix_memalign(memptr, alignment, size);
@@ -252,9 +242,8 @@ extern "C" int __wrap_posix_memalign(void ** memptr, size_t alignment, size_t si
     return res;
 }
 
-extern "C" void * __wrap_aligned_alloc(size_t alignment, size_t size)
+extern "C" void * __wrap_aligned_alloc(size_t alignment, size_t size) // NOLINT
 {
-    extern void * __real_aligned_alloc(size_t alignment, size_t size);
     AllocationTrace trace;
     size_t actual_size = Memory::trackMemory(size, trace);
     void * res = __real_aligned_alloc(alignment, size);
@@ -262,9 +251,8 @@ extern "C" void * __wrap_aligned_alloc(size_t alignment, size_t size)
     return res;
 }
 
-extern "C" void * __wrap_valloc(size_t size)
+extern "C" void * __wrap_valloc(size_t size) // NOLINT
 {
-    extern void * __real_valloc(size_t size);
     AllocationTrace trace;
     size_t actual_size = Memory::trackMemory(size, trace);
     void * res = __real_valloc(size);
@@ -272,9 +260,8 @@ extern "C" void * __wrap_valloc(size_t size)
     return res;
 }
 
-extern "C" void * __wrap_memalign(size_t alignment, size_t size)
+extern "C" void * __wrap_memalign(size_t alignment, size_t size) // NOLINT
 {
-    extern void * __real_memalign(size_t alignment, size_t size);
     AllocationTrace trace;
     size_t actual_size = Memory::trackMemory(size, trace);
     void * res = __real_memalign(alignment, size);
@@ -289,5 +276,20 @@ extern "C" size_t __wrap_sallocx(const void *ptr, int flags)
     return res;
 }
 
+extern "C" void __wrap_free(void * ptr) // NOLINT
+{
+    AllocationTrace trace;
+    size_t actual_size = Memory::untrackMemory(ptr, trace);
+    trace.onFree(ptr, actual_size);
+    __real_free(ptr);
+}
+
+extern "C" void __wrap_sdallocx(void * ptr, size_t size, int flags) // NOLINT
+{
+    AllocationTrace trace;
+    size_t actual_size = Memory::untrackMemory(ptr, trace, size);
+    trace.onFree(ptr, actual_size);
+    __real_sdallocx(ptr, size, flags);
+}
 
 #pragma clang diagnostic pop
