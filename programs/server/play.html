@@ -1308,7 +1308,6 @@ async function restoreFromHistory(state) {
     if (is_explain_graph) {
         await renderGraph();
     } else {
-    if (is_raw) {
         if (extremes['min'] && extremes['max']) renderExtremes();
         if (is_table) transposeTableIfNeeded();
     }
