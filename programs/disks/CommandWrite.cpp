@@ -18,8 +18,11 @@ public:
     {
         command_name = "write";
         description = "Write a file from `path-from` to `path-to`";
-        options_description.add_options()("path-from", po::value<String>(), "file from which we are reading, defaults to `stdin` (input from `stdin` is finished by Ctrl+D)")(
-            "path-to", po::value<String>(), "file to which we are writing (mandatory, positional)");
+        options_description.add_options()
+            ("path-from", po::value<String>(), "file from which we are reading, defaults to `stdin` (input from `stdin` is finished by Ctrl+D)")
+            ("path-to", po::value<String>(), "file to which we are writing (mandatory, positional)")
+            ("append", po::value<bool>()->zero_tokens()->default_value(false), "Append")
+        ;
         positional_options_description.add("path-to", 1);
     }
 
@@ -29,8 +32,8 @@ public:
         auto disk = client.getCurrentDiskWithPath();
 
         std::optional<String> path_from = getValueFromCommandLineOptionsWithOptional<String>(options, "path-from");
-
         String path_to = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-to"));
+        bool append = getValueFromCommandLineOptionsThrow<bool>(options, "append");
 
         auto in = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
         {
@@ -46,7 +49,8 @@ public:
         }();
 
         LOG_INFO(log, "Writing file from '{}' to '{}' at disk '{}'", path_from.value_or("stdin"), path_to, disk.getDisk()->getName());
-        auto out = disk.getDisk()->writeFile(path_to);
+        auto mode = append ? WriteMode::Append : WriteMode::Rewrite;
+        auto out = disk.getDisk()->writeFile(path_to, /*buf_size=*/ DBMS_DEFAULT_BUFFER_SIZE, mode);
         copyData(*in, *out);
         out->finalize();
     }
