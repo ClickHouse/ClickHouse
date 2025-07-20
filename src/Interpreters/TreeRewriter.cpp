@@ -1408,10 +1408,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     // expand LIMIT BY ALL
     if (select_query->limit_by_all) 
-    {
         expandLimitByAll(select_query);
-    }
-        
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
