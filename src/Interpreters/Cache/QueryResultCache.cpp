@@ -688,7 +688,7 @@ void QueryResultCacheWriter::finalizeWrite()
     {
         if (key.is_compressed)
             query_result->chunks = std::move(uncompressed_chunks);
-    
+
         cache->writeDisk(key, query_result);
     }
 
@@ -724,7 +724,7 @@ QueryResultCacheReader::QueryResultCacheReader(QueryResultCachePtr cache_, const
         ProfileEvents::increment(ProfileEvents::QueryCacheHits);
     else
         ProfileEvents::increment(ProfileEvents::QueryCacheMisses);
-    
+
     if (!entry.has_value() && enable_reads_from_query_cache_disk)
     {
         entry = cache_->readFromDisk(key);
@@ -771,7 +771,7 @@ QueryResultCache::QueryResultCache(
     size_t max_entries,
     size_t max_entry_size_in_bytes_,
     size_t max_entry_size_in_rows_,
-    size_t max_disk_size_in_bytes, 
+    size_t max_disk_size_in_bytes,
     size_t max_disk_entries,
     DiskPtr & disk_,
     const String & path_)
@@ -797,7 +797,7 @@ void QueryResultCache::updateConfiguration(
     size_t max_entries,
     size_t max_entry_size_in_bytes_,
     size_t max_entry_size_in_rows_,
-    size_t max_disk_size_in_bytes, 
+    size_t max_disk_size_in_bytes,
     size_t max_disk_entries)
 {
     std::lock_guard lock(mutex);
@@ -844,9 +844,9 @@ QueryResultCacheWriter QueryResultCache::createWriter(
 
 bool QueryResultCache::isStale(const Key & key)
 {
-    if (auto entry = memory_cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key)){
+    if (auto entry = memory_cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
         return false;
-    }
+
     return true;
 }
 
@@ -859,7 +859,7 @@ void QueryResultCache::writeDisk(const Key & key, const QueryResultCache::Cache:
 {
     if (!disk)
         return;
-    
+
     auto entry_path = fs::path(path) / key.getKeyPath();
     auto disk_entry = std::shared_ptr<DiskEntry>(
         new DiskEntry,
@@ -878,13 +878,13 @@ void QueryResultCache::writeDisk(const Key & key, const QueryResultCache::Cache:
     );
 
     disk->createDirectories(entry_path);
-    
+
     {
         auto entry_file = disk->writeFile(entry_path / "key_metadata.txt");
         key.serialize(*entry_file);
         entry_file->finalize();
     }
-    
+
     serializeEntry(key, entry, disk_entry);
     disk_cache.set(key, disk_entry);
     LOG_TRACE(logger, "Stored query result of query {} to disk, size {}", doubleQuoteString(key.query_string), disk_cache.count());
@@ -899,9 +899,8 @@ std::optional<QueryResultCache::Cache::KeyMapped> QueryResultCache::readFromMemo
     const auto & entry_key = entry->key;
     const auto & entry_mapped = entry->mapped;
 
-    if (!checkAccess(entry_key, key)) {
+    if (!checkAccess(entry_key, key))
         return std::nullopt;
-    }
 
     auto res = std::make_shared<Entry>();
 
@@ -1186,7 +1185,8 @@ bool QueryResultCache::checkAccess(const Key & entry_key, const Key & key) const
 
 void QueryResultCache::clear(const std::optional<String> & type, const std::optional<String> & tag)
 {
-    auto clear_cache = [tag](auto & cache) {
+    auto clear_cache = [tag](auto & cache)
+    {
         if (tag)
         {
             using CacheType = std::decay_t<decltype(cache)>;

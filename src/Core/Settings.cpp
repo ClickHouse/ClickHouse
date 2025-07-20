@@ -4875,17 +4875,17 @@ Possible values:
 )", 0) \
     DECLARE(Bool, enable_writes_to_query_cache_disk, false, R"(
 If turned on, results of `SELECT` queries are stored on disk as part of the [query cache](../query-cache.md).
-    
+
 Possible values:
-    
+
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
     DECLARE(Bool, enable_reads_from_query_cache_disk, false, R"(
 If turned on, results of `SELECT` queries are retrieved from disk as part of the [query cache](../query-cache.md).
-    
+
 Possible values:
-    
+
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \

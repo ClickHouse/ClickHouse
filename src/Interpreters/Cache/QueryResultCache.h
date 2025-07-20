@@ -120,7 +120,7 @@ public:
             const Settings & settings,
             const String & query_id_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
-        
+
         explicit Key(IASTHash ast_hash_);
 
         Key(IASTHash ast_hash_,
@@ -179,11 +179,11 @@ public:
     using DiskCache = CacheBase<Key, DiskEntry, KeyHasher, DiskEntryWeight>;
 
     QueryResultCache(
-        size_t max_size_in_bytes, 
+        size_t max_size_in_bytes,
         size_t max_entries,
         size_t max_entry_size_in_bytes_,
         size_t max_entry_size_in_rows_,
-        size_t max_disk_size_in_bytes, 
+        size_t max_disk_size_in_bytes,
         size_t max_disk_entries,
         DiskPtr & disk_,
         const String & path_);
@@ -195,7 +195,7 @@ public:
         size_t max_entries,
         size_t max_entry_size_in_bytes_,
         size_t max_entry_size_in_rows_,
-        size_t max_disk_size_in_bytes, 
+        size_t max_disk_size_in_bytes,
         size_t max_disk_entries);
 
     QueryResultCacheReader createReader(const Key & key, bool enable_reads_from_query_cache_disk);

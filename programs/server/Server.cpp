@@ -1840,7 +1840,7 @@ try
     size_t query_result_cache_max_disk_entries = config().getUInt64("query_cache.max_disk_entries", DEFAULT_QUERY_RESULT_CACHE_MAX_DISK_ENTRIES);
     String query_result_cache_disk = config().getString("query_cache.disk", DEFAULT_QUERY_RESULT_CACHE_DISK);
     String query_result_cache_path = config().getString("query_cache.path", DEFAULT_QUERY_RESULT_CACHE_PATH);
-    
+
     if (query_result_cache_max_size_in_bytes > max_cache_size)
     {
         query_result_cache_max_size_in_bytes = max_cache_size;

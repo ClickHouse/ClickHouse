@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Context.h>
-#include "base/types.h"
 
 
 namespace DB
@@ -75,7 +74,7 @@ void StorageSystemQueryResultCache::fillData(MutableColumns & res_columns, Conte
     fill_cache_entries(query_result_cache->dumpMemoryCache(),
         QueryResultCache::EntryWeight(),
         QueryResultCacheType::Memory);
-        
+
     fill_cache_entries(query_result_cache->dumpDiskCache(),
         QueryResultCache::DiskEntryWeight(),
         QueryResultCacheType::Disk);
