@@ -499,7 +499,7 @@ macro (clickhouse_add_executable target)
         add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
     endif ()
 
-    set_target_properties(${target} PROPERTIES LINK_FLAGS "-Wl,--wrap=malloc,--wrap=free,--wrap=calloc,--wrap=realloc,--wrap=aligned_alloc,--wrap=posix_memalign,--wrap=valloc,--wrap=memalign,--wrap=sallocx")
+    set_target_properties(${target} PROPERTIES LINK_FLAGS "-Wl,--wrap=malloc,--wrap=free,--wrap=calloc,--wrap=realloc,--wrap=aligned_alloc,--wrap=posix_memalign,--wrap=valloc,--wrap=memalign,--wrap=sallocx,--wrap=sdallocx")
 
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
