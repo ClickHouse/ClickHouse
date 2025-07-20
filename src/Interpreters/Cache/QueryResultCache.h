@@ -124,7 +124,7 @@ public:
         explicit Key(IASTHash ast_hash_);
 
         Key(IASTHash ast_hash_,
-            Block header_,
+            SharedHeader header_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
             bool is_shared_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
@@ -212,6 +212,7 @@ public:
 
     void writeDisk(const Key & key, const QueryResultCache::Cache::MappedPtr & entry);
 
+    /// Returns a cloned copy of the cached content, not the cached object itself.
     std::optional<QueryResultCache::Cache::KeyMapped> readFromMemory(const Key & key);
     std::optional<QueryResultCache::Cache::KeyMapped> readFromDisk(const Key & key);
 
@@ -340,7 +341,7 @@ private:
     using Cache = QueryResultCache::Cache;
 
     QueryResultCacheReader(QueryResultCachePtr cache_, const Cache::Key & key, bool enable_reads_from_query_cache_disk, const std::lock_guard<std::mutex> &);
-    void buildSourceFromChunks(SharedHeader header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
+    void buildSourceFromChunks(SharedHeader header, Chunks && chunks, std::optional<Chunk> & totals, std::optional<Chunk> & extremes);
 
     std::unique_ptr<SourceFromChunks> source_from_chunks;
     std::unique_ptr<SourceFromChunks> source_from_chunks_totals;

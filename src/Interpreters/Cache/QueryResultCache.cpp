@@ -337,7 +337,7 @@ QueryResultCache::Key::Key(IASTHash ast_hash_)
 
 QueryResultCache::Key::Key(
     IASTHash ast_hash_,
-    Block header_,
+    SharedHeader header_,
     std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
     bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
@@ -357,9 +357,6 @@ QueryResultCache::Key::Key(
     , tag(tag_)
 {
 }
-
-// static constexpr std::string_view format_version_txt = "format_version.txt";
-// static constexpr uint32_t current_version = 1;
 
 static constexpr auto * token_user_id = "user_id: ";
 static constexpr auto * token_current_user_roles = "current_user_roles: ";
@@ -701,21 +698,21 @@ void QueryResultCacheWriter::finalizeWrite()
 }
 
 /// Creates a source processor which serves result chunks stored in the query result cache, and separate sources for optional totals/extremes.
-void QueryResultCacheReader::buildSourceFromChunks(SharedHeader header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes)
+void QueryResultCacheReader::buildSourceFromChunks(SharedHeader header, Chunks && chunks, std::optional<Chunk> & totals, std::optional<Chunk> & extremes)
 {
     source_from_chunks = std::make_unique<SourceFromChunks>(header, std::move(chunks));
 
     if (totals.has_value())
     {
         Chunks chunks_totals;
-        chunks_totals.emplace_back(std::move(*totals));
+        chunks_totals.push_back(std::move(*totals));
         source_from_chunks_totals = std::make_unique<SourceFromChunks>(header, std::move(chunks_totals));
     }
 
     if (extremes.has_value())
     {
         Chunks chunks_extremes;
-        chunks_extremes.emplace_back(std::move(*extremes));
+        chunks_extremes.push_back(std::move(*extremes));
         source_from_chunks_extremes = std::make_unique<SourceFromChunks>(header, std::move(chunks_extremes));
     }
 }
@@ -740,8 +737,8 @@ QueryResultCacheReader::QueryResultCacheReader(QueryResultCachePtr cache_, const
     if (!entry.has_value())
         return;
 
-    const auto & entry_key = entry->key;
-    const auto & entry_mapped = entry->mapped;
+    auto & entry_key = entry->key;
+    auto & entry_mapped = entry->mapped;
 
     buildSourceFromChunks(entry_key.header, std::move(entry_mapped->chunks), entry_mapped->totals, entry_mapped->extremes);
     LOG_TRACE(logger, "Query result found for query {}", doubleQuoteString(key.query_string));
@@ -977,8 +974,9 @@ void QueryResultCache::serializeEntry(const Key & key, const QueryResultCache::C
     auto entry_path = path / key.getKeyPath();
     auto write_chunk = [](const Chunk & chunk, NativeWriter & writer)
     {
-        Block block = writer.getHeader();
         const Columns & columns = chunk.getColumns();
+        SharedHeader header = writer.getHeader();
+        Block block = header->cloneEmpty();
         block.setColumns(columns);
         writer.write(block);
     };
@@ -1145,7 +1143,7 @@ void QueryResultCache::loadEntrysFromDisk()
                     });
 
                 auto [header, entry, disk_entry_] = deserializeEntry(key);
-                key.header = header;
+                key.header = std::make_shared<const Block>(header);
 
                 if (key.is_compressed)
                     compressEntry(entry);
