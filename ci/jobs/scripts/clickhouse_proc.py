@@ -726,6 +726,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
     def prepare_logs(self, all=False):
         res = self._get_logs_archives_server()
+        if Path(self.GDB_LOG).exists():
+            res.append(self.GDB_LOG)
         if all:
             res += self.debug_artifacts
             res += self.dump_system_tables()
@@ -735,8 +737,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 res.append(self.MINIO_LOG)
             if Path(self.AZURITE_LOG).exists():
                 res.append(self.AZURITE_LOG)
-            if Path(self.GDB_LOG).exists():
-                res.append(self.GDB_LOG)
             if Path(self.DMESG_LOG).exists():
                 res.append(self.DMESG_LOG)
             if Path(self.CH_LOCAL_ERR_LOG).exists():
