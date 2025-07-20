@@ -6785,6 +6785,7 @@ If ClickHouse performs rescoring for queries that use the vector similarity inde
 Without rescoring, the vector similarity index returns the rows containing the best matches directly.
 With rescoring, the rows are extrapolated to granule level and all rows in the granule are checked again.
 In most situations, rescoring helps only marginally with accuracy but it deteriorates performance of vector search queries significantly.
+Note: A query run without rescoring and with parallel replicas enabled may fall back to rescoring.
 )", BETA) \
     DECLARE(VectorSearchFilterStrategy, vector_search_filter_strategy, VectorSearchFilterStrategy::AUTO, R"(
 If a vector search query has a WHERE clause, this setting determines if it is evaluated first (pre-filtering) OR if the vector similarity index is checked first (post-filtering). Possible values:
