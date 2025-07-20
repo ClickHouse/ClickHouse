@@ -442,6 +442,10 @@
         {
             margin-top: 1rem;
             background-color: var(--element-background-color);
+        }
+
+        #data_div.fixed
+        {
             width: fit-content;
         }
 
@@ -571,13 +575,6 @@
             white-space: pre-wrap;
             max-width: none;
             outline: 2px solid var(--border-color-selected);
-        }
-
-        td.transposed
-        {
-            max-width: none;
-            overflow: auto;
-            white-space: pre-wrap;
         }
 
         td.empty-result
@@ -1414,6 +1411,7 @@ function clear()
     clearElement('progress');
 
     document.getElementById('data-table').classList.remove('fixed');
+    document.getElementById('data_div').classList.remove('fixed');
     document.getElementById('check-mark').display = 'none';
     document.getElementById('hourglass').display = 'none';
     document.getElementById('stats').innerText = '';
@@ -1550,6 +1548,7 @@ function transposeTableIfNeeded()
         let th = heads[1];
         th.className = 'right';
         th.style.width = '0';
+        th.removeChild(th.querySelector('.resizer'))
         tr.appendChild(th);
         if (values) {
             let td = values[1];
@@ -1680,11 +1679,6 @@ function changeTableLayout() {
     const table = document.getElementById('data-table');
     const headers = table.querySelectorAll('th');
 
-    console.log(table)
-    console.log(table.style)
-    console.log(table.offsetWidth)
-    console.log(table.width)
-
     document.getElementById('data-table').style.setProperty('--table-width', `${table.offsetWidth}px`);
 
     columnWidths = [];
@@ -1693,6 +1687,7 @@ function changeTableLayout() {
     });
 
     table.classList.add('fixed');
+    document.getElementById('data_div').classList.add('fixed');
 
     headers.forEach((header, index) => {
         header.style.width = `${columnWidths[index]}px`;
