@@ -67,13 +67,15 @@ struct VersionMetadata
     void read(ReadBuffer & buf);
 
     enum WhichCSN { CREATION, REMOVAL };
-    void writeCSN(WriteBuffer & buf, WhichCSN which_csn, bool internal = false) const;
-    void writeRemovalTID(WriteBuffer & buf, bool clear = false) const;
 
     String toString(bool one_line = true) const;
 
     LoggerPtr log;
     VersionMetadata();
+
+private:
+    void writeCSN(WriteBuffer & buf, WhichCSN which_csn, bool internal = false) const;
+    void writeRemovalTID(WriteBuffer & buf, bool clear = false) const;
 };
 
 DataTypePtr getTransactionIDDataType();

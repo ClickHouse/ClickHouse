@@ -1232,7 +1232,7 @@ void IMergeTreeDataPart::writeColumns(const NamesAndTypesList & columns_, const 
     });
 }
 
-void IMergeTreeDataPart::writeVersionMetadata(const VersionMetadata & version_, bool fsync_part_dir) const
+void IMergeTreeDataPart::writeVersionMetadata(const VersionMetadata & version_, bool fsync) const
 {
     static constexpr auto filename = TXN_VERSION_METADATA_FILE_NAME;
     static constexpr auto tmp_filename = "txn_version.txt.tmp";
@@ -1249,11 +1249,12 @@ void IMergeTreeDataPart::writeVersionMetadata(const VersionMetadata & version_, 
             auto buf = data_part_storage.writeFile(tmp_filename, 256, write_settings);
             version_.write(*buf);
             buf->finalize();
-            buf->sync();
+            if (fsync)
+                buf->sync();
         }
 
         SyncGuardPtr sync_guard;
-        if (fsync_part_dir)
+        if ((*storage.getSettings())[MergeTreeSetting::fsync_part_directory])
             sync_guard = data_part_storage.getDirectorySyncGuard();
         data_part_storage.replaceFile(tmp_filename, filename);
     }
@@ -1798,7 +1799,7 @@ void IMergeTreeDataPart::storeVersionMetadata(bool force) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage does not support transaction. It is a bug");
 
     LOG_TEST(storage.log, "Writing version for {} (creation: {}, removal {}, creation csn {})", name, version.creation_tid, version.removal_tid, version.creation_csn.load());
-    writeVersionMetadata(version, (*storage.getSettings())[MergeTreeSetting::fsync_part_directory]);
+    writeVersionMetadata(version, /*fsync=*/ true);
 }
 
 void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN which_csn) const
@@ -1809,21 +1810,19 @@ void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN wh
     chassert(!(which_csn == VersionMetadata::WhichCSN::REMOVAL && (version.removal_tid.isPrehistoric() || version.removal_tid.isEmpty())));
     chassert(!(which_csn == VersionMetadata::WhichCSN::REMOVAL && version.removal_csn == 0));
 
-    /// Small enough appends to file are usually atomic,
-    /// so we append new metadata instead of rewriting file to reduce number of fsyncs.
     /// We don't need to do fsync when writing CSN, because in case of hard restart
     /// we will be able to restore CSN from transaction log in Keeper.
-
-    auto out = getDataPartStorage().writeTransactionFile(WriteMode::Append);
-    version.writeCSN(*out, which_csn);
-    out->finalize();
+    ///
+    /// NOTE: we can just use writeCSN(which_csn) for local disks here,
+    /// but for now, to keep code simpler there will be no such optimization, since the code is not well tested.
+    writeVersionMetadata(version, /*fsync=*/ false);
 }
 
 void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
 {
     chassert(!version.creation_tid.isEmpty());
     chassert(version.removal_csn == 0 || (version.removal_csn == Tx::PrehistoricCSN && version.removal_tid.isPrehistoric()));
-    chassert(!version.removal_tid.isEmpty());
+    chassert((clear && version.removal_tid.isEmpty()) || (!clear && !version.removal_tid.isEmpty()));
 
     if (version.creation_tid.isPrehistoric() && !clear)
     {
@@ -1844,13 +1843,11 @@ void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
     else
         LOG_TEST(storage.log, "Appending removal TID for {} (creation: {}, removal {})", name, version.creation_tid, version.removal_tid);
 
-    auto out = getDataPartStorage().writeTransactionFile(WriteMode::Append);
-    version.writeRemovalTID(*out, clear);
-    out->finalize();
-
     /// fsync is not required when we clearing removal TID, because after hard restart we will fix metadata
-    if (!clear)
-        out->sync();
+    bool fsync = !clear;
+    /// NOTE: we can just use writeRemovalTID(clear) for local disks here,
+    /// but for now, to keep code simpler there will be no such optimization, since the code is not well tested.
+    writeVersionMetadata(version, /*fsync=*/ fsync);
 }
 
 static std::unique_ptr<ReadBufferFromFileBase> openForReading(const IDataPartStorage & part_storage, const String & filename)

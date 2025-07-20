@@ -307,8 +307,8 @@ bool MergeTreeTransaction::rollback() noexcept
     {
         /// Clear removal_tid from version metadata file, so we will not need to distinguish TIDs that were not committed
         /// and TIDs that were committed long time ago and were removed from the log on log cleanup.
-        part->appendRemovalTIDToVersionMetadata(/* clear */ true);
         part->version.unlockRemovalTID(tid, TransactionInfoContext{part->storage.getStorageID(), part->name});
+        part->appendRemovalTIDToVersionMetadata(/* clear */ true);
     }
 
     assert([&]()
