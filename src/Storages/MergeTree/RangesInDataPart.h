@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 
 
 namespace DB
@@ -42,6 +43,14 @@ struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescripti
     void merge(const RangesInDataPartsDescription & other);
 };
 
+
+/// A vehicle which transports additional information to optimize searches
+struct RangesInDataPartReadHints
+{
+    /// Currently only information related to vector search
+    std::optional<NearestNeighbours> vector_search_results;
+};
+
 struct RangesInDataPart
 {
     DataPartPtr data_part;
@@ -50,6 +59,7 @@ struct RangesInDataPart
     size_t part_starting_offset_in_query;
     MarkRanges ranges;
     MarkRanges exact_ranges;
+    RangesInDataPartReadHints read_hints;
 
     RangesInDataPart(
         const DataPartPtr & data_part_,

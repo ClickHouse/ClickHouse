@@ -40,6 +40,7 @@ namespace Setting
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsBool query_plan_join_shard_by_pk_ranges;
     extern const SettingsBool query_plan_optimize_lazy_materialization;
+    extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsOverflowMode transfer_overflow_mode;
@@ -139,8 +140,9 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization] && from[Setting::allow_experimental_analyzer];
     max_limit_for_lazy_materialization = from[Setting::query_plan_max_limit_for_lazy_materialization];
 
-    vector_search_filter_strategy = from[Setting::vector_search_filter_strategy].value;
     max_limit_for_vector_search_queries = from[Setting::max_limit_for_vector_search_queries].value;
+    vector_search_with_rescoring = from[Setting::vector_search_with_rescoring];
+    vector_search_filter_strategy = from[Setting::vector_search_filter_strategy].value;
 
     query_plan_join_shard_by_pk_ranges = from[Setting::query_plan_join_shard_by_pk_ranges].value;
 
