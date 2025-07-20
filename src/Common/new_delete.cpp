@@ -193,3 +193,101 @@ void operator delete[](void * ptr, std::size_t size, std::align_val_t align) noe
     trace.onFree(ptr, actual_size);
     Memory::deleteSized(ptr, size, align);
 }
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+
+extern "C" void * __wrap_malloc(size_t size)
+{
+    extern void * __real_malloc(size_t size);
+    AllocationTrace trace;
+    std::size_t actual_size = Memory::trackMemory(size, trace);
+    void * ptr = __real_malloc(size);
+    trace.onAlloc(ptr, actual_size);
+    return ptr;
+}
+
+extern "C" void __wrap_free(void * ptr)
+{
+    extern void __real_free(void * ptr);
+    AllocationTrace trace;
+    size_t actual_size = Memory::untrackMemory(ptr, trace);
+    trace.onFree(ptr, actual_size);
+    __real_free(ptr);
+}
+
+extern "C" void * __wrap_calloc(size_t number_of_members, size_t size)
+{
+    extern void * __real_calloc(size_t number_of_members, size_t size);
+    AllocationTrace trace;
+    size_t actual_size = Memory::trackMemory(number_of_members * size, trace);
+    void * res = __real_calloc(number_of_members, size);
+    trace.onAlloc(res, actual_size);
+    return res;
+}
+
+extern "C" void * __wrap_realloc(void * ptr, size_t size)
+{
+    extern void * __real_realloc(void * ptr, size_t size);
+    if (ptr)
+    {
+        AllocationTrace trace;
+        size_t actual_size = Memory::untrackMemory(ptr, trace);
+        trace.onFree(ptr, actual_size);
+    }
+    AllocationTrace trace;
+    size_t actual_size = Memory::trackMemory(size, trace);
+    void * res = __real_realloc(ptr, size);
+    trace.onAlloc(res, actual_size);
+    return res;
+}
+
+extern "C" int __wrap_posix_memalign(void ** memptr, size_t alignment, size_t size)
+{
+    extern int __real_posix_memalign(void ** memptr, size_t alignment, size_t size);
+    AllocationTrace trace;
+    size_t actual_size = Memory::trackMemory(size, trace);
+    int res = __real_posix_memalign(memptr, alignment, size);
+    trace.onAlloc(*memptr, actual_size);
+    return res;
+}
+
+extern "C" void * __wrap_aligned_alloc(size_t alignment, size_t size)
+{
+    extern void * __real_aligned_alloc(size_t alignment, size_t size);
+    AllocationTrace trace;
+    size_t actual_size = Memory::trackMemory(size, trace);
+    void * res = __real_aligned_alloc(alignment, size);
+    trace.onAlloc(res, actual_size);
+    return res;
+}
+
+extern "C" void * __wrap_valloc(size_t size)
+{
+    extern void * __real_valloc(size_t size);
+    AllocationTrace trace;
+    size_t actual_size = Memory::trackMemory(size, trace);
+    void * res = __real_valloc(size);
+    trace.onAlloc(res, actual_size);
+    return res;
+}
+
+extern "C" void * __wrap_memalign(size_t alignment, size_t size)
+{
+    extern void * __real_memalign(size_t alignment, size_t size);
+    AllocationTrace trace;
+    size_t actual_size = Memory::trackMemory(size, trace);
+    void * res = __real_memalign(alignment, size);
+    trace.onAlloc(res, actual_size);
+    return res;
+}
+
+extern "C" size_t __wrap_sallocx(const void *ptr, int flags)
+{
+    extern size_t __real_sallocx(const void *ptr, int flags);
+    size_t res = __real_sallocx(ptr, flags);
+    return res;
+}
+
+
+#pragma clang diagnostic pop
