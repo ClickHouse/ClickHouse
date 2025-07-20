@@ -476,7 +476,7 @@ REGISTER_FUNCTION(TimeDiff)
     FunctionDocumentation::Description description = R"(
 Returns the count of the specified `unit` boundaries crossed between the `startdate` and the `enddate`.
 The difference is calculated using relative units. For example, the difference between 2021-12-29 and 2022-01-01 is 3 days for unit day
-(see [`toRelativeDayNum`](#toRelativeDayNum)), 1 month for unit month (see [`toRelativeMonthNum`](#toRelativeMonthnum)) and 1 year for unit year
+(see [`toRelativeDayNum`](#toRelativeDayNum)), 1 month for unit month (see [`toRelativeMonthNum`](#toRelativeMonthNum)) and 1 year for unit year
 (see [`toRelativeYearNum`](#toRelativeYearNum)).
 
 If the unit `week` was specified, then `date_diff` assumes that weeks start on Monday.
