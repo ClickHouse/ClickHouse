@@ -29,12 +29,14 @@ SETTINGS
 
 INSERT INTO {{ table }} SELECT * FROM generateRandom() LIMIT 400;
 
-SELECT * FROM {{ table }} FORMAT Null SETTINGS filesystem_prefetches_limit = 5;
-SELECT * FROM {{ table }} FORMAT Null SETTINGS filesystem_prefetches_limit = 10;
+SELECT * FROM {{ table }} FORMAT Null SETTINGS allow_prefetched_read_pool_for_remote_filesystem = 0, filesystem_prefetches_limit = 5;
+SELECT * FROM {{ table }} FORMAT Null SETTINGS allow_prefetched_read_pool_for_remote_filesystem = 0, filesystem_prefetches_limit = 10;
+SELECT * FROM {{ table }} FORMAT Null SETTINGS allow_prefetched_read_pool_for_remote_filesystem = 1, filesystem_prefetches_limit = 5;
+SELECT * FROM {{ table }} FORMAT Null SETTINGS allow_prefetched_read_pool_for_remote_filesystem = 1, filesystem_prefetches_limit = 10;
 
 {% endfor %}
 
 SYSTEM FLUSH LOGS query_log;
-SELECT normalizeQuery(query), Settings['filesystem_prefetches_limit'], ProfileEvents['RemoteFSPrefetches'] FROM system.query_log
+SELECT normalizeQuery(query), Settings['allow_prefetched_read_pool_for_remote_filesystem'], Settings['filesystem_prefetches_limit'], ProfileEvents['RemoteFSPrefetches'] FROM system.query_log
 WHERE current_database = currentDatabase() AND type != 'QueryStart' AND query_kind = 'Select'
 ORDER BY event_time_microseconds;
