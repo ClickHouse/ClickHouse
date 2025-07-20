@@ -137,7 +137,12 @@ public:
     /// Like the previous one, but avoids extra copying if Field is in a container, for example.
     virtual void get(size_t n, Field & res) const = 0;
 
-    virtual std::pair<String, DataTypePtr> getValueNameAndType(size_t) const = 0;
+    struct Options
+    {
+        Int64 optimize_const_array_and_tuple_name_size = -1;
+    };
+
+    virtual std::pair<String, DataTypePtr> getValueNameAndType(size_t, const Options &) const = 0;
 
     /// If possible, returns pointer to memory chunk which contains n-th element (if it isn't possible, throws an exception)
     /// Is used to optimize some computations (in aggregation, for example).

@@ -92,7 +92,7 @@ void ColumnFunction::get(size_t n, Field & res) const
         res_tuple.push_back((*captured_columns[i].column)[n]);
 }
 
-std::pair<String, DataTypePtr> ColumnFunction::getValueNameAndType(size_t n) const
+std::pair<String, DataTypePtr> ColumnFunction::getValueNameAndType(size_t n, const Options & options) const
 {
     size_t size = captured_columns.size();
 
@@ -102,7 +102,7 @@ std::pair<String, DataTypePtr> ColumnFunction::getValueNameAndType(size_t n) con
 
     for (size_t i = 0; i < size; ++i)
     {
-        const auto & [value, type] = captured_columns[i].column->getValueNameAndType(n);
+        const auto & [value, type] = captured_columns[i].column->getValueNameAndType(n, options);
         element_types.push_back(type);
         if (i > 0)
             value_name += ", ";

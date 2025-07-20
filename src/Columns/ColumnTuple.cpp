@@ -155,7 +155,7 @@ void ColumnTuple::get(size_t n, Field & res) const
         res_tuple.push_back((*columns[i])[n]);
 }
 
-std::pair<String, DataTypePtr> ColumnTuple::getValueNameAndType(size_t n) const
+std::pair<String, DataTypePtr> ColumnTuple::getValueNameAndType(size_t n, const Options & options) const
 {
     const size_t tuple_size = columns.size();
 
@@ -168,7 +168,7 @@ std::pair<String, DataTypePtr> ColumnTuple::getValueNameAndType(size_t n) const
 
         for (size_t i = 0; i < tuple_size; ++i)
         {
-            const auto & [value, type] = columns[i]->getValueNameAndType(n);
+            const auto & [value, type] = columns[i]->getValueNameAndType(n, options);
             element_types.push_back(type);
             if (i > 0)
                 value_name += ", ";

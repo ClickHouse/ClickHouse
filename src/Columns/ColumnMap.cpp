@@ -88,7 +88,7 @@ void ColumnMap::get(size_t n, Field & res) const
         map.push_back(getNestedData()[offset + i]);
 }
 
-std::pair<String, DataTypePtr> ColumnMap::getValueNameAndType(size_t n) const
+std::pair<String, DataTypePtr> ColumnMap::getValueNameAndType(size_t n, const Options & options) const
 {
     const auto & offsets = getNestedColumn().getOffsets();
     size_t offset = offsets[n - 1];
@@ -100,7 +100,7 @@ std::pair<String, DataTypePtr> ColumnMap::getValueNameAndType(size_t n) const
 
     for (size_t i = 0; i < size; ++i)
     {
-        const auto & [value, type] = getNestedData().getValueNameAndType(offset + i);
+        const auto & [value, type] = getNestedData().getValueNameAndType(offset + i, options);
         element_types.push_back(type);
         if (i > 0)
             value_name += ", ";

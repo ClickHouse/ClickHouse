@@ -71,9 +71,9 @@ public:
         data->get(0, res);
     }
 
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t, const Options & options) const override
     {
-        return data->getValueNameAndType(0);
+        return data->getValueNameAndType(0, options);
     }
 
     StringRef getDataAt(size_t) const override

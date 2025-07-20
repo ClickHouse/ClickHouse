@@ -240,14 +240,14 @@ void ColumnObjectDeprecated::Subcolumn::get(size_t n, Field & res) const
     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Index ({}) for getting field is out of range", n);
 }
 
-std::pair<String, DataTypePtr> ColumnObjectDeprecated::Subcolumn::getValueNameAndType(size_t n) const
+std::pair<String, DataTypePtr> ColumnObjectDeprecated::Subcolumn::getValueNameAndType(size_t n, const Options & options) const
 {
     if (isFinalized())
-        return getFinalizedColumn().getValueNameAndType(n);
+        return getFinalizedColumn().getValueNameAndType(n, options);
 
     size_t ind = n;
     if (ind < num_of_defaults_in_prefix)
-        return least_common_type.get()->createColumnConstWithDefaultValue(1)->getValueNameAndType(0);
+        return least_common_type.get()->createColumnConstWithDefaultValue(1)->getValueNameAndType(0, options);
 
     ind -= num_of_defaults_in_prefix;
     for (const auto & part : data)
@@ -258,7 +258,7 @@ std::pair<String, DataTypePtr> ColumnObjectDeprecated::Subcolumn::getValueNameAn
             part->get(ind, field);
             const auto column = least_common_type.get()->createColumn();
             column->insert(convertFieldToTypeOrThrow(field, *least_common_type.get()));
-            return column->getValueNameAndType(0);
+            return column->getValueNameAndType(0, options);
         }
 
         ind -= part->size();
@@ -812,7 +812,7 @@ void ColumnObjectDeprecated::get(size_t n, Field & res) const
     }
 }
 
-std::pair<String, DataTypePtr> ColumnObjectDeprecated::getValueNameAndType(size_t n) const
+std::pair<String, DataTypePtr> ColumnObjectDeprecated::getValueNameAndType(size_t n, const Options & options) const
 {
     WriteBufferFromOwnString wb;
     wb << '{';
@@ -827,7 +827,7 @@ std::pair<String, DataTypePtr> ColumnObjectDeprecated::getValueNameAndType(size_
             wb << ", ";
 
         writeDoubleQuoted(entry->path.getPath(), wb);
-        const auto & [value, type] = entry->data.getValueNameAndType(n);
+        const auto & [value, type] = entry->data.getValueNameAndType(n, options);
         wb << ": " << value;
     }
 

@@ -106,9 +106,9 @@ public:
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
-    std::pair<String, DataTypePtr> getValueNameAndType() const
+    std::pair<String, DataTypePtr> getValueNameAndType(const IColumn::Options & options) const
     {
-        return constant_value.getValueNameAndType();
+        return constant_value.getValueNameAndType(options);
     }
 
 protected:

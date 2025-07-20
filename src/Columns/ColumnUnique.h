@@ -73,9 +73,9 @@ public:
 
     Field operator[](size_t n) const override { return (*getNestedColumn())[n]; }
     void get(size_t n, Field & res) const override { getNestedColumn()->get(n, res); }
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n, const IColumn::Options & options) const override
     {
-        return getNestedColumn()->getValueNameAndType(n);
+        return getNestedColumn()->getValueNameAndType(n, options);
     }
     bool isDefaultAt(size_t n) const override { return n == 0; }
     StringRef getDataAt(size_t n) const override { return getNestedColumn()->getDataAt(n); }

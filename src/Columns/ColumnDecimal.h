@@ -123,7 +123,7 @@ public:
 
     Field operator[](size_t n) const override { return DecimalField(data[n], scale); }
     void get(size_t n, Field & res) const override { res = (*this)[n]; }
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n, const IColumn::Options &) const override
     {
         return {FieldVisitorToString()(data[n], scale), FieldToDataType()(data[n], scale)};
     }

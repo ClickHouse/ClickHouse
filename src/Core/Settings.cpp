@@ -6945,6 +6945,15 @@ Possible values:
 - 0 — always,
 - negative integer - never.
 )", EXPERIMENTAL) \
+    DECLARE(Int64, optimize_const_array_and_tuple_name_size, 0, R"(
+This is an experimental setting. Use hash instead of calculating name of a constant array or tuple.
+
+Possible values:
+
+- positive integer - number of elements in an array or tuple,
+- 0 — always,
+- negative integer - never.
+)", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

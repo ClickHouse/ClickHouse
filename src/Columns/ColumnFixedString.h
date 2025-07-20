@@ -90,7 +90,7 @@ public:
         res = std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n};
     }
 
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t index) const override
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t index, const Options &) const override
     {
         WriteBufferFromOwnString buf;
         writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n}, buf);

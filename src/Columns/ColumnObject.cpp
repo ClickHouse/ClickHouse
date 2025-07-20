@@ -268,7 +268,7 @@ void ColumnObject::get(size_t n, Field & res) const
     res = (*this)[n];
 }
 
-std::pair<String, DataTypePtr> ColumnObject::getValueNameAndType(size_t n) const
+std::pair<String, DataTypePtr> ColumnObject::getValueNameAndType(size_t n, const Options & options) const
 {
     WriteBufferFromOwnString wb;
     wb << '{';
@@ -277,7 +277,7 @@ std::pair<String, DataTypePtr> ColumnObject::getValueNameAndType(size_t n) const
 
     for (const auto & [path, column] : typed_paths)
     {
-        const auto & [value, type] = column->getValueNameAndType(n);
+        const auto & [value, type] = column->getValueNameAndType(n, options);
 
         if (first)
             first = false;
@@ -295,7 +295,7 @@ std::pair<String, DataTypePtr> ColumnObject::getValueNameAndType(size_t n) const
         if (column->isNullAt(n))
             continue;
 
-        const auto & [value, type] = column->getValueNameAndType(n);
+        const auto & [value, type] = column->getValueNameAndType(n, options);
 
         if (first)
             first = false;
@@ -333,7 +333,7 @@ std::pair<String, DataTypePtr> ColumnObject::getValueNameAndType(size_t n) const
         const auto column = decoded_type->createColumn();
         decoded_type->getDefaultSerialization()->deserializeBinary(*column, buf, getFormatSettings());
 
-        const auto & [value, type] = column->getValueNameAndType(0);
+        const auto & [value, type] = column->getValueNameAndType(0, options);
 
         wb << ": " << value;
     }

@@ -180,7 +180,7 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 
     auto requires_cast = [this]()
     {
-        const auto & [_, type] = getValueNameAndType();
+        const auto & [_, type] = getValueNameAndType({});
         return requiresCastCall(type, getResultType());
     };
 

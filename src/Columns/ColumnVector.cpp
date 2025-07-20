@@ -449,7 +449,7 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 }
 
 template <typename T>
-std::pair<String, DataTypePtr> ColumnVector<T>::getValueNameAndType(size_t n) const
+std::pair<String, DataTypePtr> ColumnVector<T>::getValueNameAndType(size_t n, const IColumn::Options &) const
 {
     chassert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
     const auto & val = castToNearestFieldType(data[n]);

@@ -152,7 +152,7 @@ void ColumnArray::get(size_t n, Field & res) const
         res_arr.push_back(getData()[offset + i]);
 }
 
-std::pair<String, DataTypePtr> ColumnArray::getValueNameAndType(size_t n) const
+std::pair<String, DataTypePtr> ColumnArray::getValueNameAndType(size_t n, const Options & options) const
 {
     size_t offset = offsetAt(n);
     size_t size = sizeAt(n);
@@ -166,7 +166,7 @@ std::pair<String, DataTypePtr> ColumnArray::getValueNameAndType(size_t n) const
 
         for (size_t i = 0; i < size; ++i)
         {
-            const auto & [value, type] = getData().getValueNameAndType(offset + i);
+            const auto & [value, type] = getData().getValueNameAndType(offset + i, options);
             element_types.push_back(type);
             if (i > 0)
                 value_name += ", ";

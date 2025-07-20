@@ -475,7 +475,7 @@ void ColumnAggregateFunction::get(size_t n, Field & res) const
     res = operator[](n);
 }
 
-std::pair<String, DataTypePtr> ColumnAggregateFunction::getValueNameAndType(size_t n) const
+std::pair<String, DataTypePtr> ColumnAggregateFunction::getValueNameAndType(size_t n, const Options &) const
 {
     String state;
     {

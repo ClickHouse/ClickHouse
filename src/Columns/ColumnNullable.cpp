@@ -117,12 +117,12 @@ void ColumnNullable::get(size_t n, Field & res) const
         getNestedColumn().get(n, res);
 }
 
-std::pair<String, DataTypePtr> ColumnNullable::getValueNameAndType(size_t n) const
+std::pair<String, DataTypePtr> ColumnNullable::getValueNameAndType(size_t n, const Options & options) const
 {
     if (isNullAt(n))
         return {"NULL", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())};
 
-    return getNestedColumn().getValueNameAndType(n);
+    return getNestedColumn().getValueNameAndType(n, options);
 }
 
 Float64 ColumnNullable::getFloat64(size_t n) const
