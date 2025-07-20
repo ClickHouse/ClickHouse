@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3285 
+personal_ws-1.1 en 3286 
 AArch
 ACLs
 ALTERs
@@ -728,6 +728,8 @@ NumericIndexedVectors
 OAuth
 ODBCDriver
 OFNS
+OKLab
+OKLCH
 OLAP
 OLTP
 ORCCompression
@@ -788,6 +790,7 @@ OnTime
 OpenCelliD
 OpenFileForRead
 OpenFileForWrite
+OpenRouter
 OpenSSL
 OpenSUSE
 OpenSky
@@ -953,6 +956,7 @@ ReplicatedSend
 ReplicatedSummingMergeTree
 ReplicatedVersionedCollapsingMergeTree
 Resample
+Rescoring
 RestartReplicaThreads
 RestartReplicaThreadsActive
 RestoreThreads
@@ -1532,6 +1536,7 @@ checksumming
 checksums
 childern
 chproxy
+chroma
 chunksize
 cickhouse
 cipherList
@@ -1560,6 +1565,8 @@ codepoint
 codepoints
 codespell
 collapsingmergetree
+colorOKLCHToSRGB
+colorSRGBToOKLCH
 combinator
 combinators
 compareSubstrings
@@ -2208,6 +2215,7 @@ libuv
 libvirt
 linearizability
 linearizable
+linearize
 linearized
 lineasstring
 linefeeds
@@ -2751,6 +2759,7 @@ representable
 requestor
 requireTLSv
 rerange
+rescoring
 resharding
 reshards
 resolvers
@@ -2796,6 +2805,7 @@ russian
 rustc
 rustup
 rw
+sRGB
 sasl
 satisfiable
 scala

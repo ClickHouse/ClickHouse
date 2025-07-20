@@ -77,10 +77,10 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
         result = DatabaseCatalog::instance().isDictionaryExist({database, exists_query->getTable()});
     }
 
-    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{
+    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(Block{{
         ColumnUInt8::create(1, result),
         std::make_shared<DataTypeUInt8>(),
-        "result" }}));
+        "result" }})));
 }
 
 void registerInterpreterExistsQuery(InterpreterFactory & factory)
