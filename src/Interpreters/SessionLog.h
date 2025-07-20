@@ -5,11 +5,13 @@
 #include <Access/Common/AuthenticationType.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 #include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
+
+struct Settings;
 
 enum SessionLogElementType : int8_t
 {

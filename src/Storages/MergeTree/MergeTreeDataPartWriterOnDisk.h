@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileBase.h>
@@ -9,6 +10,8 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MarkCache.h>
+#include <Columns/IColumn_fwd.h>
+#include <Compression/ICompressionCodec.h>
 
 namespace DB
 {
@@ -134,6 +137,7 @@ public:
     void cancel() noexcept override;
 
     const Block & getColumnsSample() const override { return block_sample; }
+    const ColumnsSubstreams & getColumnsSubstreams() const override { return columns_substreams; }
 
 protected:
      /// Count index_granularity for block and store in `index_granularity`
@@ -174,6 +178,9 @@ protected:
     /// the structure from the sample.
     void initOrAdjustDynamicStructureIfNeeded(Block & block);
 
+    /// This is useful only for vector codecs (like SZ3).
+    static void setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column);
+
     const MergeTreeIndices skip_indices;
 
     const ColumnsStatistics stats;
@@ -211,6 +218,10 @@ protected:
 
     bool is_dynamic_streams_initialized = false;
     Block block_sample;
+
+    /// List of substreams for each column in order of serialization.
+    /// Right now used only in Compact parts.
+    ColumnsSubstreams columns_substreams;
 
 private:
     void initSkipIndices();

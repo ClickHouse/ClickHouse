@@ -31,6 +31,10 @@ protected:
 
     bool isCompression() const override { return false; }
     bool isGenericCompression() const override { return false; }
+    String getDescription() const override
+    {
+        return "Preprocessor. Greatest common divisor compression; divides values by a common divisor; effective for divisible integer sequences.";
+    }
 
 private:
     const UInt8 gcd_bytes_size;
@@ -211,7 +215,9 @@ void CompressionCodecGCD::doDecompressData(const char * source, UInt32 source_si
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data. File has wrong header");
 
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
-    chassert(bytes_to_skip == static_cast<UInt8>(source[1]));
+
+    if (bytes_to_skip != static_cast<UInt8>(source[1]))
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data. File has wrong header");
 
     UInt32 output_size = uncompressed_size - bytes_to_skip;
 

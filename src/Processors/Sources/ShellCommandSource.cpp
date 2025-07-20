@@ -2,6 +2,7 @@
 
 #include <poll.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
@@ -13,10 +14,13 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/ISimpleTransform.h>
 #include <QueryPipeline/Pipe.h>
+#include <Core/Field.h>
 
 #include <boost/circular_buffer.hpp>
+#include <fmt/ranges.h>
 
 #include <ranges>
+
 
 namespace DB
 {
@@ -340,7 +344,7 @@ namespace
             size_t command_read_timeout_milliseconds,
             ExternalCommandStderrReaction stderr_reaction,
             bool check_exit_code_,
-            const Block & sample_block_,
+            SharedHeader sample_block_,
             std::unique_ptr<ShellCommand> && command_,
             std::vector<SendDataTask> && send_data_tasks = {},
             const ShellCommandSourceConfiguration & configuration_ = {},
@@ -357,12 +361,29 @@ namespace
             , process_pool(process_pool_)
             , check_exit_code(check_exit_code_)
         {
+            auto context_for_reading = Context::createCopy(context);
+            /// Currently parallel parsing input format cannot read exactly max_block_size rows from input,
+            /// so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
+            if (configuration.read_fixed_number_of_rows)
+                context_for_reading->setSetting("input_format_parallel_parsing", false);
+            /// Here header auto detection can only cause troubles, since if it
+            /// will find "header" the number of input and output rows will not
+            /// match.
+            context_for_reading->setSetting("input_format_csv_detect_header", false);
+            context_for_reading->setSetting("input_format_tsv_detect_header", false);
+            context_for_reading->setSetting("input_format_custom_detect_header", false);
+            context = context_for_reading;
+
+            auto thread_group = CurrentThread::getGroup();
+
             try
             {
                 for (auto && send_data_task : send_data_tasks)
                 {
-                    send_data_threads.emplace_back([task = std::move(send_data_task), this]() mutable
+                    send_data_threads.emplace_back([thread_group, task = std::move(send_data_task), this]() mutable
                     {
+                        ThreadGroupSwitcher switcher(thread_group, "SendToShellCmd");
+
                         try
                         {
                             task();
@@ -371,24 +392,21 @@ namespace
                         {
                             std::lock_guard lock(send_data_lock);
                             exception_during_send_data = std::current_exception();
-
-                            /// task should be reset inside catch block or else it breaks d'tor
-                            /// invariants such as in ~WriteBuffer.
-                            task = {};
                         }
+
+                        // In case of exception, the task should be reset in thread
+                        // worker function or else it breaks d'tor invariants such
+                        // as in ~WriteBuffer.
+                        //
+                        // For completed execution, the task reset allows to account
+                        // memory deallocation in sending data thread group.
+                        task = {};
                     });
                 }
                 size_t max_block_size = configuration.max_block_size;
 
                 if (configuration.read_fixed_number_of_rows)
                 {
-                    /** Currently parallel parsing input format cannot read exactly max_block_size rows from input,
-                    * so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
-                    */
-                    auto context_for_reading = Context::createCopy(context);
-                    context_for_reading->setSetting("input_format_parallel_parsing", false);
-                    context = context_for_reading;
-
                     if (configuration.read_number_of_rows_from_process_output)
                     {
                         /// Initialize executor in generate
@@ -398,7 +416,7 @@ namespace
                     max_block_size = configuration.number_of_rows_to_read;
                 }
 
-                pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, sample_block, max_block_size)));
+                pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, *sample_block, max_block_size)));
                 executor = std::make_unique<PullingPipelineExecutor>(pipeline);
             }
             catch (...)
@@ -451,7 +469,7 @@ namespace
                         readChar(dummy, timeout_command_out);
 
                         size_t max_block_size = configuration.number_of_rows_to_read;
-                        pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, sample_block, max_block_size)));
+                        pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, *sample_block, max_block_size)));
                         executor = std::make_unique<PullingPipelineExecutor>(pipeline);
                     }
 
@@ -520,7 +538,7 @@ namespace
 
         ContextPtr context;
         std::string format;
-        Block sample_block;
+        SharedHeader sample_block;
 
         std::unique_ptr<ShellCommand> command;
         ShellCommandSourceConfiguration configuration;
@@ -548,7 +566,7 @@ namespace
     class SendingChunkHeaderTransform final : public ISimpleTransform
     {
     public:
-        SendingChunkHeaderTransform(const Block & header, std::shared_ptr<TimeoutWriteBufferFromFileDescriptor> buffer_)
+        SendingChunkHeaderTransform(SharedHeader header, std::shared_ptr<TimeoutWriteBufferFromFileDescriptor> buffer_)
             : ISimpleTransform(header, header, false)
             , buffer(buffer_)
         {
@@ -661,11 +679,13 @@ Pipe ShellCommandSourceCoordinator::createPipe(
 
         if (configuration.send_chunk_header)
         {
-            auto transform = std::make_shared<SendingChunkHeaderTransform>(input_pipes[i].getHeader(), timeout_write_buffer);
+            auto transform = std::make_shared<SendingChunkHeaderTransform>(input_pipes[i].getSharedHeader(), timeout_write_buffer);
             input_pipes[i].addTransform(std::move(transform));
         }
 
+        auto num_streams = input_pipes[i].maxParallelStreams();
         auto pipeline = std::make_shared<QueryPipeline>(std::move(input_pipes[i]));
+        pipeline->setNumThreads(num_streams);
         auto out = context->getOutputFormat(configuration.format, *timeout_write_buffer, materializeBlock(pipeline->getHeader()));
         out->setAutoFlush();
         pipeline->complete(std::move(out));
@@ -693,7 +713,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         configuration.command_read_timeout_milliseconds,
         configuration.stderr_reaction,
         configuration.check_exit_code,
-        std::move(sample_block),
+        std::make_shared<const Block>(std::move(sample_block)),
         std::move(process),
         std::move(tasks),
         source_configuration,

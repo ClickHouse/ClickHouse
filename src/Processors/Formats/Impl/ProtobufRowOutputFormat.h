@@ -4,7 +4,8 @@
 
 #if USE_PROTOBUF
 #    include <Processors/Formats/IRowOutputFormat.h>
-#   include <Formats/FormatSchemaInfo.h>
+#    include <Formats/FormatSchemaInfo.h>
+#    include <Formats/ProtobufSchemas.h>
 
 namespace DB
 {
@@ -28,20 +29,19 @@ class ProtobufRowOutputFormat final : public IRowOutputFormat
 public:
     ProtobufRowOutputFormat(
         WriteBuffer & out_,
-        const Block & header_,
+        SharedHeader header_,
         const ProtobufSchemaInfo & schema_info_,
         const FormatSettings & settings_,
         bool with_length_delimiter_);
 
     String getName() const override { return "ProtobufRowOutputFormat"; }
 
-    std::string getContentType() const override { return "application/octet-stream"; }
-
 private:
     void write(const Columns & columns, size_t row_num) override;
     void writeField(const IColumn &, const ISerialization &, size_t) override {}
 
     std::unique_ptr<ProtobufWriter> writer;
+    ProtobufSchemas::DescriptorHolder descriptor_holder;
     std::unique_ptr<ProtobufSerializer> serializer;
     const bool allow_multiple_rows;
 };

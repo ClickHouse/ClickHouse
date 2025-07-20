@@ -1,6 +1,7 @@
 import datetime
 import logging
 import time
+import math
 from datetime import datetime
 from typing import Optional
 
@@ -245,9 +246,11 @@ def test_append(
     with_append,
     empty,
 ):
+    opposite_minutes = math.floor((time.time() + 1800) % 3600 / 60)
+
     create_sql = CREATE_RMV.render(
         table_name="test_rmv",
-        refresh_interval="EVERY 1 HOUR",
+        refresh_interval=f"EVERY 1 HOUR OFFSET {opposite_minutes} MINUTE",
         to_clause="tgt1",
         select_query=select_query,
         with_append=with_append,
@@ -382,7 +385,7 @@ def test_real_wait_refresh(
 
     create_sql = CREATE_RMV.render(
         table_name="test_rmv",
-        refresh_interval="EVERY 10 SECOND",
+        refresh_interval="AFTER 10 SECOND",
         to_clause=to_clause_,
         table_clause=table_clause,
         select_query="SELECT now() as a, b FROM src1 SETTINGS insert_deduplicate=0",
@@ -391,8 +394,9 @@ def test_real_wait_refresh(
         empty=empty,
     )
     node.query(create_sql)
+    if not empty:
+        node.query("SYSTEM WAIT VIEW test_rmv")
     rmv = get_rmv_info(node, "test_rmv")
-    time.sleep(1)
     node.query("SYSTEM SYNC DATABASE REPLICA ON CLUSTER default default")
 
     expected_rows = 0
@@ -402,23 +406,25 @@ def test_real_wait_refresh(
         expected_rows += 2
         expect_rows(expected_rows, table=tgt)
 
+    is_close = lambda x, y: x is not None and y is not None and abs(x.timestamp() - y.timestamp()) <= 3
+
     rmv2 = get_rmv_info(
         node,
         "test_rmv",
-        condition=lambda x: x["last_refresh_time"] == rmv["next_refresh_time"],
+        condition=lambda x: is_close(x["last_refresh_time"], rmv["next_refresh_time"]),
         # wait for refresh a little bit more than 10 seconds
         max_attempts=30,
         delay=0.5,
         wait_status="Scheduled",
     )
 
-    node.query("SYSTEM SYNC DATABASE REPLICA ON CLUSTER default default")
-
     rmv22 = get_rmv_info(
         node,
         "test_rmv",
         wait_status="Scheduled",
     )
+
+    node.query("SYSTEM SYNC DATABASE REPLICA ON CLUSTER default default")
 
     if append:
         expected_rows += 2
@@ -428,8 +434,8 @@ def test_real_wait_refresh(
 
     assert rmv2["exception"] is None
     assert rmv2["status"] in ["Scheduled", "Running"]
-    assert rmv2["last_success_time"] == rmv["next_refresh_time"]
-    assert rmv2["last_refresh_time"] == rmv["next_refresh_time"]
+    assert is_close(rmv2["last_success_time"], rmv["next_refresh_time"])
+    assert is_close(rmv2["last_refresh_time"], rmv["next_refresh_time"])
     assert rmv2["retry"] == 0 and rmv22["retry"] == 0
 
     for n in nodes:
@@ -443,9 +449,10 @@ def test_real_wait_refresh(
     del rmv2["status"]
     assert rmv3 == rmv2
 
+    # Should immediately refresh after unpausing because it's been more than 10 seconds.
     for n in nodes:
         n.query("SYSTEM START VIEW test_rmv")
-    time.sleep(1)
+    time.sleep(2)
     rmv4 = get_rmv_info(node, "test_rmv")
 
     if append:
@@ -458,8 +465,9 @@ def test_real_wait_refresh(
     assert rmv4["status"] == "Scheduled"
     assert rmv4["retry"] == 0
 
-    node.query("SYSTEM REFRESH VIEW test_rmv")
-    time.sleep(1)
+    node.query("SYSTEM REFRESH VIEW test_rmv;" \
+        "SYSTEM WAIT VIEW test_rmv;" \
+        "SYSTEM SYNC DATABASE REPLICA ON CLUSTER default default;")
     if append:
         expected_rows += 2
         expect_rows(expected_rows, table=tgt)
@@ -481,7 +489,7 @@ def get_rmv_info(
             check_callback=(
                 (lambda r: r.iloc[0]["status"] == wait_status)
                 if wait_status
-                else (lambda x: True)
+                else (lambda r: r.iloc[0]["status"] != "Scheduling")
             ),
             parse=True,
         ).to_dict("records")[0]

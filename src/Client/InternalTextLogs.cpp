@@ -1,5 +1,6 @@
 #include <Client/InternalTextLogs.h>
 #include <Core/Block.h>
+#include <IO/WriteBuffer.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Common/typeid_cast.h>
@@ -163,4 +164,8 @@ void InternalTextLogs::writeProfileEvents(const Block & block)
     }
 }
 
+void InternalTextLogs::flush()
+{
+    wb.next();
+}
 }

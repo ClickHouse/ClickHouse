@@ -1,13 +1,13 @@
 #pragma once
 
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeNothing.h>
-#include <Columns/IColumn.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/IColumn_fwd.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypesNumber.h>
 
 
 namespace DB
@@ -48,8 +48,8 @@ class AggregateFunctionNothingImpl final : public IAggregateFunctionHelper<Aggre
     }
 
 public:
-    AggregateFunctionNothingImpl(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionHelper<AggregateFunctionNothingImpl<Name>>(arguments, params, getReturnType(arguments))
+    AggregateFunctionNothingImpl(const DataTypes & arguments, const Array &)
+        : IAggregateFunctionHelper<AggregateFunctionNothingImpl<Name>>(arguments, Array(), getReturnType(arguments))
     {
     }
 

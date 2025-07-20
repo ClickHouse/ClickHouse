@@ -1,6 +1,7 @@
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
@@ -55,8 +56,11 @@ ContextMutablePtr StorageFactory::Arguments::getLocalContext() const
 
 void StorageFactory::registerStorage(const std::string & name, CreatorFn creator_fn, StorageFeatures features)
 {
+    if (features.supports_settings && !features.has_builtin_setting_fn)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "StorageFactory: Storage '{}' supports settings but has_builtin_setting_fn is not provided", name);
     if (!storages.emplace(name, Creator{std::move(creator_fn), features}).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "TableFunctionFactory: the table function name '{}' is not unique", name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageFactory: the storage '{}' is not unique", name);
 }
 
 
@@ -67,7 +71,8 @@ StoragePtr StorageFactory::get(
     ContextMutablePtr context,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
-    LoadingStrictnessLevel mode) const
+    LoadingStrictnessLevel mode,
+    bool is_restore_from_backup) const
 {
     String name;
     String comment;
@@ -132,6 +137,10 @@ StoragePtr StorageFactory::get(
             if (name == "View")
             {
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Direct creation of tables with ENGINE View is not supported, use CREATE VIEW statement");
+            }
+            if (name == "Loop")
+            {
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Direct creation of tables with ENGINE Loop is not supported, use Loop as a table function only");
             }
             if (name == "MaterializedView")
             {
@@ -225,7 +234,8 @@ StoragePtr StorageFactory::get(
         .columns = columns,
         .constraints = constraints,
         .mode = mode,
-        .comment = comment};
+        .comment = comment,
+        .is_restore_from_backup = is_restore_from_backup};
 
     assert(arguments.getContext() == arguments.getContext()->getGlobalContext());
 
@@ -252,11 +262,11 @@ StorageFactory & StorageFactory::instance()
 }
 
 
-AccessType StorageFactory::getSourceAccessType(const String & table_engine) const
+std::optional<AccessTypeObjects::Source> StorageFactory::getSourceAccessObject(const String & table_engine) const
 {
     auto it = storages.find(table_engine);
     if (it == storages.end())
-        return AccessType::NONE;
+        return std::nullopt;
     return it->second.features.source_access_type;
 }
 

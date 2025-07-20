@@ -1,4 +1,4 @@
-#include "MySQLHandler.h"
+#include <Server/MySQLHandler.h>
 
 #include <optional>
 #include <Core/MySQL/Authentication.h>
@@ -13,12 +13,12 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromPocoSocket.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/copyData.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/Context.h>
 #include <Server/TCPServer.h>
 #include <Storages/IStorage.h>
 #include <base/scope_guard.h>
@@ -31,16 +31,15 @@
 #include <Common/setThreadName.h>
 
 #if USE_SSL
-#    include <Poco/Crypto/RSAKey.h>
 #    include <Poco/Net/SSLManager.h>
 #    include <Poco/Net/SecureStreamSocket.h>
-
 #endif
 
 namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsSeconds send_timeout;
@@ -64,6 +63,7 @@ namespace ErrorCodes
     extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
+    extern const int OPENSSL_ERROR;
 }
 
 static const size_t PACKET_HEADER_SIZE = 4;
@@ -170,17 +170,43 @@ static String killConnectionIdReplacementQuery(const String & query)
     return query;
 }
 
+
+/** MySQL returns this error code, HY000, so should we.
+  *
+  * These error codes represent the worst legacy practices in software engineering from 1970s
+  * (fixed-size fields, short variable names, cryptic abbreviations, lack of documentation, made-up alphabets)
+  * We should never ever fall into these practices, and having this compatibility error code is probably the only exception.
+  *
+  * You might be wondering, why it is HY000, and more precisely, what do the letters H and Y mean?
+  * The history does not know. The best answer I found is:
+  * https://dba.stackexchange.com/questions/241506/what-does-hy-stand-for-in-error-code
+  * Also, https://en.wikipedia.org/wiki/SQLSTATE
+  *
+  * Apparently, they decide to allocate alphanumeric characters for some meaning,
+  * then split their range (0..9A..Z) to some intervals for the system, user, and other categories,
+  * and the letter H appeared to be the first in some category.
+  *
+  * Also, the letter Y is chosen, because it is the highest, but someone afraid to took letter Z,
+  * and decided that the second highest letter is good enough.
+  *
+  * This will forever remind us about the mistakes made by previous generations of software engineers.
+  */
+static constexpr const char * mysql_error_code = "HY000";
+
+
 MySQLHandler::MySQLHandler(
     IServer & server_,
     TCPServer & tcp_server_,
     const Poco::Net::StreamSocket & socket_,
-    bool ssl_enabled, uint32_t connection_id_,
+    bool ssl_enabled, bool secure_required_,
+     uint32_t connection_id_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
     , log(getLogger("MySQLHandler"))
+    , secure_required(secure_required_)
     , connection_id(connection_id_)
     , auth_plugin(new MySQLProtocol::Authentication::Native41())
     , read_event(read_event_)
@@ -245,6 +271,9 @@ void MySQLHandler::run()
         if (!(client_capabilities & CLIENT_PROTOCOL_41))
             throw Exception(ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES, "Required capability: CLIENT_PROTOCOL_41.");
 
+        if (secure_required && !(client_capabilities & CLIENT_SSL))
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "SSL connection required.");
+
         authenticate(handshake_response.username, handshake_response.auth_plugin_name, handshake_response.auth_response);
 
         try
@@ -257,7 +286,7 @@ void MySQLHandler::run()
         catch (const Exception & exc)
         {
             log->log(exc);
-            packet_endpoint->sendPacket(ERRPacket(exc.code(), "00000", exc.message()));
+            packet_endpoint->sendPacket(ERRPacket(exc.code(), mysql_error_code, exc.message()));
         }
 
         OKPacket ok_packet(0, handshake_response.capability_flags, 0, 0, 0);
@@ -321,7 +350,7 @@ void MySQLHandler::run()
             catch (...)
             {
                 tryLogCurrentException(log, "MySQLHandler: Cannot read packet: ");
-                packet_endpoint->sendPacket(ERRPacket(getCurrentExceptionCode(), "00000", getCurrentExceptionMessage(false)));
+                packet_endpoint->sendPacket(ERRPacket(getCurrentExceptionCode(), mysql_error_code, getCurrentExceptionMessage(false)));
             }
         }
     }
@@ -400,7 +429,7 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
     catch (const Exception & exc)
     {
         LOG_ERROR(log, "Authentication for user {} failed.", user_name);
-        packet_endpoint->sendPacket(ERRPacket(exc.code(), "00000", exc.message()));
+        packet_endpoint->sendPacket(ERRPacket(exc.code(), mysql_error_code, exc.message()));
         throw;
     }
     LOG_DEBUG(log, "Authentication for user {} succeeded.", user_name);
@@ -483,10 +512,13 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
 
-        /// --- Workaround for Bug 56173. Can be removed when the analyzer is on by default.
+        /// --- Workaround for Bug 56173.
         auto settings = query_context->getSettingsCopy();
-        settings[Setting::prefer_column_name_to_alias] = true;
-        query_context->setSettings(settings);
+        if (!settings[Setting::allow_experimental_analyzer])
+        {
+            settings[Setting::prefer_column_name_to_alias] = true;
+            query_context->setSettings(settings);
+        }
 
         /// Update timeouts
         socket().setReceiveTimeout(settings[Setting::receive_timeout]);
@@ -638,19 +670,18 @@ MySQLHandlerSSL::MySQLHandlerSSL(
     TCPServer & tcp_server_,
     const Poco::Net::StreamSocket & socket_,
     bool ssl_enabled,
+    bool secure_required_,
     uint32_t connection_id_,
-    RSA & public_key_,
-    RSA & private_key_,
+    KeyPair & private_key_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
-    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, connection_id_, read_event_, write_event_)
-    , public_key(public_key_)
+    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, secure_required_, connection_id_, read_event_, write_event_)
     , private_key(private_key_)
 {}
 
 void MySQLHandlerSSL::authPluginSSL()
 {
-    auth_plugin = std::make_unique<MySQLProtocol::Authentication::Sha256Password>(public_key, private_key, log);
+    auth_plugin = std::make_unique<MySQLProtocol::Authentication::Sha256Password>(private_key, log);
 }
 
 void MySQLHandlerSSL::finishHandshakeSSL(

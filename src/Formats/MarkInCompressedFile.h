@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tuple>
+#include <unordered_map>
 
 #include <base/types.h>
 #include <Common/PODArray.h>
@@ -48,6 +49,8 @@ public:
     MarkInCompressedFile get(size_t idx) const;
 
     size_t approximateMemoryUsage() const;
+
+    size_t getNumberOfMarks() const { return num_marks; }
 
 private:
     /** Throughout this class:

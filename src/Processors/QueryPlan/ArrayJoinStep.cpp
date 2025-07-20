@@ -3,14 +3,17 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/ArrayJoinTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/ArrayJoinAction.h>
-#include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 namespace DB
 {
+
+namespace QueryPlanSerializationSetting
+{
+    extern const QueryPlanSerializationSettingsUInt64 max_block_size;
+}
 
 static ITransformingStep::Traits getTraits()
 {
@@ -27,10 +30,10 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-ArrayJoinStep::ArrayJoinStep(const Header & input_header_, ArrayJoin array_join_, bool is_unaligned_, size_t max_block_size_)
+ArrayJoinStep::ArrayJoinStep(const SharedHeader & input_header_, ArrayJoin array_join_, bool is_unaligned_, size_t max_block_size_)
     : ITransformingStep(
         input_header_,
-        ArrayJoinTransform::transformHeader(input_header_, array_join_.columns),
+        std::make_shared<const Block>(ArrayJoinTransform::transformHeader(*input_header_, array_join_.columns)),
         getTraits())
     , array_join(std::move(array_join_))
     , is_unaligned(is_unaligned_)
@@ -40,13 +43,13 @@ ArrayJoinStep::ArrayJoinStep(const Header & input_header_, ArrayJoin array_join_
 
 void ArrayJoinStep::updateOutputHeader()
 {
-    output_header = ArrayJoinTransform::transformHeader(input_headers.front(), array_join.columns);
+    output_header = std::make_shared<const Block>(ArrayJoinTransform::transformHeader(*input_headers.front(), array_join.columns));
 }
 
 void ArrayJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto array_join_actions = std::make_shared<ArrayJoinAction>(array_join.columns, array_join.is_left, is_unaligned, max_block_size);
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
+    pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
         return std::make_shared<ArrayJoinTransform>(header, array_join_actions, on_totals);
@@ -84,7 +87,7 @@ void ArrayJoinStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings) const
 {
-    settings.max_block_size = max_block_size;
+    settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
 }
 
 void ArrayJoinStep::serialize(Serialization & ctx) const
@@ -120,7 +123,7 @@ std::unique_ptr<IQueryPlanStep> ArrayJoinStep::deserialize(Deserialization & ctx
     for (auto & column : array_join.columns)
         readStringBinary(column, ctx.in);
 
-    return std::make_unique<ArrayJoinStep>(ctx.input_headers.front(), std::move(array_join), is_unaligned, ctx.settings.max_block_size);
+    return std::make_unique<ArrayJoinStep>(ctx.input_headers.front(), std::move(array_join), is_unaligned, ctx.settings[QueryPlanSerializationSetting::max_block_size]);
 }
 
 void registerArrayJoinStep(QueryPlanStepRegistry & registry)

@@ -60,11 +60,11 @@ struct RabbitMQSettingsImpl : public BaseSettings<RabbitMQSettingsTraits>
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) RabbitMQSettings##TYPE NAME = &RabbitMQSettingsImpl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) RabbitMQSettings##TYPE NAME = &RabbitMQSettingsImpl ::NAME;
 
 namespace RabbitMQSetting
 {
-LIST_OF_RABBITMQ_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
+LIST_OF_RABBITMQ_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
@@ -134,5 +134,10 @@ SettingsChanges RabbitMQSettings::getFormatSettings() const
     }
 
     return values;
+}
+
+bool RabbitMQSettings::hasBuiltin(std::string_view name)
+{
+    return RabbitMQSettingsImpl::hasBuiltin(name);
 }
 }

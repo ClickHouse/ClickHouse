@@ -1,5 +1,4 @@
 #include <type_traits>
-#include <boost/tti/has_member_function.hpp>
 
 #include <base/range.h>
 
@@ -62,6 +61,22 @@ concept HasIndexOperator = requires (T t)
     t[0];
 };
 
+template <typename T>
+concept Reservable = requires (T t)
+{
+    t.reserve(0);
+};
+
+template <typename T>
+concept Preparable = requires (T t)
+{
+    t.prepare(
+        std::declval<const char *>(),
+        std::declval<const ColumnsWithTypeAndName&>(),
+        std::declval<const DataTypePtr&>()
+    );
+};
+
 /// Functions to parse JSONs and extract values from it.
 /// The first argument of all these functions gets a JSON,
 /// after that there are any number of arguments specifying path to a desired part from the JSON's root.
@@ -105,7 +120,7 @@ public:
 
             /// Preallocate memory in parser if necessary.
             JSONParser parser;
-            if constexpr (has_member_function_reserve<void (JSONParser::*)(size_t)>::value)
+            if constexpr (Reservable<JSONParser>)
             {
                 size_t max_size = calculateMaxSize(offsets);
                 if (max_size)
@@ -115,7 +130,7 @@ public:
             Impl<JSONParser> impl;
 
             /// prepare() does Impl-specific preparation before handling each row.
-            if constexpr (has_member_function_prepare<void (Impl<JSONParser>::*)(const char *, const ColumnsWithTypeAndName &, const DataTypePtr &)>::value)
+            if constexpr (Preparable<Impl<JSONParser>>)
                 impl.prepare(Name::name, arguments, result_type);
 
             using Element = typename JSONParser::Element;
@@ -158,9 +173,6 @@ public:
     };
 
 private:
-    BOOST_TTI_HAS_MEMBER_FUNCTION(reserve)
-    BOOST_TTI_HAS_MEMBER_FUNCTION(prepare)
-
     /// Represents a move of a JSON iterator described by a single argument passed to a JSON function.
     /// For example, the call JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1)
     /// contains two moves: {MoveType::ConstKey, "b"} and {MoveType::ConstIndex, 1}.

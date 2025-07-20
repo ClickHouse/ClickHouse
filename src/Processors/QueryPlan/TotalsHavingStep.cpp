@@ -13,6 +13,12 @@
 namespace DB
 {
 
+namespace QueryPlanSerializationSetting
+{
+    extern const QueryPlanSerializationSettingsFloat totals_auto_threshold;
+    extern const QueryPlanSerializationSettingsTotalsMode totals_mode;
+}
+
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
@@ -34,7 +40,7 @@ static ITransformingStep::Traits getTraits(bool has_filter)
 }
 
 TotalsHavingStep::TotalsHavingStep(
-    const Header & input_header_,
+    SharedHeader input_header_,
     const AggregateDescriptions & aggregates_,
     bool overflow_row_,
     std::optional<ActionsDAG> actions_dag_,
@@ -45,13 +51,13 @@ TotalsHavingStep::TotalsHavingStep(
     bool final_)
     : ITransformingStep(
         input_header_,
-        TotalsHavingTransform::transformHeader(
-            input_header_,
+        std::make_shared<const Block>(TotalsHavingTransform::transformHeader(
+            *input_header_,
             actions_dag_ ? &*actions_dag_ : nullptr,
             filter_column_,
             remove_filter_,
             final_,
-            getAggregatesMask(input_header_, aggregates_)),
+            getAggregatesMask(*input_header_, aggregates_))),
         getTraits(!filter_column_.empty()))
     , aggregates(aggregates_)
     , overflow_row(overflow_row_)
@@ -80,6 +86,9 @@ void TotalsHavingStep::transformPipeline(QueryPipelineBuilder & pipeline, const 
         final);
 
     pipeline.addTotalsHavingTransform(std::move(totals_having));
+
+    /// Pipeline is resized to single stream before TotalsHavingTransform. So, we need to resize it back to "default" number of streams after transform.
+    pipeline.resize(settings.max_threads);
 }
 
 static String totalsModeToString(TotalsMode totals_mode, double auto_include_threshold)
@@ -140,19 +149,19 @@ void TotalsHavingStep::describeActions(JSONBuilder::JSONMap & map) const
 void TotalsHavingStep::updateOutputHeader()
 {
     output_header =
-        TotalsHavingTransform::transformHeader(
-            input_headers.front(),
+        std::make_shared<const Block>(TotalsHavingTransform::transformHeader(
+            *input_headers.front(),
             getActions(),
             filter_column_name,
             remove_filter,
             final,
-            getAggregatesMask(input_headers.front(), aggregates));
+            getAggregatesMask(*input_headers.front(), aggregates)));
 }
 
 void TotalsHavingStep::serializeSettings(QueryPlanSerializationSettings & settings) const
 {
-    settings.totals_mode = totals_mode;
-    settings.totals_auto_threshold = auto_include_threshold;
+    settings[QueryPlanSerializationSetting::totals_mode] = totals_mode;
+    settings[QueryPlanSerializationSetting::totals_auto_threshold] = auto_include_threshold;
 }
 
 void TotalsHavingStep::serialize(Serialization & ctx) const
@@ -210,8 +219,8 @@ std::unique_ptr<IQueryPlanStep> TotalsHavingStep::deserialize(Deserialization & 
         std::move(actions_dag),
         std::move(filter_column_name),
         remove_filter_column,
-        ctx.settings.totals_mode,
-        ctx.settings.totals_auto_threshold,
+        ctx.settings[QueryPlanSerializationSetting::totals_mode],
+        ctx.settings[QueryPlanSerializationSetting::totals_auto_threshold],
         final);
 }
 

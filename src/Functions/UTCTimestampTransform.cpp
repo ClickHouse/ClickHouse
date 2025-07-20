@@ -4,6 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/LocalDateTime.h>
 #include <Common/logger_useful.h>
 #include <Core/DecimalFunctions.h>
@@ -82,16 +83,48 @@ namespace
             {
                 const auto & date_time_col = checkAndGetColumn<ColumnDateTime>(*arg1.column);
                 using ColVecTo = DataTypeDateTime::ColumnType;
+
                 typename ColVecTo::MutablePtr result_column = ColVecTo::create(input_rows_count);
                 typename ColVecTo::Container & result_data = result_column->getData();
+
+                auto safe_add = [](UInt32 value, UInt32 offset) -> UInt32
+                {
+                    if (value > std::numeric_limits<UInt32>::max() - offset)
+                        return std::numeric_limits<UInt32>::max();
+                    return value + offset;
+                };
+
+                auto safe_subtract = [](UInt32 value, UInt32 offset) -> UInt32
+                {
+                    if (value < offset)
+                        return 0;
+                    return value - offset;
+                };
+
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     UInt32 date_time_val = date_time_col.getElement(i);
                     auto time_zone_offset = time_zone.timezoneOffset(date_time_val);
+                    UInt32 abs_offset = static_cast<UInt32>(std::abs(time_zone_offset));
+
                     if constexpr (toUTC)
-                        result_data[i] = date_time_val - static_cast<UInt32>(time_zone_offset);
+                    {
+                        // Convert from local time to UTC
+                        // UTC = Local - Offset (for positive offsets like UTC+3)
+                        // UTC = Local + |Offset| (for negative offsets like UTC-5)
+                        result_data[i] = (time_zone_offset >= 0)
+                            ? safe_subtract(date_time_val, abs_offset)
+                            : safe_add(date_time_val, abs_offset);
+                    }
                     else
-                        result_data[i] = date_time_val + static_cast<UInt32>(time_zone_offset);
+                    {
+                        // Convert from UTC to local time
+                        // Local = UTC + Offset (for positive offsets like UTC+3)
+                        // Local = UTC - |Offset| (for negative offsets like UTC-5)
+                        result_data[i] = (time_zone_offset >= 0)
+                            ? safe_add(date_time_val, abs_offset)
+                            : safe_subtract(date_time_val, abs_offset);
+                    }
                 }
                 return result_column;
             }
@@ -120,7 +153,7 @@ namespace
                 }
                 return result_column;
             }
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {}'s 1st argument can only be datetime/datatime64. ", name);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {}'s 1st argument can only be DateTime/DateTime64. ", name);
         }
 
     };
@@ -141,9 +174,60 @@ namespace
 
 REGISTER_FUNCTION(UTCTimestampTransform)
 {
-    factory.registerFunction<ToUTCTimestampFunction>();
-    factory.registerFunction<FromUTCTimestampFunction>();
+    FunctionDocumentation::Description description_toUTCTimestamp = R"(
+Converts a date or date with time value from one time zone to UTC timezone timestamp. This function is mainly included for compatibility with Apache Spark and similar frameworks.
+    )";
+    FunctionDocumentation::Syntax syntax_toUTCTimestamp = R"(
+toUTCTimestamp(datetime, time_zone)
+    )";
+    FunctionDocumentation::Arguments arguments_toUTCTimestamp = {
+        {"datetime", "A date or date with time type const value or an expression.", {"DateTime", "DateTime64"}},
+        {"time_zone", "A String type const value or an expression representing the time zone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_toUTCTimestamp = {"Returns a date or date with time in UTC timezone.", {"DateTime", "DateTime64"}};
+    FunctionDocumentation::Examples examples_toUTCTimestamp = {
+        {"Convert timezone to UTC", R"(
+SELECT toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')
+        )",
+        R"(
+┌─toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')─┐
+│                                     2023-03-15 16:00:00 │
+└─────────────────────────────────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_toUTCTimestamp = {23, 8};
+    FunctionDocumentation::Category category_toUTCTimestamp = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_toUTCTimestamp = {description_toUTCTimestamp, syntax_toUTCTimestamp, arguments_toUTCTimestamp, returned_value_toUTCTimestamp, examples_toUTCTimestamp, introduced_in_toUTCTimestamp, category_toUTCTimestamp};
+
+    factory.registerFunction<ToUTCTimestampFunction>(documentation_toUTCTimestamp);
     factory.registerAlias("to_utc_timestamp", NameToUTCTimestamp::name, FunctionFactory::Case::Insensitive);
+
+    FunctionDocumentation::Description description_fromUTCTimestamp = R"(
+Converts a date or date with time value from UTC timezone to a date or date with time value with the specified time zone. This function is mainly included for compatibility with Apache Spark and similar frameworks.
+    )";
+    FunctionDocumentation::Syntax syntax_fromUTCTimestamp = R"(
+fromUTCTimestamp(datetime, time_zone)
+    )";
+    FunctionDocumentation::Arguments arguments_fromUTCTimestamp = {
+        {"datetime", "A date or date with time const value or an expression.", {"DateTime", "DateTime64"}},
+        {"time_zone", "A String type const value or an expression representing the time zone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_fromUTCTimestamp = {"Returns DateTime/DateTime64 in the specified timezone.", {"DateTime", "DateTime64"}};
+    FunctionDocumentation::Examples examples_fromUTCTimestamp = {
+        {"Convert UTC timezone to specified timezone", R"(
+SELECT fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')
+        )",
+        R"(
+┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00',3), 'Asia/Shanghai')─┐
+│                                                 2023-03-16 18:00:00.000 │
+└─────────────────────────────────────────────────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_fromUTCTimestamp = {22, 1};
+    FunctionDocumentation::Category category_fromUTCTimestamp = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_fromUTCTimestamp = {description_fromUTCTimestamp,syntax_fromUTCTimestamp,arguments_fromUTCTimestamp,returned_value_fromUTCTimestamp,examples_fromUTCTimestamp,introduced_in_fromUTCTimestamp,category_fromUTCTimestamp};
+
+    factory.registerFunction<FromUTCTimestampFunction>(documentation_fromUTCTimestamp);
     factory.registerAlias("from_utc_timestamp", NameFromUTCTimestamp::name, FunctionFactory::Case::Insensitive);
 }
 

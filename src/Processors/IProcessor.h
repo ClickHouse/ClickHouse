@@ -1,23 +1,23 @@
 #pragma once
 
-#include <Interpreters/Context.h>
-#include <Processors/Port.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Common/CurrentThread.h>
+#include <Common/MemorySpillScheduler.h>
 #include <Common/Stopwatch.h>
 
+#include <list>
 #include <memory>
+#include <vector>
+#include <fmt/format.h>
 
 class EventCounter;
 
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
-}
+
+class InputPort;
+class OutputPort;
+using InputPorts = std::list<InputPort>;
+using OutputPorts = std::list<OutputPort>;
 
 class IQueryPlanStep;
 
@@ -69,7 +69,6 @@ using Processors = std::vector<ProcessorPtr>;
   *
   * Simple transformation. Has single input and single output port. Pulls data, transforms it and pushes to output port.
   * Example: expression calculator.
-  * TODO Better to make each function a separate processor. It's better for pipeline analysis. Also keep in mind 'sleep' and 'rand' functions.
   *
   * Squashing or filtering transformation. Pulls data, possibly accumulates it, and sometimes pushes it to output port.
   * Examples: DISTINCT, WHERE, squashing of blocks for INSERT SELECT.
@@ -151,7 +150,7 @@ public:
         /// You may call 'work' method and processor will do some work synchronously.
         Ready,
 
-        /// You may call 'schedule' method and processor will return descriptor.
+        /// You may call 'schedule' method and processor will return a descriptor.
         /// You need to poll this descriptor and call work() afterwards.
         Async,
 
@@ -180,10 +179,7 @@ public:
       * - method 'prepare' cannot be executed in parallel even for different objects,
       *   if they are connected (including indirectly) to each other by their ports;
       */
-    virtual Status prepare()
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'prepare' is not implemented for {} processor", getName());
-    }
+    virtual Status prepare();
 
     using PortNumbers = std::vector<UInt64>;
 
@@ -195,10 +191,7 @@ public:
       *
       * Method work can be executed in parallel for different processors.
       */
-    virtual void work()
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'work' is not implemented for {} processor", getName());
-    }
+    virtual void work();
 
     /** Executor must call this method when 'prepare' returned Async.
       * This method cannot access any ports. It should use only data that was prepared by 'prepare' method.
@@ -214,10 +207,7 @@ public:
       * It is expected that executor epoll using level-triggered notifications.
       * Read all available data from descriptor before returning ASYNC.
       */
-    virtual int schedule()
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'schedule' is not implemented for {} processor", getName());
-    }
+    virtual int schedule();
 
     /* The method is called right after asynchronous job is done
      * i.e. when file descriptor returned by schedule() is readable.
@@ -245,10 +235,7 @@ public:
       * Method can't remove or reconnect existing ports, move data from/to port or perform calculations.
       * 'prepare' should be called again after expanding pipeline.
       */
-    virtual Processors expandPipeline()
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'expandPipeline' is not implemented for {} processor", getName());
-    }
+    virtual Processors expandPipeline();
 
     /// In case if query was cancelled executor will wait till all processors finish their jobs.
     /// Generally, there is no reason to check this flag. However, it may be reasonable for long operations (e.g. i/o).
@@ -264,33 +251,9 @@ public:
     auto & getInputs() { return inputs; }
     auto & getOutputs() { return outputs; }
 
-    UInt64 getInputPortNumber(const InputPort * input_port) const
-    {
-        UInt64 number = 0;
-        for (const auto & port : inputs)
-        {
-            if (&port == input_port)
-                return number;
+    UInt64 getInputPortNumber(const InputPort * input_port) const;
 
-            ++number;
-        }
-
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find input port for {} processor", getName());
-    }
-
-    UInt64 getOutputPortNumber(const OutputPort * output_port) const
-    {
-        UInt64 number = 0;
-        for (const auto & port : outputs)
-        {
-            if (&port == output_port)
-                return number;
-
-            ++number;
-        }
-
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find output port for {} processor", getName());
-    }
+    UInt64 getOutputPortNumber(const OutputPort * output_port) const;
 
     const auto & getInputs() const { return inputs; }
     const auto & getOutputs() const { return outputs; }
@@ -329,24 +292,7 @@ public:
         size_t output_bytes = 0;
     };
 
-    ProcessorDataStats getProcessorDataStats() const
-    {
-        ProcessorDataStats stats;
-
-        for (const auto & input : inputs)
-        {
-            stats.input_rows += input.rows;
-            stats.input_bytes += input.bytes;
-        }
-
-        for (const auto & output : outputs)
-        {
-            stats.output_rows += output.rows;
-            stats.output_bytes += output.bytes;
-        }
-
-        return stats;
-    }
+    ProcessorDataStats getProcessorDataStats() const;
 
     struct ReadProgressCounters
     {
@@ -380,10 +326,24 @@ public:
     /// This counter is used to calculate the number of rows right before AggregatingTransform.
     virtual void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr /* counter */) { }
 
+    /// Returns true if processor can spill memory to disk.
+    /// Aggregate, join and sort processors can be spillable.
+    /// For unspillable processors, the memory usage is not tracked.
+    inline bool isSpillable() const { return spillable; }
+
+    virtual ProcessorMemoryStats getMemoryStats()
+    {
+        return {};
+    }
+
+    // If the in-memory data's size is not larger then bytes, it doesn't spill
+    virtual bool spillOnSize(size_t /*bytes*/) { return false; }
+
 protected:
     virtual void onCancel() noexcept {}
 
     std::atomic<bool> is_cancelled{false};
+    bool spillable = false;
 
 private:
     /// For:
@@ -412,6 +372,7 @@ private:
     size_t processor_index = 0;
     String plan_step_name;
     String plan_step_description;
+
 };
 
 

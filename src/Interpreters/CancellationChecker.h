@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/ProcessList.h>
-#include "QueryPipeline/SizeLimits.h"
+#include <QueryPipeline/SizeLimits.h>
 #include <atomic>
 #include <set>
 
@@ -48,6 +48,8 @@ private:
     // Function to execute when a task's endTime is reached
     void cancelTask(QueryToTrack task);
     bool removeQueryFromSet(std::shared_ptr<QueryStatus> query);
+
+    const LoggerPtr log;
 
 public:
     // Singleton instance retrieval

@@ -28,12 +28,11 @@ UInt64 getJeMallocValue(const char * name)
     /// mallctl() fills the value with 32 bit integer for some queries("arenas.nbins" for example).
     /// In this case variable 'size' will be changed from 8 to 4 and the 64 bit variable 'value' will hold the 32 bit actual value times 2^32 on big-endian machines.
     /// We should right shift the value by 32 on big-endian machines(which is unnecessary on little-endian machines).
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    if (size == 4)
+    if constexpr (std::endian::native == std::endian::big)
     {
-        value >>= 32;
+        if (size == 4)
+            value >>= 32;
     }
-#endif
     return value;
 }
 
@@ -123,7 +122,7 @@ Pipe StorageSystemJemallocBins::read(
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);
 
-    return Pipe(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
+    return Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(header)), std::move(chunk)));
 }
 
 }

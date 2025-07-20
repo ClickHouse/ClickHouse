@@ -1,4 +1,4 @@
-#include "StorageMySQL.h"
+#include <Storages/StorageMySQL.h>
 
 #if USE_MYSQL
 
@@ -9,6 +9,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -19,6 +20,7 @@
 #include <mysqlxx/Transaction.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
+#include <Columns/IColumn.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/quoteString.h>
@@ -70,7 +72,7 @@ StorageMySQL::StorageMySQL(
     , on_duplicate_clause{on_duplicate_clause_}
     , mysql_settings(std::make_unique<MySQLSettings>(mysql_settings_))
     , pool(std::make_shared<mysqlxx::PoolWithFailover>(pool_))
-    , log(getLogger("StorageMySQL (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageMySQL (" + table_id_.getFullTableName() + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
 
@@ -154,7 +156,7 @@ public:
         const std::string & remote_table_name_,
         const mysqlxx::PoolWithFailover::Entry & entry_,
         const size_t & mysql_max_rows_to_insert)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , storage{storage_}
         , metadata_snapshot{metadata_snapshot_}
         , remote_database_name{remote_database_name_}
@@ -275,7 +277,7 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
 {
     StorageMySQL::Configuration configuration;
 
-    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments = {"replace_query", "on_duplicate_clause", "addresses_expr", "host", "hostname", "port"};
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments = {"replace_query", "on_duplicate_clause", "addresses_expr", "host", "hostname", "port", "ssl_ca", "ssl_cert", "ssl_key"};
     auto mysql_settings_names = storage_settings.getAllRegisteredNames();
     for (const auto & name : mysql_settings_names)
         optional_arguments.insert(name);
@@ -306,6 +308,9 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
         configuration.table = named_collection.get<String>("table");
     configuration.replace_query = named_collection.getOrDefault<UInt64>("replace_query", false);
     configuration.on_duplicate_clause = named_collection.getOrDefault<String>("on_duplicate_clause", "");
+    configuration.ssl_ca = named_collection.getOrDefault<String>("ssl_ca", "");
+    configuration.ssl_cert = named_collection.getOrDefault<String>("ssl_cert", "");
+    configuration.ssl_key = named_collection.getOrDefault<String>("ssl_key", "");
 
     storage_settings.loadFromNamedCollection(named_collection);
 
@@ -383,7 +388,8 @@ void registerStorageMySQL(StorageFactory & factory)
     {
         .supports_settings = true,
         .supports_schema_inference = true,
-        .source_access_type = AccessType::MYSQL,
+        .source_access_type = AccessTypeObjects::Source::MYSQL,
+        .has_builtin_setting_fn = MySQLSettings::hasBuiltin,
     });
 }
 

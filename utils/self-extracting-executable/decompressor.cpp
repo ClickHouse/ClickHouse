@@ -15,9 +15,13 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <vector>
 
-#if (defined(OS_DARWIN) || defined(OS_FREEBSD)) && defined(__GNUC__)
+#if defined(OS_DARWIN) && defined(__GNUC__)
 #   include <machine/endian.h>
+#elif defined(OS_FREEBSD) && defined(__GNUC__)
+#   include <machine/endian.h>
+#   include <sys/endian.h>
 #else
 #   include <endian.h>
 #endif
@@ -33,7 +37,7 @@
 #   include <sys/sysctl.h>
 #endif
 
-#include "types.h"
+#include <types.h>
 
 /// decompress part
 int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_offset,
@@ -488,7 +492,7 @@ int main(int/* argc*/, char* argv[])
 
         /// size 1 of lock file indicates that another decompressor has found active executable
         if (lock_info.st_size == 1)
-            execv(self, argv);
+            execv(self, argv);  // NOLINT(clang-analyzer-optin.taint.GenericTaint)
 
         printf("No target executable - decompression only was performed.\n"); // NOLINT(modernize-use-std-print)
         return 0;
@@ -572,7 +576,7 @@ int main(int/* argc*/, char* argv[])
             /// execution should be performed
             write(lock, "1", 1);
 #endif
-            execv(self, argv);
+            execv(self, argv); // NOLINT(clang-analyzer-optin.taint.GenericTaint)
 
             /// This part of code will be reached only if error happened
             perror("execv");

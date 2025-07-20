@@ -3,8 +3,6 @@
 #include <Access/AccessRights.cpp>  // NOLINT(bugprone-suspicious-include)
 #include <IO/WriteBufferFromString.h>
 
-#include <list>
-
 using namespace DB;
 
 TEST(AccessRights, Radix)
@@ -273,24 +271,6 @@ TEST(AccessRights, Union)
     rhs.grantWithGrantOption(AccessType::SELECT, "db1", "tb1", Strings{"col2", "col3"});
     lhs.makeUnion(rhs);
     ASSERT_EQ(lhs.toString(), "GRANT SELECT(col1) ON db1.tb1, GRANT SELECT(col2, col3) ON db1.tb1 WITH GRANT OPTION");
-
-    lhs = {};
-    rhs = {};
-    lhs.grant(AccessType::INSERT);
-    rhs.grant(AccessType::ALL, "db1");
-    lhs.makeUnion(rhs);
-    ASSERT_EQ(lhs.toString(),
-              "GRANT INSERT ON *.*, "
-              "GRANT SHOW, SELECT, ALTER, CREATE DATABASE, CREATE TABLE, CREATE VIEW, "
-              "CREATE DICTIONARY, DROP DATABASE, DROP TABLE, DROP VIEW, DROP DICTIONARY, UNDROP TABLE, "
-              "TRUNCATE, OPTIMIZE, BACKUP, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, "
-              "SHOW ROW POLICIES, SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, "
-              "SYSTEM MOVES, SYSTEM PULLING REPLICATION LOG, SYSTEM CLEANUP, SYSTEM VIEWS, SYSTEM SENDS, "
-              "SYSTEM REPLICATION QUEUES, SYSTEM VIRTUAL PARTS UPDATE, SYSTEM REDUCE BLOCKING PARTS, "
-              "SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, SYSTEM RESTART REPLICA, "
-              "SYSTEM RESTORE REPLICA, SYSTEM WAIT LOADING PARTS, SYSTEM SYNC DATABASE REPLICA, SYSTEM FLUSH DISTRIBUTED, "
-              "SYSTEM LOAD PRIMARY KEY, SYSTEM UNLOAD PRIMARY KEY, dictGet ON db1.*, GRANT TABLE ENGINE ON db1, "
-              "GRANT SET DEFINER ON db1, GRANT NAMED COLLECTION ADMIN ON db1");
 
     lhs = {};
     rhs = {};

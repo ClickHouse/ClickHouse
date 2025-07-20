@@ -1,5 +1,5 @@
-#include "PolygonDictionaryImplementations.h"
-#include "DictionaryFactory.h"
+#include <Dictionaries/PolygonDictionaryImplementations.h>
+#include <Dictionaries/DictionaryFactory.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -7,10 +7,9 @@
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 
+#include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
-
-#include <numeric>
 
 namespace DB
 {
@@ -163,7 +162,7 @@ bool PolygonDictionaryIndexCell::find(const Point & point, size_t & polygon_inde
 }
 
 template <class PolygonDictionary>
-DictionaryPtr createLayout(const std::string & ,
+DictionaryPtr createLayout(const std::string & /*name*/,
                            const DictionaryStructure & dict_struct,
                            const Poco::Util::AbstractConfiguration & config,
                            const std::string & config_prefix,

@@ -121,10 +121,12 @@ def test_concurrent_backups_on_same_node():
 
     ids_list = "[" + ", ".join([f"'{id}'" for id in ids]) + "]"
 
+    # Wait until all the concurrent BACKUP commands have finished.
     assert_eq_with_retry(
         node0,
         f"SELECT status FROM system.backups WHERE status == 'CREATING_BACKUP' AND id IN {ids_list}",
         "",
+        retry_count=100,
     )
 
     assert node0.query(
@@ -154,11 +156,13 @@ def test_concurrent_backups_on_different_nodes():
         )
         ids.append(id)
 
+    # Wait until all the concurrent BACKUP commands have finished.
     for i in range(num_concurrent_backups):
         assert_eq_with_retry(
             nodes[i],
             f"SELECT status FROM system.backups WHERE status == 'CREATING_BACKUP' AND id = '{ids[i]}'",
             "",
+            retry_count=100,
         )
 
     for i in range(num_concurrent_backups):

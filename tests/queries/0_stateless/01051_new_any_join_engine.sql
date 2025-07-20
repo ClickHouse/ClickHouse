@@ -10,7 +10,7 @@ DROP TABLE IF EXISTS semi_right_join;
 DROP TABLE IF EXISTS anti_left_join;
 DROP TABLE IF EXISTS anti_right_join;
 
-CREATE TABLE t1 (x UInt32, str String) engine = Memory;
+CREATE TABLE t1 (x UInt32, str String) engine = MergeTree ORDER BY tuple();
 
 CREATE TABLE any_left_join (x UInt32, s String) engine = Join(ANY, LEFT, x);
 CREATE TABLE any_inner_join (x UInt32, s String) engine = Join(ANY, INNER, x);
@@ -35,6 +35,7 @@ INSERT INTO anti_right_join (x, s) VALUES (2, 'b1'), (2, 'b2'), (4, 'b3'), (4, '
 
 SET join_use_nulls = 0;
 SET any_join_distinct_right_table_keys = 0;
+SET parallel_replicas_local_plan=1;
 
 SELECT 'any left';
 SELECT * FROM t1 ANY LEFT JOIN any_left_join j USING(x) ORDER BY x, str, s;

@@ -14,9 +14,8 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/FieldVisitors.h>
-#include "Columns/ColumnsDateTime.h"
-#include "Columns/ColumnsNumber.h"
+#include <Columns/ColumnsDateTime.h>
+#include <Columns/ColumnsNumber.h>
 
 #include <base/range.h>
 #include <base/unaligned.h>
@@ -74,6 +73,10 @@ public:
 
     Field operator[](size_t n) const override { return (*getNestedColumn())[n]; }
     void get(size_t n, Field & res) const override { getNestedColumn()->get(n, res); }
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
+    {
+        return getNestedColumn()->getValueNameAndType(n);
+    }
     bool isDefaultAt(size_t n) const override { return n == 0; }
     StringRef getDataAt(size_t n) const override { return getNestedColumn()->getDataAt(n); }
     UInt64 get64(size_t n) const override { return getNestedColumn()->get64(n); }
@@ -118,7 +121,7 @@ public:
         callback(column_holder);
     }
 
-    void forEachSubcolumn(IColumn::MutableColumnCallback callback) override
+    void forEachMutableSubcolumn(IColumn::MutableColumnCallback callback) override
     {
         callback(column_holder);
         reverse_index.setColumn(getRawColumnPtr());
@@ -132,10 +135,10 @@ public:
         column_holder->forEachSubcolumnRecursively(callback);
     }
 
-    void forEachSubcolumnRecursively(IColumn::RecursiveMutableColumnCallback callback) override
+    void forEachMutableSubcolumnRecursively(IColumn::RecursiveMutableColumnCallback callback) override
     {
         callback(*column_holder);
-        column_holder->forEachSubcolumnRecursively(callback);
+        column_holder->forEachMutableSubcolumnRecursively(callback);
         reverse_index.setColumn(getRawColumnPtr());
         if (is_nullable)
             nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
@@ -736,6 +739,7 @@ extern template class ColumnUnique<ColumnFloat64>;
 extern template class ColumnUnique<ColumnString>;
 extern template class ColumnUnique<ColumnFixedString>;
 extern template class ColumnUnique<ColumnDateTime64>;
+extern template class ColumnUnique<ColumnTime64>;
 extern template class ColumnUnique<ColumnIPv4>;
 extern template class ColumnUnique<ColumnIPv6>;
 extern template class ColumnUnique<ColumnUUID>;

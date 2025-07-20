@@ -8,7 +8,11 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/SipHash.h>
+#include <Columns/ColumnSparse.h>
 #include <Poco/UTF8Encoding.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 #include <limits>
 
@@ -24,11 +28,9 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-
 template <typename FieldType> struct EnumName;
 template <> struct EnumName<Int8> { static constexpr auto value = "Enum8"; };
 template <> struct EnumName<Int16> { static constexpr auto value = "Enum16"; };
-
 
 template <typename Type>
 const char * DataTypeEnum<Type>::getFamilyName() const
@@ -78,7 +80,23 @@ Field DataTypeEnum<Type>::getDefault() const
 template <typename Type>
 void DataTypeEnum<Type>::insertDefaultInto(IColumn & column) const
 {
-    assert_cast<ColumnType &>(column).getData().push_back(this->getValues().front().second);
+    const auto & default_value = this->getValues().front().second;
+
+    /// This code is actually bad, but unfortunately, `IDataType::insertDefaultInto`
+    /// breaks the abstraction of the separation of data types, serializations, and columns.
+    /// Since this method is overridden only for `DataTypeEnum` and this code
+    /// has remained unchanged for years, so it should be okay.
+    if (auto * sparse_column = typeid_cast<ColumnSparse *>(&column))
+    {
+        if (default_value == Type{})
+            sparse_column->insertDefault();
+        else
+            sparse_column->insert(default_value);
+    }
+    else
+    {
+        assert_cast<ColumnType &>(column).getData().push_back(default_value);
+    }
 }
 
 template <typename Type>
@@ -87,6 +105,11 @@ bool DataTypeEnum<Type>::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this) && type_name == static_cast<const DataTypeEnum<Type> &>(rhs).type_name;
 }
 
+template <typename Type>
+void DataTypeEnum<Type>::updateHashImpl(SipHash & hash) const
+{
+    hash.update(type_name);
+}
 
 template <typename Type>
 bool DataTypeEnum<Type>::textCanContainOnlyValidUTF8() const

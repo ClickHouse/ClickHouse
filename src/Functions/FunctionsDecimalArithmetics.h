@@ -10,9 +10,6 @@
 #include <Functions/castTypeToEither.h>
 #include <IO/WriteHelpers.h>
 
-#include <Poco/Logger.h>
-#include <Loggers/Loggers.h>
-
 
 namespace DB
 {
@@ -247,7 +244,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return Transform::suitable_for_short_circuit; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

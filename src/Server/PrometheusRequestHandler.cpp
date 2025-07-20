@@ -7,6 +7,7 @@
 #include <Server/IServer.h>
 #include <Server/PrometheusMetricsWriter.h>
 #include <base/scope_guard.h>
+#include <Poco/Net/HTTPResponse.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include "config.h"
@@ -138,7 +139,7 @@ protected:
 
     bool authenticateUser(HTTPServerRequest & request, HTTPServerResponse & response)
     {
-        return authenticateUserByHTTP(request, *params, response, *session, request_credentials, HTTPHandlerConnectionConfig{}, server().context(), log());
+        return authenticateUserByHTTP(request, *params, response, *session, request_credentials, config().connection_config, server().context(), log());
     }
 
     void makeContext(HTTPServerRequest & request)
@@ -230,7 +231,8 @@ public:
         if (write_request.metadata_size())
             protocol.writeMetricsMetadata(write_request.metadata());
 
-        response.setContentType("text/plain; charset=UTF-8");
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NO_CONTENT, Poco::Net::HTTPResponse::HTTP_REASON_NO_CONTENT);
+        response.setChunkedTransferEncoding(false);
         response.send();
 
 #else
@@ -304,13 +306,15 @@ PrometheusRequestHandler::PrometheusRequestHandler(
     IServer & server_,
     const PrometheusRequestHandlerConfig & config_,
     const AsynchronousMetrics & async_metrics_,
-    std::shared_ptr<PrometheusMetricsWriter> metrics_writer_)
+    std::shared_ptr<PrometheusMetricsWriter> metrics_writer_,
+    std::unordered_map<String, String> response_headers_)
     : server(server_)
     , config(config_)
     , async_metrics(async_metrics_)
     , metrics_writer(metrics_writer_)
     , log(getLogger("PrometheusRequestHandler"))
 {
+    response_headers = response_headers_;
     createImpl();
 }
 
@@ -342,6 +346,7 @@ void PrometheusRequestHandler::createImpl()
 void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event_)
 {
     setThreadName("PrometheusHndlr");
+    applyHTTPResponseHeaders(response, response_headers);
 
     try
     {

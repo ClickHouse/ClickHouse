@@ -1,5 +1,6 @@
+#include <IO/ReadBufferFromString.h>
 #include <Processors/Formats/Impl/FormRowInputFormat.h>
-#include "Formats/EscapingRuleUtils.h"
+#include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
 
 #include <Poco/URI.h>
@@ -23,7 +24,7 @@ namespace
     }
 }
 
-FormRowInputFormat::FormRowInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_) : IRowInputFormat(std::move(header_), in_, params_), format_settings(format_settings_)
+FormRowInputFormat::FormRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_) : IRowInputFormat(std::move(header_), in_, params_), format_settings(format_settings_)
 {
     const auto & header = getPort().getHeader();
     size_t num_columns = header.columns();
@@ -166,7 +167,7 @@ void registerInputFormatForm(FormatFactory & factory)
         IRowInputFormat::Params params,
         const FormatSettings & settings)
     {
-        return std::make_shared<FormRowInputFormat>(buf, sample, std::move(params),settings);
+        return std::make_shared<FormRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params),settings);
     });
 }
 

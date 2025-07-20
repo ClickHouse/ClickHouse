@@ -1,12 +1,9 @@
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Common/assert_cast.h>
 #include <Common/iota.h>
 #include <Common/randomSeed.h>
 #include <Common/shuffle.h>
@@ -14,7 +11,6 @@
 
 #include <pcg_random.hpp>
 
-#include <algorithm>
 #include <numeric>
 
 
@@ -176,55 +172,70 @@ ColumnPtr FunctionArrayShuffleImpl<Traits>::executeGeneric(const ColumnArray & a
 
 REGISTER_FUNCTION(ArrayShuffle)
 {
-    factory.registerFunction<FunctionArrayShuffleImpl<FunctionArrayShuffleTraits>>(
-        FunctionDocumentation{
-            .description=R"(
+    FunctionDocumentation::Description description = R"(
 Returns an array of the same size as the original array containing the elements in shuffled order.
-Elements are being reordered in such a way that each possible permutation of those elements has equal probability of appearance.
+Elements are reordered in such a way that each possible permutation of those elements has equal probability of appearance.
 
-Note: this function will not materialize constants:
-[example:materialize]
+:::note
+This function will not materialize constants.
+:::
+    )";
+    FunctionDocumentation::Syntax syntax = "arrayShuffle(arr [, seed])";
+    FunctionDocumentation::Arguments arguments = {
+        {"arr", "The array to shuffle.", {"Array(T)"}},
+        {"seed (optional)", "Optional. The seed to be used with random number generation. If not provided a random one is used.", {"(U)Int*"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Array with elements shuffled", {"Array(T)"}};
+    FunctionDocumentation::Examples examples = {
+        {"Example without seed (unstable results)", "SELECT arrayShuffle([1, 2, 3, 4]);", "[1,4,2,3]"},
+        {"Example without seed (stable results)", "SELECT arrayShuffle([1, 2, 3, 4], 41);", "[3,2,1,4]"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-If no seed is provided a random one will be used:
-[example:random_seed]
+    factory.registerFunction<FunctionArrayShuffleImpl<FunctionArrayShuffleTraits>>(documentation, FunctionFactory::Case::Insensitive);
 
-It is possible to override the seed to produce stable results:
-[example:explicit_seed]
-)",
-            .examples{
-                {"random_seed", "SELECT arrayShuffle([1, 2, 3, 4])", ""},
-                {"explicit_seed", "SELECT arrayShuffle([1, 2, 3, 4], 41)", ""},
-                {"materialize", "SELECT arrayShuffle(materialize([1, 2, 3]), 42), arrayShuffle([1, 2, 3], 42) FROM numbers(10)", ""}},
-            .categories{"Array"}},
-        FunctionFactory::Case::Insensitive);
+    description = R"(
+Returns an array of the same size as the original array where elements in range `[1..limit]` are a random
+subset of the original array. Remaining `(limit..n]` shall contain the elements not in `[1..limit]` range in undefined order.
+Value of limit shall be in range `[1..n]`. Values outside of that range are equivalent to performing full `arrayShuffle`:
 
-    factory.registerFunction<FunctionArrayShuffleImpl<FunctionArrayPartialShuffleTraits>>(
-        FunctionDocumentation{
-            .description=R"(
-Returns an array of the same size as the original array where elements in range [1..limit] are a random
-subset of the original array. Remaining (limit..n] shall contain the elements not in [1..limit] range in undefined order.
-Value of limit shall be in range [1..n]. Values outside of that range are equivalent to performing full arrayShuffle:
-[example:no_limit1]
-[example:no_limit2]
+:::note
+This function will not materialize constants.
 
-Note: this function will not materialize constants:
-[example:materialize]
-
-If no seed is provided a random one will be used:
-[example:random_seed]
-
-It is possible to override the seed to produce stable results:
-[example:explicit_seed]
-)",
-            .examples{
-                {"no_limit1", "SELECT arrayPartialShuffle([1, 2, 3, 4], 0)", ""},
-                {"no_limit2", "SELECT arrayPartialShuffle([1, 2, 3, 4])", ""},
-                {"random_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2)", ""},
-                {"explicit_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2, 41)", ""},
-                {"materialize",
-                 "SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffle([1, 2, 3], 2, 42) FROM numbers(10)", ""}},
-            .categories{"Array"}},
-        FunctionFactory::Case::Insensitive);
+The value of `limit` should be in the range `[1..N]`. Values outside of that range are equivalent to performing full [`arrayShuffle`](#arrayShuffle).
+:::
+    )";
+    syntax = "arrayPartialShuffle(arr [, limit[, seed]])";
+    arguments = {
+        {"arr", "The array to shuffle.", {"Array(T)"}},
+        {"seed", "Optional. The seed to be used with random number generation. If not provided, a random one is used.", {"(U)Int*"}},
+        {"limit", "Optional. The number to limit element swaps to, in the range `[1..N]`.", {"(U)Int*"}},
+    };
+    returned_value = {"Array with elements partially shuffled.", {"Array(T)"}};
+    examples = {
+        {"no_limit1", "SELECT arrayPartialShuffle([1, 2, 3, 4], 0)", "[2, 4, 3, 1]"},
+        {"no_limit2", "SELECT arrayPartialShuffle([1, 2, 3, 4])", "[4, 1, 3, 2]"},
+        {"random_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2)", "[3, 4, 1, 2]"},
+        {"explicit_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2, 41)", "[3, 2, 1, 4]"},
+        {"materialize", "SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffle([1, 2, 3], 2, 42) FROM numbers(10)", R"(
+┌─arrayPartial⋯4]), 2, 42)─┬─arrayPartial⋯ 3], 2, 42)─┐
+│ [3,2,1,4]                │ [3,2,1]                  │
+│ [3,2,1,4]                │ [3,2,1]                  │
+│ [4,3,2,1]                │ [3,2,1]                  │
+│ [1,4,3,2]                │ [3,2,1]                  │
+│ [3,4,1,2]                │ [3,2,1]                  │
+│ [1,2,3,4]                │ [3,2,1]                  │
+│ [1,4,3,2]                │ [3,2,1]                  │
+│ [1,4,3,2]                │ [3,2,1]                  │
+│ [3,1,2,4]                │ [3,2,1]                  │
+│ [1,3,2,4]                │ [3,2,1]                  │
+└──────────────────────────┴──────────────────────────┘
+    )"}
+    };
+    documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionArrayShuffleImpl<FunctionArrayPartialShuffleTraits>>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

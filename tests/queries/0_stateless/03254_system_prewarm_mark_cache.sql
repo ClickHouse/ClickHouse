@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-shared-merge-tree
+-- Tags: no-parallel
 
 DROP TABLE IF EXISTS t_prewarm_cache;
 
@@ -18,7 +18,7 @@ SYSTEM PREWARM MARK CACHE t_prewarm_cache;
 
 SELECT count() FROM t_prewarm_cache WHERE NOT ignore(*);
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT ProfileEvents['LoadedMarksCount'] > 0 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE 'SELECT count() FROM t_prewarm_cache%'

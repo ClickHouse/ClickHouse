@@ -261,139 +261,120 @@ using FunctionArrayRotateRight = FunctionArrayShiftRotate<ArrayRotateRightImpl, 
 
 REGISTER_FUNCTION(ArrayShiftOrRotate)
 {
-    factory.registerFunction<FunctionArrayRotateLeft>(
-        FunctionDocumentation{
-        .description = R"(
-Returns an array of the same size as the original array with elements rotated
-to the left by the specified number of positions.
-[example:simple_int]
-[example:overflow_int]
-[example:simple_string]
-[example:simple_array]
-[example:simple_nested_array]
+    FunctionDocumentation::Description description_rotateleft = "Rotates an array to the left by the specified number of elements. Negative values of `n` are treated as rotating to the right by the absolute value of the rotation.";
+    FunctionDocumentation::Syntax syntax_rotateleft = "arrayRotateLeft(arr, n)";
+    FunctionDocumentation::Arguments arguments_rotateleft =
+    {
+        {"arr", "The array for which to rotate the elements.[`Array(T)`](/sql-reference/data-types/array)."},
+        {"n", "Number of elements to rotate. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_rotateleft = {"An array rotated to the left by the specified number of elements", {"Array(T)"}};
+    FunctionDocumentation::Examples examples_rotateleft = {
+        {"Usage example", "SELECT arrayRotateLeft([1,2,3,4,5,6], 2) as res;", "[3,4,5,6,1,2]"},
+        {"Negative value of n", "SELECT arrayRotateLeft([1,2,3,4,5,6], -2) as res;", "[5,6,1,2,3,4]"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_rotateleft = {23, 8};
+    FunctionDocumentation::Category category_rotateleft = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_rotateleft = {
+        description_rotateleft,
+        syntax_rotateleft,
+        arguments_rotateleft,
+        returned_value_rotateleft,
+        examples_rotateleft,
+        introduced_in_rotateleft,
+        category_rotateleft
+    };
 
-Negative rotate values are treated as rotating to the right by the absolute
-value of the rotation.
-[example:negative_rotation_int]
-)",
-        .examples{
-            {"simple_int", "SELECT arrayRotateLeft([1, 2, 3, 4, 5], 3)", "[4, 5, 1, 2, 3]"},
-            {"simple_string", "SELECT arrayRotateLeft(['a', 'b', 'c', 'd', 'e'], 3)", "['d', 'e', 'a', 'b', 'c']"},
-            {"simple_array", "SELECT arrayRotateLeft([[1, 2], [3, 4], [5, 6]], 2)", "[[5, 6], [1, 2], [3, 4]]"},
-            {"simple_nested_array",
-             "SELECT arrayRotateLeft([[[1, 2], [3, 4]], [[5, 6], [7, 8]]], 1)",
-             "[[[5, 6], [7, 8]], [[1, 2], [3, 4]]]"},
-            {"negative_rotation_int", "SELECT arrayRotateLeft([1, 2, 3, 4, 5], -3)", "[3, 4, 5, 1, 2]"},
-            {"overflow_int", "SELECT arrayRotateLeft([1, 2, 3, 4, 5], 8)", "[4, 5, 1, 2, 3]"},
+    factory.registerFunction<FunctionArrayRotateLeft>(documentation_rotateleft);
 
-        },
-        .categories = {"Array"},
-    });
-    factory.registerFunction<FunctionArrayRotateRight>(
-        FunctionDocumentation{
-        .description = R"(
-Returns an array of the same size as the original array with elements rotated
-to the right by the specified number of positions.
-[example:simple_int]
-[example:overflow_int]
-[example:simple_string]
-[example:simple_array]
-[example:simple_nested_array]
+    FunctionDocumentation::Description description_rotateright = "Rotates an array to the right by the specified number of elements. Negative values of `n` are treated as rotating to the left by the absolute value of the rotation.";
+    FunctionDocumentation::Syntax syntax_rotateright = "arrayRotateRight(arr, n)";
+    FunctionDocumentation::Arguments arguments_rotateright =
+    {
+        {"arr", "The array for which to rotate the elements.[`Array(T)`](/sql-reference/data-types/array)."},
+        {"n", "Number of elements to rotate. [`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_rotateright = {"An array rotated to the right by the specified number of elements", {"Array(T)"}};
+    FunctionDocumentation::Examples examples_rotateright =
+    {
+        {"Usage example", "SELECT arrayRotateRight([1,2,3,4,5,6], 2) as res;", "[5,6,1,2,3,4]"},
+        {"Negative value of n", "SELECT arrayRotateRight([1,2,3,4,5,6], -2) as res;", "[3,4,5,6,1,2]"},
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_rotateright = {23, 8};
+    FunctionDocumentation::Category category_rotateright = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_rotateright = {
+        description_rotateright,
+        syntax_rotateright,
+        arguments_rotateright,
+        returned_value_rotateright,
+        examples_rotateright,
+        introduced_in_rotateright,
+        category_rotateright
+    };
 
-Negative rotate values are treated as rotating to the left by the absolute
-value of the rotation.
-[example:negative_rotation_int]
-)",
-        .examples{
-            {"simple_int", "SELECT arrayRotateRight([1, 2, 3, 4, 5], 3)", "[3, 4, 5, 1, 2]"},
-            {"simple_string", "SELECT arrayRotateRight(['a', 'b', 'c', 'd', 'e'], 3)", "['c', 'd', 'e', 'a', 'b']"},
-            {"simple_array", "SELECT arrayRotateRight([[1, 2], [3, 4], [5, 6]], 2)", "[[3, 4], [5, 6], [1, 2]]"},
-            {"simple_nested_array",
-             "SELECT arrayRotateRight([[[1, 2], [3, 4]], [[5, 6], [7, 8]]], 1)",
-             "[[[7, 8], [1, 2]], [[3, 4], [5, 6]]]"},
-            {"negative_rotation_int", "SELECT arrayRotateRight([1, 2, 3, 4, 5], -3)", "[4, 5, 1, 2, 3]"},
-            {"overflow_int", "SELECT arrayRotateRight([1, 2, 3, 4, 5], 8)", "[4, 5, 1, 2, 3]"},
-        },
-        .categories = {"Array"},
-    });
-    factory.registerFunction<FunctionArrayShiftLeft>(
-        FunctionDocumentation{
-        .description = R"(
-Returns an array of the same size as the original array with elements shifted
-to the left by the specified number of positions. New elements are filled with
-provided default values or default values of the corresponding type.
-[example:simple_int]
-[example:overflow_int]
-[example:simple_string]
-[example:simple_array]
-[example:simple_nested_array]
+    factory.registerFunction<FunctionArrayRotateRight>(documentation_rotateright);
 
-Negative shift values are treated as shifting to the right by the absolute
-value of the shift.
-[example:negative_shift_int]
+    FunctionDocumentation::Description description_shiftleft = R"(
+Shifts an array to the left by the specified number of elements.
+New elements are filled with the provided argument or the default value of the array element type.
+If the number of elements is negative, the array is shifted to the right.
+    )";
+    FunctionDocumentation::Syntax syntax_shiftleft = "arrayShiftLeft(arr, n[, default])";
+    FunctionDocumentation::Arguments arguments_shiftleft =
+    {
+        {"arr", "The array for which to shift the elements.[`Array(T)`](/sql-reference/data-types/array)."},
+        {"n", "Number of elements to shift.[`(U)Int8/16/32/64`](/sql-reference/data-types/int-uint)."},
+        {"default", "Optional. Default value for new elements."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_shiftleft = {"An array shifted to the left by the specified number of elements", {"Array(T)"}};
+    FunctionDocumentation::Examples examples_shiftleft =
+    {
+        {"Usage example", "SELECT arrayShiftLeft([1,2,3,4,5,6], 2) as res;", "[3,4,5,6,0,0]"},
+        {"Negative value of n", "SELECT arrayShiftLeft([1,2,3,4,5,6], -2) as res;", "[0,0,1,2,3,4]"},
+        {"Using a default value", "SELECT arrayShiftLeft([1,2,3,4,5,6], 2, 42) as res;", "[3,4,5,6,42,42]"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_shiftleft = {23, 8};
+    FunctionDocumentation::Category category_shiftleft = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_shiftleft =
+    {
+        description_shiftleft,
+        syntax_shiftleft,
+        arguments_shiftleft,
+        returned_value_shiftleft,
+        examples_shiftleft,
+        introduced_in_shiftleft,
+        category_shiftleft
+    };
 
-The default value must be of the same type as the array elements.
-[example:simple_int_with_default]
-[example:simple_string_with_default]
-[example:simple_array_with_default]
-[example:cast_array_with_default]
-)",
-        .examples{
-            {"simple_int", "SELECT arrayShiftLeft([1, 2, 3, 4, 5], 3)", "[4, 5, 0, 0, 0]"},
-            {"negative_shift_int", "SELECT arrayShiftLeft([1, 2, 3, 4, 5], -3)", "[0, 0, 0, 1, 2]"},
-            {"overflow_int", "SELECT arrayShiftLeft([1, 2, 3, 4, 5], 8)", "[0, 0, 0, 0, 0]"},
-            {"simple_string", "SELECT arrayShiftLeft(['a', 'b', 'c', 'd', 'e'], 3)", "['d', 'e', '', '', '']"},
-            {"simple_array", "SELECT arrayShiftLeft([[1, 2], [3, 4], [5, 6]], 2)", "[[5, 6], [], []]"},
-            {"simple_nested_array", "SELECT arrayShiftLeft([[[1, 2], [3, 4]], [[5, 6], [7, 8]]], 1)", "[[[5, 6], [7, 8]], []]"},
-            {"simple_int_with_default", "SELECT arrayShiftLeft([1, 2, 3, 4, 5], 3, 7)", "[4, 5, 7, 7, 7]"},
-            {"simple_string_with_default", "SELECT arrayShiftLeft(['a', 'b', 'c', 'd', 'e'], 3, 'foo')", "['d', 'e', 'foo', 'foo', 'foo']"},
-            {"simple_array_with_default", "SELECT arrayShiftLeft([[1, 2], [3, 4], [5, 6]], 2, [7, 8])", "[[5, 6], [7, 8], [7, 8]]"},
-            {"cast_array_with_default",
-             "SELECT arrayShiftLeft(CAST('[1, 2, 3, 4, 5, 6]', 'Array(UInt16)'), 1, 1000)",
-             "[2, 3, 4, 5, 6, 1000]"},
-        },
-        .categories = {"Array"},
-    });
-    factory.registerFunction<FunctionArrayShiftRight>(
-        FunctionDocumentation{
-        .description = R"(
-Returns an array of the same size as the original array with elements shifted
-to the right by the specified number of positions. New elements are filled with
-provided default values or default values of the corresponding type.
-[example:simple_int]
-[example:overflow_int]
-[example:simple_string]
-[example:simple_array]
-[example:simple_nested_array]
+    factory.registerFunction<FunctionArrayShiftLeft>(documentation_shiftleft);
 
-Negative shift values are treated as shifting to the left by the absolute
-value of the shift.
-[example:negative_shift_int]
+    FunctionDocumentation::Description description_shiftright = R"(
+Shifts an array to the right by the specified number of elements.
+New elements are filled with the provided argument or the default value of the array element type.
+If the number of elements is negative, the array is shifted to the left.
+    )";
+    FunctionDocumentation::Syntax syntax_shiftright = "arrayShiftRight(arr, n[, default])";
+    FunctionDocumentation::Arguments arguments_shiftright =
+    {
+        {"arr", "The array for which to shift the elements.", {"Array(T)"}},
+        {"n", "Number of elements to shift.", {"(U)Int8/16/32/64"}},
+        {"default", "Optional. Default value for new elements."},
+    };
+    FunctionDocumentation::ReturnedValue returned_value_shiftright =
+    {
+        "An array shifted to the right by the specified number of elements", {"Array(T)"}
+    };
+    FunctionDocumentation::Examples examples_shiftright =
+    {
+        {"Usage example", "SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], 2) as res;", "[0, 0, 1, 2, 3, 4]"},
+        {"Negative value of n", "SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], -2) as res;", "[3, 4, 5, 6, 0, 0]"},
+        {"Using a default value", "SELECT arrayShiftRight([1, 2, 3, 4, 5, 6], 2, 42) as res;", "[42, 42, 1, 2, 3, 4]"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_shiftright = {23, 8};
+    FunctionDocumentation::Category category_shiftright = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_shiftright = {description_shiftright, syntax_shiftright, arguments_shiftright, returned_value_shiftright, examples_shiftright, introduced_in_shiftright, category_shiftright};
 
-The default value must be of the same type as the array elements.
-[example:simple_int_with_default]
-[example:simple_string_with_default]
-[example:simple_array_with_default]
-[example:cast_array_with_default]
-)",
-        .examples{
-            {"simple_int", "SELECT arrayShiftRight([1, 2, 3, 4, 5], 3)", "[0, 0, 0, 1, 2]"},
-            {"negative_shift_int", "SELECT arrayShiftRight([1, 2, 3, 4, 5], -3)", "[4, 5, 0, 0, 0]"},
-            {"overflow_int", "SELECT arrayShiftRight([1, 2, 3, 4, 5], 8)", "[0, 0, 0, 0, 0]"},
-            {"simple_string", "SELECT arrayShiftRight(['a', 'b', 'c', 'd', 'e'], 3)", "['', '', '', 'a', 'b']"},
-            {"simple_array", "SELECT arrayShiftRight([[1, 2], [3, 4], [5, 6]], 2)", "[[], [], [1, 2]]"},
-            {"simple_nested_array", "SELECT arrayShiftRight([[[1, 2], [3, 4]], [[5, 6], [7, 8]]], 1)", "[[], [[1, 2], [3, 4]]]"},
-            {"simple_int_with_default", "SELECT arrayShiftRight([1, 2, 3, 4, 5], 3, 7)", "[7, 7, 7, 1, 2]"},
-            {"simple_string_with_default",
-             "SELECT arrayShiftRight(['a', 'b', 'c', 'd', 'e'], 3, 'foo')",
-             "['foo', 'foo', 'foo', 'a', 'b']"},
-            {"simple_array_with_default", "SELECT arrayShiftRight([[1, 2], [3, 4], [5, 6]], 2, [7, 8])", "[[7, 8], [7, 8], [1, 2]]"},
-            {"cast_array_with_default",
-             "SELECT arrayShiftRight(CAST('[1, 2, 3, 4, 5, 6]', 'Array(UInt16)'), 1, 1000)",
-             "[1000, 1, 2, 3, 4, 5]"},
-        },
-        .categories = {"Array"},
-    });
+    factory.registerFunction<FunctionArrayShiftRight>(documentation_shiftright);
 }
 
 }

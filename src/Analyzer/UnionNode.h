@@ -5,10 +5,8 @@
 
 #include <Parsers/SelectUnionMode.h>
 
-#include <Analyzer/Identifier.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
-#include <Analyzer/TableExpressionModifiers.h>
 #include <Analyzer/RecursiveCTE.h>
 
 #include <Interpreters/Context_fwd.h>
@@ -36,6 +34,9 @@ namespace DB
   */
 class UnionNode;
 using UnionNodePtr = std::shared_ptr<UnionNode>;
+
+class ColumnNode;
+using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 
 class UnionNode final : public IQueryTreeNode
 {
@@ -170,10 +171,29 @@ public:
     NamesAndTypes computeProjectionColumns() const;
 
     /// Remove unused projection columns
-    void removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns);
-
-    /// Remove unused projection columns
     void removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes);
+
+    bool isCorrelated() const
+    {
+        return !children[correlated_columns_list_index]->as<ListNode>()->getNodes().empty();
+    }
+
+    QueryTreeNodePtr & getCorrelatedColumnsNode()
+    {
+        return children[correlated_columns_list_index];
+    }
+
+    ListNode & getCorrelatedColumns()
+    {
+        return children[correlated_columns_list_index]->as<ListNode &>();
+    }
+
+    const ListNode & getCorrelatedColumns() const
+    {
+        return children[correlated_columns_list_index]->as<ListNode &>();
+    }
+
+    void addCorrelatedColumn(const QueryTreeNodePtr & correlated_column);
 
     QueryTreeNodeType getNodeType() const override
     {
@@ -201,7 +221,8 @@ private:
     SelectUnionMode union_mode;
 
     static constexpr size_t queries_child_index = 0;
-    static constexpr size_t children_size = queries_child_index + 1;
+    static constexpr size_t correlated_columns_list_index = 1;
+    static constexpr size_t children_size = correlated_columns_list_index + 1;
 };
 
 }

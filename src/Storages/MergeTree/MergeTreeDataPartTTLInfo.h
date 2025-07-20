@@ -1,13 +1,19 @@
 #pragma once
-#include <IO/WriteBufferFromFile.h>
-#include <IO/ReadBufferFromFile.h>
-#include <Storages/TTLDescription.h>
+
+#include <base/types.h>
 
 #include <map>
 #include <optional>
+#include <vector>
+#include <time.h>
 
 namespace DB
 {
+
+class ReadBuffer;
+class WriteBuffer;
+struct TTLDescription;
+using TTLDescriptions = std::vector<TTLDescription>;
 
 /// Minimal and maximal ttl for column or table
 struct MergeTreeDataPartTTLInfo

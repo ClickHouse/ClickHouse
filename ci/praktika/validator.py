@@ -2,6 +2,8 @@ import glob
 from itertools import chain
 from pathlib import Path
 
+from praktika import Artifact, Job
+
 from . import Workflow
 from .mangle import _get_workflows
 from .settings import GHRunners, Settings
@@ -11,9 +13,59 @@ class Validator:
     @classmethod
     def validate(cls):
         print("---Start validating Pipeline and settings---")
-        workflows = _get_workflows()
+
+        if Settings.DISABLED_WORKFLOWS:
+            for file in Settings.DISABLED_WORKFLOWS:
+                cls.evaluate_check_simple(
+                    Path(file).is_file()
+                    or Path(f"{Settings.WORKFLOWS_DIRECTORY}/{file}").is_file(),
+                    f"Setting DISABLED_WORKFLOWS has non-existing workflow file [{file}]",
+                )
+
+        if Settings.ENABLED_WORKFLOWS:
+            for file in Settings.ENABLED_WORKFLOWS:
+                cls.evaluate_check_simple(
+                    Path(file).is_file()
+                    or Path(f"{Settings.WORKFLOWS_DIRECTORY}/{file}").is_file(),
+                    f"Setting ENABLED_WORKFLOWS has non-existing workflow file [{file}]",
+                )
+
+        if Settings.USE_CUSTOM_GH_AUTH:
+            cls.evaluate_check_simple(
+                Settings.SECRET_GH_APP_ID and Settings.SECRET_GH_APP_PEM_KEY,
+                f"Setting SECRET_GH_APP_ID and SECRET_GH_APP_PEM_KEY must be provided with USE_CUSTOM_GH_AUTH == True",
+            )
+
+        workflows = _get_workflows(_for_validation_check=True)
         for workflow in workflows:
             print(f"Validating workflow [{workflow.name}]")
+            if Settings.USE_CUSTOM_GH_AUTH and workflow.enable_report:
+                secret = workflow.get_secret(Settings.SECRET_GH_APP_ID)
+                cls.evaluate_check(
+                    bool(secret),
+                    f"Secret [{Settings.SECRET_GH_APP_ID}] must be configured for workflow",
+                    workflow.name,
+                )
+                secret = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY)
+                cls.evaluate_check(
+                    bool(secret),
+                    f"Secret [{Settings.SECRET_GH_APP_PEM_KEY}] must be configured for workflow",
+                    workflow.name,
+                )
+
+            for job in workflow.jobs:
+                cls.evaluate_check(
+                    isinstance(job, Job.Config),
+                    f"Invalid job type [{job}]: type [{type(job)}]",
+                    workflow.name,
+                )
+                cls.evaluate_check(
+                    job.runs_on
+                    and isinstance(job.runs_on, list)
+                    or isinstance(job.runs_on, tuple),
+                    f"Invalid Job.Config.runs_on [{job.runs_on}] for [{job.name}]",
+                    workflow.name,
+                )
 
             cls.validate_file_paths_in_run_command(workflow)
             cls.validate_file_paths_in_digest_configs(workflow)
@@ -49,6 +101,11 @@ class Validator:
 
             if workflow.artifacts:
                 for artifact in workflow.artifacts:
+                    cls.evaluate_check(
+                        isinstance(artifact, Artifact.Config),
+                        f"Must be Artifact.Config type, not {type(artifact)}: [{artifact}]",
+                        workflow.name,
+                    )
                     if artifact.is_s3_artifact():
                         assert (
                             Settings.S3_ARTIFACT_PATH
@@ -65,11 +122,6 @@ class Validator:
                                 [r in GHRunners for r in job.runs_on]
                             ), f"GH runners [{job.name}:{job.runs_on}] must not be used with S3 as artifact storage"
 
-                if job.allow_merge_on_failure:
-                    assert (
-                        workflow.enable_merge_ready_status
-                    ), f"Job property allow_merge_on_failure must be used only with enabled workflow.enable_merge_ready_status, workflow [{workflow.name}], job [{job.name}]"
-
             if workflow.enable_cache:
                 assert (
                     Settings.CI_CONFIG_RUNS_ON
@@ -80,9 +132,26 @@ class Validator:
                 ), f"CACHE_S3_PATH Setting must be defined if enable_cache=True, workflow [{workflow.name}]"
 
             if workflow.dockers:
+                if Settings.ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB == False:
+                    cls.evaluate_check_simple(
+                        Settings.DOCKER_BUILD_ARM_RUNS_ON
+                        and Settings.DOCKER_MERGE_RUNS_ON
+                        and Settings.DOCKER_BUILD_AMD_RUNS_ON
+                        and Settings.DOCKER_BUILD_ARM_RUNS_ON
+                        != Settings.DOCKER_BUILD_AMD_RUNS_ON,
+                        f"Settings: DOCKER_MERGE_RUNS_ON, DOCKER_BUILD_ARM_RUNS_ON, DOCKER_BUILD_AMD_RUNS_ON must be provided and be different CPU architecture machines",
+                    )
+                else:
+                    cls.evaluate_check(
+                        Settings.DOCKER_MERGE_RUNS_ON,
+                        f"DOCKER_BUILD_AND_MERGE_RUNS_ON settings must be defined if workflow has dockers",
+                        workflow_name=workflow.name,
+                    )
+
+            if workflow.set_latest_for_docker_merged_manifest:
                 cls.evaluate_check(
-                    Settings.DOCKER_BUILD_RUNS_ON,
-                    f"DOCKER_BUILD_RUNS_ON settings must be defined if workflow has dockers",
+                    workflow.enable_dockers_manifest_merge,
+                    f".set_latest_for_docker_merged_manifest workflow setting is applicable with .enable_dockers_manifest_merge=True",
                     workflow_name=workflow.name,
                 )
 
@@ -104,7 +173,7 @@ class Validator:
                         artifact.is_s3_artifact()
                     ), f"All artifacts must be of S3 type if enable_cache|enable_html=True, artifact [{artifact.name}], type [{artifact.type}], workflow [{workflow.name}]"
 
-            if workflow.dockers:
+            if workflow.dockers and not workflow.disable_dockers_build:
                 assert (
                     Settings.DOCKERHUB_USERNAME
                 ), f"Settings.DOCKERHUB_USERNAME must be provided if workflow has dockers, workflow [{workflow.name}]"
@@ -126,18 +195,43 @@ class Validator:
                     ), f"GitHub Runners must not be used for workflow with enabled: workflow.enable_cache, workflow.enable_html or workflow.enable_merge_ready_status as s3 access is required, workflow [{workflow.name}], job [{job.name}]"
 
             if workflow.enable_cidb:
-                assert (
-                    Settings.SECRET_CI_DB_URL
-                ), f"Settings.CI_DB_URL_SECRET must be provided if workflow.enable_cidb=True, workflow [{workflow.name}]"
-                assert (
-                    Settings.SECRET_CI_DB_PASSWORD
-                ), f"Settings.CI_DB_PASSWORD_SECRET must be provided if workflow.enable_cidb=True, workflow [{workflow.name}]"
-                assert (
-                    Settings.CI_DB_DB_NAME
-                ), f"Settings.CI_DB_DB_NAME must be provided if workflow.enable_cidb=True, workflow [{workflow.name}]"
-                assert (
-                    Settings.CI_DB_TABLE_NAME
-                ), f"Settings.CI_DB_TABLE_NAME must be provided if workflow.enable_cidb=True, workflow [{workflow.name}]"
+                cls.evaluate_check(
+                    Settings.SECRET_CI_DB_URL,
+                    "Settings.SECRET_CI_DB_URL must be provided if workflow.enable_cidb=True",
+                    workflow,
+                )
+                cls.evaluate_check(
+                    Settings.SECRET_CI_DB_USER,
+                    "Settings.SECRET_CI_DB_USER must be provided if workflow.enable_cidb=True",
+                    workflow,
+                )
+                cls.evaluate_check(
+                    Settings.SECRET_CI_DB_PASSWORD,
+                    "Settings.SECRET_CI_DB_PASSWORD must be provided if workflow.enable_cidb=True",
+                    workflow,
+                )
+                cls.evaluate_check(
+                    Settings.CI_DB_DB_NAME,
+                    "Settings.CI_DB_DB_NAME must be provided if workflow.enable_cidb=True",
+                    workflow,
+                )
+                cls.evaluate_check(
+                    Settings.CI_DB_TABLE_NAME,
+                    "Settings.CI_DB_TABLE_NAME must be provided if workflow.enable_cidb=True",
+                    workflow,
+                )
+
+            if workflow.enable_gh_summary_comment:
+                cls.evaluate_check(
+                    workflow.event == Workflow.Event.PULL_REQUEST,
+                    ".enable_gh_summary_comment=True applicable for pull_request workflow only",
+                    workflow,
+                )
+                cls.evaluate_check(
+                    workflow.enable_report,
+                    ".enable_gh_summary_comment=True requires .enable_report==True",
+                    workflow,
+                )
 
     @classmethod
     def validate_file_paths_in_run_command(cls, workflow: Workflow.Config) -> None:
@@ -153,6 +247,7 @@ class Validator:
                     assert (
                         Path(part).is_file() or Path(part).is_dir()
                     ), f"Apparently run command [{run_command}] for job [{job}] has invalid path [{part}]. Setting to disable check: VALIDATE_FILE_PATHS"
+                    break
 
     @classmethod
     def validate_file_paths_in_digest_configs(cls, workflow: Workflow.Config) -> None:
@@ -171,7 +266,7 @@ class Validator:
                 else:
                     assert (
                         Path(include_path).is_file() or Path(include_path).is_dir()
-                    ), f"Apparently file path [{include_path}] in job [{job.name}] digest_config [{job.digest_config}] invalid, workflow [{workflow.name}]. Setting to disable check: VALIDATE_FILE_PATHS"
+                    ), f"Invalid file path [{include_path}] in job [{job.name}] digest_config, workflow [{workflow.name}]. Setting to disable check: VALIDATE_FILE_PATHS"
 
     @classmethod
     def validate_requirements_txt_files(cls, workflow: Workflow.Config) -> None:
@@ -181,7 +276,7 @@ class Validator:
                     path = Path(job.job_requirements.python_requirements_txt)
                     message = f"File with py requirement [{path}] does not exist"
                     if job.name in (
-                        Settings.DOCKER_BUILD_JOB_NAME,
+                        Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
                         Settings.CI_CONFIG_JOB_NAME,
                         Settings.FINISH_WORKFLOW_JOB_NAME,
                     ):
@@ -189,7 +284,7 @@ class Validator:
                         message += "\n  If requirements needs to be installed - add requirements file (Settings.INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS):"
                         message += "\n      echo jwt==1.3.1 > ./ci/requirements.txt"
                         message += (
-                            "\n      echo requests==2.32.3 >> ./ci/requirements.txt"
+                            "\n      echo requests==2.32.4 >> ./ci/requirements.txt"
                         )
                         message += "\n      echo https://clickhouse-builds.s3.amazonaws.com/packages/praktika-0.1-py3-none-any.whl >> ./ci/requirements.txt"
                     cls.evaluate_check(path.is_file(), message, job.name, workflow.name)
@@ -222,6 +317,18 @@ class Validator:
             print(
                 f"ERROR: Config validation failed: workflow [{workflow_name}], job [{job_name}]:"
             )
+            for message in messages:
+                print(" ||  " + message)
+            raise
+
+    @classmethod
+    def evaluate_check_simple(cls, check_ok, message):
+        message = message.split("\n")
+        messages = [message] if not isinstance(message, list) else message
+        if check_ok:
+            return
+        else:
+            print(f"ERROR: Validation failed:")
             for message in messages:
                 print(" ||  " + message)
             raise

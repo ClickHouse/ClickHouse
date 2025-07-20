@@ -1,4 +1,5 @@
 #include <Storages/Statistics/Statistics.h>
+
 #include <Common/Exception.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
@@ -86,6 +87,11 @@ Float64 IStatistics::estimateLess(const Field & /*val*/) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Less-than estimation is not implemented for this type of statistics");
 }
 
+Float64 IStatistics::estimateRange(const Range & /*range*/) const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Range estimation is not implemented for this type of statistics");
+}
+
 /// Notes:
 /// - Statistics object usually only support estimation for certain types of predicates, e.g.
 ///    - TDigest: '< X' (less-than predicates)
@@ -118,21 +124,57 @@ Float64 ColumnPartStatistics::estimateEqual(const Field & val) const
     {
         /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows) for every bucket.
         if (stats.at(StatisticsType::Uniq)->estimateCardinality() < 2048)
+        {
             return stats.at(StatisticsType::TDigest)->estimateEqual(val);
+        }
     }
 #if USE_DATASKETCHES
     if (stats.contains(StatisticsType::CountMinSketch))
+    {
         return stats.at(StatisticsType::CountMinSketch)->estimateEqual(val);
+    }
 #endif
     if (stats.contains(StatisticsType::Uniq))
     {
         UInt64 cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
         if (cardinality == 0 || rows == 0)
             return 0;
-        return 1.0 / cardinality * rows; /// assume uniform distribution
+        return Float64(rows) / cardinality; /// assume uniform distribution
     }
 
     return rows * ConditionSelectivityEstimator::default_cond_equal_factor;
+}
+
+Float64 ColumnPartStatistics::estimateRange(const Range & range) const
+{
+    if (range.empty())
+    {
+        return 0;
+    }
+
+    if (range.isInfinite())
+    {
+        return rows;
+    }
+
+    if (range.left == range.right)
+    {
+        return estimateEqual(range.left);
+    }
+
+    if (range.left.isNegativeInfinity())
+    {
+        return estimateLess(range.right);
+    }
+
+    if (range.right.isPositiveInfinity())
+    {
+        return estimateGreater(range.left);
+    }
+
+    Float64 right_count = estimateLess(range.right);
+    Float64 left_count = estimateLess(range.left);
+    return right_count - left_count;
 }
 
 /// -------------------------------------
@@ -143,7 +185,7 @@ void ColumnPartStatistics::serialize(WriteBuffer & buf)
 
     UInt64 stat_types_mask = 0;
     for (const auto & [type, _]: stats)
-        stat_types_mask |= 1 << UInt8(type);
+        stat_types_mask |= 1LL << UInt8(type);
     writeIntBinary(stat_types_mask, buf);
 
     /// as the column row count is always useful, save it in any case
@@ -168,7 +210,7 @@ void ColumnPartStatistics::deserialize(ReadBuffer &buf)
 
     for (auto it = stats.begin(); it != stats.end();)
     {
-        if (!(stat_types_mask & 1 << UInt8(it->first)))
+        if (!(stat_types_mask & 1LL << UInt8(it->first)))
         {
             stats.erase(it++);
         }

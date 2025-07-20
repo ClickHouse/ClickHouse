@@ -132,6 +132,9 @@ Pool::Pool(
      const std::string & user_,
      const std::string & password_,
      unsigned port_,
+     const std::string & ssl_ca_,
+     const std::string & ssl_cert_,
+     const std::string & ssl_key_,
      const std::string & socket_,
      unsigned connect_timeout_,
      unsigned rw_timeout_,
@@ -149,6 +152,9 @@ Pool::Pool(
     , socket(socket_)
     , connect_timeout(connect_timeout_)
     , rw_timeout(rw_timeout_)
+    , ssl_ca(ssl_ca_)
+    , ssl_cert(ssl_cert_)
+    , ssl_key(ssl_key_)
     , enable_local_infile(enable_local_infile_)
     , opt_reconnect(opt_reconnect_)
 {
@@ -293,21 +299,30 @@ void Pool::Entry::forceConnected() const
         LOG_DEBUG(pool->log,
             "Creating a new MySQL connection to {} with settings: connect_timeout={}, read_write_timeout={}",
             pool->description, pool->connect_timeout, pool->rw_timeout);
-
-        data->conn.connect(
-            pool->db.c_str(),
-            pool->server.c_str(),
-            pool->user.c_str(),
-            pool->password.c_str(),
-            pool->port,
-            pool->socket.c_str(),
-            pool->ssl_ca.c_str(),
-            pool->ssl_cert.c_str(),
-            pool->ssl_key.c_str(),
-            pool->connect_timeout,
-            pool->rw_timeout,
-            pool->enable_local_infile,
-            pool->opt_reconnect);
+        try
+        {
+            data->conn.connect(
+                pool->db.c_str(),
+                pool->server.c_str(),
+                pool->user.c_str(),
+                pool->password.c_str(),
+                pool->port,
+                pool->socket.c_str(),
+                pool->ssl_ca.c_str(),
+                pool->ssl_cert.c_str(),
+                pool->ssl_key.c_str(),
+                pool->connect_timeout,
+                pool->rw_timeout,
+                pool->enable_local_infile,
+                pool->opt_reconnect);
+        }
+        catch (mysqlxx::ConnectionFailed &)
+        {
+            pool->online = false;
+            pool->removeConnection(data);
+            throw;
+        }
+        pool->online = true;
     }
 }
 
