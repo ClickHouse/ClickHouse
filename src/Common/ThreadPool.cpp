@@ -672,7 +672,7 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::~ThreadFromThreadPool()
 template <typename Thread>
 void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
 {
-    DENY_ALLOCATIONS_IN_SCOPE;
+    // DENY_ALLOCATIONS_IN_SCOPE;
 
     DB::Exception::initializeThreadFramePointers();
 

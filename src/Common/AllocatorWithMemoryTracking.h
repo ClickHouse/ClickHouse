@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <cstddef>
 #include <cstdlib>
+#include <jemalloc/jemalloc.h>
 
 #include <Common/CurrentMemoryTracker.h>
 
@@ -32,7 +33,7 @@ struct AllocatorWithMemoryTracking
         size_t bytes = n * sizeof(T); /// NOLINT(bugprone-sizeof-expression)
         auto trace = CurrentMemoryTracker::alloc(bytes);
 
-        T * p = static_cast<T *>(malloc(bytes));
+        T * p = static_cast<T *>(je_malloc(bytes));
         if (!p)
             throw std::bad_alloc();
 
@@ -45,7 +46,7 @@ struct AllocatorWithMemoryTracking
     {
         size_t bytes = n * sizeof(T); /// NOLINT(bugprone-sizeof-expression)
 
-        free(p);
+        je_free(p);
         auto trace = CurrentMemoryTracker::free(bytes);
         trace.onFree(p, bytes);
     }
@@ -62,4 +63,3 @@ bool operator!=(const AllocatorWithMemoryTracking <T> &, const AllocatorWithMemo
 {
     return false;
 }
-
