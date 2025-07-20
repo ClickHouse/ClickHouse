@@ -2026,21 +2026,21 @@ The default settings are:
 </s3queue_log>
 ```
 
-## dead_letter {#dead_letter}
+## dead_letter_queue {#dead_letter_queue}
 
-Setting for the 'dead_letter' system table.
+Setting for the 'dead_letter_queue' system table.
 
 <SystemLogParameters/>
 
 The default settings are:
 
 ```xml
-<dead_letter>
+<dead_letter_queue>
     <database>system</database>
     <table>dead_letter</table>
     <partition_by>toYYYYMM(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-</query_log>
+</dead_letter_queue>
 ```
 
 ## zookeeper {#zookeeper}
