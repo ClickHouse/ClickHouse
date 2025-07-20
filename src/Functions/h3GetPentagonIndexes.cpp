@@ -110,7 +110,32 @@ public:
 
 REGISTER_FUNCTION(H3GetPentagonIndexes)
 {
-    factory.registerFunction<FunctionH3GetPentagonIndexes>();
+    FunctionDocumentation::Description description = R"(
+Returns all the pentagon [H3](#h3-index) indices at the specified resolution.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3GetPentagonIndexes(resolution)";
+    FunctionDocumentation::Arguments arguments = {
+        {"resolution", "Index resolution with range `[0, 15]`.", {"UInt8"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns an array of all pentagon H3 indices at the specified resolution.",
+        {"Array(UInt64)"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get all pentagon indices at resolution 3",
+            "SELECT h3GetPentagonIndexes(3) AS indexes",
+            R"(
+┌─indexes────────────────────────────────────────────────────────┐
+│ [590112357393367039,590464201114255359,590816044835143679,...] │
+└────────────────────────────────────────────────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3GetPentagonIndexes>(documentation);
 }
 
 }
