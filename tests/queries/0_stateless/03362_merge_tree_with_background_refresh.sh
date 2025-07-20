@@ -6,6 +6,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+set -e
+
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS writer SYNC"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS reader SYNC"
 
