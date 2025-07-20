@@ -201,7 +201,6 @@ void operator delete[](void * ptr, std::size_t size, std::align_val_t align) noe
 
 extern "C" void * __wrap_malloc(size_t size) // NOLINT
 {
-    // printf("__wrap_malloc");
     AllocationTrace trace;
     std::size_t actual_size = Memory::trackMemory(size, trace);
     void * ptr = __real_malloc(size);
@@ -269,11 +268,20 @@ extern "C" void * __wrap_memalign(size_t alignment, size_t size) // NOLINT
     return res;
 }
 
-extern "C" size_t __wrap_sallocx(const void *ptr, int flags)
+extern "C" size_t __wrap_sallocx(const void *ptr, int flags) // NOLINT
 {
-    extern size_t __real_sallocx(const void *ptr, int flags);
+    extern size_t __real_sallocx(const void *ptr, int flags); // NOLINT
     size_t res = __real_sallocx(ptr, flags);
     return res;
+}
+
+extern "C" void * __wrap_reallocarray(void * ptr, size_t number_of_members, size_t size) // NOLINT
+{
+    size_t real_size = 0;
+    if (__builtin_mul_overflow(number_of_members, size, &real_size))
+        return nullptr;
+
+    return __wrap_realloc(ptr, real_size);
 }
 
 extern "C" void __wrap_free(void * ptr) // NOLINT
