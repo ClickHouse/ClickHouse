@@ -355,6 +355,7 @@ class MainThreadStatus : public ThreadStatus
 public:
     static MainThreadStatus & getInstance();
     static ThreadStatus * get() { return main_thread; }
+    static bool initialized() { return is_initialized.test(std::memory_order_relaxed); }
     static bool isMainThread() { return main_thread == current_thread; }
 
     ~MainThreadStatus();
@@ -363,6 +364,7 @@ private:
     MainThreadStatus();
 
     static ThreadStatus * main_thread;
+    static std::atomic_flag is_initialized;
 };
 
 }

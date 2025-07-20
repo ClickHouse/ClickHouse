@@ -167,6 +167,7 @@ def main():
 
     files = []
     if res and JobStages.BUILD in stages:
+        run_shell("sccache start server", "sccache --start-server", retries=3)
         run_shell("sccache stats", "sccache --show-stats")
         if build_type == BuildTypes.AMD_DEBUG:
             targets = "-k0 all"
@@ -217,6 +218,7 @@ def main():
                     f"cd {Utils.cwd()}/packages/ && OUTPUT_DIR={temp_dir} BUILD_TYPE={BUILD_TYPE_TO_DEB_PACKAGE_TYPE[build_type]} VERSION_STRING={version_dict['string']} DEB_ARCH={deb_arch} ./build --deb {'--rpm --tgz' if 'release' in build_type else ''}",
                 ],
                 workdir=build_dir,
+                with_log=True,
             )
         )
         res = results[-1].is_ok()

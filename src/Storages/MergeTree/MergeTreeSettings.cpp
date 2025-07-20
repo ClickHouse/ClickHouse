@@ -1606,7 +1606,7 @@ namespace ErrorCodes
     )", EXPERIMENTAL) \
     DECLARE(Bool, allow_remote_fs_zero_copy_replication, false, R"(
     Don't use this setting in production, because it is not ready.
-    )", BETA) \
+    )", EXPERIMENTAL) \
     DECLARE(String, remote_fs_zero_copy_zookeeper_path, "/clickhouse/zero_copy", R"(
     ZooKeeper path for zero-copy table-independent info.
     )", EXPERIMENTAL) \

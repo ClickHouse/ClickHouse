@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3285 
+personal_ws-1.1 en 3286 
 AArch
 ACLs
 ALTERs
@@ -790,6 +790,7 @@ OnTime
 OpenCelliD
 OpenFileForRead
 OpenFileForWrite
+OpenRouter
 OpenSSL
 OpenSUSE
 OpenSky
@@ -955,6 +956,7 @@ ReplicatedSend
 ReplicatedSummingMergeTree
 ReplicatedVersionedCollapsingMergeTree
 Resample
+Rescoring
 RestartReplicaThreads
 RestartReplicaThreadsActive
 RestoreThreads
@@ -2756,6 +2758,7 @@ representable
 requestor
 requireTLSv
 rerange
+rescoring
 resharding
 reshards
 resolvers
