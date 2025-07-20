@@ -152,7 +152,6 @@ numeric_value:                   0
 age:                             1.1
 bidi_mirroring_glyph:            a
 case_folding:                    a
-iso_comment:                     
 lowercase_mapping:               a
 name:                            LATIN SMALL LETTER A
 simple_case_folding:             a
@@ -160,10 +159,10 @@ simple_lowercase_mapping:        a
 simple_titlecase_mapping:        A
 simple_uppercase_mapping:        A
 titlecase_mapping:               A
-unicode_1_name:                  
 uppercase_mapping:               A
 bidi_paired_bracket:             a
 script_extensions:               [25]
+identifier_type:                 [11]
 
 ```
 

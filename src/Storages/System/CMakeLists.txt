@@ -59,4 +59,5 @@ target_link_libraries(clickhouse_storages_system PRIVATE
 
 if (TARGET ch_contrib::icu)
     target_link_libraries(clickhouse_storages_system PRIVATE ch_contrib::icu)
+    target_compile_definitions(clickhouse_storages_system PRIVATE U_HIDE_DEPRECATED_API)
 endif()
