@@ -111,7 +111,7 @@ StorageObjectStorage::StorageObjectStorage(
         && !configuration->isDataLakeConfiguration();
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
 
-    if (columns_.size() > 0)
+    if (!columns_.empty())
     {
         configuration->create(
             object_storage,
