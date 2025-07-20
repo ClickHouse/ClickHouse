@@ -1,7 +1,6 @@
 #include <Common/SignalHandlers.h>
 #include <Common/config_version.h>
 #include <Common/getHashOfLoadedBinary.h>
-#include <Common/GWPAsan.h>
 #include <Common/ShellCommandsHolder.h>
 #include <Common/CurrentThread.h>
 #include <Common/SymbolIndex.h>
@@ -104,12 +103,6 @@ void signalHandler(int sig, siginfo_t * info, void * context)
 
     const ucontext_t * signal_context = reinterpret_cast<ucontext_t *>(context);
     const StackTrace stack_trace(*signal_context);
-
-#if USE_GWP_ASAN
-    if (const auto fault_address = reinterpret_cast<uintptr_t>(info->si_addr);
-        GWPAsan::isGWPAsanError(fault_address))
-        GWPAsan::printReport(fault_address);
-#endif
 
     writeBinary(sig, out);
     writePODBinary(*info, out);
