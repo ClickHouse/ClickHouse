@@ -872,7 +872,7 @@ void QueryResultCache::writeDisk(const Key & key, const QueryResultCache::Cache:
                 if (!shutdown)
                     disk->removeRecursive(entry_path);
             }
-            catch (...)
+            catch (...) // NOLINT(bugprone-empty-catch)
             {
             }
             delete e;
@@ -1068,7 +1068,7 @@ std::tuple<Block, QueryResultCache::Cache::MappedPtr, QueryResultCache::DiskCach
 
         return std::make_tuple(*header, entry, disk_entry);
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
     return {};
@@ -1137,7 +1137,7 @@ void QueryResultCache::loadEntrysFromDisk()
                             if (!shutdown)
                                 disk->removeRecursive(entry_path);
                         }
-                        catch (...)
+                        catch (...) // NOLINT(bugprone-empty-catch)
                         {
                         }
                         delete e;
@@ -1165,7 +1165,8 @@ void QueryResultCache::loadEntrysFromDisk()
     {
         try {
             disk->removeRecursive(entry_path);
-        } catch (...)
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
         }
     }
