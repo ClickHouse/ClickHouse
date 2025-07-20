@@ -1407,7 +1407,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         expandOrderByAll(select_query, tables_with_columns);
 
     // expand LIMIT BY ALL
-    if (select_query->limit_by_all) 
+    if (select_query->limit_by_all)
         expandLimitByAll(select_query);
 
     /// Remove unneeded columns according to 'required_result_columns'.

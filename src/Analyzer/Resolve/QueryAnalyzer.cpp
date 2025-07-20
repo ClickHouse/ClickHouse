@@ -1115,16 +1115,14 @@ void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed, const Se
 void QueryAnalyzer::expandLimitByAll(QueryNode & query_tree_node_typed)
 {
     if (!query_tree_node_typed.isLimitByAll())
-    {
         return;
-    }
 
     auto & limit_by_nodes = query_tree_node_typed.getLimitBy().getNodes();
     auto & projection_list = query_tree_node_typed.getProjection();
 
     for (auto & node : projection_list.getNodes())
         recursivelyCollectMaxOrdinaryExpressions(node, limit_by_nodes);
-    
+
     query_tree_node_typed.setIsLimitByAll(false);
 }
 
@@ -5914,7 +5912,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         resolveInterpolateColumnsNodeList(query_node_typed.getInterpolate(), scope);
 
     expandLimitByAll(query_node_typed);
-    
+
     if (query_node_typed.hasLimitByLimit())
     {
         resolveExpressionNode(query_node_typed.getLimitByLimit(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
