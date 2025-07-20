@@ -3,6 +3,9 @@
 -- - no-random-settings -- more deterministic prefetch
 -- - no-parallel-replicas -- other replicas may do prefetch
 
+-- Disable multibuffer, there is a separate test
+SET merge_tree_compact_parts_min_granules_to_multibuffer_read = 129;
+
 {% for min_bytes_for_wide_part in [0, 10e9] %}
 
 {% set table = 'data' +
