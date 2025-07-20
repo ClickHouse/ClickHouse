@@ -45,6 +45,8 @@ namespace CurrentMetrics
 {
     extern const Metric QueryCacheBytes;
     extern const Metric QueryCacheEntries;
+    extern const Metric QueryCacheDiskBytes;
+    extern const Metric QueryCacheDiskEntries;
 }
 
 namespace DB
@@ -778,7 +780,7 @@ QueryResultCache::QueryResultCache(
     : memory_cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, EntryWeight, IsStale>>(
         CurrentMetrics::QueryCacheBytes, CurrentMetrics::QueryCacheEntries, std::make_unique<PerUserTTLCachePolicyUserQuota>()))
     , disk_cache(std::make_unique<TTLCachePolicy<Key, DiskEntry, KeyHasher, DiskEntryWeight, IsStale>>(
-        CurrentMetrics::QueryCacheBytes, CurrentMetrics::QueryCacheEntries, std::make_unique<PerUserTTLCachePolicyUserQuota>()))
+        CurrentMetrics::QueryCacheDiskBytes, CurrentMetrics::QueryCacheDiskEntries, std::make_unique<PerUserTTLCachePolicyUserQuota>()))
     , disk(disk_)
     , path(path_)
 {
@@ -868,7 +870,7 @@ void QueryResultCache::writeDisk(const Key & key, const QueryResultCache::Cache:
             try
             {
                 if (!shutdown)
-                    disk->removeRecursive(path / entry_path);
+                    disk->removeRecursive(entry_path);
             }
             catch (...)
             {
@@ -1133,7 +1135,7 @@ void QueryResultCache::loadEntrysFromDisk()
                         try
                         {
                             if (!shutdown)
-                                disk->removeRecursive(path / entry_path);
+                                disk->removeRecursive(entry_path);
                         }
                         catch (...)
                         {
@@ -1160,9 +1162,14 @@ void QueryResultCache::loadEntrysFromDisk()
     }
 
     for (const auto & entry_path : expired_entrys)
-        disk->removeRecursive(path / entry_path);
-
-    LOG_TRACE(logger, "Loading entries from disk, {} succeeded and {} failed.", disk_cache.count(), expired_entrys.size());
+    {
+        try {
+            disk->removeRecursive(entry_path);
+        } catch (...)
+        {
+        }
+    }
+    LOG_INFO(logger, "Loading entries from disk, {} succeeded and {} failed.", disk_cache.count(), expired_entrys.size());
 }
 
 bool QueryResultCache::checkAccess(const Key & entry_key, const Key & key) const

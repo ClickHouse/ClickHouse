@@ -3830,12 +3830,12 @@ void Context::setQueryResultCache(
     size_t max_entry_size_in_rows,
     size_t max_disk_size_in_bytes,
     size_t max_disk_entries,
-    const String & disk,
+    const String & disk_name,
     const String & path)
 {
-    auto disk_ptr = getDisk(disk);
-    if (!disk_ptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query cache disk does not exist.");
+    DiskPtr disk = nullptr;
+    if (!disk_name.empty())
+        disk = getDisk(disk_name);
 
     std::lock_guard lock(shared->mutex);
 
@@ -3850,7 +3850,7 @@ void Context::setQueryResultCache(
         max_entry_size_in_rows,
         max_disk_size_in_bytes,
         max_disk_entries,
-        disk_ptr,
+        disk,
         path);
 }
 

@@ -1253,7 +1253,7 @@ public:
         size_t max_entry_size_in_rows,
         size_t max_disk_size_in_bytes,
         size_t max_disk_entries,
-        const String & disk,
+        const String & disk_name,
         const String & path);
     void updateQueryResultCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<QueryResultCache> getQueryResultCache() const;
