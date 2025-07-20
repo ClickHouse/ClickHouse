@@ -849,24 +849,16 @@ void expandOrderByAll(ASTSelectQuery * select_query, [[maybe_unused]] const Tabl
     select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, order_expression_list);
 }
 
-/** Expand LIMIT BY ALL by extracting all the SELECT-ed expressions that are not aggregate functions.
-  *
-  * For a special case that if there is a function having both aggregate functions and other fields as its arguments,
-  * the `LIMIT BY` keys will contain the maximum non-aggregate fields we can extract from it.
-  */
 void expandLimitByAll(ASTSelectQuery * select_query)
 {
-    std::cerr << "DEBUG: expandLimitByAll called, limit_by_all = " << select_query->limit_by_all << std::endl;
     if (!select_query->isLimitByAll())
         return;
 
-    std::cerr << "DEBUG: Expanding LIMIT BY ALL" << std::endl;
     auto limit_by_expression_list = std::make_shared<ASTExpressionList>();
 
     for (const auto & expr : select_query->select()->children)
         recursivelyCollectMaxOrdinaryExpressions(expr, *limit_by_expression_list);
 
-    std::cerr << "DEBUG: Collected " << limit_by_expression_list->children.size() << " expressions" << std::endl;
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY, limit_by_expression_list);
     select_query->setIsLimitByAll(false);
 }
@@ -1417,7 +1409,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     // expand LIMIT BY ALL
     if (select_query->limit_by_all) 
     {
-        std::cerr << "DEBUG: About to call expandLimitByAll" << std::endl;
         expandLimitByAll(select_query);
     }
         

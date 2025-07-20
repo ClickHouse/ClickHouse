@@ -172,7 +172,6 @@ public:
         return is_limit_by_all;
     }
 
-    /// Set query node LIMIT BY ALL modifier value
     void setIsLimitByAll(bool is_limit_by_all_value)
     {
         is_limit_by_all = is_limit_by_all_value;

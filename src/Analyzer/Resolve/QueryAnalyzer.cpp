@@ -1112,25 +1112,12 @@ void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed, const Se
     query_tree_node_typed.setIsOrderByAll(false);
 }
 
-/** Expand LIMIT BY ALL by extracting all the SELECT-ed expressions that are not aggregate functions.
-  *
-  * For a special case that if there is a function having both aggregate functions and other fields as its arguments,
-  * the `LIMIT BY` keys will contain the maximum non-aggregate fields we can extract from it.
-  *
-  * Example:
-  * SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t LIMIT 2 BY ALL
-  * will expand as
-  * SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t LIMIT 2 BY substring(a, 4, 2), substring(a, 1, 2)
-  */
 void QueryAnalyzer::expandLimitByAll(QueryNode & query_tree_node_typed)
 {
-    std::cerr << "DEBUG: QueryAnalyzer::expandLimitByAll called" << std::endl;
     if (!query_tree_node_typed.isLimitByAll())
     {
-        std::cerr << "DEBUG: isLimitByAll() returned false" << std::endl;
         return;
     }
-    std::cerr << "DEBUG: QueryAnalyzer expanding LIMIT BY ALL" << std::endl;
 
     auto & limit_by_nodes = query_tree_node_typed.getLimitBy().getNodes();
     auto & projection_list = query_tree_node_typed.getProjection();
@@ -1138,7 +1125,6 @@ void QueryAnalyzer::expandLimitByAll(QueryNode & query_tree_node_typed)
     for (auto & node : projection_list.getNodes())
         recursivelyCollectMaxOrdinaryExpressions(node, limit_by_nodes);
     
-    std::cerr << "DEBUG: QueryAnalyzer collected " << limit_by_nodes.size() << " expressions" << std::endl;
     query_tree_node_typed.setIsLimitByAll(false);
 }
 
