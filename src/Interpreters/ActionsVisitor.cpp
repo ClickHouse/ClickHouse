@@ -1056,7 +1056,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             {
                 visit(arg, index_hint_data);
 
-                if (auto name_type = getNameAndTypeFromAST(arg, data))
+                if (auto name_type = getNameAndTypeFromAST(arg, index_hint_data))
                     args.push_back({name_type->name, {}});
                 else
                     throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Unexpected element in AST inside the indexHint function: {}", arg->getID());
