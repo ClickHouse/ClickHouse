@@ -60,10 +60,10 @@ ENGINE = MongoDB(uri, collection[, oid_columns]);
 
 | MongoDB                 | ClickHouse                                                            |
 |-------------------------|-----------------------------------------------------------------------|
-| bool, int32, int64      | *any numeric type*, String                                            |
+| bool, int32, int64      | *any numeric type except Decimals*, Boolean, String                   |
 | double                  | Float64, String                                                       |
 | date                    | Date, Date32, DateTime, DateTime64, String                            |
-| string                  | String                                                                |
+| string                  | String, *any numeric type(except Decimals) if formatted correctly*    |
 | document                | String(as JSON)                                                       |
 | array                   | Array, String(as JSON)                                                |
 | oid                     | String                                                                |
@@ -170,7 +170,7 @@ CREATE TABLE sample_mflix_table
     writers Array(String),
     released Date,
     imdb String,
-    year String,
+    year String
 ) ENGINE = MongoDB('mongodb://<USERNAME>:<PASSWORD>@atlas-sql-6634be87cefd3876070caf96-98lxs.a.query.mongodb.net/sample_mflix?ssl=true&authSource=admin', 'movies');
 ```
 
