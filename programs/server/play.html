@@ -1200,13 +1200,23 @@ async function postImpl(posted_request_num, query)
         return;
     }
 
-    finalizeRendering(query, is_table, is_explain_graph, extremes);
+    if (is_explain_graph) {
+        await renderGraph();
+    } else {
+        if (extremes['min'] && extremes['max']) renderExtremes();
+        if (is_table) transposeTableIfNeeded();
+    }
+
+    document.getElementById('check-mark').style.display = 'inline-block';
+    document.getElementById('hourglass').style.display = 'none';
 
     if (is_raw) {
         elapsed_ns = 1e6 * (performance.now() - last_query_start);
     }
 
     updateProgressText();
+    document.documentElement.style.setProperty('--progress', '0');
+    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
 
     if (posted_request_num != request_num) { return; }
 
@@ -1295,13 +1305,22 @@ async function restoreFromHistory(state) {
         updateRaw(state.data);
     }
 
-    finalizeRendering(query, is_table, is_explain_graph, extremes);
-    
+    if (is_explain_graph) {
+        await renderGraph();
+    } else {
     if (is_raw) {
-        elapsed_ns = state.elapsed_ns;
+        if (extremes['min'] && extremes['max']) renderExtremes();
+        if (is_table) transposeTableIfNeeded();
     }
-    
+
+    document.getElementById('check-mark').style.display = 'inline-block';
+    document.getElementById('hourglass').style.display = 'none';
+
+    if (is_raw) elapsed_ns = state.elapsed_ns;
+
     updateProgressText();
+    document.documentElement.style.setProperty('--progress', '0');
+    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
 }
 
 let query_area = document.getElementById('query');
@@ -1577,21 +1596,6 @@ function transposeTableIfNeeded()
     table.removeChild(table.tHead);
     table.removeChild(table.tBodies[0]);
     table.appendChild(new_tbody);
-}
-
-async function finalizeRendering(query, is_table, is_explain_graph, extremes) {
-    if (is_explain_graph) {
-        await renderGraph();
-    } else {
-        if (extremes['min'] && extremes['max']) renderExtremes();
-        if (is_table) transposeTableIfNeeded();
-    }
-
-    document.getElementById('check-mark').style.display = 'inline-block';
-    document.getElementById('hourglass').style.display = 'none';
-
-    document.documentElement.style.setProperty('--progress', '0');
-    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
 }
 
 function update(json, fragment) {
