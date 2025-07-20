@@ -77,7 +77,7 @@ ColumnsDescription TableFunctionArrowFlight::getActualTableStructure(ContextPtr 
 
     auto fields = schema->fields();
     ColumnsDescription desr;
-    for (auto field : fields)
+    for (const auto & field : fields)
     {
         desr.add(ColumnDescription(field->name(), std::make_shared<DataTypeString>()));
     }

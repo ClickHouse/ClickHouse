@@ -26,13 +26,13 @@ class GRPCServer : public IGRPCServer
 {
 public:
     GRPCServer(IServer & iserver_, const Poco::Net::SocketAddress & address_to_listen_);
-    virtual ~GRPCServer() override;
+    ~GRPCServer() override;
 
     /// Starts the server. A new thread will be created that waits for and accepts incoming connections.
-    virtual void start() override;
+    void start() override;
 
     /// Stops the server. No new connections will be accepted.
-    virtual void stop() override;
+    void stop() override;
 
     /// Returns the port this server is listening to.
     UInt16 portNumber() const override { return address_to_listen.port(); }
