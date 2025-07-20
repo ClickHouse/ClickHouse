@@ -67,7 +67,7 @@ def run_tests(
     extra_args="",
 ):
     test_output_file = f"{temp_dir}/test_result.txt"
-    nproc = int(Utils.cpu_count() * 1.0)
+    nproc = int(Utils.cpu_count() * 1.5)
     if batch_num and batch_total:
         extra_args += (
             f" --run-by-hash-total {batch_total} --run-by-hash-num {batch_num-1}"
@@ -91,7 +91,7 @@ def run_tests(
 
 def run_specific_tests(tests, runs=1, extra_args=""):
     test_output_file = f"{temp_dir}/test_result.txt"
-    nproc = int(Utils.cpu_count() * 1.0)
+    nproc = int(Utils.cpu_count() * 1.5)
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
     command = f"clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --trace \
         --capture-client-stacktrace --queries ./tests/queries --test-runs {runs} \

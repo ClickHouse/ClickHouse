@@ -19,6 +19,10 @@ class RunnerLabels:
     BUILDER_ARM = ["self-hosted", "builder-aarch64"]
     FUNC_TESTER_AMD = ["self-hosted", "amd-large"]
     FUNC_TESTER_ARM = ["self-hosted", "arm-large"]
+    AMD_LARGE = ["self-hosted", "amd-large"]
+    AMD_SMALL = ["self-hosted", "arm-large"]
+    ARM_LARGE = ["self-hosted", "amd-small"]
+    ARM_SMALL = ["self-hosted", "arm-small"]
     STYLE_CHECK_AMD = ["self-hosted", "style-checker"]
     STYLE_CHECK_ARM = ["self-hosted", "style-checker-aarch64"]
 
