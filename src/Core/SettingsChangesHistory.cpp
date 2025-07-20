@@ -52,6 +52,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"azure_sdk_use_native_client", false, true, "New setting"},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
             {"vector_search_with_rescoring", true, true, "New setting."},
+            {"enable_writes_to_query_cache_disk", false, false, "New setting."},
+            {"enable_reads_from_query_cache_disk", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
