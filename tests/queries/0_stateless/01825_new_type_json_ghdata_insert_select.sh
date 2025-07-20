@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-object-storage, long, no-parallel
+# Tags: no-fasttest, no-object-storage, long, no-parallel, no-flaky-check
 # ^ no-object-storage: it is memory-hungry
+# ^ no-flaky-check: slow with thread fuzzer
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
