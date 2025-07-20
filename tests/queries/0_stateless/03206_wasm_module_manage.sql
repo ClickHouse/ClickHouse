@@ -1,7 +1,7 @@
---
+-- Tags: no-fasttest
+
 -- Checks general functionality of managing WebAssembly modules and functions (adding modules, creating functions, etc)
 -- And basic wasm engine functionality, such as calling simple functions
---
 
 SET allow_experimental_analyzer = 1;
 

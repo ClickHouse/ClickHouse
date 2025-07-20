@@ -405,10 +405,7 @@ WasmAbiVersion getWasmAbiFromString(const String & str)
     if (!isCaseConstrained(str))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value for WebAssembly ABI version: '{}'", str);
 
-    for (auto abi_type : {
-             WasmAbiVersion::Plain,
-             WasmAbiVersion::V1,
-         })
+    for (auto abi_type : {WasmAbiVersion::Plain, WasmAbiVersion::V1})
         if (Poco::toUpper(str) == toString(abi_type))
             return abi_type;
 
@@ -428,7 +425,7 @@ public:
     {
     }
 
-    Entry aquire() { return get(-1); }
+    Entry acquire() { return get(-1); }
 
 protected:
     ObjectPtr allocObject() override { return wasm_module->instantiate(module_cfg); }
@@ -500,7 +497,7 @@ public:
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
-        auto compartment_entry = compartment_pool.aquire();
+        auto compartment_entry = compartment_pool.acquire();
         auto * compartment_ptr = &(*compartment_entry);
         return execute(compartment_ptr, arguments, input_rows_count);
     }

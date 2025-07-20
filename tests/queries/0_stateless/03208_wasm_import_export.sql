@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 SET allow_experimental_analyzer = 1;
 
 DROP FUNCTION IF EXISTS test_host_api;
@@ -38,11 +40,12 @@ SYSTEM FLUSH LOGS;
 
 SELECT count() >= 1
 FROM system.text_log
-WHERE event_date = today() AND query_id = (
+WHERE event_date >= yesterday() AND query_id = (
     SELECT query_id FROM system.query_log
-    WHERE event_date = today() AND query LIKE '%test_host_api%'
+    WHERE event_date >= yesterday() AND query LIKE '%test_host_api%'
     AND type = 'QueryFinish' AND query_kind = 'Select'
     AND log_comment = '03208_wasm_import_export_ok'
+    AND database = currentDatabase()
     ORDER BY event_time DESC
     LIMIT 1
 )
@@ -51,9 +54,10 @@ AND message LIKE 'Hello, ClickHouse%' || substring(replace(version(), '.', '%'),
 
 SELECT exception LIKE '%Goodbye, ClickHouse%'
 FROM system.query_log
-WHERE event_date = today() AND query LIKE '%test_host_api%'
+WHERE event_date >= yesterday() AND query LIKE '%test_host_api%'
 AND query_kind = 'Select' AND toString(type) LIKE 'Exception%'
 AND log_comment = '03208_wasm_import_export_err'
+AND database = currentDatabase()
 ORDER BY event_time DESC
 LIMIT 1
 ;

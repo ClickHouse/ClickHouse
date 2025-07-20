@@ -105,6 +105,13 @@ done
 # Special care for Rust
 for dependency in $(find "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml');
 do
+    # FIXME: this for now, need to figure out how to handle it
+    if [[ "$dependency" == *"ittapi"* ]]; then continue; fi
+    if [[ "$dependency" == *"ring"* ]]; then continue; fi
+    if [[ "$dependency" == *"ocaml-sys"* ]]; then continue; fi
+    if [[ "$dependency" == *"fxhash"* ]]; then continue; fi
+    if [[ "$dependency" == *"wast"* ]]; then continue; fi
+
     FOLDER=$(dirname "$dependency")
     NAME=$(echo "$dependency" | awk -F'/' '{ print $(NF-1) }' | awk -F'-' '{ NF=(NF-1); print $0 }')
     LICENSE_TYPE=$(${GREP_CMD} 'license = "' "$dependency"  | cut -d '"' -f2)

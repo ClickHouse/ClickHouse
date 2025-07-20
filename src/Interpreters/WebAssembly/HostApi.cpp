@@ -99,11 +99,12 @@ std::unique_ptr<WasmHostFunction> makeHostFunction(std::string_view function_nam
 
 std::unique_ptr<WasmHostFunction> getHostFunction(std::string_view function_name)
 {
-    for (auto && function : std::array{
-             makeHostFunction("clickhouse_server_version", wasmExportServerVer),
-             makeHostFunction("clickhouse_terminate", wasmExportTerminate),
-             makeHostFunction("clickhouse_log", wasmExportAlert),
-         })
+    std::array exported_functions{
+        makeHostFunction("clickhouse_server_version", wasmExportServerVer),
+        makeHostFunction("clickhouse_terminate", wasmExportTerminate),
+        makeHostFunction("clickhouse_log", wasmExportAlert),
+    };
+    for (auto && function : exported_functions)
     {
         if (function->getName() == function_name)
             return std::move(function);

@@ -108,7 +108,7 @@ wasmtime::Val toWasmTimeValue(WasmVal val)
             }
             else
             {
-                throw Exception(ErrorCodes::WASM_ERROR, "Failed to transform WasmVal to wasmtime::Val: unkown variant underlying type");
+                throw Exception(ErrorCodes::WASM_ERROR, "Failed to transform WasmVal to wasmtime::Val: unknown variant underlying type");
             }
         },
         val);

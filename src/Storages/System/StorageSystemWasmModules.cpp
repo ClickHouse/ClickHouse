@@ -35,9 +35,9 @@ namespace ErrorCodes
 ColumnsDescription StorageSystemWasmModules::getColumnsDescription()
 {
     return ColumnsDescription{
-        {"name", std::make_shared<DataTypeString>()},
-        {"code", std::make_shared<DataTypeString>()},
-        {"hash", std::make_shared<DataTypeUInt256>()},
+        {"name", std::make_shared<DataTypeString>(), "The name of the module"},
+        {"code", std::make_shared<DataTypeString>(), "Binary WebAssembly module code"},
+        {"hash", std::make_shared<DataTypeUInt256>(), "The hash of the module code"},
     };
 }
 

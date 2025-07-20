@@ -215,7 +215,7 @@ endif()
 if (TARGET ch_contrib::wasmedge)
     set(USE_WASMEDGE 1)
 endif()
-if (TARGET ch_contrib::wasmtime)
+if (TARGET ch_contrib::wasmtime_cpp)
     set(USE_WASMTIME 1)
 endif()
 
