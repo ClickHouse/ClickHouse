@@ -106,13 +106,13 @@ public:
         std::string token;
 
         const std::string prefix_basic = "Basic ";
-        if (auth_header.compare(0, prefix_basic.size(), prefix_basic) == 0)
+        if (auth_header.starts_with(prefix_basic))
         {
             token = auth_header.substr(prefix_basic.size());
         }
 
         const std::string prefix_bearer = "Bearer ";
-        if (auth_header.compare(0, prefix_bearer.size(), prefix_bearer) == 0)
+        if (auth_header.starts_with(prefix_bearer))
         {
             token = auth_header.substr(prefix_bearer.size());
         }
@@ -224,9 +224,7 @@ void ArrowFlightHandler::start()
     }
 }
 
-ArrowFlightHandler::~ArrowFlightHandler()
-{
-}
+ArrowFlightHandler::~ArrowFlightHandler() = default;
 
 void ArrowFlightHandler::stop()
 {
@@ -338,7 +336,7 @@ arrow::Status ArrowFlightHandler::DoGet(
             return arrow::Status::IOError("DoGet failed: cannot combine chunks: " + maybe_combined.status().ToString());
         }
 
-        auto combined_table = maybe_combined.ValueOrDie();
+        const auto & combined_table = maybe_combined.ValueOrDie();
         arrow::TableBatchReader reader(combined_table);
 
         std::vector<std::shared_ptr<arrow::RecordBatch>> batches;
@@ -398,7 +396,7 @@ arrow::Status ArrowFlightHandler::DoPut(
         {
             return arrow::Status::Invalid("Failed to receive schema: " + schema_result.status().ToString());
         }
-        auto schema = schema_result.ValueOrDie();
+        const auto & schema = schema_result.ValueOrDie();
 
         const auto & descriptor = reader->descriptor();
         if (descriptor.type == arrow::flight::FlightDescriptor::CMD)
@@ -457,7 +455,7 @@ arrow::Status ArrowFlightHandler::DoPut(
                 {
                     return arrow::Status::IOError("Failed to read batch: " + batch_result.status().ToString());
                 }
-                auto arrow_table = batch_result.ValueOrDie();
+                const auto & arrow_table = batch_result.ValueOrDie();
                 auto chunk = converter.arrowTableToCHChunk(arrow_table, batch->num_rows(), nullptr, nullptr);
 
                 auto input = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(header), std::move(chunk));
@@ -504,7 +502,7 @@ arrow::Status ArrowFlightHandler::DoPut(
             {
                 return arrow::Status::IOError("Failed to read batch: " + batch_result.status().ToString());
             }
-            auto arrow_table = batch_result.ValueOrDie();
+            const auto & arrow_table = batch_result.ValueOrDie();
             auto chunk = converter.arrowTableToCHChunk(arrow_table, batch->num_rows(), nullptr, nullptr);
 
             auto insert_context = Context::createCopy(query_context);

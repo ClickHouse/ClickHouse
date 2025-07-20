@@ -87,7 +87,7 @@ Chunk ArrowFlightSource::generate()
         throw Exception(ErrorCodes::ARROWFLIGHT_INTERNAL_ERROR, "Arrow Flight internal error: {}", status.status().ToString());
     }
 
-    auto chunk = status.ValueOrDie();
+    const auto & chunk = status.ValueOrDie();
     auto batch = chunk.data;
 
     if (!batch)
@@ -113,7 +113,7 @@ Chunk ArrowFlightSource::generate()
     }
     auto table = std::move(batch_result).ValueOrDie();
     auto ch_chunk = converter.arrowTableToCHChunk(table, batch->num_rows(), nullptr, nullptr);
-    for (auto & col : ch_chunk.getColumns())
+    for (const auto & col : ch_chunk.getColumns())
         columns.push_back(IColumn::mutate(col->cloneResized(batch->num_rows())));
 
     Chunk filled_chunk(std::move(columns), batch->num_rows());
