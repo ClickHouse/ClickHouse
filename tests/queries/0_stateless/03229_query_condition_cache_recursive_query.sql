@@ -33,7 +33,7 @@ WITH RECURSIVE
                 UNION ALL
                 SELECT parent AS id FROM objects WHERE objects.id IN rec AND parent != zero GROUP BY parent
         )
-SELECT * FROM rec GROUP BY id;
+SELECT * FROM rec GROUP BY id ORDER BY id;
 
 SELECT 'Second run (copy-paste of the same query)';
 WITH RECURSIVE
@@ -44,7 +44,7 @@ WITH RECURSIVE
                 UNION ALL
                 SELECT parent AS id FROM objects WHERE objects.id IN rec AND parent != zero GROUP BY parent
         )
-SELECT * FROM rec GROUP BY id;
+SELECT * FROM rec GROUP BY id ORDER BY id;
 
 DROP TABLE objects;
 

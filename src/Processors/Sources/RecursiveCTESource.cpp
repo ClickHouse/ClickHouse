@@ -26,7 +26,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 max_recursive_cte_evaluation_depth;
-    extern const SettingsUInt64 use_query_condition_cache;
+    extern const SettingsBool use_query_condition_cache;
 }
 
 namespace ErrorCodes
