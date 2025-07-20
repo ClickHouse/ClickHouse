@@ -1142,6 +1142,21 @@ void FileSegment::increasePriority()
     }
 }
 
+FileSegment::~FileSegment()
+{
+    try
+    {
+        /// Can be non-finalized in case it was push to background download
+        /// but not executed before server shutdown.
+        if (cache_writer)
+            cache_writer->finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
+}
+
 FileSegmentsHolder::FileSegmentsHolder(FileSegments && file_segments_)
     : file_segments(std::move(file_segments_))
 {

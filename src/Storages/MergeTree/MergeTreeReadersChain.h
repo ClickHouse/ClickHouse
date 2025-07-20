@@ -22,7 +22,7 @@ public:
     size_t numRowsInCurrentGranule() const;
     size_t currentMark() const;
 
-    Block getSampleBlock() const;
+    const Block & getSampleBlock() const;
     bool isCurrentRangeFinished() const;
 
 private:
@@ -41,11 +41,8 @@ private:
         bool is_last_reader);
 
     void readPatches(const Block & result_header, std::vector<MarkRanges> & patch_ranges, ReadResult & read_result);
-    bool needApplyPatch(const Block & block, const IMergeTreeDataPartInfoForReader & patch) const;
-
     void addPatchVirtuals(Block & to, const Block & from) const;
     void addPatchVirtuals(ReadResult & result, const Block & header) const;
-
     void applyPatchesAfterReader(ReadResult & result, size_t reader_index);
 
     void applyPatches(

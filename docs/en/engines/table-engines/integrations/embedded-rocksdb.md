@@ -8,13 +8,13 @@ title: 'EmbeddedRocksDB Engine'
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# EmbeddedRocksDB Engine
+# EmbeddedRocksDB engine
 
 <CloudNotSupportedBadge />
 
 This engine allows integrating ClickHouse with [RocksDB](http://rocksdb.org/).
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]

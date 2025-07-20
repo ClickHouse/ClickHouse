@@ -268,14 +268,14 @@ else \
         demangle(typeid(*column).name())); \
 }
 
-WindowTransform::WindowTransform(const Block & input_header_,
-        const Block & output_header_,
+WindowTransform::WindowTransform(SharedHeader input_header_,
+        SharedHeader output_header_,
         const WindowDescription & window_description_,
         const std::vector<WindowFunctionDescription> & functions)
     : IProcessor({input_header_}, {output_header_})
     , input(inputs.front())
     , output(outputs.front())
-    , input_header(input_header_)
+    , input_header(*input_header_)
     , window_description(window_description_)
 {
     // Materialize all columns in header, because we materialize all columns

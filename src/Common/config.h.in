@@ -10,6 +10,7 @@
 #cmakedefine01 USE_HDFS
 #cmakedefine01 USE_AWS_S3
 #cmakedefine01 USE_GOOGLE_CLOUD
+#cmakedefine01 USE_GOOGLE_CLOUD_KMS
 #cmakedefine01 USE_AZURE_BLOB_STORAGE
 #cmakedefine01 USE_BROTLI
 #cmakedefine01 USE_CASSANDRA
@@ -76,6 +77,7 @@
 #cmakedefine01 USE_DELTA_KERNEL_RS
 #cmakedefine01 USE_CHDIG
 #cmakedefine01 USE_SHA3IUF
+#cmakedefine01 USE_CLIENT_AI
 
 /// This is needed for .incbin in assembly. For some reason, include paths don't work there in presence of LTO.
 /// That's why we use absolute paths.
