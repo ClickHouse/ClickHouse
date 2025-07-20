@@ -815,7 +815,7 @@ private:
         aggregate_function->parameters->children.push_back(timestampToAST(end_time));
         aggregate_function->parameters->children.push_back(intervalToAST(step));
         aggregate_function->parameters->children.push_back(intervalToAST(window));
-        return makeASTFunction("timeSeriesGrid", timestampToAST(start_time), intervalToAST(step), aggregate_function);
+        return makeASTFunction("timeSeriesGrid", timestampToAST(start_time), timestampToAST(end_time), intervalToAST(step), aggregate_function);
     }
 
     /// Finds all subqueries and @ and offset operations related to a specific node
