@@ -599,8 +599,9 @@ class ClickHouseProc:
             else:
                 print(f"Server replica {replica_num} not ready, err: {err}, wait")
             Utils.sleep(delay)
-            if proc.poll() is not None:
-                print(f"Server replica {replica_num} not ready, process is dead")
+            status = proc.poll()
+            if status is not None:
+                print(f"Server replica {replica_num} (pid={proc.pid}) exited: {status}")
                 Shell.check(f"echo 'Error log:' && tail -n100 {err_log}", verbose=True)
                 return False
         else:
