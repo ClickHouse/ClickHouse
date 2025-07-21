@@ -42,17 +42,19 @@ public:
     /// Unlike s3 and azure, which are object storages,
     /// hdfs is a filesystem, so it cannot list files by partial prefix,
     /// only by directory.
+    /// Therefore in the below methods we use supports_partial_prefix=false.
     Path getRawPath() const override { return path; }
-    void setRawPath(const Path & path_) override { path = {path_.path, false}; }
+    void setRawPath(const Path & path_) override { path = {path_.path, /* supports_partial_prefix=false */ false}; }
 
     const Paths & getPaths() const override { return paths; }
     void setPaths(const Paths & paths_) override
     {
         paths.clear();
-        // copy paths adjusting `allow_partial_prefix=false` since partial prefixes are not allowed in HDFS
+        paths.reserve(paths_.size());
+        // copy paths adjusting `supports_partial_prefix=false` since partial prefixes are not allowed in HDFS
         for (const auto & p : paths_)
         {
-            paths.emplace_back(p.path, /* allow_partial_prefix */false);
+            paths.emplace_back(p.path, /* supports_partial_prefix */false);
         }
     }
 

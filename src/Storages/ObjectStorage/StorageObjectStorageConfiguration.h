@@ -50,7 +50,7 @@ public:
         Path() = default;
         /// A partial prefix is a prefix that does not represent an actual object (directory or file), usually strings that do not end with a slash character.
         /// Example: `table_root/year=20`. AWS S3 supports partial prefixes, but HDFS does not.
-        Path(const std::string & path_, bool allow_partial_prefix_ = true) : path(path_), allow_partial_prefix(allow_partial_prefix_) {} /// NOLINT(google-explicit-constructor)
+        Path(const std::string & path_, bool supports_partial_prefix_ = true) : path(path_), supports_partial_prefix(supports_partial_prefix_) {} /// NOLINT(google-explicit-constructor)
 
         std::string path;
 
@@ -60,7 +60,7 @@ public:
         std::string getWithoutGlobs() const;
 
     private:
-        bool allow_partial_prefix;
+        bool supports_partial_prefix;
     };
 
     using Paths = std::vector<Path>;

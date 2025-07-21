@@ -73,7 +73,7 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
         {}, // predicate
         {},
         {}, // virtual_columns
-        {}, /* hive_columns */
+        {}, // hive_columns
         nullptr, // read_keys
         {} // file_progress_callback
     );
