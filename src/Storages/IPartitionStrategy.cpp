@@ -228,6 +228,9 @@ std::shared_ptr<IPartitionStrategy> PartitionStrategyFactory::get(StrategyType s
                 file_format,
                 globbed_path,
                 partition_columns_in_data_file);
+        case StrategyType::NONE:
+            /// Unreachable for plain object storage, used only by Data Lakes for now
+            return nullptr;
     }
 }
 

@@ -118,3 +118,7 @@ CREATE TABLE t_invalid_expression (year UInt16, country String, counter UInt8)
 CREATE TABLE t_invalid_expression (year UInt16, country String, counter Float64)
                                   ENGINE = S3(s3_conn, filename = 'invalid', format = Parquet, partition_strategy='hive')
                                   PARTITION BY counter; -- {serverError BAD_ARGUMENTS}
+
+-- Data lake like engines do not support the `partition_strategy` argument
+CREATE TABLE t_03363_iceberg ENGINE=IcebergS3(s3_conn, filename = 'iceberg_data/default/t_iceberg/', format='parquet', url = 'http://minio1:9001/bucket/', partition_strategy='WILDCARD'); -- {serverError BAD_ARGUMENTS}
+CREATE TABLE t_03363_iceberg ENGINE=IcebergS3(s3_conn, filename = 'iceberg_data/default/t_iceberg/', format='parquet', url = 'http://minio1:9001/bucket/', partition_strategy='HIVE'); -- {serverError BAD_ARGUMENTS}

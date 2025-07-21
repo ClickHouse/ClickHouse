@@ -61,6 +61,19 @@ void StorageObjectStorageConfiguration::initialize(
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Expression can not have wildcards inside {} name", configuration_to_initialize.getNamespaceType());
 
+    if (configuration_to_initialize.isDataLakeConfiguration())
+    {
+        if (configuration_to_initialize.partition_strategy_type != PartitionStrategyFactory::StrategyType::NONE)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `partition_strategy` argument is incompatible with data lakes");
+        }
+    }
+    else if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE)
+    {
+        // Promote to wildcard in case it is not data lake to make it backwards compatible
+        configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
+    }
+
     if (configuration_to_initialize.format == "auto")
     {
         if (configuration_to_initialize.isDataLakeConfiguration())

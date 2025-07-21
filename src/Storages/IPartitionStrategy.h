@@ -53,6 +53,7 @@ struct PartitionStrategyFactory
 {
     enum class StrategyType
     {
+        NONE, /// The default for data lakes. To keep it backwards compatible, it is promoted to `WILDCARD` in case it is plain object storage
         WILDCARD,
         HIVE
     };

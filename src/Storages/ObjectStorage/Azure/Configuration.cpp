@@ -150,7 +150,7 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
     format = collection.getOrDefault<String>("format", format);
     compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
 
-    static const auto default_partition_strategy_name = std::string(magic_enum::enum_name(PartitionStrategyFactory::StrategyType::WILDCARD));
+    static const auto default_partition_strategy_name = std::string(magic_enum::enum_name(PartitionStrategyFactory::StrategyType::NONE));
     const auto partition_strategy_name = collection.getOrDefault<std::string>("partition_strategy", default_partition_strategy_name);
     const auto partition_strategy_type_opt = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(partition_strategy_name, magic_enum::case_insensitive);
 
