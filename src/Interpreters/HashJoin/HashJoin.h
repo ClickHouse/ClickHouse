@@ -467,7 +467,7 @@ private:
     friend class HashJoinMethods;
 
     std::shared_ptr<TableJoin> table_join;
-    const JoinKind kind;
+    JoinKind kind;
     JoinStrictness strictness;
 
     /// This join was created from StorageJoin and it is already filled.

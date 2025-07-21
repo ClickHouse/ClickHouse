@@ -302,15 +302,15 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     }
 
     IColumn::Filter partial_filter;
-    std::span<UInt64> partial_selector;
+    std::span<UInt64> partial_matched_rows;
     if (!filter.empty())
     {
         partial_filter.resize(num_lhs_rows);
         memcpySmallAllowReadWriteOverflow15(partial_filter.data(), filter.data() + next_row, num_lhs_rows);
-        const size_t old_selector_it = next_selector_it;
-        while (next_selector_it < matched_rows.size() && matched_rows[next_selector_it] < next_row + num_lhs_rows)
-            ++next_selector_it;
-        partial_selector = std::span<UInt64>{matched_rows.begin() + old_selector_it, matched_rows.begin() + next_selector_it};
+        const auto old_selector_it = next_matched_rows_it;
+        while (next_matched_rows_it < matched_rows.size() && matched_rows[next_matched_rows_it] < next_row + num_lhs_rows)
+            ++next_matched_rows_it;
+        partial_matched_rows = std::span<UInt64>{&matched_rows[old_selector_it], &matched_rows[next_matched_rows_it]};
     }
 
     const auto row_ref_start = next_row_ref;
@@ -352,7 +352,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         properties,
         partial_offsets,
         partial_filter,
-        partial_selector);
+        partial_matched_rows);
 
     columns = std::move(next_columns);
     if (is_last)

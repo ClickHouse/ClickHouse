@@ -410,11 +410,9 @@ void HashJoin::dataMapInit(MapsVariant & map)
 
 bool HashJoin::preferUseMapsAll() const
 {
-    auto res = table_join->getMixedJoinExpression() != nullptr
-        || all_join_was_promoted_to_right_any // It means that we built hash tables for ALL strictness, but upon finishing found out that we can switch to RIGHT ANY.
+    return all_join_was_promoted_to_right_any // It means that we built hash tables for ALL strictness, but upon finishing found out that we can switch to RIGHT ANY.
                                               // In this case we still have to use ALL maps.
-        ;
-    return res;
+        || table_join->getMixedJoinExpression() != nullptr;
 }
 
 bool HashJoin::empty() const
