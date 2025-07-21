@@ -75,7 +75,7 @@ size_t ColumnsSubstreams::getLastSubstreamPosition(size_t column_position) const
     return getSubstreamPosition(column_position, columns_substreams[column_position].second.back());
 }
 
-const std::vector<String> & ColumnsSubstreams::getAllColumnSubstreams(const String & column) const
+const std::vector<String> & ColumnsSubstreams::getColumnSubstreams(const String & column) const
 {
     for (const auto & [column_, substreams] : columns_substreams)
     {
