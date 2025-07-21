@@ -791,14 +791,18 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
             CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
 
-            for (size_t idx = 0; idx < skip_indexes.useful_indices.size(); ++idx)
+            const auto &index_order = skip_indexes.per_part_index_orders[part_index];
+
+            for (size_t idx = 0; idx < index_order.size(); ++idx)
             {
                 if (ranges.ranges.empty())
                     break;
 
                 ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
-                const auto & index_and_condition = skip_indexes.useful_indices[idx];
+
+                const auto & index_and_condition = skip_indexes.useful_indices[index_order[idx]];
+                LOG_DEBUG(log, "part_index: {} index: {} name: {} sz: {}", part_index, index_order[idx], index_and_condition.index->index.name, index_order.size());
                 auto & stat = useful_indices_stat[idx];
                 stat.total_parts.fetch_add(1, std::memory_order_relaxed);
                 size_t total_granules = ranges.ranges.getNumberOfMarks();
