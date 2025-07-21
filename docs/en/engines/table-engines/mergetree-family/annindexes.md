@@ -372,6 +372,36 @@ ORDER BY event_time_microseconds;
 
 For production use-cases, we recommend that the cache is sized large enough so that all vector indexes remain in memory at all times.
 
+**Tuning Data Transfer**
+
+The search embedding vector is a user input in a similarity search query and is generally retrieved by making a call to an LLM. A typical Python code snippet to use similarity search in ClickHouse is shown below :
+
+```python
+search_v = openai_client.embeddings.create(input = "[Good Books]", model='text-embedding-3-large', dimensions=1536).data[0].embedding
+
+params = {'search_v': search_v}
+result = chclient.query(
+   "SELECT id FROM items
+    ORDER BY cosineDistance(vector, %(search_v)s)
+    LIMIT 10",
+    parameters=params)
+```
+
+An embedding vector could be of a very high dimension. OpenAI models generate embedding vectors of dimension 1536 or even 3072. Other models could output embedding vectors of dimension 4096 or more. The above code snippet will result in the ClickHouse driver to substitute the embedding vector in human readable string form in the ```search_v``` parameter and subsequently send the SELECT query entirely as a string. To illustrate, a SELECT query with 1536 floating point values in string form could reach lengths of 20kB or more. This large SQL string will lead to CPU usage for tokenizing, parsing and performing 1000's of string to floating point value conversions. The large SQL query will also occupy significant space in the ClickHouse server log file and cause bloat in the ```system.query_log``` table. Note that most LLM modules return an embedding vector as a ```list``` of native floats or as a Python ```NumPy``` array of native floats. Thus, ClickHouse recommends Python applications to bind the search vector parameter in ```binary``` form by using the following style :
+
+```python
+search_v = openai_client.embeddings.create(input = "[Good Books]", model='text-embedding-3-large', dimensions=1536).data[0].embedding
+
+params = {'$search_v_binary$': np.array(search_v, dtype=np.float32).tobytes()}
+result = chclient.query(
+   "SELECT id FROM items
+    ORDER BY cosineDistance(vector, (SELECT reinterpret($search_v_binary$, 'Array(Float32)')))
+    LIMIT 10" 
+    parameters=params)
+```
+
+The above technique saves CPU time and avoids bloating of the ClickHouse server log file and ```system.query_log``` table.
+
 ### Administration and monitoring {#administration}
 
 The on-disk size of vector similarity indexes can be obtained from [system.data_skipping_indices](../../../operations/system-tables/data_skipping_indices):
