@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/RadixSort.h>
+#include "base/types.h"
 
 namespace DB
 {
@@ -16,7 +17,7 @@ template <typename T>
 struct RadixSortTraits : RadixSortNumTraits<T>
 {
     using Element = ValueWithIndex<T>;
-    using Result = size_t;
+    using Result = UInt32;
 
     static T & extractKey(Element & elem) { return elem.value; }
     static size_t extractResult(Element & elem) { return elem.index; }

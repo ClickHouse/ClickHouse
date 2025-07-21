@@ -30,7 +30,7 @@ class ColumnConst;
 class IDataType;
 class Block;
 using DataTypePtr = std::shared_ptr<const IDataType>;
-using IColumnPermutation = PaddedPODArray<size_t>;
+using IColumnPermutation = PaddedPODArray<UInt32>;
 using IColumnFilter = PaddedPODArray<UInt8>;
 
 /// A range of column values between row indexes `from` and `to`. The name "equal range" is due to table sorting as its main use case: With
