@@ -15,6 +15,130 @@ namespace ErrorCodes
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+namespace
+{
+/// Helper to validate path length
+void validatePathLength(size_t path_size)
+{
+    if (path_size > MAX_JSON_MERGE_PATH_LENGTH)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_STRING_SIZE, "JSON path too long: {} bytes (maximum: {})", path_size, MAX_JSON_MERGE_PATH_LENGTH);
+}
+
+/// Helper to validate paths count
+void validatePathsCount(size_t paths_count)
+{
+    if (paths_count > MAX_JSON_MERGE_PATHS)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many paths in JSON merge: {} (maximum: {})", paths_count, MAX_JSON_MERGE_PATHS);
+}
+
+/// Helper to validate total size
+void validateTotalSize(size_t total_size)
+{
+    if (total_size > MAX_JSON_MERGE_TOTAL_SIZE)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "JSON merge state size too large: {} bytes (maximum: {} bytes)",
+            total_size,
+            MAX_JSON_MERGE_TOTAL_SIZE);
+}
+}
+
+bool DeepMergeJSONAggregateData::isObjectPath(const StringRef & path) const
+{
+    auto it = paths.upper_bound(path);
+    return it != paths.end() && it->first.size > path.size && memcmp(it->first.data, path.data, path.size) == 0
+        && it->first.data[path.size] == '.';
+}
+
+bool DeepMergeJSONAggregateData::isUnsetMarker(const Field & value)
+{
+    if (value.getType() != Field::Types::Object)
+        return false;
+
+    const auto & obj = value.safeGet<Object>();
+    return obj.size() == 1 && obj.contains(UNSET_KEY) && obj.at(UNSET_KEY).getType() == Field::Types::Bool
+        && obj.at(UNSET_KEY).safeGet<bool>();
+}
+
+bool DeepMergeJSONAggregateData::handleDeletion(const StringRef & target_path, size_t order, Arena * arena)
+{
+    auto it = paths.find(target_path);
+
+    if (it != paths.end() && order <= it->second.row_order)
+        return false; // Skip if not newer
+
+    if (it == paths.end())
+    {
+        // Need to intern the string for new deletion marker
+        char * data = arena->alloc(target_path.size);
+        memcpy(data, target_path.data, target_path.size);
+        paths[StringRef(data, target_path.size)] = PathData{Field(), order, true};
+    }
+    else
+    {
+        it->second.value = Field();
+        it->second.row_order = order;
+        it->second.is_deleted = true;
+    }
+
+    removeChildPaths(target_path);
+    return true;
+}
+
+void DeepMergeJSONAggregateData::addPath(const StringRef & path, const Field & value, size_t order, Arena * arena)
+{
+    /// Check for ".$unset" suffix deletion
+    std::string path_str = path.toString();
+    std::string unset_suffix = std::string(".") + UNSET_KEY;
+    if (path_str.size() > unset_suffix.size() && path_str.substr(path_str.size() - unset_suffix.size()) == unset_suffix
+        && value.getType() == Field::Types::Bool && value.safeGet<bool>())
+    {
+        std::string target_path = path_str.substr(0, path_str.size() - unset_suffix.size());
+        handleDeletion(StringRef(target_path), order, arena);
+        return;
+    }
+
+    /// Check for deletion marker (backward compatibility)
+    if (isUnsetMarker(value))
+    {
+        handleDeletion(path, order, arena);
+        return;
+    }
+
+    /// Normal value update/insert
+    auto it = paths.find(path);
+    if (it != paths.end())
+    {
+        if (order > it->second.row_order)
+        {
+            it->second.value = value;
+            it->second.row_order = order;
+            it->second.is_deleted = false;
+        }
+    }
+    else
+    {
+        paths[path] = PathData{value, order, false};
+    }
+
+    /// Remove child paths if this is now a leaf value
+    if (!value.isNull() && !isObjectPath(path))
+        removeChildPaths(path);
+}
+
+void DeepMergeJSONAggregateData::removeChildPaths(const StringRef & parent_path)
+{
+    String prefix = parent_path.toString() + ".";
+    auto it = paths.lower_bound(StringRef(prefix));
+
+    while (it != paths.end() && it->first.size >= prefix.size() && memcmp(it->first.data, prefix.data(), prefix.size()) == 0)
+    {
+        it = paths.erase(it);
+    }
+}
+
 void AggregateFunctionDeepMergeJSON::add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const
 {
     auto & aggregate_data = data(place);
@@ -22,6 +146,14 @@ void AggregateFunctionDeepMergeJSON::add(AggregateDataPtr __restrict place, cons
 
     processColumnObject(col_object, row_num, aggregate_data, arena);
     ++aggregate_data.row_count;
+}
+
+void AggregateFunctionDeepMergeJSON::processPath(
+    const StringRef & path, const Field & value, DeepMergeJSONAggregateData & aggregate_data, Arena * arena) const
+{
+    validatePathLength(path.size);
+    auto interned_path = internString(path, arena);
+    aggregate_data.addPath(interned_path, value, aggregate_data.row_count, arena);
 }
 
 void AggregateFunctionDeepMergeJSON::processColumnObject(
@@ -34,17 +166,7 @@ void AggregateFunctionDeepMergeJSON::processColumnObject(
         {
             Field value;
             column->get(row_num, value);
-
-            /// Check path length
-            if (path.size() > MAX_JSON_MERGE_PATH_LENGTH)
-                throw Exception(
-                    ErrorCodes::TOO_LARGE_STRING_SIZE,
-                    "JSON path too long: {} bytes (maximum: {})",
-                    path.size(),
-                    MAX_JSON_MERGE_PATH_LENGTH);
-
-            auto interned_path = internString(StringRef(path), arena);
-            aggregate_data.addPath(interned_path, value, aggregate_data.row_count, arena);
+            processPath(StringRef(path), value, aggregate_data, arena);
         }
     }
 
@@ -55,16 +177,7 @@ void AggregateFunctionDeepMergeJSON::processColumnObject(
         {
             Field value;
             dynamic_column->get(row_num, value);
-
-            if (path.size() > MAX_JSON_MERGE_PATH_LENGTH)
-                throw Exception(
-                    ErrorCodes::TOO_LARGE_STRING_SIZE,
-                    "JSON path too long: {} bytes (maximum: {})",
-                    path.size(),
-                    MAX_JSON_MERGE_PATH_LENGTH);
-
-            auto interned_path = internString(StringRef(path), arena);
-            aggregate_data.addPath(interned_path, value, aggregate_data.row_count, arena);
+            processPath(StringRef(path), value, aggregate_data, arena);
         }
     }
 
@@ -77,10 +190,7 @@ void AggregateFunctionDeepMergeJSON::processColumnObject(
     for (size_t i = start; i < end; ++i)
     {
         auto path = shared_data_paths->getDataAt(i);
-
-        if (path.size > MAX_JSON_MERGE_PATH_LENGTH)
-            throw Exception(
-                ErrorCodes::TOO_LARGE_STRING_SIZE, "JSON path too long: {} bytes (maximum: {})", path.size, MAX_JSON_MERGE_PATH_LENGTH);
+        validatePathLength(path.size);
 
         /// Deserialize value from shared data
         auto value_data = shared_data_values->getDataAt(i);
@@ -94,19 +204,11 @@ void AggregateFunctionDeepMergeJSON::processColumnObject(
 
             Field value;
             column->get(0, value);
-
-            auto interned_path = internString(path, arena);
-            aggregate_data.addPath(interned_path, value, aggregate_data.row_count, arena);
+            processPath(path, value, aggregate_data, arena);
         }
     }
 
-    /// Check total size
-    if (aggregate_data.paths.size() > MAX_JSON_MERGE_PATHS)
-        throw Exception(
-            ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-            "Too many paths in JSON merge: {} (maximum: {})",
-            aggregate_data.paths.size(),
-            MAX_JSON_MERGE_PATHS);
+    validatePathsCount(aggregate_data.paths.size());
 }
 
 void AggregateFunctionDeepMergeJSON::merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const
@@ -117,22 +219,13 @@ void AggregateFunctionDeepMergeJSON::merge(AggregateDataPtr __restrict place, Co
     /// Merge paths from rhs, keeping the one with higher row_order
     for (const auto & [path, path_data] : rhs_data.paths)
     {
-        /// Adjust row order to be after all current rows
         size_t adjusted_order = path_data.row_order + aggregate_data.row_count;
-
         auto interned_path = internString(path, arena);
         aggregate_data.addPath(interned_path, path_data.value, adjusted_order, arena);
     }
 
     aggregate_data.row_count += rhs_data.row_count;
-
-    /// Check size limit
-    if (aggregate_data.paths.size() > MAX_JSON_MERGE_PATHS)
-        throw Exception(
-            ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-            "Too many paths in JSON merge: {} (maximum: {})",
-            aggregate_data.paths.size(),
-            MAX_JSON_MERGE_PATHS);
+    validatePathsCount(aggregate_data.paths.size());
 }
 
 void AggregateFunctionDeepMergeJSON::serialize(
@@ -157,13 +250,7 @@ void AggregateFunctionDeepMergeJSON::serialize(
         writeStringBinary(field_buf.str(), buf);
 
         total_size += path.size + field_buf.str().size();
-
-        if (total_size > MAX_JSON_MERGE_TOTAL_SIZE)
-            throw Exception(
-                ErrorCodes::TOO_LARGE_STRING_SIZE,
-                "JSON merge state size too large: {} bytes (maximum: {} bytes)",
-                total_size,
-                MAX_JSON_MERGE_TOTAL_SIZE);
+        validateTotalSize(total_size);
     }
 }
 
@@ -175,10 +262,7 @@ void AggregateFunctionDeepMergeJSON::deserialize(
 
     size_t num_paths;
     readVarUInt(num_paths, buf);
-
-    if (num_paths > MAX_JSON_MERGE_PATHS)
-        throw Exception(
-            ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many paths in deserialization: {} (maximum: {})", num_paths, MAX_JSON_MERGE_PATHS);
+    validatePathsCount(num_paths);
 
     readVarUInt(aggregate_data.row_count, buf);
 
@@ -188,13 +272,7 @@ void AggregateFunctionDeepMergeJSON::deserialize(
     {
         String path_str;
         readStringBinary(path_str, buf);
-
-        if (path_str.size() > MAX_JSON_MERGE_PATH_LENGTH)
-            throw Exception(
-                ErrorCodes::TOO_LARGE_STRING_SIZE,
-                "Path too long in deserialization: {} bytes (maximum: {})",
-                path_str.size(),
-                MAX_JSON_MERGE_PATH_LENGTH);
+        validatePathLength(path_str.size());
 
         size_t row_order;
         readVarUInt(row_order, buf);
@@ -206,13 +284,7 @@ void AggregateFunctionDeepMergeJSON::deserialize(
         readStringBinary(value_str, buf);
 
         total_size += path_str.size() + value_str.size();
-
-        if (total_size > MAX_JSON_MERGE_TOTAL_SIZE)
-            throw Exception(
-                ErrorCodes::TOO_LARGE_STRING_SIZE,
-                "Total deserialized size too large: {} bytes (maximum: {} bytes)",
-                total_size,
-                MAX_JSON_MERGE_TOTAL_SIZE);
+        validateTotalSize(total_size);
 
         /// Deserialize Field
         ReadBufferFromString value_buf(value_str);
@@ -226,8 +298,6 @@ void AggregateFunctionDeepMergeJSON::deserialize(
 void AggregateFunctionDeepMergeJSON::insertResultInto(AggregateDataPtr __restrict place, IColumn & to, [[maybe_unused]] Arena * arena) const
 {
     const auto & aggregate_data = data(place);
-
-    /// Create result object
     Object result_object;
 
     /// Helper function to set a value in a nested object structure
@@ -243,35 +313,25 @@ void AggregateFunctionDeepMergeJSON::insertResultInto(AggregateDataPtr __restric
 
             if (dot_pos == std::string::npos)
             {
-                // Last component - set the value
                 (*current)[key] = value;
                 break;
             }
-            else
-            {
-                // Intermediate component - ensure it's an object
-                if (!current->contains(key) || current->at(key).getType() != Field::Types::Object)
-                {
-                    (*current)[key] = Object();
-                }
-                // Get mutable reference to the Object
-                Field & field = (*current)[key];
-                current = &field.safeGet<Object>();
-                pos = dot_pos + 1;
-            }
+
+            // Intermediate component - ensure it's an object
+            if (!current->contains(key) || current->at(key).getType() != Field::Types::Object)
+                (*current)[key] = Object();
+
+            Field & field = (*current)[key];
+            current = &field.safeGet<Object>();
+            pos = dot_pos + 1;
         }
     };
 
     /// Convert flat paths back to nested object structure
     for (const auto & [path_ref, path_data] : aggregate_data.paths)
     {
-        const std::string path = path_ref.toString();
-
-        /// Skip if this path was deleted or is an object path (has children)
         if (!path_data.is_deleted && !aggregate_data.isObjectPath(path_ref))
-        {
-            set_nested_value(result_object, path, path_data.value);
-        }
+            set_nested_value(result_object, path_ref.toString(), path_data.value);
     }
 
     to.insert(result_object);
@@ -283,7 +343,6 @@ void AggregateFunctionDeepMergeJSON::addBatchSinglePlace(
 {
     if (if_argument_pos >= 0)
     {
-        // Fall back to default implementation when we have an IF condition
         IAggregateFunctionDataHelper<DeepMergeJSONAggregateData, AggregateFunctionDeepMergeJSON>::addBatchSinglePlace(
             row_begin, row_end, place, columns, arena, if_argument_pos);
         return;
