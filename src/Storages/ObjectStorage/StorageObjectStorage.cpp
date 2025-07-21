@@ -439,11 +439,6 @@ SinkToStoragePtr StorageObjectStorage::write(
     if (!configuration->supportsWrites())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
 
-    if (configuration->partition_strategy)
-    {
-        return std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, format_settings, sample_block, local_context);
-    }
-
     /// Delta lake does not support writes yet.
     if (configuration->isDataLakeConfiguration() && configuration->supportsWrites())
     {
@@ -462,6 +457,13 @@ SinkToStoragePtr StorageObjectStorage::write(
                 "Insert into iceberg is experimental. "
                 "To allow its usage, enable setting allow_experimental_insert_into_iceberg");
 #endif
+    }
+
+    /// Not a data lake, just raw object storage
+
+    if (configuration->partition_strategy)
+    {
+        return std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, format_settings, sample_block, local_context);
     }
 
     auto paths = configuration->getPaths();
