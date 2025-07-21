@@ -78,33 +78,73 @@ StatementGenerator::StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations 
         }
     }
     /* Deterministic engines */
-    likeEngs
-        = {MergeTree,
-           ReplacingMergeTree,
-           CoalescingMergeTree,
-           SummingMergeTree,
-           AggregatingMergeTree,
-           File,
-           Null,
-           Set,
-           Join,
-           StripeLog,
-           Log,
-           TinyLog,
-           EmbeddedRocksDB};
-    if (fc.allow_memory_tables)
+    likeEngsDeterministic = {MergeTree};
+    if ((fc.engine_mask & allow_replacing_mergetree) != 0)
     {
-        likeEngs.emplace_back(Memory);
+        likeEngsDeterministic.emplace_back(ReplacingMergeTree);
     }
-    if (!fc.keeper_map_path_prefix.empty())
+    if ((fc.engine_mask & allow_coalescing_mergetree) != 0)
     {
-        likeEngs.emplace_back(KeeperMap);
+        likeEngsDeterministic.emplace_back(CoalescingMergeTree);
     }
+    if ((fc.engine_mask & allow_summing_mergetree) != 0)
+    {
+        likeEngsDeterministic.emplace_back(SummingMergeTree);
+    }
+    if ((fc.engine_mask & allow_aggregating_mergetree) != 0)
+    {
+        likeEngsDeterministic.emplace_back(AggregatingMergeTree);
+    }
+    if ((fc.engine_mask & allow_file) != 0)
+    {
+        likeEngsDeterministic.emplace_back(File);
+    }
+    if ((fc.engine_mask & allow_null) != 0)
+    {
+        likeEngsDeterministic.emplace_back(Null);
+    }
+    if ((fc.engine_mask & allow_setengine) != 0)
+    {
+        likeEngsDeterministic.emplace_back(Set);
+    }
+    if ((fc.engine_mask & allow_join) != 0)
+    {
+        likeEngsDeterministic.emplace_back(Join);
+    }
+    if ((fc.engine_mask & allow_stripelog) != 0)
+    {
+        likeEngsDeterministic.emplace_back(StripeLog);
+    }
+    if ((fc.engine_mask & allow_log) != 0)
+    {
+        likeEngsDeterministic.emplace_back(Log);
+    }
+    if ((fc.engine_mask & allow_tinylog) != 0)
+    {
+        likeEngsDeterministic.emplace_back(TinyLog);
+    }
+    if ((fc.engine_mask & allow_embedded_rocksdb) != 0)
+    {
+        likeEngsDeterministic.emplace_back(EmbeddedRocksDB);
+    }
+    if (fc.allow_memory_tables && (fc.engine_mask & allow_memory) != 0)
+    {
+        likeEngsDeterministic.emplace_back(Memory);
+    }
+    if (!fc.keeper_map_path_prefix.empty() && (fc.engine_mask & allow_keepermap) != 0)
+    {
+        likeEngsDeterministic.emplace_back(KeeperMap);
+    }
+    likeEngsNotDeterministic.insert(likeEngsNotDeterministic.end(), likeEngsDeterministic.begin(), likeEngsDeterministic.end());
     /* Not deterministic engines */
-    likeEngs.emplace_back(Merge);
-    if (fc.allow_infinite_tables)
+    if ((fc.engine_mask & allow_merge) != 0)
     {
-        likeEngs.emplace_back(GenerateRandom);
+        likeEngsNotDeterministic.emplace_back(Merge);
+    }
+    likeEngsInfinite.insert(likeEngsInfinite.end(), likeEngsNotDeterministic.begin(), likeEngsNotDeterministic.end());
+    if (fc.allow_infinite_tables && (fc.engine_mask & allow_generaterandom) != 0)
+    {
+        likeEngsInfinite.emplace_back(GenerateRandom);
     }
 }
 
@@ -164,15 +204,15 @@ DatabaseEngineValues StatementGenerator::getNextDatabaseEngine(RandomGenerator &
 {
     chassert(this->ids.empty());
     this->ids.emplace_back(DAtomic);
-    if (fc.allow_memory_tables)
+    if (fc.allow_memory_tables && (fc.engine_mask & allow_memory) != 0)
     {
         this->ids.emplace_back(DMemory);
     }
-    if (replica_setup)
+    if (replica_setup && (fc.engine_mask & allow_replicated) != 0)
     {
         this->ids.emplace_back(DReplicated);
     }
-    if (supports_cloud_features)
+    if (supports_cloud_features && (fc.engine_mask & allow_shared) != 0)
     {
         this->ids.emplace_back(DShared);
     }
