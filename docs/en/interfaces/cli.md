@@ -102,6 +102,10 @@ The format looks like this:
             <secure>1</secure>
             <user>default</user>
             <password>password</password>
+            <!-- <history_file></history_file> -->
+            <!-- <history_max_entries></history_max_entries> -->
+            <!-- <accept-invalid-certificate>false</accept-invalid-certificate> -->
+            <!-- <prompt></prompt> -->
         </connection>
     </connections_credentials>
 </config>
