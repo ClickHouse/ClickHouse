@@ -43,6 +43,7 @@ namespace ErrorCodes
 
 void StorageHDFSConfiguration::check(ContextPtr context) const
 {
+    context->getRemoteHostFilter().checkURL(Poco::URI(url));
     checkHDFSURL(fs::path(url) / path.path.substr(1));
     StorageObjectStorageConfiguration::check(context);
 }
