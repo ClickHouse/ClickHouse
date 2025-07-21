@@ -22,13 +22,13 @@ INSERT INTO test_limit_by_all_comprehensive VALUES
 -- Should expand to LIMIT 1 BY id, category
 SELECT id, category, value, name
 FROM test_limit_by_all_comprehensive 
-ORDER BY id, category 
+ORDER BY id, category, value, name
 LIMIT 1 BY ALL;
 
 -- Should expand to LIMIT 1 BY id, category, value
 SELECT id, category, value, name, value * 2 as doubled_value
 FROM test_limit_by_all_comprehensive 
-ORDER BY id, category 
+ORDER BY id, category, value, name, doubled_value
 LIMIT 1 BY ALL;
 
 -- Should expand to LIMIT 1 BY id, category (excluding aggregate functions)
@@ -38,15 +38,14 @@ SELECT id, category,
        avg(score) as avg_score
 FROM test_limit_by_all_comprehensive 
 GROUP BY id, category
-ORDER BY id, category 
+ORDER BY id, category, cnt, total_value, avg_score
 LIMIT 1 BY ALL;
-
 
 -- Should expand to LIMIT 1 BY id, category (excluding window functions)
 SELECT id, category, value,
        row_number() OVER (PARTITION BY category ORDER BY value) as rn
 FROM test_limit_by_all_comprehensive 
-ORDER BY id, category 
+ORDER BY id, category, value, rn
 LIMIT 1 BY ALL;
 
 -- Should expand to LIMIT 1 BY id, category, value, name
@@ -54,7 +53,7 @@ SELECT id, category, value, name,
        CASE WHEN value > 500 THEN 'high' ELSE 'low' END as value_category,
        substring(name, 1, 3) as name_prefix
 FROM test_limit_by_all_comprehensive 
-ORDER BY id, category 
+ORDER BY id, category, value, name, value_category, name_prefix
 LIMIT 1 BY ALL;
 
 -- Should expand to LIMIT 1 BY id, category, value, name
@@ -62,33 +61,33 @@ SELECT id, category, value, name,
        upper(name) as upper_name,
        value + score as combined_value
 FROM test_limit_by_all_comprehensive 
-ORDER BY id, category 
+ORDER BY id, category, value, name, upper_name, combined_value
 LIMIT 1 BY ALL;
 
 -- Should expand to LIMIT 1 BY id, category, value
 SELECT id, category, value,
        if(value > 500, 'high', 'low') as value_level
 FROM test_limit_by_all_comprehensive 
-ORDER BY id, category 
+ORDER BY id, category, value, value_level
 LIMIT 1 BY ALL;
 
 -- Should expand to LIMIT 1 BY id, category, value, name, score, is_active
 SELECT id, category, value, name, score, is_active
 FROM test_limit_by_all_comprehensive 
-ORDER BY id, category 
+ORDER BY id, category, value, name, score, is_active
 LIMIT 1 BY ALL;
 
 -- Should expand to LIMIT 1 BY id, category, value
 SELECT id, category, value, name
 FROM test_limit_by_all_comprehensive 
-ORDER BY value DESC
+ORDER BY value DESC, id, category, name
 LIMIT 1 BY ALL;
 
 -- Should expand to LIMIT 1 BY id, category, value, name
 SELECT id, category, value, name
 FROM test_limit_by_all_comprehensive 
 WHERE value > 500
-ORDER BY id, category 
+ORDER BY id, category, value, name
 LIMIT 1 BY ALL;
 
 -- Should result in empty LIMIT BY clause (no non-aggregate columns)
@@ -96,6 +95,7 @@ SELECT count(*) as total_count,
        sum(value) as total_value,
        avg(score) as average_score
 FROM test_limit_by_all_comprehensive 
+ORDER BY total_count, total_value, average_score
 LIMIT 1 BY ALL;
 
 -- Should expand to LIMIT 1 BY id, category
@@ -105,14 +105,14 @@ SELECT id, category,
 FROM test_limit_by_all_comprehensive 
 GROUP BY id, category
 HAVING count(*) > 1
-ORDER BY id, category 
+ORDER BY id, category, cnt, total_value
 LIMIT 1 BY ALL;
 
 -- Should expand to LIMIT 1 BY id, category, value
 SELECT id, category, value,
        (SELECT count(*) FROM test_limit_by_all_comprehensive t2 WHERE t2.category = test_limit_by_all_comprehensive.category) as category_total
 FROM test_limit_by_all_comprehensive 
-ORDER BY id, category 
+ORDER BY id, category, value, category_total
 LIMIT 1 BY ALL;
 
 -- Should expand to LIMIT 1 BY id, category, value, name
@@ -120,7 +120,7 @@ SELECT t1.id, t1.category, t1.value, t1.name,
        t2.value as other_value
 FROM test_limit_by_all_comprehensive t1
 JOIN test_limit_by_all_comprehensive t2 ON t1.id = t2.id
-ORDER BY t1.id, t1.category 
+ORDER BY t1.id, t1.category, t1.value, t1.name, t2.value
 LIMIT 1 BY ALL;
 
 -- Should expand to LIMIT 1 BY id, category, value, name
@@ -131,7 +131,7 @@ UNION ALL
 SELECT id, category, value, name
 FROM test_limit_by_all_comprehensive 
 WHERE value >= 500
-ORDER BY id, category 
+ORDER BY id, category, value, name
 LIMIT 1 BY ALL;
 
 -- Should expand to LIMIT 1 BY id, category, value, name
@@ -142,7 +142,7 @@ WITH cte AS (
 )
 SELECT id, category, value, name
 FROM cte
-ORDER BY id, category 
+ORDER BY id, category, value, name
 LIMIT 1 BY ALL;
 
 -- Should expand to LIMIT 1 BY id, category
@@ -151,7 +151,7 @@ SELECT id, category,
        groupArray(name) as names_array
 FROM test_limit_by_all_comprehensive 
 GROUP BY id, category
-ORDER BY id, category 
+ORDER BY id, category, cnt, names_array
 LIMIT 1 BY ALL;
 
 -- Should expand to LIMIT 1 BY id, category, value, name
@@ -159,7 +159,7 @@ SELECT id, category, value, name,
        length(name) as name_length,
        concat(category, '_', toString(value)) as combined
 FROM test_limit_by_all_comprehensive 
-ORDER BY id, category 
+ORDER BY id, category, value, name, name_length, combined
 LIMIT 1 BY ALL;
 
 -- Should expand to LIMIT 1 BY id, category, value, score
@@ -167,7 +167,7 @@ SELECT id, category, value, score,
        round(score, 1) as rounded_score,
        value * score as product
 FROM test_limit_by_all_comprehensive 
-ORDER BY id, category 
+ORDER BY id, category, value, score, rounded_score, product
 LIMIT 1 BY ALL;
 
 -- Should expand to LIMIT 1 BY id, category, value, name
@@ -175,7 +175,7 @@ SELECT id, category, value, name,
        toString(value) as value_str,
        toFloat64(value) as value_float
 FROM test_limit_by_all_comprehensive 
-ORDER BY id, category 
+ORDER BY id, category, value, name, value_str, value_float
 LIMIT 1 BY ALL;
 
 -- Clean up
