@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
+#include <Databases/DataLake/Common.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/DateTimeTransforms.h>
@@ -59,6 +60,7 @@ namespace Setting
 {
 extern const SettingsUInt64 output_format_compression_level;
 extern const SettingsUInt64 output_format_compression_zstd_window_log;
+extern const SettingsBool write_full_path_insert_iceberg;
 }
 
 namespace DataLakeStorageSetting
@@ -75,6 +77,17 @@ FileNamesGenerator::FileNamesGenerator(const String & table_dir)
     : data_dir(table_dir + "data/")
     , metadata_dir(table_dir + "metadata/")
 {
+}
+
+FileNamesGenerator & FileNamesGenerator::operator=(const FileNamesGenerator & other)
+{
+    if (this == &other)
+        return *this;
+
+    data_dir = other.data_dir;
+    metadata_dir = other.metadata_dir;
+    initial_version = other.initial_version;
+    return *this;
 }
 
 String FileNamesGenerator::generateDataFileName()
@@ -574,9 +587,16 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
 
     for (size_t col = 0; col < chunk.getNumColumns(); ++col)
     {
-        MutableColumns scattered = chunk.getColumns()[col]->scatter(partitions_count, selector);
-        for (size_t i = 0; i < partitions_count; ++i)
-            result_columns[i].second[col] = std::move(scattered[i]);
+        if (partitions_count > 1)
+        {
+            MutableColumns scattered = chunk.getColumns()[col]->scatter(partitions_count, selector);
+            for (size_t i = 0; i < partitions_count; ++i)
+                result_columns[i].second[col] = std::move(scattered[i]);
+        }
+        else
+        {
+            result_columns[0].second[col] = chunk.getColumns()[col]->cloneFinalized();
+        }    
     }
 
     std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>> result;
@@ -594,22 +614,36 @@ IcebergStorageSink::IcebergStorageSink(
     StorageObjectStorageConfigurationPtr configuration_,
     const std::optional<FormatSettings> & format_settings_,
     SharedHeader sample_block_,
-    ContextPtr context_)
+    ContextPtr context_,
+    std::shared_ptr<DataLake::ICatalog> catalog_,
+    const StorageID & table_id_)
     : SinkToStorage(sample_block_)
     , sample_block(sample_block_)
     , object_storage(object_storage_)
     , context(context_)
     , configuration(configuration_)
     , format_settings(format_settings_)
-    , filename_generator(configuration_->getPath())
+    , catalog(catalog_)
+    , table_id(table_id_)
 {
     configuration->update(object_storage, context, true, false);
     auto log = getLogger("IcebergWrites");
     auto [last_version, metadata_path, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_, nullptr, context_, log.get());
 
-    filename_generator.setVersion(last_version + 1);
     metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, log, compression_method);
+    if (!context_->getSettingsRef()[Setting::write_full_path_insert_iceberg])
+    {
+        filename_generator = FileNamesGenerator(configuration_->getPath());
+    }
+    else
+    {
+        auto bucket = metadata->getValue<String>(Iceberg::f_location);
+        if (bucket.back() != '/')
+            bucket += "/";
+        filename_generator = FileNamesGenerator(bucket);
+    }
+    filename_generator.setVersion(last_version + 1);
 
     partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
     auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
@@ -657,7 +691,7 @@ void IcebergStorageSink::consume(Chunk & chunk)
             data_filenames[partition_key] = data_filename;
 
             auto buffer = object_storage->writeObject(
-                StoredObject(data_filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
+                StoredObject(getPathInStorage(data_filename)), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
             write_buffers[partition_key] = std::move(buffer);
             if (format_settings)
@@ -729,11 +763,31 @@ void IcebergStorageSink::cancelBuffers()
     }
 }
 
+String IcebergStorageSink::getPathInStorage(const String & path)
+{
+    if (!context->getSettingsRef()[Setting::write_full_path_insert_iceberg])
+    {
+        return path;
+    }
+    else
+    {
+        String result = path;
+        if (result.starts_with("s3://"))
+            result = result.substr(5);
+        while (result[0] != '/')
+            result = result.substr(1);
+        return result;
+    }
+}
+
 bool IcebergStorageSink::initializeMetadata()
 {
     auto metadata_name = filename_generator.generateMetadataName();
+    Poco::JSON::Stringifier::stringify(metadata, std::cerr, 4);
 
-    Int64 parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
+    Int64 parent_snapshot = -1;
+    if (metadata->has(Iceberg::f_current_snapshot_id))
+        parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
     auto [new_snapshot, manifest_list_name] = MetadataGenerator(metadata).generateNextMetadata(
         filename_generator, metadata_name, parent_snapshot, write_buffers.size(), total_rows, total_chunks_size, static_cast<Int32>(data_filenames.size()));
 
@@ -745,7 +799,7 @@ bool IcebergStorageSink::initializeMetadata()
         manifest_entries.push_back(manifest_entry_name);
 
         auto buffer_manifest_entry = object_storage->writeObject(
-            StoredObject(manifest_entry_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
+            StoredObject(getPathInStorage(manifest_entry_name)), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
         generateManifestFile(metadata, partitioner ? partitioner->getColumns() : std::vector<String>{}, partition_key, data_filename, new_snapshot, configuration->format, partititon_spec, partition_spec_id, *buffer_manifest_entry);
         buffer_manifest_entry->finalize();
         manifest_lengths += buffer_manifest_entry->count();
@@ -753,7 +807,7 @@ bool IcebergStorageSink::initializeMetadata()
 
     {
         auto buffer_manifest_list = object_storage->writeObject(
-            StoredObject(manifest_list_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
+            StoredObject(getPathInStorage(manifest_list_name)), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
         generateManifestList(
             metadata, object_storage, context, manifest_entries, new_snapshot, manifest_lengths, *buffer_manifest_list);
@@ -765,17 +819,21 @@ bool IcebergStorageSink::initializeMetadata()
         Poco::JSON::Stringifier::stringify(metadata, oss, 4);
         std::string json_representation = removeEscapedSlashes(oss.str());
 
-        if (object_storage->exists(StoredObject(metadata_name)))
+        const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
+        if (object_storage->exists(StoredObject(getPathInStorage(metadata_name))))
         {
             for (const auto & manifest_filename : manifest_entries)
-                object_storage->removeObjectIfExists(StoredObject(manifest_filename));
+                object_storage->removeObjectIfExists(StoredObject(getPathInStorage(manifest_filename)));
 
-            object_storage->removeObjectIfExists(StoredObject(manifest_list_name));
+            object_storage->removeObjectIfExists(StoredObject(getPathInStorage(manifest_list_name)));
             return false;
         }
 
+        if (catalog)
+            catalog->updateMetadata(namespace_name, table_name, metadata_name);
+
         auto buffer_metadata = object_storage->writeObject(
-            StoredObject(metadata_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
+            StoredObject(getPathInStorage(metadata_name)), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
         buffer_metadata->write(json_representation.data(), json_representation.size());
         buffer_metadata->finalize();
     }

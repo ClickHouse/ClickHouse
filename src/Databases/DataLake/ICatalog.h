@@ -147,6 +147,8 @@ public:
     /// E.g. one of S3, Azure, Local, HDFS.
     virtual std::optional<StorageType> getStorageType() const = 0;
 
+    virtual void updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path) const;
+
 protected:
     /// Name of the warehouse,
     /// which is sometimes also called "catalog name".

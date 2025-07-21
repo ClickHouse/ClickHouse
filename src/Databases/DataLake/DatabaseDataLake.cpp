@@ -3,6 +3,7 @@
 #include <Databases/DataLake/HiveCatalog.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
+#include <Databases/DataLake/Common.h>
 
 #if USE_AVRO && USE_PARQUET
 
@@ -69,24 +70,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
-}
-
-namespace
-{
-    /// Parse a string, containing at least one dot, into a two substrings:
-    /// A.B.C.D.E -> A.B.C.D and E, where
-    /// `A.B.C.D` is a table "namespace".
-    /// `E` is a table name.
-    std::pair<std::string, std::string> parseTableName(const std::string & name)
-    {
-        auto pos = name.rfind('.');
-        if (pos == std::string::npos)
-            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Table cannot have empty namespace: {}", name);
-
-        auto table_name = name.substr(pos + 1);
-        auto namespace_name = name.substr(0, name.size() - table_name.size() - 1);
-        return {namespace_name, table_name};
-    }
 }
 
 DatabaseDataLake::DatabaseDataLake(
@@ -306,7 +289,7 @@ bool DatabaseDataLake::empty() const
 
 bool DatabaseDataLake::isTableExist(const String & name, ContextPtr /* context_ */) const
 {
-    const auto [namespace_name, table_name] = parseTableName(name);
+    const auto [namespace_name, table_name] = DataLake::parseTableName(name);
     return getCatalog()->existsTable(namespace_name, table_name);
 }
 
@@ -324,7 +307,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     if (!lightweight && with_vended_credentials)
         table_metadata = table_metadata.withStorageCredentials();
 
-    auto [namespace_name, table_name] = parseTableName(name);
+    auto [namespace_name, table_name] = DataLake::parseTableName(name);
 
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
         return nullptr;
@@ -442,6 +425,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         /* comment */"",
         getFormatSettings(context_copy),
         LoadingStrictnessLevel::CREATE,
+        getCatalog(),
         /* distributed_processing */false,
         /* partition_by */nullptr,
         /* is_table_function */false,
@@ -622,7 +606,7 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withLocation().withSchema();
 
-    const auto [namespace_name, table_name] = parseTableName(name);
+    const auto [namespace_name, table_name] = DataLake::parseTableName(name);
 
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
     {

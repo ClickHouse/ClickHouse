@@ -1,6 +1,7 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include "AggregateFunctions/AggregateFunctionUniq.h"
 #include <Poco/String.h>
 
 #include <filesystem>
@@ -180,6 +181,11 @@ bool TableMetadata::hasSchema() const
 bool TableMetadata::hasStorageCredentials() const
 {
     return storage_credentials != nullptr;
+}
+
+void ICatalog::updateMetadata(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateMetadata is not implemented");
 }
 
 }

@@ -41,7 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.8",
         {
-
+            {"write_full_path_insert_iceberg", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {

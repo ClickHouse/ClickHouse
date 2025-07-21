@@ -6,6 +6,7 @@
 #include <IO/WriteBuffer.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Databases/DataLake/ICatalog.h>
 
 #if USE_AVRO
 
@@ -33,7 +34,10 @@ String removeEscapedSlashes(const String & json_str);
 class FileNamesGenerator
 {
 public:
+    FileNamesGenerator() = default;
     explicit FileNamesGenerator(const String & table_dir);
+
+    FileNamesGenerator & operator=(const FileNamesGenerator & other);
 
     String generateDataFileName();
     String generateManifestEntryName();
@@ -46,7 +50,7 @@ private:
     Poco::UUIDGenerator uuid_generator;
     String data_dir;
     String metadata_dir;
-    Int32 initial_version;
+    Int32 initial_version = 0;
 };
 
 void generateManifestFile(
@@ -127,7 +131,9 @@ public:
         StorageObjectStorageConfigurationPtr configuration_,
         const std::optional<FormatSettings> & format_settings_,
         SharedHeader sample_block_,
-        ContextPtr context_);
+        ContextPtr context_,
+        std::shared_ptr<DataLake::ICatalog> catalog_,
+        const StorageID & table_id_);
 
     ~IcebergStorageSink() override = default;
 
@@ -154,11 +160,15 @@ private:
     void releaseBuffers();
     void cancelBuffers();
     bool initializeMetadata();
+    String getPathInStorage(const String & path);
 
     FileNamesGenerator filename_generator;
     std::optional<ChunkPartitioner> partitioner;
     Poco::JSON::Object::Ptr partititon_spec;
     Int64 partition_spec_id;
+
+    std::shared_ptr<DataLake::ICatalog> catalog;
+    StorageID table_id;
 };
 
 }

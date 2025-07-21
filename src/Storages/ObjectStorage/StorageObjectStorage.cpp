@@ -26,6 +26,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
+#include "Interpreters/StorageID.h"
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Databases/LoadingStrictnessLevel.h>
@@ -93,6 +94,7 @@ StorageObjectStorage::StorageObjectStorage(
     const String & comment,
     std::optional<FormatSettings> format_settings_,
     LoadingStrictnessLevel mode,
+    std::shared_ptr<DataLake::ICatalog> catalog_,
     bool distributed_processing_,
     ASTPtr partition_by_,
     bool is_table_function,
@@ -104,6 +106,8 @@ StorageObjectStorage::StorageObjectStorage(
     , partition_by(partition_by_)
     , distributed_processing(distributed_processing_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
+    , catalog(catalog_)
+    , storage_id(table_id_)
 {
     const bool need_resolve_columns_or_format = columns_.empty() || (configuration->format == "auto");
     const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning]
@@ -384,7 +388,9 @@ SinkToStoragePtr StorageObjectStorage::write(
                 configuration,
                 format_settings,
                 sample_block,
-                local_context);
+                local_context,
+                catalog,
+                storage_id);
         }
         else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
