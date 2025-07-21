@@ -3202,7 +3202,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
         {
             auto data_parts_lock = lockParts();
 
-            transaction.commit(&data_parts_lock);
+            transaction.commit(data_parts_lock);
             if (replace)
             {
                 parts_to_remove = removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(NO_TRANSACTION_RAW, drop_range, data_parts_lock);
@@ -4531,9 +4531,9 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
     {
         if (!broken_part)
             return;
-        DataPartsLock lock = lockParts();
+        auto lock = lockParts();
         if (broken_part->getState() == DataPartState::Active)
-            removePartsFromWorkingSet(NO_TRANSACTION_RAW, {broken_part}, true, &lock);
+            removePartsFromWorkingSet(NO_TRANSACTION_RAW, {broken_part}, true, lock);
         broken_part.reset();
         cleanup_thread.wakeup();
     };
@@ -4543,8 +4543,14 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
     /// It's quite dangerous, so clone covered parts to detached.
     auto broken_part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
-    auto partition_range = getDataPartsVectorInPartitionForInternalUsage({MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated},
-                                                                         broken_part_info.getPartitionId());
+    DataPartsVector partition_range;
+    {
+        auto l = readLockParts();
+        partition_range = getDataPartsVectorInPartitionForInternalUsage({MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated},
+                                                                        broken_part_info.getPartitionId(),
+                                                                        l);
+    }
+
     Strings detached_parts;
     for (const auto & part : partition_range)
     {
@@ -6008,7 +6014,7 @@ void StorageReplicatedMergeTree::foreachActiveParts(Func && func, bool select_se
     if (select_sequential_consistency)
         max_added_blocks = getMaxAddedBlocks();
 
-    auto lock = lockParts();
+    auto lock = readLockParts();
     /// TODO Transactions: should we count visible parts only?
     for (const auto & part : getDataPartsStateRange(DataPartState::Active, MergeTreePartInfo::Kind::Regular))
     {
@@ -6186,7 +6192,7 @@ bool StorageReplicatedMergeTree::optimize(
             }
             else
             {
-                auto parts_lock = lockParts();
+                auto parts_lock = readLockParts();
                 if (!getAnyPartInPartition(partition_id, parts_lock))
                     handle_noop("Cannot select parts for optimization: there are no parts in partition {}", partition_id);
                 partition_ids_hint.insert(partition_id);
@@ -8638,7 +8644,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
 
     {
         /// NOTE: Some covered parts may be missing in src_all_parts if corresponding log entries are not executed yet.
-        auto parts_lock = src_data.lockParts();
+        auto parts_lock = src_data.readLockParts();
         src_all_parts = src_data.getVisibleDataPartsVectorInPartition(query_context, partition_id, parts_lock);
         src_patch_parts = src_data.getPatchPartsVectorForPartition(partition_id, parts_lock);
     }
@@ -8857,10 +8863,10 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
 
             {
                 auto data_parts_lock = lockParts();
-                transaction.commit(&data_parts_lock);
+                transaction.commit(data_parts_lock);
                 if (replace)
                 {
-                    parts_holder = getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, drop_range.getPartitionId(), &data_parts_lock);
+                    parts_holder = getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, drop_range.getPartitionId(), data_parts_lock);
                     /// We ignore the list of parts returned from the function below. We will remove them from zk when executing REPLACE_RANGE
                     removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(NO_TRANSACTION_RAW, drop_range, data_parts_lock);
                 }
@@ -9119,11 +9125,11 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                     continue;
                 zkutil::KeeperMultiException::check(code, ops, op_results);
 
-                parts_holder = getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, drop_range.getPartitionId(), &src_data_parts_lock);
+                parts_holder = getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, drop_range.getPartitionId(), src_data_parts_lock);
                 /// We ignore the list of parts returned from the function below because we cannot remove them from zk
                 /// because we have not created the DROP_RANGE yet. Yes, MOVE PARTITION is trash.
                 removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(NO_TRANSACTION_RAW, drop_range, src_data_parts_lock);
-                transaction.commit(&src_data_parts_lock);
+                transaction.commit(src_data_parts_lock);
             }
 
             PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
@@ -10766,7 +10772,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
 
     MergeTreePartition partition;
     {
-        DataPartsLock lock = lockParts();
+        auto lock = lockParts();
 
         auto parts_in_partition = getDataPartsPartitionRange(new_part_info.getPartitionId());
         if (!parts_in_partition.empty())
