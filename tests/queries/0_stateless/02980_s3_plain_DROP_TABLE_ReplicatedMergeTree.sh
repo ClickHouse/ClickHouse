@@ -14,7 +14,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-config="${BASH_SOURCE[0]/.sh/.yml}"
+config="$CUR_DIR/02980_s3_plain_DROP_TABLE_ReplicatedMergeTree.yml"
 
 # only in Atomic ATTACH from s3_plain works
 new_database="ordinary_$CLICKHOUSE_DATABASE"

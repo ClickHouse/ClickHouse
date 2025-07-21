@@ -39,9 +39,10 @@ size_t MergeTreeReadersChain::currentMark() const
     return range_readers.empty() ? 0 : range_readers.back().currentMark();
 }
 
-Block MergeTreeReadersChain::getSampleBlock() const
+const Block & MergeTreeReadersChain::getSampleBlock() const
 {
-    return range_readers.empty() ? Block{} : range_readers.back().getSampleBlock();
+    static const Block empty_block;
+    return range_readers.empty() ? empty_block : range_readers.back().getSampleBlock();
 }
 
 bool MergeTreeReadersChain::isCurrentRangeFinished() const
@@ -181,7 +182,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     if (should_evaluate_missing_defaults)
     {
         Block additional_columns;
-        if (previous_header)
+        if (!previous_header.empty())
             additional_columns = previous_header.cloneWithColumns(result.columns);
 
         for (const auto & col : result.additional_columns)

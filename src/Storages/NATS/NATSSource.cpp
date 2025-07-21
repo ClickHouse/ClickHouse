@@ -51,7 +51,7 @@ NATSSource::NATSSource(
     const Names & columns,
     size_t max_block_size_,
     StreamingHandleErrorMode handle_error_mode_)
-    : ISource(getSampleBlock(headers.first, headers.second))
+    : ISource(std::make_shared<const Block>(getSampleBlock(headers.first, headers.second)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)
