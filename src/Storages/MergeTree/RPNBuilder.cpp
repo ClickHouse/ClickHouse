@@ -123,11 +123,7 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
                 appendColumnNameWithoutAlias(*arg, out, context, use_analyzer, legacy);
             }
             writeChar(')', out);
-            break;
         }
-        case ActionsDAG::ActionType::PLACEHOLDER:
-            writeString(node.result_name, out);
-            break;
     }
 }
 
