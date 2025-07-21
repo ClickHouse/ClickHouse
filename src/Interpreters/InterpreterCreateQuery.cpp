@@ -43,22 +43,23 @@
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/WindowView/StorageWindowView.h>
 
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Interpreters/executeQuery.h>
 #include <Interpreters/DDLTask.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/GinFilter.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
-#include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Interpreters/GinFilter.h>
-#include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/executeQuery.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Interpreters/removeOnClusterClauseIfNeeded.h>
 
 #include <Access/Common/AccessRightsElement.h>
 
@@ -1539,7 +1540,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), QueryFlags{ .internal = internal, .distributed_backup_restore = is_restore_from_backup });
         }
 
-        if (!create.cluster.empty())
+        if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
             return executeQueryOnCluster(create);
 
         if (!database)
@@ -1732,7 +1733,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), QueryFlags{ .internal = internal, .distributed_backup_restore = is_restore_from_backup });
     }
 
-    if (!create.cluster.empty())
+    if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         chassert(!ddl_guard);
         return executeQueryOnCluster(create);

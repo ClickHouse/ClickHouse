@@ -223,6 +223,12 @@ bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context)
         database_name = context->getCurrentDatabase();
 
     auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query_ptr.get());
+    if (query_on_cluster->isIgnoreOnCluster(query_ptr, context))
+    {
+        query_on_cluster->cluster.clear();
+        return true;
+    }
+
     if (database_name != query_on_cluster->cluster)
         return false;
 

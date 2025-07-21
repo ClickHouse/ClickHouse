@@ -1,0 +1,13 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <ignore_on_cluster_for_replicated_database_queries>1</ignore_on_cluster_for_replicated_database_queries>
+        </default>
+    </profiles>
+    <users>
+        <default>
+            <password></password>
+            <profile>default</profile>
+        </default>
+    </users>
+</clickhouse>

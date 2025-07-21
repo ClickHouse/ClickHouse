@@ -1,7 +1,9 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IParser.h>
+#include <base/defines.h>
 
 namespace DB
 {
@@ -42,6 +44,8 @@ public:
     ASTQueryWithOnCluster() = default;
     ASTQueryWithOnCluster(const ASTQueryWithOnCluster &) = default;
     ASTQueryWithOnCluster & operator=(const ASTQueryWithOnCluster &) = default;
+
+    bool isIgnoreOnCluster(const ASTPtr & query, const ContextPtr & context) const;
 
 protected:
     template <typename T>

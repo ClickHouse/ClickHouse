@@ -2179,6 +2179,9 @@ Ignore ON CLUSTER clause for replicated access entities management queries.
     DECLARE(Bool, ignore_on_cluster_for_replicated_named_collections_queries, false, R"(
 Ignore ON CLUSTER clause for replicated named collections management queries.
 )", 0) \
+    DECLARE(Bool, ignore_on_cluster_for_replicated_database_queries, false, R"(
+Ignore ON CLUSTER clause for Replicated database management queries.
+)", 0) \
     /** Settings for testing hedged requests */ \
     DECLARE(Milliseconds, sleep_in_send_tables_status_ms, 0, R"(
 Time to sleep in sending tables status response in TCPHandler
