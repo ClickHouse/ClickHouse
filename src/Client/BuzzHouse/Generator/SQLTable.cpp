@@ -2063,7 +2063,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(tableLikeLambda));
         const auto & toPick
             = next.is_deterministic ? likeEngsDeterministic : (fc.allow_infinite_tables ? likeEngsInfinite : likeEngsNotDeterministic);
-        std::uniform_int_distribution<size_t> table_engine(0, toPick.size());
+        std::uniform_int_distribution<size_t> table_engine(0, toPick.size() - UINT32_C(1));
         TableEngineValues val = toPick[table_engine(rg.generator)];
 
         next.teng = val;
