@@ -1,3 +1,4 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 
@@ -12,6 +13,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/RenameMultipleColumnsVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/processColumnTransformers.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -34,6 +36,7 @@
 #include <Processors/Transforms/ApplySquashingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/ColumnDefault.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageDistributed.h>
@@ -43,6 +46,7 @@
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
 #include <Common/ProfileEvents.h>
+#include <Common/typeid_cast.h>
 
 #include <memory>
 
@@ -721,6 +725,23 @@ BlockIO InterpreterInsertQuery::execute()
     auto table_lock = table->lockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
 
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
+    
+    std::unordered_map<String, String> column_rename_map;
+    for (const auto & column : metadata_snapshot->getColumns()){
+        if (column.default_desc.kind == ColumnDefaultKind::Alias){
+            const ASTPtr & alias_expression = column.default_desc.expression;
+            if (const ASTIdentifier * actual_column = typeid_cast<const ASTIdentifier *>(alias_expression.get())) column_rename_map[column.name] = actual_column->full_name;
+        }
+    }
+
+    RenameMultipleColumnsData rename_data{column_rename_map};
+    RenameMultipleColumnsVisitor rename_columns_visitor{rename_data};
+
+    if (query.columns){
+        rename_columns_visitor.visit(query.columns);
+    }
+
+
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized);
 
     /// For table functions we check access while executing
