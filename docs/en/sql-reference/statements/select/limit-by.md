@@ -75,7 +75,7 @@ LIMIT 5 BY domain, device_type
 LIMIT 100
 ```
 
-## LIMIT BY ALL
+## LIMIT BY ALL {#limit-by-all}
 
 `LIMIT BY ALL` is equivalent to listing all the SELECT-ed expressions that are not aggregate functions.
 
@@ -105,7 +105,7 @@ is the same as
 SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t LIMIT 2 BY substring(a, 4, 2), substring(a, 1, 2)
 ```
 
-## Examples {#examples}
+## Examples {#examples-limit-by-all}
 
 Sample table:
 
