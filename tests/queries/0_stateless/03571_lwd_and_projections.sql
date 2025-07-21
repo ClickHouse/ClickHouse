@@ -3,7 +3,7 @@ DROP TABLE IF EXISTS weird_projections;
 CREATE TABLE weird_projections(
     `account_id` UInt64,
     `user_id` String,
-    PROJECTION flow_events_by_day_proj
+    PROJECTION events_by_day_proj
     (
         SELECT
             account_id,
