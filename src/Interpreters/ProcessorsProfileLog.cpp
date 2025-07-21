@@ -9,11 +9,14 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Processors/Port.h>
+#include <QueryPipeline/printPipeline.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -142,6 +145,14 @@ void logProcessorProfile(ContextPtr context, const Processors & processors)
 
                 processors_profile_log->add(processor_elem);
             }
+        }
+
+        auto logger = ::getLogger("ProcessorProfileLog");
+        if (logger->getLevel() >= Poco::Message::PRIO_DEBUG)
+        {
+            WriteBufferFromOwnString out;
+            printPipeline(processors, out, true);
+            LOG_DEBUG(logger, "Processors profile log:\n{}", out.str());
         }
     }
 }
