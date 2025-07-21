@@ -384,3 +384,6 @@
 [submodule "contrib/crc32c"]
 	path = contrib/crc32c
 	url = https://github.com/google/crc32c.git
+[submodule "contrib/StringZilla"]
+	path = contrib/StringZilla
+	url = https://github.com/ashvardanian/StringZilla.git
