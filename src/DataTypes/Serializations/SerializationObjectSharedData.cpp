@@ -509,7 +509,8 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                 "Got empty stream for shared data copy values in SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams");
 
         const auto & values_column = shared_data_tuple_column.getColumn(1);
-        SerializationString().serializeBinaryBulk(values_column, *copy_values_stream, nested_offset, nested_limit);
+        if (nested_limit)
+            SerializationString().serializeBinaryBulk(values_column, *copy_values_stream, nested_offset, nested_limit);
         settings.path.pop_back();
 
         settings.path.pop_back();
@@ -1174,7 +1175,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 deserializeStructureGranulePrefix(*structure_prefix_stream, structure_granule, *structure_state);
 
                 if (structure_granule.num_rows != rows_offset + limit)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected reading a single granule with {} rows, requested {} rows in Compact part", structure_granule.num_rows, rows_offset + limit);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected reading a single granule with {} rows, requested {} rows in Compact part in bucket {}", structure_granule.num_rows, rows_offset + limit, bucket);
 
                 paths.insert(paths.end(), structure_granule.all_paths.begin(), structure_granule.all_paths.end());
                 settings.path.pop_back();

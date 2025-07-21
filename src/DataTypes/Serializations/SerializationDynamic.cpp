@@ -219,9 +219,9 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
     {
         const auto & statistics = column_dynamic.getStatistics();
 
-        /// If serialization version supports it, write flag that statistics is not empty.
+        /// In V3 serialization write flag that statistics is not empty.
         /// It is needed to be able to write empty statistics if needed.
-        if (structure_version.supportsEmptyStatistics())
+        if (structure_version.value == SerializationVersion::V3)
             writeBinary(true, *stream);
 
         /// First, write statistics for usual variants.
@@ -280,8 +280,8 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
     }
     else if (settings.object_and_dynamic_write_statistics == SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::PREFIX_EMPTY)
     {
-        /// If serialization version supports empty statistics flag just write 0.
-        if (structure_version.supportsEmptyStatistics())
+        /// V3 serialization supports empty statistics flag just write 0.
+        if (structure_version.value == SerializationVersion::V3)
         {
             writeBinary(false, *stream);
         }
@@ -429,7 +429,8 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
             if (settings.object_and_dynamic_read_statistics)
             {
                 bool has_statistics = true;
-                if (structure_state->structure_version.supportsEmptyStatistics())
+                /// In V3 version we have additional flag that indicates if we have statistics or not.
+                if (structure_state->structure_version.value == SerializationVersion::V3)
                     readBinary(has_statistics, *structure_stream);
                 if (has_statistics)
                 {
@@ -494,9 +495,9 @@ void SerializationDynamic::serializeBinaryBulkStateSuffix(
         if (!stream)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for Dynamic column structure during serialization of binary bulk state suffix");
 
-        /// If serialization version supports it, write flag that statistics is not empty.
+        /// In V3 version we have additional flag that indicates if we have statistics or not.
         /// It is needed to be able to write empty statistics if needed.
-        if (dynamic_state->structure_version.supportsEmptyStatistics())
+        if (dynamic_state->structure_version.value == SerializationVersion::V3)
             writeBinary(true, *stream);
 
         /// First, write statistics for usual variants.

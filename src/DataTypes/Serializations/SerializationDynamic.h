@@ -48,11 +48,6 @@ public:
 
         static void checkVersion(UInt64 version);
 
-        bool supportsEmptyStatistics() const
-        {
-            return value == V3;
-        }
-
         explicit SerializationVersion(UInt64 version);
         explicit SerializationVersion(MergeTreeDynamicSerializationVersion version);
         explicit SerializationVersion(Value value_) : value(value_) {}
