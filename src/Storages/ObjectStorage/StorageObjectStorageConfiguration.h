@@ -57,7 +57,7 @@ public:
         bool withPartitionWildcard() const;
         bool withGlobsIgnorePartitionWildcard() const;
         bool withGlobs() const;
-        std::string getWithoutGlobs() const;
+        std::string withoutGlobs() const;
 
     private:
         bool supports_partial_prefix;

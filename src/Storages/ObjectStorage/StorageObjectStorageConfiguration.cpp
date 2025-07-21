@@ -141,7 +141,7 @@ bool StorageObjectStorageConfiguration::Path::withGlobs() const
     return path.find_first_of("*?{") != std::string::npos;
 }
 
-std::string StorageObjectStorageConfiguration::Path::getWithoutGlobs() const
+std::string StorageObjectStorageConfiguration::Path::withoutGlobs() const
 {
     if (supports_partial_prefix)
     {
