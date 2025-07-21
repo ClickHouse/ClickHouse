@@ -111,11 +111,6 @@ if(ENABLE_GOOGLE_CLOUD_CPP_KMS)
         google_cloud_cpp_iam_v1_iam_policy_protos
     )
 
-    # The library is large - avoid bloat.
-    if(OMIT_HEAVY_DEBUG_SYMBOLS)
-        target_compile_options(_gcloud PRIVATE -g0)
-    endif()
-
     target_include_directories(_gcloud SYSTEM PRIVATE ${GOOGLE_CLOUD_CPP_PRIVATE_INCLUDES})
     target_include_directories(_gcloud SYSTEM PUBLIC ${GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES})
     target_link_libraries(_gcloud PRIVATE ${GOOGLE_CLOUD_CPP_PRIVATE_LIBS})
@@ -123,6 +118,11 @@ else()
     add_library(_gcloud INTERFACE)
     target_include_directories(_gcloud SYSTEM INTERFACE ${GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES})
     target_link_libraries(_gcloud INTERFACE ${GOOGLE_CLOUD_CPP_PRIVATE_LIBS})
+endif()
+
+# The library is large - avoid bloat.
+if(OMIT_HEAVY_DEBUG_SYMBOLS)
+    target_compile_options(_gcloud PRIVATE -g0)
 endif()
 
 add_library(ch_contrib::google_cloud_cpp ALIAS _gcloud)
