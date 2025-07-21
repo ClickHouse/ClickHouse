@@ -90,7 +90,8 @@ void childSignalHandler(int sig, siginfo_t * info, void *)
     errno = saved_errno;
 }
 
-void signalHandler(int sig, siginfo_t * info, void * context)
+/// Handler for "fault" or diagnostic signals. Send data about fault to separate thread to write into log.
+static void signalHandler(int sig, siginfo_t * info, void * context)
 {
     if (asynchronous_stack_unwinding && sig == SIGSEGV)
         siglongjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1);

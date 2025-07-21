@@ -35,10 +35,6 @@ void terminateRequestedSignalHandler(int sig, siginfo_t *, void *);
 
 void childSignalHandler(int sig, siginfo_t * info, void *);
 
-/** Handler for "fault" or diagnostic signals. Send data about fault to separate thread to write into log.
-  */
-void signalHandler(int sig, siginfo_t * info, void * context);
-
 
 /** To use with std::set_terminate.
   * Collects slightly more info than __gnu_cxx::__verbose_terminate_handler,
