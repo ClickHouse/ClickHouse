@@ -106,6 +106,7 @@ list(APPEND GOOGLE_CLOUD_CPP_PRIVATE_LIBS_EXTRA
 if(ENABLE_GOOGLE_CLOUD_CPP_KMS)
     list(APPEND GOOGLE_CLOUD_CPP_SOURCES ${GOOGLE_CLOUD_CPP_KMS_SRC})
     add_library(_google_cloud_cpp_kms ${GOOGLE_CLOUD_CPP_SOURCES})
+    add_dependencies(_google_cloud_cpp_kms google_cloud_cpp_kms_protos)
 
     list(APPEND GOOGLE_CLOUD_CPP_PRIVATE_LIBS
         google_cloud_cpp_grpc_utils
