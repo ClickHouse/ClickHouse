@@ -4,11 +4,11 @@
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLTask.h>
 #include <base/sleep.h>
 #include <Common/FailPoint.h>
+#include <Interpreters/Context.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/thread_local_rng.h>

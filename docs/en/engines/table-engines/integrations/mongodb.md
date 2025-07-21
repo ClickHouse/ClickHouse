@@ -14,7 +14,7 @@ MongoDB engine is read-only table engine which allows to read data from a remote
 Only MongoDB v3.6+ servers are supported.
 [Seed list(`mongodb+srv`)](https://www.mongodb.com/docs/manual/reference/glossary/#std-term-seed-list) is not yet supported.
 
-## Creating a table {#creating-a-table}
+## Creating a Table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -27,15 +27,19 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 
 **Engine Parameters**
 
-| Parameter     | Description                                                                                                                                                                                              |
-|---------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `host:port`   | MongoDB server address.                                                                                                                                                                                  |
-| `database`    | Remote database name.                                                                                                                                                                                    |
-| `collection`  | Remote collection name.                                                                                                                                                                                  |
-| `user`        | MongoDB user.                                                                                                                                                                                            |
-| `password`    | User password.                                                                                                                                                                                           |
-| `options`     | Optional. MongoDB connection string [options](https://www.mongodb.com/docs/manual/reference/connection-string-options/#connection-options) as a URL formatted string. e.g. `'authSource=admin&ssl=true'` |
-| `oid_columns` | Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.                                                                                                   |
+- `host:port` — MongoDB server address.
+
+- `database` — Remote database name.
+
+- `collection` — Remote collection name.
+
+- `user` — MongoDB user.
+
+- `password` — User password.
+
+- `options` — MongoDB connection string options (optional parameter).
+
+- `oid_columns` - Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.
 
 :::tip
 If you are using the MongoDB Atlas cloud offering connection url can be obtained from 'Atlas SQL' option.
@@ -50,11 +54,12 @@ ENGINE = MongoDB(uri, collection[, oid_columns]);
 
 **Engine Parameters**
 
-| Parameter     | Description                                                                                            |
-|---------------|--------------------------------------------------------------------------------------------------------|
-| `uri`         | MongoDB server's connection URI.                                                                       |
-| `collection`  | Remote collection name.                                                                                |
-| `oid_columns` | Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default. |
+- `uri` — MongoDB server's connection URI.
+
+- `collection` — Remote collection name.
+
+- `oid_columns` - Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.
+
 
 ## Types mappings {#types-mappings}
 
@@ -152,7 +157,7 @@ This applied for `Date`, `Date32`, `DateTime`, `Bool`, `UUID`.
 :::
 
 
-## Usage example {#usage-example}
+## Usage Example {#usage-example}
 
 
 Assuming MongoDB has [sample_mflix](https://www.mongodb.com/docs/atlas/sample-data/sample-mflix) dataset loaded
@@ -218,9 +223,9 @@ released:  1989-11-22
 
 ```sql
 -- Find top 3 movies based on Cormac McCarthy's books
-SELECT title, toFloat32(JSONExtractString(imdb, 'rating')) AS rating
+SELECT title, toFloat32(JSONExtractString(imdb, 'rating')) as rating
 FROM sample_mflix_table
-WHERE arrayExists(x -> x LIKE 'Cormac McCarthy%', writers)
+WHERE arrayExists(x -> x like 'Cormac McCarthy%', writers)
 ORDER BY rating DESC
 LIMIT 3;
 ```

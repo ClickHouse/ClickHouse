@@ -8,19 +8,19 @@
 
 ## Installation {#troubleshooting-installation-errors}
 
-### You cannot get deb packages from ClickHouse repository with apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
+### You Cannot Get Deb Packages from ClickHouse Repository with Apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
 - Check firewall settings.
 - If you cannot access the repository for any reason, download packages as described in the [install guide](../getting-started/install.md) article and install them manually using the `sudo dpkg -i <packages>` command. You will also need the `tzdata` package.
 
-### You cannot update deb packages from ClickHouse repository with apt-get {#you-cannot-update-deb-packages-from-clickhouse-repository-with-apt-get}
+### You Cannot Update Deb Packages from ClickHouse Repository with Apt-get {#you-cannot-update-deb-packages-from-clickhouse-repository-with-apt-get}
 
 - The issue may be happened when the GPG key is changed.
 
 Please use the manual from the [setup](../getting-started/install.md#setup-the-debian-repository) page to update the repository configuration.
 
 
-### You get different warnings with `apt-get update` {#you-get-different-warnings-with-apt-get-update}
+### You Get Different Warnings with `apt-get update` {#you-get-different-warnings-with-apt-get-update}
 
 - The completed warning messages are as one of following:
 
@@ -52,7 +52,7 @@ sudo apt-get clean
 sudo apt-get autoclean
 ```
 
-### You can't get packages with yum because of wrong signature {#you-cant-get-packages-with-yum-because-of-wrong-signature}
+### You Can't Get Packages With Yum Because Of Wrong Signature {#you-cant-get-packages-with-yum-because-of-wrong-signature}
 
 Possible issue: the cache is wrong, maybe it's broken after updated GPG key in 2022-09.
 
@@ -65,13 +65,14 @@ sudo rm -f /etc/yum.repos.d/clickhouse.repo
 
 After that follow the [install guide](../getting-started/install.md#from-rpm-packages)
 
-### You can't run the Docker container {#you-cant-run-docker-container}
+### You Can't Run Docker Container {#you-cant-run-docker-container}
 
 You are running a simple `docker run clickhouse/clickhouse-server` and it crashes with a stack trace similar to following:
 
 ```bash
 $ docker run -it clickhouse/clickhouse-server
 ........
+2024.11.06 21:04:48.912036 [ 1 ] {} <Information> SentryWriter: Sending crash reports is disabled
 Poco::Exception. Code: 1000, e.code() = 0, System exception: cannot start thread, Stack trace (when copying this message, always include the lines below):
 
 0. Poco::ThreadImpl::startImpl(Poco::SharedPtr<Poco::Runnable, Poco::ReferenceCounter, Poco::ReleasePolicy<Poco::Runnable>>) @ 0x00000000157c7b34
@@ -99,7 +100,7 @@ Possible issues:
 - The server is not running.
 - Unexpected or wrong configuration parameters.
 
-### Server is not running {#server-is-not-running}
+### Server Is Not Running {#server-is-not-running}
 
 **Check if server is running**
 
@@ -168,7 +169,7 @@ $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-se
 
 This command starts the server as an interactive app with standard parameters of the autostart script. In this mode `clickhouse-server` prints all the event messages in the console.
 
-### Configuration parameters {#configuration-parameters}
+### Configuration Parameters {#configuration-parameters}
 
 Check:
 
@@ -199,7 +200,7 @@ Check:
 
     You might be using the wrong user name or password.
 
-## Query processing {#troubleshooting-does-not-process-queries}
+## Query Processing {#troubleshooting-does-not-process-queries}
 
 If ClickHouse is not able to process the query, it sends an error description to the client. In the `clickhouse-client` you get a description of the error in the console. If you are using the HTTP interface, ClickHouse sends the error description in the response body. For example:
 
@@ -212,7 +213,7 @@ If you start `clickhouse-client` with the `stack-trace` parameter, ClickHouse re
 
 You might see a message about a broken connection. In this case, you can repeat the query. If the connection breaks every time you perform the query, check the server logs for errors.
 
-## Efficiency of query processing {#troubleshooting-too-slow}
+## Efficiency of Query Processing {#troubleshooting-too-slow}
 
 If you see that ClickHouse is working too slowly, you need to profile the load on the server resources and network for your queries.
 

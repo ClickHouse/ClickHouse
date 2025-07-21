@@ -116,9 +116,8 @@ void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory)
     {
         FormatSettings settings = _format_settings;
         settings.json.serialize_as_strings = false;
-        return std::make_shared<JSONEachRowWithProgressRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
+        return std::make_shared<JSONEachRowWithProgressRowOutputFormat>(buf, sample, settings);
     });
-    factory.setContentType("JSONEachRowWithProgress", "application/json; charset=UTF-8");
 
     factory.registerOutputFormat("JSONStringsEachRowWithProgress", [](
             WriteBuffer & buf,
@@ -127,9 +126,8 @@ void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory)
     {
         FormatSettings settings = _format_settings;
         settings.json.serialize_as_strings = true;
-        return std::make_shared<JSONEachRowWithProgressRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
+        return std::make_shared<JSONEachRowWithProgressRowOutputFormat>(buf, sample, settings);
     });
-    factory.setContentType("JSONStringsEachRowWithProgress", "application/json; charset=UTF-8");
 }
 
 }

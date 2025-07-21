@@ -9,8 +9,6 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinInfo.h>
 
-#include <Planner/Utils.h>
-
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -50,6 +48,40 @@ auto getInputNodes(const ActionsDAG & filter_dag, const Names & allowed_inputs_n
     }
 
     return allowed_nodes;
+}
+
+ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate)
+{
+    /// Parts of predicate in case predicate is conjunction (or just predicate itself).
+    ActionsDAG::NodeRawConstPtrs conjuncts;
+    {
+        std::vector<const ActionsDAG::Node *> stack;
+        std::unordered_set<const ActionsDAG::Node *> visited_nodes;
+        stack.push_back(predicate);
+        visited_nodes.insert(predicate);
+        while (!stack.empty())
+        {
+            const auto * node = stack.back();
+            stack.pop_back();
+            bool is_conjunction = node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and";
+            if (is_conjunction)
+            {
+                for (const auto & child : node->children)
+                {
+                    if (!visited_nodes.contains(child))
+                    {
+                        visited_nodes.insert(child);
+                        stack.push_back(child);
+                    }
+                }
+            }
+            else if (node->type == ActionsDAG::ActionType::ALIAS)
+                stack.push_back(node->children.front());
+            else
+                conjuncts.push_back(node);
+        }
+    }
+    return conjuncts;
 }
 
 enum class ExpressionSide : uint8_t
@@ -293,11 +325,11 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
 
         for (const auto & input_column : input_header.getColumnsWithTypeAndName())
         {
-            if (!join_header->has(input_column.name))
+            if (!join_header.has(input_column.name))
                 continue;
 
             /// Skip if type is changed. Push down expression expect equal types.
-            if (!input_column.type->equals(*join_header->getByName(input_column.name).type))
+            if (!input_column.type->equals(*join_header.getByName(input_column.name).type))
                 continue;
 
             available_input_columns_for_filter.push_back(input_column.name);
@@ -306,8 +338,8 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
         return available_input_columns_for_filter;
     };
 
-    auto left_stream_available_columns = get_available_columns(*left_stream_header);
-    auto right_stream_available_columns = get_available_columns(*right_stream_header);
+    auto left_stream_available_columns = get_available_columns(left_stream_header);
+    auto right_stream_available_columns = get_available_columns(right_stream_header);
 
     auto & filter_dag = filter_step->getExpression();
     auto [equality_predicates, trivial_filter] = extractActionsForJoinCondition(

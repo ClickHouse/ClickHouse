@@ -35,7 +35,7 @@
 #include <Common/TerminalSize.h>
 #include <Common/StudentTTest.h>
 #include <Common/CurrentMetrics.h>
-#include <IO/WriteBuffer.h>
+#include "IO/WriteBuffer.h"
 
 
 /** A tool for evaluating ClickHouse performance.
@@ -484,7 +484,7 @@ private:
         if (should_reconnect)
             entry->disconnect();
 
-        RemoteQueryExecutor executor(*entry, query, std::make_shared<const Block>(), global_context, nullptr, Scalars(), Tables(), query_processing_stage);
+        RemoteQueryExecutor executor(*entry, query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
 
         if (!query_id.empty())
             executor.setQueryId(query_id);
@@ -497,7 +497,7 @@ private:
         executor.sendQuery(ClientInfo::QueryKind::INITIAL_QUERY);
 
         ProfileInfo info;
-        for (Block block = executor.readBlock(); !block.empty(); block = executor.readBlock())
+        while (Block block = executor.readBlock())
             info.update(block);
 
         executor.finish();
@@ -608,7 +608,6 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         /// So we copy the results to std::string.
         std::optional<std::string> env_user_str;
         std::optional<std::string> env_password_str;
-        std::optional<std::string> env_host_str;
         std::optional<std::string> env_quota_key_str;
 
         const char * env_user = getenv("CLICKHOUSE_USER"); // NOLINT(concurrency-mt-unsafe)
@@ -619,18 +618,13 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         if (env_password != nullptr)
             env_password_str.emplace(std::string(env_password));
 
-        const char * env_host = getenv("CLICKHOUSE_HOST"); // NOLINT(concurrency-mt-unsafe)
-        if (env_host != nullptr)
-            env_host_str.emplace(std::string(env_host));
-
         const char * env_quota_key = getenv("CLICKHOUSE_QUOTA_KEY"); // NOLINT(concurrency-mt-unsafe)
         if (env_quota_key != nullptr)
             env_quota_key_str.emplace(std::string(env_quota_key));
 
-        boost::program_options::options_description options_description = createOptionsDescription("Allowed options", getTerminalWidth());
-        options_description.add_options()
-            ("help", "Print usage summary and exit; combine with --verbose to display all options")
-            ("verbose", "Increase output verbosity")
+        boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
+        desc.add_options()
+            ("help",                                                            "produce help message")
             ("query,q",       value<std::string>()->default_value(""),          "query to execute")
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
             ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")
@@ -658,11 +652,10 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         ;
 
         Settings settings;
-        auto options_description_non_verbose = options_description;
-        settings.addToProgramOptions(options_description);
+        settings.addToProgramOptions(desc);
 
         boost::program_options::variables_map options;
-        boost::program_options::store(boost::program_options::parse_command_line(argc, argv, options_description), options);
+        boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
         boost::program_options::notify(options);
 
         clearPasswordFromCommandLine(argc, argv);
@@ -670,10 +663,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         if (options.contains("help"))
         {
             std::cout << "Usage: " << argv[0] << " [options] < queries.txt\n";
-            if (options.contains("verbose"))
-                std::cout << options_description << "\n";
-            else
-                std::cout << options_description_non_verbose << "\n";
+            std::cout << desc << "\n";
             std::cout << "\nSee also: https://clickhouse.com/docs/operations/utilities/clickhouse-benchmark/\n";
             return 0;
         }
@@ -688,7 +678,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ? options["port"].as<Ports>()
             : Ports({default_port});
 
-        Strings hosts = options.contains("host") ? options["host"].as<Strings>() : Strings({env_host_str.value_or("localhost")});
+        Strings hosts = options.contains("host") ? options["host"].as<Strings>() : Strings({"localhost"});
 
         String proto_send_chunked {"notchunked"};
         String proto_recv_chunked {"notchunked"};

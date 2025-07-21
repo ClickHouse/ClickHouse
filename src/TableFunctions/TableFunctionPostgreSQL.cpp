@@ -6,12 +6,11 @@
 #include <Core/PostgreSQL/PoolWithFailover.h>
 #include <Core/Settings.h>
 #include <Storages/StoragePostgreSQL.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/Exception.h>
 #include <Common/parseRemoteDescription.h>
-#include <TableFunctions/registerTableFunctions.h>
+#include "registerTableFunctions.h"
 
 
 namespace DB

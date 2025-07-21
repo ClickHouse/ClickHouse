@@ -7,7 +7,6 @@ from datetime import datetime
 import pyarrow as pa
 import pytest
 import urllib3
-import pytz
 from datetime import datetime, timedelta
 from minio import Minio
 from pyiceberg.catalog import load_catalog
@@ -23,7 +22,6 @@ from pyiceberg.types import (
     StringType,
     StructType,
     TimestampType,
-    TimestamptzType,
     MapType,
     DecimalType,
 )
@@ -202,6 +200,22 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     )
 
 
+def print_objects():
+    minio_client = Minio(
+        f"minio:9002",
+        access_key="minio",
+        secret_key="minio123",
+        secure=False,
+        http_client=urllib3.PoolManager(cert_reqs="CERT_NONE"),
+    )
+
+    objects = list(minio_client.list_objects("warehouse", "", recursive=True))
+    names = [x.object_name for x in objects]
+    names.sort()
+    for name in names:
+        print(f"Found object: {name}")
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -347,150 +361,3 @@ def test_hide_sensitive_info(started_cluster):
     )
     assert "SECRET_1" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
     assert "SECRET_2" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
-
-
-
-def test_select_after_rename(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_list_tables_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-
-    namespaces_to_create = [
-        root_namespace,
-        f"{root_namespace}_A",
-        f"{root_namespace}_B",
-        f"{root_namespace}_C",
-    ]
-
-    catalog = load_catalog_impl(started_cluster)
-
-    for namespace in namespaces_to_create:
-        catalog.create_namespace(namespace)
-        assert len(catalog.list_tables(namespace)) == 0
-
-    for namespace in namespaces_to_create:
-        table = create_table(catalog, namespace, table_name)
-
-        num_rows = 10
-        df = generate_arrow_data(num_rows)
-        table.append(df)
-
-        create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
-
-        expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace, table_name)
-        assert expected == node.query(
-            f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`"
-        )
-
-        with table.update_schema() as update:
-            update.rename_column("bid", "new_bid")
-
-        print(node.query(f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}`"))
-
-def test_non_existing_tables(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_non_existing_tables_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-
-    namespaces_to_create = [
-        root_namespace,
-        f"{root_namespace}_A",
-    ]
-
-    catalog = load_catalog_impl(started_cluster)
-
-    for namespace in namespaces_to_create:
-        catalog.create_namespace(namespace)
-
-    for namespace in namespaces_to_create:
-        table = create_table(catalog, namespace, table_name)
-
-        num_rows = 10
-        df = generate_arrow_data(num_rows)
-        table.append(df)
-
-        create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
-
-        expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace, table_name)
-        assert expected == node.query(
-            f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`"
-        )
-
-        try:
-            node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.wrong_table_name`")
-        except Exception as e:
-            assert "DB::Exception: Table" in str(e)
-            assert "doesn't exist" in str(e)
-
-        try:
-            node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`fake_namespace.wrong_table_name`")
-        except Exception as e:
-            assert "DB::Exception: Table" in str(e)
-            assert "doesn't exist" in str(e)
-
-
-def test_empty_table(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_list_tables_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(root_namespace)
-
-    table = create_table(catalog, root_namespace, table_name)
-
-    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
-    assert len(node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`")) == 0
-    
-    
-def test_timestamps(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_list_tables_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(root_namespace)
-
-    schema = Schema(
-        NestedField(
-            field_id=1, name="timestamp", field_type=TimestampType(), required=False
-        ),
-        NestedField(
-            field_id=2,
-            name="timestamptz",
-            field_type=TimestamptzType(),
-            required=False,
-        ),
-    )
-    table = create_table(catalog, root_namespace, table_name, schema)
-
-    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
-
-    data = [
-        {
-            "timestamp": datetime(2024, 1, 1, hour=12, minute=0, second=0, microsecond=0),
-            "timestamptz": datetime(
-                2024,
-                1,
-                1,
-                hour=12,
-                minute=0,
-                second=0,
-                microsecond=0,
-                tzinfo=pytz.timezone("UTC"),
-            )
-        }
-    ]
-    df = pa.Table.from_pylist(data)
-    table.append(df)
-
-    assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'UTC\\'))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse-glue/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
-    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"
