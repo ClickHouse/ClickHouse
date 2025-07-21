@@ -1,7 +1,5 @@
 #include <Interpreters/PredicateRewriteVisitor.h>
 
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Core/Block.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTSubquery.h>
@@ -14,6 +12,7 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/ExtractExpressionInfoVisitor.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 
 
 namespace DB
@@ -108,7 +107,7 @@ void PredicateRewriteVisitorData::visitOtherInternalSelect(ASTSelectQuery & sele
     const Names & internal_columns = InterpreterSelectQuery(
         temp_internal_select,
         const_pointer_cast<Context>(getContext()),
-        SelectQueryOptions().analyze()).getSampleBlock()->getNames();
+        SelectQueryOptions().analyze()).getSampleBlock().getNames();
 
     if (rewriteSubquery(*temp_select_query, internal_columns))
     {

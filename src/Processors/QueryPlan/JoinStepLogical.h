@@ -42,8 +42,8 @@ class JoinStepLogical final : public IQueryPlanStep
 {
 public:
     JoinStepLogical(
-        SharedHeader left_header_,
-        SharedHeader right_header_,
+        const Block & left_header_,
+        const Block & right_header_,
         JoinInfo join_info_,
         JoinExpressionActions join_expression_actions_,
         Names required_output_columns_,
@@ -108,9 +108,6 @@ public:
     void serialize(Serialization & ctx) const override;
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
-
-    QueryPlanStepPtr clone() const override;
-    bool hasCorrelatedExpressions() const override { return expression_actions.hasCorrelatedExpressions(); }
 
 protected:
     void updateOutputHeader() override;

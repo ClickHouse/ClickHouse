@@ -53,11 +53,9 @@ public:
     explicit operator bool() const { return !isEmpty(); }
     bool contains(const AccessFlags & other) const { return (flags & other.flags) == other.flags; }
     bool isGlobalWithParameter() const;
-    bool validateParameter(String & parameter, std::function<void(const char *)> add_to_expected) const;
     enum ParameterType
     {
         NONE,
-        SOURCE,
         TABLE_ENGINE,
         NAMED_COLLECTION,
         USER_NAME,
@@ -116,9 +114,6 @@ public:
 
     /// Returns all the flags related to a table engine.
     static AccessFlags allTableEngineFlags();
-
-    /// Returns all the flags related to a source.
-    static AccessFlags allSourceFlags();
 
     /// Returns all the flags which could be granted on the global level.
     /// The same as allFlags().

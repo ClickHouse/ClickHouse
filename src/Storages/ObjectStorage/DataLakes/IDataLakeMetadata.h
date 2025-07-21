@@ -2,10 +2,9 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <boost/noncopyable.hpp>
-#include <Interpreters/ActionsDAG.h>
+#include "Interpreters/ActionsDAG.h"
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
-#include <Formats/FormatParserGroup.h>
 
 namespace DB
 {
@@ -14,7 +13,6 @@ namespace ErrorCodes
 {
 extern const int UNSUPPORTED_METHOD;
 }
-
 
 class IDataLakeMetadata : boost::noncopyable
 {
@@ -36,9 +34,9 @@ public:
     /// Read schema is the schema of actual data files,
     /// which can differ from table schema from data lake metadata.
     /// Return nothing if read schema is the same as table schema.
-    virtual ReadFromFormatInfo prepareReadingFromFormat(
+    virtual DB::ReadFromFormatInfo prepareReadingFromFormat(
         const Strings & requested_columns,
-        const StorageSnapshotPtr & storage_snapshot,
+        const DB::StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context,
         bool supports_subset_of_columns);
 
@@ -52,16 +50,9 @@ public:
     virtual bool update(const ContextPtr &) { return false; }
 
     virtual bool supportsSchemaEvolution() const { return false; }
-    virtual bool supportsWrites() const { return false; }
-
-    virtual void modifyFormatSettings(FormatSettings &) const {}
 
     virtual std::optional<size_t> totalRows(ContextPtr) const { return {}; }
     virtual std::optional<size_t> totalBytes(ContextPtr) const { return {}; }
-
-    /// Some data lakes specify information for reading files from disks.
-    /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
-    virtual ColumnMapperPtr getColumnMapper() const { return nullptr; }
 
 protected:
     ObjectIterator createKeysIterator(

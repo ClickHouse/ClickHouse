@@ -214,7 +214,7 @@ public:
         /// If destination table is dropped return null source
         if (!DatabaseCatalog::instance().isTableExist(view_storage_id, context))
         {
-            Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(std::move(full_output_header))));
+            Pipe pipe(std::make_shared<NullSource>(full_output_header));
             auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
             read_from_pipe->setStepDescription("Read from NullSource");
             query_plan.addStep(std::move(read_from_pipe));
@@ -240,7 +240,7 @@ public:
         if (additional_name.has_value())
             output_header.insert(full_output_header.getByName(*additional_name));
 
-        query_plan.addStep(std::make_unique<CustomMetricLogViewStep>(std::make_shared<const Block>(std::move(input_header)), std::make_shared<const Block>(std::move(output_header))));
+        query_plan.addStep(std::make_unique<CustomMetricLogViewStep>(input_header, output_header));
     }
 
     std::optional<String> addFilterByMetricNameStep(QueryPlan & query_plan, const Names & column_names, ContextPtr context)
@@ -271,7 +271,7 @@ public:
         auto column_set = ColumnSet::create(1, std::move(future_set));
         ColumnWithTypeAndName set_for_dag(std::move(column_set), std::make_shared<DataTypeSet>(), "_filter");
 
-        ActionsDAG dag(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
+        ActionsDAG dag(query_plan.getCurrentHeader().getColumnsWithTypeAndName());
         const auto & metric_input = dag.findInOutputs(TransposedMetricLog::METRIC_NAME);
         const auto & filter_dag_column = dag.addColumn(set_for_dag);
         const auto & output = dag.addFunction(in_function, {&metric_input, &filter_dag_column}, "_special_filter_for_metric_log");
@@ -291,7 +291,7 @@ void TransposedMetricLogElement::appendToBlock(MutableColumns & columns) const
     size_t column_idx = 0;
 
     columns[column_idx++]->insert(getFQDNOrHostName());
-    columns[column_idx++]->insert(event_date);
+    columns[column_idx++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(event_time_microseconds);
     columns[column_idx++]->insert(metric_name);
@@ -350,8 +350,8 @@ void TransposedMetricLog::stepFunction(TimePoint current_time)
     static std::vector<ProfileEvents::Count> prev_profile_events(ProfileEvents::end());
 
     TransposedMetricLogElement elem;
-    elem.event_time = std::chrono::system_clock::to_time_t(current_time);
     elem.event_date = DateLUT::instance().toDayNum(elem.event_time);
+    elem.event_time = std::chrono::system_clock::to_time_t(current_time);
     elem.event_time_microseconds = timeInMicroseconds(current_time);
 
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)

@@ -92,7 +92,7 @@ BackupImpl::BackupImpl(
     BackupFactory::CreateParams params_,
     const ArchiveParams & archive_params_,
     std::shared_ptr<IBackupReader> reader_,
-    SnapshotReaderCreator lightweight_snapshot_reader_creator_)
+    std::shared_ptr<IBackupReader> lightweight_snapshot_reader_)
     : params(std::move(params_))
     , backup_info(params.backup_info)
     , backup_name_for_logging(backup_info.toStringForLogging())
@@ -100,11 +100,15 @@ BackupImpl::BackupImpl(
     , archive_params(archive_params_)
     , open_mode(OpenMode::READ)
     , reader(std::move(reader_))
-    , lightweight_snapshot_reader_creator(lightweight_snapshot_reader_creator_)
+    , lightweight_snapshot_reader(std::move(lightweight_snapshot_reader_))
     , version(INITIAL_BACKUP_VERSION)
     , base_backup_info(params.base_backup_info)
     , log(getLogger("BackupImpl"))
 {
+    if (params.is_lightweight_snapshot && !lightweight_snapshot_reader_)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create lightweight backup reader");
+    }
     open();
 }
 
@@ -935,12 +939,12 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     }
     else if (src_disk && from_immutable_file)
     {
-        LOG_TRACE(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
+        LOG_INFO(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
         writer->copyFileFromDisk(info.data_file_name, src_disk, src_file_path, info.encrypted_by_disk, info.base_size, info.size - info.base_size);
     }
     else
     {
-        LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
+        LOG_INFO(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
         auto create_read_buffer = [entry, read_settings = writer->getReadSettings()] { return entry->getReadBuffer(read_settings); };
         writer->copyDataToFile(info.data_file_name, create_read_buffer, info.base_size, info.size - info.base_size);
     }

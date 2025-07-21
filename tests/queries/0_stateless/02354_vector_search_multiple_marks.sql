@@ -2,8 +2,7 @@
 
 -- Tests correctness of vector similarity index with > 1 mark
 
-SET enable_vector_similarity_index = 1;
-SET max_execution_time = 600;
+SET allow_experimental_vector_similarity_index = 1;
 
 DROP TABLE IF EXISTS tab;
 

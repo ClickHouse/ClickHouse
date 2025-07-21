@@ -21,7 +21,6 @@
 #include <Formats/BSONTypes.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/Sources/MongoDBSource.h>
 #include <QueryPipeline/Pipe.h>
@@ -57,13 +56,6 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool mongodb_throw_on_unsupported_query;
-}
-
-void MongoDBConfiguration::checkHosts(const ContextPtr & context) const
-{
-    // Because domain records will be resolved inside the driver, we can't check resolved IPs for our restrictions.
-    for (const auto & host : uri->hosts())
-        context->getRemoteHostFilter().checkHostAndPort(host.name, toString(host.port));
 }
 
 StorageMongoDB::StorageMongoDB(
@@ -103,9 +95,8 @@ Pipe StorageMongoDB::read(
 
     auto options = mongocxx::options::find{};
 
-    bsoncxx::document::view_or_value mongo_query = buildMongoDBQuery(context, options, query_info, sample_block);
-    return Pipe(std::make_shared<MongoDBSource>(*configuration.uri, configuration.collection, mongo_query,
-        std::move(options), std::make_shared<const Block>(std::move(sample_block)), max_block_size));
+    return Pipe(std::make_shared<MongoDBSource>(*configuration.uri, configuration.collection, buildMongoDBQuery(context, options, query_info, sample_block),
+        std::move(options), sample_block, max_block_size));
 }
 
 static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, ASTs engine_args, ContextPtr context, bool allow_excessive_path_in_host)
@@ -460,7 +451,7 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
     if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         if (throw_on_error)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MongoDB storage does not support 'enable_analyzer = 0' setting");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MongoDB storage does not support 'allow_experimental_analyzer = 0' setting");
         return make_document();
     }
 
@@ -607,7 +598,7 @@ void registerStorageMongoDB(StorageFactory & factory)
             args.comment);
     },
     {
-        .source_access_type = AccessTypeObjects::Source::MONGO,
+        .source_access_type = AccessType::MONGO,
     });
 }
 

@@ -4,8 +4,7 @@
 
 -- Tests vector search with setting 'hnsw_candidate_list_size_for_search'
 
-SET enable_vector_similarity_index = 1;
-SET max_execution_time = 600;
+SET allow_experimental_vector_similarity_index = 1;
 
 DROP TABLE IF EXISTS tab;
 

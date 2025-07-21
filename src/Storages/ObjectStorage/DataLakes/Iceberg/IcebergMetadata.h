@@ -1,5 +1,4 @@
 #pragma once
-
 #include "config.h"
 
 #if USE_AVRO
@@ -18,7 +17,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
-#include <Formats/FormatParserGroup.h>
 
 #include <Common/SharedMutex.h>
 #include <tuple>
@@ -32,14 +30,16 @@ namespace DB
 class IcebergMetadata : public IDataLakeMetadata
 {
 public:
-    using IcebergHistory = std::vector<Iceberg::IcebergHistoryRecord>;
+    using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
+    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+
 
     static constexpr auto name = "Iceberg";
 
     IcebergMetadata(
         ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationWeakPtr configuration_,
-        const ContextPtr & context_,
+        ConfigurationObserverPtr configuration_,
+        const DB::ContextPtr & context_,
         Int32 metadata_version_,
         Int32 format_version_,
         const Poco::JSON::Object::Ptr & metadata_object,
@@ -56,7 +56,7 @@ public:
 
     static DataLakeMetadataPtr create(
         const ObjectStoragePtr & object_storage,
-        const StorageObjectStorageConfigurationWeakPtr & configuration,
+        const ConfigurationObserverPtr & configuration,
         const ContextPtr & local_context);
 
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, const String & data_path) const override;
@@ -67,16 +67,11 @@ public:
     static Int32 parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger);
 
     bool supportsUpdate() const override { return true; }
-    bool supportsWrites() const override { return true; }
 
     bool update(const ContextPtr & local_context) override;
 
-    IcebergHistory getHistory(ContextPtr local_context) const;
-
-    std::optional<size_t> totalRows(ContextPtr Local_context) const override;
-    std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
-
-    ColumnMapperPtr getColumnMapper() const override { return column_mapper; }
+    std::optional<size_t> totalRows(ContextPtr local_context) const override;
+    std::optional<size_t> totalBytes(ContextPtr local_context) const override;
 
 protected:
     ObjectIterator iterate(
@@ -87,7 +82,7 @@ protected:
 
 private:
     const ObjectStoragePtr object_storage;
-    const StorageObjectStorageConfigurationWeakPtr configuration;
+    const ConfigurationObserverPtr configuration;
     mutable IcebergSchemaProcessor schema_processor;
     LoggerPtr log;
 
@@ -96,7 +91,6 @@ private:
     std::tuple<Int64, Int32> getVersion() const;
 
     mutable SharedMutex mutex;
-
     Int32 last_metadata_version TSA_GUARDED_BY(mutex);
     const Int32 format_version;
 
@@ -113,8 +107,6 @@ private:
     mutable std::optional<Strings> cached_unprunned_files_for_last_processed_snapshot TSA_GUARDED_BY(cached_unprunned_files_for_last_processed_snapshot_mutex);
     mutable std::mutex cached_unprunned_files_for_last_processed_snapshot_mutex;
 
-    ColumnMapperPtr column_mapper;
-
     void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object, bool metadata_file_changed) TSA_REQUIRES(mutex);
     Strings getDataFiles(const ActionsDAG * filter_dag, ContextPtr local_context) const;
     void updateSnapshot(ContextPtr local_context, Poco::JSON::Object::Ptr metadata_object) TSA_REQUIRES(mutex);
@@ -123,6 +115,7 @@ private:
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const TSA_REQUIRES_SHARED(mutex);
     void initializeSchemasFromManifestList(ContextPtr local_context, ManifestFileCacheKeys manifest_list_ptr) const TSA_REQUIRES(mutex);
     Iceberg::ManifestFilePtr getManifestFile(ContextPtr local_context, const String & filename, Int64 inherited_sequence_number) const TSA_REQUIRES_SHARED(mutex);
+
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
     Iceberg::ManifestFilePtr tryGetManifestFile(const String & filename) const;
 };

@@ -269,8 +269,8 @@ public:
 
     VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 
-    bool enableAnalyzer() const { return enable_analyzer; }
-    void assertEnableAnalyzer() const;
+    bool enableEnalyzer() const { return enable_analyzer; }
+    void assertEnableEnalyzer() const;
     TemporaryDataOnDiskScopePtr getTempDataOnDisk() { return tmp_data ? tmp_data->childScope(CurrentMetrics::TemporaryFilesForJoin) : nullptr; }
 
     ActionsDAG createJoinedBlockActions(ContextPtr context, PreparedSetsPtr prepared_sets) const;
@@ -415,7 +415,7 @@ public:
     }
 
     void setInputColumns(NamesAndTypesList left_output_columns, NamesAndTypesList right_output_columns);
-    const NamesAndTypesList & getOutputColumns(JoinTableSide side) const;
+    const NamesAndTypesList & getOutputColumns(JoinTableSide side);
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
     const NamesAndTypesList & columnsAddedByJoin() const { return columns_added_by_join; }
 

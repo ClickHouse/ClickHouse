@@ -343,7 +343,7 @@ REGISTER_FUNCTION(HashFixedStrings)
         .syntax = "SELECT RIPEMD160(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the RIPEMD160 hash of the given input string as a fixed-length string.", {"FixedString(20)"}},
+        = "The RIPEMD160 hash of the given input string returned as a [FixedString(20)](../../sql-reference/data-types/fixedstring.md).",
         .examples
         = {{"",
             "SELECT HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'));",
@@ -351,15 +351,13 @@ REGISTER_FUNCTION(HashFixedStrings)
 ┌─HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'))─┐
 │ 37F332F68DB77BD9D7EDD4969571AD671CF9DD3B                      │
 └───────────────────────────────────────────────────────────────┘
-         )"}},
-        .category = FunctionDocumentation::Category::Hash
-    });
+         )"}}});
     factory.registerFunction<FunctionMD4>(FunctionDocumentation{
         .description = R"(Calculates the MD4 hash of the given string.)",
         .syntax = "SELECT MD4(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the MD4 hash of the given input string as a fixed-length string.", {"FixedString(16)"}},
+        = "The MD4 hash of the given input string returned as a [FixedString(16)](../../sql-reference/data-types/fixedstring.md).",
         .examples
         = {{"",
             "SELECT HEX(MD4('abc'));",
@@ -367,15 +365,13 @@ REGISTER_FUNCTION(HashFixedStrings)
 ┌─hex(MD4('abc'))──────────────────┐
 │ A448017AAF21D8525FC10AE87AA6729D │
 └──────────────────────────────────┘
-            )"}},
-        .category = FunctionDocumentation::Category::Hash
-    });
+            )"}}});
     factory.registerFunction<FunctionMD5>(FunctionDocumentation{
         .description = R"(Calculates the MD5 hash of the given string.)",
         .syntax = "SELECT MD5(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the MD5 hash of the given input string as a fixed-length string.", {"FixedString(16)"}},
+        = "The MD5 hash of the given input string returned as a [FixedString(16)](../../sql-reference/data-types/fixedstring.md).",
         .examples
         = {{"",
             "SELECT HEX(MD5('abc'));",
@@ -383,15 +379,13 @@ REGISTER_FUNCTION(HashFixedStrings)
 ┌─hex(MD5('abc'))──────────────────┐
 │ 900150983CD24FB0D6963F7D28E17F72 │
 └──────────────────────────────────┘
-            )"}},
-        .category = FunctionDocumentation::Category::Hash
-    });
+            )"}}});
     factory.registerFunction<FunctionSHA1>(FunctionDocumentation{
         .description = R"(Calculates the SHA1 hash of the given string.)",
         .syntax = "SELECT SHA1(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the SHA1 hash of the given input string as a fixed-length string.", {"FixedString(20)"}},
+        = "The SHA1 hash of the given input string returned as a [FixedString](../../sql-reference/data-types/fixedstring.md).",
         .examples
         = {{"",
             "SELECT HEX(SHA1('abc'));",
@@ -399,15 +393,13 @@ REGISTER_FUNCTION(HashFixedStrings)
 ┌─hex(SHA1('abc'))─────────────────────────┐
 │ A9993E364706816ABA3E25717850C26C9CD0D89D │
 └──────────────────────────────────────────┘
-            )"}},
-        .category = FunctionDocumentation::Category::Hash
-    });
+            )"}}});
     factory.registerFunction<FunctionSHA224>(FunctionDocumentation{
         .description = R"(Calculates the SHA224 hash of the given string.)",
         .syntax = "SELECT SHA224(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the SHA224 hash of the given input string as a fixed-length string.", {"FixedString(28)"}},
+        = "The SHA224 hash of the given input string returned as a [FixedString](../../sql-reference/data-types/fixedstring.md).",
         .examples
         = {{"",
             "SELECT HEX(SHA224('abc'));",
@@ -415,15 +407,13 @@ REGISTER_FUNCTION(HashFixedStrings)
 ┌─hex(SHA224('abc'))───────────────────────────────────────┐
 │ 23097D223405D8228642A477BDA255B32AADBCE4BDA0B3F7E36C9DA7 │
 └──────────────────────────────────────────────────────────┘
-            )"}},
-        .category = FunctionDocumentation::Category::Hash
-    });
+            )"}}});
     factory.registerFunction<FunctionSHA256>(FunctionDocumentation{
         .description = R"(Calculates the SHA256 hash of the given string.)",
         .syntax = "SELECT SHA256(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the SHA256 hash of the given input string as a fixed-length string.", {"FixedString(32)"}},
+        = "The SHA256 hash of the given input string returned as a [FixedString](../../sql-reference/data-types/fixedstring.md).",
         .examples
         = {{"",
             "SELECT HEX(SHA256('abc'));",
@@ -431,15 +421,13 @@ REGISTER_FUNCTION(HashFixedStrings)
 ┌─hex(SHA256('abc'))───────────────────────────────────────────────┐
 │ BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD │
 └──────────────────────────────────────────────────────────────────┘
-            )"}},
-        .category = FunctionDocumentation::Category::Hash
-    });
+            )"}}});
     factory.registerFunction<FunctionSHA384>(FunctionDocumentation{
         .description = R"(Calculates the SHA384 hash of the given string.)",
         .syntax = "SELECT SHA384(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the SHA384 hash of the given input string as a fixed-length string.", {"FixedString(48)"}},
+        = "The SHA384 hash of the given input string returned as a [FixedString](../../sql-reference/data-types/fixedstring.md).",
         .examples
         = {{"",
             "SELECT HEX(SHA384('abc'));",
@@ -447,15 +435,13 @@ REGISTER_FUNCTION(HashFixedStrings)
 ┌─hex(SHA384('abc'))───────────────────────────────────────────────────────────────────────────────┐
 │ CB00753F45A35E8BB5A03D699AC65007272C32AB0EDED1631A8B605A43FF5BED8086072BA1E7CC2358BAECA134C825A7 │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
-            )"}},
-        .category = FunctionDocumentation::Category::Hash
-    });
+            )"}}});
     factory.registerFunction<FunctionSHA512>(FunctionDocumentation{
         .description = R"(Calculates the SHA512 hash of the given string.)",
         .syntax = "SELECT SHA512(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the SHA512 hash of the given input string as a fixed-length string.", {"FixedString(64)"}},
+        = "The SHA512 hash of the given input string returned as a [FixedString](../../sql-reference/data-types/fixedstring.md).",
         .examples
         = {{"",
             "SELECT HEX(SHA512('abc'));",
@@ -463,15 +449,13 @@ REGISTER_FUNCTION(HashFixedStrings)
 ┌─hex(SHA512('abc'))───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ DDAF35A193617ABACC417349AE20413112E6FA4E89A97EA20A9EEEE64B55D39A2192992A274FC1A836BA3C23A3FEEBBD454D4423643CE80E2A9AC94FA54CA49F │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-            )"}},
-        .category = FunctionDocumentation::Category::Hash
-    });
+            )"}}});
     factory.registerFunction<FunctionSHA512_256>(FunctionDocumentation{
         .description = R"(Calculates the SHA512_256 hash of the given string.)",
         .syntax = "SELECT SHA512_256(s);",
         .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the SHA512_256 hash of the given input string as a fixed-length string.", {"FixedString(32)"}},
+        = "The SHA512_256 hash of the given input string returned as a [FixedString](../../sql-reference/data-types/fixedstring.md).",
         .examples
         = {{"",
             "SELECT HEX(SHA512_256('abc'));",
@@ -479,9 +463,7 @@ REGISTER_FUNCTION(HashFixedStrings)
 ┌─hex(SHA512_256('abc'))───────────────────────────────────────────┐
 │ 53048E2681941EF99B2E29B76B4C7DABE4C2D0C634FC6D46E0E2F13107E7AF23 │
 └──────────────────────────────────────────────────────────────────┘
-            )"}},
-        .category = FunctionDocumentation::Category::Hash
-    });
+            )"}}});
 
 
 #    endif
@@ -495,12 +477,8 @@ REGISTER_FUNCTION(HashFixedStrings)
     The function is rather fast and shows approximately two times faster performance compared to SHA-2, while generating hashes of the same length as SHA-256.
     It returns a BLAKE3 hash as a byte array with type FixedString(32).
     )",
-        .syntax = "SELECT BLAKE3(message)",
-        .arguments = {{"message", "The input [String](../../sql-reference/data-types/string.md)."}},
-        .returned_value
-        = {"Returns the 32-byte BLAKE3 hash of the input string as a fixed-length string.", {"FixedString(32)"}},
         .examples{{"hash", "SELECT hex(BLAKE3('ABC'))", ""}},
-        .category = FunctionDocumentation::Category::Hash});
+        .category{"Hash"}});
 #    endif
 
 #   if USE_SHA3IUF
@@ -511,7 +489,7 @@ REGISTER_FUNCTION(HashFixedStrings)
         .syntax = "SELECT keccak256(message)",
         .arguments = {{"message", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = {"Returns the 32-byte Keccak-256 hash of the input string as a fixed-length string.", {"FixedString(32)"}},
+        = "A [FixedString(32)](../../sql-reference/data-types/fixedstring.md) containing the 32-byte Keccak-256 hash of the input string.",
         .examples
         = {{"",
             "SELECT hex(keccak256('hello'))",
@@ -519,9 +497,7 @@ REGISTER_FUNCTION(HashFixedStrings)
 ┌─hex(keccak256('hello'))──────────────────────────────────────────┐
 │ 1C8AFF950685C2ED4BC3174F3472287B56D9517B9C948127319A09A7A36DEAC8 │
 └──────────────────────────────────────────────────────────────────┘
-        )"}},
-        .category = FunctionDocumentation::Category::Hash
-    });
+        )"}}});
 #    endif
 }
 #endif

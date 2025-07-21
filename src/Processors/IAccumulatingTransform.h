@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Block_fwd.h>
+#include <Core/Block.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 
@@ -33,7 +33,7 @@ protected:
     void finishConsume() { finished_input = true; }
 
 public:
-    IAccumulatingTransform(SharedHeader input_header, SharedHeader output_header);
+    IAccumulatingTransform(Block input_header, Block output_header);
 
     Status prepare() override;
     void work() override;

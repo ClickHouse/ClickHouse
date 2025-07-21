@@ -75,8 +75,8 @@ Reloads all registered [executable user defined functions](/sql-reference/functi
 **Syntax**
 
 ```sql
-SYSTEM RELOAD FUNCTIONS [ON CLUSTER cluster_name]
-SYSTEM RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
+RELOAD FUNCTIONS [ON CLUSTER cluster_name]
+RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
 ```
 
 ## RELOAD ASYNCHRONOUS METRICS {#reload-asynchronous-metrics}
@@ -84,7 +84,7 @@ SYSTEM RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
 Re-calculates all [asynchronous metrics](../../operations/system-tables/asynchronous_metrics.md). Since asynchronous metrics are periodically updated based on setting [asynchronous_metrics_update_period_s](../../operations/server-configuration-parameters/settings.md), updating them manually using this statement is typically not necessary.
 
 ```sql
-SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
+RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 ```
 
 ## DROP DNS CACHE {#drop-dns-cache}
@@ -160,13 +160,12 @@ If a tag is specified, only query cache entries with the specified tag are delet
 
 Clears cache for schemas loaded from [`format_schema_path`](../../operations/server-configuration-parameters/settings.md#format_schema_path).
 
-Supported targets:
-- Protobuf: Removes imported Protobuf message definitions from memory.
-- Files: Deletes cached schema files stored locally in the [`format_schema_path`](../../operations/server-configuration-parameters/settings.md#format_schema_path), generated when `format_schema_source` is set to `query`.
-Note: If no target is specified, both caches are cleared.
+Supported formats:
+
+- Protobuf
 
 ```sql
-SYSTEM DROP FORMAT SCHEMA CACHE [FOR Protobuf/Files]
+SYSTEM DROP FORMAT SCHEMA CACHE [FOR Protobuf]
 ```
 
 ## FLUSH LOGS {#flush-logs}
@@ -340,7 +339,7 @@ SYSTEM START MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
 
 ### SYSTEM UNFREEZE {#query_language-system-unfreeze}
 
-Clears a frozen backup with the specified name from all the disks. See more about unfreezing separate parts in [ALTER TABLE table_name UNFREEZE WITH NAME ](/sql-reference/statements/alter/partition#unfreeze-partition)
+Clears freezed backup with the specified name from all the disks. See more about unfreezing separate parts in [ALTER TABLE table_name UNFREEZE WITH NAME ](/sql-reference/statements/alter/partition#unfreeze-partition)
 
 ```sql
 SYSTEM UNFREEZE WITH NAME <backup_name>
@@ -433,12 +432,11 @@ SYSTEM START PULLING REPLICATION LOG [ON CLUSTER cluster_name] [[db.]replicated_
 Wait until a `ReplicatedMergeTree` table will be synced with other replicas in a cluster, but no more than `receive_timeout` seconds.
 
 ```sql
-SYSTEM SYNC REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name [IF EXISTS] [STRICT | LIGHTWEIGHT [FROM 'srcReplica1'[, 'srcReplica2'[, ...]]] | PULL]
+SYSTEM SYNC REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name [STRICT | LIGHTWEIGHT [FROM 'srcReplica1'[, 'srcReplica2'[, ...]]] | PULL]
 ```
 
 After running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from the common replicated log into its own replication queue, and then the query waits till the replica processes all of the fetched commands. The following modifiers are supported:
 
- - With `IF EXISTS` (available since 25.6) the query won't throw an error if the table does not exists. This is useful when adding a new replica to a cluster, when it's already part of the cluster configuration but it is still in the process of creating and synchronizing the table.
  - If a `STRICT` modifier was specified then the query waits for the replication queue to become empty. The `STRICT` version may never succeed if new entries constantly appear in the replication queue.
  - If a `LIGHTWEIGHT` modifier was specified then the query waits only for `GET_PART`, `ATTACH_PART`, `DROP_RANGE`, `REPLACE_RANGE` and `DROP_PART` entries to be processed.
    Additionally, the LIGHTWEIGHT modifier supports an optional FROM 'srcReplicas' clause, where 'srcReplicas' is a comma-separated list of source replica names. This extension allows for more targeted synchronization by focusing only on replication tasks originating from the specified source replicas.

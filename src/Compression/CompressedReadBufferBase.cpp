@@ -1,4 +1,4 @@
-#include <Compression/CompressedReadBufferBase.h>
+#include "CompressedReadBufferBase.h"
 
 #include <bit>
 #include <cstring>
@@ -40,7 +40,6 @@ namespace ErrorCodes
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int CANNOT_DECOMPRESS;
     extern const int CORRUPTED_DATA;
-    extern const int LOGICAL_ERROR;
 }
 
 using Checksum = CityHash_v1_0_2::uint128;
@@ -180,8 +179,8 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
 
     UInt8 header_size = ICompressionCodec::getHeaderSize();
     own_compressed_buffer.resize(header_size + sizeof(Checksum));
+
     compressed_in->readStrict(own_compressed_buffer.data(), sizeof(Checksum) + header_size);
-    own_compressed_buffer_header_init = true;
 
     readHeaderAndGetCodecAndSize(
         own_compressed_buffer.data() + sizeof(Checksum),
@@ -234,7 +233,6 @@ size_t CompressedReadBufferBase::readCompressedDataBlockForAsynchronous(size_t &
 
     own_compressed_buffer.resize(header_size + sizeof(Checksum));
     compressed_in->readStrict(own_compressed_buffer.data(), sizeof(Checksum) + header_size);
-    own_compressed_buffer_header_init = true;
 
     readHeaderAndGetCodecAndSize(
         own_compressed_buffer.data() + sizeof(Checksum),
@@ -339,9 +337,7 @@ void CompressedReadBufferBase::addDiagnostics(Exception & e) const
     if (auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(compressed_in))
         current_pos = seekable_in->tryGetPosition();
     UInt8 header_size = ICompressionCodec::getHeaderSize();
-    String header_hex = own_compressed_buffer_header_init ?
-        hexString(own_compressed_buffer.data(), std::min(own_compressed_buffer.size(), sizeof(Checksum) + header_size)) :
-        String("<uninitialized>"); // We do not print uninitialized memory because it's a security vulnerability and triggers msan
+    String header_hex = hexString(own_compressed_buffer.data(), std::min(own_compressed_buffer.size(), sizeof(Checksum) + header_size));
 
     e.addMessage("While reading or decompressing {} (position: {}, typename: {}, compressed data header: {})",
                  getFileNameFromReadBuffer(*compressed_in),
@@ -368,15 +364,6 @@ CompressedReadBufferBase::CompressedReadBufferBase(ReadBuffer * in, bool allow_d
 {
 }
 
-void CompressedReadBufferBase::seek(size_t, size_t)
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressedReadBufferBase does not implements seek");
-}
-
-off_t CompressedReadBufferBase::getPosition() const
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressedReadBufferBase does not implement getPosition");
-}
 
 CompressedReadBufferBase::~CompressedReadBufferBase() = default; /// Proper destruction of unique_ptr of forward-declared type.
 

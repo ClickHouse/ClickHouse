@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Range.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <Storages/StatisticsDescription.h>
@@ -45,7 +44,6 @@ public:
     /// Throws if the statistics object is not able to do a meaningful estimation.
     virtual Float64 estimateEqual(const Field & val) const; /// cardinality of val in the column
     virtual Float64 estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
-    virtual Float64 estimateRange(const Range & range) const;
 
 protected:
     SingleStatisticsDescription stat;
@@ -72,7 +70,6 @@ public:
     Float64 estimateLess(const Field & val) const;
     Float64 estimateGreater(const Field & val) const;
     Float64 estimateEqual(const Field & val) const;
-    Float64 estimateRange(const Range & range) const;
 
 private:
     friend class MergeTreeStatisticsFactory;
