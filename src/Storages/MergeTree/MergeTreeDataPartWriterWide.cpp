@@ -954,6 +954,7 @@ void MergeTreeDataPartWriterWide::initColumnsSubstreamsIfNeeded(const Block & bl
             columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForStream(name_and_type, substream_path));
             return &buf;
         };
+        serialize_settings.stream_mark_getter = [&](const ISerialization::SubstreamPath &){ return MarkInCompressedFile(); };
 
         ISerialization::SerializeBinaryBulkStatePtr state;
         auto serialization = getSerialization(name_and_type.name);
