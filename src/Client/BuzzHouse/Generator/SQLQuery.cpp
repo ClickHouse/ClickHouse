@@ -408,7 +408,7 @@ void StatementGenerator::addRandomRelation(
         String buf;
         bool first = true;
         uint32_t col_counter = 0;
-        const uint32_t type_mask_backup = this->next_type_mask;
+        const uint64_t type_mask_backup = this->next_type_mask;
         std::unordered_map<uint32_t, std::unique_ptr<SQLType>> centries;
 
         this->next_type_mask = fc.type_mask;

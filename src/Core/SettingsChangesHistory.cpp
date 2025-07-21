@@ -39,12 +39,28 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "25.8",
+        {
+            {"azure_max_single_part_upload_size", 100 * 1024 * 1024, 32 * 1024 * 1024, "Align with S3"},
+            {"azure_max_redirects", 10, 10, "New setting"},
+            {"azure_max_get_rps", 0, 0, "New setting"},
+            {"azure_max_get_burst", 0, 0, "New setting"},
+            {"azure_max_put_rps", 0, 0, "New setting"},
+            {"azure_max_put_burst", 0, 0, "New setting"},
+            {"azure_use_adaptive_timeouts", true, true, "New setting"},
+            {"azure_request_timeout_ms", 30000, 30000, "New setting"},
+            {"azure_connect_timeout_ms", 1000, 1000, "New setting"},
+            {"azure_sdk_use_native_client", false, true, "New setting"},
+            {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
+            {"vector_search_with_rescoring", true, true, "New setting."},
+        });
         addSettingsChanges(settings_changes_history, "25.7",
         {
+            /// RELEASE CLOSED
             {"correlated_subqueries_substitute_equivalent_expressions", false, true, "New setting to correlated subquery planning optimization."},
             {"function_date_trunc_return_type_behavior", 0, 0, "Add new setting to preserve old behaviour of dateTrunc function"},
             {"output_format_parquet_geometadata", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."},
-            {"cluster_function_process_archive_on_multiple_nodes", true, true, "New setting"},
+            {"cluster_function_process_archive_on_multiple_nodes", false, true, "New setting"},
             {"enable_vector_similarity_index", false, false, "Added an alias for setting `allow_experimental_vector_similarity_index`"},
             {"distributed_plan_max_rows_to_broadcast", 20000, 20000, "New experimental setting."},
             {"output_format_json_map_as_array_of_tuples", false, false, "New setting"},
@@ -57,6 +73,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             {"output_format_parquet_enum_as_byte_array", false, false, "Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM"},
             {"distributed_plan_force_shuffle_aggregation", 0, 0, "New experimental setting"},
+            {"allow_experimental_insert_into_iceberg", false, false, "New setting."},
+            /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
@@ -774,9 +792,13 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "25.7",
+        addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
 
+        });
+        addSettingsChanges(merge_tree_settings_changes_history, "25.7",
+        {
+            /// RELEASE CLOSED
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.6",
         {
