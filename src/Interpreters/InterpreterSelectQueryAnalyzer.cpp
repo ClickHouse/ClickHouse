@@ -33,6 +33,7 @@
 #include <Interpreters/QueryLog.h>
 
 #include <Planner/Utils.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {

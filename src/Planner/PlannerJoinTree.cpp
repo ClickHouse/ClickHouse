@@ -1255,7 +1255,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 subquery_planner_context = planner_context->getGlobalPlannerContext();
 
             auto subquery_options = select_query_options.subquery();
-            Planner subquery_planner(table_expression, subquery_options, subquery_planner_context);
+            Planner subquery_planner(table_expression, subquery_options, subquery_planner_context, "buildQueryPlanForTableExpression1");
             /// Propagate storage limits to subquery
             subquery_planner.addStorageLimits(*select_query_info.storage_limits);
             subquery_planner.buildQueryPlanIfNeeded();
@@ -1331,7 +1331,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         SelectQueryOptions analyze_query_options = SelectQueryOptions(from_stage).analyze();
         Planner planner(select_query_info.query_tree,
             analyze_query_options,
-            select_query_info.planner_context);
+            select_query_info.planner_context, "buildQueryPlanForTableExpression2");
         planner.buildQueryPlanIfNeeded();
 
         auto expected_header = planner.getQueryPlan().getCurrentHeader();
