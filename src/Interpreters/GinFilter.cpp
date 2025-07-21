@@ -26,11 +26,6 @@ GinFilterParameters::GinFilterParameters(
 {
 }
 
-GinFilter::GinFilter(const GinFilterParameters & params_)
-    : params(params_)
-{
-}
-
 void GinFilter::add(const char * data, size_t len, UInt32 rowID, GinIndexStorePtr & store) const
 {
     if (len > FST::MAX_TERM_LENGTH)

@@ -60,15 +60,15 @@ ENGINE = TinyLog;
 -- Parse DateTime
 -- - from string,
 -- - from integer interpreted as number of seconds since 1970-01-01.
-INSERT INTO dt VALUES ('2019-01-01 00:00:00', 1), (1546300800, 3);
+INSERT INTO dt VALUES ('2019-01-01 00:00:00', 1), (1546300800, 2);
 
 SELECT * FROM dt;
 ```
 
 ```text
 ┌───────────timestamp─┬─event_id─┐
-│ 2019-01-01 00:00:00 │        2 │
-│ 2019-01-01 03:00:00 │        1 │
+│ 2019-01-01 00:00:00 │        1 │
+│ 2019-01-01 03:00:00 │        2 │
 └─────────────────────┴──────────┘
 ```
 
