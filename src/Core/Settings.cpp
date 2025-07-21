@@ -1097,7 +1097,7 @@ Possible values:
 )", 0) \
     \
    DECLARE(Bool, skip_non_cache_locality_shards, false, R"(
-Enables or disables .
+Enables or disables usage of shards without cache locality.
 
 Possible values:
 
