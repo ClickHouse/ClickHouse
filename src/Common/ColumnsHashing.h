@@ -385,7 +385,6 @@ struct HashMethodSerialized
             for (auto row_size : row_sizes)
                 total_size += row_size;
 
-            // serialized_buffer = std::make_unique<char[]>(total_size);
             serialized_buffer.resize(total_size);
 
             const size_t rows = row_sizes.size();
