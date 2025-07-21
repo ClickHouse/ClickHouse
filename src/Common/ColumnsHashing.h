@@ -388,15 +388,8 @@ struct HashMethodSerialized
             // serialized_buffer = std::make_unique<char[]>(total_size);
             serialized_buffer.resize(total_size);
 
-            // const char * begin = nullptr;
-            // char * memory = pool.allocContinue(total_size, begin);
-            // std::cout << "allocate total size:" << total_size << " bytes for serialized keys" << std::endl;
-            // std::cout << "total rows: " << row_sizes.size() << std::endl;
-            // std::vector<char *> memories_copy = memories;
             const size_t rows = row_sizes.size();
-            // char * memory = serialized_buffer.get();
             char * memory = serialized_buffer.data();
-
             std::vector<char *> memories(rows);
             serialized_keys.resize(rows);
             for (size_t i = 0; i < row_sizes.size(); ++i)
@@ -417,57 +410,6 @@ struct HashMethodSerialized
             }
         }
     }
-
-    // void lazyInitialize(Arena & pool) const
-    // requires(prealloc)
-    // {
-    //     const char * begin = nullptr;
-    //     char * memory = pool.allocContinue(total_size, begin);
-    //     // std::cout << "allocate total size:" << total_size << " bytes for serialized keys" << std::endl;
-    //     // std::cout << "total rows: " << row_sizes.size() << std::endl;
-
-    //     size_t rows = row_sizes.size();
-    //     std::vector<char *> memories(rows);
-    //     serialized_keys.resize(rows);
-    //     for (size_t i = 0; i < row_sizes.size(); ++i)
-    //     {
-    //         memories[i] = memory;
-    //         serialized_keys[i].data = memory;
-    //         serialized_keys[i].size = row_sizes[i];
-
-    //         memory += row_sizes[i];
-    //     }
-
-    //     std::vector<char *> memories_copy = memories;
-
-    //     for (size_t i = 0; i < keys_size; ++i)
-    //     {
-    //         if constexpr (nullable)
-    //             key_columns[i]->batchSerializeValueIntoMemoryWithNull(memories, null_maps[i]);
-
-    //         else
-    //             key_columns[i]->batchSerializeValueIntoMemory(memories);
-    //     }
-
-    //     for (size_t i = 0; i < rows; ++i)
-    //     {
-    //         size_t sz = memories[i] - memories_copy[i];
-    //         if (sz != serialized_keys[i].size)
-    //             throw Exception(
-    //                 ErrorCodes::LOGICAL_ERROR, "Serialized key size mismatch: row {} expected {}, got {}", i, serialized_keys[i].size, sz);
-
-    //         for (const auto & column : key_columns)
-    //         {
-    //             auto strref = column->getDataAt(i);
-    //             std::cout << "column:" << column->getName() << " size:" << strref.size << " data:" << std::string(strref.data, strref.size)
-    //                       << "|" << std::endl;
-    //         }
-    //         std::cout << "row:" << i << " serializedkey size:" << serialized_keys[i].size << " data:"
-    //                   << std::string(serialized_keys[i].data, serialized_keys[i].size) << "|" << std::endl;
-    //     }
-
-    //     initialized = true;
-    // }
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
