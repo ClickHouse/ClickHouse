@@ -199,6 +199,7 @@ def main():
             Result.from_commands_run(
                 name="Buzzing",
                 command=[f"clickhouse-client --buzz-house-config={buzz_config_file}"],
+                with_log=True,
             )
         )
         res = results[-1].is_ok()
