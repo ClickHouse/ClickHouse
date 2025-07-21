@@ -598,11 +598,9 @@ template <typename Derived, typename Parent>
 void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemoryWithNull(std::vector<char *> & memories, const UInt8 * is_null) const
 {
     const auto & self = static_cast<const Derived &>(*this);
-
+    chassert(memories.size() == self.size());
     for (size_t i = 0; i < self.size(); ++i)
-    {
         memories[i] = self.serializeValueIntoMemoryWithNull(i, memories[i], is_null);
-    }
 }
 
 template <typename Derived, typename Parent>
@@ -621,10 +619,9 @@ template <typename Derived, typename Parent>
 void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemory(std::vector<char *> & memories) const
 {
     const auto & self = static_cast<const Derived &>(*this);
+    chassert(memories.size() == self.size());
     for (size_t i = 0; i < self.size(); ++i)
-    {
         memories[i] = self.serializeValueIntoMemory(i, memories[i]);
-    }
 }
 
 template <typename Derived, typename Parent>

@@ -325,7 +325,6 @@ ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * mem
 void ColumnString::batchSerializeValueIntoMemory(std::vector<char *> & memories) const
 {
     chassert(memories.size() == size());
-
     for (size_t i = 0; i < memories.size(); ++i)
     {
         size_t string_size = sizeAt(i);
