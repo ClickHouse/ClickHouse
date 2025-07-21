@@ -31,13 +31,13 @@ An exception is thrown when dividing by zero or when dividing a minimal
 negative number by minus one.
     )";
     FunctionDocumentation::Syntax syntax = "functionName(x, y)";
-    FunctionDocumentation::Arguments arguments = 
+    FunctionDocumentation::Arguments arguments =
     {
         {"x", "First integer", {"(U)Int*"}},
         {"y", "Second integer", {"(U)Int*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the greatest common divisor of `x` and `y`.", {"(U)Int*"}};
-    FunctionDocumentation::Examples examples = 
+    FunctionDocumentation::Examples examples =
     {
         {"Usage example", "SELECT gcd(12, 18)", "6"};
     };
@@ -54,4 +54,4 @@ negative number by minus one.
 - Begin `returned_value` with "Returns ..."
 - If an argument is optional, then begin the description with "Optional.". Do not include "(optional)" as part of the argument name.
 - Include argument and return types whenever possible. For a list see [FunctionDocumentation.cpp](../Common/FunctionDocumentation.cpp).
-- If multiple types are possible you can generalize them. For example instead of `UInt8`, `Int8` prefer `(U)Int8` or `(U)Int*` for all integer types.
+- If multiple types are possible you can generalize them. For example instead of `UInt8`, `Int8` prefer `(U)Int8` or `(U)Int*` for all integer types.|    counter_high_bits    |

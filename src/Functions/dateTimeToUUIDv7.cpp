@@ -108,7 +108,6 @@ struct CounterFields
     }
 };
 
-
 struct Data
 {
     /// Guarantee counter monotonicity within one timestamp across all threads generating UUIDv7 simultaneously.
@@ -168,7 +167,7 @@ public:
         if (input_rows_count)
         {
             vec_to.resize(input_rows_count);
-            /// Not all random bytes produced here are required for the UUIDv7 but it's the simplest way to get the required number of them by using RandImpl
+            // Fills in all memory stored by the column of UUIDs with random bytes. Timestamp and other bits are set later.
             RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(UUID));
 
             if (const auto * col_src_non_const = typeid_cast<const ColumnDateTime *>(&col_src))
