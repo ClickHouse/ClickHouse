@@ -1850,10 +1850,10 @@ static void buildIndexes(
 
     std::unordered_map<String, UInt64> max_index_sizes;
    
-    for (auto idx : skip_indexes.useful_indices)
+    for (const auto& idx : skip_indexes.useful_indices)
     {
         UInt64 max_size = 0;
-        for (auto &part : parts)
+        for (const auto& part : parts)
         {
             auto extension = idx.index->getDeserializedFormat(part.data_part->getDataPartStorage(), idx.index->getFileName()).extension;
             auto sz = part.data_part->getFileSizeOrZero(idx.index->getFileName() + extension);
@@ -1863,7 +1863,7 @@ static void buildIndexes(
     }
 
     // Move minmax indices to first positions, so they will be applied first as cheapest ones
-    std::stable_sort(skip_indexes.useful_indices.begin(), skip_indexes.useful_indices.end(), [ &max_index_sizes](const auto & l, const auto & r)
+    std::stable_sort(skip_indexes.useful_indices.begin(), skip_indexes.useful_indices.end(), [ &max_index_map = std::as_const(max_index_sizes)](const auto & l, const auto & r)
     {
         bool l_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(l.index.get());
         bool r_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(r.index.get());
@@ -1872,8 +1872,8 @@ static void buildIndexes(
             const auto l_granularity = l.index->getGranularity();
             const auto r_granularity = r.index->getGranularity();
 
-            const auto l_size = max_index_sizes[l.index->getFileName()];
-            const auto r_size = max_index_sizes[r.index->getFileName()];
+            const auto l_size = max_index_map.at(l.index->getFileName());
+            const auto r_size = max_index_map.at(r.index->getFileName());
             return (l_size < r_size) || (l_granularity > r_granularity);
         }
 
