@@ -3,6 +3,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
+#include <Coordination/KeeperCommon.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -1421,11 +1422,14 @@ void ZooKeeper::create(
 
     ACLs final_acls = acls.empty() ? default_acls : acls;
 
-    // Append path-specific ACLs if configured for this path
-    auto path_acls_it = path_acls.find(path);
-    if (path_acls_it != path_acls.end())
+    if (!path_acls.empty())
     {
-        final_acls.push_back(path_acls_it->second);
+        // Append path-specific ACLs if configured for this path
+        if (auto path_acls_it = path_acls.find(path); path_acls_it != path_acls.end())
+            final_acls.push_back(path_acls_it->second.acl);
+
+        if (auto path_acls_it = path_acls.find(parentNodePath(path)); path_acls_it != path_acls.end() && path_acls_it->second.apply_to_children)
+            final_acls.push_back(path_acls_it->second.acl);
     }
 
     request.acls = std::move(final_acls);
@@ -1656,17 +1660,22 @@ void ZooKeeper::multi(
         {
             if (auto * create_request = dynamic_cast<CreateRequest *>(generic_request.get()))
             {
-                // Check if there's a path-specific ACL for this path
-                auto path_acls_it = path_acls.find(create_request->path);
-                if (path_acls_it != path_acls.end())
+                const auto add_acl = [&](const auto & acl)
                 {
                     // If ACLs are empty, use default_acls first
                     if (create_request->acls.empty())
                         create_request->acls = default_acls;
 
                     // Append the path-specific ACL
-                    create_request->acls.push_back(path_acls_it->second);
-                }
+                    create_request->acls.push_back(acl);
+                };
+
+                if (auto path_acls_it = path_acls.find(create_request->path); path_acls_it != path_acls.end())
+                    add_acl(path_acls_it->second.acl);
+
+                if (auto path_acls_it = path_acls.find(parentNodePath(create_request->path));
+                    path_acls_it != path_acls.end() && path_acls_it->second.apply_to_children)
+                    add_acl(path_acls_it->second.acl);
             }
         }
     }
