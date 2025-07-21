@@ -41,7 +41,7 @@ extern const int UNICODE_ERROR;
 extern const int LOGICAL_ERROR;
 }
 
-// Binary properties (UCHAR_BINARY_START to UCHAR_BINARY_LIMIT)
+// Binary properties
 constexpr UProperty binary_properties[] = {
     UCHAR_ALPHABETIC,
     UCHAR_ASCII_HEX_DIGIT,
@@ -120,7 +120,7 @@ constexpr UProperty binary_properties[] = {
     UCHAR_ID_COMPAT_MATH_CONTINUE,
 };
 
-// Integer/Enumerated properties (UCHAR_INT_START to UCHAR_INT_LIMIT)
+// Integer/Enumerated properties
 constexpr UProperty int_properties[]
     = {UCHAR_BIDI_CLASS,
        UCHAR_BLOCK,
@@ -149,13 +149,13 @@ constexpr UProperty int_properties[]
        UCHAR_VERTICAL_ORIENTATION,
        UCHAR_IDENTIFIER_STATUS};
 
-// Mask properties (UCHAR_MASK_START to UCHAR_MASK_LIMIT)
+// Mask properties
 constexpr UProperty mask_properties[] = {UCHAR_GENERAL_CATEGORY_MASK};
 
-// Double properties (UCHAR_DOUBLE_START to UCHAR_DOUBLE_LIMIT)
+// Double properties
 constexpr UProperty double_properties[] = {UCHAR_NUMERIC_VALUE};
 
-// String properties (UCHAR_STRING_START to UCHAR_STRING_LIMIT)
+// String properties
 constexpr UProperty string_properties[]
     = {UCHAR_AGE,
        UCHAR_BIDI_MIRRORING_GLYPH,
@@ -170,14 +170,13 @@ constexpr UProperty string_properties[]
        UCHAR_UPPERCASE_MAPPING,
        UCHAR_BIDI_PAIRED_BRACKET};
 
-// Other properties (UCHAR_OTHER_PROPERTY_START to UCHAR_OTHER_PROPERTY_LIMIT)
+// Other properties
 constexpr UProperty other_properties[] = {UCHAR_SCRIPT_EXTENSIONS, UCHAR_IDENTIFIER_TYPE};
 
 std::vector<std::pair<String, UProperty>> getPropNames()
 {
     std::vector<std::pair<String, UProperty>> properties;
 
-    // Helper lambda to add properties with error checking
     auto add_properties = [&properties](const UProperty * props, size_t count)
     {
         for (size_t i = 0; i < count; ++i)
@@ -250,14 +249,8 @@ ColumnsDescription StorageSystemUnicode::getColumnsDescription()
     for (size_t i = 0; i < sizeof(other_properties) / sizeof(other_properties[0]); ++i)
     {
         const auto & [prop_name, prop] = prop_names[prop_index++];
-        if (prop == UCHAR_SCRIPT_EXTENSIONS)
-        {
-            names_and_types.emplace_back(Poco::toLower(prop_name), std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()));
-        }
-        else if (prop == UCHAR_IDENTIFIER_TYPE)
-        {
-            names_and_types.emplace_back(Poco::toLower(prop_name), std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()));
-        }
+        // UCHAR_SCRIPT_EXTENSIONS and UCHAR_IDENTIFIER_TYPE are arrays of UInt32
+        names_and_types.emplace_back(Poco::toLower(prop_name), std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()));
     }
 
     return ColumnsDescription::fromNamesAndTypes(names_and_types);
@@ -388,8 +381,6 @@ void StorageSystemUnicode::fillData(
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Code point {} is outside of the Unicode range", code);
 
-        // Use the shared property arrays defined at namespace level
-
         // Process binary properties
         for (const auto & binary_prop : binary_properties)
         {
@@ -424,7 +415,6 @@ void StorageSystemUnicode::fillData(
                 }
             }
         }
-        // Use the shared string_properties and other_properties arrays
 
         // Process string properties
         for (const auto & string_prop : string_properties)
