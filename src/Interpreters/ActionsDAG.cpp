@@ -1369,9 +1369,6 @@ bool ActionsDAG::removeUnusedResult(const std::string & column_name)
         if (*it == col)
             break;
 
-    if (it == inputs.end())
-        return false;
-
     /// Check column has no dependent.
     for (const auto & node : nodes)
         for (const auto * child : node.children)
@@ -1386,14 +1383,15 @@ bool ActionsDAG::removeUnusedResult(const std::string & column_name)
     /// Remove from nodes and inputs.
     for (auto jt = nodes.begin(); jt != nodes.end(); ++jt)
     {
-        if (&(*jt) == *it)
+        if (&(*jt) == col)
         {
             nodes.erase(jt);
             break;
         }
     }
 
-    inputs.erase(it);
+    if (it != inputs.end())
+        inputs.erase(it);
     return true;
 }
 

@@ -41,27 +41,12 @@ JSONType
 JSON_EXISTS
 JSON_QUERY
 JSON_VALUE
-L1Distance
-L1Norm
-L1Normalize
-L2Distance
-L2Norm
-L2Normalize
-L2SquaredDistance
-L2SquaredNorm
-LinfDistance
-LinfNorm
-LinfNormalize
-LpDistance
-LpNorm
-LpNormalize
 MACNumToString
 MACStringToNum
 MACStringToOUI
 URLHash
 URLHierarchy
 URLPathHierarchy
-UTCTimestamp
 UUIDNumToString
 UUIDStringToNum
 UUIDToNum
@@ -79,7 +64,6 @@ accurateCastOrDefault
 accurateCastOrNull
 acos
 acosh
-addDate
 addressToLine
 addressToLineWithInlines
 addressToSymbol
@@ -122,7 +106,6 @@ concatWithSeparatorAssumeInjective
 connectionId
 cos
 cosh
-cosineDistance
 countDigits
 countMatches
 countMatchesCaseInsensitive
@@ -151,7 +134,6 @@ cutURLParameter
 cutWWW
 damerauLevenshteinDistance
 dateDiff
-dateName
 dateTime64ToSnowflake
 dateTimeToSnowflake
 decodeHTMLComponent
@@ -258,8 +240,6 @@ firstSignificantSubdomainRFC
 flattenTuple
 floor
 format
-formatDateTime
-formatDateTimeInJodaSyntax
 formatQuery
 formatQueryOrNull
 formatQuerySingleLine
@@ -272,15 +252,10 @@ formatRow
 formatRowNoNewline
 fragment
 fromDaysSinceYearZero32
-fromModifiedJulianDay
-fromModifiedJulianDayOrNull
-fromUTCTimestamp
-fromUnixTimestamp
 fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
 fromUnixTimestamp64Nano
 fromUnixTimestamp64Second
-fromUnixTimestampInJodaSyntax
 fuzzBits
 gccMurmurHash
 generateRandomStructure
@@ -396,7 +371,6 @@ metroHash64
 minSampleSizeContinuous
 minSampleSizeConversion
 moduloLegacy
-monthName
 mortonDecode
 mortonEncode
 multiFuzzyMatchAllIndices
@@ -461,9 +435,6 @@ notInIgnoreSet
 notLike
 notNullIn
 notNullInIgnoreSet
-now
-now64
-nowInBlock
 nullIf
 nullIn
 nullInIgnoreSet
@@ -663,7 +634,6 @@ stringJaccardIndex
 stringJaccardIndexUTF8
 structureToCapnProtoSchema
 structureToProtobufSchema
-subDate
 substring
 substringIndex
 substringIndexUTF8
@@ -675,8 +645,6 @@ tcpPort
 tgamma
 throwIf
 tid
-timeSlot
-timeSlots
 toBFloat16
 toBFloat16OrNull
 toBFloat16OrZero
@@ -772,8 +740,6 @@ toIntervalWeek
 toIntervalYear
 toJSONString
 toLowCardinality
-toModifiedJulianDay
-toModifiedJulianDayOrNull
 toNullable
 toStartOfMillisecond
 toString
@@ -809,7 +775,6 @@ toUInt8
 toUInt8OrDefault
 toUInt8OrNull
 toUInt8OrZero
-toUTCTimestamp
 toUUID
 toUUIDOrDefault
 toUUIDOrNull
@@ -819,9 +784,6 @@ toUnixTimestamp64Milli
 toUnixTimestamp64Nano
 toUnixTimestamp64Second
 toValidUTF8
-toYYYYMM
-toYYYYMMDD
-toYYYYMMDDhhmmss
 today
 tokens
 topLevelDomain
@@ -888,5 +850,4 @@ xor
 xxHash32
 xxHash64
 xxh3
-yesterday
 zookeeperSessionUptime

@@ -415,7 +415,7 @@ public:
     }
 
     void setInputColumns(NamesAndTypesList left_output_columns, NamesAndTypesList right_output_columns);
-    const NamesAndTypesList & getOutputColumns(JoinTableSide side);
+    const NamesAndTypesList & getOutputColumns(JoinTableSide side) const;
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
     const NamesAndTypesList & columnsAddedByJoin() const { return columns_added_by_join; }
 

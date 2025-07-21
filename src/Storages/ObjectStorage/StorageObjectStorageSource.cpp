@@ -482,7 +482,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             initial_header = sample_header;
         }
 
-
         auto input_format = FormatFactory::instance().getInput(
             configuration->format,
             *read_buf,
