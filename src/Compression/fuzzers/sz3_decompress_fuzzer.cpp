@@ -47,8 +47,7 @@ try
     CurrentThread::get().memory_tracker.resetCounters();
     CurrentThread::get().memory_tracker.setHardLimit(1_GiB);
 
-    /// sizeof(uint8_t) because we need to decode width_length
-    if (size < sizeof(AuxiliaryRandomData) + sizeof(uint8_t))
+    if (size < sizeof(AuxiliaryRandomData))
         return 0;
 
     const auto * p = reinterpret_cast<const AuxiliaryRandomData *>(data);
