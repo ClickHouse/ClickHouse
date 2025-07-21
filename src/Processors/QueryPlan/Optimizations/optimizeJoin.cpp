@@ -619,8 +619,10 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     ActionsDAG::NodeRawConstPtrs right_changes_types;
     for (const auto * out_node : join_outputs)
     {
-        if (out_node->type == ActionsDAG::ActionType::INPUT || out_node->type == ActionsDAG::ActionType::COLUMN)
+        if (out_node->type == ActionsDAG::ActionType::INPUT ||
+            out_node->type == ActionsDAG::ActionType::COLUMN)
             continue;
+
         auto source = JoinActionRef(out_node, query_graph.expression_actions).getSourceRelations();
         if (source.count() == 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot determine source relations for node {}", out_node->result_name);
@@ -696,6 +698,16 @@ static std::vector<const DPJoinEntry *> getJoinTreePostOrderSequence(DPJoinEntry
     return result;
 }
 
+static const ActionsDAG::Node * trackInputColumn(const ActionsDAG::Node * node)
+{
+    for (; !node->children.empty(); node = node->children[0])
+    {
+        if (node->children.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} has {} children, expected 1", node->result_name, node->children.size());
+    }
+    return node;
+}
+
 QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes)
 {
     QueryGraph query_graph;
@@ -732,9 +744,23 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
     auto join_settings = std::move(query_graph_builder.context->join_settings);
     auto sorting_settings = std::move(query_graph_builder.context->sorting_settings);
 
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> input_node_map;
-    for (const auto * input : global_actions_dag->getInputs())
-        input_node_map[input->result_name] = input;
+    /// After applying OUTER joins some columns may change their types (in case of join_use_nulls or JOIN USING)
+    /// We need to track this change, this map tracks input columns and how they are transformed
+    /// Each next step uses mapped columns as inputs
+    std::unordered_map<const ActionsDAG::Node *, size_t> input_node_map;
+    std::vector<std::pair<size_t, const ActionsDAG::Node *>> casted_input_nodes;
+
+    const auto & global_inputs = global_actions_dag->getInputs();
+    for (size_t input_idx = 0; input_idx < global_inputs.size(); ++input_idx)
+    {
+        const auto * input = global_inputs[input_idx];
+        auto src_rels = JoinActionRef(input, global_expression_actions).getSourceRelations();
+        if (src_rels.count() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Input node {} has {} source relations, expected 1", input->result_name, toString(src_rels));
+        auto rel_idx = src_rels.findFirstSet();
+        casted_input_nodes.emplace_back(safe_cast<size_t>(rel_idx), input);
+        input_node_map[input] = input_idx;
+    }
 
     const auto & optimization_settings = query_graph_builder.context->optimization_settings;
     for (auto * entry : sequence)
@@ -783,43 +809,36 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             for (const auto & action : join_operator.residual_filter)
                 required_output_nodes.push_back(action.getNode());
 
-            ActionsDAG::NodeMapping current_step_type_changes;
+            std::unordered_map<size_t, const ActionsDAG::Node *> current_step_type_changes;
             auto joined_mask = entry->relations;
             for (const auto & [sources, new_inputs] : query_graph_builder.type_changes)
             {
-                if (isSubsetOf(sources, joined_mask))
+                if (isSubsetOf(sources, left_rels) || isSubsetOf(sources, right_rels))
                 {
                     for (const auto * new_input : new_inputs)
                     {
-                        auto it = input_node_map.find(new_input->result_name);
+                        auto input_node = trackInputColumn(new_input);
+                        auto it = input_node_map.find(input_node);
                         if (it == input_node_map.end())
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in inputs of dag {}", new_input->result_name, global_actions_dag->dumpDAG());
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in inputs of dag {}", input_node->result_name, global_actions_dag->dumpDAG());
                         current_step_type_changes[it->second] = new_input;
                     }
                 }
             }
 
             ActionsDAG::NodeMapping current_inputs;
-
-            auto process_input_column = [&](const auto & column)
+            for (size_t input_pos = 0; input_pos < casted_input_nodes.size(); ++input_pos)
             {
-                auto it = input_node_map.find(column.name);
-                if (it == input_node_map.end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in inputs of dag {}", column.name, global_actions_dag->dumpDAG());
-                if (!it->second->result_type->equals(*column.type))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} expected to habe type {}", column.dumpStructure(), it->second->result_type->getName());
-                current_inputs[it->second] = it->second;
+                auto [rel_idx, input_node] = casted_input_nodes[input_pos];
+                if (!joined_mask.test(rel_idx))
+                    continue;
+                current_inputs[input_node] = input_node;
 
-                auto out_node = it->second;
-                if (auto it2 = current_step_type_changes.find(out_node); it2 != current_step_type_changes.end())
+                const auto * out_node = input_node;
+                if (auto it2 = current_step_type_changes.find(input_pos); it2 != current_step_type_changes.end())
                     out_node = it2->second;
                 required_output_nodes.push_back(out_node);
-            };
-
-            for (const auto & column : left_header)
-                process_input_column(column);
-            for (const auto & column : right_header)
-                process_input_column(column);
+            }
 
             JoinExpressionActions current_expression_actions(left_header, right_header,
                 ActionsDAG::foldActionsByProjection(current_inputs, required_output_nodes));
@@ -840,33 +859,18 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
 
             /// Setup outputs after join
             dag_outputs.clear();
-            /// Set current inputs to nodes after current join
-            for (auto & e : input_node_map)
+            for (auto [input_pos, new_input] : current_step_type_changes)
             {
-                auto it = current_step_type_changes.find(e.second);
-                if (it != current_step_type_changes.end())
-                    e.second = it->second;
+                casted_input_nodes.at(input_pos).second = new_input;
             }
 
             /// Columns returned from JOIN is input with possibly corrected type
-            for (const auto & column : left_header)
+            for (size_t input_pos = 0; input_pos < casted_input_nodes.size(); ++input_pos)
             {
-                auto it = input_node_map.find(column.name);
-                if (it == input_node_map.end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in inputs of dag {}", column.name, global_actions_dag->dumpDAG());
-                auto mapped_it = join_expression_map.find(it->second);
+                const auto * input_node = casted_input_nodes[input_pos].second;
+                auto mapped_it = join_expression_map.find(input_node);
                 if (mapped_it == join_expression_map.end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in join expression map", column.name);
-                dag_outputs.push_back(mapped_it->second);
-            }
-            for (const auto & column : right_header)
-            {
-                auto it = input_node_map.find(column.name);
-                if (it == input_node_map.end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in inputs of dag {}", column.name, global_actions_dag->dumpDAG());
-                auto mapped_it = join_expression_map.find(it->second);
-                if (mapped_it == join_expression_map.end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in join expression map", column.name);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in join expression map", input_node->result_name);
                 dag_outputs.push_back(mapped_it->second);
             }
 

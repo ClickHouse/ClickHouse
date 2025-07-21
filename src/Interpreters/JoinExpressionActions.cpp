@@ -1,4 +1,5 @@
 #include <Interpreters/JoinExpressionActions.h>
+#include <algorithm>
 #include <ranges>
 #include <stack>
 #include <string_view>
@@ -137,6 +138,9 @@ JoinExpressionActions::JoinExpressionActions(const Block & left_header, const Bl
 
     auto left_column_names = std::ranges::to<std::unordered_set<std::string_view>>(left_header | std::views::transform(&ColumnWithTypeAndName::name));
     auto right_column_names = std::ranges::to<std::unordered_set<std::string_view>>(right_header | std::views::transform(&ColumnWithTypeAndName::name));
+
+    if (std::ranges::any_of(left_column_names, [&right_column_names](const auto & name) { return right_column_names.contains(name); }))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Left and right columns have same names: [{}], [{}]", left_header.dumpNames(), right_header.dumpNames());
 
     for (size_t i = 0; i < input_nodes.size(); ++i)
     {
