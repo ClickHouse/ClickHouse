@@ -168,6 +168,11 @@ static void splitAndModifyMutationCommands(
                     for_interpreter.push_back(command);
                     mutated_columns.emplace(command.column_name);
                 }
+
+                /// Materialize column in case of complex data types like tuple can remove some nested columns
+                /// Here we add it "for renames" because these set of commands also removes redundant files
+                if (part_columns.has(command.column_name))
+                    for_file_renames.push_back(command);
             }
             if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
                 || command.type == MutationCommand::Type::MATERIALIZE_STATISTICS
@@ -307,6 +312,11 @@ static void splitAndModifyMutationCommands(
                 auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
                 if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
                     for_interpreter.push_back(command);
+
+                /// Materialize column in case of complex data types like tuple can remove some nested columns
+                /// Here we add it "for renames" because these set of commands also removes redundant files
+                if (part_columns.has(command.column_name))
+                    for_file_renames.push_back(command);
             }
             else if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
                 || command.type == MutationCommand::Type::MATERIALIZE_STATISTICS
@@ -887,12 +897,11 @@ static NameToNameVector collectFilesForRenames(
                 if (source_part->checksums.has(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX))
                     add_rename(STATS_FILE_PREFIX + command.column_name + STATS_FILE_SUFFIX, STATS_FILE_PREFIX + command.rename_to + STATS_FILE_SUFFIX);
             }
-            else if (command.type == MutationCommand::Type::READ_COLUMN)
+            else if (command.type == MutationCommand::Type::READ_COLUMN || command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
                 /// Remove files for streams that exist in source_part,
-                /// but were removed in new_part by MODIFY COLUMN from
+                /// but were removed in new_part by MODIFY COLUMN or MATERIALIZE COLUMN from
                 /// type with higher number of streams (e.g. LowCardinality -> String).
-
                 auto old_streams = getStreamCounts(source_part, source_part->checksums, source_part->getColumns().getNames());
                 auto new_streams = getStreamCounts(new_part, source_part->checksums, source_part->getColumns().getNames());
 
