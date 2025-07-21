@@ -25,8 +25,8 @@ ${CLICKHOUSE_CLIENT} --merge_tree_min_rows_for_concurrent_read 1 --merge_tree_mi
 ${CLICKHOUSE_CLIENT} --merge_tree_min_rows_for_concurrent_read 1 --merge_tree_min_bytes_for_concurrent_read 1 --max_block_size 100 -q "SELECT count(), sum(cityHash64(toString(data))) FROM ghdata_2_from_string"
 ${CLICKHOUSE_CLIENT} --merge_tree_min_rows_for_concurrent_read 1 --merge_tree_min_bytes_for_concurrent_read 1 --max_block_size 100 -q "SELECT count(), sum(cityHash64(toString(data))) FROM ghdata_2"
 
-${CLICKHOUSE_CLIENT} --merge_tree_min_rows_for_concurrent_read 1 --merge_tree_min_bytes_for_concurrent_read 1 --max_block_size 100 -q "SELECT arrayJoin(JSONAllPathsWithTypes(data)) AS path FROM ghdata_2_from_string GROUP BY path ORDER BY path"
-${CLICKHOUSE_CLIENT} --merge_tree_min_rows_for_concurrent_read 1 --merge_tree_min_bytes_for_concurrent_read 1 --max_block_size 100 -q "SELECT arrayJoin(JSONAllPathsWithTypes(data)) AS path FROM ghdata_2 GROUP BY path ORDER BY path"
+${CLICKHOUSE_CLIENT} --merge_tree_min_rows_for_concurrent_read 1 --merge_tree_min_bytes_for_concurrent_read 1 --max_block_size 100 -q "SELECT arrayJoin(distinctJSONPathsAndTypes(data)) AS path FROM ghdata_2_from_string ORDER BY path"
+${CLICKHOUSE_CLIENT} --merge_tree_min_rows_for_concurrent_read 1 --merge_tree_min_bytes_for_concurrent_read 1 --max_block_size 100 -q "SELECT arrayJoin(distinctJSONPathsAndTypes(data)) AS path FROM ghdata_2 ORDER BY path"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ghdata_2"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ghdata_2_string"
