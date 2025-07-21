@@ -827,9 +827,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     cache_in_store);
 
                 /// Remember this function takes a lock, don't abuse of it.
-                if (cache_in_store)
+                if (index_and_condition.index->index.type == "text")
                 {
-                    chassert(index_and_condition.index->index.type == "text");
+                    chassert(cache_in_store != nullptr);
                     const String &index_name = index_and_condition.index->index.name;
                     postings_cache_for_store_part.emplace(index_name, cache_in_store);
                 }

@@ -103,6 +103,48 @@ class FunctionIndex : public IFunction
     }
 
 
+    static size_t postingArrayToOutput(
+        const std::vector<uint32_t> matching_rows,
+        const ColumnVector<UInt64> * col_part_offset_vector,
+        PaddedPODArray<typename Impl::ResultType> & result, size_t idx, size_t mark_end)
+    {
+        const size_t input_rows_count = col_part_offset_vector->size();
+
+        /// col_part_offset_vector may have some "holes" but will be always strictly increasing, so in the worst case the distance
+        /// to the next mark start will be smaller or equal to mark_size.
+        /// If we detect a performance issue here, then we could use bisection as the array is sorted and the boundaries are
+        /// known.
+        size_t next_idx = idx;
+        while(next_idx < input_rows_count && col_part_offset_vector->getElement(next_idx) < mark_end)
+            ++next_idx;
+
+        /// Extra boundary check.
+        chassert(col_part_offset_vector->getElement(next_idx - 1) >= (matching_rows.back() - 1));
+
+        for (uint32_t row : matching_rows)
+        {
+            const size_t match_offset = row - 1;
+
+            /// This is the same than an std::lower_bound, but simpler (and faster ;)
+            size_t lower_bound_offset = col_part_offset_vector->getElement(idx);
+            while (idx < next_idx && lower_bound_offset < match_offset)
+                lower_bound_offset = col_part_offset_vector->getElement(++idx);
+
+            if (idx == next_idx)
+                break;
+
+            chassert(lower_bound_offset >= match_offset);
+
+            if (lower_bound_offset == match_offset)
+            {
+                chassert(result[idx] == 0);
+                result[idx] = 1;
+            }
+            /// if (lower_bound_offset > match_offset) continue; /// there is a hole... just continue
+        }
+
+        return next_idx;
+	}
 
 public:
     static constexpr auto name = Impl::name;
@@ -129,9 +171,19 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        // Early exits
         if (arguments.size() != getNumberOfArguments())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} expects at least 2 arguments", getName());
 
+        auto col_res = ColumnVector<ResultType>::create(input_rows_count, ResultType());
+
+        /// This is a not totally save method to ensure that this works.
+        /// Apparently when input_rows_count == 0 the indexes are not constructed yet.
+        /// This seems to happen when calling interpreter_with_analyzer->GetQueryPlan();
+        if (input_rows_count == 0)
+            return col_res;
+
+        // Read inputs
         const ColumnWithTypeAndName & index_argument = arguments[0];
         const ColumnWithTypeAndName & token_argument = arguments[1];
         const ColumnWithTypeAndName & part_index_argument = arguments[2];
@@ -142,24 +194,17 @@ public:
         chassert(part_index_argument.column->size() == input_rows_count);
         chassert(part_offset_argument.column->size() == input_rows_count);
 
-        auto col_res = ColumnVector<ResultType>::create(input_rows_count, ResultType());
-
-        /// This is a not totally save method to ensure that this works.
-        /// Apparently when input_rows_count == 0 the indexes are not constructed yet.
-        /// This seems to happen when calling interpreter_with_analyzer->GetQueryPlan();
-        if (input_rows_count == 0)
-            return col_res;
-
-        // Arguments
+        // parse inputs
         const String index_name = checkAndGetColumnConstStringOrFixedString(index_argument.column.get())->getValue<String>();
         const String token = checkAndGetColumnConstStringOrFixedString(token_argument.column.get())->getValue<String>();
-        const ColumnUInt64 * col_part_index_vector = extractColumnAndCheck<UInt64>(arguments, 2);
-        const ColumnUInt64 * col_part_offset_vector = extractColumnAndCheck<UInt64>(arguments, 3);
+        const ColumnVector<UInt64> * col_part_index_vector = extractColumnAndCheck<UInt64>(arguments, 2);
+        const ColumnVector<UInt64> * col_part_offset_vector = extractColumnAndCheck<UInt64>(arguments, 3);
 
         // Now search the part
         const size_t part_idx = col_part_index_vector->getElement(0);
+        chassert(part_idx == col_part_index_vector->getElement(input_rows_count - 1)); // We assume to work on one part at the time
 
-        /// Remember that the index_info_shared_lock is a shared mutex holded.
+        /// Remember that the index_info_shared_lock is a shared mutex hold from here up to function end
         auto [index_context_info, index_info_shared_lock] = context->getIndexInfo();
 
         const IndexContextInfo::PartInfo &part_info = index_context_info->part_info_vector[part_idx].value();
@@ -226,9 +271,6 @@ public:
 
         MergeTreeIndexGranulePtr granule = nullptr;
         size_t last_index_mark = 0;
-
-        auto & vec_res = col_res->getData();
-
         size_t idx = 0;
         size_t offset = col_part_offset_vector->getElement(idx);
 
@@ -265,41 +307,8 @@ public:
 
                 const std::vector<uint32_t> matching_rows = granule_gin->gin_filter.getIndices(filter.get(), cache_in_store.get());
 
-                /// col_part_offset_vector may have some "holes" but will be always strictly increasing, so in the worst case the distance
-                /// to the next mark start will be smaller or equal to mark_size.
-                /// If we detect a performance issue here, then we could use bisection as the array is sorted and the boundaries are
-                /// known.
-                size_t next_idx = idx;
-                while(next_idx < input_rows_count && col_part_offset_vector->getElement(next_idx) < mark_end)
-                    ++next_idx;
-
-                /// Extra boundary check.
-                chassert(col_part_offset_vector->getElement(next_idx - 1) >= (matching_rows.back() - 1));
-
-                for (uint32_t row : matching_rows)
-                {
-                    const size_t match_offset = row - 1;
-
-                    /// This is the same than an std::lower_bound, but simpler (and faster ;)
-                    size_t lower_bound_offset = col_part_offset_vector->getElement(idx);
-                    while (idx < next_idx && lower_bound_offset < match_offset)
-                        lower_bound_offset = col_part_offset_vector->getElement(++idx);
-
-                    if (idx == next_idx)
-                        break;
-
-                    chassert(lower_bound_offset >= match_offset);
-
-                    if (lower_bound_offset == match_offset)
-                    {
-                        chassert(vec_res[idx] == 0);
-                        vec_res[idx] = 1;
-                    }
-                    /// if (lower_bound_offset > match_offset) continue; /// there is a hole... just continue
-                }
-
-                idx = next_idx;
-                offset = (next_idx < input_rows_count) ? col_part_offset_vector->getElement(next_idx) : 0;
+                idx = postingArrayToOutput(matching_rows, col_part_offset_vector, col_res->getData(), idx, mark_end);
+                offset = (idx < input_rows_count) ? col_part_offset_vector->getElement(idx) : 0;
 
                 // if (matching_rows.size() > 0)
                 // {

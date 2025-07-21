@@ -1472,8 +1472,8 @@ public:
 
     bool setIndexInfo(IndexContextInfoPtr info) const
     {
-        /// TODO: JAM maybe we need some defensive code here to prevent re-assignation
         std::lock_guard lock(index_info_mutex);
+        chassert(index_info == nullptr);
         index_info = info;
         return true;
     }
