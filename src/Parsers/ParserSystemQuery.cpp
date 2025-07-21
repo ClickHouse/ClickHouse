@@ -528,13 +528,17 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         {
             ParserLiteral parser;
             ASTPtr ast;
-            if (ParserKeyword{Keyword::CONNECTIONS}.ignore(pos, expected))
+            if (parser.parse(pos, ast, expected))
+            {
+                res->distributed_cache_servive_id = ast->as<ASTLiteral>()->value.safeGet<String>();
+            }
+            else if (ParserKeyword{Keyword::CONNECTIONS}.ignore(pos, expected))
             {
                 res->distributed_cache_drop_connections = true;
             }
-            else if (parser.parse(pos, ast, expected))
+            else
             {
-                res->distributed_cache_server_id = ast->as<ASTLiteral>()->value.safeGet<String>();
+                return false;
             }
 
             break;

@@ -26,8 +26,8 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
     /// TODO fix this 0 WHERE, 1 HAVING, 2 WHERE + HAVING
     const uint32_t combination = 0;
 
-    can_test_oracle_result = fc.compare_success_results && rg.nextBool();
-    gen.setAllowEngineUDF(!can_test_oracle_result);
+    can_test_query_success = fc.compare_success_results && rg.nextBool();
+    gen.setAllowEngineUDF(!can_test_query_success);
     gen.setAllowNotDetermistic(false);
     gen.enforceFinal(true);
     gen.resetAliasCounter();
@@ -207,13 +207,12 @@ void QueryOracle::generateExportQuery(
     Insert * ins = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
     FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
     Expr * expr = ff->mutable_structure();
-    SelectParen * sparen = ins->mutable_select();
-    SelectStatementCore * sel = sparen->mutable_select()->mutable_select_core();
+    SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
     const std::filesystem::path & cnfile = fc.client_file_path / "table.data";
     const std::filesystem::path & snfile = fc.server_file_path / "table.data";
     OutFormat outf = rg.pickRandomly(StatementGenerator::outIn);
 
-    can_test_oracle_result &= test_content;
+    can_test_query_success &= test_content;
     /// Remove the file if exists
     if (!std::filesystem::remove(cnfile, ec) && ec)
     {
@@ -223,7 +222,7 @@ void QueryOracle::generateExportQuery(
     ff->set_fname(FileFunc_FName::FileFunc_FName_file);
 
     gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
-    if (!can_test_oracle_result && rg.nextSmallNumber() < 3)
+    if (!can_test_query_success && rg.nextSmallNumber() < 3)
     {
         /// Sometimes generate a not matching structure
         gen.addRandomRelation(rg, std::nullopt, gen.entries.size(), false, expr);
@@ -238,7 +237,7 @@ void QueryOracle::generateExportQuery(
             buf += fmt::format(
                 "{}{} {}{}{}{}",
                 first ? "" : ", ",
-                entry.columnPathRef(),
+                entry.getBottomName(),
                 entry.path.size() > 1 ? "Array(" : "",
                 entry.getBottomType()->typeName(false),
                 entry.path.size() > 1 ? ")" : "",
@@ -259,16 +258,16 @@ void QueryOracle::generateExportQuery(
     }
     if (rg.nextSmallNumber() < 10)
     {
-        const auto & settings = can_test_oracle_result ? serverSettings : formatSettings;
+        const auto & settings = can_test_query_success ? serverSettings : formatSettings;
         gen.generateSettingValues(rg, settings, ins->mutable_setting_values());
         const SettingValues & svs = ins->setting_values();
 
-        for (int i = 0; i < (svs.other_values_size() + 1) && can_test_oracle_result; i++)
+        for (int i = 0; i < (svs.other_values_size() + 1) && can_test_query_success; i++)
         {
             const SetValue & osv = i == 0 ? svs.set_value() : svs.other_values(i - 1);
             const CHSetting & ochs = settings.at(osv.property());
 
-            can_test_oracle_result &= !ochs.changes_behavior;
+            can_test_query_success &= !ochs.changes_behavior;
         }
     }
     /// Set the table on select
@@ -309,7 +308,7 @@ void QueryOracle::generateImportQuery(
     InsertFromFile * iff = nins->mutable_insert_file();
     const Insert & oins = sq2.single_query().explain().inner_query().insert();
     const FileFunc & ff = oins.tof().tfunc().file();
-    const InFormat & inf = (!can_test_oracle_result && rg.nextSmallNumber() < 4) ? rg.pickValueRandomlyFromMap(StatementGenerator::outIn)
+    const InFormat & inf = (!can_test_query_success && rg.nextSmallNumber() < 4) ? rg.pickValueRandomlyFromMap(StatementGenerator::outIn)
                                                                                  : StatementGenerator::outIn.at(ff.outformat());
 
     insertOnTableOrCluster(rg, gen, t, false, nins->mutable_tof());
@@ -328,7 +327,7 @@ void QueryOracle::generateImportQuery(
         iff->set_fcomp(ff.fcomp());
     }
 
-    if (!can_test_oracle_result && rg.nextSmallNumber() < 10)
+    if (!can_test_query_success && rg.nextSmallNumber() < 10)
     {
         /// If can't test success, swap settings sometimes
         svs = nins->mutable_setting_values();
@@ -339,7 +338,7 @@ void QueryOracle::generateImportQuery(
         svs = nins->mutable_setting_values();
         svs->CopyFrom(oins.setting_values());
     }
-    if ((can_test_oracle_result && inf == InFormat::IN_CSV) || inf == InFormat::IN_Parquet)
+    if ((can_test_query_success && inf == InFormat::IN_CSV) || inf == InFormat::IN_Parquet)
     {
         svs = svs ? svs : nins->mutable_setting_values();
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
@@ -398,7 +397,7 @@ bool QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
                 setv->set_value(rg.pickRandomly(chs.oracle_values));
                 nsettings.push_back(rg.pickRandomly(chs.oracle_values));
             }
-            can_test_oracle_result &= !chs.changes_behavior;
+            can_test_query_success &= !chs.changes_behavior;
         }
     }
     return use_settings;
@@ -434,7 +433,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     std::error_code ec;
     bool explain = false;
     Select * sel = nullptr;
-    SelectParen * sparen = nullptr;
+    Insert * ins = nullptr;
     const uint32_t ncols = (rg.nextMediumNumber() % 5) + UINT32_C(1);
 
     peer_query = pq;
@@ -454,8 +453,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     }
     else
     {
-        Insert * ins = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
-        sparen = ins->mutable_select();
+        ins = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
         FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
         OutFormat outf = rg.pickRandomly(StatementGenerator::outIn);
 
@@ -471,7 +469,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         }
         ff->set_outformat(outf);
         ff->set_fname(FileFunc_FName::FileFunc_FName_file);
-        sel = sparen->mutable_select();
+        sel = ins->mutable_select();
     }
 
     gen.setAllowNotDetermistic(false);
@@ -518,8 +516,8 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     if (!measure_performance && !explain && !global_aggregate)
     {
         /// If not global aggregate, use ORDER BY clause
-        Select * osel = sparen->release_select();
-        SelectStatementCore * nsel = sparen->mutable_select()->mutable_select_core();
+        Select * osel = ins->release_select();
+        SelectStatementCore * nsel = ins->mutable_select()->mutable_select_core();
         nsel->mutable_from()
             ->mutable_tos()
             ->mutable_join_clause()
@@ -533,26 +531,19 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         nsel->mutable_orderby()->set_oall(true);
         addLimitOrOffset(rg, gen, ncols, nsel);
     }
-
-    /// Don't write statistics
-    if (!sparen->select().has_setting_values())
-    {
-        Select & ssel = const_cast<Select &>(sparen->select());
-        const auto * news = ssel.mutable_setting_values();
-        UNUSED(news);
-    }
-    SettingValues & svs = const_cast<SettingValues &>(sparen->select().setting_values());
-    SetValue * sv = svs.has_set_value() ? svs.add_other_values() : svs.mutable_set_value();
-
-    sv->set_property("output_format_write_statistics");
-    sv->set_value("0");
-    if (measure_performance)
+    else if (measure_performance)
     {
         /// Add tag to find query later on
-        SetValue * sv2 = svs.add_other_values();
+        if (!sel->has_setting_values())
+        {
+            const auto * news = sel->mutable_setting_values();
+            UNUSED(news);
+        }
+        SettingValues & svs = const_cast<SettingValues &>(sel->setting_values());
+        SetValue * sv = svs.has_set_value() ? svs.add_other_values() : svs.mutable_set_value();
 
-        sv2->set_property("log_comment");
-        sv2->set_value("'measure_performance'");
+        sv->set_property("log_comment");
+        sv->set_value("'measure_performance'");
     }
 }
 
@@ -697,7 +688,7 @@ bool QueryOracle::findTablesWithPeersAndReplace(
                         }
                         found_tables.insert(tname);
                         res = !t.hasClickHousePeer();
-                        can_test_oracle_result &= t.hasClickHousePeer();
+                        can_test_query_success &= t.hasClickHousePeer();
                     }
                 }
             }
@@ -747,7 +738,7 @@ void QueryOracle::replaceQueryWithTablePeers(
 
     sq2.CopyFrom(sq1);
     const SQLQueryInner & sq2inner = sq2.single_query().explain().inner_query();
-    Select & nsel = const_cast<Select &>(measure_performance ? sq2inner.select().sel() : sq2inner.insert().select().select());
+    Select & nsel = const_cast<Select &>(measure_performance ? sq2inner.select().sel() : sq2inner.insert().select());
     /// Replace references
     const auto u = findTablesWithPeersAndReplace(rg, nsel, gen, peer_query != PeerQuery::ClickHouseOnly);
     UNUSED(u);
@@ -768,8 +759,7 @@ void QueryOracle::replaceQueryWithTablePeers(
         SQLQuery next;
         const SQLTable & t = gen.tables.at(entry);
         Insert * ins = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
-        SelectParen * sparen = ins->mutable_select();
-        SelectStatementCore * sel = sparen->mutable_select()->mutable_select_core();
+        SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
 
         /// Then insert the data
         insertOnTableOrCluster(rg, gen, t, true, ins->mutable_tof());
@@ -792,9 +782,8 @@ void QueryOracle::resetOracleValues()
 {
     peer_query = PeerQuery::AllPeers;
     measure_performance = false;
-    first_errcode = 0;
-    other_steps_sucess = true;
-    can_test_oracle_result = fc.compare_success_results;
+    first_success = other_steps_sucess = true;
+    can_test_query_success = fc.compare_success_results;
     res1 = PerformanceResult();
     res2 = PerformanceResult();
 }
@@ -804,9 +793,9 @@ void QueryOracle::setIntermediateStepSuccess(const bool success)
     other_steps_sucess &= success;
 }
 
-void QueryOracle::processFirstOracleQueryResult(const int errcode, ExternalIntegrations & ei)
+void QueryOracle::processFirstOracleQueryResult(const bool success, ExternalIntegrations & ei)
 {
-    if (!errcode)
+    if (success)
     {
         if (measure_performance)
         {
@@ -817,21 +806,18 @@ void QueryOracle::processFirstOracleQueryResult(const int errcode, ExternalInteg
             md5_hash1.hashFile(qcfile.generic_string(), first_digest);
         }
     }
-    first_errcode = errcode;
+    first_success = success;
 }
 
-void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalIntegrations & ei, const String & oracle_name)
+void QueryOracle::processSecondOracleQueryResult(const bool success, ExternalIntegrations & ei, const String & oracle_name)
 {
-    if (other_steps_sucess && can_test_oracle_result)
+    if (other_steps_sucess)
     {
-        if (first_errcode != errcode
-            && ((first_errcode && errcode)
-                || fc.oracle_ignore_error_codes.find(static_cast<uint32_t>(first_errcode ? first_errcode : errcode))
-                    == fc.oracle_ignore_error_codes.end()))
+        if (can_test_query_success && first_success != success)
         {
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "{}: failed with different success results", oracle_name);
         }
-        if (!first_errcode && !errcode)
+        if (first_success && success)
         {
             if (measure_performance)
             {

@@ -29,7 +29,7 @@ public:
 
     bool noRecords() { return !consumer || consumer->noRecords(); }
 
-    void close();
+    void onFinish();
 
     ~FileLogSource() override;
 

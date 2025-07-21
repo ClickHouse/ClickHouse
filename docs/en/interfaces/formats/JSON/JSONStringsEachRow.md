@@ -16,9 +16,9 @@ title: 'JSONStringsEachRow'
 
 Differs from the [`JSONEachRow`](./JSONEachRow.md) only in that data fields are output in strings, not in typed JSON values.
 
-## Example usage {#example-usage}
+## Example Usage {#example-usage}
 
-### Inserting data {#inserting-data}
+### Inserting Data {#inserting-data}
 
 Using a JSON file with the following data, named as `football.json`:
 
@@ -48,7 +48,7 @@ Insert the data:
 INSERT INTO football FROM INFILE 'football.json' FORMAT JSONStringsEachRow;
 ```
 
-### Reading data {#reading-data}
+### Reading Data {#reading-data}
 
 Read data using the `JSONStringsEachRow` format:
 
@@ -81,5 +81,5 @@ The output will be in JSON format:
 ```
 
 
-## Format settings {#format-settings}
+## Format Settings {#format-settings}
 

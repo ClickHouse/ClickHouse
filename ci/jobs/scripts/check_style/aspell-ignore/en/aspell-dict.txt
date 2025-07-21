@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3286 
+personal_ws-1.1 en 3283 
 AArch
 ACLs
 ALTERs
@@ -28,7 +28,6 @@ Akka
 AlertManager
 Alexey
 AnyEvent
-Anthropic
 AppleClang
 Approximative
 ArrayJoin
@@ -234,7 +233,6 @@ DESC
 DIEs
 DOGEFI
 Damerau
-Databricks
 DataGrip
 DataLens
 DataPacket
@@ -248,7 +246,6 @@ DatabaseOnDiskThreads
 DatabaseOnDiskThreadsActive
 DatabaseOrdinaryThreads
 DatabaseOrdinaryThreadsActive
-DataLakeCatalog
 DateTime
 DateTimeInputFormat
 DateTimeOutputFormat
@@ -309,7 +306,6 @@ Ethereum
 ExactEdgeLengthKm
 ExactEdgeLengthM
 ExactEdgeLengthRads
-Excel's
 ExecutablePool
 ExperimentalBadge
 ExtType
@@ -345,7 +341,6 @@ FixedString
 FixedStrings
 FlameGraph
 Flink
-FlyQL
 ForEach
 FreeBSD
 Fuzzer
@@ -586,7 +581,6 @@ LogsLevel
 Logstash
 LookML
 LoongArch
-Lossy
 LowCardinality
 LpDistance
 LpNorm
@@ -625,7 +619,6 @@ MaxThreads
 Mbps
 McNeal
 Memcheck
-memcheck
 MemoryCode
 MemoryDataAndStack
 MemoryResident
@@ -723,13 +716,8 @@ NumberOfDatabases
 NumberOfDetachedByUserParts
 NumberOfDetachedParts
 NumberOfTables
-NumericIndexedVector
-NumericIndexedVectors
-OAuth
 ODBCDriver
 OFNS
-OKLab
-OKLCH
 OLAP
 OLTP
 ORCCompression
@@ -790,12 +778,10 @@ OnTime
 OpenCelliD
 OpenFileForRead
 OpenFileForWrite
-OpenRouter
 OpenSSL
 OpenSUSE
 OpenSky
 OpenStack
-OpenAI
 OpenTelemetry
 OrDefault
 OrNull
@@ -814,6 +800,8 @@ PagerDuty
 ParallelFormattingOutputFormatThreads
 ParallelFormattingOutputFormatThreadsActive
 ParallelParsingInputFormat
+ParallelParsingInputFormatThreads
+ParallelParsingInputFormatThreadsActive
 ParallelReplicasMode
 ParquetCompression
 ParquetMetadata
@@ -913,9 +901,7 @@ RWLockWaitingWriters
 RabbitMQ
 Rabl
 RangeHashed
-Raphson
 RawBLOB
-RawSum
 RawWithNames
 RawWithNamesAndTypes
 ReDoS
@@ -1218,8 +1204,6 @@ WriteBuffer
 WriteBuffers
 XCode
 XHTML
-XIRR
-XNPV
 XORs
 Xeon
 YAML
@@ -1495,8 +1479,6 @@ cardinalities
 cardinality
 cartesian
 caseWithExpression
-cashflow
-cashflows
 cassandra
 catboost
 catboostEvaluate
@@ -1535,7 +1517,6 @@ checksumming
 checksums
 childern
 chproxy
-chroma
 chunksize
 cickhouse
 cipherList
@@ -1564,8 +1545,6 @@ codepoint
 codepoints
 codespell
 collapsingmergetree
-colorOKLCHToSRGB
-colorSRGBToOKLCH
 combinator
 combinators
 compareSubstrings
@@ -1849,10 +1828,6 @@ filesystemFree
 filesystemUnreserved
 filesystems
 finalizeAggregation
-financialInternalRateOfReturn
-financialInternalRateOfReturnExtended
-financialNetPresentValue
-financialNetPresentValueExtended
 fips
 firstLine
 firstSignficantSubdomain
@@ -1915,14 +1890,12 @@ geoToS
 geobase
 geobases
 geocode
-geocoding
 geohash
 geohashDecode
 geohashEncode
 geohashes
 geohashesInBox
 geoip
-geolocation
 geospatial
 getClientHTTPHeader
 getMacro
@@ -1974,7 +1947,6 @@ groupBitmapAnd
 groupBitmapOr
 groupBitmapXor
 groupConcat
-groupNumericIndexedVector
 groupUniqArray
 grouparray
 grouparrayinsertat
@@ -1992,7 +1964,6 @@ groupbitmapxor
 groupbitor
 groupbitxor
 groupconcat
-groupnumericindexedvector
 groupuniqarray
 grpc
 grpcio
@@ -2101,7 +2072,6 @@ isFinite
 isIPAddressInRange
 isIPv
 isInfinite
-isMergeTreePartCoveredBy
 isNaN
 isNotDistinctFrom
 isNotNull
@@ -2110,6 +2080,7 @@ isNullable
 isValidJSON
 isValidUTF
 isZeroOrNull
+isMergeTreePartCoveredBy
 iteratively
 jaccard
 jaccardIndex
@@ -2214,7 +2185,6 @@ libuv
 libvirt
 linearizability
 linearizable
-linearize
 linearized
 lineasstring
 linefeeds
@@ -2233,7 +2203,6 @@ loghouse
 london
 lookups
 loongarch
-lossy
 lowCardinalityIndices
 lowCardinalityKeys
 lowcardinality
@@ -2289,7 +2258,6 @@ mebibytes
 memtable
 memtables
 mergeTreeIndex
-mergeTreePartInfo
 mergeTreeProjection
 mergeable
 mergetree
@@ -2298,6 +2266,7 @@ metacharacters
 metasymbols
 metrica
 metroHash
+mergeTreePartInfo
 mfedotov
 mflix
 minMap
@@ -2445,23 +2414,6 @@ nullable
 nullables
 nullptr
 num
-numericIndexedVector
-numericIndexedVectorAllValueSum
-numericIndexedVectorBuild
-numericIndexedVectorCardinality
-numericIndexedVectorGetValue
-numericIndexedVectorPointwiseAdd
-numericIndexedVectorPointwiseDivide
-numericIndexedVectorPointwiseEqual
-numericIndexedVectorPointwiseGreater
-numericIndexedVectorPointwiseGreaterEqual
-numericIndexedVectorPointwiseLess
-numericIndexedVectorPointwiseLessEqual
-numericIndexedVectorPointwiseMultiply
-numericIndexedVectorPointwiseNotEqual
-numericIndexedVectorPointwiseSubtract
-numericIndexedVectorShortDebugString
-numericIndexedVectorToMap
 numerics
 nypd
 obfuscator
@@ -2529,7 +2481,6 @@ plantuml
 poco
 pointInEllipses
 pointInPolygon
-pointwise
 polygonAreaCartesian
 polygonAreaSpherical
 polygonConvexHullCartesian
@@ -2540,8 +2491,6 @@ polygonsDistanceSpherical
 polygonsEqualsCartesian
 polygonsIntersectionCartesian
 polygonsIntersectionSpherical
-polygonsIntersectCartesian
-polygonsIntersectSpherical
 polygonsSymDifferenceCartesian
 polygonsSymDifferenceSpherical
 polygonsUnionCartesian
@@ -2802,14 +2751,11 @@ russian
 rustc
 rustup
 rw
-sRGB
 sasl
 satisfiable
 scala
 sccache
 schemas
-searchAny
-searchAll
 seekable
 seektable
 sequenceCount

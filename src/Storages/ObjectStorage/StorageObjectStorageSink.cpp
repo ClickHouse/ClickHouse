@@ -1,4 +1,4 @@
-#include <Storages/ObjectStorage/StorageObjectStorageSink.h>
+#include "StorageObjectStorageSink.h"
 #include <Formats/FormatFactory.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/isValidUTF8.h>
@@ -24,9 +24,9 @@ namespace ErrorCodes
 StorageObjectStorageSink::StorageObjectStorageSink(
     const std::string & path_,
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration,
+    ConfigurationPtr configuration,
     const std::optional<FormatSettings> & format_settings_,
-    SharedHeader sample_block_,
+    const Block & sample_block_,
     ContextPtr context)
     : SinkToStorage(sample_block_)
     , path(path_)
@@ -45,7 +45,7 @@ StorageObjectStorageSink::StorageObjectStorageSink(
         static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]));
 
     writer = FormatFactory::instance().getOutputFormatParallelIfPossible(
-        configuration->format, *write_buf, *sample_block, context, format_settings_);
+        configuration->format, *write_buf, sample_block, context, format_settings_);
 }
 
 void StorageObjectStorageSink::consume(Chunk & chunk)
@@ -101,9 +101,9 @@ void StorageObjectStorageSink::cancelBuffers()
 
 PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     ObjectStoragePtr object_storage_,
-    StorageObjectStorageConfigurationPtr configuration_,
+    ConfigurationPtr configuration_,
     std::optional<FormatSettings> format_settings_,
-    SharedHeader sample_block_,
+    const Block & sample_block_,
     ContextPtr context_,
     const ASTPtr & partition_by)
     : PartitionedSink(partition_by, context_, sample_block_)

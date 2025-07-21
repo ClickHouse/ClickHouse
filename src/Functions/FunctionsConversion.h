@@ -593,17 +593,8 @@ struct ToDateTime64Transform
 
     DateTime64::NativeType execute(UInt16 d, const DateLUTImpl & time_zone) const
     {
-        /*
-         * Previous implementation delegated to ToDateTimeImpl, which returns a
-         * UInt32 unix timestamp and therefore saturates at 0xFFFFFFFF (2106-02-07).
-         * This caused overflows when casting Date values beyond that day to
-         * DateTime64.
-         *
-         * Compute the timestamp directly in 64-bit space from the day number so we
-         * can represent the full range supported by DateTime64.
-         */
-        Int64 dt = static_cast<Int64>(time_zone.fromDayNum(DayNum(d)));
-        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
+        const auto dt = ToDateTimeImpl<>::execute(d, time_zone);
+        return execute(dt, time_zone);
     }
 
     DateTime64::NativeType execute(Int32 d, const DateLUTImpl & time_zone) const
@@ -3482,23 +3473,8 @@ struct ToNumberMonotonicity
         /// Only support types represented by native integers.
         /// It can be extended to big integers, decimals and DateTime64 later.
         /// By the way, NULLs are representing unbounded ranges.
-        /// For null Field, check if the type is valid.
-        /// See : https://github.com/ClickHouse/ClickHouse/issues/80742
-        auto is_valid_uint64_or_int64_or_null = [&](const Field & f)
-        {
-            /// allow NULL only when inner type is a nativeInteger/enum/date/date32/datetime
-            if (f.isNull())
-                return which_inner_type.isNativeInteger() || which_inner_type.isEnum() || which_inner_type.isDateOrDate32()
-                    || which_inner_type.isDateTime();
-
-            /// otherwise must be one of the two 64-bit types
-            auto t = f.getType();
-            return t == Field::Types::UInt64
-                || t == Field::Types::Int64;
-        };
-
-        if (!is_valid_uint64_or_int64_or_null(left)
-            || !is_valid_uint64_or_int64_or_null(right))
+        if (!((left.isNull() || left.getType() == Field::Types::UInt64 || left.getType() == Field::Types::Int64)
+            && (right.isNull() || right.getType() == Field::Types::UInt64 || right.getType() == Field::Types::Int64)))
             return {};
 
         const bool from_is_unsigned = type.isValueRepresentedByUnsignedInteger();
@@ -4701,7 +4677,7 @@ private:
         /// For named tuples allow conversions for tuples with
         /// different sets of elements. If element exists in @to_type
         /// and doesn't exist in @to_type it will be filled by default values.
-        if (from_type->hasExplicitNames() && to_type->hasExplicitNames())
+        if (from_type->haveExplicitNames() && to_type->haveExplicitNames())
         {
             const auto & from_names = from_type->getElementNames();
             std::unordered_map<String, size_t> from_positions;
@@ -4900,7 +4876,7 @@ private:
 
     WrapperType createTupleToObjectDeprecatedWrapper(const DataTypeTuple & from_tuple, bool has_nullable_subcolumns) const
     {
-        if (!from_tuple.hasExplicitNames())
+        if (!from_tuple.haveExplicitNames())
             throw Exception(ErrorCodes::TYPE_MISMATCH,
             "Cast to Object can be performed only from flatten Named Tuple. Got: {}", from_tuple.getName());
 
@@ -5085,8 +5061,8 @@ private:
             new_elements.reserve(elements.size());
             for (const auto & element : elements)
                 new_elements.push_back(convertNestedObjectType(element, new_object_type));
-            return type_tuple->hasExplicitNames() ? std::make_shared<DataTypeTuple>(new_elements, type_tuple->getElementNames())
-                                                  : std::make_shared<DataTypeTuple>(new_elements);
+            return type_tuple->haveExplicitNames() ? std::make_shared<DataTypeTuple>(new_elements, type_tuple->getElementNames())
+                                                   : std::make_shared<DataTypeTuple>(new_elements);
         }
 
         return type;

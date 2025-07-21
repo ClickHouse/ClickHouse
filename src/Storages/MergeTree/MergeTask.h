@@ -71,7 +71,6 @@ using MergedPartOffsetsPtr = std::shared_ptr<MergedPartOffsets>;
 class MergeTask
 {
 public:
-    static constexpr auto TEMP_DIRECTORY_PREFIX = "tmp_merge_";
 
     MergeTask(
         FutureMergedMutatedPartPtr future_part_,
@@ -238,9 +237,6 @@ private:
         scope_guard temporary_directory_lock;
 
         UInt64 prev_elapsed_ms{0};
-
-        /// Current merge may or may not reduce number of rows. It's not known until the horizontal stage is finished.
-        bool merge_may_reduce_rows{false};
 
         // will throw an exception if merge was cancelled in any way.
         void checkOperationIsNotCanceled() const;

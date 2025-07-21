@@ -2,7 +2,6 @@
 #include <Core/SettingsEnums.h>
 #include <Databases/DataLake/HiveCatalog.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Databases/DataLake/DatabaseDataLakeSettings.h>
 
 #if USE_AVRO && USE_PARQUET
 
@@ -31,6 +30,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
 
+
 namespace DB
 {
 namespace DatabaseDataLakeSetting
@@ -42,13 +42,13 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString auth_scope;
     extern const DatabaseDataLakeSettingsString storage_endpoint;
     extern const DatabaseDataLakeSettingsString oauth_server_uri;
-    extern const DatabaseDataLakeSettingsBool oauth_server_use_request_body;
     extern const DatabaseDataLakeSettingsBool vended_credentials;
+
+
     extern const DatabaseDataLakeSettingsString aws_access_key_id;
     extern const DatabaseDataLakeSettingsString aws_secret_access_key;
     extern const DatabaseDataLakeSettingsString region;
 }
-
 namespace Setting
 {
     extern const SettingsBool allow_experimental_database_iceberg;
@@ -68,7 +68,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
     extern const int DATALAKE_DATABASE_ERROR;
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
 }
 
 namespace
@@ -94,15 +93,13 @@ DatabaseDataLake::DatabaseDataLake(
     const std::string & url_,
     const DatabaseDataLakeSettings & settings_,
     ASTPtr database_engine_definition_,
-    ASTPtr table_engine_definition_,
-    UUID uuid)
+    ASTPtr table_engine_definition_)
     : IDatabase(database_name_)
     , url(url_)
     , settings(settings_)
     , database_engine_definition(database_engine_definition_)
     , table_engine_definition(table_engine_definition_)
     , log(getLogger("DatabaseDataLake(" + database_name_ + ")"))
-    , db_uuid(uuid)
 {
     validateSettings();
 }
@@ -140,7 +137,6 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 settings[DatabaseDataLakeSetting::auth_scope].value,
                 settings[DatabaseDataLakeSetting::auth_header],
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
-                settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 Context::getGlobalContextInstance());
             break;
         }
@@ -157,10 +153,11 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
         case DB::DatabaseDataLakeCatalogType::GLUE:
         {
             catalog_impl = std::make_shared<DataLake::GlueCatalog>(
+                settings[DatabaseDataLakeSetting::aws_access_key_id].value,
+                settings[DatabaseDataLakeSetting::aws_secret_access_key].value,
+                settings[DatabaseDataLakeSetting::region].value,
                 url,
-                Context::getGlobalContextInstance(),
-                settings,
-                table_engine_definition);
+                Context::getGlobalContextInstance());
             break;
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_HIVE:
@@ -179,7 +176,7 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
     return catalog_impl;
 }
 
-std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfiguration(
+std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDataLake::getConfiguration(
     DatabaseDataLakeStorageType type,
     DataLakeStorageSettingsPtr storage_settings) const
 {
@@ -295,7 +292,8 @@ std::string DatabaseDataLake::getStorageEndpointForTable(const DataLake::TableMe
     auto endpoint_from_settings = settings[DatabaseDataLakeSetting::storage_endpoint].value;
     if (endpoint_from_settings.empty())
         return table_metadata.getLocation();
-    return table_metadata.getLocationWithEndpoint(endpoint_from_settings);
+    else
+        return table_metadata.getLocationWithEndpoint(endpoint_from_settings);
 }
 
 bool DatabaseDataLake::empty() const
@@ -353,6 +351,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             args[0] = std::make_shared<ASTLiteral>(table_endpoint);
     }
 
+
     /// We either fetch storage credentials from catalog
     /// or get storage credentials from database engine arguments
     /// in CREATE query (e.g. in `args`).
@@ -408,7 +407,12 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         auto metadata_location = table_specific_properties->iceberg_metadata_file_location;
         if (!metadata_location.empty())
         {
-            metadata_location = table_metadata.getMetadataLocation(metadata_location);
+            const auto data_location = table_metadata.getLocation();
+            if (metadata_location.starts_with(data_location))
+            {
+                size_t remove_slash = metadata_location[data_location.size()] == '/' ? 1 : 0;
+                metadata_location = metadata_location.substr(data_location.size() + remove_slash);
+            }
         }
 
         (*storage_settings)[DB::DataLakeStorageSetting::iceberg_metadata_file_path] = metadata_location;
@@ -424,7 +428,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
-    StorageObjectStorageConfiguration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
+    StorageObjectStorage::Configuration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
 
     return std::make_shared<StorageObjectStorage>(
         configuration,
@@ -449,70 +453,22 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
 {
     Tables tables;
     auto catalog = getCatalog();
-    DB::Names iceberg_tables;
+    const auto iceberg_tables = catalog->getTables();
 
-    /// Do not throw here, because this might be, for example, a query to system.tables.
-    /// It must not fail on case of some datalake error.
-    try
-    {
-        iceberg_tables = catalog->getTables();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-
-    auto & pool = Context::getGlobalContextInstance()->getIcebergCatalogThreadpool();
-
-    std::vector<std::shared_ptr<std::promise<StoragePtr>>> promises;
-    std::vector<std::future<StoragePtr>> futures;
     for (const auto & table_name : iceberg_tables)
     {
         if (filter_by_table_name && !filter_by_table_name(table_name))
             continue;
 
-        try
-        {
-            promises.emplace_back(std::make_shared<std::promise<StoragePtr>>());
-            futures.emplace_back(promises.back()->get_future());
+        auto storage = tryGetTableImpl(table_name, context_, false, skip_not_loaded);
 
-            pool.scheduleOrThrow(
-                [this, table_name, skip_not_loaded, context_, promise=promises.back()]() mutable
-                {
-                    try
-                    {
-                        auto storage = tryGetTableImpl(table_name, context_, false, skip_not_loaded);
-                        promise->set_value(storage);
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException(log, fmt::format("Ignoring table {}", table_name));
-                        promise->set_exception(std::current_exception());
-                    }
-                });
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Failed to schedule task");
-            pool.wait();
-
-            throw;
-        }
-    }
-
-    for (const auto & future : futures)
-        future.wait();
-
-    size_t future_index = 0;
-    for (const auto & table_name : iceberg_tables)
-    {
-        if (filter_by_table_name && !filter_by_table_name(table_name))
+        if (storage == nullptr)
             continue;
 
-        [[maybe_unused]] bool inserted = tables.emplace(table_name, futures[future_index].get()).second;
+        [[maybe_unused]] bool inserted = tables.emplace(table_name, storage).second;
         chassert(inserted);
-        future_index++;
     }
+
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
 }
 
@@ -521,25 +477,9 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
     const FilterByNameFunction & filter_by_table_name,
     bool skip_not_loaded) const
 {
-    Tables tables;
+     Tables tables;
     auto catalog = getCatalog();
-    DB::Names iceberg_tables;
-
-    /// Do not throw here, because this might be, for example, a query to system.tables.
-    /// It must not fail on case of some datalake error.
-    try
-    {
-        iceberg_tables = catalog->getTables();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-
-    auto & pool = Context::getGlobalContextInstance()->getIcebergCatalogThreadpool();
-
-    std::vector<std::shared_ptr<std::promise<StoragePtr>>> promises;
-    std::vector<std::future<StoragePtr>> futures;
+    const auto iceberg_tables = catalog->getTables();
 
     for (const auto & table_name : iceberg_tables)
     {
@@ -555,46 +495,17 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
         /// have this try/catch here.
         try
         {
-            promises.emplace_back(std::make_shared<std::promise<StoragePtr>>());
-            futures.emplace_back(promises.back()->get_future());
+            auto storage = tryGetTableImpl(table_name, context_, true, skip_not_loaded);
+            if (storage == nullptr)
+                continue;
 
-            pool.scheduleOrThrow(
-                [this, table_name, skip_not_loaded, context_, promise = promises.back()] mutable
-                {
-                    StoragePtr storage = nullptr;
-                    try
-                    {
-                        storage = tryGetTableImpl(table_name, context_, true, skip_not_loaded);
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException(log, fmt::format("ignoring table {}", table_name));
-                    }
-                    promise->set_value(storage);
-                });
+            [[maybe_unused]] bool inserted = tables.emplace(table_name, storage).second;
+            chassert(inserted);
         }
         catch (...)
         {
-            promises.back()->set_value(nullptr);
-            tryLogCurrentException(log, "Failed to schedule task into pool");
+            tryLogCurrentException(log, fmt::format("ignoring table {}", table_name));
         }
-    }
-
-    for (const auto & future : futures)
-        future.wait();
-
-    size_t future_index = 0;
-    for (const auto & table_name : iceberg_tables)
-    {
-        if (filter_by_table_name && !filter_by_table_name(table_name))
-            continue;
-
-        if (auto storage_ptr = futures[future_index].get(); storage_ptr != nullptr)
-        {
-            [[maybe_unused]] bool inserted = tables.emplace(table_name, storage_ptr).second;
-            chassert(inserted);
-        }
-        future_index++;
     }
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
@@ -617,12 +528,7 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     auto table_metadata = DataLake::TableMetadata().withLocation().withSchema();
 
     const auto [namespace_name, table_name] = parseTableName(name);
-
-    if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
-    {
-        throw Exception(
-            ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Table `{}` doesn't exist", name);
-    }
+    catalog->getTableMetadata(namespace_name, table_name, table_metadata);
 
     auto create_table_query = std::make_shared<ASTCreateQuery>();
     auto table_storage_define = table_engine_definition->clone();
@@ -732,7 +638,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                     && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                                    "DatabaseDataLake with Iceberg Rest catalog is experimental. "
+                                    "DatabaseDataLake with Icerberg Rest catalog is experimental. "
                                     "To allow its usage, enable setting allow_experimental_database_iceberg");
                 }
 
@@ -771,7 +677,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                     && !args.context->getSettingsRef()[Setting::allow_experimental_database_hms_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                                    "DatabaseDataLake with Iceberg Hive catalog is experimental. "
+                                    "DatabaseDataLake with Icerberg Hive catalog is experimental. "
                                     "To allow its usage, enable setting allow_experimental_database_hms_catalog");
                 }
 
@@ -785,8 +691,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             url,
             database_settings,
             database_engine_define->clone(),
-            std::move(engine_for_tables),
-            args.uuid);
+            std::move(engine_for_tables));
     };
     factory.registerDatabase("DataLakeCatalog", create_fn, { .supports_arguments = true, .supports_settings = true });
 }

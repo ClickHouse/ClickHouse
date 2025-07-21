@@ -27,8 +27,10 @@
 
 #if !CLICKHOUSE_CLOUD
 constexpr UInt64 default_min_bytes_for_wide_part = 10485760lu;
+constexpr bool default_allow_remote_fs_zero_copy_replication = false;
 #else
 constexpr UInt64 default_min_bytes_for_wide_part = 1024lu * 1024lu * 1024lu;
+constexpr bool default_allow_remote_fs_zero_copy_replication = true; /// TODO: Fix
 #endif
 
 namespace DB
@@ -988,7 +990,8 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(Seconds, remote_fs_execute_merges_on_single_replica_time_threshold, 3 * 60 * 60, R"(
     When this setting has a value greater than zero only a single replica starts
-    the merge immediately if merged part on shared storage.
+    the merge immediately if merged part on shared storage and
+    `allow_remote_fs_zero_copy_replication` is enabled.
 
     :::note
     Zero-copy replication is not ready for production
@@ -1604,9 +1607,9 @@ namespace ErrorCodes
     DECLARE(UInt64, part_moves_between_shards_delay_seconds, 30, R"(
     Time to wait before/after moving parts between shards.
     )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_remote_fs_zero_copy_replication, false, R"(
+    DECLARE(Bool, allow_remote_fs_zero_copy_replication, default_allow_remote_fs_zero_copy_replication, R"(
     Don't use this setting in production, because it is not ready.
-    )", EXPERIMENTAL) \
+    )", BETA) \
     DECLARE(String, remote_fs_zero_copy_zookeeper_path, "/clickhouse/zero_copy", R"(
     ZooKeeper path for zero-copy table-independent info.
     )", EXPERIMENTAL) \
