@@ -28,7 +28,7 @@ while [[ $counter -lt $retries ]]; do
     fi
 
     query_result=$($CLICKHOUSE_CLIENT -q "SELECT name, active, refcount FROM system.parts WHERE database = '$CLICKHOUSE_DATABASE' AND table = 't_insert_storage_snapshot' FORMAT CSV")
-    if [ "$query_result" == '"all_1_1_0",1,1' ]; then
+    if [ "$query_result" == '"all_1_1_0",1,3' ]; then
         echo "$query_result"
         break;
     fi
