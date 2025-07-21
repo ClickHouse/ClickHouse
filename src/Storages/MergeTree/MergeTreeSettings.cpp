@@ -1584,8 +1584,7 @@ namespace ErrorCodes
     of the table.
     )", 0) \
     DECLARE(Bool, add_minmax_index_for_string_columns, false, R"(
-    When enabled, min-max (skipping) indices are added for all string columns of
-    the table.
+    When enabled, min-max (skipping) indices are added for all string columns of the table.
     )", 0) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in
@@ -1695,6 +1694,12 @@ namespace ErrorCodes
     )", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
     Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
+    )", EXPERIMENTAL) \
+    DECLARE(UInt64, text_index_sampling_threshold, 1000, R"(
+    Enable cardinality sampling in text index for index granules with more than this number of rows.
+    )", EXPERIMENTAL) \
+    DECLARE(Float, text_index_sampling_rate, 0.1f, R"(
+    Ratio of sampled rows in text index compared to all rows.
     )", EXPERIMENTAL) \
     DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, false, R"(
     Enables writing attributes into virtual parts and committing blocks in keeper

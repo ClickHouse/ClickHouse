@@ -793,7 +793,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
-
+            {"text_index_sampling_threshold", 0, 1000, "New setting."},
+            {"text_index_sampling_rate", 0.0, 0.1, "New setting."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.7",
         {

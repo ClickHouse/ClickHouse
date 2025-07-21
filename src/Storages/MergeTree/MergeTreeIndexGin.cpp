@@ -1,3 +1,4 @@
+#include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexGin.h>
 
 #include <Columns/ColumnLowCardinality.h>
@@ -31,6 +32,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INCORRECT_QUERY;
+    extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
 }
 
@@ -89,13 +91,21 @@ MergeTreeIndexAggregatorGin::MergeTreeIndexAggregatorGin(
     GinIndexStorePtr store_,
     const Names & index_columns_,
     const String & index_name_,
-    TokenExtractorPtr token_extractor_)
+    TokenExtractorPtr token_extractor_,
+    const MergeTreeWriterSettings & settings)
     : store(store_)
     , index_columns(index_columns_)
     , index_name (index_name_)
     , token_extractor(token_extractor_)
     , granule(std::make_shared<MergeTreeIndexGranuleGin>(index_name))
+    , sampling_threshold(settings.text_index_sampling_threshold)
+    , sampling_rate(settings.text_index_sampling_rate)
 {
+    if (!std::isfinite(sampling_rate)
+        || sampling_rate < 0.0 || sampling_rate > 1.0)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting 'text_index_sampling_rate' must be between 0.0 and 1.0");
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorGin::getGranuleAndReset()
@@ -129,29 +139,34 @@ void MergeTreeIndexAggregatorGin::update(const Block & block, size_t * pos, size
     const auto & index_column_name = index_columns[0];
     const auto & index_column = block.getByName(index_column_name);
 
-    static const auto bloom_filter_sample_threshold = 1000;
-    static const auto bloom_filter_sample_rate = 0.1; /// 10%
-
-    if (rows_read >= bloom_filter_sample_threshold)
+    /// Make a rough guess how many unique values the column contains.
+    /// This is needed to size the internal bloom filter properly.
+    if (rows_read >= sampling_threshold)
     {
-        /// Compute column hashes from a sample (10%) of column data to have an estimated unique count ratio
-        const auto bloom_filter_sample_size = static_cast<size_t>(rows_read * bloom_filter_sample_rate);
+        /// Compute column hashes from a sample of column data.
+        /// A similar technique is used in MergeTreeIndexBloomFilter.
+        /// Side note: ::hashWithColumn processes a consecutive range of rows instead of a "true" random
+        ///            sample. Should still be fine for our purposes.
+        const auto sample_size = static_cast<size_t>(rows_read * sampling_rate);
         const ColumnPtr index_column_sample
-            = BloomFilterHash::hashWithColumn(index_column.type, index_column.column, *pos, bloom_filter_sample_size);
+            = BloomFilterHash::hashWithColumn(index_column.type, index_column.column, *pos, sample_size);
         const auto & sample_col = checkAndGetColumn<const ColumnUInt64>(*index_column_sample);
 
         HashSet<UInt64> sample_hashes;
         const auto & sample_data = sample_col.getData();
         for (const auto & hash : sample_data)
             sample_hashes.insert(hash);
+        const size_t unique_samples = sample_hashes.size();
 
-        const double unique_count_ratio = static_cast<double>(bloom_filter_sample_size) / sample_hashes.size();
-        const auto estimated_unique_count = static_cast<UInt64>(rows_read * unique_count_ratio);
+        const double unique_ratio = static_cast<double>(unique_samples) / sample_size;
+        const auto estimated_unique_count = static_cast<UInt64>(rows_read * unique_ratio);
         store->setEstimatedUniqueCount(estimated_unique_count);
     }
     else
+    {
         /// In case rows_read is small, assume all entries are unique
         store->setEstimatedUniqueCount(rows_read);
+    }
 
     auto start_row_id = store->getNextRowIDRange(rows_read);
 
@@ -707,16 +722,16 @@ MergeTreeIndexGranulePtr MergeTreeIndexGin::createIndexGranule() const
 MergeTreeIndexAggregatorPtr MergeTreeIndexGin::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
     /// should not be called: createIndexAggregatorForPart should be used
-    assert(false);
+    chassert(false);
     return nullptr;
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexGin::createIndexAggregatorForPart(const GinIndexStorePtr & store, const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexGin::createIndexAggregatorForPart(const GinIndexStorePtr & store, const MergeTreeWriterSettings & settings) const
 {
-    return std::make_shared<MergeTreeIndexAggregatorGin>(store, index.column_names, index.name, token_extractor.get());
+    return std::make_shared<MergeTreeIndexAggregatorGin>(store, index.column_names, index.name, token_extractor.get(), settings);
 }
 
-MergeTreeIndexConditionPtr MergeTreeIndexGin::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
+MergeTreeIndexConditionPtr MergeTreeIndexGin::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr /*context*/) const
 {
     return std::make_shared<MergeTreeIndexConditionGin>(predicate, context, index.sample_block, gin_filter_params, token_extractor.get());
 }
