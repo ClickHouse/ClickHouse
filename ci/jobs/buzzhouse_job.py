@@ -190,7 +190,7 @@ def main():
             "time_to_sleep_between_reconnects": 5000,
             "keeper_map_path_prefix": "/keeper_map_tables",
             "disabled_types": disabled_types_str,
-            #"disabled_engines": disabled_engines_str,
+            "disabled_engines": disabled_engines_str,
         }
         with open(buzz_config_file, "w") as outfile:
             outfile.write(json.dumps(buzz_config))
