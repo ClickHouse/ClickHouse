@@ -177,7 +177,6 @@ protected:
     void consume(Chunk chunk) override
     {
         num_rows += chunk.getNumRows();
-
         if (num_rows > max_rows_allowed)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection cannot increase the number of rows in a block. It's a bug");
 
