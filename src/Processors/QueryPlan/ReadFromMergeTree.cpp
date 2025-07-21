@@ -1852,14 +1852,14 @@ static void buildIndexes(
    
     for (auto idx : skip_indexes.useful_indices)
     {
-	UInt64 max_size = 0;
+        UInt64 max_size = 0;
         for (auto &part : parts)
         {
-		auto extension = idx.index->getDeserializedFormat(part.data_part->getDataPartStorage(), idx.index->getFileName()).extension;
-		auto sz = part.data_part->getFileSizeOrZero(idx.index->getFileName() + extension);
-		max_size = sz > max_size ? sz : max_size;
+            auto extension = idx.index->getDeserializedFormat(part.data_part->getDataPartStorage(), idx.index->getFileName()).extension;
+            auto sz = part.data_part->getFileSizeOrZero(idx.index->getFileName() + extension);
+            max_size = sz > max_size ? sz : max_size;
         }
-	max_index_sizes[idx.index->getFileName()] = max_size;
+        max_index_sizes[idx.index->getFileName()] = max_size;
     }
 
     // Move minmax indices to first positions, so they will be applied first as cheapest ones
