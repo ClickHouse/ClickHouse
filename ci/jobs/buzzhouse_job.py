@@ -58,6 +58,101 @@ def main():
     if res:
         print("Buzzing")
 
+        # Sometimes disallow SQL types to reduce number of combinations
+        disabled_types_str = ""
+        if random.randint(1, 2) == 1:
+            disabled_types = [
+                "bool",
+                "uint",
+                "int8",
+                "int64",
+                "int128",
+                "float",
+                "date",
+                "date32",
+                "time",
+                "time64",
+                "datetime",
+                "datetime64",
+                "string",
+                "decimal",
+                "uuid",
+                "enum",
+                "dynamic",
+                "json",
+                "nullable",
+                "lcard",
+                "array",
+                "map",
+                "tuple",
+                "variant",
+                "nested",
+                "ipv4",
+                "ipv6",
+                "geo",
+            ]
+            random.shuffle(disabled_types)
+            disabled_types_str = ",".join(
+                [_ for _ in disabled_types[: random.randint(1, len(disabled_types))]]
+            )
+
+        # Sometimes disallow Table and Database engines to reduce number of combinations
+        disabled_engines_str = ""
+        if random.randint(1, 2) == 1:
+            disabled_engines = [
+                "replacingmergetree",
+                "coalescingmergetree",
+                "summingmergetree",
+                "aggregatingmergetree",
+                "collapsingmergetree",
+                "versionedcollapsingmergetree",
+                "file",
+                "null",
+                "set",
+                "join",
+                "memory",
+                "stripelog",
+                "log",
+                "tinylog",
+                "embeddedrocksdb",
+                "buffer",
+                "mysql",
+                "postgresql",
+                "sqlite",
+                "mongodb",
+                "redis",
+                "s3",
+                "s3queue",
+                "hudi",
+                "deltalakes3",
+                "deltalakeazure",
+                "deltalakelocal",
+                "icebergs3",
+                "icebergazure",
+                "iceberglocal",
+                "merge",
+                "distributed",
+                "dictionary",
+                "generaterandom",
+                "azureblobstorage",
+                "azurequeue",
+                "url",
+                "keepermap",
+                "externaldistributed",
+                "materializedpostgresql",
+                "replicated",
+                "shared",
+            ]
+            random.shuffle(disabled_engines)
+            disabled_engines_str = ",".join(
+                [
+                    _
+                    for _ in disabled_engines[
+                        : random.randint(1, len(disabled_engines))
+                    ]
+                ]
+            )
+
         # Generate configuration file
         min_nested_rows = random.randint(0, 10)
         min_insert_rows = random.randint(1, 100)
@@ -94,6 +189,8 @@ def main():
             "max_reconnection_attempts": 3,
             "time_to_sleep_between_reconnects": 5000,
             "keeper_map_path_prefix": "/keeper_map_tables",
+            "disabled_types": disabled_types_str,
+            #"disabled_engines": disabled_engines_str,
         }
         with open(buzz_config_file, "w") as outfile:
             outfile.write(json.dumps(buzz_config))
