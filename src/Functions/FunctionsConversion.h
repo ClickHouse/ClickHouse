@@ -593,8 +593,17 @@ struct ToDateTime64Transform
 
     DateTime64::NativeType execute(UInt16 d, const DateLUTImpl & time_zone) const
     {
-        const auto dt = ToDateTimeImpl<>::execute(d, time_zone);
-        return execute(dt, time_zone);
+        /*
+         * Previous implementation delegated to ToDateTimeImpl, which returns a
+         * UInt32 unix timestamp and therefore saturates at 0xFFFFFFFF (2106-02-07).
+         * This caused overflows when casting Date values beyond that day to
+         * DateTime64.
+         *
+         * Compute the timestamp directly in 64-bit space from the day number so we
+         * can represent the full range supported by DateTime64.
+         */
+        Int64 dt = static_cast<Int64>(time_zone.fromDayNum(DayNum(d)));
+        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
     }
 
     DateTime64::NativeType execute(Int32 d, const DateLUTImpl & time_zone) const

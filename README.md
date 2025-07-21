@@ -34,9 +34,9 @@ curl https://clickhouse.com/ | sh
 
 ## Monthly Release & Community Call
 
-ClickHouse **Release 25.6** is published!
+Join us for the [ClickHouse **25.7** Community Call](https://clickhouse.com/company/events/v25-7-community-release-call) happening on July 24. We'll introduce Lightweight Updates, AI for clickhouse-client and more!
 
-This release includes the new data type, a new type of MergeTree, tokenization for logs, functions for time series, the new monitoring UI, and many more. [Presentation](https://presentations.clickhouse.com/2025-release-25.6/), [Video](https://www.youtube.com/watch?v=_9IBOM3pR4U), [Changelog](https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md).
+ClickHouse **Release 25.6** is published! This release included a new data type, a new type of MergeTree, tokenization for logs, functions for time series, the new monitoring UI, and many more. [Presentation](https://presentations.clickhouse.com/2025-release-25.6/), [Video](https://www.youtube.com/watch?v=_9IBOM3pR4U), [Changelog](https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md).
 
 ## Upcoming Events
 
@@ -46,17 +46,19 @@ Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com.
 You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 Upcoming meetups
-* [Denver Meetup](https://lu.ma/j7qm8o6i) - June 26, 2025
-* [Bangalore Meetup](https://www.meetup.com/clickhouse-bangalore-user-group/events/308323519/) - June 27, 2025
-* [ClickHouse + Docker AI Night](https://lu.ma/g9nhgnlh) - July 1st 2025
-* [Perth Meetup](https://www.meetup.com/clickhouse-perth-user-group/events/308421971/) - July 2, 2025
-* [Atlanta Meetup](https://www.meetup.com/clickhouse-atlanta-meetup-group/events/307627590/) - July 8, 2025
-* [Philadelphia Meetup](https://www.meetup.com/clickhouse-philadelphia-user-group/events/308333554/) - July 10, 2025
-* [Los Gatos Meetup](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/308546075) - July 10, 2025
-* [New York Meetup](https://www.meetup.com/clickhouse-new-york-user-group/events/307627675/) - July 15, 2025
-
+* [Hong Kong Meetup](https://www.meetup.com/clickhouse-hong-kong-meetup-group/events/308568412/) - July 17, 2025
+* [Bogota Meetup](https://www.meetup.com/clickhouse-latinoamerica/events/308819394/) - August 5, 2025
+* [Buenos Aires Meetup](https://www.meetup.com/clickhouse-latinoamerica/events/308819423/) - August 7, 2025
 
 Recent meetups
+* [New York Meetup](https://www.meetup.com/clickhouse-new-york-user-group/events/307627675/) - July 15, 2025
+* [Los Gatos Meetup](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/308546075) - July 10, 2025
+* [Philadelphia Meetup](https://www.meetup.com/clickhouse-philadelphia-user-group/events/308333554/) - July 10, 2025
+* [Atlanta Meetup](https://www.meetup.com/clickhouse-atlanta-meetup-group/events/307627590/) - July 8, 2025
+* [Perth Meetup](https://www.meetup.com/clickhouse-perth-user-group/events/308421971/) - July 2, 2025
+* [ClickHouse + Docker AI Night](https://lu.ma/g9nhgnlh) - July 1st 2025
+* [Bangalore Meetup](https://www.meetup.com/clickhouse-bangalore-user-group/events/308323519/) - June 27, 2025
+* [Denver Meetup](https://lu.ma/j7qm8o6i) - June 26, 2025
 * [Amsterdam Meetup](https://www.meetup.com/clickhouse-netherlands-user-group/events/308053051/) - June 25, 2025
 * [Berlin Meetup](https://www.meetup.com/clickhouse-berlin-user-group/events/307866586/) - June 24, 2025
 * [Sydney Meetup](https://www.meetup.com/clickhouse-australia-user-group/events/308248552/) - June 19, 2025
