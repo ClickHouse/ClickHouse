@@ -51,18 +51,16 @@ except Exception as e:
 import docker
 from dict2xml import dict2xml
 from docker.models.containers import Container
-from .kazoo_client import KazooClientWithImplicitRetries
 from kazoo.exceptions import KazooException
 from minio import Minio
 
 from . import pytest_xdist_logging_to_separate_files
-from .client import QueryRuntimeException
-from .test_tools import assert_eq_with_retry, exec_query_with_retry
-
-from .client import Client
+from .client import Client, QueryRuntimeException
 from .config_cluster import *
+from .kazoo_client import KazooClientWithImplicitRetries
 from .random_settings import write_random_settings_config
 from .retry_decorator import retry
+from .test_tools import assert_eq_with_retry, exec_query_with_retry
 
 HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
@@ -299,10 +297,12 @@ def run_rabbitmqctl(rabbitmq_id, cookie, command, timeout=90):
         raise RuntimeError(error_message)
     except subprocess.TimeoutExpired as e:
         # Raised if the command times out
-        output = f". Output: {e.stdout.decode(errors='replace')}" if e.stdout is not None else ""
-        raise RuntimeError(
-            f"rabbitmqctl {command} timed out{output}"
+        output = (
+            f". Output: {e.stdout.decode(errors='replace')}"
+            if e.stdout is not None
+            else ""
         )
+        raise RuntimeError(f"rabbitmqctl {command} timed out{output}")
 
 
 def check_rabbitmq_is_available(rabbitmq_id, cookie):
@@ -1464,14 +1464,17 @@ class ClickHouseCluster:
         return self.base_iceberg_hms_cmd
 
     def setup_iceberg_catalog_cmd(
-        self, instance, env_variables, docker_compose_yml_dir
+        self, instance, env_variables, docker_compose_yml_dir, extra_parameters=None
     ):
         self.with_iceberg_catalog = True
+        file_name = "docker_compose_iceberg_rest_catalog.yml"
+        if extra_parameters is not None and extra_parameters["docker_compose_file_name"] != "":
+            file_name = extra_parameters["docker_compose_file_name"]
         self.base_cmd.extend(
             [
                 "--file",
                 p.join(
-                    docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml"
+                    docker_compose_yml_dir, file_name
                 ),
             ]
         )
@@ -1479,7 +1482,7 @@ class ClickHouseCluster:
             "--env-file",
             instance.env_file,
             "--file",
-            p.join(docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml"),
+            p.join(docker_compose_yml_dir, file_name),
         )
         return self.base_iceberg_catalog_cmd
 
@@ -1689,6 +1692,7 @@ class ClickHouseCluster:
         use_docker_init_flag=False,
         clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
         with_dolor=False,
+        extra_parameters=None,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
 
@@ -1822,6 +1826,7 @@ class ClickHouseCluster:
             randomize_settings=randomize_settings,
             use_docker_init_flag=use_docker_init_flag,
             with_dolor=with_dolor,
+            extra_parameters=extra_parameters,
         )
 
         docker_compose_yml_dir = get_docker_compose_path()
@@ -1980,7 +1985,7 @@ class ClickHouseCluster:
         if with_iceberg_catalog and not self.with_iceberg_catalog:
             cmds.append(
                 self.setup_iceberg_catalog_cmd(
-                    instance, env_variables, docker_compose_yml_dir
+                    instance, env_variables, docker_compose_yml_dir, extra_parameters
                 )
             )
 
@@ -2226,6 +2231,47 @@ class ClickHouseCluster:
                     ),
                 ],
             )
+
+    def copy_file_from_container(self, container_id, src_path, local_path):
+        result = self.exec_in_container(
+            container_id,
+            [
+                "bash",
+                "-c",
+                "base64 {}".format(src_path),
+            ],
+        )
+
+        if result:
+            decoded_data = base64.b64decode(result)
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            with open(local_path, "wb") as f:
+                f.write(decoded_data)
+        else:
+            raise RuntimeError(f"Failed to read or empty content from {src_path} in container {container_id}")
+
+    def file_exists_in_container(self, container_id, path):
+        try:
+            self.exec_in_container(
+                container_id,
+                ["bash", "-c", f"test -f {path}"]
+            )
+            return True
+        except Exception:
+            return False
+        
+    def get_files_list_in_container(self, container_id, path):
+        result = self.exec_in_container(
+            container_id,
+            [
+                "bash",
+                "-c",
+                f"find {path} -type f"
+            ],
+        )
+
+        files = result.strip().splitlines() if result else []
+        return files            
 
     def move_file_in_container(self, container_id, old_path, new_path):
         self.exec_in_container(
@@ -3671,6 +3717,7 @@ class ClickHouseInstance:
         randomize_settings=True,
         use_docker_init_flag=False,
         with_dolor=False,
+        extra_parameters=None,
     ):
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -4454,6 +4501,21 @@ class ClickHouseInstance:
     def copy_file_to_container(self, local_path, dest_path):
         return self.cluster.copy_file_to_container(
             self.docker_id, local_path, dest_path
+        )
+
+    def copy_file_from_container(self, dest_path, local_path):
+        return self.cluster.copy_file_from_container(
+            self.docker_id, dest_path, local_path
+        )
+
+    def file_exists_in_container(self, path):
+        return self.cluster.file_exists_in_container(
+            self.docker_id, path
+        )
+    
+    def get_files_list_in_container(self, path):
+        return self.cluster.get_files_list_in_container(
+            self.docker_id, path
         )
 
     def move_file_in_container(self, old_path, new_path):

@@ -123,7 +123,7 @@ ReplicatedMergeTreeSinkImpl<async_insert>::ReplicatedMergeTreeSinkImpl(
     ContextPtr context_,
     bool is_attach_,
     bool allow_attach_while_readonly_)
-    : SinkToStorage(metadata_snapshot_->getSampleBlock())
+    : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , required_quorum_size(majority_quorum ? std::nullopt : std::make_optional<size_t>(quorum_size))

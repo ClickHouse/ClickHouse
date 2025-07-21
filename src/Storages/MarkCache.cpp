@@ -1,19 +1,16 @@
 #include <Common/SipHash.h>
-#include <Common/CurrentMetrics.h>
 #include <Storages/MarkCache.h>
-
-namespace CurrentMetrics
-{
-    extern const Metric MarkCacheBytes;
-    extern const Metric MarkCacheFiles;
-}
 
 namespace DB
 {
 template class CacheBase<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>;
 
-MarkCache::MarkCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
-    : Base(cache_policy, CurrentMetrics::MarkCacheBytes, CurrentMetrics::MarkCacheFiles, max_size_in_bytes, 0, size_ratio)
+MarkCache::MarkCache(const String & cache_policy,
+    CurrentMetrics::Metric size_in_bytes_metric,
+    CurrentMetrics::Metric count_metric,
+    size_t max_size_in_bytes,
+    double size_ratio)
+    : Base(cache_policy, size_in_bytes_metric, count_metric, max_size_in_bytes, 0, size_ratio)
 {
 }
 

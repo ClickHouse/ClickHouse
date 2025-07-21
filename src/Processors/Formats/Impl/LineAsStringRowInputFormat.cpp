@@ -13,11 +13,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-LineAsStringRowInputFormat::LineAsStringRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_) :
+LineAsStringRowInputFormat::LineAsStringRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_) :
     IRowInputFormat(header_, in_, std::move(params_))
 {
-    if (header_.columns() != 1
-        || !typeid_cast<const ColumnString *>(header_.getByPosition(0).column.get()))
+    if (header_->columns() != 1
+        || !typeid_cast<const ColumnString *>(header_->getByPosition(0).column.get()))
     {
         throw Exception(ErrorCodes::INCORRECT_QUERY, "This input format is only suitable for tables with a single column of type String.");
     }
@@ -71,7 +71,7 @@ void registerInputFormatLineAsString(FormatFactory & factory)
         const RowInputFormatParams & params,
         const FormatSettings &)
     {
-        return std::make_shared<LineAsStringRowInputFormat>(sample, buf, params);
+        return std::make_shared<LineAsStringRowInputFormat>(std::make_shared<const Block>(sample), buf, params);
     });
 }
 

@@ -154,7 +154,7 @@ public:
         std::optional<size_t> number_of_current_replica_ = std::nullopt);
 
     ReadFromMergeTree(const ReadFromMergeTree &) = default;
-    ReadFromMergeTree(ReadFromMergeTree &&) = default;
+    ReadFromMergeTree(ReadFromMergeTree &&) noexcept = default;
 
     std::unique_ptr<ReadFromMergeTree> createLocalParallelReplicasReadingStep(
         AnalysisResultPtr analyzed_result_ptr_,
@@ -253,6 +253,9 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     void setVectorSearchParameters(std::optional<VectorSearchParameters> && vector_search_parameters_) { vector_search_parameters = vector_search_parameters_; }
+    std::optional<VectorSearchParameters> getVectorSearchParameters() const { return vector_search_parameters; }
+
+    bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
 
 private:
     MergeTreeReaderSettings reader_settings;

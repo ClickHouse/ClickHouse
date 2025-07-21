@@ -10,7 +10,7 @@ namespace DB
 
 std::vector<String> listFiles(
     const IObjectStorage & object_storage,
-    const StorageObjectStorage::Configuration & configuration,
+    const StorageObjectStorageConfiguration & configuration,
     const String & prefix, const String & suffix)
 {
     auto key = std::filesystem::path(configuration.getPath()) / prefix;

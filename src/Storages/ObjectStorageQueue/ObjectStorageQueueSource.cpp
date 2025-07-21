@@ -78,7 +78,7 @@ ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObject
 ObjectStorageQueueSource::FileIterator::FileIterator(
     std::shared_ptr<ObjectStorageQueueMetadata> metadata_,
     ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
+    StorageObjectStorageConfigurationPtr configuration_,
     const StorageID & storage_id_,
     size_t list_objects_batch_size_,
     const ActionsDAG::Node * predicate_,
@@ -717,7 +717,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     String name_,
     size_t processor_id_,
     std::shared_ptr<FileIterator> file_iterator_,
-    ConfigurationPtr configuration_,
+    StorageObjectStorageConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
     ProcessingProgressPtr progress_,
     const ReadFromFormatInfo & read_from_format_info_,
@@ -733,7 +733,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     const StorageID & storage_id_,
     LoggerPtr log_,
     bool commit_once_processed_)
-    : ISource(read_from_format_info_.source_header)
+    : ISource(std::make_shared<const Block>(read_from_format_info_.source_header))
     , WithContext(context_)
     , name(std::move(name_))
     , processor_id(processor_id_)

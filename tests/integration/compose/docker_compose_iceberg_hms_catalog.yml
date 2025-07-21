@@ -17,7 +17,7 @@ services:
       - 10001:10001
 
   hive:
-    build: ./../../integration/test_database_hms/hms_extensions/
+    image: clickhouse/integration-test-with-hms
     restart: unless-stopped
     depends_on:
       minio:
@@ -31,7 +31,7 @@ services:
       test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/9083"]
       interval: 2s
       timeout: 5s
-      retries: 15
+      retries: 45
       start_period: 45s
 
   # TODO: can we simply use with_minio=True instead?

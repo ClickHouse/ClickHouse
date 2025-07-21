@@ -127,6 +127,14 @@ void optimizeTreeSecondPass(
     std::unordered_set<String> applied_projection_names;
     bool has_reading_from_mt = false;
 
+    Optimization::ExtraSettings extra_settings = {
+        optimization_settings.max_limit_for_vector_search_queries,
+        optimization_settings.vector_search_with_rescoring,
+        optimization_settings.vector_search_filter_strategy,
+        optimization_settings.use_index_for_in_with_subqueries_max_values,
+        optimization_settings.network_transfer_limits,
+    };
+
     Stack stack;
     stack.push_back({.node = &root});
 
@@ -284,6 +292,37 @@ void optimizeTreeSecondPass(
         }
 
         stack.pop_back();
+    }
+
+    /// Vector search first pass optimization sets up everything for vector index usage.
+    /// In the 2nd pass, we optimize further by attempting to do an "index-only scan".
+    if (optimization_settings.try_use_vector_search && !extra_settings.vector_search_with_rescoring)
+    {
+        chassert(stack.empty());
+        stack.push_back({.node = &root});
+        while (!stack.empty())
+        {
+            auto & frame = stack.back();
+
+            if (frame.next_child == 0)
+            {
+                if (optimizeVectorSearchSecondPass(root, stack, nodes, extra_settings))
+                    break;
+            }
+
+            /// Traverse all children first.
+            if (frame.next_child < frame.node->children.size())
+            {
+                auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+                ++frame.next_child;
+                stack.push_back(next_frame);
+                continue;
+            }
+
+            stack.pop_back();
+        }
+        while (!stack.empty()) /// Vector search only for 1 substree with ORDER BY..LIMIT
+            stack.pop_back();
     }
 
     /// projection optimizations can introduce additional reading step
