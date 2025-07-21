@@ -2225,6 +2225,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     num_parts += active_parts.size();
 
+    /// Should go before lockParts() to avoid TSAN false-positive lock-order-inversion.
+    std::unique_lock columns_and_secondary_indices_sizes_lock(columns_and_secondary_indices_sizes_mutex);
+
     auto part_lock = lockParts();
 
     MutableDataPartsVector broken_parts_to_detach;
@@ -5697,25 +5700,16 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesIfNeeded(DataPartsLock 
     /// If we already have data parts lock, just iterate over parts and calculate sizes.
     if (lock)
     {
-        calculateColumnAndSecondaryIndexSizesIfNeededWithPartsLocked();
+        /// Take into account only committed parts
+        auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
+        for (const auto & part : committed_parts_range)
+            addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
     }
     /// If we have columns with dynamic subcolumns like JSON, columns size calculation
     /// can read a column sample from each part, it can be slow and we don't want to
     /// do it under parts lock, so we create a copy of the data parts.
     else if (hasColumnsWithDynamicSubcolumns(getInMemoryMetadataPtr()->getSampleBlock()))
     {
-        /// Before making a copy, check if we already calculated all sizes.
-        /// We cannot lock parts mutex while holding columns_and_secondary_indices_sizes_mutex
-        /// because TSAN complains about lock-order-inversion (because on other places
-        /// we first lock parts and then columns_and_secondary_indices_sizes_mutex).
-        /// This is actually false-positive, but to avoid this TSAN complaint
-        /// we should make a copy with unlocked columns_and_secondary_indices_sizes_mutex.
-        {
-            std::unique_lock columns_and_secondary_indices_sizes_lock(columns_and_secondary_indices_sizes_mutex);
-            if (are_columns_and_secondary_indices_sizes_calculated)
-                return;
-        }
-
         DataParts data_parts;
         {
             auto parts_lock = lockParts();
@@ -5724,42 +5718,17 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesIfNeeded(DataPartsLock 
             data_parts.insert(committed_parts_range.begin(), committed_parts_range.end());
         }
 
-        calculateColumnAndSecondaryIndexSizesIfNeededWithPartsCopy(data_parts);
+        for (const auto & part : data_parts)
+            addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
     }
     /// If there are no columns with dynamic subcolumns, lock parts, iterate over them and calculate sizes.
     else
     {
         auto parts_lock = lockParts();
-        calculateColumnAndSecondaryIndexSizesIfNeededWithPartsLocked();
+        auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
+        for (const auto & part : committed_parts_range)
+            addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
     }
-}
-
-void MergeTreeData::calculateColumnAndSecondaryIndexSizesIfNeededWithPartsLocked() const
-{
-    std::unique_lock columns_and_secondary_indices_sizes_lock(columns_and_secondary_indices_sizes_mutex);
-    if (are_columns_and_secondary_indices_sizes_calculated)
-        return;
-
-    column_sizes.clear();
-
-    /// Take into account only committed parts
-    auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
-    for (const auto & part : committed_parts_range)
-        addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
-
-    are_columns_and_secondary_indices_sizes_calculated = true;
-}
-
-void MergeTreeData::calculateColumnAndSecondaryIndexSizesIfNeededWithPartsCopy(const DataParts & parts) const
-{
-    std::unique_lock columns_and_secondary_indices_sizes_lock(columns_and_secondary_indices_sizes_mutex);
-    if (are_columns_and_secondary_indices_sizes_calculated)
-        return;
-
-    column_sizes.clear();
-
-    for (const auto & part : parts)
-        addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
 }
 
 void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const

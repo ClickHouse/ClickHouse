@@ -989,6 +989,7 @@ public:
 
     size_t getColumnCompressedSize(const std::string & name) const
     {
+        std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
         calculateColumnAndSecondaryIndexSizesIfNeeded();
         const auto it = column_sizes.find(name);
         return it == std::end(column_sizes) ? 0 : it->second.data_compressed;
@@ -996,6 +997,7 @@ public:
 
     ColumnSizeByName getColumnSizes() const override
     {
+        std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
         calculateColumnAndSecondaryIndexSizesIfNeeded();
         return column_sizes;
     }
@@ -1006,6 +1008,7 @@ public:
 
     IndexSizeByName getSecondaryIndexSizes() const override
     {
+        std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
         calculateColumnAndSecondaryIndexSizesIfNeeded();
         return secondary_index_sizes;
     }
@@ -1523,7 +1526,8 @@ protected:
 
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 
-    /// Calculates column and secondary indexes sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
+    /// Calculates column and secondary indexes sizes in compressed form for the current state of data_parts.
+    /// Call with columns_and_secondary_indices_sizes_mutex mutex locked and propagate lock on data_parts of any.
     void calculateColumnAndSecondaryIndexSizesIfNeeded(DataPartsLock * lock = nullptr) const;
 
     /// Adds or subtracts the contribution of the part to compressed column and secondary indexes sizes.
@@ -1883,9 +1887,6 @@ private:
     createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
 
     bool isReadonlySetting(const std::string & setting_name) const;
-
-    void calculateColumnAndSecondaryIndexSizesIfNeededWithPartsLocked() const;
-    void calculateColumnAndSecondaryIndexSizesIfNeededWithPartsCopy(const DataParts & parts) const;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.
