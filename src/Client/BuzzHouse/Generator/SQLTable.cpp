@@ -1758,6 +1758,8 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     const bool has_tables = collectionHas<SQLTable>(hasTableOrView<SQLTable>(b));
     const bool has_views = collectionHas<SQLView>(hasTableOrView<SQLView>(b));
     const bool has_dictionaries = collectionHas<SQLDictionary>(hasTableOrView<SQLDictionary>(b));
+    const bool allow_mysql_tbl = connections.hasMySQLConnection() && (fc.engine_mask & allow_mysql) != 0;
+    const bool allow_postgresql_tbl = connections.hasPostgreSQLConnection() && (fc.engine_mask & allow_postgresql) != 0;
 
     if ((fc.engine_mask & allow_file) != 0)
     {
@@ -1827,13 +1829,13 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     }
     if (use_external_integrations)
     {
-        if (connections.hasMySQLConnection() && (fc.engine_mask & allow_mysql) != 0)
+        if (allow_mysql_tbl)
         {
             this->ids.emplace_back(MySQL);
         }
         if (connections.hasPostgreSQLConnection())
         {
-            if ((fc.engine_mask & allow_postgresql) != 0)
+            if (allow_postgresql_tbl)
             {
                 this->ids.emplace_back(PostgreSQL);
             }
@@ -1880,8 +1882,7 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         {
             this->ids.emplace_back(URL);
         }
-        if ((connections.hasMySQLConnection() && (fc.engine_mask & allow_mysql) != 0)
-            || (connections.hasPostgreSQLConnection() && (fc.engine_mask & allow_postgresql) != 0))
+        if (allow_mysql_tbl || allow_postgresql_tbl)
         {
             this->ids.emplace_back(ExternalDistributed);
         }
@@ -1891,7 +1892,7 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     this->ids.clear();
     if (b.isExternalDistributedEngine())
     {
-        b.sub = (!connections.hasMySQLConnection() || rg.nextBool()) ? PostgreSQL : MySQL;
+        b.sub = (!allow_mysql_tbl || rg.nextBool()) ? PostgreSQL : MySQL;
     }
 }
 
