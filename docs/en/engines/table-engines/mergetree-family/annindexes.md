@@ -352,6 +352,10 @@ Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
     └─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+:::note
+A query run without rescoring (`vector_search_with_rescoring = 0`) and with parallel replicas enabled may fall back to rescoring.
+:::
+
 ### Performance tuning {#performance-tuning}
 
 **Tuning Compression**
