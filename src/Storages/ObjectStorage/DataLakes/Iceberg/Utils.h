@@ -54,6 +54,7 @@ struct MetadataFileWithInfo
     CompressionMethod compression_method;
 };
 
+/// Spec: https://iceberg.apache.org/spec/?h=metadata.json#table-metadata-fields
 String createEmptyMetadataFile(
     String path_location,
     const ColumnsDescription & columns,

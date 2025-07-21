@@ -71,6 +71,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         args.comment,
         format_settings,
         args.mode,
+        args.query.if_not_exists,
         /* distributed_processing */ false,
         partition_by);
 }

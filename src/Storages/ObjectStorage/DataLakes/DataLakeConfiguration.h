@@ -86,17 +86,19 @@ public:
         ObjectStoragePtr object_storage,
         ContextPtr local_context,
         const std::optional<ColumnsDescription> & columns,
-        ASTPtr partition_by) override
+        ASTPtr partition_by,
+        bool if_not_exists) override
     {
         BaseStorageConfiguration::create(
-            object_storage, local_context, columns, partition_by);
+            object_storage, local_context, columns, partition_by, if_not_exists);
 
         DataLakeMetadata::createInitial(
             object_storage,
             weak_from_this(),
             local_context,
             columns,
-            partition_by
+            partition_by,
+            if_not_exists
         );
     }
 

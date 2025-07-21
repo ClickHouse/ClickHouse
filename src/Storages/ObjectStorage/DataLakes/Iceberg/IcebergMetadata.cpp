@@ -58,6 +58,7 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
+extern const int TABLE_ALREADY_EXISTS;
 }
 
 namespace Setting
@@ -456,16 +457,23 @@ void IcebergMetadata::createInitial(
     const StorageObjectStorageConfigurationWeakPtr & configuration,
     const ContextPtr & local_context,
     const std::optional<ColumnsDescription> & columns,
-    ASTPtr partition_by)
+    ASTPtr partition_by,
+    bool if_not_exists)
 {
     auto configuration_ptr = configuration.lock();
 
-    const auto metadata_files = listFiles(*object_storage, *configuration_ptr, "metadata", ".metadata.json");
-    if (!metadata_files.empty())
-        return;
-
     auto metadata_content = createEmptyMetadataFile(configuration_ptr->getPath(), *columns, partition_by, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
     auto filename = configuration_ptr->getPath() + "metadata/v1.metadata.json";
+
+    const auto metadata_files = listFiles(*object_storage, *configuration_ptr, "metadata", ".metadata.json");
+    if (!metadata_files.empty())
+    {
+        if (if_not_exists)
+            return;
+        else
+            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Iceberg table with path {} already exists", configuration_ptr->getPath());
+    }
+
     auto buffer_metadata = object_storage->writeObject(
         StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, local_context->getWriteSettings());
     buffer_metadata->write(metadata_content.data(), metadata_content.size());

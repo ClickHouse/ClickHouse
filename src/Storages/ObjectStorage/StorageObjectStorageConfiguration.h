@@ -143,7 +143,8 @@ public:
         ObjectStoragePtr object_storage,
         ContextPtr local_context,
         const std::optional<ColumnsDescription> & columns,
-        ASTPtr partition_by);
+        ASTPtr partition_by,
+        bool if_not_exists);
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
     {

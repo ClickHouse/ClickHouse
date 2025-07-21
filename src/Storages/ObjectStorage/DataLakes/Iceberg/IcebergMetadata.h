@@ -59,7 +59,8 @@ public:
         const StorageObjectStorageConfigurationWeakPtr & configuration,
         const ContextPtr & local_context,
         const std::optional<ColumnsDescription> & columns,
-        ASTPtr partition_by);
+        ASTPtr partition_by,
+        bool if_not_exists);
 
     static DataLakeMetadataPtr create(
         const ObjectStoragePtr & object_storage,

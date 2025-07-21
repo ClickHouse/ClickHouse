@@ -30,7 +30,8 @@ void StorageObjectStorageConfiguration::create( ///NOLINT
     ObjectStoragePtr object_storage_ptr,
     ContextPtr context,
     const std::optional<ColumnsDescription> & /*columns*/,
-    ASTPtr /*partition_by*/)
+    ASTPtr /*partition_by*/,
+    bool /*if_not_exists*/)
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);

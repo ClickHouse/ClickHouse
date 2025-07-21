@@ -203,6 +203,7 @@ def get_creation_expression(
     schema="",
     format_version=2,
     partition_by="",
+    if_not_exists=False,
     format="Parquet",
     table_function=False,
     allow_dynamic_metadata_for_data_lakes=False,
@@ -230,6 +231,10 @@ def get_creation_expression(
     else:
         settings_expression = ""
 
+    if_not_exists_prefix = ""
+    if if_not_exists:
+        if_not_exists_prefix = "IF NOT EXISTS"        
+
     if storage_type == "s3":
         if "bucket" in kwargs:
             bucket = kwargs["bucket"]
@@ -246,7 +251,7 @@ def get_creation_expression(
                 return (
                     f"""
                     DROP TABLE IF EXISTS {table_name};
-                    CREATE TABLE {table_name} {schema}
+                    CREATE TABLE {if_not_exists_prefix} {table_name} {schema}
                     ENGINE=IcebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')
                     {partition_by}
                     {settings_expression}
@@ -268,7 +273,7 @@ def get_creation_expression(
                 return (
                     f"""
                     DROP TABLE IF EXISTS {table_name};
-                    CREATE TABLE {table_name} {schema}
+                    CREATE TABLE {if_not_exists_prefix} {table_name} {schema}
                     ENGINE=IcebergAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})
                     {partition_by}
                     {settings_expression}
@@ -286,7 +291,7 @@ def get_creation_expression(
             return (
                 f"""
                 DROP TABLE IF EXISTS {table_name};
-                CREATE TABLE {table_name} {schema}
+                CREATE TABLE {if_not_exists_prefix} {table_name} {schema}
                 ENGINE=IcebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format})
                 {partition_by}
                 {settings_expression}
@@ -331,11 +336,12 @@ def create_iceberg_table(
     schema="",
     format_version=2,
     partition_by="",
+    if_not_exists=False,
     format="Parquet",
     **kwargs,
 ):
     node.query(
-        get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, format, **kwargs)
+        get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, format, **kwargs)
     )
 
 
@@ -4733,6 +4739,11 @@ def test_writes_create_table(started_cluster, format_version, storage_type):
     TABLE_NAME = "test_bucket_partition_pruning_" + storage_type + "_" + get_uuid_str()
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x String)", format_version)
+
+    with pytest.raises(Exception):
+        create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x String)", format_version)
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster, "(x String)", format_version, "", True)    
 
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
 

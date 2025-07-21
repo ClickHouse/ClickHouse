@@ -93,6 +93,7 @@ StorageObjectStorage::StorageObjectStorage(
     const String & comment,
     std::optional<FormatSettings> format_settings_,
     LoadingStrictnessLevel mode,
+    bool if_not_exists_,
     bool distributed_processing_,
     ASTPtr partition_by_,
     bool is_table_function,
@@ -111,13 +112,14 @@ StorageObjectStorage::StorageObjectStorage(
         && !configuration->isDataLakeConfiguration();
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
 
-    if (!columns_.empty())
+    if (!is_table_function && !columns_.empty())
     {
         configuration->create(
             object_storage,
             context,
             columns_,
-            partition_by_
+            partition_by_,
+            if_not_exists_
         );
     }
 

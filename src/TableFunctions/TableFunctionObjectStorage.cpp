@@ -207,6 +207,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         /* comment */ String{},
         /* format_settings */ std::nullopt,
         /* mode */ LoadingStrictnessLevel::CREATE,
+        /* if_not_exists*/false,
         /* distributed_processing */ is_secondary_query,
         /* partition_by */ nullptr,
         /* is_table_function */ true);
