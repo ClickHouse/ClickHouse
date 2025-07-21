@@ -63,7 +63,7 @@ class NativeORCBlockInputFormat : public IInputFormat
 {
 public:
     NativeORCBlockInputFormat(
-        ReadBuffer & in_, Block header_, const FormatSettings & format_settings_, bool use_prefetch_, size_t min_bytes_for_seek_, FormatParserGroupPtr parser_group_);
+        ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_, bool use_prefetch_, size_t min_bytes_for_seek_, FormatParserGroupPtr parser_group_);
 
     String getName() const override { return "ORCBlockInputFormat"; }
 

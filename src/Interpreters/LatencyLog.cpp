@@ -29,8 +29,8 @@ ColumnsDescription LatencyLogElement::getColumnsDescription()
 
     for (size_t i = 0, end = LatencyBuckets::end(); i < end; ++i)
     {
-        auto name = fmt::format("LatencyEvent_{}", LatencyBuckets::getName(LatencyBuckets::Event(i)));
-        const auto * comment = LatencyBuckets::getDocumentation(LatencyBuckets::Event(i));
+        auto name = fmt::format("LatencyEvent_{}", LatencyBuckets::getName(LatencyBuckets::LatencyEvent(i)));
+        const auto * comment = LatencyBuckets::getDocumentation(LatencyBuckets::LatencyEvent(i));
         result.add({std::move(name), std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), comment});
     }
 
@@ -57,7 +57,7 @@ void LatencyLog::stepFunction(const std::chrono::system_clock::time_point curren
     elem.event_time_microseconds = timeInMicroseconds(current_time);
 
     elem.latency_buckets_values.resize(LatencyBuckets::end());
-    for (LatencyBuckets::Event i = LatencyBuckets::Event(0), end = LatencyBuckets::end(); i < end; ++i)
+    for (LatencyBuckets::LatencyEvent i = LatencyBuckets::LatencyEvent(0), end = LatencyBuckets::end(); i < end; ++i)
     {
         LatencyBuckets::Count sum = 0;
         for (auto & bucket : LatencyBuckets::global_bucket_lists[i])

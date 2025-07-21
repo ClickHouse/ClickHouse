@@ -8,10 +8,10 @@
 namespace DB
 {
 
-JSONColumnsBlockOutputFormat::JSONColumnsBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool validate_utf8, size_t indent_)
+JSONColumnsBlockOutputFormat::JSONColumnsBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, bool validate_utf8, size_t indent_)
     : JSONColumnsBlockOutputFormatBase(out_, header_, format_settings_, validate_utf8), indent(indent_), header(header_)
 {
-    names = JSONUtils::makeNamesValidJSONStrings(header_.getNames(), format_settings, validate_utf8);
+    names = JSONUtils::makeNamesValidJSONStrings(header_->getNames(), format_settings, validate_utf8);
 }
 
 void JSONColumnsBlockOutputFormat::writeChunkStart()
@@ -29,7 +29,7 @@ void JSONColumnsBlockOutputFormat::writeChunkEnd()
     /// Write empty chunk
     if (!written_rows)
     {
-        const auto & columns = header.getColumns();
+        const auto & columns = header->getColumns();
         for (size_t i = 0; i != columns.size(); ++i)
         {
             writeColumnStart(i);
@@ -49,7 +49,7 @@ void registerOutputFormatJSONColumns(FormatFactory & factory)
         const Block & sample,
         const FormatSettings & format_settings)
     {
-        return std::make_shared<JSONColumnsBlockOutputFormat>(buf, sample, format_settings, format_settings.json.validate_utf8);
+        return std::make_shared<JSONColumnsBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings, format_settings.json.validate_utf8);
     });
 
     factory.setContentType("JSONColumns", "application/json; charset=UTF-8");
