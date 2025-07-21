@@ -419,6 +419,7 @@ bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_no
 QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, const ContextPtr & context)
 {
     auto function_node = std::make_shared<FunctionNode>("and");
+    function_node->markAsOperator();
     auto and_function = FunctionFactory::instance().get("and", context);
     function_node->getArguments().getNodes() = condition_nodes;
     function_node->resolveAsFunction(and_function->build(function_node->getArgumentColumns()));

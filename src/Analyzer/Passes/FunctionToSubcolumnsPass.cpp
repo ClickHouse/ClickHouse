@@ -210,6 +210,7 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
 
             auto new_column_node = std::make_shared<ColumnNode>(column, ctx.column_source);
             auto function_node_not = std::make_shared<FunctionNode>("not");
+            function_node_not->markAsOperator();
 
             function_node_not->getArguments().getNodes().push_back(std::move(new_column_node));
             resolveOrdinaryFunctionNodeByName(*function_node_not, "not", ctx.context);

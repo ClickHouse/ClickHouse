@@ -3009,6 +3009,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             QueryTreeNodePtr constant = std::make_shared<ConstantNode>(1UL, constant_data_type);
 
             function_node_ptr = std::make_shared<FunctionNode>("in");
+            function_node_ptr->markAsOperator();
             function_node_ptr->getArguments().getNodes() = {
                 constant,
                 std::move(new_exists_argument)
