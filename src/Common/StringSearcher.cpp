@@ -1,6 +1,7 @@
+#include <Common/TargetSpecific.h>
+
 #include <base/getPageSize.h>
 #include <Common/StringSearcher.h>
-#include <Common/TargetSpecific.h>
 #include <Common/UTF8Helpers.h>
 
 #include <cstdint>
@@ -19,7 +20,7 @@
 #define SZ_DEBUG 0
 #define SZ_DYNAMIC_DISPATCH 0
 
-#if ENABLE_MULTITARGET_CODE
+#if USE_MULTITARGET_CODE
 #    define SZ_USE_X86_AVX512 1
 #    define SZ_USE_X86_AVX2 1
 #elif defined(__aarch64__) && defined(__ARM_NEON)
@@ -63,12 +64,46 @@ public:
 
     bool compare(const UInt8 * /*haystack*/, const UInt8 * /*haystack_end*/, const UInt8 * pos) const override
     {
-        return sz_equal(needle, reinterpret_cast<sz_cptr_t>(pos), needle_end - needle);
+        sz_cptr_t pos_cptr = reinterpret_cast<sz_cptr_t>(pos);
+        size_t needle_size = needle_end - needle;
+
+#if defined(__aarch64__) && defined(__ARM_NEON)
+        return sz_equal_neon(pos_cptr, needle, needle_size);
+#else
+#    if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX512BW))
+            return sz_equal_avx512(pos_cptr, needle, needle_size);
+        else if (isArchSupported(TargetArch::AVX2))
+            return sz_equal_avx2(pos_cptr, needle, needle_size);
+#    endif
+        return sz_equal_serial(pos_cptr, needle, needle_size);
+#endif
     }
 
     const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const override
     {
-        auto * res = sz_find(reinterpret_cast<sz_cptr_t>(haystack), haystack_end - haystack, needle, needle_end - needle);
+        const char * res = nullptr;
+        sz_cptr_t haystack_cptr = reinterpret_cast<sz_cptr_t>(haystack);
+        size_t haystack_size = haystack_end - haystack;
+        size_t needle_size = needle_end - needle;
+
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX512BW))
+            res = sz_find_avx512(haystack_cptr, haystack_size, needle, needle_size);
+        else if (isArchSupported(TargetArch::AVX2))
+            res = sz_find_avx2(haystack_cptr, haystack_size, needle, needle_size);
+        else
+            res = sz_find_serial(haystack_cptr, haystack_size, needle, needle_size);
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+        {
+            res = sz_find_neon(haystack_cptr, haystack_size, needle, needle_size);
+        }
+#else
+        {
+            res = sz_find_serial(haystack_cptr, haystack_size, needle, needle_size);
+        }
+#endif
+
         if (!res)
             return haystack_end;
         return reinterpret_cast<const UInt8 *>(res);
