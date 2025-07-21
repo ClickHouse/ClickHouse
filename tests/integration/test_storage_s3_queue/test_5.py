@@ -966,8 +966,9 @@ def test_shutdown_order(started_cluster):
     node.query(f"DROP TABLE {new_table_name} SYNC")
 
 
+@pytest.mark.parametrize("mode", ["unordered", "ordered"])
 @pytest.mark.parametrize("limit", [1, 9999999999])
-def test_mv_settings(started_cluster, limit):
+def test_mv_settings(started_cluster, mode, limit):
     node = started_cluster.instances["instance"]
     table_name = f"test_mv_settings_{generate_random_string()}"
     dst_table_name = f"{table_name}_dst"
@@ -984,7 +985,7 @@ def test_mv_settings(started_cluster, limit):
         started_cluster,
         node,
         table_name,
-        "unordered",
+        mode,
         files_path,
         format=format,
         additional_settings={
