@@ -580,7 +580,7 @@ StringRef IColumnHelper<Derived, Parent>::serializeValueIntoArena(size_t n, Aren
 }
 
 template <typename Derived, typename Parent>
-char * IColumnHelper<Derived, Parent>::serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const
+ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const
 {
     const auto & self = static_cast<const Derived &>(*this);
     if (is_null)
