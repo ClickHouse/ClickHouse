@@ -17,8 +17,8 @@ class RunnerLabels:
     CI_SERVICES_EBS = "ci_services_ebs"
     BUILDER_AMD = ["self-hosted", "builder"]
     BUILDER_ARM = ["self-hosted", "builder-aarch64"]
-    FUNC_TESTER_AMD = ["self-hosted", "amd-small"]
-    FUNC_TESTER_ARM = ["self-hosted", "arm-small"]
+    FUNC_TESTER_AMD = ["self-hosted", "amd-medium"]
+    FUNC_TESTER_ARM = ["self-hosted", "arm-medium"]
     AMD_LARGE = ["self-hosted", "amd-large"]
     AMD_MEDIUM = ["self-hosted", "amd-medium"]
     AMD_SMALL = ["self-hosted", "amd-small"]
