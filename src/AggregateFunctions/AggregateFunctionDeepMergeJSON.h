@@ -15,8 +15,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int TOO_LARGE_ARRAY_SIZE;
-extern const int TOO_LARGE_STRING_SIZE;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
