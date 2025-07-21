@@ -4,7 +4,6 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/formatSettingName.h>
-#include <Storages/Kafka/Kafka_fwd.h>
 #include <Storages/NATS/NATS_fwd.h>
 #include <Storages/RabbitMQ/RabbitMQ_fwd.h>
 #include <Poco/Exception.h>
