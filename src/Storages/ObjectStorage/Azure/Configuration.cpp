@@ -150,16 +150,19 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
     format = collection.getOrDefault<String>("format", format);
     compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
 
-    static const auto default_partition_strategy_name = std::string(magic_enum::enum_name(PartitionStrategyFactory::StrategyType::NONE));
-    const auto partition_strategy_name = collection.getOrDefault<std::string>("partition_strategy", default_partition_strategy_name);
-    const auto partition_strategy_type_opt = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(partition_strategy_name, magic_enum::case_insensitive);
-
-    if (!partition_strategy_type_opt)
+    if (collection.has("partition_strategy"))
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy {} is not supported", partition_strategy_name);
+        const auto partition_strategy_name = collection.get<std::string>("partition_strategy");
+        const auto partition_strategy_type_opt = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(partition_strategy_name, magic_enum::case_insensitive);
+
+        if (!partition_strategy_type_opt)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy {} is not supported", partition_strategy_name);
+        }
+
+        partition_strategy_type = partition_strategy_type_opt.value();
     }
 
-    partition_strategy_type = partition_strategy_type_opt.value();
     partition_columns_in_data_file = collection.getOrDefault<bool>("partition_columns_in_data_file", partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE);
 
     blobs_paths = {blob_path};

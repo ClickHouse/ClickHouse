@@ -107,8 +107,6 @@ ENGINE = S3(s3_conn, filename = 't_03363_parquet', format=Parquet, partition_col
 -- hive partition strategy can't be set in select statement?
 select * from s3(s3_conn, filename='t_03363_function_write_down_partition_columns/**.parquet', format=Parquet, partition_strategy='hive'); -- {serverError BAD_ARGUMENTS}
 
-DROP TABLE IF EXISTS t_03363_parquet, t_03363_csv;
-
 -- do not support expressions in hive partitioning
 CREATE TABLE t_invalid_expression (year UInt16, country String, counter UInt8)
                                   ENGINE = S3(s3_conn, filename = 'invalid', format = Parquet, partition_strategy='hive')
@@ -122,3 +120,5 @@ CREATE TABLE t_invalid_expression (year UInt16, country String, counter Float64)
 -- Data lake like engines do not support the `partition_strategy` argument
 CREATE TABLE t_03363_iceberg ENGINE=IcebergS3(s3_conn, filename = 'iceberg_data/default/t_iceberg/', format='parquet', url = 'http://minio1:9001/bucket/', partition_strategy='WILDCARD'); -- {serverError BAD_ARGUMENTS}
 CREATE TABLE t_03363_iceberg ENGINE=IcebergS3(s3_conn, filename = 'iceberg_data/default/t_iceberg/', format='parquet', url = 'http://minio1:9001/bucket/', partition_strategy='HIVE'); -- {serverError BAD_ARGUMENTS}
+
+DROP TABLE IF EXISTS t_03363_parquet, t_03363_csv;
