@@ -5,6 +5,7 @@
 #include <Formats/ReadSchemaUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Interpreters/Context.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -82,7 +83,6 @@ void StorageObjectStorageConfiguration::initialize(
 
 void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context)
 {
-
     partition_strategy = PartitionStrategyFactory::get(
         partition_strategy_type,
         partition_by,
@@ -92,6 +92,11 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
         getRawPath().withGlobs(),
         getRawPath().withPartitionWildcard(),
         partition_columns_in_data_file);
+
+    if (partition_strategy)
+    {
+        LOG_DEBUG(getLogger("StorageObjectStorageConfiguration"), "Initialized partition strategy {}", magic_enum::enum_name(partition_strategy_type));
+    }
 }
 
 StorageObjectStorageConfiguration::Path StorageObjectStorageConfiguration::getPathForRead() const
