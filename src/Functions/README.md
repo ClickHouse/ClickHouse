@@ -54,4 +54,4 @@ negative number by minus one.
 - Begin `returned_value` with "Returns ..."
 - If an argument is optional, then begin the description with "Optional.". Do not include "(optional)" as part of the argument name.
 - Include argument and return types whenever possible. For a list see [FunctionDocumentation.cpp](../Common/FunctionDocumentation.cpp).
-- If multiple types are possible you can generalize them. For example instead of `UInt8`, `Int8` prefer `(U)Int8` or `(U)Int*` for all integer types.|    counter_high_bits    |
+- If multiple types are possible you can generalize them. For example instead of `UInt8`, `Int8` prefer `(U)Int8` or `(U)Int*` for all integer types.
