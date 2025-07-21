@@ -23,15 +23,16 @@ private:
     std::unordered_map<String, MarkRanges> ranges_by_name;
 };
 
-struct PatchRangesStats
+struct PatchRangeStats
 {
-    UInt64 min_block_number = 0;
-    UInt64 max_block_number = 0;
+    UInt64 min_value = 0;
+    UInt64 max_value = 0;
 };
 
-using MaybePatchRangesStats = std::optional<std::vector<PatchRangesStats>>;
+using PatchRangesStats = std::vector<PatchRangeStats>;
+using MaybePatchRangesStats = std::optional<PatchRangesStats>;
 
-MaybePatchRangesStats getPatchRangesStats(const DataPartPtr & patch_part, const MarkRanges & ranges);
-MarkRanges filterPatchRanges(const MarkRanges & ranges, const std::vector<PatchRangesStats> & patch_stats, const PatchRangesStats & result_stats);
+MaybePatchRangesStats getPatchRangesStats(const DataPartPtr & patch_part, const MarkRanges & ranges, const String & column_name);
+MarkRanges filterPatchRanges(const MarkRanges & ranges, const PatchRangesStats & patch_stats, const PatchRangeStats & result_stats);
 
 }

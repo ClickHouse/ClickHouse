@@ -16,6 +16,7 @@
 namespace ProfileEvents
 {
     extern const Event ReadPatchesMicroseconds;
+    extern const Event PatchesReadUncompressedBytes;
 }
 
 namespace DB
@@ -52,6 +53,7 @@ MergeTreePatchReader::ReadResult MergeTreePatchReader::readPatchRange(MarkRanges
         range_reader.getReader()->performRequiredConversions(read_result.columns);
 
     ProfileEvents::increment(ProfileEvents::ReadPatchesMicroseconds, watch.elapsedMicroseconds());
+    ProfileEvents::increment(ProfileEvents::PatchesReadUncompressedBytes, read_result.numBytesRead());
     return read_result;
 }
 
@@ -148,32 +150,39 @@ MergeTreePatchReaderJoin::MergeTreePatchReaderJoin(PatchPartInfoForReader patch_
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected patch with mode Join, got {}", patch_part.mode);
 }
 
-static PatchRangesStats getBlockNumberStats(const Block & result_block)
+static PatchRangeStats getResultBlockStats(const Block & result_block, const String & column_name)
 {
-    const auto & block_number_column = result_block.getByName(BlockNumberColumn::name).column;
+    const auto & column = result_block.getByName(column_name).column;
 
     Field min_value;
     Field max_value;
 
-    block_number_column->getExtremes(min_value, max_value);
+    column->getExtremes(min_value, max_value);
     return {min_value.safeGet<UInt64>(), max_value.safeGet<UInt64>()};
 }
 
-MergeTreePatchReader::PatchReadResultPtr MergeTreePatchReaderJoin::readPatch(MarkRanges & ranges, const Block & result_block)
+void MergeTreePatchReaderJoin::filterRangesByMinMaxIndex(MarkRanges & ranges, const Block & result_block, const String & column_name)
 {
     const auto * loaded_part_info = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(patch_part.part.get());
     if (!loaded_part_info)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Applying patch parts is supported only for loaded data parts");
 
-    MarkRanges ranges_to_read = ranges;
-    ranges.clear();
-    auto stats = getPatchRangesStats(loaded_part_info->getDataPart(), ranges_to_read);
+    auto stats = getPatchRangesStats(loaded_part_info->getDataPart(), ranges, column_name);
 
     if (stats.has_value())
     {
-        auto result_stats = getBlockNumberStats(result_block);
-        ranges_to_read = filterPatchRanges(ranges_to_read, stats.value(), result_stats);
+        auto result_stats = getResultBlockStats(result_block, column_name);
+        ranges = filterPatchRanges(ranges, stats.value(), result_stats);
     }
+}
+
+MergeTreePatchReader::PatchReadResultPtr MergeTreePatchReaderJoin::readPatch(MarkRanges & ranges, const Block & result_block)
+{
+    MarkRanges ranges_to_read = ranges;
+    ranges.clear();
+
+    filterRangesByMinMaxIndex(ranges_to_read, result_block, BlockNumberColumn::name);
+    filterRangesByMinMaxIndex(ranges_to_read, result_block, BlockOffsetColumn::name);
 
     auto read_patch = [&]
     {

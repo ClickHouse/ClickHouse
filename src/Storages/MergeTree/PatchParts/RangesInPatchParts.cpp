@@ -249,11 +249,15 @@ static std::pair<UInt64, UInt64> getMinMaxValues(const IMergeTreeIndexGranule & 
     return {min, max};
 }
 
-MaybePatchRangesStats getPatchRangesStats(const DataPartPtr & patch_part, const MarkRanges & ranges)
+MaybePatchRangesStats getPatchRangesStats(const DataPartPtr & patch_part, const MarkRanges & ranges, const String & column_name)
 {
     auto metadata_snapshot = patch_part->getMetadataSnapshot();
     const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
-    auto it = std::ranges::find_if(secondary_indices, [](const auto & index) { return index.name ==  IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + BlockNumberColumn::name; });
+
+    auto it = std::ranges::find_if(secondary_indices, [&](const auto & index)
+    {
+        return index.name ==  IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name;
+    });
 
     if (it == secondary_indices.end())
         return {};
@@ -279,7 +283,7 @@ MaybePatchRangesStats getPatchRangesStats(const DataPartPtr & patch_part, const 
         /*settings_=*/ {});
 
     MergeTreeIndexGranulePtr granule = nullptr;
-    std::vector<PatchRangesStats> result(ranges.size());
+    PatchRangesStats result(ranges.size());
 
     for (size_t i = 0; i < ranges.size(); ++i)
     {
@@ -290,29 +294,29 @@ MaybePatchRangesStats getPatchRangesStats(const DataPartPtr & patch_part, const 
             continue;
 
         reader.read(ranges[i].begin, granule);
-        std::tie(stats.min_block_number, stats.max_block_number) = getMinMaxValues(*granule);
+        std::tie(stats.min_value, stats.max_value) = getMinMaxValues(*granule);
 
         for (size_t j = ranges[i].begin + 1; j < last_mark; ++j)
         {
             reader.read(j, granule);
             auto [min, max] = getMinMaxValues(*granule);
 
-            stats.min_block_number = std::min(stats.min_block_number, min);
-            stats.max_block_number = std::max(stats.max_block_number, max);
+            stats.min_value = std::min(stats.min_value, min);
+            stats.max_value = std::max(stats.max_value, max);
         }
     }
 
     return result;
 }
 
-MarkRanges filterPatchRanges(const MarkRanges & ranges, const std::vector<PatchRangesStats> & patch_stats, const PatchRangesStats & result_stats)
+MarkRanges filterPatchRanges(const MarkRanges & ranges, const PatchRangesStats & patch_stats, const PatchRangeStats & result_stats)
 {
     chassert(ranges.size() == patch_stats.size());
 
     MarkRanges result;
     for (size_t i = 0; i < ranges.size(); ++i)
     {
-        if (result_stats.max_block_number < patch_stats[i].min_block_number || result_stats.min_block_number > patch_stats[i].max_block_number)
+        if (result_stats.max_value < patch_stats[i].min_value || result_stats.min_value > patch_stats[i].max_value)
             continue;
 
         result.push_back(ranges[i]);

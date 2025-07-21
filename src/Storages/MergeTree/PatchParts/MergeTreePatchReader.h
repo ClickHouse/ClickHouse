@@ -89,6 +89,8 @@ public:
     bool needOldPatch(const ReadResult &, const PatchReadResult &) const override { return true; }
 
 private:
+    void filterRangesByMinMaxIndex(MarkRanges & ranges, const Block & result_block, const String & column_name);
+
     PatchReadResultCache * read_result_cache;
 };
 
