@@ -459,13 +459,6 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
 
         /// Write array sizes.
         settings.path.push_back(Substream::ObjectSharedDataCopySizes);
-        auto * copy_sizes_stream = settings.getter(settings.path);
-
-        if (!copy_sizes_stream)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Got empty stream for shared data copy sizes in SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams");
-
         SerializationArray::serializeOffsetsBinaryBulk(shared_data_offsets_column, offset, limit, settings);
         settings.path.pop_back();
 
