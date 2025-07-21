@@ -374,7 +374,8 @@ For production use-cases, we recommend that the cache is sized large enough so t
 
 **Tuning Data Transfer**
 
-The search embedding vector is a user input in a similarity search query and is generally retrieved by making a call to an LLM. A typical Python code snippet to use similarity search in ClickHouse is shown below :
+The reference vector in a vector search query is provided by the user and generally retrieved by making a call to a Large Language Model (LLM).
+Typical Python code which runs a vector search in ClickHouse might look like this
 
 ```python
 search_v = openai_client.embeddings.create(input = "[Good Books]", model='text-embedding-3-large', dimensions=1536).data[0].embedding
@@ -384,10 +385,18 @@ result = chclient.query(
    "SELECT id FROM items
     ORDER BY cosineDistance(vector, %(search_v)s)
     LIMIT 10",
-    parameters=params)
+    parameters = params)
 ```
 
-An embedding vector could be of a very high dimension. OpenAI models generate embedding vectors of dimension 1536 or even 3072. Other models could output embedding vectors of dimension 4096 or more. The above code snippet will result in the ClickHouse driver to substitute the embedding vector in human readable string form in the ```search_v``` parameter and subsequently send the SELECT query entirely as a string. To illustrate, a SELECT query with 1536 floating point values in string form could reach lengths of 20kB or more. This large SQL string will lead to CPU usage for tokenizing, parsing and performing 1000's of string to floating point value conversions. The large SQL query will also occupy significant space in the ClickHouse server log file and cause bloat in the ```system.query_log``` table. Note that most LLM modules return an embedding vector as a ```list``` of native floats or as a Python ```NumPy``` array of native floats. Thus, ClickHouse recommends Python applications to bind the search vector parameter in ```binary``` form by using the following style :
+Embedding vectors (`search_v` in above snippet) could have a very large dimension.
+For example, OpenAI provides models that generate embeddings vectors with 1536 or even 3072 dimensions.
+In above code, the ClickHouse Python driver substitutes the embedding vector by a human readable string and subsequently send the SELECT query entirely as a string.
+Assuming the embedding vector consists of 1536 single-precision floating point values, the sent string reaches a length of 20 kB.
+This creates a high CPU usage for tokenizing, parsing and performing thousands of string-to-float conversions.
+Also, significant space is required in the ClickHouse server log file, causing bloat in `system.query_log` as well.
+
+Note that most LLM models return an embedding vector as a list or NumPy array of native floats.
+We therefore recommend Python applications to bind the reference vector parameter in binary form by using the following style:
 
 ```python
 search_v = openai_client.embeddings.create(input = "[Good Books]", model='text-embedding-3-large', dimensions=1536).data[0].embedding
@@ -396,11 +405,12 @@ params = {'$search_v_binary$': np.array(search_v, dtype=np.float32).tobytes()}
 result = chclient.query(
    "SELECT id FROM items
     ORDER BY cosineDistance(vector, (SELECT reinterpret($search_v_binary$, 'Array(Float32)')))
-    LIMIT 10" 
-    parameters=params)
+    LIMIT 10"
+    parameters = params)
 ```
 
-The above technique saves CPU time and avoids bloating of the ClickHouse server log file and ```system.query_log``` table.
+In the example, the reference vector is sent as-is in binary form and reinterpreted as array of floats on the server.
+This saves CPU time on the server side, and avoids bloat in the server logs and `system.query_log`.
 
 ### Administration and monitoring {#administration}
 
