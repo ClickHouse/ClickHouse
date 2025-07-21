@@ -778,45 +778,49 @@ StorageSnapshotPtr StorageDistributed::getStorageSnapshotForQuery(
 
 namespace
 {
-// class ReplaseAliasColumnsVisitor : public InDepthQueryTreeVisitor<ReplaseAliasColumnsVisitor>
-// {
-//     static QueryTreeNodePtr getColumnNodeAliasExpression(const QueryTreeNodePtr & node)
-//     {
-//         const auto * column_node = node->as<ColumnNode>();
-//         if (!column_node || !column_node->hasExpression())
-//             return nullptr;
+class ReplaseAliasColumnsVisitor : public InDepthQueryTreeVisitor<ReplaseAliasColumnsVisitor>
+{
+    static QueryTreeNodePtr getColumnNodeAliasExpression(const QueryTreeNodePtr & node)
+    {
+        const auto * column_node = node->as<ColumnNode>();
+        if (!column_node || !column_node->hasExpression())
+            return nullptr;
 
-//         const auto & column_source = column_node->getColumnSourceOrNull();
-//         if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
-//                            || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
-//                            || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
-//             return nullptr;
+        const auto & column_source = column_node->getColumnSourceOrNull();
+        if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
+                           || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
+                           || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+            return nullptr;
 
-//         auto column_expression = column_node->getExpression();
-//         column_expression->setAlias(column_node->getColumnName());
-//         return column_expression;
-//     }
+        auto column_expression = column_node->getExpression();
+        column_expression->setAlias(column_node->getColumnName());
+        return column_expression;
+    }
 
-// public:
-//     void visitImpl(QueryTreeNodePtr & node)
-//     {
-//         if (auto column_expression = getColumnNodeAliasExpression(node))
-//             node = column_expression;
-//     }
+public:
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        if (auto column_expression = getColumnNodeAliasExpression(node))
+            node = column_expression;
+    }
 
-//     static bool needChildVisit(const QueryTreeNodePtr & node, const QueryTreeNodePtr & /*child*/)
-//     {
+    static bool needChildVisit(const QueryTreeNodePtr & node, const QueryTreeNodePtr & /*child*/)
+    {
 
-//         const auto * column_node = node->as<ColumnNode>();
-//         if (!column_node)
-//             return true;
-//         const auto & column_source = column_node->getColumnSourceOrNull();
-//         if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN)
-//             return false;
+        const auto * column_node = node->as<ColumnNode>();
+        if (!column_node)
+            return true;
+        /// Skip JOIN USING section because it can only contain columns, not expressions.
+        /// Column expressions typically come from projections when 'analyzer_compatibility_join_using_top_level_identifier' is enabled.
+        /// Such queries will resolve properly on remote nodes.
+        /// Joining using aliased columns defined in Distributed table definitions is not supported.
+        const auto & column_source = column_node->getColumnSourceOrNull();
+        if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN)
+            return false;
 
-//         return true;
-//     }
-// };
+        return true;
+    }
+};
 
 class RewriteInToGlobalInVisitor : public InDepthQueryTreeVisitorWithContext<RewriteInToGlobalInVisitor>
 {
@@ -967,8 +971,8 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     replacement_table_expression->setAlias(query_info.table_expression->getAlias());
 
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
-    // ReplaseAliasColumnsVisitor replase_alias_columns_visitor;
-    // replase_alias_columns_visitor.visit(query_tree_to_modify);
+    ReplaseAliasColumnsVisitor replase_alias_columns_visitor;
+    replase_alias_columns_visitor.visit(query_tree_to_modify);
 
     const auto & settings = query_context->getSettingsRef();
 
