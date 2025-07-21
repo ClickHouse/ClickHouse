@@ -95,12 +95,14 @@ The format looks like this:
 ```xml
 <config>
     <connections_credentials>
-        <name>default</name>
-        <hostname>hostname</hostname>
-        <port>9440</port>
-        <secure>1</secure>
-        <user>default</user>
-        <password>password</password>
+        <connection>
+            <name>default</name>
+            <hostname>hostname</hostname>
+            <port>9440</port>
+            <secure>1</secure>
+            <user>default</user>
+            <password>password</password>
+        </connection>
     </connections_credentials>
 </config>
 ```
