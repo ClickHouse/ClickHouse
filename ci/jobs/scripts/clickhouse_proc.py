@@ -305,7 +305,7 @@ class ClickHouseProc:
         self.proc_2 = None
         self.pid = 0
         nproc = int(Utils.cpu_count() / 2)
-        self.fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' \
+        self.fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' \
         | tee -a \"{self.test_output_file}\""
         self.minio_proc = None
         self.azurite_proc = None
@@ -563,7 +563,6 @@ class ClickHouseProc:
             )
         )
         res = "success" in status
-        print(f"Clickminio restart status: {status}, res: {res}")
         if not res:
             print(f"ERROR: Failed to restart clickminio, status: {status}")
         return res
@@ -778,7 +777,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         results.append(
             Result.from_commands_run(
                 name="Exception in test runner",
-                command=f"! grep -A10 'Traceback (most recent call last)' {temp_dir}/job.log | head -n 100 | tee /dev/stderr | grep -q .",
+                command=f"! awk 'found && /^[^[:space:]]/ {{ print; exit }} /^Traceback \(most recent call last\):/ {{ found=1 }} found {{ print }}' {temp_dir}/job.log | head -n 100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(

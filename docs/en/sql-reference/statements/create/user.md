@@ -236,3 +236,10 @@ Create the user account `john` and allow him to grant his privileges to the user
 ```sql
 CREATE USER john GRANTEES jack;
 ```
+
+Use a query parameter to create the user account `john`:
+
+```sql
+SET param_user=john;
+CREATE USER {user:Identifier};
+```

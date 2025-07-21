@@ -6,7 +6,7 @@
 
 #if USE_AWS_S3
 
-#include "PocoHTTPClient.h"
+#include <IO/S3/PocoHTTPClient.h>
 
 #include <utility>
 #include <algorithm>
@@ -77,24 +77,24 @@ namespace ProfileEvents
 
 namespace LatencyBuckets
 {
-    extern const Event S3FirstByteReadAttempt1Microseconds;
-    extern const Event S3FirstByteReadAttempt2Microseconds;
-    extern const Event S3FirstByteReadAttemptNMicroseconds;
+    extern const LatencyEvent S3FirstByteReadAttempt1Microseconds;
+    extern const LatencyEvent S3FirstByteReadAttempt2Microseconds;
+    extern const LatencyEvent S3FirstByteReadAttemptNMicroseconds;
 
-    extern const Event S3FirstByteWriteAttempt1Microseconds;
-    extern const Event S3FirstByteWriteAttempt2Microseconds;
-    extern const Event S3FirstByteWriteAttemptNMicroseconds;
+    extern const LatencyEvent S3FirstByteWriteAttempt1Microseconds;
+    extern const LatencyEvent S3FirstByteWriteAttempt2Microseconds;
+    extern const LatencyEvent S3FirstByteWriteAttemptNMicroseconds;
 
-    extern const Event DiskS3FirstByteReadAttempt1Microseconds;
-    extern const Event DiskS3FirstByteReadAttempt2Microseconds;
-    extern const Event DiskS3FirstByteReadAttemptNMicroseconds;
+    extern const LatencyEvent DiskS3FirstByteReadAttempt1Microseconds;
+    extern const LatencyEvent DiskS3FirstByteReadAttempt2Microseconds;
+    extern const LatencyEvent DiskS3FirstByteReadAttemptNMicroseconds;
 
-    extern const Event DiskS3FirstByteWriteAttempt1Microseconds;
-    extern const Event DiskS3FirstByteWriteAttempt2Microseconds;
-    extern const Event DiskS3FirstByteWriteAttemptNMicroseconds;
+    extern const LatencyEvent DiskS3FirstByteWriteAttempt1Microseconds;
+    extern const LatencyEvent DiskS3FirstByteWriteAttempt2Microseconds;
+    extern const LatencyEvent DiskS3FirstByteWriteAttemptNMicroseconds;
 
-    extern const Event S3ConnectMicroseconds;
-    extern const Event DiskS3ConnectMicroseconds;
+    extern const LatencyEvent S3ConnectMicroseconds;
+    extern const LatencyEvent DiskS3ConnectMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -319,14 +319,14 @@ void PocoHTTPClient::addLatency(const Aws::Http::HttpRequest & request, S3Latenc
     if (amount == 0)
         return;
 
-    static const LatencyBuckets::Event events_map[static_cast<size_t>(S3LatencyType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] = {
+    static const LatencyBuckets::LatencyEvent events_map[static_cast<size_t>(S3LatencyType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] = {
         {LatencyBuckets::S3FirstByteReadAttempt1Microseconds, LatencyBuckets::S3FirstByteWriteAttempt1Microseconds},
         {LatencyBuckets::S3FirstByteReadAttempt2Microseconds, LatencyBuckets::S3FirstByteWriteAttempt2Microseconds},
         {LatencyBuckets::S3FirstByteReadAttemptNMicroseconds, LatencyBuckets::S3FirstByteWriteAttemptNMicroseconds},
         {LatencyBuckets::S3ConnectMicroseconds, LatencyBuckets::S3ConnectMicroseconds},
     };
 
-    static const LatencyBuckets::Event disk_s3_events_map[static_cast<size_t>(S3LatencyType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] = {
+    static const LatencyBuckets::LatencyEvent disk_s3_events_map[static_cast<size_t>(S3LatencyType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] = {
         {LatencyBuckets::DiskS3FirstByteReadAttempt1Microseconds, LatencyBuckets::DiskS3FirstByteWriteAttempt1Microseconds},
         {LatencyBuckets::DiskS3FirstByteReadAttempt2Microseconds, LatencyBuckets::DiskS3FirstByteWriteAttempt2Microseconds},
         {LatencyBuckets::DiskS3FirstByteReadAttemptNMicroseconds, LatencyBuckets::DiskS3FirstByteWriteAttemptNMicroseconds},
@@ -680,9 +680,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
             addLatency(request, S3LatencyType::Connect, connect_time);
             addLatency(request, first_byte_latency_type, first_byte_time);
         }
-        auto error_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true);
-        error_message.text = fmt::format("Failed to make request to: {}: {}", uri, error_message.text);
-        LOG_INFO(log, error_message);
+        LOG_INFO(log, "Failed to make request to: {}: {}", uri, getCurrentExceptionMessage(/* with_stacktrace */ true));
 
         response->SetClientErrorType(e.code() == ErrorCodes::DNS_ERROR ? Aws::Client::CoreErrors::ENDPOINT_RESOLUTION_FAILURE : Aws::Client::CoreErrors::NETWORK_CONNECTION);
         response->SetClientErrorMessage(getCurrentExceptionMessage(false));
@@ -696,9 +694,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
             addLatency(request, S3LatencyType::Connect, connect_time);
             addLatency(request, first_byte_latency_type, first_byte_time);
         }
-        auto error_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true);
-        error_message.text = fmt::format("Failed to make request to: {}: {}", uri, error_message.text);
-        LOG_INFO(log, error_message);
+        LOG_INFO(log, "Failed to make request to: {}: {}", uri, getCurrentExceptionMessage(/* with_stacktrace */ true));
 
         response->SetClientErrorType(Aws::Client::CoreErrors::NETWORK_CONNECTION);
         response->SetClientErrorMessage(getCurrentExceptionMessage(false));

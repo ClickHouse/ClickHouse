@@ -28,8 +28,7 @@ namespace Setting
 
 ReadFromObjectStorageStep::ReadFromObjectStorageStep(
     ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
-    const String & name_,
+    StorageObjectStorageConfigurationPtr configuration_,
     const Names & columns_to_read,
     const NamesAndTypesList & virtual_columns_,
     const SelectQueryInfo & query_info_,
@@ -41,13 +40,12 @@ ReadFromObjectStorageStep::ReadFromObjectStorageStep(
     ContextPtr context_,
     size_t max_block_size_,
     size_t num_streams_)
-    : SourceStepWithFilter(info_.source_header, columns_to_read, query_info_, storage_snapshot_, context_)
+    : SourceStepWithFilter(std::make_shared<const Block>(info_.source_header), columns_to_read, query_info_, storage_snapshot_, context_)
     , object_storage(object_storage_)
     , configuration(configuration_)
     , info(std::move(info_))
     , virtual_columns(virtual_columns_)
     , format_settings(format_settings_)
-    , name(name_ + "ReadStep")
     , need_only_count(need_only_count_)
     , max_block_size(max_block_size_)
     , num_streams(num_streams_)
@@ -58,7 +56,6 @@ ReadFromObjectStorageStep::ReadFromObjectStorageStep(
 void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-    createIterator();
 }
 
 void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -79,6 +76,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     }
 
     auto parser_group = std::make_shared<FormatParserGroup>(context->getSettingsRef(), num_streams, filter_actions_dag, context);
+    parser_group->column_mapper = configuration->getColumnMapper();
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -90,7 +88,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     }
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
-        pipe = Pipe(std::make_shared<NullSource>(info.source_header));
+        pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
 
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);

@@ -1,4 +1,4 @@
-#include "ActionLocksManager.h"
+#include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>

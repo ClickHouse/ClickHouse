@@ -62,13 +62,13 @@ void StorageAzureConfiguration::check(ContextPtr context) const
 {
     auto url = Poco::URI(connection_params.getConnectionURL());
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url);
-    Configuration::check(context);
+    StorageObjectStorageConfiguration::check(context);
 }
 
-StorageObjectStorage::QuerySettings StorageAzureConfiguration::getQuerySettings(const ContextPtr & context) const
+StorageObjectStorageQuerySettings StorageAzureConfiguration::getQuerySettings(const ContextPtr & context) const
 {
     const auto & settings = context->getSettingsRef();
-    return StorageObjectStorage::QuerySettings{
+    return StorageObjectStorageQuerySettings{
         .truncate_on_insert = settings[Setting::azure_truncate_on_insert],
         .create_new_file_on_insert = settings[Setting::azure_create_new_file_on_insert],
         .schema_inference_use_cache = settings[Setting::schema_inference_use_cache_for_azure],
@@ -111,12 +111,12 @@ static AzureBlobStorage::ConnectionParams getConnectionParams(
         connection_params.endpoint.storage_account_url = connection_url;
         connection_params.endpoint.container_name = container_name;
         connection_params.auth_method = std::make_shared<Azure::Storage::StorageSharedKeyCredential>(*account_name, *account_key);
-        connection_params.client_options = AzureBlobStorage::getClientOptions(*request_settings, /*for_disk=*/ false);
+        connection_params.client_options = AzureBlobStorage::getClientOptions(local_context, *request_settings, /*for_disk=*/ false);
     }
     else
     {
         AzureBlobStorage::processURL(connection_url, container_name, connection_params.endpoint, connection_params.auth_method);
-        connection_params.client_options = AzureBlobStorage::getClientOptions(*request_settings, /*for_disk=*/ false);
+        connection_params.client_options = AzureBlobStorage::getClientOptions(local_context, *request_settings, /*for_disk=*/ false);
     }
 
     return connection_params;

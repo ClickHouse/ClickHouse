@@ -171,7 +171,7 @@ SELECT catalog_name,
        default_character_set_name,
        sql_path
 FROM information_schema.schemata
-WHERE schema_name ilike 'information_schema' 
+WHERE schema_name ILIKE 'information_schema' 
 LIMIT 1 
 FORMAT Vertical;
 ```
