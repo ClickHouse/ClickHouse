@@ -72,6 +72,7 @@ ColumnDescription & ColumnDescription::operator=(const ColumnDescription & other
 
     name = other.name;
     type = other.type;
+    uuid = other.uuid;
     default_desc = other.default_desc;
     comment = other.comment;
     codec = other.codec ? other.codec->clone() : nullptr;
@@ -89,6 +90,7 @@ ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) noe
 
     name = std::move(other.name);
     type = std::move(other.type);
+    uuid = std::move(other.uuid);
     default_desc = std::move(other.default_desc);
     comment = std::move(other.comment);
 
@@ -111,6 +113,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
 
     return name == other.name
         && type->equals(*other.type)
+        && uuid == other.uuid
         && default_desc == other.default_desc
         && statistics == other.statistics
         && ast_to_str(codec) == ast_to_str(other.codec)
@@ -180,6 +183,14 @@ void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, 
         writeEscapedString(formatASTStateAware(ast, state), buf);
         DB::writeText(")", buf);
     }
+
+    /// TODO
+    // if (uuid != UUIDHelpers::Nil)
+    // {
+    //     writeChar('\t', buf);
+    //     DB::writeText("UUID ", buf);
+    //     writeEscapedString(UUIDHelpers::uuidToStr(uuid), buf);
+    // }
 
     writeChar('\n', buf);
 }
@@ -310,6 +321,11 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
     if (has(column.name))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                         "Cannot add column {}: column with this name already exists", column.name);
+
+
+    /// Roman
+    if (column.uuid == UUIDHelpers::Nil)
+        column.uuid = UUIDHelpers::generateV4();
 
     /// Normalize ASTs to be compatible with InterpreterCreateQuery.
     if (column.default_desc.expression)

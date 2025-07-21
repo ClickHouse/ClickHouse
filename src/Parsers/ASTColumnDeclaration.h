@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Core/UUID.h>
 
 namespace DB
 {
@@ -13,6 +14,7 @@ class ASTColumnDeclaration : public IAST
 public:
     String name;
     ASTPtr type;
+    UUID uuid = UUIDHelpers::Nil;
     std::optional<bool> null_modifier;
     String default_specifier;
     ASTPtr default_expression;
