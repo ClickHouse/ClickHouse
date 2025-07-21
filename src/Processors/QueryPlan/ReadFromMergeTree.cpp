@@ -1874,7 +1874,7 @@ static void buildIndexes(
 
             const auto l_size = max_index_map.at(l.index->getFileName());
             const auto r_size = max_index_map.at(r.index->getFileName());
-            return (l_size < r_size) || (l_granularity > r_granularity);
+            return (l_granularity > r_granularity) || (l_size < r_size);
         }
 
 #if USE_USEARCH
