@@ -1046,8 +1046,8 @@ public:
 class FunctionLayer : public Layer
 {
 public:
-    explicit FunctionLayer(String function_name_, bool allow_function_parameters_ = true, bool is_compound_name_ = false)
-        : function_name(function_name_), allow_function_parameters(allow_function_parameters_), is_compound_name(is_compound_name_){}
+    explicit FunctionLayer(String function_name_, bool allow_function_parameters_ = true, bool is_compound_name_ = false, bool is_operator_ = false)
+        : function_name(function_name_), allow_function_parameters(allow_function_parameters_), is_compound_name(is_compound_name_), is_operator(is_operator_) {}
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
@@ -1189,6 +1189,7 @@ public:
 
             auto function_node = makeASTFunction(function_name, std::move(elements));
             function_node->is_compound_name = is_compound_name;
+            function_node->is_operator = is_operator;
 
             if (parameters)
             {
@@ -1252,6 +1253,7 @@ private:
 
     bool allow_function_parameters;
     bool is_compound_name;
+    bool is_operator;
 };
 
 /// Layer for priority brackets and tuple function
@@ -2322,6 +2324,8 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
         return std::make_unique<DateDiffLayer>();
     if (function_name_lowercase == "grouping")
         return std::make_unique<FunctionLayer>(function_name_lowercase, allow_function_parameters_);
+    if (function_name_lowercase == "not" || function_name_lowercase == "negate")
+        return std::make_unique<FunctionLayer>(function_name_lowercase, allow_function_parameters_, false, true);
     return std::make_unique<FunctionLayer>(function_name, allow_function_parameters_, identifier->as<ASTIdentifier>()->compound());
 }
 

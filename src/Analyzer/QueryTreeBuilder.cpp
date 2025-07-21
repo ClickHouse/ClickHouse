@@ -670,7 +670,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             const auto & lambda_expression = lambda_arguments_and_expression.at(1);
             auto lambda_expression_node = buildExpression(lambda_expression, context);
 
-            result = std::make_shared<LambdaNode>(std::move(lambda_arguments), std::move(lambda_expression_node));
+            result = std::make_shared<LambdaNode>(std::move(lambda_arguments), std::move(lambda_expression_node), function->is_operator);
         }
         else
         {
