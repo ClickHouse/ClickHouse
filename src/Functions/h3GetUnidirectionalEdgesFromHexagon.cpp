@@ -104,7 +104,32 @@ public:
 
 REGISTER_FUNCTION(H3GetUnidirectionalEdgesFromHexagon)
 {
-    factory.registerFunction<FunctionH3GetUnidirectionalEdgesFromHexagon>();
+    FunctionDocumentation::Description description = R"(
+Provides all of the unidirectional edges from the provided H3Index.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3GetUnidirectionalEdgesFromHexagon(index)";
+    FunctionDocumentation::Arguments arguments = {
+        {"index", "Hexagon index number that represents a unidirectional edge.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns an array of H3 indexes representing each unidirectional edge.",
+        {"Array(UInt64)"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get all edges for an H3 index",
+            "SELECT h3GetUnidirectionalEdgesFromHexagon(599686042433355775) AS edges",
+            R"(
+┌─edges─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [1248204388774707199,1320261982812635135,1392319576850563071,1464377170888491007,1536434764926418943,1608492358964346879] │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3GetUnidirectionalEdgesFromHexagon>(documentation);
 }
 
 }
