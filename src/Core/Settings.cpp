@@ -393,7 +393,7 @@ The maximum number of a concurrent loaded parts in multipart upload request. 0 m
     DECLARE(UInt64, s3_max_single_part_upload_size, S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, R"(
 The maximum size of object to upload using singlepart upload to S3.
 )", 0) \
-    DECLARE(UInt64, azure_max_single_part_upload_size, 100*1024*1024, R"(
+    DECLARE(UInt64, azure_max_single_part_upload_size, S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, R"(
 The maximum size of object to upload using singlepart upload to Azure blob storage.
 )", 0)                                                                             \
     DECLARE(UInt64, azure_max_single_part_copy_size, 256*1024*1024, R"(
