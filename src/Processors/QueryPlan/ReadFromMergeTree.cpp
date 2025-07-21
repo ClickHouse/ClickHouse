@@ -1795,13 +1795,16 @@ static void buildIndexes(
 
         if (!all_updated_columns.empty())
         {
-            auto required_columns = index_helper->getColumnsRequiredForIndexCalc();
-            auto it = std::ranges::find_if(required_columns, [&](const auto & column_name)
+            auto options = GetColumnsOptions(GetColumnsOptions::Kind::All).withSubcolumns();
+            auto required_columns_names = index_helper->getColumnsRequiredForIndexCalc();
+            auto required_columns_list = metadata_snapshot->getColumns().getByNames(options, required_columns_names);
+
+            auto it = std::ranges::find_if(required_columns_list, [&](const auto & column)
             {
-                return all_updated_columns.contains(column_name);
+                return all_updated_columns.contains(column.getNameInStorage());
             });
 
-            if (it != required_columns.end())
+            if (it != required_columns_list.end())
             {
                 LOG_TRACE(log, "Index {} is not used because it depends on column {} which will be updated on fly", index.name, *it);
                 continue;
@@ -2021,7 +2024,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             find_exact_ranges,
             query_info_.isFinal());
 
-        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(result.parts_with_ranges, query_info_, context_, log);
+        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(result.parts_with_ranges, query_info_, vector_search_parameters, context_, log);
 
         if (indexes->use_skip_indexes && !indexes->skip_indexes.useful_indices.empty() && query_info_.isFinal()
             && settings[Setting::use_skip_indexes_if_final_exact_mode])
@@ -2176,6 +2179,28 @@ void ReadFromMergeTree::updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_re
     /// then update columns to read in analysis result
     if (analyzed_result_ptr)
         analyzed_result_ptr->column_names_to_read = all_column_names;
+}
+
+void ReadFromMergeTree::replaceVectorColumnWithDistanceColumn(const String & vector_column)
+{
+    if (isVectorColumnReplaced())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector column unexpectedly already replaced.");
+    std::erase(all_column_names, vector_column);
+    all_column_names.emplace_back("_distance");
+    output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
+        storage_snapshot->getSampleBlockForColumns(all_column_names),
+        lazily_read_info,
+        prewhere_info));
+
+    /// if analysis has already been done (like in optimization for projections),
+    /// then update columns to read in analysis result
+    if (analyzed_result_ptr)
+        analyzed_result_ptr->column_names_to_read = all_column_names;
+}
+
+bool ReadFromMergeTree::isVectorColumnReplaced() const
+{
+    return std::ranges::find(all_column_names, "_distance") != all_column_names.end();
 }
 
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
@@ -2716,6 +2741,8 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
             if (!search_algorithm.empty())
                 format_settings.out << prefix << indent << indent << "Search Algorithm: " << search_algorithm << "\n";
         }
+
+        format_settings.out << prefix << indent << indent << "Ranges: " << result.selected_ranges << '\n';
     }
 }
 

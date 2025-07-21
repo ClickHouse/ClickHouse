@@ -563,7 +563,6 @@ class ClickHouseProc:
             )
         )
         res = "success" in status
-        print(f"Clickminio restart status: {status}, res: {res}")
         if not res:
             print(f"ERROR: Failed to restart clickminio, status: {status}")
         return res

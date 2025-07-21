@@ -6,6 +6,9 @@
 
 namespace DB
 {
+
+namespace ColorConversion
+{
     /// Conversion constants for conversion between OKLCH and sRGB
     ///
     /// Source: Björn Ottosson, “OkLab – A perceptual colour space”, https://bottosson.github.io/posts/oklab/
@@ -43,4 +46,6 @@ namespace DB
     constexpr Mat3x3 lms_to_linear_base = {4.0767416621, -3.3077115913,  0.2309699292,
                                            -1.2684380046,  2.6097574011, -0.3413193965,
                                            -0.0041960863, -0.7034186147,  1.7076147010};
+}
+
 }
