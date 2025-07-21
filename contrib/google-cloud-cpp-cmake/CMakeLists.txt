@@ -117,7 +117,7 @@ if(ENABLE_GOOGLE_CLOUD_CPP_KMS)
 
     target_include_directories(_google_cloud_cpp_kms SYSTEM PRIVATE ${GOOGLE_CLOUD_CPP_PRIVATE_INCLUDES})
     target_include_directories(_google_cloud_cpp_kms SYSTEM PUBLIC ${GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES})
-    target_link_libraries(_google_cloud_cpp_kms absl::optional gRPC::grpc++)
+    target_link_libraries(_google_cloud_cpp_kms absl::optional ch_contrib::protobuf)
 endif()
 
 add_library(_gcloud INTERFACE)
