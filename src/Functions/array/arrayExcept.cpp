@@ -1,10 +1,21 @@
+#include <base/StringRef.h>
+#include <base/types.h>
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
+#include <Common/assert_cast.h>
+#include <Common/Exception.h>
+#include <Common/FunctionDocumentation.h>
+#include <Common/HashTable/ClearableHashSet.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/PODArray_fwd.h>
+#include <Common/register_objects.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
@@ -12,24 +23,14 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
-#include <base/StringRef.h>
-#include <base/types.h>
-#include <Common/Exception.h>
-#include <Common/FunctionDocumentation.h>
-#include <Common/HashTable/ClearableHashSet.h>
-#include <Common/HashTable/Hash.h>
-#include <Common/PODArray_fwd.h>
-#include <Common/assert_cast.h>
-#include <Common/register_objects.h>
-#include <Common/typeid_cast.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
