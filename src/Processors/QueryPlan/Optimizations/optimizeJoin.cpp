@@ -867,7 +867,10 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             /// Columns returned from JOIN is input with possibly corrected type
             for (size_t input_pos = 0; input_pos < casted_input_nodes.size(); ++input_pos)
             {
-                const auto * input_node = casted_input_nodes[input_pos].second;
+                auto [rel_idx, input_node] = casted_input_nodes[input_pos];
+                if (!joined_mask.test(rel_idx))
+                    continue;
+
                 auto mapped_it = join_expression_map.find(input_node);
                 if (mapped_it == join_expression_map.end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in join expression map", input_node->result_name);
