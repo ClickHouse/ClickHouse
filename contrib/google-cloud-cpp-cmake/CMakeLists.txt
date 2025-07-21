@@ -18,13 +18,6 @@ if(NOT ENABLE_PROTOBUF)
     return()
 endif()
 
-# To supress the following warning:
-# CMake Warning (dev) at contrib/google-cloud-cpp/cmake/CompileProtos.cmake:354 (install):
-#   Policy CMP0177 is not set: install() DESTINATION paths are normalized.  Run
-#   "cmake --help-policy CMP0177" for policy details.  Use the cmake_policy
-#   command to set the policy and suppress this warning.
-cmake_policy(SET CMP0177 OLD)
-
 # Gather sources and options.
 set(GOOGLE_CLOUD_CPP_SOURCES)
 set(GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES)
