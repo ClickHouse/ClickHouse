@@ -14,7 +14,7 @@ sed -i 's/<password><\/password>/<password_sha256_hex>c64c5e4e53ea1a9f1427d2713b
  sed -i 's/<!-- <access_management>1<\/access_management> -->/<access_management>1<\/access_management>/g' "$CURDIR"/users.xml
 
 server_opts=(
-    "--config-file=$CURDIR/$(basename "${BASH_SOURCE[0]}" .sh).config.xml"
+    "--config-file=$CURDIR/02422_allow_implicit_no_password.config.xml"
     "--"
     # to avoid multiple listen sockets (complexity for port discovering)
     "--listen_host=127.1"
