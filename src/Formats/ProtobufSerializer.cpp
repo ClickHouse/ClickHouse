@@ -3494,7 +3494,7 @@ namespace
                                 if (data_type_id == TypeIndex::Enum8)
                                 {
                                     const auto * data_type_enum8 = typeid_cast<const DataTypeEnum8 *>(data_types_[idx].get());
-                                    assert(data_type_enum);
+                                    assert(data_type_enum8);
 
                                     check_enum(data_type_enum8, oneof_descriptor);
                                 }
@@ -3503,7 +3503,7 @@ namespace
                                 if (data_type_id == TypeIndex::Enum16)
                                 {
                                     const auto * data_type_enum16 = typeid_cast<const DataTypeEnum16 *>(data_types_[idx].get());
-                                    assert(data_type_enum);
+                                    assert(data_type_enum16);
 
                                     check_enum(data_type_enum16, oneof_descriptor);
                                 }
