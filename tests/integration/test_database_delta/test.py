@@ -65,11 +65,12 @@ def execute_spark_query(node, query_text, ignore_exit_code=False):
             "-c",
             f"""
 cd /spark-3.5.4-bin-hadoop3 && bin/spark-sql --name "s3-uc-test" \\
-    --master "local[*]" \\
+    --master "local[1]" \\
     --packages "org.apache.hadoop:hadoop-aws:3.3.4,io.delta:delta-spark_2.12:3.2.1,io.unitycatalog:unitycatalog-spark_2.12:0.2.0" \\
     --conf "spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension" \\
     --conf "spark.sql.catalog.spark_catalog=io.unitycatalog.spark.UCSingleCatalog" \\
     --conf "spark.hadoop.fs.s3.impl=org.apache.hadoop.fs.s3a.S3AFileSystem" \\
+    --conf "spark.driver.allowMultipleContexts=false" \\
     --conf "spark.sql.catalog.unity=io.unitycatalog.spark.UCSingleCatalog" \\
     --conf "spark.sql.catalog.unity.uri=http://localhost:8080" \\
     --conf "spark.sql.catalog.unity.token=" \\
