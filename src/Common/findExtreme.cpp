@@ -93,6 +93,7 @@ MULTITARGET_FUNCTION_AVX2_SSE42(
         else
         {
             /// Only native integers
+            _Pragma("clang loop vectorize_width(8) unroll_count(4)")
             for (; i < count; i++)
             {
                 constexpr bool is_min = std::same_as<ComparatorClass, MinComparator<T>>;
