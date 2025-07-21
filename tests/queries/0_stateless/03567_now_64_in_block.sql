@@ -1,0 +1,1 @@
+select now64InBlock(); --{serverError TOO_MANY_ARGUMENTS_FOR_FUNCTION}
