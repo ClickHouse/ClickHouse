@@ -105,7 +105,7 @@ void processImpl(ConstColumnInfo<ColumnT> source, ConstColumnInfo<ColumnT> exclu
 {
     using ValueType = typename ValueHandler<ColumnT>::ValueType;
     using Handler = ValueHandler<ColumnT>;
-    constexpr size_t initial_size_degree = 9; // Arbitrary...
+    constexpr size_t initial_size_degree = 9;
     using Set = ClearableHashSetWithStackMemory<ValueType, DefaultHash<ValueType>, initial_size_degree>;
     Set exclude_set;
 
