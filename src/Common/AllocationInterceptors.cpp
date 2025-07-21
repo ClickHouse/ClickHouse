@@ -292,12 +292,4 @@ extern "C" void __wrap_free(void * ptr) // NOLINT
     __real_free(ptr);
 }
 
-extern "C" void __wrap_sdallocx(void * ptr, size_t size, int flags) // NOLINT
-{
-    AllocationTrace trace;
-    size_t actual_size = Memory::untrackMemory(ptr, trace, size);
-    trace.onFree(ptr, actual_size);
-    __real_sdallocx(ptr, size, flags);
-}
-
 #pragma clang diagnostic pop

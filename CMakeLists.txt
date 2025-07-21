@@ -499,19 +499,25 @@ macro (clickhouse_add_executable target)
         add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
     endif ()
 
-    target_link_options(${target} PRIVATE
-        "LINKER:--wrap=malloc"
-        "LINKER:--wrap=free"
-        "LINKER:--wrap=calloc"
-        "LINKER:--wrap=realloc"
-        "LINKER:--wrap=aligned_alloc"
-        "LINKER:--wrap=posix_memalign"
-        "LINKER:--wrap=valloc"
-        "LINKER:--wrap=memalign"
-        "LINKER:--wrap=sallocx"
-        "LINKER:--wrap=sdallocx"
-        "LINKER:--wrap=reallocarray"
-    )
+    # Wrap the malloc/free and other C-style functions with our own ones
+    # to inject memory tracking mechanism into them.
+    # Sanitizers have their own way of intercepting the
+    # allocations and deallocations, so we skip this step for them.
+    if (NOT (SANITIZE OR SANITIZE_COVERAGE))
+        target_link_options(${target} PRIVATE
+            "LINKER:--wrap=malloc"
+            "LINKER:--wrap=free"
+            "LINKER:--wrap=calloc"
+            "LINKER:--wrap=realloc"
+            "LINKER:--wrap=aligned_alloc"
+            "LINKER:--wrap=posix_memalign"
+            "LINKER:--wrap=valloc"
+            "LINKER:--wrap=memalign"
+            "LINKER:--wrap=sallocx"
+            "LINKER:--wrap=sdallocx"
+            "LINKER:--wrap=reallocarray"
+        )
+    endif()
 
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
