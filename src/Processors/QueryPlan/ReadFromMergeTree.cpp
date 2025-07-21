@@ -1848,50 +1848,63 @@ static void buildIndexes(
             skip_indexes.useful_indices.emplace_back(index_helper, condition);
     }
 
-    std::unordered_map<String, UInt64> max_index_sizes;
-   
-    for (const auto& idx : skip_indexes.useful_indices)
     {
-        UInt64 max_size = 0;
+        std::vector<size_t> index_sizes;
+        index_sizes.reserve(skip_indexes.useful_indices.size());
+        size_t part_idx = 0;
         for (const auto& part : parts)
         {
-            auto extension = idx.index->getDeserializedFormat(part.data_part->getDataPartStorage(), idx.index->getFileName()).extension;
-            auto sz = part.data_part->getFileSizeOrZero(idx.index->getFileName() + extension);
-            max_size = sz > max_size ? sz : max_size;
-        }
-        max_index_sizes[idx.index->getFileName()] = max_size;
-    }
+            skip_indexes.per_part_index_orders.emplace_back();
+            for (size_t i = 0; i < skip_indexes.useful_indices.size(); i++)
+            {
+                skip_indexes.per_part_index_orders[part_idx].push_back(i);
+            }
+       
 
-    // Move minmax indices to first positions, so they will be applied first as cheapest ones
-    std::stable_sort(skip_indexes.useful_indices.begin(), skip_indexes.useful_indices.end(), [ &max_index_map = std::as_const(max_index_sizes)](const auto & l, const auto & r)
-    {
-        bool l_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(l.index.get());
-        bool r_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(r.index.get());
-        if (l_is_minmax == r_is_minmax)
-        {
-            const auto l_granularity = l.index->getGranularity();
-            const auto r_granularity = r.index->getGranularity();
+            index_sizes.clear();
+            for (const auto &idx : skip_indexes.useful_indices)
+            {
+                auto extension = idx.index->getDeserializedFormat(part.data_part->getDataPartStorage(), idx.index->getFileName()).extension;
+                auto sz = part.data_part->getFileSizeOrZero(idx.index->getFileName() + extension);
+                index_sizes.emplace_back(sz);
+            }
+            // Move minmax indices to first positions, so they will be applied first as cheapest ones
+            std::stable_sort(skip_indexes.per_part_index_orders[part_idx].begin(), skip_indexes.per_part_index_orders[part_idx].end(), [ &idx_sizes = std::as_const(index_sizes), &useful_indices = std::as_const(skip_indexes.useful_indices)](const auto & l, const auto & r)
+            {
+                auto l_index = useful_indices[l].index;
+                auto r_index = useful_indices[r].index;
 
-            const auto l_size = max_index_map.at(l.index->getFileName());
-            const auto r_size = max_index_map.at(r.index->getFileName());
-            return (l_granularity > r_granularity) || (l_size < r_size);
-        }
+                bool l_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(l_index.get());
+                bool r_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(r_index.get());
+
+                if (l_is_minmax == r_is_minmax)
+                {
+                    const auto l_granularity = l_index->getGranularity();
+                    const auto r_granularity = r_index->getGranularity();
+
+                    const auto l_size = idx_sizes[l];
+                    const auto r_size = idx_sizes[r];
+                    return (l_granularity > r_granularity) || (l_size < r_size);
+                }
 
 #if USE_USEARCH
-        // A vector similarity index (if present) is the most selective, hence move it to front
-        bool l_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(l.index.get());
-        bool r_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(r.index.get());
-        if (l_is_vectorsimilarity)
-            return true;
-        if (r_is_vectorsimilarity)
-            return false;
+                // A vector similarity index (if present) is the most selective, hence move it to front
+                bool l_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(l_index.get());
+                bool r_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(r_index.get());
+                if (l_is_vectorsimilarity)
+                    return true;
+                if (r_is_vectorsimilarity)
+                    return false;
 #endif
-        if (l_is_minmax)
-            return true; // left is min max but right is not
+                if (l_is_minmax)
+                    return true; // left is min max but right is not
 
-        return false; // right is min max but left is not
-    });
+                return false; // right is min max but left is not
+            });
 
+        }
+    }
+   
     indexes->skip_indexes = std::move(skip_indexes);
 }
 
