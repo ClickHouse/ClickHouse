@@ -21,19 +21,19 @@ External data can be uploaded using the command-line client (in non-interactive 
 In the command-line client, you can specify a parameters section in the format
 
 ```bash
-- -external --file=... [--name=...] [--format=...] [--types=...|--structure=...]
+--external --file=... [--name=...] [--format=...] [--types=...|--structure=...]
 ```
 
 You may have multiple sections like this, for the number of tables being transmitted.
 
-**–external** – Marks the beginning of a clause.
-**–file** – Path to the file with the table dump, or -, which refers to stdin.
+* *–external** – Marks the beginning of a clause.
+* *–file** – Path to the file with the table dump, or -, which refers to stdin.
 Only a single table can be retrieved from stdin.
 
 The following parameters are optional: **–name**– Name of the table. If omitted, _data is used.
-**–format** – Data format in the file. If omitted, TabSeparated is used.
+* *–format** – Data format in the file. If omitted, TabSeparated is used.
 
-One of the following parameters is required:**–types** – A list of comma-separated column types. For example: `UInt64,String`. The columns will be named _1,_2, ...
+One of the following parameters is required:**–types** – A list of comma-separated column types. For example: `UInt64,String`. The columns will be named _1, _2, ...
 **–structure**– The table structure in the format`UserID UInt64`, `URL String`. Defines the column names and types.
 
 The files specified in 'file' will be parsed by the format specified in 'format', using the data types specified in 'types' or 'structure'. The table will be uploaded to the server and accessible there as a temporary table with the name in 'name'.
@@ -41,9 +41,9 @@ The files specified in 'file' will be parsed by the format specified in 'format'
 Examples:
 
 ```bash
-$ echo -ne "1\n2\n3\n" | clickhouse-client --query="SELECT count() FROM test.visits WHERE TraficSourceID IN _data" --external --file=---types=Int8
+$ echo -ne "1\n2\n3\n" | clickhouse-client --query="SELECT count() FROM test.visits WHERE TraficSourceID IN _data" --external --file=- --types=Int8
 849897
-$ cat /etc/passwd | sed 's/:/\t/g' | clickhouse-client --query="SELECT shell, count() AS c FROM passwd GROUP BY shell ORDER BY c DESC" --external --file=---name=passwd --structure='login String, unused String, uid UInt16, gid UInt16, comment String, home String, shell String'
+$ cat /etc/passwd | sed 's/:/\t/g' | clickhouse-client --query="SELECT shell, count() AS c FROM passwd GROUP BY shell ORDER BY c DESC" --external --file=- --name=passwd --structure='login String, unused String, uid UInt16, gid UInt16, comment String, home String, shell String'
 /bin/sh 20
 /bin/false      5
 /bin/bash       4

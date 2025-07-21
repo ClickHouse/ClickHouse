@@ -7,7 +7,7 @@ slug: /sql-reference/data-types/int-uint
 title: 'Int | UInt Types'
 ---
 
-ClickHouse offers a number of fixed-length integers,
+ClickHouse offers a number of fixed-length integers, 
 with a sign (`Int`) or without a sign (unsigned `UInt`) ranging from one byte to 32 bytes.
 
 When creating tables, numeric parameters for integer numbers can be set (e.g. `TINYINT(8)`, `SMALLINT(16)`, `INT(32)`, `BIGINT(64)`), but ClickHouse ignores them.

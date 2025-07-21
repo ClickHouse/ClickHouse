@@ -65,7 +65,6 @@ SELECT * FROM sqlite_db.table1;
 │ line3 │    3 │
 └───────┴──────┘
 ```
-
 Inserting data into SQLite table from ClickHouse table:
 
 ```sql

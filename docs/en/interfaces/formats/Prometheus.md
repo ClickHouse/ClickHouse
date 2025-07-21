@@ -24,7 +24,7 @@ For this format, it is a requirement for the output table to be structured corre
 - Each metric value may also have some `labels` ([Map(String, String)](/sql-reference/data-types/map.md)).
 - Several consequent rows may refer to the one metric with different labels. The table should be sorted by metric name (e.g., with `ORDER BY name`).
 
-There are special requirements for the `histogram` and `summary` labels - see [Prometheus doc](https://prometheus.io/docs/instrumenting/exposition_formats/#histograms-and-summaries) for the details.
+There are special requirements for the `histogram` and `summary` labels - see [Prometheus doc](https://prometheus.io/docs/instrumenting/exposition_formats/#histograms-and-summaries) for the details. 
 Special rules are applied to rows with labels `{'count':''}` and `{'sum':''}`, which are converted to `<metric_name>_count` and `<metric_name>_sum` respectively.
 
 ## Example usage {#example-usage}

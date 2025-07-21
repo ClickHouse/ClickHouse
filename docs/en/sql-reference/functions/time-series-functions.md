@@ -111,7 +111,7 @@ Result:
 
 ## seriesDecomposeSTL {#seriesdecomposestl}
 
-Decomposes a series data using STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.wessa.net/download/stl.pdf) into a season, a trend and a residual component.
+Decomposes a series data using STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.wessa.net/download/stl.pdf) into a season, a trend and a residual component. 
 
 **Syntax**
 

@@ -36,9 +36,9 @@ The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.or
         [(lower_1, upper_1, height_1), ... (lower_N, upper_N, height_N)]
         ```
 
-        -`lower` — Lower bound of the bin.
-        -`upper` — Upper bound of the bin.
-        -`height` — Calculated height of the bin.
+        - `lower` — Lower bound of the bin.
+        - `upper` — Upper bound of the bin.
+        - `height` — Calculated height of the bin.
 
 **Example**
 
@@ -277,7 +277,7 @@ Consider data in the `t` table:
 └──────┴────────┘
 ```
 
-Return timestamps of events for longest chain
+Return timestamps of events for longest chain 
 
 ```sql
 SELECT sequenceMatchEvents('(?1).*(?2).*(?1)(?3)')(time, number = 1, number = 2, number = 4) FROM t
@@ -320,10 +320,10 @@ windowFunnel(window, [mode, [mode, ... ]])(timestamp, cond1, cond2, ..., condN)
 
 - `window` — Length of the sliding window, it is the time interval between the first and the last condition. The unit of `window` depends on the `timestamp` itself and varies. Determined using the expression `timestamp of cond1 <= timestamp of cond2 <= ... <= timestamp of condN <= timestamp of cond1 + window`.
 - `mode` — It is an optional argument. One or more modes can be set.
-- `'strict_deduplication'` — If the same condition holds for the sequence of events, then such repeating event interrupts further processing. Note: it may work unexpectedly if several conditions hold for the same event.
-- `'strict_order'` — Don't allow interventions of other events. E.g. in the case of `A->B->D->C`, it stops finding `A->B->C` at the `D` and the max event level is 2.
-- `'strict_increase'` — Apply conditions only to events with strictly increasing timestamps.
-- `'strict_once'` — Count each event only once in the chain even if it meets the condition several times
+  - `'strict_deduplication'` — If the same condition holds for the sequence of events, then such repeating event interrupts further processing. Note: it may work unexpectedly if several conditions hold for the same event.
+  - `'strict_order'` — Don't allow interventions of other events. E.g. in the case of `A->B->D->C`, it stops finding `A->B->C` at the `D` and the max event level is 2.
+  - `'strict_increase'` — Apply conditions only to events with strictly increasing timestamps.
+  - `'strict_once'` — Count each event only once in the chain even if it meets the condition several times
 
 **Returned value**
 
@@ -338,10 +338,10 @@ Determine if a set period of time is enough for the user to select a phone and p
 
 Set the following chain of events:
 
-1.The user logged in to their account on the store (`eventID = 1003`).
-2.The user searches for a phone (`eventID = 1007, product = 'phone'`).
-3.The user placed an order (`eventID = 1009`).
-4.The user made the order again (`eventID = 1010`).
+1.  The user logged in to their account on the store (`eventID = 1003`).
+2.  The user searches for a phone (`eventID = 1007, product = 'phone'`).
+3.  The user placed an order (`eventID = 1009`).
+4.  The user made the order again (`eventID = 1010`).
 
 Input table:
 
@@ -419,7 +419,7 @@ Type: `UInt8`.
 
 Let's consider an example of calculating the `retention` function to determine site traffic.
 
-**1.** Create a table to illustrate an example.
+* *1.** Create a table to illustrate an example.
 
 ```sql
 CREATE TABLE retention_test(date Date, uid Int32) ENGINE = Memory;
@@ -514,7 +514,7 @@ Result:
 └─────┴─────────┘
 ```
 
-**3.** Calculate the total number of site visits per day.
+* *3.** Calculate the total number of site visits per day.
 
 Query:
 
@@ -695,14 +695,14 @@ sequenceNextNode(direction, base)(timestamp, event_column, base_condition, event
 **Parameters**
 
 - `direction` — Used to navigate to directions.
-- forward — Moving forward.
-- backward — Moving backward.
+  - forward — Moving forward.
+  - backward — Moving backward.
 
 - `base` — Used to set the base point.
-- head — Set the base point to the first event.
-- tail — Set the base point to the last event.
-- first_match — Set the base point to the first matched `event1`.
-- last_match — Set the base point to the last matched `event1`.
+  - head — Set the base point to the first event.
+  - tail — Set the base point to the last event.
+  - first_match — Set the base point to the first matched `event1`.
+  - last_match — Set the base point to the last matched `event1`.
 
 **Arguments**
 

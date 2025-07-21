@@ -62,5 +62,5 @@ The following settings are supported:
 
 See below pages for examples of using the `DataLakeCatalog` engine:
 
-- [Unity Catalog](/use-cases/data-lake/unity-catalog)
-- [Glue Catalog](/use-cases/data-lake/glue-catalog)
+* [Unity Catalog](/use-cases/data-lake/unity-catalog)
+* [Glue Catalog](/use-cases/data-lake/glue-catalog)

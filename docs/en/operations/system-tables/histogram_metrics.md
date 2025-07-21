@@ -25,7 +25,6 @@ Columns:
 **Example**
 
 You can use a query like this to export all the histogram metrics in the Prometheus format.
-
 ```sql
 SELECT
   metric AS name,
@@ -40,11 +39,9 @@ FORMAT Prometheus
 ## Metric descriptions {#metric_descriptions}
 
 ### keeper_response_time_ms_bucket {#keeper_response_time_ms_bucket}
-
 The response time of Keeper, in milliseconds.
 
 **See Also**
-
 - [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) — Contains periodically calculated metrics.
 - [system.events](/operations/system-tables/events) — Contains a number of events that occurred.
 - [system.metric_log](/operations/system-tables/metric_log) — Contains a history of metrics values from tables `system.metrics` and `system.events`.

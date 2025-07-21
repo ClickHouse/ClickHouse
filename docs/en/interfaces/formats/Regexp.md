@@ -35,7 +35,6 @@ id: 1 array: [1,2,3] string: str1 date: 2020-01-01
 id: 2 array: [1,2,3] string: str2 date: 2020-01-02
 id: 3 array: [1,2,3] string: str3 date: 2020-01-03
 ```
-
 and table `imp_regex_table`:
 
 ```sql
@@ -45,7 +44,7 @@ CREATE TABLE imp_regex_table (id UInt32, array Array(UInt32), string String, dat
 We'll insert the data from the aforementioned file into the table above using the following query:
 
 ```bash
-cat data.tsv | clickhouse-client  --query "INSERT INTO imp_regex_table SETTINGS format_regexp='id: (.+?) array: (.+?) string: (.+?) date: (.+?)', format_regexp_escaping_rule='Escaped', format_regexp_skip_unmatched=0 FORMAT Regexp;"
+$ cat data.tsv | clickhouse-client  --query "INSERT INTO imp_regex_table SETTINGS format_regexp='id: (.+?) array: (.+?) string: (.+?) date: (.+?)', format_regexp_escaping_rule='Escaped', format_regexp_skip_unmatched=0 FORMAT Regexp;"
 ```
 
 We can now `SELECT` the data from the table to see how the `Regex` format parsed the data from the file:
@@ -69,10 +68,10 @@ When working with the `Regexp` format, you can use the following settings:
 - `format_regexp` — [String](/sql-reference/data-types/string.md). Contains regular expression in the [re2](https://github.com/google/re2/wiki/Syntax) format.
 - `format_regexp_escaping_rule` — [String](/sql-reference/data-types/string.md). The following escaping rules are supported:
 
-- CSV (similarly to [CSV](/interfaces/formats/CSV)
-- JSON (similarly to [JSONEachRow](/interfaces/formats/JSONEachRow)
-- Escaped (similarly to [TSV](/interfaces/formats/TabSeparated)
-- Quoted (similarly to [Values](/interfaces/formats/Values)
-- Raw (extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](/interfaces/formats/TabSeparated)
+  - CSV (similarly to [CSV](/interfaces/formats/CSV)
+  - JSON (similarly to [JSONEachRow](/interfaces/formats/JSONEachRow)
+  - Escaped (similarly to [TSV](/interfaces/formats/TabSeparated)
+  - Quoted (similarly to [Values](/interfaces/formats/Values)
+  - Raw (extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](/interfaces/formats/TabSeparated)
 
 - `format_regexp_skip_unmatched` — [UInt8](/sql-reference/data-types/int-uint.md). Defines the need to throw an exception in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.

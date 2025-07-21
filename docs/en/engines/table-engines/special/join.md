@@ -90,7 +90,6 @@ When creating a table, the following settings are applied:
 #### `join_any_take_last_row` {#join_any_take_last_row}
 
 [join_any_take_last_row](/operations/settings/settings.md/#join_any_take_last_row)
-
 #### `join_use_nulls` {#join_use_nulls-1}
 
 #### Persistent {#persistent}

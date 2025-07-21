@@ -16,7 +16,7 @@ import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
 
 ## Description {#description}
 
-Differs from the [`PrettyCompact`](./PrettyCompact.md) format in that whitespace
+Differs from the [`PrettyCompact`](./PrettyCompact.md) format in that whitespace 
 (space characters) is used for displaying the table instead of a grid.
 
 ## Example usage {#example-usage}

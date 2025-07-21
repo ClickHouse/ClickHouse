@@ -24,7 +24,6 @@ Syntax: `URL(URL [,Format] [,CompressionMethod])`
 To enable compression, please first make sure the remote HTTP endpoint indicated by the `URL` parameter supports corresponding compression algorithm.
 
 The supported `CompressionMethod` should be one of following:
-
 - gzip or gz
 - deflate
 - brotli or br
@@ -57,7 +56,7 @@ CREATE TABLE url_engine_table (word String, value UInt64)
 ENGINE=URL('http://127.0.0.1:12345/', CSV)
 ```
 
-**2.** Create a basic HTTP server using the standard Python 3 tools and
+* *2.** Create a basic HTTP server using the standard Python 3 tools and
 start it:
 
 ```python3
@@ -77,10 +76,10 @@ if __name__ == "__main__":
 ```
 
 ```bash
-python3 server.py
+$ python3 server.py
 ```
 
-**3.** Request data:
+* *3.** Request data:
 
 ```sql
 SELECT * FROM url_engine_table
@@ -97,9 +96,9 @@ SELECT * FROM url_engine_table
 
 - Reads and writes can be parallel
 - Not supported:
-- `ALTER` and `SELECT...SAMPLE` operations.
-- Indexes.
-- Replication.
+  - `ALTER` and `SELECT...SAMPLE` operations.
+  - Indexes.
+  - Replication.
 
 ## Virtual columns {#virtual-columns}
 

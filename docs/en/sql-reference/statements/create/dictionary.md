@@ -35,7 +35,6 @@ Depending on dictionary [layout](/sql-reference/dictionaries#storing-dictionarie
 ## SOURCE {#source}
 
 The source for a dictionary can be a:
-
 - table in the current ClickHouse service
 - table in a remote ClickHouse service
 - file available by HTTP(S)

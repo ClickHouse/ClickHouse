@@ -434,7 +434,6 @@ ORDER BY
 ```
 
 Result:
-
 ```response
 ┌─────────d1─┬─────────d2─┬─source───┐
 │ 1970-01-11 │ 1970-01-02 │ original │
@@ -621,7 +620,6 @@ Result:
 
 It can be useful to fill rows which have the same values in particular columns independently, - a good example is filling missing values in time series.
 Assume there is the following time series table:
-
 ```sql
 CREATE TABLE timeseries
 (
@@ -640,10 +638,8 @@ SELECT * FROM timeseries;
 │       432 │ 2021-12-01 00:00:05.000 │     5 │
 └───────────┴─────────────────────────┴───────┘
 ```
-
 And we'd like to fill missing values for each sensor independently with 1 second interval.
 The way to achieve it is to use `sensor_id` column as sorting prefix for filling column `timestamp`:
-
 ```sql
 SELECT *
 FROM timeseries
@@ -665,7 +661,6 @@ INTERPOLATE ( value AS 9999 )
 │       432 │ 2021-12-01 00:00:05.000 │     5 │
 └───────────┴─────────────────────────┴───────┘
 ```
-
 Here, the `value` column was interpolated with `9999` just to make filled rows more noticeable.
 This behavior is controlled by setting `use_with_fill_by_sorting_prefix` (enabled by default)
 

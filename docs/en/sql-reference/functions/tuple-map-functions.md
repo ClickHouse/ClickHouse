@@ -48,7 +48,6 @@ Creates a map from an array or map of keys and an array or map of values.
 
 The function is a convenient alternative to syntax `CAST([...], 'Map(key_type, value_type)')`.
 For example, instead of writing
-
 - `CAST((['aa', 'bb'], [4, 5]), 'Map(String, UInt32)')`, or
 - `CAST([('aa',4), ('bb',5)], 'Map(String, UInt32)')`
 
@@ -128,7 +127,6 @@ extractKeyValuePairs(data[, key_value_delimiter[, pair_delimiter[, quoting_chara
 ```
 
 Alias:
-
 - `str_to_map`
 - `mapFromString`
 
@@ -142,7 +140,7 @@ Alias:
 
 **Returned values**
 
-- A of key-value pairs. Type: [Map(String, String)](../data-types/map.md)
+- A of key-value pairs. Type: [Map(String, String)](../data-types/map.md) 
 
 **Examples**
 
@@ -286,7 +284,6 @@ Non standard escape sequences are returned as it is (including the backslash) un
 
 This function will satisfy the use case where pre-escaping and post-escaping are not suitable. For instance, consider the following
 input string: `a: "aaaa\"bbb"`. The expected output is: `a: aaaa\"bbbb`.
-
 - Pre-escaping: Pre-escaping it will output: `a: "aaaa"bbb"` and `extractKeyValuePairs` will then output: `a: aaaa`
 - Post-escaping: `extractKeyValuePairs` will output `a: aaaa\` and post-escaping will keep it as it is.
 
@@ -564,7 +561,6 @@ mapContainsKeyLike(map, pattern)
 ```
 
 **Arguments**
-
 - `map` — Map. [Map](../data-types/map.md).
 - `pattern`  - String pattern to match.
 
@@ -728,7 +724,6 @@ mapContainsValueLike(map, pattern)
 ```
 
 **Arguments**
-
 - `map` — Map. [Map](../data-types/map.md).
 - `pattern`  - String pattern to match.
 
@@ -927,7 +922,7 @@ mapConcat(maps)
 
 **Arguments**
 
-- `maps` – Arbitrarily many [Maps](../data-types/map.md).
+-   `maps` – Arbitrarily many [Maps](../data-types/map.md).
 
 **Returned value**
 
@@ -1040,11 +1035,11 @@ SELECT mapSort((k, v) -> v, map('key2', 2, 'key3', 1, 'key1', 3)) AS map;
 └──────────────────────────────┘
 ```
 
-For more details see the [reference](/sql-reference/functions/array-functions#arraySort) for `arraySort` function.
+For more details see the [reference](/sql-reference/functions/array-functions#arraySort) for `arraySort` function. 
 
 ## mapPartialSort {#mappartialsort}
 
-Sorts the elements of a map in ascending order with additional `limit` argument allowing partial sorting.
+Sorts the elements of a map in ascending order with additional `limit` argument allowing partial sorting. 
 If the `func` function is specified, the sorting order is determined by the result of the `func` function applied to the keys and values of the map.
 
 **Syntax**
@@ -1052,7 +1047,6 @@ If the `func` function is specified, the sorting order is determined by the resu
 ```sql
 mapPartialSort([func,] limit, map)
 ```
-
 **Arguments**
 
 - `func` – Optional function to apply to the keys and values of the map. [Lambda function](/sql-reference/functions/overview#higher-order-functions).
@@ -1114,7 +1108,6 @@ If the `func` function is specified, the sorting order is determined by the resu
 ```sql
 mapPartialReverseSort([func,] limit, map)
 ```
-
 **Arguments**
 
 - `func` – Optional function to apply to the keys and values of the map. [Lambda function](/sql-reference/functions/overview#higher-order-functions).

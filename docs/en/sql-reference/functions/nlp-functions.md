@@ -94,6 +94,7 @@ fr
 
 Similar to the `detectLanguage` function, but `detectLanguageMixed` returns a `Map` of 2-letter language codes that are mapped to the percentage of the certain language in the text.
 
+
 *Syntax*
 
 ```sql
@@ -107,6 +108,7 @@ detectLanguageMixed('text_to_be_analyzed')
 *Returned value*
 
 - `Map(String, Float32)`: The keys are 2-letter ISO codes and the values are a percentage of text found for that language
+
 
 *Examples*
 
@@ -126,7 +128,7 @@ Result:
 
 ## detectProgrammingLanguage {#detectprogramminglanguage}
 
-Determines the programming language from the source code. Calculates all the unigrams and bigrams of commands in the source code.
+Determines the programming language from the source code. Calculates all the unigrams and bigrams of commands in the source code. 
 Then using a marked-up dictionary with weights of unigrams and bigrams of commands for various programming languages finds the biggest weight of the programming language and returns it.
 
 *Syntax*
@@ -162,6 +164,7 @@ Result:
 ## detectLanguageUnknown {#detectlanguageunknown}
 
 Similar to the `detectLanguage` function, except the `detectLanguageUnknown` function works with non-UTF8-encoded strings. Prefer this version when your character set is UTF-16 or UTF-32.
+
 
 *Syntax*
 
@@ -238,7 +241,6 @@ Result:
 │                               0.44445 │                             0 │                                 -0.3 │
 └───────────────────────────────────────┴───────────────────────────────┴──────────────────────────────────────┘
 ```
-
 ## lemmatize {#lemmatize}
 
 Performs lemmatization on a given word. Needs dictionaries to operate, which can be obtained [here](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models).
@@ -316,7 +318,6 @@ Result:
 │ ['I','think','it','is','a','bless','in','disguis'] │
 └────────────────────────────────────────────────────┘
 ```
-
 *Supported languages for stem()*
 
 :::note
@@ -389,7 +390,6 @@ Result:
 ```
 
 *Configuration*
-
 ```xml
 <synonyms_extensions>
     <extension>

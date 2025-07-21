@@ -153,7 +153,6 @@ Settings:
 - `dump_ast` — Display the query AST generated from the query tree. Default: `0`.
 
 Example:
-
 ```sql
 EXPLAIN QUERY TREE SELECT id, value FROM test_table;
 ```
@@ -481,10 +480,9 @@ ExpressionTransform
             (ReadFromStorage)
             NumbersRange × 2 0 → 1
 ```
-
 ### EXPLAIN ESTIMATE {#explain-estimate}
 
-Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](/engines/table-engines/mergetree-family/mergetree) family.
+Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](/engines/table-engines/mergetree-family/mergetree) family. 
 
 **Example**
 

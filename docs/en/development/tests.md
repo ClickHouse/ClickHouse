@@ -17,12 +17,10 @@ Each functional test sends one or multiple queries to the running ClickHouse ser
 
 Tests are located in `queries` directory.
 There are two subdirectories: `stateless` and `stateful`.
-
 - Stateless tests run queries without any preloaded test data - they often create small synthetic datasets on the fly, within the test itself.
 - Stateful tests require preloaded test data from ClickHouse and it is available to general public. See [stateful test in continuous integration](continuous-integration.md#functional-stateful-tests).
 
 Each test can be one of two types: `.sql` and `.sh`.
-
 - An `.sql` test is the simple SQL script that is piped to `clickhouse-client`.
 - An `.sh` test is a script that is run by itself.
 
@@ -66,7 +64,6 @@ sudo ./install.sh
 
 :::note
 Tests should be
-
 - be minimal: only create the minimally needed tables, columns and, complexity,
 - be fast: not take longer than a few seconds (better: sub-seconds),
 - be correct and deterministic: fails if and only if the feature-under-test is not working,
@@ -74,7 +71,6 @@ Tests should be
 - be exhaustive: cover corner cases like zeros, nulls, empty sets, exceptions (negative tests, use syntax `-- { serverError xyz }` and `-- { clientError xyz }` for that),
 - clean up tables at the end of the test (in case of leftovers),
 - make sure the other tests don't test the same stuff (i.e. grep first).
-
 :::
 
 ### Restricting test runs {#restricting-test-runs}
@@ -84,9 +80,9 @@ A test can have zero or more _tags_ specifying restrictions in which contexts th
 For `.sql` tests tags are placed in the first line as a SQL comment:
 
 ```sql
-- - Tags: no-fasttest, no-replicated-database
-- - no-fasttest: <provide_a_reason_for_the_tag_here>
-- - no-replicated-database: <provide_a_reason_here>
+-- Tags: no-fasttest, no-replicated-database
+-- no-fasttest: <provide_a_reason_for_the_tag_here>
+-- no-replicated-database: <provide_a_reason_here>
 
 SELECT 1
 ```
@@ -149,8 +145,8 @@ For `.sh` tests limits are written as a comment on the line next to tags or on t
 For `.sql` tests tags are placed as a SQL comment in the line next to tags or in the first line:
 
 ```sql
-- - Tags: no-fasttest
-- - Random settings limits: max_block_size=(1000, 10000); index_granularity=(100, None)
+-- Tags: no-fasttest
+-- Random settings limits: max_block_size=(1000, 10000); index_granularity=(100, None)
 SELECT 1
 ```
 
@@ -224,7 +220,7 @@ It's not necessary to have unit tests if the code is already covered by function
 You can run individual gtest checks by calling the executable directly, for example:
 
 ```bash
-./src/unit_tests_dbms --gtest_filter=LocalAddress*
+$ ./src/unit_tests_dbms --gtest_filter=LocalAddress*
 ```
 
 ## Performance tests {#performance-tests}
@@ -277,22 +273,22 @@ Look for logs at `/etc/clickhouse-server/clickhouse-server.log`.
 When ClickHouse is already installed on your system, you can build a new `clickhouse` binary and replace the existing binary:
 
 ```bash
-sudo clickhouse stop
-sudo cp ./clickhouse /usr/bin/
-sudo clickhouse start
+$ sudo clickhouse stop
+$ sudo cp ./clickhouse /usr/bin/
+$ sudo clickhouse start
 ```
 
 Also you can stop system clickhouse-server and run your own with the same configuration but with logging to terminal:
 
 ```bash
-sudo clickhouse stop
-sudo -u clickhouse /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
+$ sudo clickhouse stop
+$ sudo -u clickhouse /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
 Example with gdb:
 
 ```bash
-sudo -u clickhouse gdb --args /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
+$ sudo -u clickhouse gdb --args /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
 If the system clickhouse-server is already running and you do not want to stop it, you can change port numbers in your `config.xml` (or override them in a file in `config.d` directory), provide appropriate data path, and run it.
@@ -306,7 +302,6 @@ Build tests allow to check that build is not broken on various alternative confi
 These tests are automated as well.
 
 Examples:
-
 - cross-compile for Darwin x86_64 (macOS)
 - cross-compile for FreeBSD x86_64
 - cross-compile for Linux AArch64
@@ -330,7 +325,6 @@ We also test that there are no too large stack frames.
 When we extend ClickHouse network protocol, we test manually that old clickhouse-client works with new clickhouse-server and new clickhouse-client works with old clickhouse-server (simply by running binaries from corresponding packages).
 
 We also test some cases automatically with integrational tests:
-
 - if data written by old version of ClickHouse can be successfully read by the new version;
 - do distributed queries work in a cluster with different ClickHouse versions.
 
@@ -407,7 +401,6 @@ It runs all functional tests in parallel in random order with a single server.
 Results of the tests are not checked.
 
 It is checked that:
-
 - server does not crash, no debug or sanitizer traps are triggered;
 - there are no deadlocks;
 - the database structure is consistent;

@@ -10,7 +10,6 @@ title: 'system.users'
 Contains a list of [user accounts](../../guides/sre/user-management/index.md#user-account-management) configured on the server.
 
 Columns:
-
 - `name` ([String](../../sql-reference/data-types/string.md)) — User name.
 
 - `id` ([UUID](../../sql-reference/data-types/uuid.md)) — User ID.

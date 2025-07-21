@@ -73,9 +73,9 @@ DESCRIBE icebergS3(iceberg_conf, filename = 'test_table')
 
 At the moment, with the help of CH, you can read iceberg tables, the schema of which has changed over time. We currently support reading tables where columns have been added and removed, and their order has changed. You can also change a column where a value is required to one where NULL is allowed. Additionally, we support permitted type casting for simple types, namely:  
 
-*int -> long
-*float -> double
-*decimal(P, S) -> decimal(P', S) where P' > P.
+* int -> long
+* float -> double
+* decimal(P, S) -> decimal(P', S) where P' > P.
 
 Currently, it is not possible to change nested structures or the types of elements within arrays and maps.
 
@@ -103,11 +103,11 @@ Note: You cannot specify both `iceberg_timestamp_ms` and `iceberg_snapshot_id` p
 
 ### Important considerations {#important-considerations}
 
-***Snapshots** are typically created when:
-*New data is written to the table
-*Some kind of data compaction is performed
+* **Snapshots** are typically created when:
+* New data is written to the table
+* Some kind of data compaction is performed
 
-***Schema changes typically don't create snapshots** - This leads to important behaviors when using time travel with tables that have undergone schema evolution.
+* **Schema changes typically don't create snapshots** - This leads to important behaviors when using time travel with tables that have undergone schema evolution.
 
 ### Example scenarios {#example-scenarios}
 
@@ -172,15 +172,15 @@ Consider this sequence of operations:
 
 Query results at different timestamps:
 
-*At ts1 & ts2: Only the original two columns appear
-*At ts3: All three columns appear, with NULL for the price of the first row
+* At ts1 & ts2: Only the original two columns appear
+* At ts3: All three columns appear, with NULL for the price of the first row
 
 #### Scenario 2:  Historical vs. Current Schema Differences {#scenario-2}
 
 A time travel query at a current moment might show a different schema than the current table:
 
 ```sql
-- - Create a table
+-- Create a table
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_2 (
   order_number bigint, 
   product_code string
@@ -188,15 +188,15 @@ A time travel query at a current moment might show a different schema than the c
   USING iceberg 
   OPTIONS ('format-version'='2')
 
-- - Insert initial data into the table
+-- Insert initial data into the table
   INSERT INTO spark_catalog.db.time_travel_example_2 VALUES (2, 'Venus');
 
-- - Alter table to add a new column
+-- Alter table to add a new column
   ALTER TABLE spark_catalog.db.time_travel_example_2 ADD COLUMN (price double);
 
   ts = now();
 
-- - Query the table at a current moment but using timestamp syntax
+-- Query the table at a current moment but using timestamp syntax
 
   SELECT * FROM spark_catalog.db.time_travel_example_2 TIMESTAMP AS OF ts;
 
@@ -206,7 +206,7 @@ A time travel query at a current moment might show a different schema than the c
     |           2|       Venus|
     +------------+------------+
 
-- - Query the table at a current moment
+-- Query the table at a current moment
   SELECT * FROM spark_catalog.db.time_travel_example_2;
 
 
@@ -224,7 +224,7 @@ This happens because `ALTER TABLE` doesn't create a new snapshot but for the cur
 The second one is that while doing time travel you can't get state of table before any data was written to it:
 
 ```sql
-- - Create a table
+-- Create a table
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_3 (
   order_number bigint, 
   product_code string
@@ -234,7 +234,7 @@ The second one is that while doing time travel you can't get state of table befo
 
   ts = now();
 
-- - Query the table at a specific timestamp
+-- Query the table at a specific timestamp
   SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finises with error: Cannot find a snapshot older than ts.
 ```
 
@@ -246,30 +246,30 @@ When using the `iceberg` table function in ClickHouse, the system needs to locat
 
 ### Candidate Search (in Priority Order) {#candidate-search}
 
-1.**Direct Path Specification**:
+1. **Direct Path Specification**:
 *If you set `iceberg_metadata_file_path`, the system will use this exact path by combining it with the Iceberg table directory path.
-*When this setting is provided, all other resolution settings are ignored.
+* When this setting is provided, all other resolution settings are ignored.
 
-2.**Table UUID Matching**:
+2. **Table UUID Matching**:
 *If `iceberg_metadata_table_uuid` is specified, the system will:
     *Look only at `.metadata.json` files in the `metadata` directory
     *Filter for files containing a `table-uuid` field matching your specified UUID (case-insensitive)
 
-3.**Default Search**:
+3. **Default Search**:
 *If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
 
 ### Selecting the Most Recent File {#most-recent-file}
 
 After identifying candidate files using the above rules, the system determines which one is the most recent:
 
-*If `iceberg_recent_metadata_file_by_last_updated_ms_field` is enabled:
-*The file with the largest `last-updated-ms` value is selected
+* If `iceberg_recent_metadata_file_by_last_updated_ms_field` is enabled:
+* The file with the largest `last-updated-ms` value is selected
 
-*Otherwise:
-*The file with the highest version number is selected
-*(Version appears as `V` in filenames formatted as `V.metadata.json` or `V-uuid.metadata.json`)
+* Otherwise:
+* The file with the highest version number is selected
+* (Version appears as `V` in filenames formatted as `V.metadata.json` or `V-uuid.metadata.json`)
 
-**Note**: All mentioned settings are table function settings (not global or query-level settings) and must be specified as shown below:
+* *Note**: All mentioned settings are table function settings (not global or query-level settings) and must be specified as shown below:
 
 ```sql
 SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table', 
@@ -288,5 +288,5 @@ Table function `iceberg` is an alias to `icebergS3` now.
 
 ## See Also {#see-also}
 
-*[Iceberg engine](/engines/table-engines/integrations/iceberg.md)
-*[Iceberg cluster table function](/sql-reference/table-functions/icebergCluster.md)
+* [Iceberg engine](/engines/table-engines/integrations/iceberg.md)
+* [Iceberg cluster table function](/sql-reference/table-functions/icebergCluster.md)

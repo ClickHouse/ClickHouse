@@ -63,7 +63,7 @@ Constructions with `{}` are similar to the [remote](remote.md) and [file](file.m
 
 **Example**
 
-1.Suppose that we have several files with following URIs on HDFS:
+1.  Suppose that we have several files with following URIs on HDFS:
 
 - 'hdfs://hdfs1:9000/some_dir/some_file_1'
 - 'hdfs://hdfs1:9000/some_dir/some_file_2'
@@ -72,18 +72,18 @@ Constructions with `{}` are similar to the [remote](remote.md) and [file](file.m
 - 'hdfs://hdfs1:9000/another_dir/some_file_2'
 - 'hdfs://hdfs1:9000/another_dir/some_file_3'
 
-2.Query the amount of rows in these files:
+2.  Query the amount of rows in these files:
 
-<!---->
+<!-- -->
 
 ```sql
 SELECT count(*)
 FROM hdfs('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV', 'name String, value UInt32')
 ```
 
-3.Query the amount of rows in all files of these two directories:
+3.  Query the amount of rows in all files of these two directories:
 
-<!---->
+<!-- -->
 
 ```sql
 SELECT count(*)

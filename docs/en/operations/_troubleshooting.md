@@ -105,13 +105,13 @@ Possible issues:
 Command:
 
 ```bash
-sudo service clickhouse-server status
+$ sudo service clickhouse-server status
 ```
 
 If the server is not running, start it with the command:
 
 ```bash
-sudo service clickhouse-server start
+$ sudo service clickhouse-server start
 ```
 
 **Check logs**
@@ -156,13 +156,13 @@ Revision: 54413
 If you do not find any useful information in `clickhouse-server` logs or there aren't any logs, you can view `system.d` logs using the command:
 
 ```bash
-sudo journalctl -u clickhouse-server
+$ sudo journalctl -u clickhouse-server
 ```
 
 **Start clickhouse-server in interactive mode**
 
 ```bash
-sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-server/config.xml
+$ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-server/config.xml
 ```
 
 This command starts the server as an interactive app with standard parameters of the autostart script. In this mode `clickhouse-server` prints all the event messages in the console.
@@ -189,8 +189,8 @@ Check:
 
     Check:
 
-- The [tcp_port_secure](../operations/server-configuration-parameters/settings.md#tcp_port_secure) setting.
-- Settings for [SSL certificates](../operations/server-configuration-parameters/settings.md#openssl).
+  - The [tcp_port_secure](../operations/server-configuration-parameters/settings.md#tcp_port_secure) setting.
+  - Settings for [SSL certificates](../operations/server-configuration-parameters/settings.md#openssl).
 
     Use proper parameters while connecting. For example, use the `port_secure` parameter with `clickhouse_client`.
 

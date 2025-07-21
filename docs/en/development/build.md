@@ -71,7 +71,6 @@ rustup toolchain install nightly-2025-07-07
 rustup default nightly-2025-07-07
 rustup component add rust-src
 ```
-
 ## Build ClickHouse {#build-clickhouse}
 
 We recommend to create a separate directory `build` inside `ClickHouse` which contains all build artifacts:
@@ -123,7 +122,6 @@ CMake provides shortcuts for above commands:
 cmake -S . -B build  # configure build, run from repository top-level directory
 cmake --build build  # compile
 ```
-
 :::
 
 ## Running the ClickHouse Executable {#running-the-clickhouse-executable}
@@ -210,7 +208,6 @@ You can run any build locally in an environment similar to CI using:
 ```bash
 python -m ci.praktika "BUILD_JOB_NAME"
 ```
-
 where BUILD_JOB_NAME is the job name as shown in the CI report, e.g., "Build (arm_release)", "Build (amd_debug)"
 
 This command pulls the appropriate Docker image `clickhouse/binary-builder` with all required dependencies,

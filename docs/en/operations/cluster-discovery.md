@@ -23,7 +23,6 @@ To enable it include the `allow_experimental_cluster_discovery` setting in your 
     <!-- ... -->
 </clickhouse>
 ```
-
 :::
 
 ## Remote servers configuration {#remote-servers-configuration}
@@ -157,7 +156,6 @@ You can use both features simultaneously, the host can register itself in cluste
 ```
 
 Limitations:
-
 - You can't use both `<path>` and `<multicluster_root_path>` in the same `remote_servers` subtree.
 - `<multicluster_root_path>` can only be with `<observer/>`.
 - The last part of path from Keeper is used as the cluster name, while during registration the name is taken from the XML tag.

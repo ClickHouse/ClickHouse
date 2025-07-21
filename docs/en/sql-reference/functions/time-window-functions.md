@@ -26,7 +26,6 @@ tumble(time_attr, interval [, timezone])
 ```
 
 **Arguments**
-
 - `time_attr` — Date and time. [DateTime](../data-types/datetime.md).
 - `interval` — Window interval in [Interval](../data-types/special-data-types/interval.md).
 - `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
@@ -171,7 +170,6 @@ Returns the inclusive lower bound of the corresponding [hopping window](#hop).
 ```sql
 hopStart(time_attr, hop_interval, window_interval [, timezone]);
 ```
-
 **Arguments**
 
 - `time_attr` — Date and time. [DateTime](../data-types/datetime.md).
@@ -212,7 +210,6 @@ Returns the exclusive upper bound of the corresponding [hopping window](#hop).
 ```sql
 hopEnd(time_attr, hop_interval, window_interval [, timezone]);
 ```
-
 **Arguments**
 
 - `time_attr` — Date and time. [DateTime](../data-types/datetime.md).

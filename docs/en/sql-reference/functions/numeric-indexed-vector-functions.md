@@ -40,8 +40,8 @@ groupNumericIndexedVectorState(type, integer_bit_num, fraction_bit_num)(col1, co
 **Parameters**
 
 - `type`: String, optional. Specifies the storage format. Currently, only `'BSI'` is supported.
-- `integer_bit_num`: `UInt32`, optional. Effective under the `'BSI'` storage format, this parameter indicates the number of bits used for the integer part. When the index type is an integer type, the default value corresponds to the number of bits used to store the index. For example, if the index type is UInt16, the default `integer_bit_num` is 16. For Float32 and Float64 index types, the default value of integer_bit_num is 40, so the integer part of the data that can be represented is in the range `[-2^39, 2^39 - 1]`. The legal range is `[0, 64]`.
-- `fraction_bit_num`: `UInt32`, optional. Effective under the `'BSI'` storage format, this parameter indicates the number of bits used for the fractional part. When the value type is an integer, the default value is 0; when the value type is Float32 or Float64 types, the default value is 24. The valid range is `[0, 24]`.
+- `integer_bit_num`: `UInt32`, optional. Effective under the `'BSI'` storage format, this parameter indicates the number of bits used for the integer part. When the index type is an integer type, the default value corresponds to the number of bits used to store the index. For example, if the index type is UInt16, the default `integer_bit_num` is 16. For Float32 and Float64 index types, the default value of integer_bit_num is 40, so the integer part of the data that can be represented is in the range `[-2^39, 2^39 - 1]`. The legal range is `[0, 64]`. 
+- `fraction_bit_num`: `UInt32`, optional. Effective under the `'BSI'` storage format, this parameter indicates the number of bits used for the fractional part. When the value type is an integer, the default value is 0; when the value type is Float32 or Float64 types, the default value is 24. The valid range is `[0, 24]`. 
 - There is also a constraint that the valid range of integer_bit_num + fraction_bit_num is [0, 64].
 - `col1`: The index column. Supported types: `UInt8`/`UInt16`/`UInt32`/`Int8`/`Int16`/`Int32`.
 - `col2`: The value column. Supported types: `Int8`/`Int16`/`Int32`/`Int64`/`UInt8`/`UInt16`/`UInt32`/`UInt64`/`Float32`/`Float64`.
@@ -245,7 +245,6 @@ Example
 ```sql
 SELECT numericIndexedVectorShortDebugString(numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30]))) AS res\G;
 ```
-
 Result
 
 ```text
@@ -263,13 +262,13 @@ The following information is valid in BSI vector type.
 - `integer_bit_num`: Number of bits used for the integer part.
 - `fraction_bit_num`: Number of bits used for the fractional part.
 - `zero_indexes info`: Information of indexes with value equal to 0
-- `cardinality`: The number of indexes with value equal to 0.
+    - `cardinality`: The number of indexes with value equal to 0.
 - `non_zero_indexes info`: Information of indexes with value not equal to 0
-- `total_cardinality`: Number of indexes with value not equal to 0.
-- `all value sum`: Sum of all values.
-- `number_of_bitmaps`: Number of bitmaps used by this indexes which value not equal 0.
-- `bitmap_info`: Information of each bitmap
-    -`cardinality`: Number of indexes in each bitmap.
+    - `total_cardinality`: Number of indexes with value not equal to 0.
+    - `all value sum`: Sum of all values.
+    - `number_of_bitmaps`: Number of bitmaps used by this indexes which value not equal 0.
+    - `bitmap_info`: Information of each bitmap
+        - `cardinality`: Number of indexes in each bitmap.
 
 # numericIndexedVectorPointwiseAdd
 

@@ -14,7 +14,6 @@ import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 Contains information about all cached file schemas.
 
 Columns:
-
 - `storage` ([String](/sql-reference/data-types/string.md)) — Storage name: File, URL, S3 or HDFS.
 - `source` ([String](/sql-reference/data-types/string.md)) — File source.
 - `format` ([String](/sql-reference/data-types/string.md)) — Format name.
@@ -25,7 +24,6 @@ Columns:
 **Example**
 
 Let's say we have a file `data.jsonl` with this content:
-
 ```json
 {"id" :  1, "age" :  25, "name" :  "Josh", "hobbies" :  ["football", "cooking", "music"]}
 {"id" :  2, "age" :  19, "name" :  "Alan", "hobbies" :  ["tennis", "art"]}
@@ -36,11 +34,9 @@ Let's say we have a file `data.jsonl` with this content:
 :::tip
 Place `data.jsonl` in the `user_files_path` directory.  You can find this by looking
 in your ClickHouse configuration files. The default is:
-
 ```sql
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
-
 :::
 
 Open `clickhouse-client` and run the `DESCRIBE` query:
@@ -65,7 +61,6 @@ SELECT *
 FROM system.schema_inference_cache
 FORMAT Vertical
 ```
-
 ```response
 Row 1:
 ──────
@@ -78,5 +73,4 @@ schema:                 id Nullable(Float64), age Nullable(Float64), name Nullab
 ```
 
 **See also**
-
 - [Automatic schema inference from input data](/interfaces/schema-inference.md)

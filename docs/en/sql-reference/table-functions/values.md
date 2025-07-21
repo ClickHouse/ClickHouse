@@ -9,7 +9,7 @@ title: 'values'
 
 # Values Table Function {#values-table-function}
 
-The `Values` table function allows you to create temporary storage which fills
+The `Values` table function allows you to create temporary storage which fills 
 columns with values. It is useful for quick testing or generating sample data.
 
 :::note
@@ -37,10 +37,10 @@ VALUES(
 
 ## Arguments {#arguments}
 
-- `column1_name Type1, ...` (optional). [String](/sql-reference/data-types/string)
+- `column1_name Type1, ...` (optional). [String](/sql-reference/data-types/string) 
   specifying the column names and types. If this argument is omitted columns will
   be named as `c1`, `c2`, etc.
-- `(value1_row1, value2_row1)`. [Tuples](/sql-reference/data-types/tuple)
+- `(value1_row1, value2_row1)`. [Tuples](/sql-reference/data-types/tuple) 
    containing values of any type.
 
 :::note
@@ -122,12 +122,12 @@ FROM VALUES(
 ```
 
 Or without providing a row specification (`'column1_name Type1, column2_name Type2, ...'`
-in the [syntax](#syntax)), in which case the columns are automatically named.
+in the [syntax](#syntax)), in which case the columns are automatically named. 
 
 For example:
 
 ```sql title="Query"
-- - tuples as values
+-- tuples as values
 SELECT *
 FROM VALUES(
     ('Noah', 'Paris'),
@@ -156,10 +156,10 @@ FROM VALUES(
  9. │ Mason    │ Venice    │
 10. │ Isabella │ Prague    │
     └──────────┴───────────┘
-```
+```   
 
 ```sql
-- - single values
+-- single values
 SELECT *
 FROM VALUES(
     'Noah',

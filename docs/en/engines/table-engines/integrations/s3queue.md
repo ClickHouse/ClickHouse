@@ -228,7 +228,6 @@ The s3Queue table engine supports role-based access.
 Refer to the documentation [here](/cloud/security/secure-s3) for steps to configure a role to access your bucket.
 
 Once the role is configured, a `roleARN` can be passed via an `extra_credentials` parameter as shown below:
-
 ```sql
 CREATE TABLE s3_table
 (
@@ -256,9 +255,9 @@ The setting `(s3queue_)buckets` is available starting with version `24.6`.
 
 `SELECT` is not particularly useful for streaming import (except for debugging), because each file can be imported only once. It is more practical to create real-time threads using [materialized views](../../../sql-reference/statements/create/view.md). To do this:
 
-1.Use the engine to create a table for consuming from specified path in S3 and consider it a data stream.
-2.Create a table with the desired structure.
-3.Create a materialized view that converts data from the engine and puts it into a previously created table.
+1.  Use the engine to create a table for consuming from specified path in S3 and consider it a data stream.
+2.  Create a table with the desired structure.
+3.  Create a materialized view that converts data from the engine and puts it into a previously created table.
 
 When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the background.
 
@@ -302,7 +301,7 @@ Constructions with `{}` are similar to the [remote](../../../sql-reference/table
 
 ## Limitations {#limitations}
 
-1.Duplicated rows can be as a result of:
+1. Duplicated rows can be as a result of:
 
 - an exception happens during parsing in the middle of file processing and retries are enabled via `s3queue_loading_retries`;
 
@@ -310,13 +309,13 @@ Constructions with `{}` are similar to the [remote](../../../sql-reference/table
 
 - abnormal server termination.
 
-2.`S3Queue` is configured on multiple servers pointing to the same path in zookeeper and `Ordered` mode is used, then `s3queue_loading_retries` will not work. This will be fixed soon.
+2. `S3Queue` is configured on multiple servers pointing to the same path in zookeeper and `Ordered` mode is used, then `s3queue_loading_retries` will not work. This will be fixed soon.
 
 ## Introspection {#introspection}
 
 For introspection use `system.s3queue` stateless table and `system.s3queue_log` persistent table.
 
-1.`system.s3queue`. This table is not persistent and shows in-memory state of `S3Queue`: which files are currently being processed, which files are processed or failed.
+1. `system.s3queue`. This table is not persistent and shows in-memory state of `S3Queue`: which files are currently being processed, which files are processed or failed.
 
 ```sql
 ┌─statement──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -356,7 +355,7 @@ ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMul
 exception:
 ```
 
-2.`system.s3queue_log`. Persistent table. Has the same information as `system.s3queue`, but for `processed` and `failed` files.
+2. `system.s3queue_log`. Persistent table. Has the same information as `system.s3queue`, but for `processed` and `failed` files.
 
 The table has the following structure:
 

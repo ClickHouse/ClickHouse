@@ -24,10 +24,10 @@ Columns:
 - `description` ([String](../../sql-reference/data-types/string.md)) — Short server setting description.
 - `type` ([String](../../sql-reference/data-types/string.md)) — Server setting value type.
 - `changeable_without_restart` ([Enum8](../../sql-reference/data-types/enum.md)) — Whether the setting can be changed at server runtime. Values:
-- `'No'`
-- `'IncreaseOnly'`
-- `'DecreaseOnly'`
-- `'Yes'`
+  - `'No' `
+  - `'IncreaseOnly'`
+  - `'DecreaseOnly'`
+  - `'Yes'`
 - `is_obsolete` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) - Shows whether a setting is obsolete.
 
 **Example**
@@ -61,6 +61,8 @@ WHERE name LIKE '%thread_pool%'
 
 Using of `WHERE changed` can be useful, for example, when you want to check
 whether settings in configuration files are loaded correctly and are in use.
+
+<!-- -->
 
 ```sql
 SELECT * FROM system.server_settings WHERE changed AND name='max_thread_pool_size'

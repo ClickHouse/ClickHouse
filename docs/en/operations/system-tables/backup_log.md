@@ -23,12 +23,12 @@ Columns:
 - `id` ([String](../../sql-reference/data-types/string.md)) — Identifier of the backup or restore operation.
 - `name` ([String](../../sql-reference/data-types/string.md)) — Name of the backup storage (the contents of the `FROM` or `TO` clause).
 - `status` ([Enum8](../../sql-reference/data-types/enum.md)) — Operation status. Possible values:
-- `'CREATING_BACKUP'`
-- `'BACKUP_CREATED'`
-- `'BACKUP_FAILED'`
-- `'RESTORING'`
-- `'RESTORED'`
-- `'RESTORE_FAILED'`
+  - `'CREATING_BACKUP'`
+  - `'BACKUP_CREATED'`
+  - `'BACKUP_FAILED'`
+  - `'RESTORING'`
+  - `'RESTORED'`
+  - `'RESTORE_FAILED'`
 - `error` ([String](../../sql-reference/data-types/string.md)) — Error message of the failed operation (empty string for successful operations).
 - `start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time of the operation.
 - `end_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — End time of the operation.
@@ -45,17 +45,14 @@ Columns:
 ```sql
 BACKUP TABLE test_db.my_table TO Disk('backups_disk', '1.zip')
 ```
-
 ```response
 ┌─id───────────────────────────────────┬─status─────────┐
 │ e5b74ecb-f6f1-426a-80be-872f90043885 │ BACKUP_CREATED │
 └──────────────────────────────────────┴────────────────┘
 ```
-
 ```sql
 SELECT * FROM system.backup_log WHERE id = 'e5b74ecb-f6f1-426a-80be-872f90043885' ORDER BY event_date, event_time_microseconds \G
 ```
-
 ```response
 Row 1:
 ──────
@@ -96,21 +93,17 @@ compressed_size:         3525068304
 files_read:              0
 bytes_read:              0
 ```
-
 ```sql
 RESTORE TABLE test_db.my_table FROM Disk('backups_disk', '1.zip')
 ```
-
 ```response
 ┌─id───────────────────────────────────┬─status───┐
 │ cdf1f731-52ef-42da-bc65-2e1bfcd4ce90 │ RESTORED │
 └──────────────────────────────────────┴──────────┘
 ```
-
 ```sql
 SELECT * FROM system.backup_log WHERE id = 'cdf1f731-52ef-42da-bc65-2e1bfcd4ce90' ORDER BY event_date, event_time_microseconds \G
 ```
-
 ```response
 Row 1:
 ──────
@@ -156,7 +149,6 @@ This is essentially the same information that is written in the system table `sy
 ```sql
 SELECT * FROM system.backups ORDER BY start_time
 ```
-
 ```response
 ┌─id───────────────────────────────────┬─name──────────────────────────┬─status─────────┬─error─┬──────────start_time─┬────────────end_time─┬─num_files─┬─total_size─┬─num_entries─┬─uncompressed_size─┬─compressed_size─┬─files_read─┬─bytes_read─┐
 │ e5b74ecb-f6f1-426a-80be-872f90043885 │ Disk('backups_disk', '1.zip') │ BACKUP_CREATED │       │ 2023-08-19 11:05:21 │ 2023-08-19 11:08:56 │        57 │ 4290364870 │          46 │        4290362365 │      3525068304 │          0 │          0 │

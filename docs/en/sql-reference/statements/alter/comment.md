@@ -10,8 +10,8 @@ keywords: ['ALTER TABLE', 'MODIFY COMMENT']
 
 # ALTER TABLE ... MODIFY COMMENT
 
-Adds, modifies, or removes a table comment, regardless of whether it was set
-before or not. The comment change is reflected in both [`system.tables`](../../../operations/system-tables/tables.md)
+Adds, modifies, or removes a table comment, regardless of whether it was set 
+before or not. The comment change is reflected in both [`system.tables`](../../../operations/system-tables/tables.md) 
 and in the `SHOW CREATE TABLE` query.
 
 ## Syntax {#syntax}
@@ -77,10 +77,10 @@ WHERE database = currentDatabase() AND name = 'table_with_comment';
 
 ## Caveats {#caveats}
 
-For Replicated tables, the comment can be different on different replicas.
+For Replicated tables, the comment can be different on different replicas. 
 Modifying the comment applies to a single replica.
 
-The feature is available since version 23.9. It does not work in previous
+The feature is available since version 23.9. It does not work in previous 
 ClickHouse versions.
 
 ## Related content {#related-content}

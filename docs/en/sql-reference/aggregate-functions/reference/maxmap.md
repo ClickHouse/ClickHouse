@@ -15,9 +15,7 @@ Calculates the maximum from `value` array according to the keys specified in the
 ```sql
 maxMap(key, value)
 ```
-
 or
-
 ```sql
 maxMap(Tuple(key, value))
 ```
@@ -25,10 +23,8 @@ maxMap(Tuple(key, value))
 Alias: `maxMappedArrays`
 
 :::note
-
 - Passing a tuple of keys and value arrays is identical to passing two arrays of keys and values.
 - The number of elements in `key` and `value` must be the same for each row that is totaled.
-
 :::
 
 **Parameters**

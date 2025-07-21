@@ -6,7 +6,7 @@ slug: /sql-reference/window-functions/
 title: 'Window Functions'
 ---
 
-# Window functions
+# Window functions 
 
 Windows functions let you perform calculations across a set of rows that are related to the current row.
 Some of the calculations that you can do are similar to those that can be done with an aggregate function, but a window function doesn't cause rows to be grouped into a single output - the individual rows are still returned.
@@ -26,7 +26,7 @@ ClickHouse supports the standard grammar for defining windows and window functio
 | `GROUPS` frame                                                                     | ❌                                                                                                                                                                               |
 | Calculating aggregate functions over a frame (`sum(value) over (order by time)`)   | ✅ (All aggregate functions are supported)                                                                                                                                                       |
 | `rank()`, `dense_rank()`, `row_number()`                                           | ✅ <br/>Alias: `denseRank()`                                                                                                                                                                                   |
-| `percent_rank()` | ✅  Efficiently computes the relative standing of a value within a partition in a dataset. This function effectively replaces the more verbose and computationally intensive manual SQL calculation expressed as `ifNull((rank() OVER(PARTITION BY x ORDER BY y) - 1) / nullif(count(1) OVER(PARTITION BY x) - 1, 0), 0)` <br/>Alias: `percentRank()`|
+| `percent_rank()` | ✅  Efficiently computes the relative standing of a value within a partition in a dataset. This function effectively replaces the more verbose and computationally intensive manual SQL calculation expressed as `ifNull((rank() OVER(PARTITION BY x ORDER BY y) - 1) / nullif(count(1) OVER(PARTITION BY x) - 1, 0), 0)` <br/>Alias: `percentRank()`| 
 | `lag/lead(value, offset)`                                                          | ✅ <br/> You can also use one of the following workarounds:<br/> 1) `any(value) over (.... rows between <offset> preceding and <offset> preceding)`, or `following` for `lead` <br/> 2) `lagInFrame/leadInFrame`, which are analogous, but respect the window frame. To get behavior identical to `lag/lead`, use `rows between unbounded preceding and unbounded following`                                                                 |
 | ntile(buckets) | ✅ <br/> Specify window like, (partition by x order by y rows between unbounded preceding and unbounded following). |
 
@@ -36,10 +36,9 @@ There is also the following ClickHouse specific window function:
 
 ### nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS]) {#nonnegativederivativemetric_column-timestamp_column-interval-x-units}
 
-Finds non-negative derivative for given `metric_column` by `timestamp_column`.
+Finds non-negative derivative for given `metric_column` by `timestamp_column`. 
 `INTERVAL` can be omitted, default is `INTERVAL 1 SECOND`.
 The computed value is the following for each row:
-
 - `0` for 1st row,
 - ${\text{metric}_i - \text{metric}_{i-1} \over \text{timestamp}_i - \text{timestamp}_{i-1}}  * \text{interval}$ for $i_{th}$ row.
 
@@ -245,7 +244,7 @@ INSERT INTO wf_frame FORMAT Values
 ```
 
 ```sql
-- - Frame is bounded by bounds of a partition (BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+-- Frame is bounded by bounds of a partition (BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
 SELECT
     part_key,
     value,
@@ -270,8 +269,8 @@ ORDER BY
 ```
 
 ```sql
-- - short form - no bound expression, no order by,
-- - an equalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
+-- short form - no bound expression, no order by,
+-- an equalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
 SELECT
     part_key,
     value,
@@ -294,7 +293,7 @@ ORDER BY
 ```
 
 ```sql
-- - frame is bounded by the beginning of a partition and the current row
+-- frame is bounded by the beginning of a partition and the current row
 SELECT
     part_key,
     value,
@@ -319,8 +318,8 @@ ORDER BY
 ```
 
 ```sql
-- - short form (frame is bounded by the beginning of a partition and the current row)
-- - an equalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
+-- short form (frame is bounded by the beginning of a partition and the current row)
+-- an equalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
 SELECT
     part_key,
     value,
@@ -344,7 +343,7 @@ ORDER BY
 ```
 
 ```sql
-- - frame is bounded by the beginning of a partition and the current row, but order is backward
+-- frame is bounded by the beginning of a partition and the current row, but order is backward
 SELECT
     part_key,
     value,
@@ -365,7 +364,7 @@ ORDER BY
 ```
 
 ```sql
-- - sliding frame - 1 PRECEDING ROW AND CURRENT ROW
+-- sliding frame - 1 PRECEDING ROW AND CURRENT ROW
 SELECT
     part_key,
     value,
@@ -390,7 +389,7 @@ ORDER BY
 ```
 
 ```sql
-- - sliding frame - ROWS BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING 
+-- sliding frame - ROWS BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING 
 SELECT
     part_key,
     value,
@@ -415,7 +414,7 @@ ORDER BY
 ```
 
 ```sql
-- - row_number does not respect the frame, so rn_1 = rn_2 = rn_3 != rn_4
+-- row_number does not respect the frame, so rn_1 = rn_2 = rn_3 != rn_4
 SELECT
     part_key,
     value,
@@ -447,7 +446,7 @@ ORDER BY
 ```
 
 ```sql
-- - first_value and last_value respect the frame
+-- first_value and last_value respect the frame
 SELECT
     groupArray(value) OVER w1 AS frame_values_1,
     first_value(value) OVER w1 AS first_value_1,
@@ -473,7 +472,7 @@ ORDER BY
 ```
 
 ```sql
-- - second value within the frame
+-- second value within the frame
 SELECT
     groupArray(value) OVER w1 AS frame_values_1,
     nth_value(value, 2) OVER w1 AS second_value
@@ -493,7 +492,7 @@ ORDER BY
 ```
 
 ```sql
-- - second value within the frame + Null for missing values
+-- second value within the frame + Null for missing values
 SELECT
     groupArray(value) OVER w1 AS frame_values_1,
     nth_value(toNullable(value), 2) OVER w1 AS second_value
@@ -590,7 +589,7 @@ INSERT INTO warehouse VALUES
     ('sku1', '2020-01-01', 1),
     ('sku1', '2020-02-01', 1),
     ('sku1', '2020-03-01', 1);
-```
+```    
 
 ```sql
 SELECT
@@ -758,8 +757,6 @@ https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/window_fu
 
 https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/01591_window_functions.sql
 
-https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/01591_window_functions.sql
-
 ### Postgres Docs {#postgres-docs}
 
 https://www.postgresql.org/docs/current/sql-select.html#SQL-WINDOW
@@ -781,7 +778,5 @@ https://dev.mysql.com/doc/refman/8.0/en/window-functions-frames.html
 ## Related Content {#related-content}
 
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
-
 - Blog: [Window and array functions for Git commit sequences](https://clickhouse.com/blog/clickhouse-window-array-functions-git-commits)
-
 - Blog: [Getting Data Into ClickHouse - Part 3 - Using S3](https://clickhouse.com/blog/getting-data-into-clickhouse-part-3-s3)

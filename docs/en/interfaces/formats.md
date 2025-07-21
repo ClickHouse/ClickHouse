@@ -16,30 +16,28 @@ data pipeline to leverage the benefits of ClickHouse.
 ## Input formats {#input-formats}
 
 Input formats are used for:
-
 - Parsing data provided to `INSERT` statements
 - Performing `SELECT` queries from file-backed tables such as `File`, `URL`, or `HDFS`
 - Reading dictionaries
 
-Choosing the right input format is crucial for efficient data ingestion in ClickHouse. With over 70 supported formats,
-selecting the most performant option can significantly impact insert speed, CPU and memory usage, and overall system
+Choosing the right input format is crucial for efficient data ingestion in ClickHouse. With over 70 supported formats, 
+selecting the most performant option can significantly impact insert speed, CPU and memory usage, and overall system 
 efficiency. To help navigate these choices, we benchmarked ingestion performance across formats, revealing key takeaways:
 
-- **The [Native](formats/Native.md) format is the most efficient input format**, offering the best compression, lowest
+- **The [Native](formats/Native.md) format is the most efficient input format**, offering the best compression, lowest 
   resource usage, and minimal server-side processing overhead.
 - **Compression is essential** - LZ4 reduces data size with minimal CPU cost, while ZSTD offers higher compression at the
   expense of additional CPU usage.
 - **Pre-sorting has a moderate impact**, as ClickHouse already sorts efficiently.
 - **Batching significantly improves efficiency** - larger batches reduce insert overhead and improve throughput.
 
-For a deep dive into the results and best practices,
+For a deep dive into the results and best practices, 
 read the full [benchmark analysis](https://www.clickhouse.com/blog/clickhouse-input-format-matchup-which-is-fastest-most-efficient).
 For the full test results, explore the [FastFormats](https://fastformats.clickhouse.com/) online dashboard.
 
 ## Output formats {#output-formats}
 
 Formats supported for output are used for:
-
 - Arranging the results of a `SELECT` query
 - Performing `INSERT` operations into file-backed tables
 
@@ -438,7 +436,6 @@ See [Npy](/interfaces/formats/Npy)
 ### LineAsString {#lineasstring}
 
 See:
-
 - [LineAsString](/interfaces/formats/LineAsString)
 - [LineAsStringWithNames](/interfaces/formats/LineAsStringWithNames)
 - [LineAsStringWithNamesAndTypes](/interfaces/formats/LineAsStringWithNamesAndTypes)
@@ -493,6 +490,5 @@ in the server configuration.
 Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` and `Protobuf` can skip broken row if parsing error occurred and continue parsing from the beginning of next row. See [input_format_allow_errors_num](/operations/settings/settings-formats.md/#input_format_allow_errors_num) and
 [input_format_allow_errors_ratio](/operations/settings/settings-formats.md/#input_format_allow_errors_ratio) settings.
 Limitations:
-
 - In case of parsing error `JSONEachRow` skips all data until the new line (or EOF), so rows must be delimited by `\n` to count errors correctly.
 - `Template` and `CustomSeparated` use delimiter after the last column and delimiter between rows to find the beginning of next row, so skipping errors works only if at least one of them is not empty.

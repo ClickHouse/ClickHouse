@@ -14,7 +14,7 @@ title: 'Form'
 
 ## Description {#description}
 
-The `Form` format can be used to read a single record in the application/x-www-form-urlencoded format
+The `Form` format can be used to read a single record in the application/x-www-form-urlencoded format 
 in which data is formatted as `key1=value1&key2=value2`.
 
 ## Example usage {#example-usage}

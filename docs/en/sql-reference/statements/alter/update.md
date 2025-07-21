@@ -14,7 +14,7 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN P
 
 Manipulates data matching the specified filtering expression. Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
 
-:::note
+:::note    
 The `ALTER TABLE` prefix makes this syntax different from most other systems supporting SQL. It is intended to signify that unlike similar queries in OLTP databases this is a heavy operation not designed for frequent use.
 :::
 

@@ -36,9 +36,9 @@ dictGetOrNull('dict_name', attr_name, id_expr)
 
 - If there is no the key, corresponding to `id_expr`, in the dictionary, then:
 
-        -`dictGet` returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
-        -`dictGetOrDefault` returns the value passed as the `default_value_expr` parameter.
-        -`dictGetOrNull` returns `NULL` in case key was not found in dictionary.
+        - `dictGet` returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
+        - `dictGetOrDefault` returns the value passed as the `default_value_expr` parameter.
+        - `dictGetOrNull` returns `NULL` in case key was not found in dictionary.
 
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
 
@@ -215,7 +215,6 @@ SELECT
     dictGetOrNull('range_key_dictionary', ('value', 'value_nullable'), number, toDate('2019-05-20'))
 FROM system.numbers LIMIT 5 FORMAT TabSeparated;
 ```
-
 Result:
 
 ```text
@@ -365,7 +364,6 @@ Consider the hierarchic dictionary:
 │  4 │         2 │
 └────┴───────────┘
 ```
-
 All descendants:
 
 ```sql
@@ -395,6 +393,7 @@ SELECT dictGetDescendants('hierarchy_flat_dictionary', number, 1) FROM system.nu
 │ []                                                         │
 └────────────────────────────────────────────────────────────┘
 ```
+
 
 ## dictGetAll {#dictgetall}
 
@@ -510,8 +509,8 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 - If there is no requested `id_expr` in the dictionary then:
 
-        -`dictGet[Type]` returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
-        -`dictGet[Type]OrDefault` returns the value passed as the `default_value_expr` parameter.
+        - `dictGet[Type]` returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
+        - `dictGet[Type]OrDefault` returns the value passed as the `default_value_expr` parameter.
 
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
 

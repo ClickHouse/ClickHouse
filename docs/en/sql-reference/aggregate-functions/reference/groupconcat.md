@@ -49,7 +49,7 @@ Input table:
 └────┴──────┘
 ```
 
-1.Basic usage without a delimiter:
+1.    Basic usage without a delimiter:
 
 Query:
 
@@ -65,7 +65,7 @@ JohnJaneBob
 
 This concatenates all names into one continuous string without any separator.
 
-2.Using comma as a delimiter:
+2. Using comma as a delimiter:
 
 Query:
 
@@ -87,7 +87,7 @@ John, Jane, Bob
 
 This output shows the names separated by a comma followed by a space.
 
-3.Limiting the number of concatenated elements
+3. Limiting the number of concatenated elements
 
 Query:
 

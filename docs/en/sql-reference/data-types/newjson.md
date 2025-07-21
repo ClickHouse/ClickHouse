@@ -48,7 +48,6 @@ To declare a column of `JSON` type, you can use the following syntax:
     SKIP REGEXP 'paths_regexp'
 )
 ```
-
 Where the parameters in the syntax above are defined as:
 
 | Parameter                   | Description                                                                                                                                                                                                                                                                                                                                                | Default Value |
@@ -174,13 +173,12 @@ and **not**:
 1. │ {"a.b.c":"42"} │
    └────────────────┘
 ```
-
 :::
 
 ## Reading JSON paths as sub-columns {#reading-json-paths-as-sub-columns}
 
-The `JSON` type supports reading every path as a separate sub-column.
-If the type of the requested path is not specified in the JSON type declaration,
+The `JSON` type supports reading every path as a separate sub-column. 
+If the type of the requested path is not specified in the JSON type declaration, 
 then the sub column of the path will always have type [Dynamic](/sql-reference/data-types/dynamic.md).
 
 For example:
@@ -239,7 +237,7 @@ SELECT toTypeName(json.a.b), toTypeName(json.a.g), toTypeName(json.c), toTypeNam
 └──────────────────────┴──────────────────────┴────────────────────┴────────────────────┘
 ```
 
-As we can see, for `a.b`, the type is `UInt32` as we specified it to be in the JSON type declaration,
+As we can see, for `a.b`, the type is `UInt32` as we specified it to be in the JSON type declaration, 
 and for all other sub-columns the type is `Dynamic`.
 
 It is also possible to read sub-columns of a `Dynamic` type using the special syntax `json.some.path.:TypeName`:
@@ -326,10 +324,10 @@ Reading sub-objects as sub-columns may be inefficient, as this may require a nea
 
 ## Type inference for paths {#type-inference-for-paths}
 
-During parsing of `JSON`, ClickHouse tries to detect the most appropriate data type for each JSON path.
+During parsing of `JSON`, ClickHouse tries to detect the most appropriate data type for each JSON path. 
 It works similarly to [automatic schema inference from input data](/interfaces/schema-inference.md),
 and is controlled by the same settings:
-
+ 
 - [input_format_try_infer_dates](/operations/settings/formats#input_format_try_infer_dates)
 - [input_format_try_infer_datetimes](/operations/settings/formats#input_format_try_infer_datetimes)
 - [schema_inference_make_columns_nullable](/operations/settings/formats#schema_inference_make_columns_nullable)
@@ -384,7 +382,7 @@ SELECT JSONAllPathsWithTypes('{"a" : [1, 2, 3]}'::JSON) AS paths_with_types sett
 
 ## Handling arrays of JSON objects {#handling-arrays-of-json-objects}
 
-JSON paths that contain an array of objects are parsed as type `Array(JSON)` and inserted into a `Dynamic` column for the path.
+JSON paths that contain an array of objects are parsed as type `Array(JSON)` and inserted into a `Dynamic` column for the path. 
 To read an array of objects, you can extract it from the `Dynamic` column as a sub-column:
 
 ```sql title="Query"
@@ -416,7 +414,7 @@ SELECT json.a.b, dynamicType(json.a.b) FROM test;
 └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────┘
 ```
 
-As you may have noticed, the `max_dynamic_types`/`max_dynamic_paths` parameters of the nested `JSON` type got reduced compared to the default values.
+As you may have noticed, the `max_dynamic_types`/`max_dynamic_paths` parameters of the nested `JSON` type got reduced compared to the default values. 
 This is needed to avoid the number of sub-columns growing uncontrollably on nested arrays of JSON objects.
 
 Let's try to read sub-columns from a nested `JSON` column:
@@ -495,11 +493,11 @@ SELECT json.a.b[].^k FROM test
 
 ## Reading JSON type from data {#reading-json-type-from-data}
 
-All text formats
-([`JSONEachRow`](../../interfaces/formats/JSON/JSONEachRow.md),
-[`TSV`](../../interfaces/formats/TabSeparated/TabSeparated.md),
-[`CSV`](../../interfaces/formats/CSV/CSV.md),
-[`CustomSeparated`](../../interfaces/formats/CustomSeparated/CustomSeparated.md),
+All text formats 
+([`JSONEachRow`](../../interfaces/formats/JSON/JSONEachRow.md), 
+[`TSV`](../../interfaces/formats/TabSeparated/TabSeparated.md), 
+[`CSV`](../../interfaces/formats/CSV/CSV.md), 
+[`CustomSeparated`](../../interfaces/formats/CustomSeparated/CustomSeparated.md), 
 [`Values`](../../interfaces/formats/Values.md), etc.) support reading the `JSON` type.
 
 Examples:
@@ -547,19 +545,19 @@ SELECT json FROM format(TSV, 'json JSON(a.b.c UInt32, SKIP a.b.d, SKIP REGEXP \'
 
 ## Reaching the limit of dynamic paths inside JSON {#reaching-the-limit-of-dynamic-paths-inside-json}
 
-The `JSON` data type can store only a limited number of paths as separate sub-columns internally.
+The `JSON` data type can store only a limited number of paths as separate sub-columns internally. 
 By default, this limit is `1024`, but you can change it in the type declaration using parameter `max_dynamic_paths`.
 
-When the limit is reached, all new paths inserted to a `JSON` column will be stored in a single shared data structure.
-It's still possible to read such paths as sub-columns,
-but it will require reading the entire shared data structure to extract the values of this path.
+When the limit is reached, all new paths inserted to a `JSON` column will be stored in a single shared data structure. 
+It's still possible to read such paths as sub-columns, 
+but it will require reading the entire shared data structure to extract the values of this path. 
 This limit is needed to avoid having an enormous number of different sub-columns that can make the table unusable.
 
 Let's see what happens when the limit is reached in a few different scenarios.
 
 ### Reaching the limit during data parsing {#reaching-the-limit-during-data-parsing}
 
-During parsing of `JSON` objects from data, when the limit is reached for the current block of data,
+During parsing of `JSON` objects from data, when the limit is reached for the current block of data, 
 all new paths will be stored in a shared data structure. We can use the following two introspection functions `JSONDynamicPaths`, `JSONSharedDataPaths`:
 
 ```sql title="Query"
@@ -582,18 +580,18 @@ SELECT json, JSONDynamicPaths(json), JSONSharedDataPaths(json) FROM format(JSONE
 └────────────────────────────────────────────────────────────────┴────────────────────────┴───────────────────────────┘
 ```
 
-As we can see, after inserting paths `e` and `f.g` the limit was reached,
+As we can see, after inserting paths `e` and `f.g` the limit was reached, 
 and they got inserted into a shared data structure.
 
 ### During merges of data parts in MergeTree table engines {#during-merges-of-data-parts-in-mergetree-table-engines}
 
-During a merge of several data parts in a `MergeTree` table the `JSON` column in the resulting data part can reach the limit of dynamic paths
+During a merge of several data parts in a `MergeTree` table the `JSON` column in the resulting data part can reach the limit of dynamic paths 
 and won't be able to store all paths from source parts as sub-columns.
-In this case, ClickHouse chooses what paths will remain as sub-columns after merge and what paths will be stored in the shared data structure.
+In this case, ClickHouse chooses what paths will remain as sub-columns after merge and what paths will be stored in the shared data structure. 
 In most cases, ClickHouse tries to keep paths that contain
 the largest number of non-null values and move the rarest paths to the shared data structure. This does, however, depend on the implementation.
 
-Let's see an example of such a merge.
+Let's see an example of such a merge. 
 First, let's create a table with a `JSON` column, set the limit of dynamic paths to `3` and then insert values with `5` different paths:
 
 ```sql title="Query"
@@ -652,8 +650,7 @@ As we can see, ClickHouse kept the most frequent paths `a`, `b` and `c` and move
 
 ## Introspection functions {#introspection-functions}
 
-There are several functions that can help to inspect the content of the JSON column:
-
+There are several functions that can help to inspect the content of the JSON column: 
 - [`JSONAllPaths`](../functions/json-functions.md#jsonallpaths)
 - [`JSONAllPathsWithTypes`](../functions/json-functions.md#jsonallpathswithtypes)
 - [`JSONDynamicPaths`](../functions/json-functions.md#jsondynamicpaths)
@@ -812,7 +809,7 @@ SELECT json, json.a, json.b, json.c FROM test;
 
 ## Comparison between values of the JSON type {#comparison-between-values-of-the-json-type}
 
-JSON objects are compared similarly to Maps.
+JSON objects are compared similarly to Maps. 
 
 For example:
 
@@ -854,7 +851,7 @@ Before creating `JSON` column and loading data into it, consider the following t
 
 - Investigate your data and specify as many path hints with types as you can. It will make storage and reading much more efficient.
 - Think about what paths you will need and what paths you will never need. Specify paths that you won't need in the `SKIP` section, and `SKIP REGEXP` section if needed. This will improve the storage.
-- Don't set the `max_dynamic_paths` parameter to very high values, as it can make storage and reading less efficient.
+- Don't set the `max_dynamic_paths` parameter to very high values, as it can make storage and reading less efficient. 
   While highly dependent on system parameters such as memory, CPU, etc., a general rule of thumb would be to not set `max_dynamic_paths` > 10 000.
 
 ## Further Reading {#further-reading}

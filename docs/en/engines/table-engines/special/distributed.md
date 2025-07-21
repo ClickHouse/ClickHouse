@@ -12,11 +12,11 @@ title: 'Distributed Table Engine'
 # Distributed table engine
 
 :::warning Distributed engine in Cloud
-To create a distributed table engine in ClickHouse Cloud, you can use the [`remote` and `remoteSecure`](../../../sql-reference/table-functions/remote) table functions.
+To create a distributed table engine in ClickHouse Cloud, you can use the [`remote` and `remoteSecure`](../../../sql-reference/table-functions/remote) table functions. 
 The `Distributed(...)` syntax cannot be used in ClickHouse Cloud.
 :::
 
-Tables with Distributed engine do not store any data of their own, but allow distributed query processing on multiple servers.
+Tables with Distributed engine do not store any data of their own, but allow distributed query processing on multiple servers. 
 Reading is automatically parallelized. During a read, the table indexes on remote servers are used if they exist.
 
 ## Creating a table {#distributed-creating-a-table}
@@ -51,9 +51,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
 
 **See Also**
 
-- [distributed_foreground_insert](../../../operations/settings/settings.md#distributed_foreground_insert) setting
-- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
-
+- [distributed_foreground_insert](../../../operations/settings/settings.md#distributed_foreground_insert) setting- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
 ### Distributed settings {#distributed-settings}
 
 | Setting                                    | Description                                                                                                                                                                                                                           | Default value |
@@ -82,7 +80,6 @@ For **Insert limit settings** (`..._insert`) see also:
 - [`distributed_foreground_insert`](../../../operations/settings/settings.md#distributed_foreground_insert) setting
 - [`prefer_localhost_replica`](/operations/settings/settings#prefer_localhost_replica) setting
 - `bytes_to_throw_insert` handled before `bytes_to_delay_insert`, so you should not set it to the value less then `bytes_to_delay_insert`
-
 :::
 
 **Example**
@@ -229,7 +226,7 @@ To learn more about how distributed `in` and `global in` queries are processed, 
 `_shard_num` — Contains the `shard_num` value from the table `system.clusters`. Type: [UInt32](../../../sql-reference/data-types/int-uint.md).
 
 :::note
-Since [`remote`](../../../sql-reference/table-functions/remote.md) and [`cluster](../../../sql-reference/table-functions/cluster.md) table functions internally create temporary Distributed table,`_shard_num` is available there too.
+Since [`remote`](../../../sql-reference/table-functions/remote.md) and [`cluster](../../../sql-reference/table-functions/cluster.md) table functions internally create temporary Distributed table, `_shard_num` is available there too.
 :::
 
 **See Also**

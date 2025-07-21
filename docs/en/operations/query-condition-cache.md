@@ -22,7 +22,6 @@ The information is recorded as a single bit: a 0 bit represents that no row matc
 In the former case, ClickHouse may skip the corresponding granule during filter evaluation, in the latter case, the granule must be loaded and evaluated.
 
 The query condition cache is effective if three prerequisites are fulfilled:
-
 - First, the workload must evaluate the same filter conditions repeatedly. This happens naturally if a query is repeated multiple times but it can also happen if two queries share the same filters, e.g. `SELECT product FROM products WHERE quality > 3` and `SELECT vendor, count() FROM products WHERE quality > 3`.
 - Second, the majority of the data is immutable, i.e., does not change between queries. This is generally the case in ClickHouse as parts are immutable and created only by INSERTs.
 - Third, filters are selective, i.e. only relatively few rows satisfy the filter condition. The fewer rows match the filter condition, the more granules will be recorded with bit 0 (no matching rows), and the more data can be "pruned" from subsequent filter evaluations.
@@ -31,7 +30,7 @@ The query condition cache is effective if three prerequisites are fulfilled:
 
 Since the query condition cache stores only a single bit per filter condition and granule, it consumes only little memory.
 The maximum size of the query condition cache can be configured using server settings [`query_condition_cache_size`](server-configuration-parameters/settings.md#query_condition_cache_size) (default: 100 MB).
-A cache size of 100 MB corresponds to 100 *1024* 1024 * 8 = 838,860,800 entries.
+A cache size of 100 MB corresponds to 100 * 1024 * 1024 * 8 = 838,860,800 entries.
 Since each entry represents a mark (8192 rows by default), the cache can cover up to 6,871,947,673,600 (6.8 trillion) rows of a single column.
 In practice, filter are evaluated on more than one column, so that number needs to be divided by the number of filtered columns.
 

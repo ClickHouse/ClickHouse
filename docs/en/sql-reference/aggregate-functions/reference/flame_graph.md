@@ -84,7 +84,7 @@ SELECT event_time, m, formatReadableSize(max(s) AS m) FROM (SELECT event_time, s
 SELECT argMax(event_time, s), max(s) FROM (SELECT event_time, sum(size) OVER (ORDER BY event_time) AS s FROM system.trace_log WHERE query_id = 'xxx' AND trace_type = 'MemorySample');
 ```
 
-- 3 - Fix active allocations at fixed point of time
+-  3 - Fix active allocations at fixed point of time
 
 ```text
 clickhouse client --allow_introspection_functions=1 -q "SELECT arrayJoin(flameGraph(trace, size, ptr)) FROM (SELECT * FROM system.trace_log WHERE trace_type = 'MemorySample' AND query_id = 'xxx' AND event_time <= 'yyy' ORDER BY event_time)" | ~/dev/FlameGraph/flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_pos.svg

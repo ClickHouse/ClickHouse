@@ -10,7 +10,6 @@ It reads an input table and produces an output table, that retains some properti
 It allows publishing almost real production data for usage in benchmarks.
 
 It is designed to retain the following properties of data:
-
 - cardinalities of values (number of distinct values) for every column and every tuple of columns;
 - conditional cardinalities: number of distinct values of one column under the condition on the value of another column;
 - probability distributions of the absolute value of integers; the sign of signed integers; exponent and sign for floats;

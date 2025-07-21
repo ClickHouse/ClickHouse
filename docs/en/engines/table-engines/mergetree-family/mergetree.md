@@ -97,7 +97,7 @@ The sampling expression must result in an unsigned integer.
 
 Example: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
-#### TTL {#ttl}
+####  TTL {#ttl}
 
 `TTL` — A list of rules that specify the storage duration of rows and the logic of automatic parts movement [between disks and volumes](#table_engine-mergetree-multiple-volumes). Optional.
 
@@ -209,8 +209,8 @@ The number of columns in the primary key is not explicitly limited. Depending on
 
     If the primary key is `(a, b)`, then adding another column `c` will improve the performance if the following conditions are met:
 
-- There are queries with a condition on column `c`.
-- Long data ranges (several times longer than the `index_granularity`) with identical values for `(a, b)` are common. In other words, when adding another column allows you to skip quite long data ranges.
+  - There are queries with a condition on column `c`.
+  - Long data ranges (several times longer than the `index_granularity`) with identical values for `(a, b)` are common. In other words, when adding another column allows you to skip quite long data ranges.
 
 - Improve data compression.
 
@@ -244,7 +244,6 @@ For `SELECT` queries, ClickHouse analyzes whether an index can be used. An index
 Thus, it is possible to quickly run queries on one or many ranges of the primary key. In this example, queries will be fast when run for a specific tracking tag, for a specific tag and date range, for a specific tag and date, for multiple tags with a date range, and so on.
 
 Let's look at the engine configured as follows:
-
 ```sql
 ENGINE MergeTree()
 PARTITION BY toYYYYMM(EventDate)
@@ -333,15 +332,15 @@ SELECT count() FROM table WHERE u64 * length(s) == 1234
 Data skipping indexes can also be created on composite columns:
 
 ```sql
-- - on columns of type Map:
+-- on columns of type Map:
 INDEX map_key_index mapKeys(map_column) TYPE bloom_filter
 INDEX map_value_index mapValues(map_column) TYPE bloom_filter
 
-- - on columns of type Tuple:
+-- on columns of type Tuple:
 INDEX tuple_1_index tuple_column.1 TYPE bloom_filter
 INDEX tuple_2_index tuple_column.2 TYPE bloom_filter
 
-- - on columns of type Nested:
+-- on columns of type Nested:
 INDEX nested_1_index col.nested_col1 TYPE bloom_filter
 INDEX nested_2_index col.nested_col2 TYPE bloom_filter
 ```
@@ -397,7 +396,6 @@ AS
 (number_of_hash_functions, probability_of_false_positives, size_of_bloom_filter_in_bytes) -> ceil(size_of_bloom_filter_in_bytes / (-number_of_hash_functions / log(1 - exp(log(probability_of_false_positives) / number_of_hash_functions))))
 
 ```
-
 To use those functions,we need to specify two parameter at least.
 For example, if there 4300 ngrams in the granule and we expect false positives to be less than 0.0001. The other parameters can be estimated by executing following queries:
 
@@ -417,7 +415,6 @@ SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) as number_of_ha
 └──────────────────────────┘
 
 ```
-
 Of course, you can also use those functions to estimate parameters by other conditions.
 The functions refer to the content [here](https://hur.st/bloomfilter).
 
@@ -476,22 +473,20 @@ Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`
 For example:
 
 - Can be optimized:
-- `s LIKE '%test%'`
-- `NOT s NOT LIKE '%test%'`
-- `s = 1`
-- `NOT s != 1`
-- `startsWith(s, 'test')`
+  - `s LIKE '%test%'`
+  - `NOT s NOT LIKE '%test%'`
+  - `s = 1`
+  - `NOT s != 1`
+  - `startsWith(s, 'test')`
 - Can not be optimized:
-- `NOT s LIKE '%test%'`
-- `s NOT LIKE '%test%'`
-- `NOT s = 1`
-- `s != 1`
-- `NOT startsWith(s, 'test')`
-
+  - `NOT s LIKE '%test%'`
+  - `s NOT LIKE '%test%'`
+  - `NOT s = 1`
+  - `s != 1`
+  - `NOT startsWith(s, 'test')`
 :::
 
 ## Projections {#projections}
-
 Projections are like [materialized views](/sql-reference/statements/create/view) but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
 
 :::note
@@ -501,7 +496,6 @@ When you are implementing projections you should also consider the [force_optimi
 Projections are not supported in the `SELECT` statements with the [FINAL](/sql-reference/statements/select/from#final-modifier) modifier.
 
 ### Projection query {#projection-query}
-
 A projection query is what defines a projection. It implicitly selects data from the parent table.
 **Syntax**
 
@@ -512,14 +506,12 @@ SELECT <column list expr> [GROUP BY] <group keys expr> [ORDER BY] <expr>
 Projections can be modified or dropped with the [ALTER](/sql-reference/statements/alter/projection.md) statement.
 
 ### Projection storage {#projection-storage}
-
 Projections are stored inside the part directory. It's similar to an index but contains a subdirectory that stores an anonymous `MergeTree` table's part. The table is induced by the definition query of the projection. If there is a `GROUP BY` clause, the underlying storage engine becomes [AggregatingMergeTree](aggregatingmergetree.md), and all aggregate functions are converted to `AggregateFunction`. If there is an `ORDER BY` clause, the `MergeTree` table uses it as its primary key expression. During the merge process the projection part is merged via its storage's merge routine. The checksum of the parent table's part is combined with the projection's part. Other maintenance jobs are similar to skip indices.
 
 ### Query analysis {#projection-query-analysis}
-
-1.Check if the projection can be used to answer the given query, that is, it generates the same answer as querying the base table.
-2.Select the best feasible match, which contains the least granules to read.
-3.The query pipeline which uses projections will be different from the one that uses the original parts. If the projection is absent in some parts, we can add the pipeline to "project" it on the fly.
+1. Check if the projection can be used to answer the given query, that is, it generates the same answer as querying the base table.
+2. Select the best feasible match, which contains the least granules to read.
+3. The query pipeline which uses projections will be different from the one that uses the original parts. If the projection is absent in some parts, we can add the pipeline to "project" it on the fly.
 
 ## Concurrent data access {#concurrent-data-access}
 
@@ -610,7 +602,6 @@ Type of TTL rule may follow each TTL expression. It affects an action which is t
 - `GROUP BY` - aggregate expired rows.
 
 `DELETE` action can be used together with `WHERE` clause to delete only some of the expired rows based on a filtering condition:
-
 ```sql
 TTL time_column + INTERVAL 1 MONTH DELETE WHERE column = 'value'
 ```
@@ -704,7 +695,6 @@ If you perform the `SELECT` query between merges, you may get expired data. To a
 ## Disk types {#disk-types}
 
 In addition to local block devices, ClickHouse supports these storage types:
-
 - [`s3` for S3 and MinIO](#table_engine-mergetree-s3)
 - [`gcs` for GCS](/integrations/data-ingestion/gcs/index.md/#creating-a-disk)
 - [`blob_storage_disk` for Azure Blob Storage](/operations/storing-data#azure-blob-storage)
@@ -815,10 +805,10 @@ Tags:
 - `least_used_ttl_ms` - Configure timeout (in milliseconds) for the updating available space on all disks (`0` - update always, `-1` - never update, default is `60000`). Note, if the disk can be used by ClickHouse only and is not subject to a online filesystem resize/shrink you can use `-1`, in all other cases it is not recommended, since eventually it will lead to incorrect space distribution.
 - `prefer_not_to_merge` — You should not use this setting. Disables merging of data parts on this volume (this is harmful and leads to performance degradation). When this setting is enabled (don't do it), merging data on this volume is not allowed (which is bad). This allows (but you don't need it) controlling (if you want to control something, you're making a mistake) how ClickHouse works with slow disks (but ClickHouse knows better, so please don't use this setting).
 - `volume_priority` — Defines the priority (order) in which volumes are filled. Lower value means higher priority. The parameter values should be natural numbers and collectively cover the range from 1 to N (lowest priority given) without skipping any numbers.
-- If *all* volumes are tagged, they are prioritized in given order.
-- If only *some* volumes are tagged, those without the tag have the lowest priority, and they are prioritized in the order they are defined in config.
-- If *no* volumes are tagged, their priority is set correspondingly to their order they are declared in configuration.
-- Two volumes cannot have the same priority value.
+  * If _all_ volumes are tagged, they are prioritized in given order.
+  * If only _some_ volumes are tagged, those without the tag have the lowest priority, and they are prioritized in the order they are defined in config.
+  * If _no_ volumes are tagged, their priority is set correspondingly to their order they are declared in configuration.
+  * Two volumes cannot have the same priority value.
 
 Configuration examples:
 
@@ -901,8 +891,8 @@ In the case of `MergeTree` tables, data is getting to disk in different ways:
 
 In all these cases except for mutations and partition freezing, a part is stored on a volume and a disk according to the given storage policy:
 
-1.The first volume (in the order of definition) that has enough disk space for storing a part (`unreserved_space > current_part_size`) and allows for storing parts of a given size (`max_data_part_size_bytes > current_part_size`) is chosen.
-2.Within this volume, that disk is chosen that follows the one, which was used for storing the previous chunk of data, and that has free space more than the part size (`unreserved_space - keep_free_space_bytes > current_part_size`).
+1.  The first volume (in the order of definition) that has enough disk space for storing a part (`unreserved_space > current_part_size`) and allows for storing parts of a given size (`max_data_part_size_bytes > current_part_size`) is chosen.
+2.  Within this volume, that disk is chosen that follows the one, which was used for storing the previous chunk of data, and that has free space more than the part size (`unreserved_space - keep_free_space_bytes > current_part_size`).
 
 Under the hood, mutations and partition freezing make use of [hard links](https://en.wikipedia.org/wiki/Hard_link). Hard links between different disks are not supported, therefore in such cases the resulting parts are stored on the same disks as the initial ones.
 
@@ -925,7 +915,6 @@ User can assign new big parts to different disks of a [JBOD](https://en.wikipedi
 Example for [S3](https://aws.amazon.com/s3/) as external storage using a disk with type `s3`.
 
 Configuration markup:
-
 ```xml
 <storage_configuration>
     ...

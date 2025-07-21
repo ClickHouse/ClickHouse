@@ -54,7 +54,6 @@ The generated file will be appended to the prefix PID and sequence number.
 
 After heap profiles have been generated, they need to be analyzed.  
 For that, `jemalloc`'s tool called [jeprof](https://github.com/jemalloc/jemalloc/blob/dev/bin/jeprof.in) can be used. It can be installed in multiple ways:
-
 - Using the system's package manager
 - Cloning the [jemalloc repo](https://github.com/jemalloc/jemalloc) and running `autogen.sh` from the root folder. This will provide you with the `jeprof` script inside the `bin` folder
 
@@ -68,11 +67,10 @@ cd addr2line
 cargo build --features bin --release
 cp ./target/release/addr2line path/to/current/addr2line
 ```
-
 :::
 
 There are many different formats to generate from the heap profile using `jeprof`.
-It is recommended to run `jeprof --help` for information on the usage and the various options the tool provides.
+It is recommended to run `jeprof --help` for information on the usage and the various options the tool provides. 
 
 In general, the `jeprof` command is used as:
 

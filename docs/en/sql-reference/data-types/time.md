@@ -31,7 +31,7 @@ Due to the implementation details, the `Time` and `DateTime` type requires 4 byt
 
 The point in time is saved as a [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time), regardless of the time zone or daylight saving time.
 
-**Note:** The Time data type does not observe time zones. It represents a time‐of‐day value on its own, without any date or regional offset context. Attempting to apply or change a time zone on Time columns has no effect and is not supported.
+* *Note:** The Time data type does not observe time zones. It represents a time‐of‐day value on its own, without any date or regional offset context. Attempting to apply or change a time zone on Time columns has no effect and is not supported.
 
 ## Examples {#examples}
 
@@ -47,9 +47,9 @@ ENGINE = TinyLog;
 ```
 
 ``` sql
-- - Parse Time
-- - - from string,
-- - - from integer interpreted as number of seconds since 1970-01-01.
+-- Parse Time
+-- - from string,
+-- - from integer interpreted as number of seconds since 1970-01-01.
 INSERT INTO dt VALUES ('100:00:00', 1), (12453, 3);
 
 SELECT * FROM dt;

@@ -13,7 +13,6 @@ Creates a user defined function (UDF) from a lambda expression. The expression m
 ```sql
 CREATE FUNCTION name [ON CLUSTER cluster] AS (parameter0, ...) -> expression
 ```
-
 A function can have an arbitrary number of parameters.
 
 There are a few restrictions:

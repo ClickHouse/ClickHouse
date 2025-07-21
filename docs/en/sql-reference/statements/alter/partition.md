@@ -25,6 +25,8 @@ The following operations with [partitions](/engines/table-engines/mergetree-fami
 - [UPDATE IN PARTITION](#update-in-partition) — Update data inside the partition by condition.
 - [DELETE IN PARTITION](#delete-in-partition) — Delete data inside the partition by condition.
 
+<!-- -->
+
 ## DETACH PARTITION\|PART {#detach-partitionpart}
 
 ```sql
@@ -217,9 +219,9 @@ The query creates backup almost instantly (but first it waits for the current qu
 
 To restore data from a backup, do the following:
 
-1.Create the table if it does not exist. To view the query, use the .sql file (replace `ATTACH` in it with `CREATE`).
-2.Copy the data from the `data/database/table/` directory inside the backup to the `/var/lib/clickhouse/data/database/table/detached/` directory.
-3.Run `ALTER TABLE t ATTACH PARTITION` queries to add the data to a table.
+1.  Create the table if it does not exist. To view the query, use the .sql file (replace `ATTACH` in it with `CREATE`).
+2.  Copy the data from the `data/database/table/` directory inside the backup to the `/var/lib/clickhouse/data/database/table/detached/` directory.
+3.  Run `ALTER TABLE t ATTACH PARTITION` queries to add the data to a table.
 
 Restoring from a backup does not require stopping the server.
 
@@ -251,20 +253,17 @@ Downloads a partition from another server. This query only works for the replica
 
 The query does the following:
 
-1. Downloads the partition|part from the specified shard. In 'path-in-zookeeper' you must specify a path to the shard in ZooKeeper.
-2. Then the query puts the downloaded data to the `detached` directory of the `table_name` table. Use the [ATTACH PARTITION\|PART](#attach-partitionpart) query to add the data to the table.
+1.  Downloads the partition|part from the specified shard. In 'path-in-zookeeper' you must specify a path to the shard in ZooKeeper.
+2.  Then the query puts the downloaded data to the `detached` directory of the `table_name` table. Use the [ATTACH PARTITION\|PART](#attach-partitionpart) query to add the data to the table.
 
 For example:
 
-1.FETCH PARTITION
-
+1. FETCH PARTITION
 ```sql
 ALTER TABLE users FETCH PARTITION 201902 FROM '/clickhouse/tables/01-01/visits';
 ALTER TABLE users ATTACH PARTITION 201902;
 ```
-
-2.FETCH PART
-
+2. FETCH PART
 ```sql
 ALTER TABLE users FETCH PART 201901_2_2_0 FROM '/clickhouse/tables/01-01/visits';
 ALTER TABLE users ATTACH PART 201901_2_2_0;
@@ -313,10 +312,10 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN P
 ### Example {#example}
 
 ```sql
-- - using partition name
+-- using partition name
 ALTER TABLE mt UPDATE x = x + 1 IN PARTITION 2 WHERE p = 2;
 
-- - using partition id
+-- using partition id
 ALTER TABLE mt UPDATE x = x + 1 IN PARTITION ID '2' WHERE p = 2;
 ```
 
@@ -337,10 +336,10 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_expr]
 ### Example {#example-1}
 
 ```sql
-- - using partition name
+-- using partition name
 ALTER TABLE mt DELETE IN PARTITION 2 WHERE p = 2;
 
-- - using partition id
+-- using partition id
 ALTER TABLE mt DELETE IN PARTITION ID '2' WHERE p = 2;
 ```
 

@@ -28,7 +28,6 @@ SELECT
 ## makeDate {#makedate}
 
 Creates a [Date](../data-types/date.md)
-
 - from a year, month and day argument, or
 - from a year and day of year argument.
 
@@ -40,7 +39,6 @@ makeDate(year, day_of_year);
 ```
 
 Alias:
-
 - `MAKEDATE(year, month, day);`
 - `MAKEDATE(year, day_of_year);`
 
@@ -84,7 +82,6 @@ Result:
 │ 2023-02-11 │
 └────────────┘
 ```
-
 ## makeDate32 {#makedate32}
 
 Creates a date of type [Date32](../../sql-reference/data-types/date32.md) from a year, month, day (or optionally a year and a day).
@@ -311,7 +308,7 @@ Alias: `serverTimezone`.
 
 **Returned value**
 
-- Timezone. [String](../data-types/string.md).
+-   Timezone. [String](../data-types/string.md).
 
 **Example**
 
@@ -415,7 +412,6 @@ SELECT timezoneOf(now());
 ```
 
 Result:
-
 ```text
 ┌─timezoneOf(now())─┐
 │ Etc/UTC           │
@@ -865,14 +861,12 @@ from_date32:     1509840000
 The return type of `toStartOf*`, `toLastDayOf*`, `toMonday`, `timeSlot` functions described below is determined by the configuration parameter [enable_extended_results_for_datetime_functions](/operations/settings/settings#enable_extended_results_for_datetime_functions) which is `0` by default.
 
 Behavior for
-
-- `enable_extended_results_for_datetime_functions = 0`:
-- Functions `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfWeek`, `toLastDayOfMonth`, `toMonday` return `Date` or `DateTime`.
-- Functions `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` return `DateTime`. Though these functions can take values of the extended types `Date32` and `DateTime64` as an argument, passing them a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results.
-- `enable_extended_results_for_datetime_functions = 1`:
-- Functions `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfWeek`, `toLastDayOfMonth`, `toMonday` return `Date` or `DateTime` if their argument is a `Date` or `DateTime`, and they return `Date32` or `DateTime64` if their argument is a `Date32` or `DateTime64`.
-- Functions `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` return `DateTime` if their argument is a `Date` or `DateTime`, and they return `DateTime64` if their argument is a `Date32` or `DateTime64`.
-
+* `enable_extended_results_for_datetime_functions = 0`:
+  * Functions `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfWeek`, `toLastDayOfMonth`, `toMonday` return `Date` or `DateTime`.
+  * Functions `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` return `DateTime`. Though these functions can take values of the extended types `Date32` and `DateTime64` as an argument, passing them a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results.
+* `enable_extended_results_for_datetime_functions = 1`:
+  * Functions `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfWeek`, `toLastDayOfMonth`, `toMonday` return `Date` or `DateTime` if their argument is a `Date` or `DateTime`, and they return `Date32` or `DateTime64` if their argument is a `Date32` or `DateTime64`.
+  * Functions `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` return `DateTime` if their argument is a `Date` or `DateTime`, and they return `DateTime64` if their argument is a `Date32` or `DateTime64`.
 :::
 
 ## toStartOfYear {#tostartofyear}
@@ -1597,7 +1591,6 @@ toStartOfFifteenMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:15:00
 
 This function generalizes other `toStartOf*()` functions with `toStartOfInterval(date_or_date_with_time, INTERVAL x unit [, time_zone])` syntax.
 For example,
-
 - `toStartOfInterval(t, INTERVAL 1 YEAR)` returns the same as `toStartOfYear(t)`,
 - `toStartOfInterval(t, INTERVAL 1 MONTH)` returns the same as `toStartOfMonth(t)`,
 - `toStartOfInterval(t, INTERVAL 1 DAY)` returns the same as `toStartOfDay(t)`,
@@ -1630,7 +1623,6 @@ If unit `WEEK` was specified, `toStartOfInterval` assumes that weeks start on Mo
 toStartOfInterval(value, INTERVAL x unit[, time_zone])
 toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 ```
-
 Aliases: `time_bucket`, `date_bin`.
 
 The second overload emulates TimescaleDB's `time_bucket()` function, respectively PostgreSQL's `date_bin()` function, e.g.
@@ -1648,7 +1640,6 @@ Result:
 ```
 
 **See Also**
-
 - [date_trunc](#date_trunc)
 
 ## toTimeWithFixedDate {#totimewithfixeddate}
@@ -2247,17 +2238,17 @@ age('unit', startdate, enddate, [timezone])
 - `unit` — The type of interval for result. [String](../data-types/string.md).
     Possible values:
 
-- `nanosecond`, `nanoseconds`, `ns`
-- `microsecond`, `microseconds`, `us`, `u`
-- `millisecond`, `milliseconds`, `ms`
-- `second`, `seconds`, `ss`, `s`
-- `minute`, `minutes`, `mi`, `n`
-- `hour`, `hours`, `hh`, `h`
-- `day`, `days`, `dd`, `d`
-- `week`, `weeks`, `wk`, `ww`
-- `month`, `months`, `mm`, `m`
-- `quarter`, `quarters`, `qq`, `q`
-- `year`, `years`, `yyyy`, `yy`
+    - `nanosecond`, `nanoseconds`, `ns`
+    - `microsecond`, `microseconds`, `us`, `u`
+    - `millisecond`, `milliseconds`, `ms`
+    - `second`, `seconds`, `ss`, `s`
+    - `minute`, `minutes`, `mi`, `n`
+    - `hour`, `hours`, `hh`, `h`
+    - `day`, `days`, `dd`, `d`
+    - `week`, `weeks`, `wk`, `ww`
+    - `month`, `months`, `mm`, `m`
+    - `quarter`, `quarters`, `qq`, `q`
+    - `year`, `years`, `yyyy`, `yy`
 
 - `startdate` — The first time value to subtract (the subtrahend). [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md).
 
@@ -2300,6 +2291,7 @@ Result:
 └────────────┴────────────┴─────────┴────────────┴──────────┘
 ```
 
+
 ## date_diff {#date_diff}
 
 Returns the count of the specified `unit` boundaries crossed between the `startdate` and the `enddate`.
@@ -2322,17 +2314,17 @@ Aliases: `dateDiff`, `DATE_DIFF`, `timestampDiff`, `timestamp_diff`, `TIMESTAMP_
 - `unit` — The type of interval for result. [String](../data-types/string.md).
     Possible values:
 
-- `nanosecond`, `nanoseconds`, `ns`
-- `microsecond`, `microseconds`, `us`, `u`
-- `millisecond`, `milliseconds`, `ms`
-- `second`, `seconds`, `ss`, `s`
-- `minute`, `minutes`, `mi`, `n`
-- `hour`, `hours`, `hh`, `h`
-- `day`, `days`, `dd`, `d`
-- `week`, `weeks`, `wk`, `ww`
-- `month`, `months`, `mm`, `m`
-- `quarter`, `quarters`, `qq`, `q`
-- `year`, `years`, `yyyy`, `yy`
+    - `nanosecond`, `nanoseconds`, `ns`
+    - `microsecond`, `microseconds`, `us`, `u`
+    - `millisecond`, `milliseconds`, `ms`
+    - `second`, `seconds`, `ss`, `s`
+    - `minute`, `minutes`, `mi`, `n`
+    - `hour`, `hours`, `hh`, `h`
+    - `day`, `days`, `dd`, `d`
+    - `week`, `weeks`, `wk`, `ww`
+    - `month`, `months`, `mm`, `m`
+    - `quarter`, `quarters`, `qq`, `q`
+    - `year`, `years`, `yyyy`, `yy`
 
 - `startdate` — The first time value to subtract (the subtrahend). [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md).
 
@@ -2392,17 +2384,17 @@ Alias: `dateTrunc`.
 - `unit` — The type of interval to truncate the result. [String Literal](/sql-reference/syntax#string).
     Possible values:
 
-- `nanosecond` - Compatible only with DateTime64
-- `microsecond` - Compatible only with DateTime64
-- `millisecond` - Compatible only with DateTime64
-- `second`
-- `minute`
-- `hour`
-- `day`
-- `week`
-- `month`
-- `quarter`
-- `year`
+    - `nanosecond` - Compatible only with DateTime64
+    - `microsecond` - Compatible only with DateTime64
+    - `millisecond` - Compatible only with DateTime64
+    - `second`
+    - `minute`
+    - `hour`
+    - `day`
+    - `week`
+    - `month`
+    - `quarter`
+    - `year`
 
     `unit` argument is case-insensitive.
 
@@ -2412,12 +2404,10 @@ Alias: `dateTrunc`.
 **Returned value**
 
 If the unit argument is Year, Quarter, Month, or Week,
-
 - and the value argument is Date32 or DateTime64, then [Date32](../data-types/date32.md) is returned,
 - otherwise, [Date](../data-types/date.md) is returned.
 
 If the unit argument is Day, Hour, Minute, or Second,
-
 - and the value argument is Date32 or DateTime64, then [DateTime64](../data-types/datetime64.md) is returned,
 - otherwise, [DateTime](../data-types/datetime.md) is returned.
 
@@ -2482,14 +2472,14 @@ Aliases: `dateAdd`, `DATE_ADD`.
 - `unit` — The type of interval to add. Note: This is not a [String](../data-types/string.md) and must therefore not be quoted.
     Possible values:
 
-- `second`
-- `minute`
-- `hour`
-- `day`
-- `week`
-- `month`
-- `quarter`
-- `year`
+    - `second`
+    - `minute`
+    - `hour`
+    - `day`
+    - `week`
+    - `month`
+    - `quarter`
+    - `year`
 
 - `value` — Value of interval to add. [Int](../data-types/int-uint.md).
 - `date` — The date or date with time to which `value` is added. [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md).
@@ -2524,6 +2514,8 @@ Result:
 └───────────────────────────────────────────────┘
 ```
 
+
+
 **See Also**
 
 - [addDate](#adddate)
@@ -2546,6 +2538,7 @@ Alternative syntax:
 date_sub(date, INTERVAL value unit)
 ```
 
+
 Aliases: `dateSub`, `DATE_SUB`.
 
 **Arguments**
@@ -2554,14 +2547,14 @@ Aliases: `dateSub`, `DATE_SUB`.
 
     Possible values:
 
-- `second`
-- `minute`
-- `hour`
-- `day`
-- `week`
-- `month`
-- `quarter`
-- `year`
+    - `second`
+    - `minute`
+    - `hour`
+    - `day`
+    - `week`
+    - `month`
+    - `quarter`
+    - `year`
 
 - `value` — Value of interval to subtract. [Int](../data-types/int-uint.md).
 - `date` — The date or date with time from which `value` is subtracted. [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md).
@@ -2596,6 +2589,7 @@ Result:
 └────────────────────────────────────────────────┘
 ```
 
+
 **See Also**
 
 - [subDate](#subdate)
@@ -2621,14 +2615,14 @@ Aliases: `timeStampAdd`, `TIMESTAMP_ADD`.
 - `unit` — The type of interval to add. [String](../data-types/string.md).
     Possible values:
 
-- `second`
-- `minute`
-- `hour`
-- `day`
-- `week`
-- `month`
-- `quarter`
-- `year`
+    - `second`
+    - `minute`
+    - `hour`
+    - `day`
+    - `week`
+    - `month`
+    - `quarter`
+    - `year`
 
 **Returned value**
 
@@ -2667,14 +2661,14 @@ Aliases: `timeStampSub`, `TIMESTAMP_SUB`.
 - `unit` — The type of interval to subtract. [String](../data-types/string.md).
     Possible values:
 
-- `second`
-- `minute`
-- `hour`
-- `day`
-- `week`
-- `month`
-- `quarter`
-- `year`
+    - `second`
+    - `minute`
+    - `hour`
+    - `day`
+    - `week`
+    - `month`
+    - `quarter`
+    - `year`
 
 - `value` — Value of interval to subtract. [Int](../data-types/int-uint.md).
 - `date` — Date or date with time. [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md).
@@ -3131,7 +3125,6 @@ Accepts an additional, optional `precision` parameter after the `timezone` param
 Changes the year component of a date or date time.
 
 **Syntax**
-
 ```sql
 
 changeYear(date_or_datetime, value)
@@ -3532,7 +3525,6 @@ addHours(date, num)
 
 **Returned value**
 o
-
 - Returns `date` plus `num` hours. [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
 
 **Example**
@@ -3820,7 +3812,6 @@ Result:
 │                                                                           2019-02-02 │
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
-
 ## subtractYears {#subtractyears}
 
 Subtracts a specified number of years from a date, a date with time or a string-encoded date / date with time.
@@ -4422,7 +4413,7 @@ Note 3: In ClickHouse versions earlier than v23.4, `%M` prints the minute (00-59
 
 Note 4: In ClickHouse versions earlier than v23.11, function `parseDateTime` required leading zeros for formatters `%c` (month) and `%l`/`%k` (hour), e.g. `07`. In later versions, the leading zero may be omitted, e.g. `7`. The previous behavior can be restored using setting `parsedatetime_parse_without_leading_zeros = 0`. Note that function `formatDateTime` by default still prints leading zeros for `%c` and `%l`/`%k` to not break existing use cases. This behavior can be changed by setting `formatdatetime_format_without_leading_zeros = 1`.
 
-Note 5: In ClickHouse versions earlier than v25.5, function `parseDateTime` required for formatter `%e` that single-digit days are space padded, e.g. `3`. In later versions, space padding is optional, e.g. `3` and `3` work. To retain the previous behaviour, set setting `parsedatetime_e_requires_space_padding = 1`. Similarly, formatter `%e` in function `formatDateTime` previously space-padded single-printed unconditionally whereas it now prints them without leading whitespace. To retain the previous behavior, set setting `formatdatetime_e_with_space_padding = 1`.
+Note 5: In ClickHouse versions earlier than v25.5, function `parseDateTime` required for formatter `%e` that single-digit days are space padded, e.g. ` 3`. In later versions, space padding is optional, e.g. `3` and ` 3` work. To retain the previous behaviour, set setting `parsedatetime_e_requires_space_padding = 1`. Similarly, formatter `%e` in function `formatDateTime` previously space-padded single-printed unconditionally whereas it now prints them without leading whitespace. To retain the previous behavior, set setting `formatdatetime_e_with_space_padding = 1`.
 
 **Example**
 
@@ -4491,6 +4482,7 @@ The opposite operation of this function is [parseDateTimeInJodaSyntax](/sql-refe
 
 Using replacement fields, you can define a pattern for the resulting string.
 
+
 | Placeholder | Description                              | Presentation  | Examples                           |
 | ----------- | ---------------------------------------- | ------------- | ---------------------------------- |
 | G           | era                                      | text          | AD                                 |
@@ -4530,6 +4522,7 @@ Result:
 │ 2010-01-04 12:34:56                                                                     │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
 
 ## dateName {#datename}
 

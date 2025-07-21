@@ -14,7 +14,7 @@ title: 'LineAsStringWithNamesAndTypes'
 
 ## Description {#description}
 
-The `LineAsStringWithNames` format is similar to the [`LineAsString`](./LineAsString.md) format
+The `LineAsStringWithNames` format is similar to the [`LineAsString`](./LineAsString.md) format 
 but prints two header rows: one with column names, the other with types.
 
 ## Example usage {#example-usage}

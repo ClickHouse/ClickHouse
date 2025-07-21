@@ -52,7 +52,6 @@ INSERT INTO TABLE FUNCTION file('01188_attach/test/data.TSV', 'TSV', 's String, 
 ATTACH TABLE test FROM '01188_attach/test' (s String, n UInt8) ENGINE = File(TSV);
 SELECT * FROM test;
 ```
-
 Result:
 
 ```sql
@@ -101,17 +100,13 @@ Get ZooKeeper path and replica name for table:
 ```sql
 SELECT replica_name, zookeeper_path FROM system.replicas WHERE table='test';
 ```
-
 Result:
-
 ```sql
 ┌─replica_name─┬─zookeeper_path─────────────────────────────────────────────┐
 │ r1           │ /clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1 │
 └──────────────┴────────────────────────────────────────────────────────────┘
 ```
-
 Attach table as not replicated and delete replica's data from ZooKeeper:
-
 ```sql
 DETACH TABLE test;
 ATTACH TABLE test AS NOT REPLICATED;

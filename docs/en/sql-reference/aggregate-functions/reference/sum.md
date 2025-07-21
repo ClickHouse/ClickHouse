@@ -16,7 +16,6 @@ sum(num)
 ```
 
 **Parameters**
-
 - `num`: Column of numeric values. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal*](../../data-types/decimal.md).
 
 **Returned value**
@@ -47,7 +46,7 @@ INSERT INTO employees VALUES
     (71245, 'Anastasia Ivanovna', 89210);
 ```
 
-We query for the total amount of the employee salaries using the `sum` function.
+We query for the total amount of the employee salaries using the `sum` function. 
 
 Query:
 

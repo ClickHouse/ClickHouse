@@ -33,7 +33,6 @@ position(haystack, needle[, start_pos])
 ```
 
 Alias:
-
 - `position(needle IN haystack)`
 
 **Arguments**
@@ -48,7 +47,6 @@ Alias:
 - 0, if the substring was not found. [UInt64](../data-types/int-uint.md).
 
 If substring `needle` is empty, these rules apply:
-
 - if no `start_pos` was specified: return `1`
 - if `start_pos = 0`: return `1`
 - if `start_pos >= 1` and `start_pos <= length(haystack) + 1`: return `start_pos`
@@ -134,7 +132,6 @@ Result:
 Like [position](#position) but with arguments `haystack` and `locate` switched.
 
 The behavior of this function depends on the ClickHouse version:
-
 - in versions < v24.3, `locate` was an alias of function `position` and accepted arguments `(haystack, needle[, start_pos])`.
 - in versions >= 24.3,, `locate` is an individual function (for better compatibility with MySQL) and accepts arguments `(needle, haystack[, start_pos])`. The previous behavior
   can be restored using setting [function_locate_has_mysql_compatible_argument_order = false](/operations/settings/settings#function_locate_has_mysql_compatible_argument_order);
@@ -230,7 +227,6 @@ Result:
 │ [0,13,0]                                                          │
 └───────────────────────────────────────────────────────────────────┘
 ```
-
 ## multiSearchAllPositionsCaseInsensitive {#multisearchallpositionscaseinsensitive}
 
 Like [multiSearchAllPositions](#multisearchallpositions) but ignores case.
@@ -490,7 +486,6 @@ Functions [`multiSearchFirstIndexCaseInsensitive`](#multisearchfirstindexcaseins
 ```sql
 multiSearchFirstIndex(haystack, [needle1, needle2, ..., needleN])
 ```
-
 **Parameters**
 
 - `haystack` — String in which the search is performed. [String](../data-types/string.md).
@@ -901,15 +896,15 @@ Alias: `haystack REGEXP pattern operator`
 Like `match` but returns 1 if at least one of the patterns match and 0 otherwise.
 
 :::note
-Functions in the `multi[Fuzzy]Match*()` family use the the [Vectorscan](https://github.com/VectorCamp/vectorscan) library. As such, they are only enabled if ClickHouse is compiled with support for vectorscan.
+Functions in the `multi[Fuzzy]Match*()` family use the the (Vectorscan)[https://github.com/VectorCamp/vectorscan] library. As such, they are only enabled if ClickHouse is compiled with support for vectorscan.
 
 To turn off all functions that use hyperscan, use setting `SET allow_hyperscan = 0;`.
 
 Due to restrictions of vectorscan, the length of the `haystack` string must be less than 2<sup>32</sup> bytes.
 
 Hyperscan is generally vulnerable to regular expression denial of service (ReDoS) attacks (e.g. see
-[here](https://www.usenix.org/conference/usenixsecurity22/presentation/turonova), [here](https://doi.org/10.1007/s10664-021-10033-1) and
-[here](https://doi.org/10.1145/3236024.3236027). Users are adviced to check the provided patterns carefully.
+(here)[https://www.usenix.org/conference/usenixsecurity22/presentation/turonova], (here)[https://doi.org/10.1007/s10664-021-10033-1] and
+(here)[https://doi.org/10.1145/3236024.3236027]. Users are adviced to check the provided patterns carefully.
 :::
 
 If you only want to search multiple substrings in a string, you can use function [multiSearchAny](#multisearchany) instead - it works much faster than this function.
@@ -977,7 +972,7 @@ multiFuzzyMatchAllIndices(haystack, distance, \[pattern<sub>1</sub>, pattern<sub
 ## extract {#extract}
 
 Returns the first match of a regular expression in a string.
-If `haystack` does not match the `pattern` regex, an empty string is returned.
+If `haystack` does not match the `pattern` regex, an empty string is returned. 
 
 If the regular expression has capturing groups, the function matches the input string against the first capturing group.
 
@@ -1249,6 +1244,7 @@ Result:
 ```
 
 The less similar two strings are to each, the larger the result will be.
+
 
 Query:
 
@@ -1572,7 +1568,6 @@ Result:
 │                                      1 │
 └────────────────────────────────────────┘
 ```
-
 ## countSubstringsCaseInsensitive {#countsubstringscaseinsensitive}
 
 Returns how often a substring `needle` occurs in a string `haystack`. Ignores case.
@@ -1682,7 +1677,6 @@ Result:
 Returns the number of regular expression matches for a `pattern` in a `haystack`.
 
 The behavior of this function depends on the ClickHouse version:
-
 - in versions < v25.6, `countMatches` would stop counting at the first empty match even if a pattern accepts.
 - in versions >= 25.6, `countMatches` would continue its execution when an empty match occurs.
   The legacy behavior can be restored using setting [count_matches_stop_at_empty_match = true](/operations/settings/settings#count_matches_stop_at_empty_match);
@@ -1807,6 +1801,7 @@ Result:
 
 Returns 1 if `needle` is a subsequence of `haystack`, or 0 otherwise.
 A subsequence of a string is a sequence that can be derived from the given string by deleting zero or more elements without changing the order of the remaining elements.
+
 
 **Syntax**
 
@@ -2076,6 +2071,7 @@ Token must be a constant string. Supported by tokenbf_v1 index specialization.
 
 **Example**
 
+
 Where `hasTokenCaseInsensitive` would throw an error for an ill-formed token, `hasTokenCaseInsensitiveOrNull` returns `null` for an ill-formed token.
 
 Query:
@@ -2096,3 +2092,4 @@ See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogene
 
 <!--AUTOGENERATED_START-->
 <!--AUTOGENERATED_END-->
+

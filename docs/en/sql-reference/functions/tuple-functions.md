@@ -607,7 +607,7 @@ tupleIntDiv(tuple_num, tuple_div)
 **Implementation details**
 
 - If either `tuple_num` or `tuple_div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
-- An error will be thrown for division by 0.
+- An error will be thrown for division by 0. 
 
 **Examples**
 
@@ -641,7 +641,7 @@ Result:
 
 ## tupleIntDivOrZero {#tupleintdivorzero}
 
-Like [tupleIntDiv](#tupleintdiv) it does integer division of a tuple of numerators and a tuple of denominators, and returns a tuple of the quotients. It does not throw an error for 0 divisors, but rather returns the quotient as 0.
+Like [tupleIntDiv](#tupleintdiv) it does integer division of a tuple of numerators and a tuple of denominators, and returns a tuple of the quotients. It does not throw an error for 0 divisors, but rather returns the quotient as 0. 
 
 **Syntax**
 
@@ -699,7 +699,7 @@ tupleIntDivByNumber(tuple_num, div)
 **Implementation details**
 
 - If either `tuple_num` or `div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
-- An error will be thrown for division by 0.
+- An error will be thrown for division by 0. 
 
 **Examples**
 

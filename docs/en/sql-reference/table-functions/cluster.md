@@ -25,7 +25,6 @@ cluster(['cluster_name', db, table, sharding_key])
 clusterAllReplicas(['cluster_name', db.table, sharding_key])
 clusterAllReplicas(['cluster_name', db, table, sharding_key])
 ```
-
 ## Arguments {#arguments}
 
 | Arguments                   | Type                                                                                                                                              |

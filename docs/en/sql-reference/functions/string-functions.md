@@ -107,7 +107,7 @@ Query:
 SELECT length('Hello, world!');
 ```
 
-Result:
+Result: 
 
 ```response
 ┌─length('Hello, world!')─┐
@@ -121,7 +121,7 @@ Query:
 SELECT length([1, 2, 3, 4]);
 ```
 
-Result:
+Result: 
 
 ```response
 ┌─length([1, 2, 3, 4])─┐
@@ -129,12 +129,12 @@ Result:
 └──────────────────────┘
 ```
 
+
 ## lengthUTF8 {#lengthutf8}
 
 Returns the length of a string in Unicode code points rather than in bytes or characters. It assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
 Aliases:
-
 - `CHAR_LENGTH`
 - `CHARACTER_LENGTH`
 
@@ -160,7 +160,7 @@ Query:
 SELECT lengthUTF8('Здравствуй, мир!');
 ```
 
-Result:
+Result: 
 
 ```response
 ┌─lengthUTF8('Здравствуй, мир!')─┐
@@ -986,7 +986,6 @@ substring(s, offset[, length])
 ```
 
 Aliases:
-
 - `substr`
 - `mid`
 - `byteSlice`
@@ -1062,8 +1061,8 @@ Returns the substring of `s` before `count` occurrences of the delimiter `delim`
 ```sql
 substringIndex(s, delim, count)
 ```
-
 Alias: `SUBSTRING_INDEX`
+
 
 **Arguments**
 
@@ -1078,7 +1077,6 @@ SELECT substringIndex('www.clickhouse.com', '.', 2)
 ```
 
 Result:
-
 ```sql
 ┌─substringIndex('www.clickhouse.com', '.', 2)─┐
 │ www.clickhouse                               │
@@ -1585,6 +1583,7 @@ SELECT startsWith('Spider-Man', 'Spi');
 
 Returns whether string `str` starts with `prefix`, the difference between `startsWithUTF8` and `startsWith` is that `startsWithUTF8` match `str` and `suffix` by UTF-8 characters.
 
+
 **Example**
 
 ```sql
@@ -1996,24 +1995,24 @@ This function extracts plain text from HTML or XHTML.
 
 It does not conform 100% to the HTML, XML or XHTML specification but the implementation is reasonably accurate and fast. The rules are the following:
 
-1.Comments are skipped. Example: `<!-- test -->`. Comment must end with `-->`. Nested comments are disallowed.
+1. Comments are skipped. Example: `<!-- test -->`. Comment must end with `-->`. Nested comments are disallowed.
 Note: constructions like `<!-->` and `<!--->` are not valid comments in HTML but they are skipped by other rules.
-2.CDATA is pasted verbatim. Note: CDATA is XML/XHTML-specific  and processed on a "best-effort" basis.
-3.`script` and `style` elements are removed with all their content. Note: it is assumed that closing tag cannot appear inside content. For example, in JS string literal has to be escaped like `"<\/script>"`.
+2. CDATA is pasted verbatim. Note: CDATA is XML/XHTML-specific  and processed on a "best-effort" basis.
+3. `script` and `style` elements are removed with all their content. Note: it is assumed that closing tag cannot appear inside content. For example, in JS string literal has to be escaped like `"<\/script>"`.
 Note: comments and CDATA are possible inside `script` or `style` - then closing tags are not searched inside CDATA. Example: `<script><![CDATA[</script>]]></script>`. But they are still searched inside comments. Sometimes it becomes complicated: `<script>var x = "<!--"; </script> var y = "-->"; alert(x + y);</script>`
 Note: `script` and `style` can be the names of XML namespaces - then they are not treated like usual `script` or `style` elements. Example: `<script:a>Hello</script:a>`.
 Note: whitespaces are possible after closing tag name: `</script >` but not before: `< / script>`.
-4.Other tags or tag-like elements are skipped without inner content. Example: `<a>.</a>`
+4. Other tags or tag-like elements are skipped without inner content. Example: `<a>.</a>`
 Note: it is expected that this HTML is illegal: `<a test=">"></a>`
 Note: it also skips something like tags: `<>`, `<!>`, etc.
-Note: tag without end is skipped to the end of input: `<hello`
-5.HTML and XML entities are not decoded. They must be processed by separate function.
-6.Whitespaces in the text are collapsed or inserted by specific rules.
-    -Whitespaces at the beginning and at the end are removed.
-    -Consecutive whitespaces are collapsed.
-    -But if the text is separated by other elements and there is no whitespace, it is inserted.
-    -It may cause unnatural examples: `Hello<b>world</b>`, `Hello<!---->world` - there is no whitespace in HTML, but the function inserts it. Also consider: `Hello<p>world</p>`, `Hello<br>world`. This behavior is reasonable for data analysis, e.g. to convert HTML to a bag of words.
-7.Also note that correct handling of whitespaces requires the support of `<pre></pre>` and CSS `display` and `white-space` properties.
+Note: tag without end is skipped to the end of input: `<hello   `
+5. HTML and XML entities are not decoded. They must be processed by separate function.
+6. Whitespaces in the text are collapsed or inserted by specific rules.
+    - Whitespaces at the beginning and at the end are removed.
+    - Consecutive whitespaces are collapsed.
+    - But if the text is separated by other elements and there is no whitespace, it is inserted.
+    - It may cause unnatural examples: `Hello<b>world</b>`, `Hello<!-- -->world` - there is no whitespace in HTML, but the function inserts it. Also consider: `Hello<p>world</p>`, `Hello<br>world`. This behavior is reasonable for data analysis, e.g. to convert HTML to a bag of words.
+7. Also note that correct handling of whitespaces requires the support of `<pre></pre>` and CSS `display` and `white-space` properties.
 
 **Syntax**
 
@@ -2467,7 +2466,7 @@ Result:
 
 ## initcapUTF8 {#initcaputf8}
 
-Like [initcap](#initcap), `initcapUTF8` converts the first letter of each word to upper case and the rest to lower case. Assumes that the string contains valid UTF-8 encoded text.
+Like [initcap](#initcap), `initcapUTF8` converts the first letter of each word to upper case and the rest to lower case. Assumes that the string contains valid UTF-8 encoded text. 
 If this assumption is violated, no exception is thrown and the result is undefined.
 
 :::note
@@ -2573,9 +2572,7 @@ SELECT
     stringCompare('alice', 'alicia', 0, 0, 3) AS result2,
     stringCompare('bob', 'alice', 0, 0, 3) AS result3
 ```
-
 Result:
-
 ```result
    ┌─result1─┬─result2─┬─result3─┐
 1. │      -1 │       0 │       1 │
@@ -2588,9 +2585,7 @@ SELECT
     stringCompare('alice', 'alice') AS result1,
     stringCompare('bob', 'alice') AS result3
 ```
-
 Result:
-
 ```result
    ┌─result2─┬─result1─┬─result3─┐
 1. │      -1 │       0 │       1 │
@@ -2599,7 +2594,7 @@ Result:
 
 ## sparseGrams {#sparsegrams}
 
-Finds all substrings of a given string that have a length of at least `n`,
+Finds all substrings of a given string that have a length of at least `n`, 
 where the hashes of the (n-1)-grams at the borders of the substring
 are strictly greater than those of any (n-1)-gram inside the substring.
 Uses [crc32](./string-functions.md#crc32) as a hash function.
@@ -2625,9 +2620,7 @@ sparseGrams(s[, min_ngram_length]);
 ```sql
 SELECT sparseGrams('alice', 3) AS result
 ```
-
 Result:
-
 ```result
    ┌─result─────────────────────┐
 1. │ ['ali','lic','lice','ice'] │
@@ -2663,15 +2656,12 @@ sparseGramsUTF8(s[, min_ngram_length]);
 ```sql
 SELECT sparseGramsUTF8('алиса', 3) AS result
 ```
-
 Result:
-
 ```result
    ┌─result──────────────┐
 1. │ ['али','лис','иса'] │
    └─────────────────────┘
 ```
-
 ## sparseGramsHashes {#sparsegramshashes}
 
 Finds hashes of all substrings of a given string that have a length of at least `n`,
@@ -2700,9 +2690,7 @@ sparseGramsHashes(s[, min_ngram_length]);
 ```sql
 SELECT sparseGramsHashes('alice', 3) AS result
 ```
-
 Result:
-
 ```result
    ┌─result────────────────────────────────────────┐
 1. │ [1265796434,3725069146,1689963195,3410985998] │
@@ -2738,9 +2726,7 @@ sparseGramsUTF8(s[, min_ngram_length]);
 ```sql
 SELECT sparseGramsHashesUTF8('алиса', 3) AS result
 ```
-
 Result:
-
 ```result
    ┌─result───────────────────────────┐
 1. │ [417784657,728683856,3071092609] │

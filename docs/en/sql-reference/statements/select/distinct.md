@@ -81,7 +81,6 @@ SELECT DISTINCT a FROM t1 ORDER BY b ASC;
 │ 3 │
 └───┘
 ```
-
 Selecting data with the different sorting direction:
 
 ```sql

@@ -57,9 +57,9 @@ The delivered records are tracked automatically, so each record in a log file is
 
 `SELECT` is not particularly useful for reading records (except for debugging), because each record can be read only once. It is more practical to create real-time threads using [materialized views](../../../sql-reference/statements/create/view.md). To do this:
 
-1.Use the engine to create a FileLog table and consider it a data stream.
-2.Create a table with the desired structure.
-3.Create a materialized view that converts data from the engine and puts it into a previously created table.
+1.  Use the engine to create a FileLog table and consider it a data stream.
+2.  Create a table with the desired structure.
+3.  Create a materialized view that converts data from the engine and puts it into a previously created table.
 
 When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the background. This allows you to continually receive records from log files and convert them to the required format using `SELECT`.
 One FileLog table can have as many materialized views as you like, they do not read data from the table directly, but receive new records (in blocks), this way you can write to several tables with different detail level (with grouping - aggregation and without).

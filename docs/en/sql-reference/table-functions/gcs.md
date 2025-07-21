@@ -24,7 +24,7 @@ gcs(named_collection[, option=value [,..]])
 ```
 
 :::tip GCS
-The GCS Table Function integrates with Google Cloud Storage by using the GCS XML API and HMAC keys.
+The GCS Table Function integrates with Google Cloud Storage by using the GCS XML API and HMAC keys. 
 See the [Google interoperability docs]( https://cloud.google.com/storage/docs/interoperability) for more details about the endpoint and HMAC.
 :::
 
@@ -100,14 +100,14 @@ LIMIT 2;
 
 Suppose that we have several files with following URIs on GCS:
 
-- https://storage.googleapis.com/my-test-bucket-768/some_prefix/some_file_1.csv>
-- https://storage.googleapis.com/my-test-bucket-768/some_prefix/some_file_2.csv
-- https://storage.googleapis.com/my-test-bucket-768/some_prefix/some_file_3.csv
-- https://storage.googleapis.com/my-test-bucket-768/some_prefix/some_file_4.csv
-- https://storage.googleapis.com/my-test-bucket-768/another_prefix/some_file_1.csv
-- https://storage.googleapis.com/my-test-bucket-768/another_prefix/some_file_2.csv
-- https://storage.googleapis.com/my-test-bucket-768/another_prefix/some_file_3.csv
-- https://storage.googleapis.com/my-test-bucket-768/another_prefix/some_file_4.csv
+-   'https://storage.googleapis.com/my-test-bucket-768/some_prefix/some_file_1.csv'
+-   'https://storage.googleapis.com/my-test-bucket-768/some_prefix/some_file_2.csv'
+-   'https://storage.googleapis.com/my-test-bucket-768/some_prefix/some_file_3.csv'
+-   'https://storage.googleapis.com/my-test-bucket-768/some_prefix/some_file_4.csv'
+-   'https://storage.googleapis.com/my-test-bucket-768/another_prefix/some_file_1.csv'
+-   'https://storage.googleapis.com/my-test-bucket-768/another_prefix/some_file_2.csv'
+-   'https://storage.googleapis.com/my-test-bucket-768/another_prefix/some_file_3.csv'
+-   'https://storage.googleapis.com/my-test-bucket-768/another_prefix/some_file_4.csv'
 
 Count the amount of rows in files ending with numbers from 1 to 3:
 
@@ -179,7 +179,6 @@ SELECT * FROM gcs('https://storage.googleapis.com/my-test-bucket-768/**/test-dat
 ```
 
 For production use cases it is recommended to use [named collections](operations/named-collections.md). Here is the example:
-
 ```sql
 
 CREATE NAMED COLLECTION creds AS
@@ -195,27 +194,24 @@ If you specify `PARTITION BY` expression when inserting data into `GCS` table, a
 
 **Examples**
 
-1.Using partition ID in a key creates separate files:
+1. Using partition ID in a key creates separate files:
 
 ```sql
 INSERT INTO TABLE FUNCTION
     gcs('http://bucket.amazonaws.com/my_bucket/file_{_partition_id}.csv', 'CSV', 'a String, b UInt32, c UInt32')
     PARTITION BY a VALUES ('x', 2, 3), ('x', 4, 5), ('y', 11, 12), ('y', 13, 14), ('z', 21, 22), ('z', 23, 24);
 ```
-
 As a result, the data is written into three files: `file_x.csv`, `file_y.csv`, and `file_z.csv`.
 
-2.Using partition ID in a bucket name creates files in different buckets:
+2. Using partition ID in a bucket name creates files in different buckets:
 
 ```sql
 INSERT INTO TABLE FUNCTION
     gcs('http://bucket.amazonaws.com/my_bucket_{_partition_id}/file.csv', 'CSV', 'a UInt32, b UInt32, c UInt32')
     PARTITION BY a VALUES (1, 2, 3), (1, 4, 5), (10, 11, 12), (10, 13, 14), (20, 21, 22), (20, 23, 24);
 ```
-
 As a result, the data is written into three files in different buckets: `my_bucket_1/file.csv`, `my_bucket_10/file.csv`, and `my_bucket_20/file.csv`.
 
 ## Related {#related}
-
 - [S3 table function](s3.md)
 - [S3 engine](../../engines/table-engines/integrations/s3.md)

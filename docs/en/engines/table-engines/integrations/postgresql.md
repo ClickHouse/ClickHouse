@@ -61,7 +61,6 @@ The table structure can differ from the original PostgreSQL table structure:
 ```
 
 Some parameters can be overridden by key value arguments:
-
 ```sql
 SELECT * FROM postgresql(postgres_creds, table='table1');
 ```

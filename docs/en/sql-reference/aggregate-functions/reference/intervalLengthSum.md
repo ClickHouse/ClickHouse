@@ -30,7 +30,7 @@ Arguments must be of the same data type. Otherwise, an exception will be thrown.
 
 **Examples**
 
-1.Input table:
+1. Input table:
 
 ```text
 ┌─id─┬─start─┬─end─┐
@@ -58,7 +58,7 @@ Result:
 └────┴───────────────────────────────┴───────────────────────────────────────────┘
 ```
 
-2.Input table:
+2. Input table:
 
 ```text
 ┌─id─┬───────────────start─┬─────────────────end─┐
@@ -84,7 +84,7 @@ Result:
 └────┴───────────────────────────────┴───────────────────────────────────────────┘
 ```
 
-3.Input table:
+3. Input table:
 
 ```text
 ┌─id─┬──────start─┬────────end─┐

@@ -47,7 +47,6 @@ Accepts a region ID and geobase and returns a string of the name of the region i
 ```sql
 regionToName(id\[, lang\])
 ```
-
 **Parameters**
 
 - `id` — Region ID from the geobase. [UInt32](../data-types/int-uint).
@@ -56,7 +55,7 @@ regionToName(id\[, lang\])
 **Returned value**
 
 - Name of the region in the corresponding language specified by `geobase`. [String](../data-types/string).
-- Otherwise, an empty string.
+- Otherwise, an empty string. 
 
 **Example**
 

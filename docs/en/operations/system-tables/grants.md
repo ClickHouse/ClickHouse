@@ -9,7 +9,6 @@ title: 'system.grants'
 Privileges granted to ClickHouse user accounts.
 
 Columns:
-
 - `user_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — User name.
 
 - `role_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Role assigned to user account.

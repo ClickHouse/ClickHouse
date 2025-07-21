@@ -83,7 +83,6 @@ Query:
 ```sql
 SELECT year, month, day, count(*) FROM t GROUP BY ROLLUP(year, month, day);
 ```
-
 As `GROUP BY` section has three key expressions, the result contains four tables with subtotals "rolled up" from right to left:
 
 - `GROUP BY year, month, day`;
@@ -113,9 +112,7 @@ As `GROUP BY` section has three key expressions, the result contains four tables
 │    0 │     0 │   0 │       6 │
 └──────┴───────┴─────┴─────────┘
 ```
-
 The same query also can be written using `WITH` keyword.
-
 ```sql
 SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
 ```
@@ -210,9 +207,7 @@ Columns, excluded from `GROUP BY`, are filled with zeros.
 │    0 │     0 │   0 │       6 │
 └──────┴───────┴─────┴─────────┘
 ```
-
 The same query also can be written using `WITH` keyword.
-
 ```sql
 SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 ```
@@ -351,10 +346,10 @@ To solve this problem `GROUPING` function must be used.
 The following two queries are equivalent.
 
 ```sql
-- - Query 1
+-- Query 1
 SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
 
-- - Query 2
+-- Query 2
 SELECT year, month, day, count(*) FROM t GROUP BY
 GROUPING SETS
 (

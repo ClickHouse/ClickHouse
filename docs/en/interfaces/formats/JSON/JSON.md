@@ -14,9 +14,9 @@ title: 'JSON'
 
 ## Description {#description}
 
-The `JSON` format reads and outputs data in the JSON format.
+The `JSON` format reads and outputs data in the JSON format. 
 
-The `JSON` format returns the following:
+The `JSON` format returns the following: 
 
 | Parameter                    | Description                                                                                                                                                                                                                                |
 |------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -28,14 +28,13 @@ The `JSON` format returns the following:
 | `totals`                     | Total values (when using WITH TOTALS).                                                                                                                                                                                                     |
 | `extremes`                   | Extreme values (when extremes are set to 1).                                                                                                                                                                                               |
 
-The `JSON` type is compatible with JavaScript. To ensure this, some characters are additionally escaped:
-
+The `JSON` type is compatible with JavaScript. To ensure this, some characters are additionally escaped: 
 - the slash `/` is escaped as `\/`
-- alternative line breaks `U+2028` and `U+2029`, which break some browsers, are escaped as `\uXXXX`.
-- ASCII control characters are escaped: backspace, form feed, line feed, carriage return, and horizontal tab are replaced with `\b`, `\f`, `\n`, `\r`, `\t` , as well as the remaining bytes in the 00-1F range using `\uXXXX` sequences.
-- Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences.
+- alternative line breaks `U+2028` and `U+2029`, which break some browsers, are escaped as `\uXXXX`. 
+- ASCII control characters are escaped: backspace, form feed, line feed, carriage return, and horizontal tab are replaced with `\b`, `\f`, `\n`, `\r`, `\t` , as well as the remaining bytes in the 00-1F range using `\uXXXX` sequences. 
+- Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. 
 
-For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double quotes by default.
+For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double quotes by default. 
 To remove the quotes, you can set the configuration parameter [`output_format_json_quote_64bit_integers`](/operations/settings/settings-formats.md/#output_format_json_quote_64bit_integers) to `0`.
 
 ClickHouse supports [NULL](/sql-reference/syntax.md), which is displayed as `null` in the JSON output. To enable `+nan`, `-nan`, `+inf`, `-inf` values in output, set the [output_format_json_quote_denormals](/operations/settings/settings-formats.md/#output_format_json_quote_denormals) to `1`.

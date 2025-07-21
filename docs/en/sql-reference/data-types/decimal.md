@@ -20,7 +20,6 @@ Signed fixed-point numbers that keep precision during add, subtract and multiply
 Decimal(P) is equivalent to Decimal(P, 0). Similarly, the syntax Decimal is equivalent to Decimal(10, 0).
 
 Depending on P parameter value Decimal(P, S) is a synonym for:
-
 - P from \[ 1 : 9 \] - for Decimal32(S)
 - P from \[ 10 : 18 \] - for Decimal64(S)
 - P from \[ 19 : 38 \] - for Decimal128(S)
@@ -121,6 +120,5 @@ DB::Exception: Can't compare.
 ```
 
 **See also**
-
 - [isDecimalOverflow](/sql-reference/functions/other-functions#isdecimaloverflow)
 - [countDigits](/sql-reference/functions/other-functions#countdigits)

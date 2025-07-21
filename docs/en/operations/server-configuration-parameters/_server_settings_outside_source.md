@@ -97,7 +97,7 @@ Data compression settings for [MergeTree](../../engines/table-engines/mergetree-
 We recommend not changing this if you have just started using ClickHouse.
 :::
 
-**Configuration template**:
+* *Configuration template**:
 
 ```xml
 <compression>
@@ -122,7 +122,7 @@ We recommend not changing this if you have just started using ClickHouse.
 You can configure multiple `<case>` sections.
 :::
 
-**Actions when conditions are met**:
+* *Actions when conditions are met**:
 
 - If a data part matches a condition set, ClickHouse uses the specified compression method.
 - If a data part matches multiple condition sets, ClickHouse uses the first matched condition set.
@@ -221,7 +221,6 @@ Or it can be set in hex:
     </aes_128_gcm_siv>
 </encryption_codecs>
 ```
-
 :::note
 Everything mentioned above can be applied for `aes_256_gcm_siv` (but the key must be 32 bytes long).
 :::
@@ -311,7 +310,6 @@ Path:
 - The path can contain wildcards \* and ?.
 
 See also:
-
 - "[Dictionaries](../../sql-reference/dictionaries/index.md)".
 
 **Example**
@@ -330,7 +328,6 @@ Path:
 - The path can contain wildcards \* and ?.
 
 See also:
-
 - "[Executable User Defined Functions](/sql-reference/functions/udf#executable-user-defined-functions).".
 
 **Example**
@@ -643,11 +640,9 @@ A username and a password used to connect to other servers during [replication](
 `interserver_http_credentials` must therefore be the same for all replicas in a cluster.
 
 :::note
-
 - By default, if `interserver_http_credentials` section is omitted, authentication is not used during replication.
 - `interserver_http_credentials` settings do not relate to a ClickHouse client credentials [configuration](../../interfaces/cli.md#configuration_files).
 - These credentials are common for replication via `HTTP` and `HTTPS`.
-
 :::
 
 The following settings can be configured by sub-tags:
@@ -695,7 +690,6 @@ When new credentials are applied to all replicas, old credentials may be removed
 ## ldap_servers {#ldap_servers}
 
 List LDAP servers with their connection parameters here to:
-
 - use them as authenticators for dedicated local users, who have an 'ldap' authentication mechanism specified instead of 'password'
 - use them as remote user directories.
 
@@ -799,12 +793,10 @@ Default:
 Backlog (queue size of pending connections) of the listen socket. The default value of `4096` is the same as that of linux [5.4+](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=19f92a030ca6d772ab44b22ee6a01378a8cb32d4)).
 
 Usually this value does not need to be changed, since:
-
 - The default value is large enough,
 - For accepting client's connections server has separate thread.
 
 So even if you have `TcpExtListenOverflows` (from `nstat`) non-zero and this counter grows for ClickHouse server it does not mean that this value needs to be increased, since:
-
 - Usually if `4096` is not enough it shows some internal ClickHouse scaling issue, so it is better to report an issue.
 - It does not mean that the server can handle more connections later (and even if it could, by that moment clients may be gone or disconnected).
 
@@ -818,7 +810,7 @@ So even if you have `TcpExtListenOverflows` (from `nstat`) non-zero and this cou
 
 The location and format of log messages.
 
-**Keys**:
+* *Keys**:
 
 | Key                 | Description                                                                                                                                                                         |
 |---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -879,7 +871,7 @@ Column "Example" shows the output at `2023-07-06 18:32:07`.
 | `%T`         | Equivalent to "%H:%M:%S" (the ISO 8601 time format)                                                                 | `18:32:07`                 |
 | `%p`         | Localized a.m. or p.m. designation (locale dependent)                                                               | `PM`                       |
 | `%z`         | Offset from UTC in the ISO 8601 format (e.g. -0430), or no characters if the time zone information is not available | `+0800`                    |
-| `%Z`         | Locale-dependent time zone name or abbreviation, or no characters if the time zone information is not available     | `Z AWST`                  |
+| `%Z`         | Locale-dependent time zone name or abbreviation, or no characters if the time zone information is not available     | `Z AWST `                  |
 
 **Example**
 
@@ -1119,7 +1111,6 @@ The sub-tags above define the following settings for `policies`:
 | `volume_priority`            | Defines the priority (order) in which volumes are filled. The smaller the value, the higher the priority. The parameter values must be natural numbers and cover the range from 1 to N (N is the largest parameter value specified) with no gaps.                                                                                                                                                                                                                                                                |
 
 For the `volume_priority`:
-
 - If all volumes have this parameter, they are prioritized in the specified order.
 - If only _some_ volumes have it, volumes that do not have it have the lowest priority. Those that do have it are prioritized according to the tag value, the priority of the rest is determined by the order of description in the configuration file relative to each other.
 - If _no_ volumes are given this parameter, their order is determined by the order of the description in the configuration file.
@@ -1466,7 +1457,6 @@ Settings:
 ```
 
 Check (replace `127.0.0.1` with the IP addr or hostname of your ClickHouse server):
-
 ```bash
 curl 127.0.0.1:9363/metrics
 ```
@@ -1545,10 +1535,8 @@ The following settings are available:
 | `max_entry_size_in_rows`  | The maximum number of rows `SELECT` query results may have to be saved in the cache.   | `30000000`    |
 
 :::note
-
 - Changed settings take effect immediately.
 - Data for the query cache is allocated in DRAM. If memory is scarce, make sure to set a small value for `max_size_in_bytes` or disable the query cache altogether.
-
 :::
 
 **Example**
@@ -1789,7 +1777,7 @@ sensitive data leakage from SQL queries such as names, emails, personal identifi
 </query_masking_rules>
 ```
 
-**Config fields**:
+* *Config fields**:
 
 | Setting   | Description                                                                   |
 |-----------|-------------------------------------------------------------------------------|
@@ -1827,7 +1815,6 @@ For the value of the `incl` attribute, see the section "[Configuration files](/o
 List of hosts which are allowed to be used in URL-related storage engines and table functions.
 
 When adding a host with the `\<host\>` xml tag:
-
 - it should be specified exactly as in the URL, as the name is checked before DNS resolution. For example: `<host>clickhouse.com</host>`
 - if the port is explicitly specified in the URL, then host:port is checked as a whole. For example: `<host>clickhouse.com:80</host>`
 - if the host is specified without a port, then any port of the host is allowed. For example: if `<host>clickhouse.com</host>` is specified then `clickhouse.com:20` (FTP), `clickhouse.com:80` (HTTP), `clickhouse.com:443` (HTTPS) etc are allowed.
@@ -1885,10 +1872,8 @@ TCP port for secure communication with clients. Use it with [OpenSSL](#openssl) 
 Port for communicating with clients over MySQL protocol.
 
 :::note
-
 - Positive integers specify the port number to listen to
 - Empty values are used to disable communication with clients over MySQL protocol.
-
 :::
 
 **Example**
@@ -1902,10 +1887,8 @@ Port for communicating with clients over MySQL protocol.
 Port for communicating with clients over PostgreSQL protocol.
 
 :::note
-
 - Positive integers specify the port number to listen to
 - Empty values are used to disable communication with clients over PostgreSQL protocol.
-
 :::
 
 **Example**
@@ -1914,15 +1897,21 @@ Port for communicating with clients over PostgreSQL protocol.
 <postgresql_port>9005</postgresql_port>
 ```
 
+## mysql_require_secure_transport {#mysql_require_secure_transport}
+
+If set to true, secure communication is required with clients over [mysql_port](#mysql_port). Connection with option `--ssl-mode=none` will be refused. Use it with [OpenSSL](#openssl) settings.
+
+## postgresql_require_secure_transport {#postgresql_require_secure_transport}
+
+If set to true, secure communication is required with clients over [postgresql_port](#postgresql_port). Connection with option `sslmode=disable` will be refused. Use it with [OpenSSL](#openssl) settings.
+
 ## tmp_path {#tmp_path}
 
 Path on the local filesystem to store temporary data for processing large queries.
 
 :::note
-
 - Only one option can be used to configure temporary data storage: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
 - The trailing slash is mandatory.
-
 :::
 
 **Example**
@@ -2043,6 +2032,23 @@ The default settings are:
     <partition_by>toYYYYMM(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
 </s3queue_log>
+```
+
+## dead_letter_queue {#dead_letter_queue}
+
+Setting for the 'dead_letter_queue' system table.
+
+<SystemLogParameters/>
+
+The default settings are:
+
+```xml
+<dead_letter_queue>
+    <database>system</database>
+    <table>dead_letter</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+</dead_letter_queue>
 ```
 
 ## zookeeper {#zookeeper}
@@ -2216,7 +2222,6 @@ Default session timeout, in seconds.
 Sets the password type to be automatically set for in queries like `CREATE USER u IDENTIFIED BY 'p'`.
 
 Accepted values are:
-
 - `plaintext_password`
 - `sha256_password`
 - `double_sha1_password`
@@ -2229,7 +2234,6 @@ Accepted values are:
 ## user_directories {#user_directories}
 
 Section of the configuration file that contains settings:
-
 - Path to configuration file with predefined users.
 - Path to folder where users created by SQL commands are stored.
 - ZooKeeper node path where users created by SQL commands are stored and replicated (experimental).
@@ -2298,7 +2302,6 @@ For example:
 ```
 
 See also:
-
 - function [`cutToFirstSignificantSubdomainCustom`](../../sql-reference/functions/url-functions.md/#cuttofirstsignificantsubdomaincustom) and variations thereof,
   which accepts a custom TLD list name, returning the part of the domain that includes top-level subdomains up to the first significant subdomain.
 
@@ -2307,7 +2310,6 @@ See also:
 Define proxy servers for HTTP and HTTPS requests, currently supported by S3 storage, S3 table functions, and URL functions.
 
 There are three ways to define proxy servers:
-
 - environment variables
 - proxy lists
 - remote proxy resolvers.
@@ -2343,7 +2345,6 @@ one proxy server for a protocol and the list of proxy servers doesn't change.
     </https>
 </proxy>
 ```
-
 Select a parent field in the tabs below to view their children:
 
 <Tabs>
@@ -2486,7 +2487,6 @@ The directory used as a storage for all `CREATE WORKLOAD` and `CREATE RESOURCE` 
 ```
 
 **See Also**
-
 - [Workload Hierarchy](/operations/workload-scheduling.md#workloads)
 - [workload_zookeeper_path](#workload_zookeeper_path)
 
@@ -2501,6 +2501,5 @@ The path to a ZooKeeper node, which is used as a storage for all `CREATE WORKLOA
 ```
 
 **See Also**
-
 - [Workload Hierarchy](/operations/workload-scheduling.md#workloads)
 - [workload_path](#workload_path)

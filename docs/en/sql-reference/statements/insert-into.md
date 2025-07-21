@@ -99,7 +99,6 @@ If you want to specify `SETTINGS` for `INSERT` query then you have to do it _bef
 ```sql
 INSERT INTO table SETTINGS ... FORMAT format_name data_set
 ```
-
 :::
 
 ## Constraints {#constraints}
@@ -187,7 +186,6 @@ INSERT INTO infile_globs FROM INFILE 'input_*.csv' FORMAT CSV;
 INSERT INTO infile_globs FROM INFILE 'input_{1,2}.csv' FORMAT CSV;
 INSERT INTO infile_globs FROM INFILE 'input_?.csv' FORMAT CSV;
 ```
-
 :::
 
 ## Inserting using a Table Function {#inserting-using-a-table-function}

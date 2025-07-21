@@ -10,7 +10,7 @@ title: 'Rounding Functions'
 ## floor {#floor}
 
 Returns the largest rounded number less than or equal `x`.
-A rounded number is a multiple of 1 / 10 *N, or the nearest number of the appropriate data type if 1 / 10* N isn't exact.
+A rounded number is a multiple of 1 / 10 * N, or the nearest number of the appropriate data type if 1 / 10 * N isn't exact.
 
 Integer arguments may be rounded with negative `N` argument, with non-negative `N` the function returns `x`, i.e. does nothing.
 
@@ -116,9 +116,9 @@ round(x[, N])
 
 - `x` — A number to round. [Float*](../data-types/float.md), [Decimal*](../data-types/decimal.md), or [(U)Int*](../data-types/int-uint.md).
 - `N` — The number of decimal places to round to. Integer. Defaults to `0`.
-- If `N > 0`, the function rounds to the right of the decimal point.
-- If `N < 0`, the function rounds to the left of the decimal point.
-- If `N = 0`, the function rounds to the next integer.
+  - If `N > 0`, the function rounds to the right of the decimal point.
+  - If `N < 0`, the function rounds to the left of the decimal point.
+  - If `N = 0`, the function rounds to the next integer.
 
 **Returned value:**
 
@@ -222,15 +222,15 @@ roundBankers(x [, N])
 
 **Arguments**
 
-    -`N > 0` — The function rounds the number to the given position right of the decimal point. Example: `roundBankers(3.55, 1) = 3.6`.
-    -`N < 0` — The function rounds the number to the given position left of the decimal point. Example: `roundBankers(24.55, -1) = 20`.
-    -`N = 0` — The function rounds the number to an integer. In this case the argument can be omitted. Example: `roundBankers(2.5) = 2`.
+    - `N > 0` — The function rounds the number to the given position right of the decimal point. Example: `roundBankers(3.55, 1) = 3.6`.
+    - `N < 0` — The function rounds the number to the given position left of the decimal point. Example: `roundBankers(24.55, -1) = 20`.
+    - `N = 0` — The function rounds the number to an integer. In this case the argument can be omitted. Example: `roundBankers(2.5) = 2`.
 
 - `x` — A number to round. [Float*](../data-types/float.md), [Decimal*](../data-types/decimal.md), or [(U)Int*](../data-types/int-uint.md).
 - `N` — The number of decimal places to round to. Integer. Defaults to `0`.
-- If `N > 0`, the function rounds to the right of the decimal point.
-- If `N < 0`, the function rounds to the left of the decimal point.
-- If `N = 0`, the function rounds to the next integer.
+    - If `N > 0`, the function rounds to the right of the decimal point.
+    - If `N < 0`, the function rounds to the left of the decimal point.
+    - If `N = 0`, the function rounds to the next integer.
 
 **Returned value**
 

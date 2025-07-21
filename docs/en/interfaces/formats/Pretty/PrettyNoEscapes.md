@@ -16,7 +16,7 @@ import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
 
 ## Description {#description}
 
-Differs from [Pretty](/interfaces/formats/Pretty) in that [ANSI-escape sequences](http://en.wikipedia.org/wiki/ANSI_escape_code) aren't used.
+Differs from [Pretty](/interfaces/formats/Pretty) in that [ANSI-escape sequences](http://en.wikipedia.org/wiki/ANSI_escape_code) aren't used. 
 This is necessary for displaying the format in a browser, as well as for using the 'watch' command-line utility.
 
 ## Example usage {#example-usage}
@@ -24,7 +24,7 @@ This is necessary for displaying the format in a browser, as well as for using t
 Example:
 
 ```bash
-watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FORMAT PrettyCompactNoEscapes'"
+$ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FORMAT PrettyCompactNoEscapes'"
 ```
 
 :::note

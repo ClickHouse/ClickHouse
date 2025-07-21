@@ -60,7 +60,6 @@ SELECT maxIntersections(start, end) FROM my_events;
 ```
 
 Response:
-
 ```response
 3
 ```

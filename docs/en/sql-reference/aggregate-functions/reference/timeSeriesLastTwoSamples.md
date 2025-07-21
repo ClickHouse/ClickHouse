@@ -8,7 +8,6 @@ title: 'timeSeriesLastTwoSamples'
 Aggregate function that takes time series data as pairs of timestamps and values and stores only at most 2 recent samples.
 
 Arguments:
-
 - `timestamp` - timestamp of the sample
 - `value` - value of the time series corresponding to the `timestamp`
 Also it is possible to pass multiple samples of timestamps and values as Arrays of equal size.
@@ -21,7 +20,7 @@ This aggregate function is intended to be used with a Materialized View and Aggr
 Consider the following example table for raw data, and a table for storing re-sampled data:
 
 ```sql
-- - Table for raw data
+-- Table for raw data
 CREATE TABLE t_raw_timeseries
 (
     metric_id UInt64,
@@ -31,7 +30,7 @@ CREATE TABLE t_raw_timeseries
 ENGINE = MergeTree()
 ORDER BY (metric_id, timestamp);
 
-- - Table with data re-sampled to bigger (15 sec) time steps
+-- Table with data re-sampled to bigger (15 sec) time steps
 CREATE TABLE t_resampled_timeseries_15_sec
 (
     metric_id UInt64,
@@ -41,7 +40,7 @@ CREATE TABLE t_resampled_timeseries_15_sec
 ENGINE = AggregatingMergeTree()
 ORDER BY (metric_id, grid_timestamp);
 
-- - MV for populating re-sampled table
+-- MV for populating re-sampled table
 CREATE MATERIALIZED VIEW mv_resampled_timeseries TO t_resampled_timeseries_15_sec
 (
     metric_id UInt64,
@@ -57,12 +56,11 @@ ORDER BY metric_id, grid_timestamp;
 ```
 
 Insert some test data and read the data between '2024-12-12 12:00:12' and '2024-12-12 12:00:30'
-
 ```sql
-- - Insert some data
+-- Insert some data
 INSERT INTO t_raw_timeseries(metric_id, timestamp, value) SELECT number%10 AS metric_id, '2024-12-12 12:00:00'::DateTime64(3, 'UTC') + interval ((number/10)%100)*900 millisecond as timestamp, number%3+number%29 AS value FROM numbers(1000);
 
-- - Check raw data
+-- Check raw data
 SELECT *
 FROM t_raw_timeseries
 WHERE metric_id = 3 AND timestamp BETWEEN '2024-12-12 12:00:12' AND '2024-12-12 12:00:31'
@@ -94,9 +92,8 @@ ORDER BY metric_id, timestamp;
 ```
 
 Query last 2 sample for timestamps '2024-12-12 12:00:15' and '2024-12-12 12:00:30':
-
 ```sql
-- - Check re-sampled data
+-- Check re-sampled data
 SELECT metric_id, grid_timestamp, (finalizeAggregation(samples).1 as timestamp, finalizeAggregation(samples).2 as value) 
 FROM t_resampled_timeseries_15_sec
 WHERE metric_id = 3 AND grid_timestamp BETWEEN '2024-12-12 12:00:15' AND '2024-12-12 12:00:30'
@@ -111,7 +108,7 @@ ORDER BY metric_id, grid_timestamp;
 The aggregated table stores only last 2 values for each 15-second aligned timestamp. This allows to calculate PromQL-like `irate` and `idelta` by reading much less data then is stored in the raw table.
 
 ```sql
-- - Calculate idelta and irate from the raw data
+-- Calculate idelta and irate from the raw data
 WITH
     '2024-12-12 12:00:15'::DateTime64(3,'UTC') AS start_ts,       -- start of timestamp grid
     start_ts + INTERVAL 60 SECOND AS end_ts,   -- end of timestamp grid
@@ -131,7 +128,7 @@ GROUP BY metric_id;
 ```
 
 ```sql
-- - Calculate idelta and irate from the re-sampled data
+-- Calculate idelta and irate from the re-sampled data
 WITH
     '2024-12-12 12:00:15'::DateTime64(3,'UTC') AS start_ts,       -- start of timestamp grid
     start_ts + INTERVAL 60 SECOND AS end_ts,   -- end of timestamp grid

@@ -16,7 +16,7 @@ title: 'MySQLDump'
 
 ClickHouse supports reading MySQL [dumps](https://dev.mysql.com/doc/refman/8.0/en/mysqldump.html).
 
-It reads all the data from `INSERT` queries belonging to a single table in the dump.
+It reads all the data from `INSERT` queries belonging to a single table in the dump. 
 If there is more than one table, by default it reads data from the first one.
 
 :::note

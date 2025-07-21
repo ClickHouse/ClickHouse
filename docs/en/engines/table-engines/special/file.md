@@ -60,7 +60,7 @@ one 1
 two 2
 ```
 
-**3.** Query the data:
+* *3.** Query the data:
 
 ```sql
 SELECT * FROM file_engine_table
@@ -80,7 +80,7 @@ In [clickhouse-local](../../../operations/utilities/clickhouse-local.md) File en
 **Example:**
 
 ```bash
-echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin); SELECT a, b FROM table; DROP TABLE table"
+$ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin); SELECT a, b FROM table; DROP TABLE table"
 ```
 
 ## Details of Implementation {#details-of-implementation}
@@ -89,10 +89,10 @@ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64) 
 - Supported creating new file by `INSERT` query.
 - If file exists, `INSERT` would append new values in it.
 - Not supported:
-- `ALTER`
-- `SELECT ... SAMPLE`
-- Indices
-- Replication
+  - `ALTER`
+  - `SELECT ... SAMPLE`
+  - Indices
+  - Replication
 
 ## PARTITION BY {#partition-by}
 

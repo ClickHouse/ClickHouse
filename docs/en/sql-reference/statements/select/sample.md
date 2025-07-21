@@ -17,7 +17,7 @@ Approximated query processing can be useful in the following cases:
 - When your raw data is not accurate, so approximation does not noticeably degrade the quality.
 - Business requirements target approximate results (for cost-effectiveness, or to market exact results to premium users).
 
-:::note
+:::note    
 You can only use sampling with the tables in the [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) family, and only if the sampling expression was specified during table creation (see [MergeTree engine](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table)).
 :::
 

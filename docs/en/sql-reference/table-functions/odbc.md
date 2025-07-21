@@ -43,7 +43,7 @@ Ensure that unixODBC and MySQL Connector are installed.
 By default (if installed from packages), ClickHouse starts as user `clickhouse`. Thus you need to create and configure this user in the MySQL server.
 
 ```bash
-sudo mysql
+$ sudo mysql
 ```
 
 ```sql

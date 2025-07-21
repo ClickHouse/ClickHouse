@@ -15,7 +15,6 @@ The engine is based on the [Atomic](../../engines/database-engines/atomic.md) en
 One ClickHouse server can have multiple replicated databases running and updating at the same time. But there can't be multiple replicas of the same replicated database.
 
 ## Creating a database {#creating-a-database}
-
 ```sql
 CREATE DATABASE testdb ENGINE = Replicated('zoo_path', 'shard_name', 'replica_name') [SETTINGS ...]
 ```

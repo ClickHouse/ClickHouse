@@ -14,7 +14,6 @@ import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 Quota usage by all users.
 
 Columns:
-
 - `quota_name` ([String](../../sql-reference/data-types/string.md)) — Quota name.
 - `quota_key` ([String](../../sql-reference/data-types/string.md)) — Key value.
 - `is_current` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Quota usage for current user.

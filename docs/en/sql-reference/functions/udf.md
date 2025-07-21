@@ -48,7 +48,6 @@ The command must read arguments from `STDIN` and must output the result to `STDO
 
 Creating `test_function_sum` manually specifying `execute_direct` to `0` using XML configuration.
 File `test_function.xml` (`/etc/clickhouse-server/test_function.xml` with default path settings).
-
 ```xml
 <functions>
     <function>
@@ -91,7 +90,6 @@ Reads a value from `STDIN` and returns it as a string:
 
 Creating `test_function` using XML configuration.
 File `test_function.xml` (`/etc/clickhouse-server/test_function.xml` with default path settings).
-
 ```xml
 <functions>
     <function>
@@ -139,7 +137,6 @@ Read two values from `STDIN` and returns their sum as a JSON object:
 
 Creating `test_function_sum_json` with named arguments and format [JSONEachRow](../../interfaces/formats.md#jsoneachrow) using XML configuration.
 File `test_function.xml` (`/etc/clickhouse-server/test_function.xml` with default path settings).
-
 ```xml
 <functions>
     <function>
@@ -197,7 +194,6 @@ Use parameters in `command` setting:
 
 Executable user defined functions can take constant parameters configured in `command` setting (works only for user defined functions with `executable` type). It also requires the `execute_direct` option (to ensure no shell argument expansion vulnerability).
 File `test_function_parameter_python.xml` (`/etc/clickhouse-server/test_function_parameter_python.xml` with default path settings).
-
 ```xml
 <functions>
     <function>
@@ -247,7 +243,6 @@ Shell script that multiplies each value by 2:
 
 Executable user defined functions can be used with shell script.
 File `test_function_shell.xml` (`/etc/clickhouse-server/test_function_shell.xml` with default path settings).
-
 ```xml
 <functions>
     <function>

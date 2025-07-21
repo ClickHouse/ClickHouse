@@ -15,7 +15,7 @@ import SelfManaged from '@site/docs/_snippets/_self_managed_only_automated.md';
 Always use the `performance` scaling governor. The `on-demand` scaling governor works much worse with constantly high demand.
 
 ```bash
-echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+$ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
 ## CPU Limitations {#cpu-limitations}
@@ -32,7 +32,7 @@ Even for data volumes of ~50 TB per server, using 128 GB of RAM significantly im
 Do not disable overcommit. The value `cat /proc/sys/vm/overcommit_memory` should be 0 or 1. Run
 
 ```bash
-echo 0 | sudo tee /proc/sys/vm/overcommit_memory
+$ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 ```
 
 Use `perf top` to watch the time spent in the kernel for memory management.
@@ -53,7 +53,6 @@ When using ClickHouse with less than 16GB of RAM, we recommend the following:
 - Set `input_format_parallel_parsing` and `output_format_parallel_formatting` to `0`.
 
 Additional notes:
-
 - To flush the memory cached by the memory allocator, you can run the `SYSTEM JEMALLOC PURGE`
 command.
 - We do not recommend using S3 or Kafka integrations on low-memory machines because they require significant memory for buffers.
@@ -69,7 +68,7 @@ But for storing archives with rare queries, shelves will work.
 ## RAID {#raid}
 
 When using HDD, you can combine their RAID-10, RAID-5, RAID-6 or RAID-50.
-For Linux, software RAID is better (with `mdadm`).
+For Linux, software RAID is better (with `mdadm`). 
 When creating RAID-10, select the `far` layout.
 If your budget allows, choose RAID-10.
 
@@ -81,7 +80,7 @@ If you have more than 4 disks, use RAID-6 (preferred) or RAID-50, instead of RAI
 When using RAID-5, RAID-6 or RAID-50, always increase stripe_cache_size, since the default value is usually not the best choice.
 
 ```bash
-echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
+$ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
 ```
 
 Calculate the exact number from the number of devices and the block size, using the formula: `2 * num_devices * chunk_size_in_bytes / 4096`.
@@ -126,13 +125,13 @@ If you are using old Linux kernel, disable transparent huge pages. It interferes
 On newer Linux kernels transparent huge pages are alright.
 
 ```bash
-echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+$ echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 ```
 
 If you want to modify the transparent huge pages setting permanently, editing the `/etc/default/grub` to add the `transparent_hugepage=madvise` to the `GRUB_CMDLINE_LINUX_DEFAULT` option:
 
 ```bash
-GRUB_CMDLINE_LINUX_DEFAULT="transparent_hugepage=madvise ..."
+$ GRUB_CMDLINE_LINUX_DEFAULT="transparent_hugepage=madvise ..."
 ```
 
 After that, run the `sudo update-grub` command then reboot to take effect.
@@ -140,19 +139,15 @@ After that, run the `sudo update-grub` command then reboot to take effect.
 ## Hypervisor configuration {#hypervisor-configuration}
 
 If you are using OpenStack, set
-
 ```ini
 cpu_mode=host-passthrough
 ```
-
 in `nova.conf`.
 
 If you are using libvirt, set
-
 ```xml
 <cpu mode='host-passthrough'/>
 ```
-
 in XML configuration.
 
 This is important for ClickHouse to be able to get correct information with `cpuid` instruction.

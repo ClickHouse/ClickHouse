@@ -28,8 +28,8 @@ Alias: `medianTimingWeighted`.
 
 - `expr` — [Expression](/sql-reference/syntax#expressions) over a column values returning a [Float\*](../../../sql-reference/data-types/float.md)-type number.
 
-        -If negative values are passed to the function, the behavior is undefined.
-        -If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
+        - If negative values are passed to the function, the behavior is undefined.
+        - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
 
 - `weight` — Column with weights of sequence elements. Weight is a number of value occurrences.
 
@@ -42,7 +42,7 @@ The calculation is accurate if:
 
 Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
 
-:::note
+:::note    
 For calculating page loading time quantiles, this function is more effective and accurate than [quantile](/sql-reference/aggregate-functions/reference/quantile).
 :::
 
@@ -52,7 +52,7 @@ For calculating page loading time quantiles, this function is more effective and
 
 Type: `Float32`.
 
-:::note
+:::note    
 If no values are passed to the function (when using `quantileTimingIf`), [NaN](/sql-reference/data-types/float#nan-and-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](/sql-reference/statements/select/order-by) for notes on sorting `NaN` values.
 :::
 

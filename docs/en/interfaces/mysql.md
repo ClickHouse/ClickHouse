@@ -37,19 +37,19 @@ This cannot be turned off and it can lead in rare edge cases to different behavi
 
 ## Enabling the MySQL Interface On ClickHouse Cloud {#enabling-the-mysql-interface-on-clickhouse-cloud}
 
-1.After creating your ClickHouse Cloud Service, click the `Connect` button.
+1. After creating your ClickHouse Cloud Service, click the `Connect` button.
 
 <br/>
 
 <Image img={mysql0} alt="Credentials screen - Prompt" size="md"/>
 
-2.Change the `Connect with` drop-down to `MySQL`.
+2. Change the `Connect with` drop-down to `MySQL`. 
 
 <br/>
 
 <Image img={mysql1} alt="Credentials screen - MySQL selected" size="md" />
 
-3.Toggle the switch to enable the MySQL interface for this specific service. This will expose port `3306` for this service and prompt you with your MySQL connection screen that include your unique MySQL username. The password will be the same as the service's default user password.
+3. Toggle the switch to enable the MySQL interface for this specific service. This will expose port `3306` for this service and prompt you with your MySQL connection screen that include your unique MySQL username. The password will be the same as the service's default user password.
 
 <br/>
 
@@ -71,14 +71,14 @@ For ClickHouse Cloud hostname like `foobar.us-east1.aws.clickhouse.cloud`, the `
 
 You can create extra users to use with the MySQL interface if, for example, you need to apply extra settings.
 
-1.Optional - create a [settings profile](/sql-reference/statements/create/settings-profile) to apply for your custom user. For example, `my_custom_profile` with an extra setting which will be applied by default when we connect with the user we create later:
+1. Optional - create a [settings profile](/sql-reference/statements/create/settings-profile) to apply for your custom user. For example, `my_custom_profile` with an extra setting which will be applied by default when we connect with the user we create later:
 
     ```sql
     CREATE SETTINGS PROFILE my_custom_profile SETTINGS prefer_column_name_to_alias=1;
     ```
 
     `prefer_column_name_to_alias` is used just as an example, you can use other settings there.
-2.[Create a user](/sql-reference/statements/create/user) using the following format: `mysql4<subdomain>_<username>` ([see above](#creating-multiple-mysql-users-in-clickhouse-cloud)). The password must be in double SHA1 format. For example:
+2. [Create a user](/sql-reference/statements/create/user) using the following format: `mysql4<subdomain>_<username>` ([see above](#creating-multiple-mysql-users-in-clickhouse-cloud)). The password must be in double SHA1 format. For example:
 
     ```sql
     CREATE USER mysql4foobar_team1 IDENTIFIED WITH double_sha1_password BY 'YourPassword42$';
@@ -91,13 +91,13 @@ You can create extra users to use with the MySQL interface if, for example, you 
     ```
 
     where `my_custom_profile` is the name of the profile you created earlier.
-3.[Grant](/sql-reference/statements/grant) the new user the necessary permissions to interact with the desired tables or databases. For example, if you want to grant access to `system.query_log` only:
+3. [Grant](/sql-reference/statements/grant) the new user the necessary permissions to interact with the desired tables or databases. For example, if you want to grant access to `system.query_log` only:
 
     ```sql
     GRANT SELECT ON system.query_log TO mysql4foobar_team1;
     ```
 
-4.Use the created user to connect to your ClickHouse Cloud service with the MySQL interface.
+4. Use the created user to connect to your ClickHouse Cloud service with the MySQL interface.
 
 ### Troubleshooting multiple MySQL users in ClickHouse Cloud {#troubleshooting-multiple-mysql-users-in-clickhouse-cloud}
 
@@ -136,7 +136,7 @@ mysql --protocol tcp -h [hostname] -u [username] -P [port_number] [database_name
 For example:
 
 ```bash
-mysql --protocol tcp -h 127.0.0.1 -u default -P 9004 default
+$ mysql --protocol tcp -h 127.0.0.1 -u default -P 9004 default
 ```
 
 Output if a connection succeeded:
@@ -169,5 +169,5 @@ Restrictions:
 To cancel a long query use `KILL QUERY connection_id` statement (it is replaced with `KILL QUERY WHERE query_id = connection_id` while proceeding). For example:
 
 ```bash
-mysql --protocol tcp -h mysql_server -P 9004 default -u default --password=123 -e "KILL QUERY 123456;"
+$ mysql --protocol tcp -h mysql_server -P 9004 default -u default --password=123 -e "KILL QUERY 123456;"
 ```

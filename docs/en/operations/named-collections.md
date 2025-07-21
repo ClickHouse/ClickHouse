@@ -46,9 +46,9 @@ url = 'https://connection.url/'
 
 In the above example:
 
-*`key_1` can always be overridden.
-*`key_2` can never be overridden.
-*`url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
+* `key_1` can always be overridden.
+* `key_2` can never be overridden.
+* `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
 
 ### Permissions to create named collections with DDL {#permissions-to-create-named-collections-with-ddl}
 
@@ -83,7 +83,6 @@ you can use `local_encrypted` or `keeper_encrypted`/`zookeeper_encrypted`.
 
 To use ZooKeeper/Keeper we also need to set up a `path` (path in ZooKeeper/Keeper, where named collections will be stored) to
 `named_collections_storage` section in configuration file. The following example uses encryption and ZooKeeper/Keeper:
-
 ```xml
 <clickhouse>
   <named_collections_storage>
@@ -116,9 +115,9 @@ An optional configuration parameter `update_timeout_ms` by default is equal to `
 
 In the above example:
 
-*`key_1` can always be overridden.
-*`key_2` can never be overridden.
-*`url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
+* `key_1` can always be overridden.
+* `key_2` can never be overridden.
+* `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
 
 ## Modifying named collections {#modifying-named-collections}
 
@@ -128,39 +127,33 @@ Named collections that are created with DDL queries can be altered or dropped wi
 
 Change or add the keys `key1` and `key3` of the collection `collection2`
 (this will not change the value of the `overridable` flag for those keys):
-
 ```sql
 ALTER NAMED COLLECTION collection2 SET key1=4, key3='value3'
 ```
 
 Change or add the key `key1` and allow it to be always overridden:
-
 ```sql
 ALTER NAMED COLLECTION collection2 SET key1=4 OVERRIDABLE
 ```
 
 Remove the key `key2` from `collection2`:
-
 ```sql
 ALTER NAMED COLLECTION collection2 DELETE key2
 ```
 
 Change or add the key `key1` and delete the key `key3` of the collection `collection2`:
-
 ```sql
 ALTER NAMED COLLECTION collection2 SET key1=4, DELETE key3
 ```
 
 To force a key to use the default settings for the `overridable` flag, you have to
 remove and re-add the key.
-
 ```sql
 ALTER NAMED COLLECTION collection2 DELETE key1;
 ALTER NAMED COLLECTION collection2 SET key1=4;
 ```
 
 ### Drop the DDL named collection `collection2`: {#drop-the-ddl-named-collection-collection2}
-
 ```sql
 DROP NAMED COLLECTION collection2
 ```
@@ -273,7 +266,6 @@ SELECT count() FROM mysql(mymysql, table = 'test');
 │       3 │
 └─────────┘
 ```
-
 :::note
 The named collection does not specify the `table` parameter, so it is specified in the function call as `table = 'test'`.
 :::
@@ -326,8 +318,8 @@ SELECT dictGet('dict', 'B', 2);
 
 The description of parameters see [postgresql](../sql-reference/table-functions/postgresql.md). Additionally, there are aliases:
 
-*`username` for `user`
-*`db` for `database`.
+- `username` for `user`
+- `db` for `database`.
 
 Parameter `addresses_expr` is used in a collection instead of `host:port`. The parameter is optional, because there are other optional ones: `host`, `hostname`, `port`. The following pseudo code explains the priority:
 
@@ -340,7 +332,6 @@ END
 ```
 
 Example of creation:
-
 ```sql
 CREATE NAMED COLLECTION mypg AS
 user = 'pguser',
@@ -352,7 +343,6 @@ schema = 'test_schema'
 ```
 
 Example of configuration:
-
 ```xml
 <clickhouse>
     <named_collections>
@@ -464,7 +454,6 @@ secure = 1
     </named_collections>
 </clickhouse>
 ```
-
 `secure` is not needed for connection because of `remoteSecure`, but it can be used for dictionaries.
 
 ### Example of using named collections with the `remote`/`remoteSecure` functions {#example-of-using-named-collections-with-the-remoteremotesecure-functions}
@@ -518,7 +507,6 @@ kafka_format = 'JSONEachRow',
 kafka_max_block_size = '1048576';
 
 ```
-
 ### XML example {#xml-example-3}
 
 ```xml

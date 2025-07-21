@@ -32,19 +32,17 @@ financialInternalRateOfReturn(cashflows[, guess])
 
 - Returns the internal rate of return as a Float64 value.
 - Returns NaN if:
-- The calculation cannot converge
-- Input array is empty or has only one element
-- All cash flows are zero
-- Other calculation errors occur
+  - The calculation cannot converge
+  - Input array is empty or has only one element
+  - All cash flows are zero
+  - Other calculation errors occur
 
 **Examples**
 
 Basic usage:
-
 ```sql
 SELECT financialInternalRateOfReturn([-100000, 25000, 25000, 25000, 25000, 25000]);
 ```
-
 ```text
 ┌─financialInt_00, 25000])─┐
 │      0.07930826116052862 │
@@ -52,11 +50,9 @@ SELECT financialInternalRateOfReturn([-100000, 25000, 25000, 25000, 25000, 25000
 ```
 
 With initial guess:
-
 ```sql
 SELECT financialInternalRateOfReturn([-100, 60, 60], 0.2);
 ```
-
 ```text
 ┌─financialInt_, 60], 0.2)─┐
 │      0.13066238629180732 │
@@ -90,30 +86,28 @@ financialInternalRateOfReturnExtended(cashflows, dates[, guess[, daycount]])
 - `dates` — Array of dates corresponding to each cash flow. Must be sorted in ascending order with unique values. Type: Array of Date or Date32.
 - `guess` — Optional initial guess (constant value) for the internal rate of return. Default: 0.1. Type: Float32|Float64.
 - `daycount` — Optional day count convention. Supported values:
-- 'ACT_365F' (default) — Actual/365 Fixed
-- 'ACT_365_25' — Actual/365.25
+  - 'ACT_365F' (default) — Actual/365 Fixed
+  - 'ACT_365_25' — Actual/365.25
 
 **Returned value**
 
 - Returns the internal rate of return as a Float64 value.
 - Returns NaN if:
-- The calculation cannot converge
-- Input arrays are empty or have only one element
-- All cash flows are zero
-- Dates are not sorted or not unique
-- Other calculation errors occur
+  - The calculation cannot converge
+  - Input arrays are empty or have only one element
+  - All cash flows are zero
+  - Dates are not sorted or not unique
+  - Other calculation errors occur
 
 **Examples**
 
 Basic usage:
-
 ```sql
 SELECT financialInternalRateOfReturnExtended(
     [-10000, 5750, 4250, 3250],
     [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')]
 );
 ```
-
 ```text
 ┌─financialInt_1-02-15')])─┐
 │       0.6342972615260243 │
@@ -121,7 +115,6 @@ SELECT financialInternalRateOfReturnExtended(
 ```
 
 Using different day count convention:
-
 ```sql
 SELECT round(
     financialInternalRateOfReturnExtended([100000, -110000],
@@ -130,7 +123,6 @@ SELECT round(
     'ACT_365_25'
 ), 6) AS xirr_365_25;
 ```
-
 ```text
 ┌─xirr_365_25─┐
 │    0.099785 │
@@ -164,8 +156,8 @@ financialNetPresentValueExtended(rate, cashflows, dates[, daycount])
 - `cashflows` — Array of cash flows. Each value represents a payment (negative value) or income (positive value). Must contain at least one positive and one negative value. Type: Array of numeric values (Int8, Int16, Int32, Int64, Float32, Float64).
 - `dates` — Array of dates corresponding to each cash flow. Must have the same size as cashflows array. Type: Array of Date or Date32.
 - `daycount` — Optional day count convention. Supported values:
-- 'ACT_365F' (default) — Actual/365 Fixed
-- 'ACT_365_25' — Actual/365.25
+  - 'ACT_365F' (default) — Actual/365 Fixed
+  - 'ACT_365_25' — Actual/365.25
 
 **Returned value**
 
@@ -174,12 +166,10 @@ financialNetPresentValueExtended(rate, cashflows, dates[, daycount])
 **Examples**
 
 Basic usage:
-
 ```sql
 SELECT financialNetPresentValueExtended(0.1, [-10_000., 5750., 4250., 3250.], 
     [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')]);
 ```
-
 ```text
 ┌─financialNet_1-02-15')])─┐
 │        2506.579458169746 │
@@ -187,13 +177,11 @@ SELECT financialNetPresentValueExtended(0.1, [-10_000., 5750., 4250., 3250.],
 ```
 
 Using different day count convention:
-
 ```sql
 SELECT financialNetPresentValueExtended(0.1, [-10_000., 5750., 4250., 3250.], 
     [toDate('2020-01-01'), toDate('2020-03-01'), toDate('2020-10-30'), toDate('2021-02-15')], 
     'ACT_365_25');
 ```
-
 ```text
 ┌─financialNet_CT_365_25')─┐
 │        2507.067268742502 │
@@ -235,11 +223,9 @@ financialNetPresentValue(rate, cashflows[, start_from_zero])
 **Examples**
 
 Basic usage:
-
 ```sql
 SELECT financialNetPresentValue(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.]);
 ```
-
 ```text
 ┌─financialNet_., 30000.])─┐
 │       3065.2226681795255 │
@@ -247,11 +233,9 @@ SELECT financialNetPresentValue(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000
 ```
 
 With start_from_zero = false (Excel compatibility mode):
-
 ```sql
 SELECT financialNetPresentValue(0.08, [-40_000., 5_000., 8_000., 12_000., 30_000.], False);
 ```
-
 ```text
 ┌─financialNet_30000.], 0)─┐
 │       2838.1691372032656 │

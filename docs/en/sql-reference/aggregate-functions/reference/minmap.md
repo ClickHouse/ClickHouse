@@ -15,9 +15,7 @@ Calculates the minimum from `value` array according to the keys specified in the
 ```sql
 `minMap(key, value)`
 ```
-
 or
-
 ```sql
 minMap(Tuple(key, value))
 ```
@@ -25,10 +23,8 @@ minMap(Tuple(key, value))
 Alias: `minMappedArrays`
 
 :::note
-
 - Passing a tuple of keys and value arrays is identical to passing an array of keys and an array of values.
 - The number of elements in `key` and `value` must be the same for each row that is totaled.
-
 :::
 
 **Parameters**

@@ -39,7 +39,6 @@ splitByChar(separator, s[, max_substrings]))
 :::note
 The behavior of parameter `max_substrings` changed starting with ClickHouse v22.11. In versions older than that, `max_substrings > 0` meant that `max_substring`-many splits were performed and that the remainder of the string was returned as the final element of the list.
 For example,
-
 - in v22.10: `SELECT splitByChar('=', 'a=b=c=d', 2);` returned `['a','b','c=d']`
 - in v22.11: `SELECT splitByChar('=', 'a=b=c=d', 2);` returned `['a','b']`
 
@@ -134,9 +133,11 @@ splitByRegexp(regexp, s[, max_substrings]))
 - `s` — The string to split. [String](../data-types/string.md).
 - `max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
 
+
 **Returned value(s)**
 
 - An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
+
 
 Empty substrings may be selected when:
 
@@ -176,7 +177,7 @@ Result:
 
 ## splitByWhitespace {#splitbywhitespace}
 
-Splits a string into substrings separated by whitespace characters.
+Splits a string into substrings separated by whitespace characters. 
 Returns an array of selected substrings.
 
 **Syntax**
@@ -190,10 +191,11 @@ splitByWhitespace(s[, max_substrings]))
 - `s` — The string to split. [String](../data-types/string.md).
 - `max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
 
+
 **Returned value(s)**
 
 - An array of selected substrings. [Array](../data-types/array.md)([String](../data-types/string.md)).
-
+ 
 :::note
 Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
 :::
@@ -214,7 +216,7 @@ Result:
 
 ## splitByNonAlpha {#splitbynonalpha}
 
-Splits a string into substrings separated by whitespace and punctuation characters.
+Splits a string into substrings separated by whitespace and punctuation characters. 
 Returns an array of selected substrings.
 
 **Syntax**
@@ -227,6 +229,7 @@ splitByNonAlpha(s[, max_substrings]))
 
 - `s` — The string to split. [String](../data-types/string.md).
 - `max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
+
 
 **Returned value(s)**
 

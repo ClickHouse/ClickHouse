@@ -17,7 +17,6 @@ MOVE {USER, ROLE, QUOTA, SETTINGS PROFILE, ROW POLICY} name1 [, name2, ...] TO a
 ```
 
 Currently, there are five access storages in ClickHouse:
-
 - `local_directory`
 - `memory`
 - `replicated`

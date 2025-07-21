@@ -95,15 +95,12 @@ Rollup configuration structure:
 `path_column_name` — The name of the column storing the metric name (Graphite sensor). Default value: `Path`.
 
 #### `time_column_name` {#time_column_name}
-
 `time_column_name` — The name of the column storing the time of measuring the metric. Default value: `Time`.
 
 #### `value_column_name` {#value_column_name}
-
 `value_column_name` — The name of the column storing the value of the metric at the time set in `time_column_name`. Default value: `Value`.
 
 #### `version_column_name` {#version_column_name}
-
 `version_column_name` — The name of the column storing the version of the metric. Default value: `Timestamp`.
 
 ### Patterns {#patterns}
@@ -137,10 +134,9 @@ default
 :::important
 Patterns must be strictly ordered:
 
-1.Patterns without `function` or `retention`.
-1.Patterns with both `function` and `retention`.
-1.Pattern `default`.
-
+1. Patterns without `function` or `retention`.
+1. Patterns with both `function` and `retention`.
+1. Pattern `default`.
 :::
 
 When processing a row, ClickHouse checks the rules in the `pattern` sections. Each of `pattern` (including `default`) sections can contain `function` parameter for aggregation, `retention` parameters or both. If the metric name matches the `regexp`, the rules from the `pattern` section (or sections) are applied; otherwise, the rules from the `default` section are used.
@@ -151,10 +147,10 @@ Fields for `pattern` and `default` sections:
 It's unnecessary when performance is not critical, or only one metrics type is used, e.g. plain metrics. By default only one type of rules set is created. Otherwise, if any of special types is defined, two different sets are created. One for plain metrics (root.branch.leaf) and one for tagged metrics (root.branch.leaf;tag1=value1).
 The default rules are ended up in both sets.
 Valid values:
-- `all` (default) - a universal rule, used when `rule_type` is omitted.
-- `plain` - a rule for plain metrics. The field `regexp` is processed as regular expression.
-- `tagged` - a rule for tagged metrics (metrics are stored in DB in the format of `someName?tag1=value1&tag2=value2&tag3=value3`). Regular expression must be sorted by tags' names, first tag must be `__name__` if exists. The field `regexp` is processed as regular expression.
-- `tag_list` - a rule for tagged metrics, a simple DSL for easier metric description in graphite format `someName;tag1=value1;tag2=value2`, `someName`, or `tag1=value1;tag2=value2`. The field `regexp` is translated into a `tagged` rule. The sorting by tags' names is unnecessary, ti will be done automatically. A tag's value (but not a name) can be set as a regular expression, e.g. `env=(dev|staging)`.
+  - `all` (default) - a universal rule, used when `rule_type` is omitted.
+  - `plain` - a rule for plain metrics. The field `regexp` is processed as regular expression.
+  - `tagged` - a rule for tagged metrics (metrics are stored in DB in the format of `someName?tag1=value1&tag2=value2&tag3=value3`). Regular expression must be sorted by tags' names, first tag must be `__name__` if exists. The field `regexp` is processed as regular expression.
+  - `tag_list` - a rule for tagged metrics, a simple DSL for easier metric description in graphite format `someName;tag1=value1;tag2=value2`, `someName`, or `tag1=value1;tag2=value2`. The field `regexp` is translated into a `tagged` rule. The sorting by tags' names is unnecessary, ti will be done automatically. A tag's value (but not a name) can be set as a regular expression, e.g. `env=(dev|staging)`.
 - `regexp` – A pattern for the metric name (a regular or DSL).
 - `age` – The minimum age of the data in seconds.
 - `precision`– How precisely to define the age of the data in seconds. Should be a divisor for 86400 (seconds in a day).

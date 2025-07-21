@@ -152,6 +152,5 @@ SELECT * FROM redis_table JOIN merge_tree_table ON merge_tree_table.key=redis_ta
 ## Limitations {#limitations}
 
 Redis engine also supports scanning queries, such as `where k > xx`, but it has some limitations:
-
-1.Scanning query may produce some duplicated keys in a very rare case when it is rehashing. See details in [Redis Scan](https://github.com/redis/redis/blob/e4d183afd33e0b2e6e8d1c79a832f678a04a7886/src/dict.c#L1186-L1269).
-2.During the scanning, keys could be created and deleted, so the resulting dataset can not represent a valid point in time.
+1. Scanning query may produce some duplicated keys in a very rare case when it is rehashing. See details in [Redis Scan](https://github.com/redis/redis/blob/e4d183afd33e0b2e6e8d1c79a832f678a04a7886/src/dict.c#L1186-L1269).
+2. During the scanning, keys could be created and deleted, so the resulting dataset can not represent a valid point in time.

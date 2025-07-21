@@ -107,5 +107,4 @@ SELECT * FROM generateRandom(11) LIMIT 3;
 :::
 
 ## Related content {#related-content}
-
 - Blog: [Generating random data in ClickHouse](https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse)

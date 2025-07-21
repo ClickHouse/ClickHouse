@@ -41,14 +41,13 @@ The `WITH ADMIN OPTION` clause grants [ADMIN OPTION](#admin-option) privilege to
 The `WITH REPLACE OPTION` clause replace old roles by new role for the `user` or `role`, if is not specified it appends roles.
 
 ## Grant Current Grants Syntax {#grant-current-grants-syntax}
-
 ```sql
 GRANT CURRENT GRANTS{(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*}) | ON {db.table|db.*|*.*|table|*}} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
 ```
 
-- `privilege` — Type of privilege.
-- `role` — ClickHouse user role.
-- `user` — ClickHouse user account.
+-   `privilege` — Type of privilege.
+-   `role` — ClickHouse user role.
+-   `user` — ClickHouse user account.
 
 Using the `CURRENT GRANTS` statement allows you to give all specified privileges to the given user or role.
 If none of the privileges were specified, then the given user or role will receive all available privileges for `CURRENT_USER`.
@@ -93,7 +92,6 @@ Example: `GRANT SELECT ON db.my_tables* TO john`. This query allows `john` to ex
 More examples:
 
 `GRANT SELECT ON db.my_tables* TO john`
-
 ```sql
 SELECT * FROM db.my_tables -- granted
 SELECT * FROM db.my_tables_0 -- granted
@@ -104,7 +102,6 @@ SELECT * FROM db2.my_tables -- not_granted
 ```
 
 `GRANT SELECT ON db*.* TO john`
-
 ```sql
 SELECT * FROM db.my_tables -- granted
 SELECT * FROM db.my_tables_0 -- granted
@@ -117,7 +114,6 @@ All newly created tables within granted paths will automatically inherit all gra
 For example, if you run the `GRANT SELECT ON db.* TO john` query and then create a new table `db.new_table`, the user `john` will be able to run the `SELECT * FROM db.new_table` query.
 
 You can specify asterisk **only** for the prefixes:
-
 ```sql
 GRANT SELECT ON db.* TO john -- correct
 GRANT SELECT ON db*.* TO john -- correct
@@ -137,201 +133,201 @@ Privileges have a hierarchical structure and a set of permitted queries depends 
 The hierarchy of privileges in ClickHouse is shown below:
 
 - [`ALL`](#all)
-- [`ACCESS MANAGEMENT`](#access-management)
-        -`ALLOW SQL SECURITY NONE`
-        -`ALTER QUOTA`
-        -`ALTER ROLE`
-        -`ALTER ROW POLICY`
-        -`ALTER SETTINGS PROFILE`
-        -`ALTER USER`
-        -`CREATE QUOTA`
-        -`CREATE ROLE`
-        -`CREATE ROW POLICY`
-        -`CREATE SETTINGS PROFILE`
-        -`CREATE USER`
-        -`DROP QUOTA`
-        -`DROP ROLE`
-        -`DROP ROW POLICY`
-        -`DROP SETTINGS PROFILE`
-        -`DROP USER`
-        -`ROLE ADMIN`
-        -`SHOW ACCESS`
-            -`SHOW QUOTAS`
-            -`SHOW ROLES`
-            -`SHOW ROW POLICIES`
-            -`SHOW SETTINGS PROFILES`
-            -`SHOW USERS`
-- [`ALTER`](#alter)
-        -`ALTER DATABASE`
-            -`ALTER DATABASE SETTINGS`
-        -`ALTER TABLE`
-                -`ALTER COLUMN`
-                    -`ALTER ADD COLUMN`
-                    -`ALTER CLEAR COLUMN`
-                    -`ALTER COMMENT COLUMN`
-                    -`ALTER DROP COLUMN`
-                    -`ALTER MATERIALIZE COLUMN`
-                    -`ALTER MODIFY COLUMN`
-                    -`ALTER RENAME COLUMN`
-                -`ALTER CONSTRAINT`
-                    -`ALTER ADD CONSTRAINT`
-                    -`ALTER DROP CONSTRAINT`
-                -`ALTER DELETE`
-                -`ALTER FETCH PARTITION`
-                -`ALTER FREEZE PARTITION`
-                -`ALTER INDEX`
-                    -`ALTER ADD INDEX`
-                    -`ALTER CLEAR INDEX`
-                    -`ALTER DROP INDEX`
-                    -`ALTER MATERIALIZE INDEX`
-                    -`ALTER ORDER BY`
-                    -`ALTER SAMPLE BY`
-                -`ALTER MATERIALIZE TTL`
-                -`ALTER MODIFY COMMENT`
-                -`ALTER MOVE PARTITION`
-                -`ALTER PROJECTION`
-                -`ALTER SETTINGS`
-                -`ALTER STATISTICS`
-                    -`ALTER ADD STATISTICS`
-                    -`ALTER DROP STATISTICS`
-                    -`ALTER MATERIALIZE STATISTICS`
-                    -`ALTER MODIFY STATISTICS`
-                -`ALTER TTL`
-                -`ALTER UPDATE`
-        -`ALTER VIEW`
-            -`ALTER VIEW MODIFY QUERY`
-            -`ALTER VIEW REFRESH`
-            -`ALTER VIEW MODIFY SQL SECURITY`
-- [`BACKUP`](#backup)
-- [`CLUSTER`](#cluster)
-- [`CREATE`](#create)
-    -`CREATE ARBITRARY TEMPORARY TABLE`
-    -`CREATE TEMPORARY TABLE`
-    -`CREATE DATABASE`
-    -`CREATE DICTIONARY`
-    -`CREATE FUNCTION`
-    -`CREATE RESOURCE`
-    -`CREATE TABLE`
-    -`CREATE VIEW`
-    -`CREATE WORKLOAD`
-- [`dictGet`](#dictget)
-- [`displaySecretsInShowAndSelect`](#displaysecretsinshowandselect)
-- [`DROP`](#drop)
-    -`DROP DATABASE`
-    -`DROP DICTIONARY`
-    -`DROP FUNCTION`
-    -`DROP RESOURCE`
-    -`DROP TABLE`
-    -`DROP VIEW`
-    -`DROP WORKLOAD`
-- [`INSERT`](#insert)
-- [`INTROSPECTION`](#introspection)
-    -`addressToLine`
-    -`addressToLineWithInlines`
-    -`addressToSymbol`
-    -`demangle`
-- `KILL QUERY`
-- `KILL TRANSACTION`
-- `MOVE PARTITION BETWEEN SHARDS`
-- [`NAMED COLLECTION ADMIN`](#named-collection-admin)
-    -`ALTER NAMED COLLECTION`
-    -`CREATE NAMED COLLECTION`
-    -`DROP NAMED COLLECTION`
-    -`NAMED COLLECTION`
-    -`SHOW NAMED COLLECTIONS`
-    -`SHOW NAMED COLLECTIONS SECRETS`
-- [`OPTIMIZE`](#optimize)
-- [`SELECT`](#select)
-- [`SET DEFINER`](/sql-reference/statements/create/view#sql_security)
-- [`SHOW`](#show)
-    -`SHOW COLUMNS`
-    -`SHOW DATABASES`
-    -`SHOW DICTIONARIES`
-    -`SHOW TABLES`
-- `SHOW FILESYSTEM CACHES`
-- [`SOURCES`](#sources)
-    -`AZURE`
-    -`FILE`
-    -`HDFS`
-    -`HIVE`
-    -`JDBC`
-    -`KAFKA`
-    -`MONGO`
-    -`MYSQL`
-    -`NATS`
-    -`ODBC`
-    -`POSTGRES`
-    -`RABBITMQ`
-    -`REDIS`
-    -`REMOTE`
-    -`S3`
-    -`SQLITE`
-    -`URL`
-- [`SYSTEM`](#system)
-    -`SYSTEM CLEANUP`
-    -`SYSTEM DROP CACHE`
-    -`SYSTEM DROP COMPILED EXPRESSION CACHE`
-    -`SYSTEM DROP CONNECTIONS CACHE`
-    -`SYSTEM DROP DISTRIBUTED CACHE`
-    -`SYSTEM DROP DNS CACHE`
-    -`SYSTEM DROP FILESYSTEM CACHE`
-    -`SYSTEM DROP FORMAT SCHEMA CACHE`
-    -`SYSTEM DROP MARK CACHE`
-    -`SYSTEM DROP MMAP CACHE`
-    -`SYSTEM DROP PAGE CACHE`
-    -`SYSTEM DROP PRIMARY INDEX CACHE`
-    -`SYSTEM DROP QUERY CACHE`
-    -`SYSTEM DROP S3 CLIENT CACHE`
-    -`SYSTEM DROP SCHEMA CACHE`
-    -`SYSTEM DROP UNCOMPRESSED CACHE`
-    -`SYSTEM DROP PRIMARY INDEX CACHE`
-    -`SYSTEM DROP REPLICA`
-    -`SYSTEM FAILPOINT`
-    -`SYSTEM FETCHES`
-    -`SYSTEM FLUSH`
-    -`SYSTEM FLUSH ASYNC INSERT QUEUE`
-    -`SYSTEM FLUSH LOGS`
-    -`SYSTEM JEMALLOC`
-    -`SYSTEM KILL QUERY`
-    -`SYSTEM KILL TRANSACTION`
-    -`SYSTEM LISTEN`
-    -`SYSTEM LOAD PRIMARY KEY`
-    -`SYSTEM MERGES`
-    -`SYSTEM MOVES`
-    -`SYSTEM PULLING REPLICATION LOG`
-    -`SYSTEM REDUCE BLOCKING PARTS`
-    -`SYSTEM REPLICATION QUEUES`
-    -`SYSTEM REPLICA READINESS`
-    -`SYSTEM RESTART DISK`
-    -`SYSTEM RESTART REPLICA`
-    -`SYSTEM RESTORE REPLICA`
-    -`SYSTEM RELOAD`
-    -`SYSTEM RELOAD ASYNCHRONOUS METRICS`
-    -`SYSTEM RELOAD CONFIG`
-        -`SYSTEM RELOAD DICTIONARY`
-        -`SYSTEM RELOAD EMBEDDED DICTIONARIES`
-        -`SYSTEM RELOAD FUNCTION`
-        -`SYSTEM RELOAD MODEL`
-        -`SYSTEM RELOAD USERS`
-    -`SYSTEM SENDS`
-    -`SYSTEM DISTRIBUTED SENDS`
-    -`SYSTEM REPLICATED SENDS`
-    -`SYSTEM SHUTDOWN`
-    -`SYSTEM SYNC DATABASE REPLICA`
-    -`SYSTEM SYNC FILE CACHE`
-    -`SYSTEM SYNC FILESYSTEM CACHE`
-    -`SYSTEM SYNC REPLICA`
-    -`SYSTEM SYNC TRANSACTION LOG`
-    -`SYSTEM THREAD FUZZER`
-    -`SYSTEM TTL MERGES`
-    -`SYSTEM UNFREEZE`
-    -`SYSTEM UNLOAD PRIMARY KEY`
-    -`SYSTEM VIEWS`
-    -`SYSTEM VIRTUAL PARTS UPDATE`
-    -`SYSTEM WAIT LOADING PARTS`
-- [`TABLE ENGINE`](#table-engine)
-- [`TRUNCATE`](#truncate)
-- `UNDROP TABLE`
+  - [`ACCESS MANAGEMENT`](#access-management)
+    - `ALLOW SQL SECURITY NONE`
+    - `ALTER QUOTA`
+    - `ALTER ROLE`
+    - `ALTER ROW POLICY` 
+    - `ALTER SETTINGS PROFILE`
+    - `ALTER USER`
+    - `CREATE QUOTA`
+    - `CREATE ROLE`
+    - `CREATE ROW POLICY`
+    - `CREATE SETTINGS PROFILE`
+    - `CREATE USER`
+    - `DROP QUOTA`
+    - `DROP ROLE`
+    - `DROP ROW POLICY`
+    - `DROP SETTINGS PROFILE`
+    - `DROP USER`
+    - `ROLE ADMIN`
+    - `SHOW ACCESS`
+      - `SHOW QUOTAS`
+      - `SHOW ROLES`
+      - `SHOW ROW POLICIES`
+      - `SHOW SETTINGS PROFILES`
+      - `SHOW USERS`
+  - [`ALTER`](#alter)
+    - `ALTER DATABASE`
+      - `ALTER DATABASE SETTINGS`
+    - `ALTER TABLE`
+      - `ALTER COLUMN`
+        - `ALTER ADD COLUMN`
+        - `ALTER CLEAR COLUMN`
+        - `ALTER COMMENT COLUMN`
+        - `ALTER DROP COLUMN`
+        - `ALTER MATERIALIZE COLUMN`
+        - `ALTER MODIFY COLUMN`
+        - `ALTER RENAME COLUMN` 
+      - `ALTER CONSTRAINT`
+        - `ALTER ADD CONSTRAINT`
+        - `ALTER DROP CONSTRAINT` 
+      - `ALTER DELETE`
+      - `ALTER FETCH PARTITION`
+      - `ALTER FREEZE PARTITION`
+      - `ALTER INDEX`
+        - `ALTER ADD INDEX`
+        - `ALTER CLEAR INDEX`
+        - `ALTER DROP INDEX`
+        - `ALTER MATERIALIZE INDEX`
+        - `ALTER ORDER BY`
+        - `ALTER SAMPLE BY` 
+      - `ALTER MATERIALIZE TTL`
+      - `ALTER MODIFY COMMENT`
+      - `ALTER MOVE PARTITION`
+      - `ALTER PROJECTION`
+      - `ALTER SETTINGS`
+      - `ALTER STATISTICS`
+        - `ALTER ADD STATISTICS`
+        - `ALTER DROP STATISTICS`
+        - `ALTER MATERIALIZE STATISTICS`
+        - `ALTER MODIFY STATISTICS` 
+      - `ALTER TTL`
+      - `ALTER UPDATE` 
+    - `ALTER VIEW`
+      - `ALTER VIEW MODIFY QUERY`
+      - `ALTER VIEW REFRESH`
+      - `ALTER VIEW MODIFY SQL SECURITY`
+  - [`BACKUP`](#backup)
+  - [`CLUSTER`](#cluster)
+  - [`CREATE`](#create)
+    - `CREATE ARBITRARY TEMPORARY TABLE`
+      - `CREATE TEMPORARY TABLE`
+    - `CREATE DATABASE`
+    - `CREATE DICTIONARY`
+    - `CREATE FUNCTION`
+    - `CREATE RESOURCE`
+    - `CREATE TABLE`
+    - `CREATE VIEW`
+    - `CREATE WORKLOAD`
+  - [`dictGet`](#dictget)
+  - [`displaySecretsInShowAndSelect`](#displaysecretsinshowandselect)
+  - [`DROP`](#drop)
+    - `DROP DATABASE`
+    - `DROP DICTIONARY`
+    - `DROP FUNCTION`
+    - `DROP RESOURCE`
+    - `DROP TABLE`
+    - `DROP VIEW` 
+    - `DROP WORKLOAD`
+  - [`INSERT`](#insert)
+  - [`INTROSPECTION`](#introspection)
+    - `addressToLine`
+    - `addressToLineWithInlines`
+    - `addressToSymbol`
+    - `demangle`
+  - `KILL QUERY`
+  - `KILL TRANSACTION`
+  - `MOVE PARTITION BETWEEN SHARDS`
+  - [`NAMED COLLECTION ADMIN`](#named-collection-admin)
+    - `ALTER NAMED COLLECTION`
+    - `CREATE NAMED COLLECTION`
+    - `DROP NAMED COLLECTION`
+    - `NAMED COLLECTION`
+    - `SHOW NAMED COLLECTIONS`
+    - `SHOW NAMED COLLECTIONS SECRETS`
+  - [`OPTIMIZE`](#optimize)
+  - [`SELECT`](#select)
+  - [`SET DEFINER`](/sql-reference/statements/create/view#sql_security)
+  - [`SHOW`](#show)
+    - `SHOW COLUMNS` 
+    - `SHOW DATABASES`
+    - `SHOW DICTIONARIES`
+    - `SHOW TABLES`
+  - `SHOW FILESYSTEM CACHES`
+  - [`SOURCES`](#sources)
+    - `AZURE`
+    - `FILE`
+    - `HDFS`
+    - `HIVE`
+    - `JDBC`
+    - `KAFKA`
+    - `MONGO`
+    - `MYSQL`
+    - `NATS`
+    - `ODBC`
+    - `POSTGRES`
+    - `RABBITMQ`
+    - `REDIS`
+    - `REMOTE`
+    - `S3`
+    - `SQLITE`
+    - `URL`
+  - [`SYSTEM`](#system)
+    - `SYSTEM CLEANUP`
+    - `SYSTEM DROP CACHE`
+      - `SYSTEM DROP COMPILED EXPRESSION CACHE`
+      - `SYSTEM DROP CONNECTIONS CACHE`
+      - `SYSTEM DROP DISTRIBUTED CACHE`
+      - `SYSTEM DROP DNS CACHE`
+      - `SYSTEM DROP FILESYSTEM CACHE`
+      - `SYSTEM DROP FORMAT SCHEMA CACHE`
+      - `SYSTEM DROP MARK CACHE`
+      - `SYSTEM DROP MMAP CACHE`
+      - `SYSTEM DROP PAGE CACHE`
+      - `SYSTEM DROP PRIMARY INDEX CACHE`
+      - `SYSTEM DROP QUERY CACHE`
+      - `SYSTEM DROP S3 CLIENT CACHE`
+      - `SYSTEM DROP SCHEMA CACHE`
+      - `SYSTEM DROP UNCOMPRESSED CACHE`
+    - `SYSTEM DROP PRIMARY INDEX CACHE`
+    - `SYSTEM DROP REPLICA`
+    - `SYSTEM FAILPOINT`
+    - `SYSTEM FETCHES`
+    - `SYSTEM FLUSH`
+      - `SYSTEM FLUSH ASYNC INSERT QUEUE`
+      - `SYSTEM FLUSH LOGS`
+    - `SYSTEM JEMALLOC`
+    - `SYSTEM KILL QUERY`
+    - `SYSTEM KILL TRANSACTION`
+    - `SYSTEM LISTEN`
+    - `SYSTEM LOAD PRIMARY KEY`
+    - `SYSTEM MERGES`
+    - `SYSTEM MOVES`
+    - `SYSTEM PULLING REPLICATION LOG`
+    - `SYSTEM REDUCE BLOCKING PARTS`
+    - `SYSTEM REPLICATION QUEUES`
+    - `SYSTEM REPLICA READINESS`
+    - `SYSTEM RESTART DISK`
+    - `SYSTEM RESTART REPLICA`
+    - `SYSTEM RESTORE REPLICA`
+    - `SYSTEM RELOAD`
+      - `SYSTEM RELOAD ASYNCHRONOUS METRICS`
+      - `SYSTEM RELOAD CONFIG`
+        - `SYSTEM RELOAD DICTIONARY`
+        - `SYSTEM RELOAD EMBEDDED DICTIONARIES`
+        - `SYSTEM RELOAD FUNCTION`
+        - `SYSTEM RELOAD MODEL`
+        - `SYSTEM RELOAD USERS`
+    - `SYSTEM SENDS`
+      - `SYSTEM DISTRIBUTED SENDS`
+      - `SYSTEM REPLICATED SENDS`
+    - `SYSTEM SHUTDOWN`
+    - `SYSTEM SYNC DATABASE REPLICA`
+    - `SYSTEM SYNC FILE CACHE`
+    - `SYSTEM SYNC FILESYSTEM CACHE`
+    - `SYSTEM SYNC REPLICA`
+    - `SYSTEM SYNC TRANSACTION LOG`
+    - `SYSTEM THREAD FUZZER`
+    - `SYSTEM TTL MERGES`
+    - `SYSTEM UNFREEZE`
+    - `SYSTEM UNLOAD PRIMARY KEY`
+    - `SYSTEM VIEWS`
+    - `SYSTEM VIRTUAL PARTS UPDATE`
+    - `SYSTEM WAIT LOADING PARTS`
+  - [`TABLE ENGINE`](#table-engine)
+  - [`TRUNCATE`](#truncate)
+  - `UNDROP TABLE` 
 - [`NONE`](#none)
 
 Examples of how this hierarchy is treated:
@@ -410,36 +406,36 @@ The granted privilege allows `john` to insert data to the `x` and/or `y` columns
 Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries according to the following hierarchy of privileges:
 
 - `ALTER`. Level: `COLUMN`.
-- `ALTER TABLE`. Level: `GROUP`
-    -`ALTER UPDATE`. Level: `COLUMN`. Aliases: `UPDATE`
-    -`ALTER DELETE`. Level: `COLUMN`. Aliases: `DELETE`
-    -`ALTER COLUMN`. Level: `GROUP`
-    -`ALTER ADD COLUMN`. Level: `COLUMN`. Aliases: `ADD COLUMN`
-    -`ALTER DROP COLUMN`. Level: `COLUMN`. Aliases: `DROP COLUMN`
-    -`ALTER MODIFY COLUMN`. Level: `COLUMN`. Aliases: `MODIFY COLUMN`
-    -`ALTER COMMENT COLUMN`. Level: `COLUMN`. Aliases: `COMMENT COLUMN`
-    -`ALTER CLEAR COLUMN`. Level: `COLUMN`. Aliases: `CLEAR COLUMN`
-    -`ALTER RENAME COLUMN`. Level: `COLUMN`. Aliases: `RENAME COLUMN`
-    -`ALTER INDEX`. Level: `GROUP`. Aliases: `INDEX`
-    -`ALTER ORDER BY`. Level: `TABLE`. Aliases: `ALTER MODIFY ORDER BY`, `MODIFY ORDER BY`
-    -`ALTER SAMPLE BY`. Level: `TABLE`. Aliases: `ALTER MODIFY SAMPLE BY`, `MODIFY SAMPLE BY`
-    -`ALTER ADD INDEX`. Level: `TABLE`. Aliases: `ADD INDEX`
-    -`ALTER DROP INDEX`. Level: `TABLE`. Aliases: `DROP INDEX`
-    -`ALTER MATERIALIZE INDEX`. Level: `TABLE`. Aliases: `MATERIALIZE INDEX`
-    -`ALTER CLEAR INDEX`. Level: `TABLE`. Aliases: `CLEAR INDEX`
-    -`ALTER CONSTRAINT`. Level: `GROUP`. Aliases: `CONSTRAINT`
-    -`ALTER ADD CONSTRAINT`. Level: `TABLE`. Aliases: `ADD CONSTRAINT`
-    -`ALTER DROP CONSTRAINT`. Level: `TABLE`. Aliases: `DROP CONSTRAINT`
-    -`ALTER TTL`. Level: `TABLE`. Aliases: `ALTER MODIFY TTL`, `MODIFY TTL`
-    -`ALTER MATERIALIZE TTL`. Level: `TABLE`. Aliases: `MATERIALIZE TTL`
-    -`ALTER SETTINGS`. Level: `TABLE`. Aliases: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
-    -`ALTER MOVE PARTITION`. Level: `TABLE`. Aliases: `ALTER MOVE PART`, `MOVE PARTITION`, `MOVE PART`
-    -`ALTER FETCH PARTITION`. Level: `TABLE`. Aliases: `ALTER FETCH PART`, `FETCH PARTITION`, `FETCH PART`
-    -`ALTER FREEZE PARTITION`. Level: `TABLE`. Aliases: `FREEZE PARTITION`
-- `ALTER VIEW` Level: `GROUP`
-    -`ALTER VIEW REFRESH`. Level: `VIEW`. Aliases: `ALTER LIVE VIEW REFRESH`, `REFRESH VIEW`
-    -`ALTER VIEW MODIFY QUERY`. Level: `VIEW`. Aliases: `ALTER TABLE MODIFY QUERY`
-    -`ALTER VIEW MODIFY SQL SECURITY`. Level: `VIEW`. Aliases: `ALTER TABLE MODIFY SQL SECURITY`
+  - `ALTER TABLE`. Level: `GROUP`
+  - `ALTER UPDATE`. Level: `COLUMN`. Aliases: `UPDATE`
+  - `ALTER DELETE`. Level: `COLUMN`. Aliases: `DELETE`
+  - `ALTER COLUMN`. Level: `GROUP`
+  - `ALTER ADD COLUMN`. Level: `COLUMN`. Aliases: `ADD COLUMN`
+  - `ALTER DROP COLUMN`. Level: `COLUMN`. Aliases: `DROP COLUMN`
+  - `ALTER MODIFY COLUMN`. Level: `COLUMN`. Aliases: `MODIFY COLUMN`
+  - `ALTER COMMENT COLUMN`. Level: `COLUMN`. Aliases: `COMMENT COLUMN`
+  - `ALTER CLEAR COLUMN`. Level: `COLUMN`. Aliases: `CLEAR COLUMN`
+  - `ALTER RENAME COLUMN`. Level: `COLUMN`. Aliases: `RENAME COLUMN`
+  - `ALTER INDEX`. Level: `GROUP`. Aliases: `INDEX`
+  - `ALTER ORDER BY`. Level: `TABLE`. Aliases: `ALTER MODIFY ORDER BY`, `MODIFY ORDER BY`
+  - `ALTER SAMPLE BY`. Level: `TABLE`. Aliases: `ALTER MODIFY SAMPLE BY`, `MODIFY SAMPLE BY`
+  - `ALTER ADD INDEX`. Level: `TABLE`. Aliases: `ADD INDEX`
+  - `ALTER DROP INDEX`. Level: `TABLE`. Aliases: `DROP INDEX`
+  - `ALTER MATERIALIZE INDEX`. Level: `TABLE`. Aliases: `MATERIALIZE INDEX`
+  - `ALTER CLEAR INDEX`. Level: `TABLE`. Aliases: `CLEAR INDEX`
+  - `ALTER CONSTRAINT`. Level: `GROUP`. Aliases: `CONSTRAINT`
+  - `ALTER ADD CONSTRAINT`. Level: `TABLE`. Aliases: `ADD CONSTRAINT`
+  - `ALTER DROP CONSTRAINT`. Level: `TABLE`. Aliases: `DROP CONSTRAINT`
+  - `ALTER TTL`. Level: `TABLE`. Aliases: `ALTER MODIFY TTL`, `MODIFY TTL`
+  - `ALTER MATERIALIZE TTL`. Level: `TABLE`. Aliases: `MATERIALIZE TTL`
+  - `ALTER SETTINGS`. Level: `TABLE`. Aliases: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
+  - `ALTER MOVE PARTITION`. Level: `TABLE`. Aliases: `ALTER MOVE PART`, `MOVE PARTITION`, `MOVE PART`
+  - `ALTER FETCH PARTITION`. Level: `TABLE`. Aliases: `ALTER FETCH PART`, `FETCH PARTITION`, `FETCH PART`
+  - `ALTER FREEZE PARTITION`. Level: `TABLE`. Aliases: `FREEZE PARTITION`
+  - `ALTER VIEW`. Level: `GROUP`
+  - `ALTER VIEW REFRESH`. Level: `VIEW`. Aliases: `ALTER LIVE VIEW REFRESH`, `REFRESH VIEW`
+  - `ALTER VIEW MODIFY QUERY`. Level: `VIEW`. Aliases: `ALTER TABLE MODIFY QUERY`
+  - `ALTER VIEW MODIFY SQL SECURITY`. Level: `VIEW`. Aliases: `ALTER TABLE MODIFY SQL SECURITY`
 
 Examples of how this hierarchy is treated:
 
@@ -462,12 +458,12 @@ Allows execution of [`BACKUP`] in queries. For more information on backups see [
 Allows executing [CREATE](../../sql-reference/statements/create/index.md) and [ATTACH](../../sql-reference/statements/attach.md) DDL-queries according to the following hierarchy of privileges:
 
 - `CREATE`. Level: `GROUP`
-- `CREATE DATABASE`. Level: `DATABASE`
-- `CREATE TABLE`. Level: `TABLE`
-    -`CREATE ARBITRARY TEMPORARY TABLE`. Level: `GLOBAL`
-    -`CREATE TEMPORARY TABLE`. Level: `GLOBAL`
-- `CREATE VIEW`. Level: `VIEW`
-- `CREATE DICTIONARY`. Level: `DICTIONARY`
+  - `CREATE DATABASE`. Level: `DATABASE`
+  - `CREATE TABLE`. Level: `TABLE`
+    - `CREATE ARBITRARY TEMPORARY TABLE`. Level: `GLOBAL`
+      - `CREATE TEMPORARY TABLE`. Level: `GLOBAL`
+  - `CREATE VIEW`. Level: `VIEW`
+  - `CREATE DICTIONARY`. Level: `DICTIONARY`
 
 **Notes**
 
@@ -502,10 +498,10 @@ located in the `access_control_improvements` section of `config.xml` (see below)
 Allows executing [DROP](../../sql-reference/statements/drop.md) and [DETACH](../../sql-reference/statements/detach.md) queries according to the following hierarchy of privileges:
 
 - `DROP`. Level: `GROUP`
-- `DROP DATABASE`. Level: `DATABASE`
-- `DROP TABLE`. Level: `TABLE`
-- `DROP VIEW`. Level: `VIEW`
-- `DROP DICTIONARY`. Level: `DICTIONARY`
+  - `DROP DATABASE`. Level: `DATABASE`
+  - `DROP TABLE`. Level: `TABLE`
+  - `DROP VIEW`. Level: `VIEW`
+  - `DROP DICTIONARY`. Level: `DICTIONARY`
 
 ### TRUNCATE {#truncate}
 
@@ -524,10 +520,10 @@ Privilege level: `TABLE`.
 Allows executing `SHOW`, `DESCRIBE`, `USE`, and `EXISTS` queries according to the following hierarchy of privileges:
 
 - `SHOW`. Level: `GROUP`
-- `SHOW DATABASES`. Level: `DATABASE`. Allows to execute `SHOW DATABASES`, `SHOW CREATE DATABASE`, `USE <database>` queries.
-- `SHOW TABLES`. Level: `TABLE`. Allows to execute `SHOW TABLES`, `EXISTS <table>`, `CHECK <table>` queries.
-- `SHOW COLUMNS`. Level: `COLUMN`. Allows to execute `SHOW CREATE TABLE`, `DESCRIBE` queries.
-- `SHOW DICTIONARIES`. Level: `DICTIONARY`. Allows to execute `SHOW DICTIONARIES`, `SHOW CREATE DICTIONARY`, `EXISTS <dictionary>` queries.
+  - `SHOW DATABASES`. Level: `DATABASE`. Allows to execute `SHOW DATABASES`, `SHOW CREATE DATABASE`, `USE <database>` queries.
+  - `SHOW TABLES`. Level: `TABLE`. Allows to execute `SHOW TABLES`, `EXISTS <table>`, `CHECK <table>` queries.
+  - `SHOW COLUMNS`. Level: `COLUMN`. Allows to execute `SHOW CREATE TABLE`, `DESCRIBE` queries.
+  - `SHOW DICTIONARIES`. Level: `DICTIONARY`. Allows to execute `SHOW DICTIONARIES`, `SHOW CREATE DICTIONARY`, `EXISTS <dictionary>` queries.
 
 **Notes**
 
@@ -548,29 +544,29 @@ Privilege level: `GLOBAL`.
 Allows a user to execute queries that manage users, roles and row policies.
 
 - `ACCESS MANAGEMENT`. Level: `GROUP`
-- `CREATE USER`. Level: `GLOBAL`
-- `ALTER USER`. Level: `GLOBAL`
-- `DROP USER`. Level: `GLOBAL`
-- `CREATE ROLE`. Level: `GLOBAL`
-- `ALTER ROLE`. Level: `GLOBAL`
-- `DROP ROLE`. Level: `GLOBAL`
-- `ROLE ADMIN`. Level: `GLOBAL`
-- `CREATE ROW POLICY`. Level: `GLOBAL`. Aliases: `CREATE POLICY`
-- `ALTER ROW POLICY`. Level: `GLOBAL`. Aliases: `ALTER POLICY`
-- `DROP ROW POLICY`. Level: `GLOBAL`. Aliases: `DROP POLICY`
-- `CREATE QUOTA`. Level: `GLOBAL`
-- `ALTER QUOTA`. Level: `GLOBAL`
-- `DROP QUOTA`. Level: `GLOBAL`
-- `CREATE SETTINGS PROFILE`. Level: `GLOBAL`. Aliases: `CREATE PROFILE`
-- `ALTER SETTINGS PROFILE`. Level: `GLOBAL`. Aliases: `ALTER PROFILE`
-- `DROP SETTINGS PROFILE`. Level: `GLOBAL`. Aliases: `DROP PROFILE`
-- `SHOW ACCESS`. Level: `GROUP`
-    -`SHOW_USERS`. Level: `GLOBAL`. Aliases: `SHOW CREATE USER`
-    -`SHOW_ROLES`. Level: `GLOBAL`. Aliases: `SHOW CREATE ROLE`
-    -`SHOW_ROW_POLICIES`. Level: `GLOBAL`. Aliases: `SHOW POLICIES`, `SHOW CREATE ROW POLICY`, `SHOW CREATE POLICY`
-    -`SHOW_QUOTAS`. Level: `GLOBAL`. Aliases: `SHOW CREATE QUOTA`
-    -`SHOW_SETTINGS_PROFILES`. Level: `GLOBAL`. Aliases: `SHOW PROFILES`, `SHOW CREATE SETTINGS PROFILE`, `SHOW CREATE PROFILE`
-- `ALLOW SQL SECURITY NONE`. Level: `GLOBAL`. Aliases: `CREATE SQL SECURITY NONE`, `SQL SECURITY NONE`, `SECURITY NONE`
+  - `CREATE USER`. Level: `GLOBAL`
+  - `ALTER USER`. Level: `GLOBAL`
+  - `DROP USER`. Level: `GLOBAL`
+  - `CREATE ROLE`. Level: `GLOBAL`
+  - `ALTER ROLE`. Level: `GLOBAL`
+  - `DROP ROLE`. Level: `GLOBAL`
+  - `ROLE ADMIN`. Level: `GLOBAL`
+  - `CREATE ROW POLICY`. Level: `GLOBAL`. Aliases: `CREATE POLICY`
+  - `ALTER ROW POLICY`. Level: `GLOBAL`. Aliases: `ALTER POLICY`
+  - `DROP ROW POLICY`. Level: `GLOBAL`. Aliases: `DROP POLICY`
+  - `CREATE QUOTA`. Level: `GLOBAL`
+  - `ALTER QUOTA`. Level: `GLOBAL`
+  - `DROP QUOTA`. Level: `GLOBAL`
+  - `CREATE SETTINGS PROFILE`. Level: `GLOBAL`. Aliases: `CREATE PROFILE`
+  - `ALTER SETTINGS PROFILE`. Level: `GLOBAL`. Aliases: `ALTER PROFILE`
+  - `DROP SETTINGS PROFILE`. Level: `GLOBAL`. Aliases: `DROP PROFILE`
+  - `SHOW ACCESS`. Level: `GROUP`
+    - `SHOW_USERS`. Level: `GLOBAL`. Aliases: `SHOW CREATE USER`
+    - `SHOW_ROLES`. Level: `GLOBAL`. Aliases: `SHOW CREATE ROLE`
+    - `SHOW_ROW_POLICIES`. Level: `GLOBAL`. Aliases: `SHOW POLICIES`, `SHOW CREATE ROW POLICY`, `SHOW CREATE POLICY`
+    - `SHOW_QUOTAS`. Level: `GLOBAL`. Aliases: `SHOW CREATE QUOTA`
+    - `SHOW_SETTINGS_PROFILES`. Level: `GLOBAL`. Aliases: `SHOW PROFILES`, `SHOW CREATE SETTINGS PROFILE`, `SHOW CREATE PROFILE`
+  - `ALLOW SQL SECURITY NONE`. Level: `GLOBAL`. Aliases: `CREATE SQL SECURITY NONE`, `SQL SECURITY NONE`, `SECURITY NONE`
 
 The `ROLE ADMIN` privilege allows a user to assign and revoke any roles including those which are not assigned to the user with the admin option.
 
@@ -579,28 +575,28 @@ The `ROLE ADMIN` privilege allows a user to assign and revoke any roles includin
 Allows a user to execute [SYSTEM](../../sql-reference/statements/system.md) queries according to the following hierarchy of privileges.
 
 - `SYSTEM`. Level: `GROUP`
-- `SYSTEM SHUTDOWN`. Level: `GLOBAL`. Aliases: `SYSTEM KILL`, `SHUTDOWN`
-- `SYSTEM DROP CACHE`. Aliases: `DROP CACHE`
-    -`SYSTEM DROP DNS CACHE`. Level: `GLOBAL`. Aliases: `SYSTEM DROP DNS`, `DROP DNS CACHE`, `DROP DNS`
-    -`SYSTEM DROP MARK CACHE`. Level: `GLOBAL`. Aliases: `SYSTEM DROP MARK`, `DROP MARK CACHE`, `DROP MARKS`
-    -`SYSTEM DROP UNCOMPRESSED CACHE`. Level: `GLOBAL`. Aliases: `SYSTEM DROP UNCOMPRESSED`, `DROP UNCOMPRESSED CACHE`, `DROP UNCOMPRESSED`
-- `SYSTEM RELOAD`. Level: `GROUP`
-    -`SYSTEM RELOAD CONFIG`. Level: `GLOBAL`. Aliases: `RELOAD CONFIG`
-    -`SYSTEM RELOAD DICTIONARY`. Level: `GLOBAL`. Aliases: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
-    -`SYSTEM RELOAD EMBEDDED DICTIONARIES`. Level: `GLOBAL`. Aliases: `RELOAD EMBEDDED DICTIONARIES`
-- `SYSTEM MERGES`. Level: `TABLE`. Aliases: `SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, `START MERGES`
-- `SYSTEM TTL MERGES`. Level: `TABLE`. Aliases: `SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, `START TTL MERGES`
-- `SYSTEM FETCHES`. Level: `TABLE`. Aliases: `SYSTEM STOP FETCHES`, `SYSTEM START FETCHES`, `STOP FETCHES`, `START FETCHES`
-- `SYSTEM MOVES`. Level: `TABLE`. Aliases: `SYSTEM STOP MOVES`, `SYSTEM START MOVES`, `STOP MOVES`, `START MOVES`
-- `SYSTEM SENDS`. Level: `GROUP`. Aliases: `SYSTEM STOP SENDS`, `SYSTEM START SENDS`, `STOP SENDS`, `START SENDS`
-    -`SYSTEM DISTRIBUTED SENDS`. Level: `TABLE`. Aliases: `SYSTEM STOP DISTRIBUTED SENDS`, `SYSTEM START DISTRIBUTED SENDS`, `STOP DISTRIBUTED SENDS`, `START DISTRIBUTED SENDS`
-    -`SYSTEM REPLICATED SENDS`. Level: `TABLE`. Aliases: `SYSTEM STOP REPLICATED SENDS`, `SYSTEM START REPLICATED SENDS`, `STOP REPLICATED SENDS`, `START REPLICATED SENDS`
-- `SYSTEM REPLICATION QUEUES`. Level: `TABLE`. Aliases: `SYSTEM STOP REPLICATION QUEUES`, `SYSTEM START REPLICATION QUEUES`, `STOP REPLICATION QUEUES`, `START REPLICATION QUEUES`
-- `SYSTEM SYNC REPLICA`. Level: `TABLE`. Aliases: `SYNC REPLICA`
-- `SYSTEM RESTART REPLICA`. Level: `TABLE`. Aliases: `RESTART REPLICA`
-- `SYSTEM FLUSH`. Level: `GROUP`
-    -`SYSTEM FLUSH DISTRIBUTED`. Level: `TABLE`. Aliases: `FLUSH DISTRIBUTED`
-    -`SYSTEM FLUSH LOGS`. Level: `GLOBAL`. Aliases: `FLUSH LOGS`
+  - `SYSTEM SHUTDOWN`. Level: `GLOBAL`. Aliases: `SYSTEM KILL`, `SHUTDOWN`
+  - `SYSTEM DROP CACHE`. Aliases: `DROP CACHE`
+    - `SYSTEM DROP DNS CACHE`. Level: `GLOBAL`. Aliases: `SYSTEM DROP DNS`, `DROP DNS CACHE`, `DROP DNS`
+    - `SYSTEM DROP MARK CACHE`. Level: `GLOBAL`. Aliases: `SYSTEM DROP MARK`, `DROP MARK CACHE`, `DROP MARKS`
+    - `SYSTEM DROP UNCOMPRESSED CACHE`. Level: `GLOBAL`. Aliases: `SYSTEM DROP UNCOMPRESSED`, `DROP UNCOMPRESSED CACHE`, `DROP UNCOMPRESSED`
+  - `SYSTEM RELOAD`. Level: `GROUP`
+    - `SYSTEM RELOAD CONFIG`. Level: `GLOBAL`. Aliases: `RELOAD CONFIG`
+    - `SYSTEM RELOAD DICTIONARY`. Level: `GLOBAL`. Aliases: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
+      - `SYSTEM RELOAD EMBEDDED DICTIONARIES`. Level: `GLOBAL`. Aliases: `RELOAD EMBEDDED DICTIONARIES`
+  - `SYSTEM MERGES`. Level: `TABLE`. Aliases: `SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, `START MERGES`
+  - `SYSTEM TTL MERGES`. Level: `TABLE`. Aliases: `SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, `START TTL MERGES`
+  - `SYSTEM FETCHES`. Level: `TABLE`. Aliases: `SYSTEM STOP FETCHES`, `SYSTEM START FETCHES`, `STOP FETCHES`, `START FETCHES`
+  - `SYSTEM MOVES`. Level: `TABLE`. Aliases: `SYSTEM STOP MOVES`, `SYSTEM START MOVES`, `STOP MOVES`, `START MOVES`
+  - `SYSTEM SENDS`. Level: `GROUP`. Aliases: `SYSTEM STOP SENDS`, `SYSTEM START SENDS`, `STOP SENDS`, `START SENDS`
+    - `SYSTEM DISTRIBUTED SENDS`. Level: `TABLE`. Aliases: `SYSTEM STOP DISTRIBUTED SENDS`, `SYSTEM START DISTRIBUTED SENDS`, `STOP DISTRIBUTED SENDS`, `START DISTRIBUTED SENDS`
+    - `SYSTEM REPLICATED SENDS`. Level: `TABLE`. Aliases: `SYSTEM STOP REPLICATED SENDS`, `SYSTEM START REPLICATED SENDS`, `STOP REPLICATED SENDS`, `START REPLICATED SENDS`
+  - `SYSTEM REPLICATION QUEUES`. Level: `TABLE`. Aliases: `SYSTEM STOP REPLICATION QUEUES`, `SYSTEM START REPLICATION QUEUES`, `STOP REPLICATION QUEUES`, `START REPLICATION QUEUES`
+  - `SYSTEM SYNC REPLICA`. Level: `TABLE`. Aliases: `SYNC REPLICA`
+  - `SYSTEM RESTART REPLICA`. Level: `TABLE`. Aliases: `RESTART REPLICA`
+  - `SYSTEM FLUSH`. Level: `GROUP`
+    - `SYSTEM FLUSH DISTRIBUTED`. Level: `TABLE`. Aliases: `FLUSH DISTRIBUTED`
+    - `SYSTEM FLUSH LOGS`. Level: `GLOBAL`. Aliases: `FLUSH LOGS`
 
 The `SYSTEM RELOAD EMBEDDED DICTIONARIES` privilege implicitly granted by the `SYSTEM RELOAD DICTIONARY ON *.*` privilege.
 
@@ -609,33 +605,33 @@ The `SYSTEM RELOAD EMBEDDED DICTIONARIES` privilege implicitly granted by the `S
 Allows using [introspection](../../operations/optimizing-performance/sampling-query-profiler.md) functions.
 
 - `INTROSPECTION`. Level: `GROUP`. Aliases: `INTROSPECTION FUNCTIONS`
-- `addressToLine`. Level: `GLOBAL`
-- `addressToLineWithInlines`. Level: `GLOBAL`
-- `addressToSymbol`. Level: `GLOBAL`
-- `demangle`. Level: `GLOBAL`
+  - `addressToLine`. Level: `GLOBAL`
+  - `addressToLineWithInlines`. Level: `GLOBAL`
+  - `addressToSymbol`. Level: `GLOBAL`
+  - `demangle`. Level: `GLOBAL`
 
 ### SOURCES {#sources}
 
 Allows using external data sources. Applies to [table engines](../../engines/table-engines/index.md) and [table functions](/sql-reference/table-functions).
 
-- `SOURCES`. Level: `GROUP`
-- `AZURE`. Level: `GLOBAL`
-- `FILE`. Level: `GLOBAL`
-- `HDFS`. Level: `GLOBAL`
-- `HIVE`. Level: `GLOBAL`
-- `JDBC`. Level: `GLOBAL`
-- `KAFKA`. Level: `GLOBAL`
-- `MONGO`. Level: `GLOBAL`
-- `MYSQL`. Level: `GLOBAL`
-- `NATS`. Level: `GLOBAL`
-- `ODBC`. Level: `GLOBAL`
-- `POSTGRES`. Level: `GLOBAL`
-- `RABBITMQ`. Level: `GLOBAL`
-- `REDIS`. Level: `GLOBAL`
-- `REMOTE`. Level: `GLOBAL`
-- `S3`. Level: `GLOBAL`
-- `SQLITE`. Level: `GLOBAL`
-- `URL`. Level: `GLOBAL`
+- `SOURCES`. Level: `GROUP`  
+  - `AZURE`. Level: `GLOBAL`  
+  - `FILE`. Level: `GLOBAL`  
+  - `HDFS`. Level: `GLOBAL`  
+  - `HIVE`. Level: `GLOBAL`  
+  - `JDBC`. Level: `GLOBAL`  
+  - `KAFKA`. Level: `GLOBAL`  
+  - `MONGO`. Level: `GLOBAL`  
+  - `MYSQL`. Level: `GLOBAL`  
+  - `NATS`. Level: `GLOBAL`  
+  - `ODBC`. Level: `GLOBAL`  
+  - `POSTGRES`. Level: `GLOBAL`  
+  - `RABBITMQ`. Level: `GLOBAL`  
+  - `REDIS`. Level: `GLOBAL`  
+  - `REMOTE`. Level: `GLOBAL`  
+  - `S3`. Level: `GLOBAL`  
+  - `SQLITE`. Level: `GLOBAL`  
+  - `URL`. Level: `GLOBAL`
 
 The `SOURCES` privilege enables use of all the sources. Also you can grant a privilege for each source individually. To use sources, you need additional privileges.
 
@@ -670,19 +666,18 @@ are turned on.
 Allows a certain operation on a specified named collection. Before version 23.7 it was called NAMED COLLECTION CONTROL, and after 23.7 NAMED COLLECTION ADMIN was added and NAMED COLLECTION CONTROL is preserved as an alias.
 
 - `NAMED COLLECTION ADMIN`. Level: `NAMED_COLLECTION`. Aliases: `NAMED COLLECTION CONTROL`
-- `CREATE NAMED COLLECTION`. Level: `NAMED_COLLECTION`
-- `DROP NAMED COLLECTION`. Level: `NAMED_COLLECTION`
-- `ALTER NAMED COLLECTION`. Level: `NAMED_COLLECTION`
-- `SHOW NAMED COLLECTIONS`. Level: `NAMED_COLLECTION`. Aliases: `SHOW NAMED COLLECTIONS`
-- `SHOW NAMED COLLECTIONS SECRETS`. Level: `NAMED_COLLECTION`. Aliases: `SHOW NAMED COLLECTIONS SECRETS`
-- `NAMED COLLECTION`. Level: `NAMED_COLLECTION`. Aliases: `NAMED COLLECTION USAGE, USE NAMED COLLECTION`
+  - `CREATE NAMED COLLECTION`. Level: `NAMED_COLLECTION`
+  - `DROP NAMED COLLECTION`. Level: `NAMED_COLLECTION`
+  - `ALTER NAMED COLLECTION`. Level: `NAMED_COLLECTION`
+  - `SHOW NAMED COLLECTIONS`. Level: `NAMED_COLLECTION`. Aliases: `SHOW NAMED COLLECTIONS`
+  - `SHOW NAMED COLLECTIONS SECRETS`. Level: `NAMED_COLLECTION`. Aliases: `SHOW NAMED COLLECTIONS SECRETS`
+  - `NAMED COLLECTION`. Level: `NAMED_COLLECTION`. Aliases: `NAMED COLLECTION USAGE, USE NAMED COLLECTION`
 
 Unlike all other grants (CREATE, DROP, ALTER, SHOW) grant NAMED COLLECTION was added only in 23.7, while all others were added earlier - in 22.12.
 
 **Examples**
 
 Assuming a named collection is called abc, we grant privilege CREATE NAMED COLLECTION to user john.
-
 - `GRANT CREATE NAMED COLLECTION ON abc TO john`
 
 ### TABLE ENGINE {#table-engine}

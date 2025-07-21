@@ -12,7 +12,6 @@ import BetaBadge from '@theme/badges/BetaBadge';
 
 The problem of finding the N closest points in a multi-dimensional (vector) space for a given point is known as [nearest neighbor search](https://en.wikipedia.org/wiki/Nearest_neighbor_search) or, shorter, vector search.
 Two general approaches exist for solving vector search:
-
 - Exact vector search calculates the distance between the given point and all points in the vector space. This ensures the best possible accuracy, i.e. the returned points are guaranteed to be the actual nearest neighbors. Since the vector space is explored exhaustively, exact vector search can be too slow for real-world use.
 - Approximate vector search refers to a group of techniques (e.g., special data structures like graphs and random forests) which compute results much faster than exact vector search. The result accuracy is typically "good enough" for practical use. Many approximate techniques provide parameters to tune the trade-off between the result accuracy and the search time.
 
@@ -110,7 +109,6 @@ ALTER TABLE table MATERIALIZE INDEX <index_name> SETTINGS mutations_sync = 2;
 ```
 
 Function `<distance_function>` must be
-
 - `L2Distance`, the [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance), representing the length of a line between two points in Euclidean space, or
 - `cosineDistance`, the [cosine distance](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance), representing the angle between two non-zero vectors.
 
@@ -140,7 +138,6 @@ ORDER BY [...]
 ```
 
 These HNSW-specific parameters are available:
-
 - `<quantization>` controls the quantization of the vectors in the proximity graph. Possible values are `f64`, `f32`, `f16`, `bf16`, or `i8`. The default value is `bf16`. Note that this parameter does not affect the representation of the vectors in the underlying column.
 - `<hnsw_max_connections_per_layer>` controls the number of neighbors per graph node, also known as HNSW hyperparameter `M`. The default value is `32`. Value `0` means using the default value.
 - `<hnsw_candidate_list_size_for_construction>` controls the size of the dynamic candidate list during construction of the HNSW graph, also known as HNSW hyperparameter `ef_construction`. The default value is `128`. Value `0` means using the default value.
@@ -149,7 +146,6 @@ The default values of all HNSW-specific parameters work reasonably well in the m
 We therefore do not recommend customizing the HNSW-specific parameters.
 
 Further restrictions apply:
-
 - Vector similarity indexes can only be build on columns of type [Array(Float32)](../../../sql-reference/data-types/array.md), [Array(Float64)](../../../sql-reference/data-types/array.md), or [Array(BFloat16)](../../../sql-reference/data-types/array.md). Arrays of nullable and low-cardinality floats such as `Array(Nullable(Float32))` and `Array(LowCardinality(Float32))` are not allowed.
 - Vector similarity indexes must be build on single columns.
 - Vector similarity indexes may be build on calculated expressions (e.g., `INDEX index_name arraySort(vectors) TYPE vector_similarity([...])`) but such indexes cannot be used for approximate neighbor search later on.
@@ -236,12 +232,10 @@ To enforce index usage, you can run the SELECT query with setting [force_data_sk
 Users may optionally specify a `WHERE` clause with additional filter conditions for the SELECT query.
 ClickHouse will evaluate these filter conditions using post-filtering or pre-filtering strategy.
 In short, both strategies determine the order in which the filters are evaluated:
-
 - Post-filtering means that the vector similarity index is evaluated first, afterwards ClickHouse evaluates the additional filter(s) specified in the `WHERE` clause.
 - Pre-filtering means that the filter evaluation order is the other way round.
 
 The strategies have different trade-offs:
-
 - Post-filtering has the general problem that it may return less than the number of rows requested in the `LIMIT <N>` clause. This situation happens when one or more result rows returned by the vector similarity index fails to satisfy the additional filters.
 - Pre-filtering is generally an unsolved problem. Certain specialized vector databases provide pre-filtering algorithms but most relational databases (including ClickHouse) will fall back to exact neighbor search, i.e., a brute-force scan without index.
 
@@ -270,7 +264,6 @@ If additional filter conditions cannot be evaluated using indexes (primary key i
 *Additional filters can be evaluated using the primary key index*
 
 If additional filter conditions can be evaluated using the [primary key](mergetree.md#primary-key) (i.e., they form a prefix of the primary key) and
-
 - the filter condition eliminates at least one row within a part, the ClickHouse will fall back to pre-filtering for the "surviving" ranges within the part,
 - the filter condition eliminates no rows within a part, the ClickHouse will perform post-filtering for the part.
 
@@ -314,6 +307,54 @@ SETTING vector_search_postfilter_multiplier = 3.0;
 ClickHouse will fetch 3.0 x 10 = 30 nearest neighbors from the vector index in each part and afterwards evaluate the additional filters.
 Only the ten closest neighbors will be returned.
 We note that setting `vector_search_postfilter_multiplier` can mitigate the problem but in extreme cases (very selective WHERE condition), it is still possible that less than N requested rows returned.
+
+**Rescoring**
+
+Skip indexes in ClickHouse generally filter at the granule level, i.e. a lookup in a skip index (internally) returns a list of potentially matching granules which reduces the number of read data in the subsequent scan.
+This works well for skip indexes in general but in the case of vector similarity indexes, it creates a "granularity mismatch".
+In more detail, the vector similarity index determines the row numbers of the N most similar vectors for a given reference vector, but it then needs to extrapolate these row numbers to granule numbers.
+ClickHouse will then load these granules from disk, and repeat the distance calculation for all vectors in these granules.
+This step is called rescoring and while it can theoretically improve accuracy - remember the vector similarity index returns only an _approximate_ result, it is obvious not optimal in terms of performance.
+
+ClickHouse therefore provides an optimization which disables rescoring and returns the most similar vectors and their distances directly from the index.
+The optimization is disabled by default, see setting [vector_search_with_rescoring](../../../operations/settings/settings#vector_search_with_rescoring).
+The way it works at a high level is that ClickHouse makes the most similar vectors and their distances available as a virtual column `_distances`.
+To see this, run a vector search query with `EXPLAIN header = 1`:
+
+```sql
+EXPLAIN header = 1
+WITH [0., 2.] AS reference_vec
+SELECT id
+FROM tab
+ORDER BY L2Distance(vec, reference_vec) ASC
+LIMIT 3
+SETTINGS vector_search_with_rescoring = 0
+```
+
+```result
+Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
+
+    ┌─explain─────────────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression (Project names)                                                                              │
+ 2. │ Header: id Int32                                                                                        │
+ 3. │   Limit (preliminary LIMIT (without OFFSET))                                                            │
+ 4. │   Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64     │
+ 5. │           __table1.id Int32                                                                             │
+ 6. │     Sorting (Sorting for ORDER BY)                                                                      │
+ 7. │     Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64   │
+ 8. │             __table1.id Int32                                                                           │
+ 9. │       Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))         │
+10. │       Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64 │
+11. │               __table1.id Int32                                                                         │
+12. │         ReadFromMergeTree (default.tab)                                                                 │
+13. │         Header: id Int32                                                                                │
+14. │                 _distance Float32                                                                       │
+    └─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+:::note
+A query run without rescoring (`vector_search_with_rescoring = 0`) and with parallel replicas enabled may fall back to rescoring.
+:::
 
 ### Performance tuning {#performance-tuning}
 
@@ -378,6 +419,46 @@ ORDER BY event_time_microseconds;
 ```
 
 For production use-cases, we recommend that the cache is sized large enough so that all vector indexes remain in memory at all times.
+
+**Tuning Data Transfer**
+
+The reference vector in a vector search query is provided by the user and generally retrieved by making a call to a Large Language Model (LLM).
+Typical Python code which runs a vector search in ClickHouse might look like this
+
+```python
+search_v = openai_client.embeddings.create(input = "[Good Books]", model='text-embedding-3-large', dimensions=1536).data[0].embedding
+
+params = {'search_v': search_v}
+result = chclient.query(
+   "SELECT id FROM items
+    ORDER BY cosineDistance(vector, %(search_v)s)
+    LIMIT 10",
+    parameters = params)
+```
+
+Embedding vectors (`search_v` in above snippet) could have a very large dimension.
+For example, OpenAI provides models that generate embeddings vectors with 1536 or even 3072 dimensions.
+In above code, the ClickHouse Python driver substitutes the embedding vector by a human readable string and subsequently send the SELECT query entirely as a string.
+Assuming the embedding vector consists of 1536 single-precision floating point values, the sent string reaches a length of 20 kB.
+This creates a high CPU usage for tokenizing, parsing and performing thousands of string-to-float conversions.
+Also, significant space is required in the ClickHouse server log file, causing bloat in `system.query_log` as well.
+
+Note that most LLM models return an embedding vector as a list or NumPy array of native floats.
+We therefore recommend Python applications to bind the reference vector parameter in binary form by using the following style:
+
+```python
+search_v = openai_client.embeddings.create(input = "[Good Books]", model='text-embedding-3-large', dimensions=1536).data[0].embedding
+
+params = {'$search_v_binary$': np.array(search_v, dtype=np.float32).tobytes()}
+result = chclient.query(
+   "SELECT id FROM items
+    ORDER BY cosineDistance(vector, (SELECT reinterpret($search_v_binary$, 'Array(Float32)')))
+    LIMIT 10"
+    parameters = params)
+```
+
+In the example, the reference vector is sent as-is in binary form and reinterpreted as array of floats on the server.
+This saves CPU time on the server side, and avoids bloat in the server logs and `system.query_log`.
 
 ### Administration and monitoring {#administration}
 
@@ -449,6 +530,5 @@ returns
 ## References {#references}
 
 Blogs:
-
 - [Vector Search with ClickHouse - Part 1](https://clickhouse.com/blog/vector-search-clickhouse-p1)
 - [Vector Search with ClickHouse - Part 2](https://clickhouse.com/blog/vector-search-clickhouse-p2)

@@ -34,7 +34,7 @@ A table with the specified format and structure and with data from the defined `
 
 Getting the first 3 lines of a table that contains columns of `String` and [UInt32](../../sql-reference/data-types/int-uint.md) type from HTTP-server which answers in [CSV](../../interfaces/formats.md#csv) format.
 
-1.Create a basic HTTP server using the standard Python 3 tools and start it:
+1. Create a basic HTTP server using the standard Python 3 tools and start it:
 
 ```python
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -63,5 +63,5 @@ Character `|` inside patterns is used to specify failover addresses. They are it
 
 ## Related {#related}
 
-- [HDFS engine](/engines/table-engines/integrations/hdfs)
-- [URL table function](/engines/table-engines/special/url)
+-   [HDFS engine](/engines/table-engines/integrations/hdfs)
+-   [URL table function](/engines/table-engines/special/url)

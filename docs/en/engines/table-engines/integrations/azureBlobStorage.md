@@ -62,7 +62,6 @@ SELECT * FROM test_table;
 ## Authentication {#authentication}
 
 Currently there are 3 ways to authenticate:
-
 - `Managed Identity` - Can be used by providing an `endpoint`, `connection_string` or `storage_account_url`.
 - `SAS Token` - Can be used by providing an `endpoint`, `connection_string` or `storage_account_url`. It is identified by presence of '?' in the url. See [azureBlobStorage](/sql-reference/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) for examples.
 - `Workload Identity` - Can be used by providing an `endpoint` or `storage_account_url`. If `use_workload_identity` parameter is set in config, ([workload identity](https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#authenticate-azure-hosted-applications)) is used for authentication.
@@ -81,7 +80,7 @@ FROM azureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount
 SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
 ```
 
-1.add the following section to clickhouse configuration file:
+1. add the following section to clickhouse configuration file:
 
 ```xml
 <clickhouse>
@@ -94,7 +93,7 @@ SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
 </clickhouse>
 ```
 
-2.reuse cache configuration (and therefore cache storage) from clickhouse `storage_configuration` section, [described here](/operations/storing-data.md/#using-local-cache)
+2. reuse cache configuration (and therefore cache storage) from clickhouse `storage_configuration` section, [described here](/operations/storing-data.md/#using-local-cache)
 
 ## See also {#see-also}
 

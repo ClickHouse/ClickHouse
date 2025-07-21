@@ -30,7 +30,7 @@ Note: The precision of the maximum value is 8. If the maximum precision of 9 dig
 
 ## Examples {#examples}
 
-1.Creating a table with `DateTime64`-type column and inserting data into it:
+1. Creating a table with `DateTime64`-type column and inserting data into it:
 
 ```sql
 CREATE TABLE dt64
@@ -42,10 +42,10 @@ ENGINE = TinyLog;
 ```
 
 ```sql
-- - Parse DateTime
-- - - from integer interpreted as number of microseconds (because of precision 3) since 1970-01-01,
-- - - from decimal interpreted as number of seconds before the decimal part, and based on the precision after the decimal point,
-- - - from string.
+-- Parse DateTime
+-- - from integer interpreted as number of microseconds (because of precision 3) since 1970-01-01,
+-- - from decimal interpreted as number of seconds before the decimal part, and based on the precision after the decimal point,
+-- - from string.
 INSERT INTO dt64 VALUES (1546300800123, 1), (1546300800.123, 2), ('2019-01-01 00:00:00', 3);
 
 SELECT * FROM dt64;
@@ -62,7 +62,7 @@ SELECT * FROM dt64;
 - When inserting datetime as an integer, it is treated as an appropriately scaled Unix Timestamp (UTC). `1546300800000` (with precision 3) represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Asia/Istanbul` (UTC+3) timezone specified, when outputting as a string the value will be shown as `'2019-01-01 03:00:00'`. Inserting datetime as a decimal will treat it similarly as an integer, except the value before the decimal point is the Unix Timestamp up to and including the seconds, and after the decimal point will be treated as the precision.
 - When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Asia/Istanbul` timezone and stored as `1546290000000`.
 
-2.Filtering on `DateTime64` values
+2. Filtering on `DateTime64` values
 
 ```sql
 SELECT * FROM dt64 WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul');
@@ -90,7 +90,7 @@ SELECT * FROM dt64 WHERE timestamp = toDateTime64(1546300800.123, 3);
 Contrary to inserting, the `toDateTime64` function will treat all values as the decimal variant, so precision needs to
 be given after the decimal point.
 
-3.Getting a time zone for a `DateTime64`-type value:
+3. Getting a time zone for a `DateTime64`-type value:
 
 ```sql
 SELECT toDateTime64(now(), 3, 'Asia/Istanbul') AS column, toTypeName(column) AS x;
@@ -102,7 +102,7 @@ SELECT toDateTime64(now(), 3, 'Asia/Istanbul') AS column, toTypeName(column) AS 
 └─────────────────────────┴────────────────────────────────┘
 ```
 
-4.Timezone conversion
+4. Timezone conversion
 
 ```sql
 SELECT

@@ -60,16 +60,13 @@ Performs various style checks on the code base.
 Basic checks in the Style Check job:
 
 ##### cpp {#cpp}
-
 Performs simple regex-based code style checks using the [`ci/jobs/scripts/check_style/check_cpp.sh`](https://github.com/ClickHouse/ClickHouse/blob/master/ci/jobs/scripts/check_style/check_cpp.sh) script (which can also be run locally).  
 If it fails, fix the style issues according to the [code style guide](style.md).
 
 ##### codespell, aspell {#codespell}
-
 Check for grammatical mistakes and typos.
 
 ##### mypy {#mypy}
-
 Performs static type checking for Python code.
 
 ### Running the style check job locally {#running-style-check-locally}
@@ -81,7 +78,6 @@ python -m ci.praktika run "Style check"
 ```
 
 To run a specific check (e.g., _cpp_ check):
-
 ```sh
 python -m ci.praktika run "Style check" --test cpp
 ```
@@ -122,30 +118,27 @@ Use these options and follow the [general build process](../development/build.md
 - **Build log**: link to the building and files copying log, useful when build failed.
 - **Build time**.
 - **Artifacts**: build result files (with `XXX` being the server version e.g. `20.8.1.4344`).
-- `clickhouse-client_XXX_amd64.deb`
-- `clickhouse-common-static-dbg_XXX[+asan, +msan, +ubsan, +tsan]_amd64.deb`
-- `clickhouse-common-staticXXX_amd64.deb`
-- `clickhouse-server_XXX_amd64.deb`
-- `clickhouse`: Main built binary.
-- `clickhouse-odbc-bridge`
-- `unit_tests_dbms`: GoogleTest binary with ClickHouse unit tests.
-- `performance.tar.zst`: Special package for performance tests.
+  - `clickhouse-client_XXX_amd64.deb`
+  - `clickhouse-common-static-dbg_XXX[+asan, +msan, +ubsan, +tsan]_amd64.deb`
+  - `clickhouse-common-staticXXX_amd64.deb`
+  - `clickhouse-server_XXX_amd64.deb`
+  - `clickhouse`: Main built binary.
+  - `clickhouse-odbc-bridge`
+  - `unit_tests_dbms`: GoogleTest binary with ClickHouse unit tests.
+  - `performance.tar.zst`: Special package for performance tests.
 
 ## Special build check {#special-build-check}
-
 Performs static analysis and code style checks using `clang-tidy`. The report is similar to the [build check](#build-check). Fix the errors found in the build log.
 
 #### Running clang-tidy locally: {#running-clang-tidy-locally}
 
 There is a convenience `packager` script that runs the clang-tidy build in docker
-
 ```sh
 mkdir build_tidy
 ./docker/packager/packager --output-dir=./build_tidy --package-type=binary --compiler=clang-19 --debug-build --clang-tidy
 ```
 
 ## Functional stateless tests {#functional-stateless-tests}
-
 Runs [stateless functional tests](tests.md#functional-tests) for ClickHouse binaries built in various configurations -- release, debug, with sanitizers, etc.
 Look at the report to see which tests fail, then reproduce the failure locally as described [here](/development/tests#functional-tests).
 Note that you have to use the correct build configuration to reproduce -- a test might fail under AddressSanitizer but pass in Debug.
@@ -158,7 +151,6 @@ Treat them in the same way as the functional stateless tests.
 The difference is that they require `hits` and `visits` tables from the [clickstream dataset](../getting-started/example-datasets/metrica.md) to run.
 
 ## Integration tests {#integration-tests}
-
 Runs [integration tests](tests.md#integration-tests).
 
 ## Bugfix validate check {#bugfix-validate-check}
@@ -167,11 +159,10 @@ Checks that either a new test (functional or integration) or there some changed 
 This check is triggered when pull request has "pr-bugfix" label.
 
 ## Stress test {#stress-test}
-
 Runs stateless functional tests concurrently from several clients to detect concurrency-related errors. If it fails:
 
-    *Fix all other test failures first;
-    *Look at the report to find the server logs and check them for possible causes
+    * Fix all other test failures first;
+    * Look at the report to find the server logs and check them for possible causes
       of error.
 
 ## Compatibility check {#compatibility-check}
@@ -180,12 +171,10 @@ Checks that `clickhouse` binary runs on distributions with old libc versions.
 If it fails, ask a maintainer for help.
 
 ## AST fuzzer {#ast-fuzzer}
-
 Runs randomly generated queries to catch program errors.
 If it fails, ask a maintainer for help.
 
 ## Performance tests {#performance-tests}
-
 Measure changes in query performance.
 This is the longest check that takes just below 6 hours to run.
 The performance test report is described in detail [here](https://github.com/ClickHouse/ClickHouse/tree/master/docker/test/performance-comparison#how-to-read-the-report).

@@ -223,7 +223,6 @@ SELECT d::Dynamic(max_types=5) as d2, dynamicType(d2) FROM test;
 ```
 
 If `K < N`, then the values with the rarest types will be inserted into a single special subcolumn, but still will be accessible:
-
 ```text
 CREATE TABLE test (d Dynamic(max_types=4)) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), (43), ('42.42'), (true), ([1, 2, 3]);
@@ -264,7 +263,7 @@ SELECT d, dynamicType(d), d::Dynamic(max_types=0) as d2, dynamicType(d2), isDyna
 
 ## Reading Dynamic type from the data {#reading-dynamic-type-from-the-data}
 
-All text formats (TSV, CSV, CustomSeparated, Values, JSONEachRow, etc) supports reading `Dynamic` type. During data parsing ClickHouse tries to infer the type of each value and use it during insertion to `Dynamic` column.
+All text formats (TSV, CSV, CustomSeparated, Values, JSONEachRow, etc) supports reading `Dynamic` type. During data parsing ClickHouse tries to infer the type of each value and use it during insertion to `Dynamic` column. 
 
 Example:
 
@@ -507,14 +506,12 @@ SELECT d, d.Int64 + 1 AS res, toTypeName(res) FROM test;
 
 During `ORDER BY` and `GROUP BY` values of `Dynamic` types are compared similar to values of `Variant` type:
 The result of operator `<` for values `d1` with underlying type `T1` and `d2` with underlying type `T2`  of a type `Dynamic` is defined as follows:
-
 - If `T1 = T2 = T`, the result will be `d1.T < d2.T` (underlying values will be compared).
 - If `T1 != T2`, the result will be `T1 < T2` (type names will be compared).
 
 By default `Dynamic` type is not allowed in `GROUP BY`/`ORDER BY` keys, if you want to use it consider its special comparison rule and enable `allow_suspicious_types_in_group_by`/`allow_suspicious_types_in_order_by` settings.
 
 Examples:
-
 ```sql
 CREATE TABLE test (d Dynamic) ENGINE=Memory;
 INSERT INTO test VALUES (42), (43), ('abc'), ('abd'), ([1, 2, 3]), ([]), (NULL);
@@ -552,7 +549,7 @@ SELECT d, dynamicType(d) FROM test ORDER BY d SETTINGS allow_suspicious_types_in
 └─────────┴────────────────┘
 ```
 
-**Note:** values of dynamic types with different numeric types are considered as different values and not compared between each other, their type names are compared instead.
+* *Note:** values of dynamic types with different numeric types are considered as different values and not compared between each other, their type names are compared instead.
 
 Example:
 
@@ -639,7 +636,6 @@ INSERT INTO test SELECT number, 'str_' || toString(number) FROM numbers(1);
 ```
 
 Each insert will create a separate data pert with `Dynamic` column containing single type:
-
 ```sql
 SELECT count(), dynamicType(d), isDynamicElementInSharedData(d), _part FROM test GROUP BY _part, dynamicType(d), isDynamicElementInSharedData(d) ORDER BY _part, count();
 ```

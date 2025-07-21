@@ -13,7 +13,7 @@ Zero as an argument is considered `false`, non-zero values are considered `true`
 
 ## and {#and}
 
-Calculates the logical conjunction of two or more values.
+Calculates the logical conjunction of two or more values. 
 
 Setting [short_circuit_function_evaluation](/operations/settings/settings#short_circuit_function_evaluation) controls whether short-circuit evaluation is used. If enabled, `val_i` is evaluated only if `(val_1 AND val_2 AND ... AND val_{i-1})` is `true`. For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT and(number = 2, intDiv(1, number)) FROM numbers(5)`.
 

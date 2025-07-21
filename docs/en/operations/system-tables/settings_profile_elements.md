@@ -15,7 +15,6 @@ Describes the content of the settings profile:
 - Parent settings profiles.
 
 Columns:
-
 - `profile_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Setting profile name.
 
 - `user_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — User name.

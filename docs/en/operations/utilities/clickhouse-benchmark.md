@@ -6,26 +6,26 @@ slug: /operations/utilities/clickhouse-benchmark
 title: 'clickhouse-benchmark'
 ---
 
-# clickhouse-benchmark
+# clickhouse-benchmark 
 
 Connects to a ClickHouse server and repeatedly sends specified queries.
 
 **Syntax**
 
 ```bash
-clickhouse-benchmark --query ["single query"] [keys]
+$ clickhouse-benchmark --query ["single query"] [keys]
 ```
 
 or
 
 ```bash
-echo "single query" | clickhouse-benchmark [keys]
+$ echo "single query" | clickhouse-benchmark [keys]
 ```
 
 or
 
 ```bash
-clickhouse-benchmark [keys] <<< "single query"
+$ clickhouse-benchmark [keys] <<< "single query"
 ```
 
 If you want to send a set of queries, create a text file and place each query on the individual string in this file. For example:
@@ -97,13 +97,13 @@ In the report you can find:
 
 - Status string containing (in order):
 
-- Endpoint of ClickHouse server.
-- Number of processed queries.
-- QPS: How many queries the server performed per second during a period specified in the `--delay` argument.
-- RPS: How many rows the server reads per second during a period specified in the `--delay` argument.
-- MiB/s: How many mebibytes the server reads per second during a period specified in the `--delay` argument.
-- result RPS: How many rows placed by the server to the result of a query per second during a period specified in the `--delay` argument.
-- result MiB/s. How many mebibytes placed by the server to the result of a query per second during a period specified in the `--delay` argument.
+  - Endpoint of ClickHouse server.
+  - Number of processed queries.
+  - QPS: How many queries the server performed per second during a period specified in the `--delay` argument.
+  - RPS: How many rows the server reads per second during a period specified in the `--delay` argument.
+  - MiB/s: How many mebibytes the server reads per second during a period specified in the `--delay` argument.
+  - result RPS: How many rows placed by the server to the result of a query per second during a period specified in the `--delay` argument.
+  - result MiB/s. How many mebibytes placed by the server to the result of a query per second during a period specified in the `--delay` argument.
 
 - Percentiles of queries execution time.
 
@@ -116,7 +116,7 @@ To use the comparison mode, specify endpoints of both servers by two pairs of `-
 ## Example {#clickhouse-benchmark-example}
 
 ```bash
-echo "SELECT * FROM system.numbers LIMIT 10000000 OFFSET 10000000" | clickhouse-benchmark --host=localhost --port=9001 --host=localhost --port=9000 -i 10
+$ echo "SELECT * FROM system.numbers LIMIT 10000000 OFFSET 10000000" | clickhouse-benchmark --host=localhost --port=9001 --host=localhost --port=9000 -i 10
 ```
 
 ```text

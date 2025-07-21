@@ -7,11 +7,11 @@ title: 'EXCEPT Clause'
 
 # EXCEPT Clause
 
-The `EXCEPT` clause returns only those rows that result from the first query without the second.
+The `EXCEPT` clause returns only those rows that result from the first query without the second. 
 
 - Both queries must have the same number of columns in the same order and data type.
 - The result of `EXCEPT` can contain duplicate rows. Use `EXCEPT DISTINCT` if this is not desirable.
-- Multiple `EXCEPT` statements are executed from left to right if parentheses are not specified.
+- Multiple `EXCEPT` statements are executed from left to right if parentheses are not specified. 
 - The `EXCEPT` operator has the same priority as the `UNION` clause and lower priority than the `INTERSECT` clause.
 
 ## Syntax {#syntax}
@@ -27,8 +27,7 @@ SELECT column1 [, column2 ]
 FROM table2
 [WHERE condition]
 ```
-
-The condition could be any expression based on your requirements.
+The condition could be any expression based on your requirements. 
 
 Additionally, `EXCEPT()` can be used to exclude columns from a result in the same table, as is possible with BigQuery (Google Cloud), using the following syntax:
 

@@ -15,7 +15,6 @@ HTTP server can be used to authenticate ClickHouse users. HTTP authentication ca
 To define HTTP authentication server you must add `http_authentication_servers` section to the `config.xml`.
 
 **Example**
-
 ```xml
 <clickhouse>
     <!- ... -->
@@ -42,17 +41,14 @@ To define HTTP authentication server you must add `http_authentication_servers` 
 Note, that you can define multiple HTTP servers inside the `http_authentication_servers` section using distinct names.
 
 **Parameters**
-
 - `uri` - URI for making authentication request
 
 Timeouts in milliseconds on the socket used for communicating with the server:
-
 - `connection_timeout_ms` - Default: 1000 ms.
 - `receive_timeout_ms` - Default: 1000 ms.
 - `send_timeout_ms` - Default: 1000 ms.
 
 Retry parameters:
-
 - `max_tries` - The maximum number of attempts to make an authentication request. Default: 3
 - `retry_initial_backoff_ms` - The backoff initial interval on retry. Default: 50 ms
 - `retry_max_backoff_ms` - The maximum backoff interval. Default: 1000 ms
@@ -66,12 +62,10 @@ The part defines which headers will be forwarded from client request headers to 
 In order to enable HTTP authentication for the user, specify `http_authentication` section instead of `password` or similar sections in the user definition.
 
 Parameters:
-
 - `server` - Name of the HTTP authentication server configured in the main `config.xml` file as described previously.
 - `scheme` - HTTP authentication scheme. `Basic` is only supported now. Default: Basic
 
 Example (goes into `users.xml`):
-
 ```xml
 <clickhouse>
     <!- ... -->

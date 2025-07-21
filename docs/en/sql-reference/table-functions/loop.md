@@ -55,8 +55,7 @@ SELECT * FROM loop(numbers(3)) LIMIT 7;
    ┌─number─┐
 7. │      0 │
    └────────┘
-```
-
+``` 
 ```sql
 SELECT * FROM loop(mysql('localhost:3306', 'test', 'test', 'user', 'password'));
 ...

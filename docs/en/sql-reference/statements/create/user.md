@@ -63,24 +63,22 @@ Password complexity requirements can be edited in [config.xml](/operations/confi
 
 :::note
 In ClickHouse Cloud, by default, passwords must meet the following complexity requirements:
-
 - Be at least 12 characters long
 - Contain at least 1 numeric character
 - Contain at least 1 uppercase character
 - Contain at least 1 lowercase character
 - Contain at least 1 special character
-
 :::
 
 ## Examples {#examples}
 
-1.The following username is `name1` and does not require a password - which obviously doesn't provide much security:
+1. The following username is `name1` and does not require a password - which obviously doesn't provide much security:
 
     ```sql
     CREATE USER name1 NOT IDENTIFIED
     ```
 
-2.To specify a plaintext password:
+2. To specify a plaintext password:
 
     ```sql
     CREATE USER name2 IDENTIFIED WITH plaintext_password BY 'my_password'
@@ -90,7 +88,7 @@ In ClickHouse Cloud, by default, passwords must meet the following complexity re
     The password is stored in a SQL text file in `/var/lib/clickhouse/access`, so it's not a good idea to use `plaintext_password`. Try `sha256_password` instead, as demonstrated next...
     :::
 
-3.The most common option is to use a password that is hashed using SHA-256. ClickHouse will hash the password for you when you specify `IDENTIFIED WITH sha256_password`. For example:
+3. The most common option is to use a password that is hashed using SHA-256. ClickHouse will hash the password for you when you specify `IDENTIFIED WITH sha256_password`. For example:
 
     ```sql
     CREATE USER name3 IDENTIFIED WITH sha256_password BY 'my_password'
@@ -107,7 +105,7 @@ In ClickHouse Cloud, by default, passwords must meet the following complexity re
     If you have already created a hash value and corresponding salt value for a username, then you can use `IDENTIFIED WITH sha256_hash BY 'hash'` or `IDENTIFIED WITH sha256_hash BY 'hash' SALT 'salt'`. For identification with `sha256_hash` using `SALT` - hash must be calculated from concatenation of 'password' and 'salt'.
     :::
 
-4.The `double_sha1_password` is not typically needed, but comes in handy when working with clients that require it (like the MySQL interface):
+4. The `double_sha1_password` is not typically needed, but comes in handy when working with clients that require it (like the MySQL interface):
 
     ```sql
     CREATE USER name4 IDENTIFIED WITH double_sha1_password BY 'my_password'
@@ -119,7 +117,7 @@ In ClickHouse Cloud, by default, passwords must meet the following complexity re
     CREATE USER name4 IDENTIFIED WITH double_sha1_hash BY 'CCD3A959D6A004B9C3807B728BC2E55B67E10518'
     ```
 
-5.The `bcrypt_password` is the most secure option for storing passwords. It uses the [bcrypt](https://en.wikipedia.org/wiki/Bcrypt) algorithm, which is resilient against brute force attacks even if the password hash is compromised.
+5. The `bcrypt_password` is the most secure option for storing passwords. It uses the [bcrypt](https://en.wikipedia.org/wiki/Bcrypt) algorithm, which is resilient against brute force attacks even if the password hash is compromised.
 
     ```sql
     CREATE USER name5 IDENTIFIED WITH bcrypt_password BY 'my_password'
@@ -133,7 +131,7 @@ In ClickHouse Cloud, by default, passwords must meet the following complexity re
 
     The work factor must be between 4 and 31, with a default value of 12.
 
-6.The type of the password can also be omitted:
+6. The type of the password can also be omitted:
 
     ```sql
     CREATE USER name6 IDENTIFIED BY 'my_password'
@@ -147,17 +145,16 @@ In ClickHouse Cloud, by default, passwords must meet the following complexity re
 
     The available password types are: `plaintext_password`, `sha256_password`, `double_sha1_password`.
 
-7.Multiple authentication methods can be specified:
+7. Multiple authentication methods can be specified: 
 
    ```sql
    CREATE USER user1 IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3''
    ```
 
 Notes:
-
-1.Older versions of ClickHouse might not support the syntax of multiple authentication methods. Therefore, if the ClickHouse server contains such users and is downgraded to a version that does not support it, such users will become unusable and some user related operations will be broken. In order to downgrade gracefully, one must set all users to contain a single authentication method prior to downgrading. Alternatively, if the server was downgraded without the proper procedure, the faulty users should be dropped.
-2.`no_password` can not co-exist with other authentication methods for security reasons. Therefore, you can only specify
-`no_password` if it is the only authentication method in the query.
+1. Older versions of ClickHouse might not support the syntax of multiple authentication methods. Therefore, if the ClickHouse server contains such users and is downgraded to a version that does not support it, such users will become unusable and some user related operations will be broken. In order to downgrade gracefully, one must set all users to contain a single authentication method prior to downgrading. Alternatively, if the server was downgraded without the proper procedure, the faulty users should be dropped.
+2. `no_password` can not co-exist with other authentication methods for security reasons. Therefore, you can only specify
+`no_password` if it is the only authentication method in the query. 
 
 ## User Host {#user-host}
 

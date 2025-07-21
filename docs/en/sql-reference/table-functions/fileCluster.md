@@ -14,7 +14,7 @@ title: 'fileCluster'
 
 Enables simultaneous processing of files matching a specified path across multiple nodes within a cluster. The initiator establishes connections to worker nodes, expands globs in the file path, and delegates file-reading tasks to worker nodes. Each worker node is querying the initiator for the next file to process, repeating until all tasks are completed (all files are read).
 
-:::note
+:::note    
 This function will operate _correctly_ only in case the set of files matching the initially specified path is identical across all nodes, and their content is consistent among different nodes.  
 In case these files differ between nodes, the return value cannot be predetermined and depends on the order in which worker nodes request tasks from the initiator.
 :::
@@ -47,9 +47,7 @@ Given a cluster named `my_cluster` and given the following value of setting `use
 $ grep user_files_path /etc/clickhouse-server/config.xml
     <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
-
 Also, given there are files `test1.csv` and `test2.csv` inside `user_files_path` of each cluster node, and their content is identical across different nodes:
-
 ```bash
 $ cat /var/lib/clickhouse/user_files/test1.csv
     1,"file1"
@@ -61,7 +59,6 @@ $ cat /var/lib/clickhouse/user_files/test2.csv
 ```
 
 For example, one can create these files by executing these two queries on every cluster node:
-
 ```sql
 INSERT INTO TABLE FUNCTION file('file1.csv', 'CSV', 'i UInt32, s String') VALUES (1,'file1'), (11,'file11');
 INSERT INTO TABLE FUNCTION file('file2.csv', 'CSV', 'i UInt32, s String') VALUES (2,'file2'), (22,'file22');

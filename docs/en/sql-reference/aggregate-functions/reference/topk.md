@@ -28,7 +28,7 @@ We recommend using the `N < 10` value; performance is reduced with large `N` val
 - `N` — The number of elements to return. Optional. Default value: 10.
 - `load_factor` — Defines, how many cells reserved for values. If uniq(column) > N * load_factor, result of topK function will be approximate. Optional. Default value: 3.
 - `counts` — Defines, should result contain approximate count and error value.
-
+ 
 **Arguments**
 
 - `column` — The value to calculate frequency.

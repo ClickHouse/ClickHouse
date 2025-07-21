@@ -54,5 +54,4 @@ build_id:
 ```
 
 **See also**
-
 - [trace_log](../../operations/system-tables/trace_log.md) system table

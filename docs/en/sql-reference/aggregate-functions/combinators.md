@@ -26,7 +26,7 @@ Example 1: `sumArray(arr)` - Totals all the elements of all 'arr' arrays. In thi
 
 Example 2: `uniqArray(arr)` – Counts the number of unique elements in all 'arr' arrays. This could be done an easier way: `uniq(arrayJoin(arr))`, but it's not always possible to add 'arrayJoin' to a query.
 
-- If and -Array can be combined. However, 'Array' must come first, then 'If'. Examples: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Due to this order, the 'cond' argument won't be an array.
+-If and -Array can be combined. However, 'Array' must come first, then 'If'. Examples: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Due to this order, the 'cond' argument won't be an array.
 
 ## -Map {#-map}
 

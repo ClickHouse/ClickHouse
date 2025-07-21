@@ -129,9 +129,9 @@ More specifically you can add Redis password for NATS engine:
 
 `SELECT` is not particularly useful for reading messages (except for debugging), because each message can be read only once. It is more practical to create real-time threads using [materialized views](../../../sql-reference/statements/create/view.md). To do this:
 
-1.Use the engine to create a NATS consumer and consider it a data stream.
-2.Create a table with the desired structure.
-3.Create a materialized view that converts data from the engine and puts it into a previously created table.
+1.  Use the engine to create a NATS consumer and consider it a data stream.
+2.  Create a table with the desired structure.
+3.  Create a materialized view that converts data from the engine and puts it into a previously created table.
 
 When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the background. This allows you to continually receive messages from NATS and convert them to the required format using `SELECT`.
 One NATS table can have as many materialized views as you like, they do not read data from the table directly, but receive new records (in blocks), this way you can write to several tables with different detail level (with grouping - aggregation and without).

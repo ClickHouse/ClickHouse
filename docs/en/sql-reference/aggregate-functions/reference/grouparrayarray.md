@@ -15,7 +15,7 @@ Alias: `array_concat_agg`
 
 **Example**
 
-We have data which captures user browsing sessions. Each session records the sequence of pages a specific user visited.
+We have data which captures user browsing sessions. Each session records the sequence of pages a specific user visited. 
 We can use the `groupArrayArray` function to analyze the patterns of page visits for each user.
 
 ```sql title="Setup"

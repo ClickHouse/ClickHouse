@@ -161,6 +161,7 @@ Result:
 └──────────────────────────────────┘
 ```
 
+
 ## unhex {#unhex}
 
 Performs the opposite operation of [hex](#hex). It interprets each pair of hexadecimal digits (in the argument) as a number and converts it to the byte represented by the number. The return value is a binary string (BLOB).
@@ -192,13 +193,11 @@ Supports both uppercase and lowercase letters `A-F`. The number of hexadecimal d
 **Example**
 
 Query:
-
 ```sql
 SELECT unhex('303132'), UNHEX('4D7953514C');
 ```
 
 Result:
-
 ```text
 ┌─unhex('303132')─┬─unhex('4D7953514C')─┐
 │ 012             │ MySQL               │
@@ -308,6 +307,7 @@ Result:
 │ 01100001111100001100010000000100010111001011001100010001111001111001000001111011101001100000000001101010110100111101101110100000 │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
 
 ## unbin {#unbin}
 
@@ -428,7 +428,6 @@ Result:
 Calculates the Morton encoding (ZCurve) for a list of unsigned integers.
 
 The function has two modes of operation:
-
 - Simple
 - Expanded
 
@@ -457,7 +456,6 @@ Query:
 ```sql
 SELECT mortonEncode(1, 2, 3);
 ```
-
 Result:
 
 ```response
@@ -482,7 +480,6 @@ mortonEncode(range_mask, args)
 ```
 
 **Parameters**
-
 - `range_mask`: 1-8.
 - `args`: up to 8 [unsigned integers](../data-types/int-uint.md) or columns of the aforementioned type.
 
@@ -491,6 +488,7 @@ Note: when using columns for `args` the provided `range_mask` tuple should still
 **Returned value**
 
 - A UInt64 code. [UInt64](../data-types/int-uint.md)
+
 
 **Example**
 
@@ -566,7 +564,6 @@ ENGINE=MergeTree()
 ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 insert into morton_numbers (*) values(1,2,3,4,5,6,7,8);
 ```
-
 Use column names instead of constants as function arguments to `mortonEncode`
 
 Query:
@@ -590,7 +587,6 @@ Please note that you can fit only so many bits of information into Morton code a
 Decodes a Morton encoding (ZCurve) into the corresponding unsigned integer tuple.
 
 As with the `mortonEncode` function, this function has two modes of operation:
-
 - Simple
 - Expanded
 
@@ -605,7 +601,6 @@ mortonDecode(tuple_size, code)
 ```
 
 **Parameters**
-
 - `tuple_size`: integer value no more than 8.
 - `code`: [UInt64](../data-types/int-uint.md) code.
 
@@ -678,7 +673,6 @@ You can also use column names in the function.
 First create the table and insert some data.
 
 Query:
-
 ```sql
 CREATE TABLE morton_numbers(
     n1 UInt32,
@@ -694,7 +688,6 @@ ENGINE=MergeTree()
 ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 insert into morton_numbers (*) values(1,2,3,4,5,6,7,8);
 ```
-
 Use column names instead of constants as function arguments to `mortonDecode`
 
 Query:
@@ -714,7 +707,6 @@ Result:
 Calculates code for Hilbert Curve for a list of unsigned integers.
 
 The function has two modes of operation:
-
 - Simple
 - Expanded
 
@@ -745,7 +737,6 @@ Query:
 ```sql
 SELECT hilbertEncode(3, 4);
 ```
-
 Result:
 
 ```response
@@ -765,7 +756,6 @@ hilbertEncode(range_mask, args)
 ```
 
 **Parameters**
-
 - `range_mask`: ([tuple](../../sql-reference/data-types/tuple.md))
 - `args`: up to 2 [unsigned integers](../../sql-reference/data-types/int-uint.md) or columns of the aforementioned type.
 
@@ -776,6 +766,7 @@ Note: when using columns for `args` the provided `range_mask` tuple should still
 - A UInt64 code
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md)
+
 
 **Example**
 
@@ -845,7 +836,6 @@ ENGINE=MergeTree()
 ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 insert into hilbert_numbers (*) values(1,2);
 ```
-
 Use column names instead of constants as function arguments to `hilbertEncode`
 
 Query:
@@ -869,7 +859,6 @@ Please note that you can fit only so many bits of information into Hilbert code 
 Decodes a Hilbert curve index back into a tuple of unsigned integers, representing coordinates in multi-dimensional space.
 
 As with the `hilbertEncode` function, this function has two modes of operation:
-
 - Simple
 - Expanded
 
@@ -884,7 +873,6 @@ hilbertDecode(tuple_size, code)
 ```
 
 **Parameters**
-
 - `tuple_size`: integer value no more than 2.
 - `code`: [UInt64](../../sql-reference/data-types/int-uint.md) code.
 
@@ -956,7 +944,6 @@ The function accepts a column of codes as a second argument:
 First create the table and insert some data.
 
 Query:
-
 ```sql
 CREATE TABLE hilbert_numbers(
     n1 UInt32,
@@ -966,7 +953,6 @@ ENGINE=MergeTree()
 ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 insert into hilbert_numbers (*) values(1,2);
 ```
-
 Use column names instead of constants as function arguments to `hilbertDecode`
 
 Query:

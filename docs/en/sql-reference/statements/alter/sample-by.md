@@ -28,6 +28,6 @@ The command removes the [sampling key](../../../engines/table-engines/mergetree-
 
 The commands `MODIFY` and `REMOVE` are lightweight in the sense that they only change metadata or remove files.
 
-:::note
+:::note    
 It only works for tables in the [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) family (including [replicated](../../../engines/table-engines/mergetree-family/replication.md) tables).
 :::

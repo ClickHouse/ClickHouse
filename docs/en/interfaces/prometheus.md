@@ -60,7 +60,6 @@ Settings:
 | `errors`                     | true       | Expose the number of errors by error codes occurred since the last server restart. This information could be obtained from the [system.errors](/operations/system-tables/errors) as well. |
 
 Check (replace `127.0.0.1` with the IP addr or hostname of your ClickHouse server):
-
 ```bash
 curl 127.0.0.1:9363/metrics
 ```

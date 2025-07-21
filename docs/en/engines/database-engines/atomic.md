@@ -8,9 +8,9 @@ slug: /engines/database-engines/atomic
 title: 'Atomic'
 ---
 
-# Atomic
+# Atomic 
 
-The `Atomic` engine supports non-blocking [`DROP TABLE`](#drop-detach-table) and [`RENAME TABLE`](#rename-table) queries, and atomic [`EXCHANGE TABLES`](#exchange-tables) queries. The `Atomic` database engine is used by default.
+The `Atomic` engine supports non-blocking [`DROP TABLE`](#drop-detach-table) and [`RENAME TABLE`](#rename-table) queries, and atomic [`EXCHANGE TABLES`](#exchange-tables) queries. The `Atomic` database engine is used by default. 
 
 :::note
 On ClickHouse Cloud, the `Replicated` database engine is used by default.
@@ -43,7 +43,7 @@ CREATE TABLE name UUID '28f1c61c-2970-457a-bffe-454156ddcfef' (n UInt64) ENGINE 
 ```
 
 :::note
-You can use the [show_table_uuid_in_table_create_query_if_not_nil](../../operations/settings/settings.md#show_table_uuid_in_table_create_query_if_not_nil) setting to display the UUID with the `SHOW CREATE` query.
+You can use the [show_table_uuid_in_table_create_query_if_not_nil](../../operations/settings/settings.md#show_table_uuid_in_table_create_query_if_not_nil) setting to display the UUID with the `SHOW CREATE` query. 
 :::
 
 ### RENAME TABLE {#rename-table}
@@ -62,7 +62,6 @@ The [`EXCHANGE`](../../sql-reference/statements/exchange.md) query swaps tables 
 ```sql title="Non-atomic"
 RENAME TABLE new_table TO tmp, old_table TO new_table, tmp TO old_table;
 ```
-
 you can use an atomic one:
 
 ```sql title="Atomic"
@@ -74,14 +73,12 @@ EXCHANGE TABLES new_table AND old_table;
 For [`ReplicatedMergeTree`](/engines/table-engines/mergetree-family/replication) tables, it is recommended not to specify the engine parameters for the path in ZooKeeper and the replica name. In this case, the configuration parameters [`default_replica_path`](../../operations/server-configuration-parameters/settings.md#default_replica_path) and [`default_replica_name`](../../operations/server-configuration-parameters/settings.md#default_replica_name) will be used. If you want to specify engine parameters explicitly, it is recommended to use the `{uuid}` macros. This ensures that unique paths are automatically generated for each table in ZooKeeper.
 
 ### Metadata disk {#metadata-disk}
-
 When `disk` is specified in `SETTINGS`, the disk is used to store table metadata files.
 For example:
 
 ```sql
 CREATE TABLE db (n UInt64) ENGINE = Atomic SETTINGS disk=disk(type='local', path='/var/lib/clickhouse-disks/db_disk');
 ```
-
 If unspecified, the disk defined in `database_disk.disk` is used by default.
 
 ## See also {#see-also}

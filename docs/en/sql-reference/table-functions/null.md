@@ -32,7 +32,6 @@ Query with the `null` function:
 ```sql
 INSERT INTO function null('x UInt64') SELECT * FROM numbers_mt(1000000000);
 ```
-
 can replace three queries:
 
 ```sql

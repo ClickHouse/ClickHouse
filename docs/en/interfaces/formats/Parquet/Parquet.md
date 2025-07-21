@@ -49,8 +49,7 @@ The table below shows supported data types and how they match ClickHouse [data t
 
 Arrays can be nested and can have a value of `Nullable` type as an argument. `Tuple` and `Map` types can also be nested.
 
-Unsupported Parquet data types are:
-
+Unsupported Parquet data types are: 
 - `FIXED_SIZE_BINARY`
 - `UUID`
 - `ENUM`.
@@ -130,7 +129,7 @@ To exchange data with Hadoop, you can use the [`HDFS table engine`](/engines/tab
 | `output_format_parquet_fixed_string_as_fixed_byte_array`                       | Use Parquet FIXED_LENGTH_BYTE_ARRAY type instead of Binary for FixedString columns.                                                                                                                                                  | `1`         |
 | `output_format_parquet_version`                                                | Parquet format version for output format. Supported versions: 1.0, 2.4, 2.6 and 2.latest (default)                                                                                                                                  | `2.latest`  |
 | `output_format_parquet_compression_method`                                     | Compression method for Parquet output format. Supported codecs: snappy, lz4, brotli, zstd, gzip, none (uncompressed)                                                                                                              | `zstd`      |
-| `output_format_parquet_compliant_nested_types`                                 | In parquet file schema, use name 'element' instead of 'item' for list elements. This is a historical artifact of Arrow library implementation. Generally increases compatibility, except perhaps with some old versions of Arrow. | `1`         |
+| `output_format_parquet_compliant_nested_types`                                 | In parquet file schema, use name 'element' instead of 'item' for list elements. This is a historical artifact of Arrow library implementation. Generally increases compatibility, except perhaps with some old versions of Arrow. | `1`         | 
 | `output_format_parquet_use_custom_encoder`                                     | Use a faster Parquet encoder implementation.                                                                                                                                                                                      | `1`         |
 | `output_format_parquet_parallel_encoding`                                      | Do Parquet encoding in multiple threads. Requires output_format_parquet_use_custom_encoder.                                                                                                                                          | `1`         |
 | `output_format_parquet_data_page_size`                                         | Target page size in bytes, before compression.                                                                                                                                                                                      | `1048576`   |

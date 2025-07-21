@@ -15,7 +15,6 @@ Creates a temporary [Merge](../../engines/table-engines/special/merge.md) table.
 ```sql
 merge(['db_name',] 'tables_regexp')
 ```
-
 ## Arguments {#arguments}
 
 | Argument        | Description                                                                                                                                                                                                                                                                                     |

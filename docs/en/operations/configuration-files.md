@@ -322,7 +322,7 @@ Note that configuration files are first [merged](#merging) taking into account s
 For example, you can have a separate config file for each user like this:
 
 ```bash
-cat /etc/clickhouse-server/users.d/alice.xml
+$ cat /etc/clickhouse-server/users.d/alice.xml
 ```
 
 ```xml
@@ -344,7 +344,7 @@ cat /etc/clickhouse-server/users.d/alice.xml
 
 Here you can see the default config written in YAML: [`config.yaml.example`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.yaml.example).
 
-There are some differences between YAML and XML formats in terms of ClickHouse configurations.
+There are some differences between YAML and XML formats in terms of ClickHouse configurations. 
 Tips for writing configuration in YAML format are presented below.
 
 An XML tag with a text value is represented by a YAML key-value pair

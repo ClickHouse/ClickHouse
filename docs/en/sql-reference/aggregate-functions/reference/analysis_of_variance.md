@@ -9,7 +9,7 @@ title: 'analysisOfVariance'
 
 # analysisOfVariance
 
-Provides a statistical test for one-way analysis of variance (ANOVA test). It is a test over several groups of normally distributed observations to find out whether all groups have the same mean or not.
+Provides a statistical test for one-way analysis of variance (ANOVA test). It is a test over several groups of normally distributed observations to find out whether all groups have the same mean or not. 
 
 **Syntax**
 
@@ -20,8 +20,7 @@ analysisOfVariance(val, group_no)
 Aliases: `anova`
 
 **Parameters**
-
-- `val`: value.
+- `val`: value. 
 - `group_no` : group number that `val` belongs to.
 
 :::note

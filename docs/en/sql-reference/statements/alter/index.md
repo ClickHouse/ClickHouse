@@ -53,7 +53,7 @@ These `ALTER` statements modify entities related to role-based access control:
 
 `ALTER` queries that are intended to manipulate table data are implemented with a mechanism called "mutations", most notably [ALTER TABLE ... DELETE](/sql-reference/statements/alter/delete.md) and [ALTER TABLE ... UPDATE](/sql-reference/statements/alter/update.md). They are asynchronous background processes similar to merges in [MergeTree](/engines/table-engines/mergetree-family/index.md) tables that to produce new "mutated" versions of parts.
 
-For `*MergeTree` tables mutations execute by **rewriting whole data parts**.
+For `*MergeTree` tables mutations execute by **rewriting whole data parts**. 
 There is no atomicity — parts are substituted for mutated parts as soon as they are ready and a `SELECT` query that started executing during a mutation will see data from parts that have already been mutated along with data from parts that have not been mutated yet.
 
 Mutations are totally ordered by their creation order and are applied to each part in that order. Mutations are also partially ordered with `INSERT INTO` queries: data that was inserted into the table before the mutation was submitted will be mutated and data that was inserted after that will not be mutated. Note that mutations do not block inserts in any way.

@@ -23,7 +23,7 @@ We recommend using the `N < 10` value; performance is reduced with large `N` val
 
 - `N` — The number of elements to return. Optional. Default value: 10.
 - `reserved` — Defines, how many cells reserved for values. If uniq(column) > reserved, result of topK function will be approximate. Optional. Default value: N * 3.
-
+ 
 **Arguments**
 
 - `column` — The value to calculate frequency.

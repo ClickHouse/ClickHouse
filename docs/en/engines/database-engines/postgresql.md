@@ -116,7 +116,6 @@ As the `use_table_cache` parameter was set to `1` when the database was created,
 ```sql
 DESCRIBE TABLE test_database.test_table;
 ```
-
 ```text
 ┌─name───┬─type──────────────┐
 │ id     │ Nullable(Integer) │
@@ -131,7 +130,6 @@ DETACH TABLE test_database.test_table;
 ATTACH TABLE test_database.test_table;
 DESCRIBE TABLE test_database.test_table;
 ```
-
 ```text
 ┌─name───┬─type──────────────┐
 │ id     │ Nullable(Integer) │

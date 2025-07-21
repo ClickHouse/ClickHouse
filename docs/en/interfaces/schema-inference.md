@@ -20,7 +20,6 @@ These table functions have the optional argument `structure` with the structure 
 **Example:**
 
 Let's say we have a file `hobbies.jsonl` in JSONEachRow format in the `user_files` directory with this content:
-
 ```json
 {"id" :  1, "age" :  25, "name" :  "Josh", "hobbies" :  ["football", "cooking", "music"]}
 {"id" :  2, "age" :  19, "name" :  "Alan", "hobbies" :  ["tennis", "art"]}
@@ -29,11 +28,9 @@ Let's say we have a file `hobbies.jsonl` in JSONEachRow format in the `user_file
 ```
 
 ClickHouse can read this data without you specifying its structure:
-
 ```sql
 SELECT * FROM file('hobbies.jsonl')
 ```
-
 ```response
 ┌─id─┬─age─┬─name───┬─hobbies──────────────────────────┐
 │  1 │  25 │ Josh   │ ['football','cooking','music']   │
@@ -46,11 +43,9 @@ SELECT * FROM file('hobbies.jsonl')
 Note: the format `JSONEachRow` was automatically determined by the file extension `.jsonl`.
 
 You can see an automatically determined structure using the `DESCRIBE` query:
-
 ```sql
 DESCRIBE file('hobbies.jsonl')
 ```
-
 ```response
 ┌─name────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ id      │ Nullable(Int64)         │              │                    │         │                  │                │
@@ -67,19 +62,15 @@ If the list of columns is not specified in `CREATE TABLE` query, the structure o
 **Example:**
 
 Let's use the file `hobbies.jsonl`. We can create a table with engine `File` with the data from this file:
-
 ```sql
 CREATE TABLE hobbies ENGINE=File(JSONEachRow, 'hobbies.jsonl')
 ```
-
 ```response
 Ok.
 ```
-
 ```sql
 SELECT * FROM hobbies
 ```
-
 ```response
 ┌─id─┬─age─┬─name───┬─hobbies──────────────────────────┐
 │  1 │  25 │ Josh   │ ['football','cooking','music']   │
@@ -88,11 +79,9 @@ SELECT * FROM hobbies
 │  4 │  47 │ Brayan │ ['movies','skydiving']           │
 └────┴─────┴────────┴──────────────────────────────────┘
 ```
-
 ```sql
 DESCRIBE TABLE hobbies
 ```
-
 ```response
 ┌─name────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ id      │ Nullable(Int64)         │              │                    │         │                  │                │
@@ -109,22 +98,18 @@ DESCRIBE TABLE hobbies
 **Example:**
 
 Let's use the file `hobbies.jsonl`. We can query the data from this file using `clickhouse-local`:
-
 ```shell
 clickhouse-local --file='hobbies.jsonl' --table='hobbies' --query='DESCRIBE TABLE hobbies'
 ```
-
 ```response
 id    Nullable(Int64)
 age    Nullable(Int64)
 name    Nullable(String)
 hobbies    Array(Nullable(String))
 ```
-
 ```shell
 clickhouse-local --file='hobbies.jsonl' --table='hobbies' --query='SELECT * FROM hobbies'
 ```
-
 ```response
 1    25    Josh    ['football','cooking','music']
 2    19    Alan    ['tennis','art']
@@ -141,7 +126,6 @@ no conversions between types will be performed.
 
 There is a special setting [use_structure_from_insertion_table_in_table_functions](/operations/settings/settings.md/#use_structure_from_insertion_table_in_table_functions)
 that controls this behaviour. It has 3 possible values:
-
 - 0 - table function will extract the structure from the data.
 - 1 - table function will use the structure from the insertion table.
 - 2 - ClickHouse will automatically determine if it's possible to use the structure from the insertion table or use schema inference. Default value.
@@ -149,7 +133,6 @@ that controls this behaviour. It has 3 possible values:
 **Example 1:**
 
 Let's create table `hobbies1` with the next structure:
-
 ```sql
 CREATE TABLE hobbies1
 (
@@ -173,7 +156,6 @@ In this case, all columns from the file are inserted into the table without chan
 **Example 2:**
 
 Let's create table `hobbies2` with the next structure:
-
 ```sql
 CREATE TABLE hobbies2
 (
@@ -246,7 +228,6 @@ For most input formats schema inference reads some data to determine its structu
 To prevent inferring the same schema every time ClickHouse read the data from the same file, the inferred schema is cached and when accessing the same file again, ClickHouse will use the schema from the cache.
 
 There are special settings that control this cache:
-
 - `schema_inference_cache_max_elements_for_{file/s3/hdfs/url/azure}` - the maximum number of cached schemas for the corresponding table function. The default value is `4096`. These settings should be set in the server config.
 - `schema_inference_use_cache_for_{file,s3,hdfs,url,azure}` - allows turning on/off using cache for schema inference. These settings can be used in queries.
 
@@ -267,7 +248,6 @@ Let's try to infer the structure of a sample dataset from s3 `github-2022.ndjson
 DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
 SETTINGS allow_experimental_object_type = 1
 ```
-
 ```response
 ┌─name───────┬─type─────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ type       │ Nullable(String)         │              │                    │         │                  │                │
@@ -279,12 +259,10 @@ SETTINGS allow_experimental_object_type = 1
 
 5 rows in set. Elapsed: 0.601 sec.
 ```
-
 ```sql
 DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
 SETTINGS allow_experimental_object_type = 1
 ```
-
 ```response
 ┌─name───────┬─type─────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ type       │ Nullable(String)         │              │                    │         │                  │                │
@@ -323,7 +301,6 @@ Let's check the content of `system.schema_inference_cache` table:
 ```sql
 SELECT schema, format, source FROM system.schema_inference_cache WHERE storage='S3'
 ```
-
 ```response
 ┌─schema──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─format─┬─source───────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ type Nullable(String), actor Object(Nullable('json')), repo Object(Nullable('json')), created_at Nullable(String), payload Object(Nullable('json')) │ NDJSON │ datasets-documentation.s3.eu-west-3.amazonaws.com443/datasets-documentation/github/github-2022.ndjson.gz │
@@ -334,19 +311,15 @@ SELECT schema, format, source FROM system.schema_inference_cache WHERE storage='
 As you can see, there are two different schemas for the same file.
 
 We can clear the schema cache using a system query:
-
 ```sql
 SYSTEM DROP SCHEMA CACHE FOR S3
 ```
-
 ```response
 Ok.
 ```
-
 ```sql
 SELECT count() FROM system.schema_inference_cache WHERE storage='S3'
 ```
-
 ```response
 ┌─count()─┐
 │       0 │
@@ -371,11 +344,9 @@ Let's see how it works, what types can be inferred and what specific settings ca
 Here and further, the [format](../sql-reference/table-functions/format.md) table function will be used in examples.
 
 Integers, Floats, Bools, Strings:
-
 ```sql
 DESC format(JSONEachRow, '{"int" : 42, "float" : 42.42, "string" : "Hello, World!"}');
 ```
-
 ```response
 ┌─name───┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ int    │ Nullable(Int64)   │              │                    │         │                  │                │
@@ -390,7 +361,6 @@ Dates, DateTimes:
 ```sql
 DESC format(JSONEachRow, '{"date" : "2022-01-01", "datetime" : "2022-01-01 00:00:00", "datetime64" : "2022-01-01 00:00:00.000"}')
 ```
-
 ```response
 ┌─name───────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ date       │ Nullable(Date)          │              │                    │         │                  │                │
@@ -400,11 +370,9 @@ DESC format(JSONEachRow, '{"date" : "2022-01-01", "datetime" : "2022-01-01 00:00
 ```
 
 Arrays:
-
 ```sql
 DESC format(JSONEachRow, '{"arr" : [1, 2, 3], "nested_arrays" : [[1, 2, 3], [4, 5, 6], []]}')
 ```
-
 ```response
 ┌─name──────────┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ arr           │ Array(Nullable(Int64))        │              │                    │         │                  │                │
@@ -413,11 +381,9 @@ DESC format(JSONEachRow, '{"arr" : [1, 2, 3], "nested_arrays" : [[1, 2, 3], [4, 
 ```
 
 If an array contains `null`, ClickHouse will use types from the other array elements:
-
 ```sql
 DESC format(JSONEachRow, '{"arr" : [null, 42, null]}')
 ```
-
 ```response
 ┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ arr  │ Array(Nullable(Int64)) │              │                    │         │                  │                │
@@ -443,11 +409,9 @@ DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 4
 Unnamed Tuples:
 
 In JSON formats we treat Arrays with elements of different types as Unnamed Tuples.
-
 ```sql
 DESC format(JSONEachRow, '{"tuple" : [1, "Hello, World!", [1, 2, 3]]}')
 ```
-
 ```response
 ┌─name──┬─type─────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ tuple │ Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64))) │              │                    │         │                  │                │
@@ -455,7 +419,6 @@ DESC format(JSONEachRow, '{"tuple" : [1, "Hello, World!", [1, 2, 3]]}')
 ```
 
 If some values are `null` or empty, we use types of corresponding values from the other rows:
-
 ```sql
 DESC format(JSONEachRow, $$
                               {"tuple" : [1, null, null]}
@@ -463,7 +426,6 @@ DESC format(JSONEachRow, $$
                               {"tuple" : [null, null, [1, 2, 3]]}
                          $$)
 ```
-
 ```response
 ┌─name──┬─type─────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ tuple │ Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64))) │              │                    │         │                  │                │
@@ -479,7 +441,6 @@ Note: it will work only when settings `input_format_json_read_objects_as_strings
 SET input_format_json_read_objects_as_strings = 0, input_format_json_try_infer_named_tuples_from_objects = 0;
 DESC format(JSONEachRow, '{"map" : {"key1" : 42, "key2" : 24, "key3" : 4}}')
 ```
-
 ```response
 ┌─name─┬─type─────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ map  │ Map(String, Nullable(Int64)) │              │                    │         │                  │                │
@@ -496,7 +457,6 @@ DESC format(JSONEachRow, $$
                             {"obj" : {"key1" : 24, "key3" : {"a" : 42, "b" : null}}}
                          $$)
 ```
-
 ```response
 ┌─name─┬─type─────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ obj  │ Object(Nullable('json')) │              │                    │         │                  │                │
@@ -504,11 +464,9 @@ DESC format(JSONEachRow, $$
 ```
 
 Nested complex types:
-
 ```sql
 DESC format(JSONEachRow, '{"value" : [[[42, 24], []], {"key1" : 42, "key2" : 24}]}')
 ```
-
 ```response
 ┌─name──┬─type─────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ value │ Tuple(Array(Array(Nullable(String))), Tuple(key1 Nullable(Int64), key2 Nullable(Int64))) │              │                    │         │                  │                │
@@ -516,21 +474,17 @@ DESC format(JSONEachRow, '{"value" : [[[42, 24], []], {"key1" : 42, "key2" : 24}
 ```
 
 If ClickHouse cannot determine the type for some key, because the data contains only nulls/empty objects/empty arrays, type `String` will be used if setting `input_format_json_infer_incomplete_types_as_strings` is enabled or an exception will be thrown otherwise:
-
 ```sql
 DESC format(JSONEachRow, '{"arr" : [null, null]}') SETTINGS input_format_json_infer_incomplete_types_as_strings = 1;
 ```
-
 ```response
 ┌─name─┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ arr  │ Array(Nullable(String)) │              │                    │         │                  │                │
 └──────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-
 ```sql
 DESC format(JSONEachRow, '{"arr" : [null, null]}') SETTINGS input_format_json_infer_incomplete_types_as_strings = 0;
 ```
-
 ```response
 Code: 652. DB::Exception: Received from localhost:9000. DB::Exception:
 Cannot determine type for column 'arr' by first 1 rows of data,
@@ -555,7 +509,6 @@ DESC format(JSONEachRow, $$
                               {"value" : "424242424242"}
                          $$)
 ```
-
 ```response
 ┌─name──┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ value │ Nullable(Int64) │              │                    │         │                  │                │
@@ -607,13 +560,11 @@ Disabled by default.
 **Examples**
 
 With disabled setting:
-
 ```sql
 SET input_format_json_try_infer_named_tuples_from_objects = 1;
 SET input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = 0;
 DESC format(JSONEachRow, '{"obj" : {"a" : 42}}, {"obj" : {"a" : {"b" : "Hello"}}}');
 ```
-
 Result:
 
 ```response
@@ -623,7 +574,6 @@ You can specify the structure manually. (CANNOT_EXTRACT_TABLE_STRUCTURE)
 ```
 
 With enabled setting:
-
 ```sql
 SET input_format_json_try_infer_named_tuples_from_objects = 1;
 SET input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = 1;
@@ -632,7 +582,6 @@ SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : 42}}, {"obj" : {"a" : {"b" : 
 ```
 
 Result:
-
 ```response
 ┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ obj  │ Tuple(a Nullable(String))     │              │                    │         │                  │                │
@@ -659,7 +608,6 @@ DESC format(JSONEachRow, $$
                              {"obj" : {"key3" : {"nested_key" : 1}}}
                          $$)
 ```
-
 ```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ obj  │ Nullable(String) │              │                    │         │                  │                │
@@ -681,7 +629,6 @@ DESC format(JSONEachRow, $$
                                 {"value" : "unknown"}
                          $$)
 ```
-
 ```response
 ┌─name──┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ value │ Nullable(String) │              │                    │         │                  │                │
@@ -703,7 +650,6 @@ DESC format(JSONEachRow, $$
                                 {"value" : 42}
                          $$)
 ```
-
 ```response
 ┌─name──┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ value │ Nullable(Int64) │              │                    │         │                  │                │
@@ -725,13 +671,11 @@ DESC format(JSONEachRow, $$
                                 {"value" : "Hello, World"}
                          $$)
 ```
-
 ```response
 ┌─name──┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ value │ Nullable(String) │              │                    │         │                  │                │
 └───────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-
 ##### input_format_json_read_arrays_as_strings {#input_format_json_read_arrays_as_strings}
 
 Enabling this setting allows reading JSON array values as strings.
@@ -744,7 +688,6 @@ This setting is enabled by default.
 SET input_format_json_read_arrays_as_strings = 1;
 SELECT arr, toTypeName(arr), JSONExtractArrayRaw(arr)[3] from format(JSONEachRow, 'arr String', '{"arr" : [1, "Hello", [1,2,3]]}');
 ```
-
 ```response
 ┌─arr───────────────────┬─toTypeName(arr)─┬─arrayElement(JSONExtractArrayRaw(arr), 3)─┐
 │ [1, "Hello", [1,2,3]] │ String          │ [1,2,3]                                   │
@@ -766,7 +709,6 @@ SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" :
 ```
 
 Result:
-
 ```markdown
 ┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ obj  │ Tuple(a Array(Nullable(Int64)), b Nullable(String), c Nullable(String), d Nullable(String), e Array(Nullable(String))) │              │                    │         │                  │                │
@@ -791,11 +733,9 @@ If setting `input_format_csv_detect_header` is enabled, ClickHouse will try to d
 **Examples:**
 
 Integers, Floats, Bools, Strings:
-
 ```sql
 DESC format(CSV, '42,42.42,true,"Hello,World!"')
 ```
-
 ```response
 ┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Int64)   │              │                    │         │                  │                │
@@ -806,11 +746,9 @@ DESC format(CSV, '42,42.42,true,"Hello,World!"')
 ```
 
 Strings without quotes:
-
 ```sql
 DESC format(CSV, 'Hello world!,World hello!')
 ```
-
 ```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(String) │              │                    │         │                  │                │
@@ -823,7 +761,6 @@ Dates, DateTimes:
 ```sql
 DESC format(CSV, '"2020-01-01","2020-01-01 00:00:00","2022-01-01 00:00:00.000"')
 ```
-
 ```response
 ┌─name─┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Date)          │              │                    │         │                  │                │
@@ -833,22 +770,18 @@ DESC format(CSV, '"2020-01-01","2020-01-01 00:00:00","2022-01-01 00:00:00.000"')
 ```
 
 Arrays:
-
 ```sql
 DESC format(CSV, '"[1,2,3]","[[1, 2], [], [3, 4]]"')
 ```
-
 ```response
 ┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Array(Nullable(Int64))        │              │                    │         │                  │                │
 │ c2   │ Array(Array(Nullable(Int64))) │              │                    │         │                  │                │
 └──────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-
 ```sql
 DESC format(CSV, $$"['Hello', 'world']","[['Abc', 'Def'], []]"$$)
 ```
-
 ```response
 ┌─name─┬─type───────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Array(Nullable(String))        │              │                    │         │                  │                │
@@ -857,11 +790,9 @@ DESC format(CSV, $$"['Hello', 'world']","[['Abc', 'Def'], []]"$$)
 ```
 
 If an array contains null, ClickHouse will use types from the other array elements:
-
 ```sql
 DESC format(CSV, '"[NULL, 42, NULL]"')
 ```
-
 ```response
 ┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Array(Nullable(Int64)) │              │                    │         │                  │                │
@@ -869,11 +800,9 @@ DESC format(CSV, '"[NULL, 42, NULL]"')
 ```
 
 Maps:
-
 ```sql
 DESC format(CSV, $$"{'key1' : 42, 'key2' : 24}"$$)
 ```
-
 ```response
 ┌─name─┬─type─────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Map(String, Nullable(Int64)) │              │                    │         │                  │                │
@@ -881,11 +810,9 @@ DESC format(CSV, $$"{'key1' : 42, 'key2' : 24}"$$)
 ```
 
 Nested Arrays and Maps:
-
 ```sql
 DESC format(CSV, $$"[{'key1' : [[42, 42], []], 'key2' : [[null], [42]]}]"$$)
 ```
-
 ```response
 ┌─name─┬─type──────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Array(Map(String, Array(Array(Nullable(Int64))))) │              │                    │         │                  │                │
@@ -893,11 +820,9 @@ DESC format(CSV, $$"[{'key1' : [[42, 42], []], 'key2' : [[null], [42]]}]"$$)
 ```
 
 If ClickHouse cannot determine the type inside quotes, because the data contains only nulls, ClickHouse will treat it as String:
-
 ```sql
 DESC format(CSV, '"[NULL, NULL]"')
 ```
-
 ```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(String) │              │                    │         │                  │                │
@@ -905,12 +830,10 @@ DESC format(CSV, '"[NULL, NULL]"')
 ```
 
 Example with disabled setting `input_format_csv_use_best_effort_in_schema_inference`:
-
 ```sql
 SET input_format_csv_use_best_effort_in_schema_inference = 0
 DESC format(CSV, '"[1,2,3]",42.42,Hello World!')
 ```
-
 ```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(String) │              │                    │         │                  │                │
@@ -922,7 +845,6 @@ DESC format(CSV, '"[1,2,3]",42.42,Hello World!')
 Examples of header auto-detection (when `input_format_csv_detect_header` is enabled):
 
 Only names:
-
 ```sql
 SELECT * FROM format(CSV,
 $$"number","string","array"
@@ -989,7 +911,6 @@ This setting is disabled by default.
 SET input_format_json_try_infer_numbers_from_strings = 1;
 DESC format(CSV, '42,42.42');
 ```
-
 ```response
 ┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Int64)   │              │                    │         │                  │                │
@@ -1010,11 +931,9 @@ If setting `input_format_tsv_detect_header` is enabled, ClickHouse will try to d
 **Examples:**
 
 Integers, Floats, Bools, Strings:
-
 ```sql
 DESC format(TSV, '42    42.42    true    Hello,World!')
 ```
-
 ```response
 ┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Int64)   │              │                    │         │                  │                │
@@ -1023,11 +942,9 @@ DESC format(TSV, '42    42.42    true    Hello,World!')
 │ c4   │ Nullable(String)  │              │                    │         │                  │                │
 └──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-
 ```sql
 DESC format(TSKV, 'int=42    float=42.42    bool=true    string=Hello,World!\n')
 ```
-
 ```response
 ┌─name───┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ int    │ Nullable(Int64)   │              │                    │         │                  │                │
@@ -1042,7 +959,6 @@ Dates, DateTimes:
 ```sql
 DESC format(TSV, '2020-01-01    2020-01-01 00:00:00    2022-01-01 00:00:00.000')
 ```
-
 ```response
 ┌─name─┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Date)          │              │                    │         │                  │                │
@@ -1052,22 +968,18 @@ DESC format(TSV, '2020-01-01    2020-01-01 00:00:00    2022-01-01 00:00:00.000')
 ```
 
 Arrays:
-
 ```sql
 DESC format(TSV, '[1,2,3]    [[1, 2], [], [3, 4]]')
 ```
-
 ```response
 ┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Array(Nullable(Int64))        │              │                    │         │                  │                │
 │ c2   │ Array(Array(Nullable(Int64))) │              │                    │         │                  │                │
 └──────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-
 ```sql
 DESC format(TSV, '[''Hello'', ''world'']    [[''Abc'', ''Def''], []]')
 ```
-
 ```response
 ┌─name─┬─type───────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Array(Nullable(String))        │              │                    │         │                  │                │
@@ -1076,11 +988,9 @@ DESC format(TSV, '[''Hello'', ''world'']    [[''Abc'', ''Def''], []]')
 ```
 
 If an array contains null, ClickHouse will use types from the other array elements:
-
 ```sql
 DESC format(TSV, '[NULL, 42, NULL]')
 ```
-
 ```response
 ┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Array(Nullable(Int64)) │              │                    │         │                  │                │
@@ -1088,11 +998,9 @@ DESC format(TSV, '[NULL, 42, NULL]')
 ```
 
 Tuples:
-
 ```sql
 DESC format(TSV, $$(42, 'Hello, world!')$$)
 ```
-
 ```response
 ┌─name─┬─type─────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Tuple(Nullable(Int64), Nullable(String)) │              │                    │         │                  │                │
@@ -1100,11 +1008,9 @@ DESC format(TSV, $$(42, 'Hello, world!')$$)
 ```
 
 Maps:
-
 ```sql
 DESC format(TSV, $${'key1' : 42, 'key2' : 24}$$)
 ```
-
 ```response
 ┌─name─┬─type─────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Map(String, Nullable(Int64)) │              │                    │         │                  │                │
@@ -1112,11 +1018,9 @@ DESC format(TSV, $${'key1' : 42, 'key2' : 24}$$)
 ```
 
 Nested Arrays, Tuples and Maps:
-
 ```sql
 DESC format(TSV, $$[{'key1' : [(42, 'Hello'), (24, NULL)], 'key2' : [(NULL, ','), (42, 'world!')]}]$$)
 ```
-
 ```response
 ┌─name─┬─type────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Array(Map(String, Array(Tuple(Nullable(Int64), Nullable(String))))) │              │                    │         │                  │                │
@@ -1124,11 +1028,9 @@ DESC format(TSV, $$[{'key1' : [(42, 'Hello'), (24, NULL)], 'key2' : [(NULL, ',')
 ```
 
 If ClickHouse cannot determine the type, because the data contains only nulls, ClickHouse will treat it as String:
-
 ```sql
 DESC format(TSV, '[NULL, NULL]')
 ```
-
 ```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(String) │              │                    │         │                  │                │
@@ -1136,12 +1038,10 @@ DESC format(TSV, '[NULL, NULL]')
 ```
 
 Example with disabled setting `input_format_tsv_use_best_effort_in_schema_inference`:
-
 ```sql
 SET input_format_tsv_use_best_effort_in_schema_inference = 0
 DESC format(TSV, '[1,2,3]    42.42    Hello World!')
 ```
-
 ```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(String) │              │                    │         │                  │                │
@@ -1153,7 +1053,6 @@ DESC format(TSV, '[1,2,3]    42.42    Hello World!')
 Examples of header auto-detection (when `input_format_tsv_detect_header` is enabled):
 
 Only names:
-
 ```sql
 SELECT * FROM format(TSV,
 $$number    string    array
@@ -1214,11 +1113,9 @@ the recursive parser similar to how literals are parsed.
 **Examples:**
 
 Integers, Floats, Bools, Strings:
-
 ```sql
 DESC format(Values, $$(42, 42.42, true, 'Hello,World!')$$)
 ```
-
 ```response
 ┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Int64)   │              │                    │         │                  │                │
@@ -1233,7 +1130,6 @@ Dates, DateTimes:
 ```sql
  DESC format(Values, $$('2020-01-01', '2020-01-01 00:00:00', '2022-01-01 00:00:00.000')$$)
  ```
-
 ```response
 ┌─name─┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Date)          │              │                    │         │                  │                │
@@ -1243,11 +1139,9 @@ Dates, DateTimes:
 ```
 
 Arrays:
-
 ```sql
 DESC format(Values, '([1,2,3], [[1, 2], [], [3, 4]])')
 ```
-
 ```response
 ┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Array(Nullable(Int64))        │              │                    │         │                  │                │
@@ -1256,11 +1150,9 @@ DESC format(Values, '([1,2,3], [[1, 2], [], [3, 4]])')
 ```
 
 If an array contains null, ClickHouse will use types from the other array elements:
-
 ```sql
 DESC format(Values, '([NULL, 42, NULL])')
 ```
-
 ```response
 ┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Array(Nullable(Int64)) │              │                    │         │                  │                │
@@ -1268,11 +1160,9 @@ DESC format(Values, '([NULL, 42, NULL])')
 ```
 
 Tuples:
-
 ```sql
 DESC format(Values, $$((42, 'Hello, world!'))$$)
 ```
-
 ```response
 ┌─name─┬─type─────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Tuple(Nullable(Int64), Nullable(String)) │              │                    │         │                  │                │
@@ -1280,11 +1170,9 @@ DESC format(Values, $$((42, 'Hello, world!'))$$)
 ```
 
 Maps:
-
 ```sql
 DESC format(Values, $$({'key1' : 42, 'key2' : 24})$$)
 ```
-
 ```response
 ┌─name─┬─type─────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Map(String, Nullable(Int64)) │              │                    │         │                  │                │
@@ -1292,11 +1180,9 @@ DESC format(Values, $$({'key1' : 42, 'key2' : 24})$$)
 ```
 
 Nested Arrays, Tuples and Maps:
-
 ```sql
 DESC format(Values, $$([{'key1' : [(42, 'Hello'), (24, NULL)], 'key2' : [(NULL, ','), (42, 'world!')]}])$$)
 ```
-
 ```response
 ┌─name─┬─type────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Array(Map(String, Array(Tuple(Nullable(Int64), Nullable(String))))) │              │                    │         │                  │                │
@@ -1304,11 +1190,9 @@ DESC format(Values, $$([{'key1' : [(42, 'Hello'), (24, NULL)], 'key2' : [(NULL, 
 ```
 
 If ClickHouse cannot determine the type, because the data contains only nulls, an exception will be thrown:
-
 ```sql
 DESC format(Values, '([NULL, NULL])')
 ```
-
 ```response
 Code: 652. DB::Exception: Received from localhost:9000. DB::Exception:
 Cannot determine type for column 'c1' by first 1 rows of data,
@@ -1317,12 +1201,10 @@ most likely this column contains only Nulls or empty Arrays/Maps.
 ```
 
 Example with disabled setting `input_format_tsv_use_best_effort_in_schema_inference`:
-
 ```sql
 SET input_format_tsv_use_best_effort_in_schema_inference = 0
 DESC format(TSV, '[1,2,3]    42.42    Hello World!')
 ```
-
 ```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(String) │              │                    │         │                  │                │
@@ -1356,7 +1238,6 @@ DESC format(CustomSeparated, $$<result_before_delimiter>
 <result_after_delimiter>
 $$)
 ```
-
 ```response
 ┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Float64)      │              │                    │         │                  │                │
@@ -1395,13 +1276,12 @@ $$)
 
 ### Template {#template}
 
-In Template format ClickHouse first extracts all column values from the row according to the specified template and then tries to infer the
+In Template format ClickHouse first extracts all column values from the row according to the specified template and then tries to infer the 
 data type for each value according to its escaping rule.
 
 **Example**
 
 Let's say we have a file `resultset` with the next content:
-
 ```bash
 <result_before_delimiter>
 ${data}<result_after_delimiter>
@@ -1427,7 +1307,6 @@ DESC format(Template, $$<result_before_delimiter>
 <result_after_delimiter>
 $$)
 ```
-
 ```response
 ┌─name─────┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ column_1 │ Nullable(Float64)      │              │                    │         │                  │                │
@@ -1450,7 +1329,6 @@ SET format_regexp = '^Line: value_1=(.+?), value_2=(.+?), value_3=(.+?)',
 DESC format(Regexp, $$Line: value_1=42, value_2="Some string 1", value_3="[1, NULL, 3]"
 Line: value_1=2, value_2="Some string 2", value_3="[4, 5, NULL]"$$)
 ```
-
 ```response
 ┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Int64)        │              │                    │         │                  │                │
@@ -1468,9 +1346,8 @@ The more rows/bytes are read, the more time is spent on schema inference, but th
 correctly determine the types (especially when the data contains a lot of nulls).
 
 Default values:
-
-- `25000` for `input_format_max_rows_to_read_for_schema_inference`.
-- `33554432` (32 Mb) for `input_format_max_bytes_to_read_for_schema_inference`.
+-   `25000` for `input_format_max_rows_to_read_for_schema_inference`.
+-   `33554432` (32 Mb) for `input_format_max_bytes_to_read_for_schema_inference`.
 
 #### column_names_for_schema_inference {#column-names-for-schema-inference}
 
@@ -1481,7 +1358,6 @@ The list of column names to use in schema inference for formats without explicit
 ```sql
 DESC format(TSV, 'Hello, World!    42    [1, 2, 3]') settings column_names_for_schema_inference = 'str,int,arr'
 ```
-
 ```response
 ┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ str  │ Nullable(String)       │              │                    │         │                  │                │
@@ -1500,7 +1376,6 @@ This setting can be used to specify the types of columns that could not be deter
 ```sql
 DESC format(JSONEachRow, '{"id" : 1, "age" : 25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}') SETTINGS schema_inference_hints = 'age LowCardinality(UInt8), status Nullable(String)', allow_suspicious_low_cardinality_types=1
 ```
-
 ```response
 ┌─name────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ id      │ Nullable(Int64)         │              │                    │         │                  │                │
@@ -1527,7 +1402,6 @@ DESC format(JSONEachRow, $$
                                 {"id" :  2, "age" :  19, "name" :  "Alan", "status" : "married", "hobbies" :  ["tennis", "art"]}
                          $$)
 ```
-
 ```response
 ┌─name────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ id      │ Nullable(Int64)         │              │                    │         │                  │                │
@@ -1537,7 +1411,6 @@ DESC format(JSONEachRow, $$
 │ hobbies │ Array(Nullable(String)) │              │                    │         │                  │                │
 └─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-
 ```sql
 SET schema_inference_make_columns_nullable = 'auto';
 DESC format(JSONEachRow, $$
@@ -1545,7 +1418,6 @@ DESC format(JSONEachRow, $$
                                 {"id" :  2, "age" :  19, "name" :  "Alan", "status" : "married", "hobbies" :  ["tennis", "art"]}
                          $$)
 ```
-
 ```response
 ┌─name────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ id      │ Int64            │              │                    │         │                  │                │
@@ -1563,7 +1435,6 @@ DESC format(JSONEachRow, $$
                                 {"id" :  2, "age" :  19, "name" :  "Alan", "status" : "married", "hobbies" :  ["tennis", "art"]}
                          $$)
 ```
-
 ```response
 
 ┌─name────┬─type──────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1596,13 +1467,11 @@ DESC format(JSONEachRow, $$
                                 {"number" : 2}
                          $$)
 ```
-
 ```response
 ┌─name───┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ number │ Nullable(Float64) │              │                    │         │                  │                │
 └────────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-
 ```sql
 SET input_format_try_infer_integers = 1
 DESC format(JSONEachRow, $$
@@ -1610,33 +1479,28 @@ DESC format(JSONEachRow, $$
                                 {"number" : 2}
                          $$)
 ```
-
 ```response
 ┌─name───┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ number │ Nullable(Int64) │              │                    │         │                  │                │
 └────────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-
 ```sql
 DESC format(JSONEachRow, $$
                                 {"number" : 1}
                                 {"number" : 18446744073709551615}
                          $$)
 ```
-
 ```response
 ┌─name───┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ number │ Nullable(UInt64) │              │                    │         │                  │                │
 └────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-
 ```sql
 DESC format(JSONEachRow, $$
                                 {"number" : 1}
                                 {"number" : 2.2}
                          $$)
 ```
-
 ```response
 ┌─name───┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ number │ Nullable(Float64) │              │                    │         │                  │                │
@@ -1660,14 +1524,12 @@ DESC format(JSONEachRow, $$
                                 {"datetime" : "2022-01-01 00:00:00", "datetime64" : "2022-01-01 00:00:00.000"}
                          $$)
 ```
-
 ```response
 ┌─name───────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ datetime   │ Nullable(String) │              │                    │         │                  │                │
 │ datetime64 │ Nullable(String) │              │                    │         │                  │                │
 └────────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-
 ```sql
 SET input_format_try_infer_datetimes = 1;
 DESC format(JSONEachRow, $$
@@ -1675,21 +1537,18 @@ DESC format(JSONEachRow, $$
                                 {"datetime" : "2022-01-01 00:00:00", "datetime64" : "2022-01-01 00:00:00.000"}
                          $$)
 ```
-
 ```response
 ┌─name───────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ datetime   │ Nullable(DateTime)      │              │                    │         │                  │                │
 │ datetime64 │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
 └────────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-
 ```sql
 DESC format(JSONEachRow, $$
                                 {"datetime" : "2021-01-01 00:00:00", "datetime64" : "2021-01-01 00:00:00.000"}
                                 {"datetime" : "unknown", "datetime64" : "unknown"}
                          $$)
 ```
-
 ```response
 ┌─name───────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ datetime   │ Nullable(String) │              │                    │         │                  │                │
@@ -1740,13 +1599,11 @@ DESC format(JSONEachRow, $$
                                 {"date" : "2022-01-01"}
                          $$)
 ```
-
 ```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ date │ Nullable(String) │              │                    │         │                  │                │
 └──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-
 ```sql
 SET input_format_try_infer_dates = 1
 DESC format(JSONEachRow, $$
@@ -1754,20 +1611,17 @@ DESC format(JSONEachRow, $$
                                 {"date" : "2022-01-01"}
                          $$)
 ```
-
 ```response
 ┌─name─┬─type───────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ date │ Nullable(Date) │              │                    │         │                  │                │
 └──────┴────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-
 ```sql
 DESC format(JSONEachRow, $$
                                 {"date" : "2021-01-01"}
                                 {"date" : "unknown"}
                          $$)
 ```
-
 ```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ date │ Nullable(String) │              │                    │         │                  │                │
@@ -1790,7 +1644,6 @@ $$1.1E10
 42E00
 $$)
 ```
-
 ```response
 ┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Float64) │              │                    │         │                  │                │
@@ -1818,7 +1671,6 @@ UInt8    String    Array(UInt8)
 42    Hello, World!    [1,2,3]
 $$)
 ```
-
 ```response
 ┌─name─┬─type─────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ num  │ UInt8        │              │                    │         │                  │                │
@@ -1833,7 +1685,6 @@ Some JSON input formats ([JSON](formats.md#json), [JSONCompact](/interfaces/form
 In schema inference for such formats, ClickHouse reads this metadata.
 
 **Example**
-
 ```sql
 DESC format(JSON, $$
 {
@@ -1873,7 +1724,6 @@ DESC format(JSON, $$
 }
 $$)
 ```
-
 ```response
 ┌─name─┬─type─────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ num  │ UInt8        │              │                    │         │                  │                │
@@ -2096,7 +1946,6 @@ In this format, ClickHouse reads the whole line from the data into a single colu
 ```sql
 DESC format(LineAsString, 'Hello\nworld!')
 ```
-
 ```response
 ┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ line │ String │              │                    │         │                  │                │
@@ -2112,7 +1961,6 @@ In this format, ClickHouse reads the whole JSON object from the data into a sing
 ```sql
 DESC format(JSONAsString, '{"x" : 42, "y" : "Hello, World!"}')
 ```
-
 ```response
 ┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ json │ String │              │                    │         │                  │                │
@@ -2130,7 +1978,6 @@ Note: This format works only if `allow_experimental_object_type` is enabled.
 ```sql
 DESC format(JSONAsString, '{"x" : 42, "y" : "Hello, World!"}') SETTINGS allow_experimental_object_type=1
 ```
-
 ```response
 ┌─name─┬─type───────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ json │ Object('json') │              │                    │         │                  │                │
@@ -2140,7 +1987,7 @@ DESC format(JSONAsString, '{"x" : 42, "y" : "Hello, World!"}') SETTINGS allow_ex
 ## Schema inference modes {#schema-inference-modes}
 
 Schema inference from the set of data files can work in 2 different modes: `default` and `union`.
-The mode is controlled by the setting `schema_inference_mode`.
+The mode is controlled by the setting `schema_inference_mode`. 
 
 ### Default mode {#default-schema-inference-mode}
 
@@ -2151,7 +1998,6 @@ Example:
 Let's say we have 3 files `data1.jsonl`, `data2.jsonl` and `data3.jsonl` with the next content:
 
 `data1.jsonl`:
-
 ```json
 {"field1" :  1, "field2" :  null}
 {"field1" :  2, "field2" :  null}
@@ -2159,7 +2005,6 @@ Let's say we have 3 files `data1.jsonl`, `data2.jsonl` and `data3.jsonl` with th
 ```
 
 `data2.jsonl`:
-
 ```json
 {"field1" :  4, "field2" :  "Data4"}
 {"field1" :  5, "field2" :  "Data5"}
@@ -2167,7 +2012,6 @@ Let's say we have 3 files `data1.jsonl`, `data2.jsonl` and `data3.jsonl` with th
 ```
 
 `data3.jsonl`:
-
 ```json
 {"field1" :  7, "field2" :  "Data7", "field3" :  [1, 2, 3]}
 {"field1" :  8, "field2" :  "Data8", "field3" :  [4, 5, 6]}
@@ -2175,7 +2019,6 @@ Let's say we have 3 files `data1.jsonl`, `data2.jsonl` and `data3.jsonl` with th
 ```
 
 Let's try to use schema inference on these 3 files:
-
 ```sql
 :) DESCRIBE file('data{1,2,3}.jsonl') SETTINGS schema_inference_mode='default'
 ```
@@ -2189,18 +2032,17 @@ Result:
 └────────┴──────────────────┘
 ```
 
-As we can see, we don't have `field3` from file `data3.jsonl`.
+As we can see, we don't have `field3` from file `data3.jsonl`. 
 It happens because ClickHouse first tried to infer schema from file `data1.jsonl`, failed because of only nulls for field `field2`,
 and then tried to infer schema from `data2.jsonl` and succeeded, so data from file `data3.jsonl` wasn't read.
 
 ### Union mode {#default-schema-inference-mode-1}
 
-In union mode, ClickHouse assumes that files can have different schemas, so it infer schemas of all files and then union them to the common schema.
+In union mode, ClickHouse assumes that files can have different schemas, so it infer schemas of all files and then union them to the common schema. 
 
 Let's say we have 3 files `data1.jsonl`, `data2.jsonl` and `data3.jsonl` with the next content:
 
 `data1.jsonl`:
-
 ```json
 {"field1" :  1}
 {"field1" :  2}
@@ -2208,7 +2050,6 @@ Let's say we have 3 files `data1.jsonl`, `data2.jsonl` and `data3.jsonl` with th
 ```
 
 `data2.jsonl`:
-
 ```json
 {"field2" :  "Data4"}
 {"field2" :  "Data5"}
@@ -2216,7 +2057,6 @@ Let's say we have 3 files `data1.jsonl`, `data2.jsonl` and `data3.jsonl` with th
 ```
 
 `data3.jsonl`:
-
 ```json
 {"field3" :  [1, 2, 3]}
 {"field3" :  [4, 5, 6]}
@@ -2224,7 +2064,6 @@ Let's say we have 3 files `data1.jsonl`, `data2.jsonl` and `data3.jsonl` with th
 ```
 
 Let's try to use schema inference on these 3 files:
-
 ```sql
 :) DESCRIBE file('data{1,2,3}.jsonl') SETTINGS schema_inference_mode='union'
 ```
@@ -2242,7 +2081,6 @@ Result:
 As we can see, we have all fields from all files.
 
 Note:
-
 - As some of the files may not contain some columns from the resulting schema, union mode is supported only for formats that support reading subset of columns (like JSONEachRow, Parquet, TSVWithNames, etc) and won't work for other formats (like CSV, TSV, JSONCompactEachRow, etc).
 - If ClickHouse cannot infer the schema from one of the files, the exception will be thrown.
 - If you have a lot of files, reading schema from all of them can take a lot of time.
@@ -2254,7 +2092,6 @@ If data format is not specified and cannot be determined by the file extension, 
 **Examples:**
 
 Let's say we have `data` with the following content:
-
 ```csv
 "a","b"
 1,"Data1"
@@ -2263,7 +2100,6 @@ Let's say we have `data` with the following content:
 ```
 
 We can inspect and query this file without specifying format or structure:
-
 ```sql
 :) desc file(data);
 ```

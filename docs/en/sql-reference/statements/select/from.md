@@ -10,7 +10,7 @@ title: 'FROM Clause'
 The `FROM` clause specifies the source to read data from:
 
 - [Table](../../../engines/table-engines/index.md)
-- [Subquery](../../../sql-reference/statements/select/index.md)
+- [Subquery](../../../sql-reference/statements/select/index.md) 
 - [Table function](/sql-reference/table-functions)
 
 [JOIN](../../../sql-reference/statements/select/join.md) and [ARRAY JOIN](../../../sql-reference/statements/select/array-join.md) clauses may also be used to extend the functionality of the `FROM` clause.
@@ -31,7 +31,6 @@ SELECT *
 When `FINAL` is specified, ClickHouse fully merges the data before returning the result. This also performs all data transformations that happen during merges for the given table engine.
 
 It is applicable when selecting data from tables using the following table engines:
-
 - `ReplacingMergeTree`
 - `SummingMergeTree`
 - `AggregatingMergeTree`

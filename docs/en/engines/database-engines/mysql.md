@@ -64,7 +64,6 @@ All other MySQL data types are converted into [String](../../sql-reference/data-
 For better compatibility you may address global variables in MySQL style, as `@@identifier`.
 
 These variables are supported:
-
 - `version`
 - `max_allowed_packet`
 

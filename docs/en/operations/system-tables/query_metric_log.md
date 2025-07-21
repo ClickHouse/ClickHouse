@@ -18,7 +18,6 @@ Once a query starts, data is collected at periodic intervals of `query_metric_lo
 by default). The data is also collected when the query finishes if the query takes longer than `query_metric_log_interval`.
 
 Columns:
-
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the query.
 - `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.

@@ -36,7 +36,6 @@ If you are using the MongoDB Atlas cloud offering please add these options:
 ```ini
 'connectTimeoutMS=10000&ssl=true&authSource=admin'
 ```
-
 :::
 
 You can also connect by URI:

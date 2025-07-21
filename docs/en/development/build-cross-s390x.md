@@ -13,7 +13,6 @@ ClickHouse has experimental support for s390x.
 ## Building ClickHouse for s390x {#building-clickhouse-for-s390x}
 
 s390x has two OpenSSL-related build options:
-
 - By default, OpenSSL is build on s390x as a shared library. This is different from all other platforms, where OpenSSL is build as static library.
 - To build OpenSSL as a static library regardless, pass `-DENABLE_OPENSSL_DYNAMIC=0` to CMake.
 
@@ -74,7 +73,7 @@ Current executable set to '/<Clickhouse Parent Directory>/ClickHouse/<build dire
 Process 1 stopped
 * thread #1, stop reason = signal SIGTRAP
     frame #0: 0x0000004020e74cd0
-- >  0x4020e74cd0: lgr    %r2, %r15
+->  0x4020e74cd0: lgr    %r2, %r15
     0x4020e74cd4: aghi   %r15, -160
     0x4020e74cd8: xc     0(8,%r15), 0(%r15)
     0x4020e74cde: brasl  %r14, 275429939040
@@ -88,7 +87,7 @@ Process 1 stopped
    447  #if !defined(FUZZING_MODE)
    448  int main(int argc_, char ** argv_)
    449  {
-- > 450      inside_main = true;
+-> 450      inside_main = true;
    451      SCOPE_EXIT({ inside_main = false; });
    452
    453      /// PHDR cache is required for query profiler to work reliably
@@ -102,9 +101,7 @@ Process 1 stopped
 - Make sure to run the clickhouse executable in debug mode prior to launch. (It is also possible to create a `preLaunchTask` that automates this)
 
 ### Example configurations {#example-configurations}
-
 #### cmake-variants.yaml {#cmake-variantsyaml}
-
 ```yaml
 buildType:
   default: relwithdebinfo
@@ -141,7 +138,6 @@ toolchain:
 ```
 
 #### launch.json {#launchjson}
-
 ```json
 {
     "version": "0.2.0",
@@ -159,9 +155,7 @@ toolchain:
 ```
 
 #### settings.json {#settingsjson}
-
 This would also put different builds under different subfolders of the `build` folder.
-
 ```json
 {
     "cmake.buildDirectory": "${workspaceFolder}/build/${buildKitVendor}-${buildKitVersion}-${variant:toolchain}-${variant:buildType}",
@@ -170,7 +164,6 @@ This would also put different builds under different subfolders of the `build` f
 ```
 
 #### run-debug.sh {#run-debugsh}
-
 ```sh
 #! /bin/sh
 echo 'Starting debugger session'
@@ -179,9 +172,7 @@ qemu-s390x-static -g 2159 -L /usr/s390x-linux-gnu $2 $3 $4
 ```
 
 #### tasks.json {#tasksjson}
-
 Defines a task to run the compiled executable in `server` mode under a `tmp` folder next to the binaries, with configuration from under `programs/server/config.xml`.
-
 ```json
 {
     "version": "2.0.0",

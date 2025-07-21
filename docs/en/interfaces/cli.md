@@ -23,7 +23,6 @@ curl https://clickhouse.com/ | sh
 ```
 
 To also install it, run:
-
 ```bash
 sudo ./clickhouse install
 ```
@@ -89,7 +88,6 @@ Choose **Native**, and the details are shown with an example `clickhouse-client`
 You can store connection details for one or more ClickHouse servers in a [configuration file](#configuration_files).
 
 The format looks like this:
-
 ```xml
 <config>
     <connections_credentials>
@@ -137,7 +135,7 @@ $ echo "SELECT avg(number) FROM numbers(10)" | clickhouse-client
 Inserting data:
 
 ```bash
-echo "Hello\nGoodbye" | clickhouse-client --query "INSERT INTO messages FORMAT CSV"
+$ echo "Hello\nGoodbye" | clickhouse-client --query "INSERT INTO messages FORMAT CSV"
 ```
 
 When `--query` is specified, any input is appended to the request after a line feed.
@@ -189,10 +187,10 @@ To exit the client, press `Ctrl+D`, or enter one of the following instead of a q
 
 When processing a query, the client shows:
 
-1.Progress, which is updated no more than 10 times per second by default. For quick queries, the progress might not have time to be displayed.
-2.The formatted query after parsing, for debugging.
-3.The result in the specified format.
-4.The number of lines in the result, the time passed, and the average speed of query processing. All data amounts refer to uncompressed data.
+1.  Progress, which is updated no more than 10 times per second by default. For quick queries, the progress might not have time to be displayed.
+2.  The formatted query after parsing, for debugging.
+3.  The result in the specified format.
+4.  The number of lines in the result, the time passed, and the average speed of query processing. All data amounts refer to uncompressed data.
 
 You can cancel a long query by pressing `Ctrl+C`. However, you will still need to wait for a little for the server to abort the request. It is not possible to cancel a query at certain stages. If you do not wait and press `Ctrl+C` a second time, the client will exit.
 
@@ -203,13 +201,12 @@ ClickHouse Client allows passing external data (external temporary tables) for q
 You can specify parameters in a query and pass values to it with command-line options. This avoids formatting a query with specific dynamic values on the client side. For example:
 
 ```bash
-clickhouse-client --param_parName="[1, 2]" --query "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
+$ clickhouse-client --param_parName="[1, 2]" --query "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
 ```
 
 It is also possible to set parameters from within an interactive session:
-
 ```bash
-clickhouse-client --query "SET param_parName='[1, 2]'; SELECT {parName:Array(UInt16)}"
+$ clickhouse-client --query "SET param_parName='[1, 2]'; SELECT {parName:Array(UInt16)}"
 ```
 
 ### Query syntax {#cli-queries-with-parameters-syntax}
@@ -237,6 +234,8 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
 
 ClickHouse Client includes built-in AI assistance for generating SQL queries from natural language descriptions. This feature helps users write complex queries without deep SQL knowledge.
 
+The AI assistance works out of the box if you have either `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` environment variable set. For more advanced configuration, see the [Configuration](#ai-sql-generation-configuration) section.
+
 ### Usage {#ai-sql-generation-usage}
 
 To use AI SQL generation, prefix your natural language query with `??`:
@@ -246,10 +245,9 @@ To use AI SQL generation, prefix your natural language query with `??`:
 ```
 
 The AI will:
-
-1.Explore your database schema automatically
-2.Generate appropriate SQL based on the discovered tables and columns
-3.Execute the generated query immediately
+1. Explore your database schema automatically
+2. Generate appropriate SQL based on the discovered tables and columns
+3. Execute the generated query immediately
 
 ### Example {#ai-sql-generation-example}
 
@@ -286,73 +284,163 @@ ORDER BY order_count DESC
 
 ### Configuration {#ai-sql-generation-configuration}
 
-AI SQL generation is configured through a configuration file. An API key must be provided in the configuration.
+AI SQL generation requires configuring an AI provider in your ClickHouse Client configuration file. You can use either OpenAI, Anthropic, or any OpenAI-compatible API service.
+
+#### Environment-based fallback {#ai-sql-generation-fallback}
+
+If no AI configuration is specified in the config file, ClickHouse Client will automatically try to use environment variables:
+
+1. First checks for `OPENAI_API_KEY` environment variable
+2. If not found, checks for `ANTHROPIC_API_KEY` environment variable
+3. If neither is found, AI features will be disabled
+
+This allows quick setup without configuration files:
+```bash
+# Using OpenAI
+export OPENAI_API_KEY=your-openai-key
+clickhouse-client
+
+# Using Anthropic
+export ANTHROPIC_API_KEY=your-anthropic-key
+clickhouse-client
+```
 
 #### Configuration file {#ai-sql-generation-configuration-file}
 
-Configure AI settings in your ClickHouse Client configuration file:
+For more control over AI settings, configure them in your ClickHouse Client configuration file located at:
+- `~/.clickhouse-client/config.xml` (XML format)
+- `~/.clickhouse-client/config.yaml` (YAML format)
+- Or specify a custom location with `--config-file`
 
-**XML format (`~/.clickhouse-client/config.xml`):**
+**XML format example:**
 
 ```xml
 <config>
     <ai>
-        <api_key>your-api-key-here</api_key>  <!-- Required -->
-        <provider>openai</provider>  <!-- Required: openai or anthropic -->
+        <!-- Required: Your API key (or set via environment variable) -->
+        <api_key>your-api-key-here</api_key>
+        
+        <!-- Required: Provider type (openai, anthropic) -->
+        <provider>openai</provider>
+        
+        <!-- Model to use (defaults vary by provider) -->
         <model>gpt-4o</model>
+        
+        <!-- Optional: Custom API endpoint for OpenAI-compatible services -->
+        <!-- <base_url>https://openrouter.ai/api</base_url> -->
+        
+        <!-- Schema exploration settings -->
         <enable_schema_access>true</enable_schema_access>
+        
+        <!-- Generation parameters -->
         <temperature>0.0</temperature>
         <max_tokens>1000</max_tokens>
         <timeout_seconds>30</timeout_seconds>
+        <max_steps>10</max_steps>
+        
+        <!-- Optional: Custom system prompt -->
+        <!-- <system_prompt>You are an expert ClickHouse SQL assistant...</system_prompt> -->
     </ai>
 </config>
 ```
 
-**YAML format (`~/.clickhouse-client/config.yaml`):**
+**YAML format example:**
 
 ```yaml
 ai:
-  api_key: your-api-key-here  # Required
-  provider: openai  # Required: openai or anthropic
+  # Required: Your API key (or set via environment variable)
+  api_key: your-api-key-here
+  
+  # Required: Provider type (openai, anthropic)
+  provider: openai
+  
+  # Model to use
   model: gpt-4o
+  
+  # Optional: Custom API endpoint for OpenAI-compatible services
+  # base_url: https://openrouter.ai/api
   
   # Enable schema access - allows AI to query database/table information
   enable_schema_access: true
   
-  # Optional: Custom system prompt (uncomment to use)
+  # Generation parameters
+  temperature: 0.0      # Controls randomness (0.0 = deterministic)
+  max_tokens: 1000      # Maximum response length
+  timeout_seconds: 30   # Request timeout
+  max_steps: 10         # Maximum schema exploration steps
+  
+  # Optional: Custom system prompt
   # system_prompt: |
   #   You are an expert ClickHouse SQL assistant. Convert natural language to SQL.
   #   Focus on performance and use ClickHouse-specific optimizations.
   #   Always return executable SQL without explanations.
-  # temperature: 0.0
-  # max_tokens: 1000
-  # timeout_seconds: 30
+```
+
+**Using OpenAI-compatible APIs (e.g., OpenRouter):**
+
+```yaml
+ai:
+  provider: openai  # Use 'openai' for compatibility
+  api_key: your-openrouter-api-key
+  base_url: https://openrouter.ai/api/v1
+  model: anthropic/claude-3.5-sonnet  # Use OpenRouter model naming
+```
+
+**Minimal configuration examples:**
+
+```yaml
+# Minimal config - uses environment variable for API key
+ai:
+  provider: openai  # Will use OPENAI_API_KEY env var
+
+# No config at all - automatic fallback
+# (Empty or no ai section - will try OPENAI_API_KEY then ANTHROPIC_API_KEY)
+
+# Only override model - uses env var for API key
+ai:
+  provider: openai
+  model: gpt-3.5-turbo
 ```
 
 ### Parameters {#ai-sql-generation-parameters}
 
+**Required parameters:**
+- `api_key` - Your API key for the AI service. Can be omitted if set via environment variable:
+  - OpenAI: `OPENAI_API_KEY`
+  - Anthropic: `ANTHROPIC_API_KEY`
+  - Note: API key in config file takes precedence over environment variable
+- `provider` - The AI provider: `openai` or `anthropic`
+  - If omitted, uses automatic fallback based on available environment variables
+
+**Model configuration:**
+- `model` - The model to use (default: provider-specific)
+  - OpenAI: `gpt-4o`, `gpt-4`, `gpt-3.5-turbo`, etc.
+  - Anthropic: `claude-3-5-sonnet-20241022`, `claude-3-opus-20240229`, etc.
+  - OpenRouter: Use their model naming like `anthropic/claude-3.5-sonnet`
+
+**Connection settings:**
+- `base_url` - Custom API endpoint for OpenAI-compatible services (optional)
+- `timeout_seconds` - Request timeout in seconds (default: `30`)
+
+**Schema exploration:**
 - `enable_schema_access` - Allow AI to explore database schemas (default: `true`)
-- `temperature` - Controls randomness in generation, 0.0 = deterministic (default: `0.0`)
-- `max_tokens` - Maximum response length (default: `1000`)
-- `timeout_seconds` - Request timeout (default: `30`)
 - `max_steps` - Maximum tool-calling steps for schema exploration (default: `10`)
+
+**Generation parameters:**
+- `temperature` - Controls randomness, 0.0 = deterministic, 1.0 = creative (default: `0.0`)
+- `max_tokens` - Maximum response length in tokens (default: `1000`)
 - `system_prompt` - Custom instructions for the AI (optional)
 
 ### How it works {#ai-sql-generation-how-it-works}
 
 The AI SQL generator uses a multi-step process:
 
-1.**Schema Discovery**: The AI uses built-in tools to explore your database:
-- Lists available databases
-- Discovers tables within relevant databases
-- Examines table structures via `CREATE TABLE` statements
+1. **Schema Discovery**: The AI uses built-in tools to explore your database:
+- Lists available databases  - Discovers tables within relevant databases   - Examines table structures via `CREATE TABLE` statements
 
-2.**Query Generation**: Based on the discovered schema, the AI generates SQL that:
-- Matches your natural language intent
-- Uses correct table and column names
-- Applies appropriate joins and aggregations
-
-3.**Execution**: The generated SQL is automatically executed and results are displayed
+2. **Query Generation**: Based on the discovered schema, the AI generates SQL that:
+- Matches your natural language intent  - Uses correct table and column names  - Applies appropriate joins and aggregations
+3. **Execution**: The generated SQL is automatically executed and results are displayed
 
 ### Limitations {#ai-sql-generation-limitations}
 
@@ -681,7 +769,6 @@ Substitution value for a parameter of a [query with parameters](#cli-queries-wit
 The query to run in batch mode. Can be specified multiple times (`--query "SELECT 1" --query "SELECT 2"`) or once with multiple semicolon-separated queries (`--query "SELECT 1; SELECT 2;"`). In the latter case, `INSERT` queries with formats other than `VALUES` must be separated by empty lines.
 
 A single query can also be specified without a parameter:
-
 ```bash
 $ clickhouse-client "SELECT 1"
 1
@@ -702,9 +789,8 @@ If specified, allow multiline queries (do not send the query on Enter). Queries 
 ### Query settings {#command-line-options-query-settings}
 
 Query settings can be specified as command-line options in the client, for example:
-
 ```bash
-clickhouse-client --max_threads 1
+$ clickhouse-client --max_threads 1
 ```
 
 See [Settings](../operations/settings/settings.md) for a list of settings.
@@ -744,7 +830,6 @@ Print hardware utilization information in progress bar.
 If specified, print memory usage to `stderr` in non-interactive mode.
 
 Possible values:
-
 - `none` - do not print memory usage
 - `default` - print number of bytes
 - `readable` - print memory usage in human-readable format
@@ -758,7 +843,6 @@ Print `ProfileEvents` packets.
 Print progress of query execution.
 
 Possible values:
-
 - `tty|on|1|true|yes` - outputs to the terminal in interactive mode
 - `err` - outputs to `stderr` in non-interactive mode
 - `off|0|false|no` - disables progress printing
@@ -770,7 +854,6 @@ Default value: `tty` in interactive mode, `off` in non-interactive (batch) mode.
 Print a progress table with changing metrics during query execution.
 
 Possible values:
-
 - `tty|on|1|true|yes` - outputs to the terminal in interactive mode
 - `err` - outputs to `stderr` non-interactive mode
 - `off|0|false|no` - disables the progress table

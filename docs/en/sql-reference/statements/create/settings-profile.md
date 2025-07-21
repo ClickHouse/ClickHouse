@@ -23,7 +23,6 @@ CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]]
 ## Example {#example}
 
 Create a user:
-
 ```sql
 CREATE USER robin IDENTIFIED BY 'password';
 ```

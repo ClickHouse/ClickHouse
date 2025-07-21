@@ -12,13 +12,13 @@ title: 'Restrictions on query complexity'
 
 As part of the [settings](/operations/settings/overview), ClickHouse offers
 the ability to place restrictions on query complexity. This helps protect against
-potentially resource-intensive queries, ensuring safer and more predictable
+potentially resource-intensive queries, ensuring safer and more predictable 
 execution, particularly when using the user interface.
 
-Almost all the restrictions only apply to `SELECT` queries, and for distributed
+Almost all the restrictions only apply to `SELECT` queries, and for distributed 
 query processing, restrictions are applied on each server separately.
 
-ClickHouse generally checks the restrictions only after data parts have been
+ClickHouse generally checks the restrictions only after data parts have been 
 fully processed, rather than checking the restrictions for each row. This can
 result in a situation where restrictions are violated while the part is being
 processed.
@@ -27,17 +27,15 @@ processed.
 
 Most restrictions also have an `overflow_mode` setting, which defines what happens
 when the limit is exceeded, and can take one of two values:
-
 - `throw`: throw an exception (default).
-- `break`: stop executing the query and return the partial result, as if the
+- `break`: stop executing the query and return the partial result, as if the 
            source data ran out.
 
 ## `group_by_overflow_mode` settings {#group_by_overflow_mode_settings}
 
 The `group_by_overflow_mode` setting also has
 the value `any`:
-
-- `any` : continue aggregation for the keys that got into the set, but do not
+- `any` : continue aggregation for the keys that got into the set, but do not 
           add new keys to the set.
 
 ## List of settings {#relevant-settings}
@@ -114,6 +112,6 @@ The following settings are obsolete
 
 ### max_pipeline_depth {#max-pipeline-depth}
 
-Maximum pipeline depth. It Corresponds to the number of transformations that each
-data block goes through during query processing. Counted within the limits of a
+Maximum pipeline depth. It Corresponds to the number of transformations that each 
+data block goes through during query processing. Counted within the limits of a 
 single server. If the pipeline depth is greater, an exception is thrown.

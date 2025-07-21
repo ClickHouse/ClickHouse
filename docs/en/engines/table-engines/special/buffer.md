@@ -71,7 +71,6 @@ CREATE TABLE merge.hits_buffer AS merge.hits ENGINE = Buffer(merge, hits, 1, 10,
 ```
 
 Creating a `merge.hits_buffer` table with the same structure as `merge.hits` and using the Buffer engine. When writing to this table, data is buffered in RAM and later written to the 'merge.hits' table. A single buffer is created and the data is flushed if either:
-
 - 100 seconds have passed since the last flush (`max_time`) or
 - 1 million rows have been written (`max_rows`) or
 - 100 MB of data have been written (`max_bytes`) or

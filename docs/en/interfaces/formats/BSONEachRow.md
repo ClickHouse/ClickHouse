@@ -69,10 +69,10 @@ For input it uses the following correspondence between BSON types and ClickHouse
 | `\x10` int32                             | [Int32/UInt32](/sql-reference/data-types/int-uint.md)/[Decimal32](/sql-reference/data-types/decimal.md)/[IPv4](/sql-reference/data-types/ipv4.md)/[Enum8/Enum16](/sql-reference/data-types/enum.md) |
 | `\x12` int64                             | [Int64/UInt64](/sql-reference/data-types/int-uint.md)/[Decimal64](/sql-reference/data-types/decimal.md)/[DateTime64](/sql-reference/data-types/datetime64.md)                                                       |
 
-Other BSON types are not supported. Additionally, it performs conversion between different integer types.
+Other BSON types are not supported. Additionally, it performs conversion between different integer types. 
 For example, it is possible to insert a BSON `int32` value into ClickHouse as [`UInt8`](../../sql-reference/data-types/int-uint.md).
 
-Big integers and decimals such as `Int128`/`UInt128`/`Int256`/`UInt256`/`Decimal128`/`Decimal256` can be parsed from a BSON Binary value with the `\x00` binary subtype.
+Big integers and decimals such as `Int128`/`UInt128`/`Int256`/`UInt256`/`Decimal128`/`Decimal256` can be parsed from a BSON Binary value with the `\x00` binary subtype. 
 In this case, the format will validate that the size of the binary data equals the size of the expected value.
 
 :::note

@@ -20,7 +20,6 @@ sumWithOverflow(num)
 ```
 
 **Parameters**
-
 - `num`: Column of numeric values. [(U)Int*](../../data-types/int-uint.md), [Float*](../../data-types/float.md), [Decimal*](../../data-types/decimal.md).
 
 **Returned value**

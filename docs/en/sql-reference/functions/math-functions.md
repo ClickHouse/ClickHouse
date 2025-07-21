@@ -30,7 +30,6 @@ Returns $\pi$ ([Pi](https://en.wikipedia.org/wiki/Pi)).
 ```sql
 pi()
 ```
-
 **Returned value**
 
 Type: [Float64](../data-types/float.md).
@@ -575,7 +574,6 @@ Result:
 │        0 │
 └──────────┘
 ```
-
 ## tanh {#tanh}
 
 Returns the [hyperbolic tangent](https://www.mathworks.com/help/matlab/ref/tanh.html).
@@ -811,7 +809,6 @@ Result:
 │       -1 │
 └──────────┘
 ```
-
 ## sigmoid {#sigmoid}
 
 Returns the [sigmoid function](https://en.wikipedia.org/wiki/Sigmoid_function).
@@ -919,6 +916,7 @@ Computes the factorial of an integer value. Works with any native integer type i
 
 The factorial of 0 is 1. Likewise, the factorial() function returns 1 for any negative value. The maximum positive value for the input argument is 20, a value of 21 or greater will cause exception throw.
 
+
 **Syntax**
 
 ```sql
@@ -950,7 +948,6 @@ Returns the number of the bucket in which `operand` falls in a histogram having 
 ```sql
 widthBucket(operand, low, high, count)
 ```
-
 Alias: `WIDTH_BUCKET`
 
 **Example**
@@ -984,7 +981,7 @@ proportionsZTest(successes_x, successes_y, trials_x, trials_y, conf_level, pool_
 - `trials_x`: Number of trials in population `x`. [UInt64](../data-types/int-uint.md).
 - `trials_y`: Number of trials in population `y`. [UInt64](../data-types/int-uint.md).
 - `conf_level`: Confidence level for the test. [Float64](../data-types/float.md).
-- `pool_type`: Selection of pooling (way in which the standard error is estimated). Can be either `unpooled` or `pooled`. [String](../data-types/string.md).
+- `pool_type`: Selection of pooling (way in which the standard error is estimated). Can be either `unpooled` or `pooled`. [String](../data-types/string.md). 
 
 :::note
 For argument `pool_type`: In the pooled version, the two proportions are averaged, and only one proportion is used to estimate the standard error. In the unpooled version, the two proportions are used separately.

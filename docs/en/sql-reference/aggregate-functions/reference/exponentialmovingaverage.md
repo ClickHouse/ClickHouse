@@ -160,7 +160,7 @@ SELECT
 FROM numbers_mt(10);
 
 
-- - Calculate timeunit using intDiv
+-- Calculate timeunit using intDiv
 SELECT
     value,
     time,
@@ -183,7 +183,7 @@ ORDER BY time ASC;
 └───────┴─────────────────────┴─────────────┴──────────┘
 
 
-- - Calculate timeunit using toRelativeHourNum
+-- Calculate timeunit using toRelativeHourNum
 SELECT
     value,
     time,

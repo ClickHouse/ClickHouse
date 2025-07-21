@@ -15,11 +15,9 @@ Most hash functions accept any number of arguments of any types.
 
 :::note
 Hash of NULL is NULL. To get a non-NULL hash of a Nullable column, wrap it in a tuple:
-
 ```sql
 SELECT cityHash64(tuple(NULL))
 ```
-
 :::
 
 :::note
@@ -113,9 +111,9 @@ This is a cryptographic hash function. It works at least three times faster than
 
 The function [interprets](/sql-reference/functions/type-conversion-functions#reinterpretasstring) all the input parameters as strings and calculates the hash value for each of them. It then combines the hashes by the following algorithm:
 
-1.The first and the second hash value are concatenated to an array which is hashed.
-2.The previously calculated hash value and the hash of the third input parameter are hashed in a similar way.
-3.This calculation is repeated for all remaining hash values of the original input.
+1. The first and the second hash value are concatenated to an array which is hashed.
+2. The previously calculated hash value and the hash of the third input parameter are hashed in a similar way.
+3. This calculation is repeated for all remaining hash values of the original input.
 
 **Arguments**
 
@@ -497,13 +495,11 @@ This cryptographic hash-function is integrated into ClickHouse with BLAKE3 Rust 
 Use function [hex](../functions/encoding-functions.md/#hex) to represent the result as a hex-encoded string.
 
 Query:
-
 ```sql
 SELECT hex(BLAKE3('ABC'))
 ```
 
 Result:
-
 ```sql
 ┌─hex(BLAKE3('ABC'))───────────────────────────────────────────────┐
 │ D1717274597CF0289694F75D96D444B992A096F1AFD8E7BBFA6EBB1D360FEDFC │
@@ -805,6 +801,7 @@ Result:
 │ 12384823029245979431 │ 1188926775431157506 │
 └──────────────────────┴─────────────────────┘
 ```
+
 
 ## kafkaMurmurHash {#kafkamurmurhash}
 
@@ -1992,13 +1989,11 @@ This cryptographic hash-function is used a lot in [EVM-based blockchains](https:
 Use function [hex](../functions/encoding-functions.md/#hex) to format the result as a hex-encoded string.
 
 Query:
-
 ```sql
 SELECT hex(keccak256('hello'))
 ```
 
 Result:
-
 ```sql
    ┌─hex(keccak256('hello'))──────────────────────────────────────────┐
 1. │ 1C8AFF950685C2ED4BC3174F3472287B56D9517B9C948127319A09A7A36DEAC8 │

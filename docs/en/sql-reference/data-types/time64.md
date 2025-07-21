@@ -30,7 +30,7 @@ The number of digits after the decimal point depends on the precision parameter.
 
 ## Examples {#examples}
 
-1.Creating a table with `Time64`-type column and inserting data into it:
+1. Creating a table with `Time64`-type column and inserting data into it:
 
 ``` sql
 CREATE TABLE t64
@@ -42,9 +42,9 @@ ENGINE = TinyLog;
 ```
 
 ``` sql
-- - Parse Time
-- - - from integer interpreted as number of seconds since 1970-01-01.
-- - - from string,
+-- Parse Time
+-- - from integer interpreted as number of seconds since 1970-01-01.
+-- - from string,
 INSERT INTO t64 VALUES (15463123, 1), (154600.123, 2), ('100:00:00', 3);
 
 SELECT * FROM t64;
@@ -58,7 +58,7 @@ SELECT * FROM t64;
    └───────────────┴──────────┘
 ```
 
-2.Filtering on `Time64` values
+2. Filtering on `Time64` values
 
 ``` sql
 SELECT * FROM t64 WHERE timestamp = toTime64('100:00:00', 3);
@@ -85,7 +85,7 @@ SELECT * FROM t64 WHERE timestamp = toTime64(154600.123, 3);
 Contrary to inserting, the `toTime64` function will treat all values as the decimal variant, so precision needs to
 be given after the decimal point.
 
-3.Getting a time zone for a `Time64`-type value:
+3. Getting a time zone for a `Time64`-type value:
 
 ``` sql
 SELECT toTime64(now(), 3) AS column, toTypeName(column) AS x;

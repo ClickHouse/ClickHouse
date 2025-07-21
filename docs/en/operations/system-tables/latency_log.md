@@ -14,7 +14,6 @@ import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 Contains history of all latency buckets, periodically flushed to disk.
 
 Columns:
-
 - `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.

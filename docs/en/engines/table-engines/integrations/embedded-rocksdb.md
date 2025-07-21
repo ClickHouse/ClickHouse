@@ -147,7 +147,6 @@ With large joins you may see much lower memory usage with direct joins
 because the hash table is not created.
 
 To enable direct joins:
-
 ```sql
 SET join_algorithm = 'direct, hash'
 ```
@@ -160,7 +159,6 @@ when possible, and hash otherwise.
 #### Example {#example}
 
 ##### Create and populate an EmbeddedRocksDB table {#create-and-populate-an-embeddedrocksdb-table}
-
 ```sql
 CREATE TABLE rdb
 (
@@ -203,7 +201,6 @@ SET join_algorithm = 'direct'
 ```
 
 ##### An INNER JOIN {#an-inner-join}
-
 ```sql
 SELECT *
 FROM
@@ -214,7 +211,6 @@ FROM
 INNER JOIN rdb ON rdb.key = t2.key
 ORDER BY key ASC
 ```
-
 ```response
 ┌─key─┬─rdb.key─┬─value──┬─value2─┐
 │   0 │       0 │ [0,1]  │ val20  │
@@ -228,6 +224,5 @@ ORDER BY key ASC
 ```
 
 ### More information on Joins {#more-information-on-joins}
-
 - [`join_algorithm` setting](/operations/settings/settings.md#join_algorithm)
 - [JOIN clause](/sql-reference/statements/select/join.md)

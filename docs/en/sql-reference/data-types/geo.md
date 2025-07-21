@@ -10,7 +10,6 @@ title: 'Geometric'
 ClickHouse supports data types for representing geographical objects — locations, lands, etc.
 
 **See Also**
-
 - [Representing simple geographical features](https://en.wikipedia.org/wiki/GeoJSON).
 
 ## Point {#point}
@@ -26,7 +25,6 @@ CREATE TABLE geo_point (p Point) ENGINE = Memory();
 INSERT INTO geo_point VALUES((10, 10));
 SELECT p, toTypeName(p) FROM geo_point;
 ```
-
 Result:
 
 ```text
@@ -48,7 +46,6 @@ CREATE TABLE geo_ring (r Ring) ENGINE = Memory();
 INSERT INTO geo_ring VALUES([(0, 0), (10, 0), (10, 10), (0, 10)]);
 SELECT r, toTypeName(r) FROM geo_ring;
 ```
-
 Result:
 
 ```text
@@ -70,7 +67,6 @@ CREATE TABLE geo_linestring (l LineString) ENGINE = Memory();
 INSERT INTO geo_linestring VALUES([(0, 0), (10, 0), (10, 10), (0, 10)]);
 SELECT l, toTypeName(l) FROM geo_linestring;
 ```
-
 Result:
 
 ```text
@@ -92,7 +88,6 @@ CREATE TABLE geo_multilinestring (l MultiLineString) ENGINE = Memory();
 INSERT INTO geo_multilinestring VALUES([[(0, 0), (10, 0), (10, 10), (0, 10)], [(1, 1), (2, 2), (3, 3)]]);
 SELECT l, toTypeName(l) FROM geo_multilinestring;
 ```
-
 Result:
 
 ```text
@@ -136,7 +131,6 @@ CREATE TABLE geo_multipolygon (mpg MultiPolygon) ENGINE = Memory();
 INSERT INTO geo_multipolygon VALUES([[[(0, 0), (10, 0), (10, 10), (0, 10)]], [[(20, 20), (50, 20), (50, 50), (20, 50)],[(30, 30), (50, 50), (50, 30)]]]);
 SELECT mpg, toTypeName(mpg) FROM geo_multipolygon;
 ```
-
 Result:
 
 ```text

@@ -29,7 +29,7 @@ When `OPTIMIZE` is used with the [ReplicatedMergeTree](../../engines/table-engin
 
 You can specify how long (in seconds) to wait for inactive replicas to execute `OPTIMIZE` queries by the [replication_wait_for_inactive_replica_timeout](/operations/settings/settings#replication_wait_for_inactive_replica_timeout) setting.
 
-:::note
+:::note    
 If the `alter_sync` is set to `2` and some replicas are not active for more than the time, specified by the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
 :::
 
@@ -37,7 +37,7 @@ If the `alter_sync` is set to `2` and some replicas are not active for more than
 
 If you want to perform deduplication on custom set of columns rather than on all, you can specify list of columns explicitly or use any combination of [`*`](../../sql-reference/statements/select/index.md#asterisk), [`COLUMNS`](/sql-reference/statements/select#select-clause) or [`EXCEPT`](/sql-reference/statements/select#except) expressions. The explicitly written or implicitly expanded list of columns must include all columns specified in row ordering expression (both primary and sorting keys) and partitioning expression (partitioning key).
 
-:::note
+:::note    
 Notice that `*` behaves just like in `SELECT`: [MATERIALIZED](/sql-reference/statements/create/view#materialized-view) and [ALIAS](../../sql-reference/statements/create/table.md#alias) columns are not used for expansion.
 
 Also, it is an error to specify empty list of columns, or write an expression that results in an empty list of columns, or deduplicate by an `ALIAS` column.
@@ -82,7 +82,6 @@ VALUES (0, 0, 0, 0), (0, 0, 0, 0), (1, 1, 2, 2), (1, 1, 2, 3), (1, 1, 3, 3);
 ```sql
 SELECT * FROM example;
 ```
-
 Result:
 
 ```sql
@@ -103,7 +102,6 @@ Result:
 All following examples are executed against this state with 5 rows.
 
 #### `DEDUPLICATE` {#deduplicate}
-
 When columns for deduplication are not specified, all of them are taken into account. The row is removed only if all values in all columns are equal to corresponding values in the previous row:
 
 ```sql
@@ -157,7 +155,6 @@ Result:
 ```
 
 #### `DEDUPLICATE BY * EXCEPT` {#deduplicate-by--except}
-
 Deduplicate by all columns that are not `ALIAS` or `MATERIALIZED` and explicitly not `value`: `primary_key`, `secondary_key`, and `partition_key` columns.
 
 ```sql
@@ -193,7 +190,6 @@ OPTIMIZE TABLE example FINAL DEDUPLICATE BY primary_key, secondary_key, partitio
 ```sql
 SELECT * FROM example;
 ```
-
 Result:
 
 ```response

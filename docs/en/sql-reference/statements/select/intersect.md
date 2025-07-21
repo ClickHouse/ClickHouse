@@ -23,7 +23,6 @@ FROM table2
 [WHERE condition]
 
 ```
-
 The condition could be any expression based on your requirements.
 
 ## Examples {#examples}

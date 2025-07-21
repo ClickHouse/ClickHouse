@@ -213,6 +213,7 @@ The [arrayJoin](/sql-reference/functions/array-join) functions will split array 
 
 ```
 
+
 ## addressToSymbol {#addresstosymbol}
 
 Converts virtual memory address inside ClickHouse server process to the symbol from ClickHouse object files.
@@ -401,7 +402,6 @@ execute_native_thread_routine
 start_thread
 clone
 ```
-
 ## tid {#tid}
 
 Returns id of the thread, in which current [Block](/development/architecture/#block) is processed.
@@ -483,11 +483,11 @@ mergeTreePartInfo(part_name)
 **Returned value**
 
 - [Tuple](../data-types/tuple.md) with subcolumns:
-- `partition_id`
-- `min_block`
-- `max_block`
-- `level`
-- `mutation`
+  - `partition_id`
+  - `min_block`
+  - `max_block`
+  - `level`
+  - `mutation`
 
 **Example**
 

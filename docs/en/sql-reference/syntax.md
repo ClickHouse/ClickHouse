@@ -7,17 +7,16 @@ slug: /sql-reference/syntax
 title: 'Syntax'
 ---
 
-In this section, we will take a look at ClickHouse's SQL syntax.
+In this section, we will take a look at ClickHouse's SQL syntax. 
 ClickHouse uses a syntax based on SQL but offers a number of extensions and optimizations.
 
 ## Query Parsing {#query-parsing}
 
 There are two types of parsers in ClickHouse:
-
 - _A full SQL parser_ (a recursive descent parser).
 - _A data format parser_ (a fast stream parser).
 
-The full SQL parser is used in all cases except for the `INSERT` query, which uses both parsers.
+The full SQL parser is used in all cases except for the `INSERT` query, which uses both parsers. 
 
 Let's examine the query below:
 
@@ -25,31 +24,31 @@ Let's examine the query below:
 INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 ```
 
-As mentioned already, the `INSERT` query makes use of both parsers.
-The `INSERT INTO t VALUES` fragment is parsed by the full parser,
+As mentioned already, the `INSERT` query makes use of both parsers. 
+The `INSERT INTO t VALUES` fragment is parsed by the full parser, 
 and the data `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` is parsed by the data format parser, or fast stream parser.
 
 <details>
 <summary>Turning on the full parser</summary>
 
-You can also turn on the full parser for the data
-by using the [`input_format_values_interpret_expressions`](../operations/settings/settings-formats.md#input_format_values_interpret_expressions) setting.
+You can also turn on the full parser for the data 
+by using the [`input_format_values_interpret_expressions`](../operations/settings/settings-formats.md#input_format_values_interpret_expressions) setting. 
 
-When the aforementioned setting is set to `1`,
-ClickHouse first tries to parse values with the fast stream parser.
+When the aforementioned setting is set to `1`, 
+ClickHouse first tries to parse values with the fast stream parser. 
 If it fails, ClickHouse tries to use the full parser for the data, treating it like an SQL [expression](#expressions).
 </details>
 
-The data can have any format.
-When a query is received, the server calculates no more than [max_query_size](../operations/settings/settings.md#max_query_size) bytes of the request in RAM
+The data can have any format. 
+When a query is received, the server calculates no more than [max_query_size](../operations/settings/settings.md#max_query_size) bytes of the request in RAM 
 (by default, 1 MB), and the rest is stream parsed.
 This is to allow for avoiding issues with large `INSERT` queries, which is the recommended way to insert your data in ClickHouse.
 
-When using the [`Values`](../interfaces/formats.md/#data-format-values) format in an `INSERT` query,
-it may appear that data is parsed the same as for expressions in a `SELECT` query however this is not the case.
+When using the [`Values`](../interfaces/formats.md/#data-format-values) format in an `INSERT` query, 
+it may appear that data is parsed the same as for expressions in a `SELECT` query however this is not the case. 
 The `Values` format is much more limited.
 
-The rest of this section covers the full parser.
+The rest of this section covers the full parser. 
 
 :::note
 For more information about format parsers, see the [Formats](../interfaces/formats.md) section.
@@ -57,14 +56,14 @@ For more information about format parsers, see the [Formats](../interfaces/forma
 
 ## Spaces {#spaces}
 
-- There may be any number of space symbols between syntactical constructions (including the beginning and end of a query).
+- There may be any number of space symbols between syntactical constructions (including the beginning and end of a query). 
 - Space symbols include the space, tab, line feed, CR, and form feed.
 
 ## Comments {#comments}
 
 ClickHouse supports both SQL-style and C-style comments:
 
-- SQL-style comments begin with `--`, `#!` or `#` and continue to the end of the line. A space after `--` and `#!` can be omitted.
+- SQL-style comments begin with `--`, `#!` or `# ` and continue to the end of the line. A space after `--` and `#!` can be omitted.
 - C-style comments span from `/*` to `*/` and can be multiline. Spaces are not required either.
 
 ## Keywords {#keywords}
@@ -82,9 +81,9 @@ You can check whether a data type name is case-sensitive in the [system.data_typ
 
 In contrast to standard SQL, all other keywords (including functions names) are **case-sensitive**.
 
-Furthermore, Keywords are not reserved.
-They are treated as such only in the corresponding context.
-If you use [identifiers](#identifiers) with the same name as the keywords, enclose them into double-quotes or backticks.
+Furthermore, Keywords are not reserved. 
+They are treated as such only in the corresponding context. 
+If you use [identifiers](#identifiers) with the same name as the keywords, enclose them into double-quotes or backticks. 
 
 For example, the following query is valid if the table `table_name` has a column with the name `"FROM"`:
 
@@ -122,7 +121,6 @@ In ClickHouse, a literal is a value which is directly represented in a query.
 In other words it is a fixed value which does not change during query execution.
 
 Literals can be:
-
 - [String](#string)
 - [Numeric](#numeric)
 - [Compound](#compound)
@@ -146,7 +144,7 @@ The backslash loses its special meaning i.e. it is interpreted literally should 
 
 | Supported Escape                    | Description                                                             |
 |-------------------------------------|-------------------------------------------------------------------------|
-| `\xHH`                              | 8-bit character specification followed by any number of hex digits (H). |
+| `\xHH`                              | 8-bit character specification followed by any number of hex digits (H). | 
 | `\N`                                | reserved, does nothing (eg `SELECT 'a\Nb'` returns `ab`)                |
 | `\a`                                | alert                                                                   |
 | `\b`                                | backspace                                                               |
@@ -180,9 +178,8 @@ Numeric literals are parsed as follows:
 
 Literal values are cast to the smallest type that the value fits in.
 For example:
-
 - `1` is parsed as `UInt8`
-- `256` is parsed as `UInt16`.
+- `256` is parsed as `UInt16`. 
 
 For more information, see [Data types](../sql-reference/data-types/index.md).
 
@@ -212,13 +209,13 @@ Technically these are not literals, but expressions with the array creation oper
 An array must consist of at least one item, and a tuple must have at least two items.
 
 :::note
-There is a separate case when tuples appear in the `IN` clause of a `SELECT` query.
+There is a separate case when tuples appear in the `IN` clause of a `SELECT` query. 
 Query results can include tuples, but tuples cannot be saved to a database (except for tables using the [Memory](../engines/table-engines/special/memory.md) engine).
 :::
 
 ### NULL {#null}
 
-`NULL` is used to indicate that a value is missing.
+`NULL` is used to indicate that a value is missing. 
 To store `NULL` in a table field, it must be of the [Nullable](../sql-reference/data-types/nullable.md) type.
 
 :::note
@@ -227,12 +224,11 @@ The following should be noted for `NULL`:
 - Depending on the data format (input or output), `NULL` may have a different representation. For more information, see [data formats](/interfaces/formats).
 - `NULL` processing is nuanced. For example, if at least one of the arguments of a comparison operation is `NULL`, the result of this operation is also `NULL`. The same is true for multiplication, addition, and other operations. We recommend to read the documentation for each operation.
 - In queries, you can check `NULL` using the [`IS NULL`](/sql-reference/functions/functions-for-nulls#isnull) and [`IS NOT NULL`](/sql-reference/functions/functions-for-nulls#isnotnull) operators and the related functions `isNull` and `isNotNull`.
-
 :::
 
 ### Heredoc {#heredoc}
 
-A [heredoc](https://en.wikipedia.org/wiki/Here_document) is a way to define a string (often multiline), while maintaining the original formatting.
+A [heredoc](https://en.wikipedia.org/wiki/Here_document) is a way to define a string (often multiline), while maintaining the original formatting. 
 A heredoc is defined as a custom string literal, placed between two `$` symbols.
 
 For example:
@@ -246,21 +242,17 @@ SELECT $heredoc$SHOW CREATE VIEW my_view$heredoc$;
 ```
 
 :::note
-
 - A value between two heredocs is processed "as-is".
-
 :::
 
 :::tip
-
 - You can use a heredoc to embed snippets of SQL, HTML, or XML code, etc.
-
 :::
 
 ## Defining and Using Query Parameters {#defining-and-using-query-parameters}
 
-Query parameters allow you to write generic queries that contain abstract placeholders instead of concrete identifiers.
-When a query with query parameters is executed,
+Query parameters allow you to write generic queries that contain abstract placeholders instead of concrete identifiers. 
+When a query with query parameters is executed, 
 all placeholders are resolved and replaced by the actual query parameter values.
 
 There are two ways to define a query parameter:
@@ -269,7 +261,6 @@ There are two ways to define a query parameter:
 - `--param_<name>='<value>'`
 
 When using the second variant, it is passed as an argument to `clickhouse-client` on the command line where:
-
 - `<name>` is the name of the query parameter.
 - `<value>` is its value.
 
@@ -294,7 +285,6 @@ SELECT
 
 13    str    2022-08-04 18:30:53    {'10':[11,12],'13':[14,15]}
 ```
-
 </details>
 
 <details>
@@ -314,36 +304,34 @@ If the query parameter represents the name of a database, table, function or oth
 SET param_mytablename = "uk_price_paid";
 SELECT * FROM {mytablename:Identifier};
 ```
-
 </details>
 
 :::note
-Query parameters are not general text substitutions which can be used in arbitrary places in arbitrary SQL queries.
+Query parameters are not general text substitutions which can be used in arbitrary places in arbitrary SQL queries. 
 They are primarily designed to work in `SELECT` statements in place of identifiers or literals.
 :::
 
 ## Functions {#functions}
 
-Function calls are written like an identifier with a list of arguments (possibly empty) in round brackets.
-In contrast to standard SQL, the brackets are required, even for an empty argument list.
-For example:
+Function calls are written like an identifier with a list of arguments (possibly empty) in round brackets. 
+In contrast to standard SQL, the brackets are required, even for an empty argument list. 
+For example: 
 
 ```sql
 now()
 ```
 
 There are also:
-
 - [Regular functions](/sql-reference/functions/overview).
 - [Aggregate functions](/sql-reference/aggregate-functions).
 
-Some aggregate functions can contain two lists of arguments in brackets. For example:
+Some aggregate functions can contain two lists of arguments in brackets. For example: 
 
 ```sql
 quantile (0.9)(x) 
 ```
 
-These aggregate functions are called "parametric" functions,
+These aggregate functions are called "parametric" functions, 
 and the arguments in the first list are called "parameters".
 
 :::note
@@ -354,13 +342,13 @@ The syntax of aggregate functions without parameters is the same as for regular 
 
 Operators are converted to their corresponding functions during query parsing, taking their priority and associativity into account.
 
-For example, the expression
+For example, the expression 
 
 ```text
 1 + 2 * 3 + 4
 ```
 
-is transformed to
+is transformed to 
 
 ```text
 plus(plus(1, multiply(2, 3)), 4)`
@@ -368,26 +356,24 @@ plus(plus(1, multiply(2, 3)), 4)`
 
 ## Data Types and Database Table Engines {#data-types-and-database-table-engines}
 
-Data types and table engines in the `CREATE` query are written the same way as identifiers or functions.
-In other words, they may or may not contain an argument list in brackets.
+Data types and table engines in the `CREATE` query are written the same way as identifiers or functions. 
+In other words, they may or may not contain an argument list in brackets. 
 
 For more information, see the sections:
-
 - [Data types](/sql-reference/data-types/index.md)
 - [Table engines](/engines/table-engines/index.md)
 - [CREATE](/sql-reference/statements/create/index.md).
 
 ## Expressions {#expressions}
 
-An expression can be the following:
-
+An expression can be the following: 
 - a function
 - an identifier
 - a literal
 - an application of an operator
 - an expression in brackets
 - a subquery
-- or an asterisk.
+- or an asterisk. 
 
 It can also contain an [alias](#expression-aliases).
 
@@ -449,10 +435,10 @@ Received exception from server (version 18.14.17):
 Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: Aggregate function sum(b) is found inside another aggregate function in query.
 ```
 
-In the preceding example, we declared table `t` with column `b`.
-Then, when selecting data, we defined the `sum(b) AS b` alias.
-As aliases are global,
-ClickHouse substituted the literal `b` in the expression `argMax(a, b)` with the expression `sum(b)`.
+In the preceding example, we declared table `t` with column `b`. 
+Then, when selecting data, we defined the `sum(b) AS b` alias. 
+As aliases are global, 
+ClickHouse substituted the literal `b` in the expression `argMax(a, b)` with the expression `sum(b)`. 
 This substitution caused the exception.
 
 :::note
@@ -461,5 +447,5 @@ You can change this default behavior by setting [prefer_column_name_to_alias](/o
 
 ## Asterisk {#asterisk}
 
-In a `SELECT` query, an asterisk can replace the expression.
+In a `SELECT` query, an asterisk can replace the expression. 
 For more information, see the section [SELECT](/sql-reference/statements/select/index.md#asterisk).

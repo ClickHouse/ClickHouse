@@ -55,7 +55,7 @@ When merging, `ReplacingMergeTree` from all the rows with the same sorting key l
 Example:
 
 ```sql
-- - without ver - the last inserted 'wins'
+-- without ver - the last inserted 'wins'
 CREATE TABLE myFirstReplacingMT
 (
     `key` Int64,
@@ -75,7 +75,7 @@ SELECT * FROM myFirstReplacingMT FINAL;
 └─────┴─────────┴─────────────────────┘
 
 
-- - with ver - the row with the biggest ver 'wins'
+-- with ver - the row with the biggest ver 'wins'
 CREATE TABLE mySecondReplacingMT
 (
     `key` Int64,
@@ -111,17 +111,15 @@ be safely inserted and the delete row will still be applied.
 
 To permanently drop such delete rows, enable the table setting `allow_experimental_replacing_merge_with_cleanup` and either:
 
-1.Set the table settings `enable_replacing_merge_with_cleanup_for_min_age_to_force_merge`, `min_age_to_force_merge_on_partition_only` and `min_age_to_force_merge_seconds`. If all parts in a partition are older than `min_age_to_force_merge_seconds`, ClickHouse will merge them
+1. Set the table settings `enable_replacing_merge_with_cleanup_for_min_age_to_force_merge`, `min_age_to_force_merge_on_partition_only` and `min_age_to_force_merge_seconds`. If all parts in a partition are older than `min_age_to_force_merge_seconds`, ClickHouse will merge them
 all into a single part and remove any delete rows.
 
 2. Manually run `OPTIMIZE TABLE table [PARTITION partition | PARTITION ID 'partition_id'] FINAL CLEANUP`.
-
 :::
 
 Example:
-
 ```sql
-- - with ver and is_deleted
+-- with ver and is_deleted
 CREATE OR REPLACE TABLE myThirdReplacingMT
 (
     `key` Int64,
@@ -140,7 +138,7 @@ select * from myThirdReplacingMT final;
 
 0 rows in set. Elapsed: 0.003 sec.
 
-- - delete rows with is_deleted
+-- delete rows with is_deleted
 OPTIMIZE TABLE myThirdReplacingMT FINAL CLEANUP;
 
 INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 00:00:00', 0);
@@ -198,7 +196,6 @@ FROM numbers(1000000000)
 
 0 rows in set. Elapsed: 19.958 sec. Processed 1.00 billion rows, 8.00 GB (50.11 million rows/s., 400.84 MB/s.)
 ```
-
 Querying without `FINAL` produces an incorrect count (exact result will vary depending on merges):
 
 ```sql

@@ -492,9 +492,9 @@ This query will pause for 2 seconds before completing. During this time, no resu
 
 The `sleep()` function is generally not used in production environments, as it can negatively impact query performance and system responsiveness. However, it can be useful in the following scenarios:
 
-1.**Testing**: When testing or benchmarking ClickHouse, you may want to simulate delays or introduce pauses to observe how the system behaves under certain conditions.
-2.**Debugging**: If you need to examine the state of the system or the execution of a query at a specific point in time, you can use `sleep()` to introduce a pause, allowing you to inspect or collect relevant information.
-3.**Simulation**: In some cases, you may want to simulate real-world scenarios where delays or pauses occur, such as network latency or external system dependencies.
+1. **Testing**: When testing or benchmarking ClickHouse, you may want to simulate delays or introduce pauses to observe how the system behaves under certain conditions.
+2. **Debugging**: If you need to examine the state of the system or the execution of a query at a specific point in time, you can use `sleep()` to introduce a pause, allowing you to inspect or collect relevant information.
+3. **Simulation**: In some cases, you may want to simulate real-world scenarios where delays or pauses occur, such as network latency or external system dependencies.
 
 It's important to use the `sleep()` function judiciously and only when necessary, as it can potentially impact the overall performance and responsiveness of your ClickHouse system.
 
@@ -536,9 +536,9 @@ But the output will be delayed, with a 0.5-second pause between each row.
 
 The `sleepEachRow()` function is primarily used for testing and debugging purposes, similar to the `sleep()` function. It allows you to simulate delays or introduce pauses in the processing of each row, which can be useful in scenarios such as:
 
-1.**Testing**: When testing or benchmarking ClickHouse's performance under specific conditions, you can use `sleepEachRow()` to simulate delays or introduce pauses for each row processed.
-2.**Debugging**: If you need to examine the state of the system or the execution of a query for each row processed, you can use `sleepEachRow()` to introduce pauses, allowing you to inspect or collect relevant information.
-3.**Simulation**: In some cases, you may want to simulate real-world scenarios where delays or pauses occur for each row processed, such as when dealing with external systems or network latencies.
+1. **Testing**: When testing or benchmarking ClickHouse's performance under specific conditions, you can use `sleepEachRow()` to simulate delays or introduce pauses for each row processed.
+2. **Debugging**: If you need to examine the state of the system or the execution of a query for each row processed, you can use `sleepEachRow()` to introduce pauses, allowing you to inspect or collect relevant information.
+3. **Simulation**: In some cases, you may want to simulate real-world scenarios where delays or pauses occur for each row processed, such as when dealing with external systems or network latencies.
 
 Like the [`sleep()` function](#sleep), it's important to use `sleepEachRow()` judiciously and only when necessary, as it can significantly impact the overall performance and responsiveness of your ClickHouse system, especially when dealing with large result sets.
 
@@ -638,6 +638,130 @@ Result:
 
 ```response
 ['default']
+```
+## colorSRGBToOKLCH {#colorsrgbtoOKLCH}
+
+Converts a colour encoded in the **sRGB** colour space to the perceptually uniform **OKLCH** colour space.
+
+If any input channel is outside `[0...255]` or the gamma value is non-positive, the behaviour is implementation-defined.
+
+:::note
+**OKLCH** is a cylindrical version of the OKLab colour space.
+Its three coordinates are **L** (lightness in range `[0...1]`), **C** (chroma `>= 0`) and **H** (hue in degrees `[0...360]`)**.  
+OKLab/OKLCH is designed to be perceptually uniform while remaining cheap to compute.
+:::
+
+**Syntax**
+
+```sql
+colorSRGBToOKLCH(tuple [, gamma])
+```
+
+**Arguments**
+
+- `tuple` - Three numeric values R, G, B in the range `[0...255]`. [Tuple](../data-types/tuple.md).
+- `gamma` - Optional numeric value. Exponent that is used to linearize sRGB by applying `(x / 255)^gamma` to each channel `x`. Defaults to `2.2`.
+
+**Returned values**
+
+- A `tuple` (L, C, H) of type `Tuple(Float64, Float64, Float64)`. 
+
+**Implementation details**
+
+The conversion consists of three stages: 
+
+1) sRGB to Linear sRGB
+2) Linear sRGB to OKLab
+3) OKLab to OKLCH.
+
+Gamma is used at the first stage, when computing linear sRGB.
+For that we normalize sRGB values and take them in power of gamma.
+Observe, that this lacks some precision due to floating-point rounding.
+This design choice was made in order to be able to quickly compute values for different gammas, and since the difference does not changed the perception of the color significantly.
+
+Two stages involve matrix multiplication and trigonometry conversions respectively.
+For more details on maths please see an article on OKLab color space: https://bottosson.github.io/posts/OKLab/
+
+In order to have some references for colors in OKLCH space, and how they correspond to sRGB colors please see https://OKLCH.com/
+
+**Example**
+
+```sql
+SELECT colorSRGBToOKLCH((128, 64, 32), 2.2) AS lch;
+```
+
+Result:
+``` response
+┌─lch─────────────────────────────────────────────────────────┐
+│ (0.4436238384931984,0.10442699545678624,45.907345481930236) │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## colorOKLCHToSRGB {#colorOKLCHtosrgb}
+
+Converts a colour from the **OKLCH** perceptual colour space to the familiar **sRGB** colour space.
+
+If **L** is outside `[0...1]`, **C** is negative, or **H** is outside `[0...360]`, the result is implementation-defined.
+
+:::note
+**OKLCH** is a cylindrical version of the OKLab colour space.
+Its three coordinates are **L** (lightness in range `[0...1]`), **C** (chroma `>= 0`) and **H** (hue in degrees `[0...360]`)**.
+OKLab/OKLCH is designed to be perceptually uniform while remaining cheap to compute.
+:::
+
+**Syntax**
+
+```sql
+colorOKLCHToSRGB(tuple [, gamma])
+```
+
+**Arguments**
+
+- `tuple` - Three numeric values **L**, **C**, **H**, presented as tuple where **L** is in range `[0...1]`, **C** `>= 0` and **H** is in range `[0...360]`. [Tuple](../data-types/tuple.md).
+- `gamma` - Optional numeric value. Exponent that is used to transform linear sRGB back to sRGB by applying `(x ^ (1 / gamma)) * 255` for each channel `x`. Defaults to `2.2`.
+
+**Returned values**
+
+- A `tuple` (R, G, B) of type `Tuple(Float64, Float64, Float64)`.
+
+:::note
+This function returns floating-point numbers, rather than integer values, to avoid forcing rounding. Users can perform the rounding themselves.
+:::
+
+**Implementation details**
+
+The conversion is inverse of `colorSRGBToOKLCH`: 
+
+1) OKLCH to OKLab.
+2) OKLab to Linear sRGB
+3) Linear sRGB to sRGB
+
+Second argument gamma is used at the last stage.
+Note, that all three channels are clipped in range `[0...1]` right before computing linear sRGB, and then set in power `1 / gamma`. In case `gamma` is `0`, `1 / gamma` is changed for `1'000'000`.
+Thus, regardless of the input we normally will have returned floats in range `[0...255]`.
+
+As in case of `colorSRGBToOKLCH`, two other stages involve trigonometry conversions and matrix multiplication respectively.
+For more details on maths please see see an article on OKLab color space: https://bottosson.github.io/posts/oklab/
+
+In order to have some references for colors in OKLCH space, and how they correspond to sRGB colors please see https://oklch.com/
+
+**Example**
+
+```sql
+SELECT colorOKLCHToSRGB((0.4466, 0.0991, 45.44), 2.2) AS rgb
+WITH colorOKLCHToSRGB((0.7, 0.1, 54)) as t SELECT tuple(toUInt8(t.1), toUInt8(t.2), toUInt8(t.3)) AS RGB
+
+```
+
+Result:
+``` response
+┌─rgb──────────────────────────────────────────────────────┐
+│ (127.03349738778945,66.06672044472008,37.11802592155851) │
+└──────────────────────────────────────────────────────────┘
+
+┌─RGB──────────┐
+│ (205,139,97) │
+└──────────────┘
 ```
 
 ## isConstant {#isconstant}
@@ -941,7 +1065,6 @@ The opposite operations of this function are [parseReadableSize](#parsereadables
 ```sql
 formatReadableSize(x)
 ```
-
 Alias: `FORMAT_BYTES`.
 
 :::note
@@ -1022,12 +1145,12 @@ This function accepts any numeric type as input, but internally it casts them to
 
 - `column` — A column with a numeric time delta.
 - `maximum_unit` — Optional. Maximum unit to show.
-- Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`.
-- Default value: `years`.
+  - Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`.
+  - Default value: `years`.
 - `minimum_unit` — Optional. Minimum unit to show. All smaller units are truncated.
-- Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`.
-- If explicitly specified value is bigger than `maximum_unit`, an exception will be thrown.
-- Default value: `seconds` if `maximum_unit` is `seconds` or bigger, `nanoseconds` otherwise.
+  - Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`.
+  - If explicitly specified value is bigger than `maximum_unit`, an exception will be thrown.
+  - Default value: `seconds` if `maximum_unit` is `seconds` or bigger, `nanoseconds` otherwise.
 
 **Example**
 
@@ -1156,6 +1279,7 @@ Given a string containing a byte size and `B`, `KiB`, `KB`, `MiB`, `MB`, etc. as
 
 The inverse operations of this function are [formatReadableSize](#formatreadablesize) and [formatReadableDecimalSize](#formatreadabledecimalsize).
 
+
 **Syntax**
 
 ```sql
@@ -1239,7 +1363,7 @@ least(a, b)
 ```
 
 :::note
-Version [24.12](/whats-new/changelog/2024#a-id2412a-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`.
+Version [24.12](/whats-new/changelog/2024#a-id2412a-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
 :::
 
 ## greatest {#greatest}
@@ -1253,7 +1377,7 @@ greatest(a, b)
 ```
 
 :::note
-Version [24.12](/whats-new/changelog/2024#a-id2412a-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`.
+Version [24.12](/whats-new/changelog/2024#a-id2412a-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
 :::
 
 ## uptime {#uptime}
@@ -1648,6 +1772,7 @@ Result:
 │                            1 │
 └──────────────────────────────┘
 ```
+
 
 ## neighbor {#neighbor}
 
@@ -2698,10 +2823,10 @@ The subquery generates `sumState` for every number from `0` to `9`. `sumState` r
 
 The whole query does the following:
 
-1.For the first row, `runningAccumulate` takes `sumState(0)` and returns `0`.
-2.For the second row, the function merges `sumState(0)` and `sumState(1)` resulting in `sumState(0 + 1)`, and returns `1` as a result.
-3.For the third row, the function merges `sumState(0 + 1)` and `sumState(2)` resulting in `sumState(0 + 1 + 2)`, and returns `3` as a result.
-4.The actions are repeated until the block ends.
+1. For the first row, `runningAccumulate` takes `sumState(0)` and returns `0`.
+2. For the second row, the function merges `sumState(0)` and `sumState(1)` resulting in `sumState(0 + 1)`, and returns `1` as a result.
+3. For the third row, the function merges `sumState(0 + 1)` and `sumState(2)` resulting in `sumState(0 + 1 + 2)`, and returns `3` as a result.
+4. The actions are repeated until the block ends.
 
 The following example shows the `groupping` parameter usage:
 
@@ -2941,7 +3066,7 @@ FROM data_table
 
 **Prerequisites**
 
-1.Build the catboost evaluation library
+1. Build the catboost evaluation library
 
 Before evaluating catboost models, the `libcatboostmodel.<so|dylib>` library must be made available. See [CatBoost documentation](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html) how to compile it.
 
@@ -2966,7 +3091,7 @@ communicate using a HTTP interface. By default, port `9012` is used. A different
 </library_bridge>
 ```
 
-2.Train a catboost model using libcatboost
+2. Train a catboost model using libcatboost
 
 See [Training and applying models](https://catboost.ai/docs/features/training.html#training) for how to train catboost models from a training data set.
 
@@ -3331,16 +3456,16 @@ getServerPort(port_name)
 
 - `port_name` — The name of the server port. [String](/sql-reference/data-types/string). Possible values:
 
-- 'tcp_port'
-- 'tcp_port_secure'
-- 'http_port'
-- 'https_port'
-- 'interserver_http_port'
-- 'interserver_https_port'
-- 'mysql_port'
-- 'postgresql_port'
-- 'grpc_port'
-- 'prometheus.port'
+  - 'tcp_port'
+  - 'tcp_port_secure'
+  - 'http_port'
+  - 'https_port'
+  - 'interserver_http_port'
+  - 'interserver_https_port'
+  - 'mysql_port'
+  - 'postgresql_port'
+  - 'grpc_port'
+  - 'prometheus.port'
 
 **Returned value**
 
@@ -3522,6 +3647,7 @@ Result:
 │ 2 │ 6 │ 2              │ 2             │
 └───┴───┴────────────────┴───────────────┘
 ```
+
 
 ## shardNum {#shardnum}
 
@@ -4249,7 +4375,7 @@ Query:
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (s LowCardinality(String)) ENGINE = Memory;
 
-- - create two parts:
+-- create two parts:
 
 INSERT INTO test VALUES ('ab'), ('cd'), ('ab'), ('ab'), ('df');
 INSERT INTO test VALUES ('ef'), ('cd'), ('ab'), ('cd'), ('ef');
@@ -4275,7 +4401,6 @@ Result:
 10. │ ef │                        1 │
     └────┴──────────────────────────┘
 ```
-
 ## lowCardinalityKeys {#lowcardinalitykeys}
 
 Returns the dictionary values of a [LowCardinality](../data-types/lowcardinality.md) column. If the block is smaller or larger than the dictionary size, the result will be truncated or extended with default values. Since LowCardinality have per-part dictionaries, this function may return different dictionary values in different parts.
@@ -4302,7 +4427,7 @@ Query:
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (s LowCardinality(String)) ENGINE = Memory;
 
-- - create two parts:
+-- create two parts:
 
 INSERT INTO test VALUES ('ab'), ('cd'), ('ab'), ('ab'), ('df');
 INSERT INTO test VALUES ('ef'), ('cd'), ('ab'), ('cd'), ('ef');
@@ -4377,7 +4502,6 @@ Returns the ID of a [transaction](/guides/developer/transactional#transactions-c
 
 :::note
 This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
-
 ```xml
 <clickhouse>
   <allow_experimental_transactions>1</allow_experimental_transactions>
