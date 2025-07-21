@@ -1906,14 +1906,6 @@ static void buildIndexes(
         }
     }
 
-    for (size_t i = 0; i < parts.size(); i++)
-    {
-        const auto &order = skip_indexes.per_part_index_orders[i];
-        for (const auto o: order) {
-        LOG_DEBUG(log, "part: {} o: {}", i, o);
-        }
-    }
-   
     indexes->skip_indexes = std::move(skip_indexes);
 }
 

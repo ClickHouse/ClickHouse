@@ -802,7 +802,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
 
                 const auto & index_and_condition = skip_indexes.useful_indices[index_order[idx]];
-                LOG_DEBUG(log, "part_index: {} index: {} name: {} sz: {}", part_index, index_order[idx], index_and_condition.index->index.name, index_order.size());
                 auto & stat = useful_indices_stat[idx];
                 stat.total_parts.fetch_add(1, std::memory_order_relaxed);
                 size_t total_granules = ranges.ranges.getNumberOfMarks();
