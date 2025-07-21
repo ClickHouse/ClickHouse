@@ -1100,7 +1100,7 @@ void StorageObjectStorageQueue::alter(
             if (change.name == "min_insert_block_size_rows_for_materialized_views")
                 min_insert_block_size_rows_for_materialized_views = change.value.safeGet<UInt64>();
             if (change.name == "min_insert_block_size_bytes_for_materialized_views")
-                min_insert_block_size_rows_for_materialized_views = change.value.safeGet<UInt64>();
+                min_insert_block_size_bytes_for_materialized_views = change.value.safeGet<UInt64>();
 
             if (change.name == "list_objects_batch_size")
                 list_objects_batch_size = change.value.safeGet<UInt64>();
