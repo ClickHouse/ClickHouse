@@ -266,6 +266,16 @@ struct ScatteredBlock : private boost::noncopyable
 
     void filter(std::span<UInt64> matched_rows)
     {
+        if (matched_rows.empty())
+        {
+            selector = Selector();
+            return;
+        }
+        else if (matched_rows.size() == rows())
+        {
+            return;
+        }
+
         IndexesPtr new_selector = Indexes::create(matched_rows.size());
         auto & data = new_selector->getData();
         size_t i = 0;

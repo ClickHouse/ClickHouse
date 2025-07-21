@@ -5,7 +5,6 @@
 #include <Interpreters/HashJoin/AddedColumns.h>
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/HashJoinResult.h>
-#include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/JoinUtils.h>
 #include "Common/Stopwatch.h"
 
@@ -219,13 +218,9 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
             continue;
 
         if constexpr (is_asof_join)
-            all_values_unique &= Inserter<HashMap, KeyGetter>::insertAsof(join, map, key_getter, stored_columns, ind, pool, *asof_column);
+            Inserter<HashMap, KeyGetter>::insertAsof(join, map, key_getter, stored_columns, ind, pool, *asof_column);
         else if constexpr (mapped_one)
-        {
-            bool inserted = Inserter<HashMap, KeyGetter>::insertOne(join, map, key_getter, stored_columns, ind, pool);
-            is_inserted |= inserted;
-            all_values_unique &= inserted;
-        }
+            is_inserted |= Inserter<HashMap, KeyGetter>::insertOne(join, map, key_getter, stored_columns, ind, pool);
         else
             all_values_unique &= Inserter<HashMap, KeyGetter>::insertAll(join, map, key_getter, stored_columns, ind, pool);
     }
