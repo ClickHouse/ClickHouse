@@ -2381,6 +2381,7 @@ mysql
 mysqldump
 mysqljs
 mytable
+naiveBayesClassifier
 namedatabases
 namenetworks
 namenode
@@ -3179,6 +3180,7 @@ transactionally
 translateUTF
 translocality
 trie
+trigrams
 trimBoth
 trimLeft
 trimRight
