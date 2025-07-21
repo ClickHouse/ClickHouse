@@ -1872,8 +1872,8 @@ static void buildIndexes(
             const auto l_granularity = l.index->getGranularity();
             const auto r_granularity = r.index->getGranularity();
 
-	    const auto l_size = max_index_sizes[l.index->getFileName()];
-	    const auto r_size = max_index_sizes[r.index->getFileName()];
+            const auto l_size = max_index_sizes[l.index->getFileName()];
+            const auto r_size = max_index_sizes[r.index->getFileName()];
             return (l_size < r_size) || (l_granularity > r_granularity);
         }
 
