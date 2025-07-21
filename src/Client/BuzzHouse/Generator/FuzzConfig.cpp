@@ -98,7 +98,7 @@ loadPerformanceMetric(const JSONParserImpl::Element & jobj, const uint32_t defau
 }
 
 static std::function<void(const JSONObjectType &)>
-parseDisabledOptions(uint64_t & res, const String & text, const std::unordered_map<std::string_view, uint32_t> & entries)
+parseDisabledOptions(uint64_t & res, const String & text, const std::unordered_map<std::string_view, uint64_t> & entries)
 {
     return [&](const JSONObjectType & value)
     {
@@ -169,7 +169,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Parsed BuzzHouse JSON configuration file is not an object");
     }
 
-    static const std::unordered_map<std::string_view, uint32_t> type_entries
+    static const std::unordered_map<std::string_view, uint64_t> type_entries
         = {{"bool", allow_bool},          {"uint", allow_unsigned_int},
            {"int8", allow_int8},          {"int64", allow_int64},
            {"int128", allow_int128},      {"float", allow_floating_points},
@@ -185,7 +185,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"nested", allow_nested},      {"ipv4", allow_ipv4},
            {"ipv6", allow_ipv6},          {"geo", allow_geo}};
 
-    static const std::unordered_map<std::string_view, uint32_t> engine_entries
+    static const std::unordered_map<std::string_view, uint64_t> engine_entries
         = {{"replacingmergetree", allow_replacing_mergetree},
            {"coalescingmergetree", allow_coalescing_mergetree},
            {"summingmergetree", allow_summing_mergetree},
@@ -207,22 +207,22 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"sqlite", allow_sqlite},
            {"mongodb", allow_mongodb},
            {"redis", allow_redis},
-           {"s3", allow_s3},
-           {"s3queue", allow_s3queue},
+           {"s3", allow_S3},
+           {"s3queue", allow_S3queue},
            {"hudi", allow_hudi},
-           {"deltalakes3", allow_deltalakes3},
-           {"deltalakeazure", allow_deltalakeazure},
+           {"deltalakes3", allow_deltalakeS3},
+           {"deltalakeazure", allow_deltalakeAzure},
            {"deltalakelocal", allow_deltalakelocal},
-           {"icebergs3", allow_icebergs3},
-           {"icebergazure", allow_icebergazure},
-           {"iceberglocal", allow_iceberglocal},
+           {"icebergs3", allow_icebergS3},
+           {"icebergazure", allow_icebergAzure},
+           {"iceberglocal", allow_icebergLocal},
            {"merge", allow_merge},
            {"distributed", allow_distributed},
            {"dictionary", allow_dictionary},
            {"generaterandom", allow_generaterandom},
-           {"azureblobstorage", allow_azureblobstorage},
-           {"azurequeue", allow_azurequeue},
-           {"url", allow_url},
+           {"azureblobstorage", allow_AzureBlobStorage},
+           {"azurequeue", allow_AzureQueue},
+           {"url", allow_URL},
            {"keepermap", allow_keepermap},
            {"externaldistributed", allow_external_distributed},
            {"materializedpostgresql", allow_materialized_postgresql},
