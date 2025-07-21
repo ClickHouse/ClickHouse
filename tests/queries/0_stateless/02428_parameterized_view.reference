@@ -4,7 +4,7 @@ ERROR
 10
 50
 SELECT *
-FROM test_02428_pv1(equals(price, 10))
+FROM test_02428_pv1(price = 10)
 ERROR
 ERROR
 ERROR

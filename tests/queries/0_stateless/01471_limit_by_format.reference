@@ -5,6 +5,6 @@ LIMIT 1
 SELECT *
 FROM system.one
 LIMIT 1 BY
-    plus(0, dummy),
-    minus(0, dummy)
+    0 + dummy,
+    0 - dummy
 LIMIT 1

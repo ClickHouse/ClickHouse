@@ -71,8 +71,8 @@ SELECT
     val_middle,
     val_right
 FROM left_table
-ALL INNER JOIN middle_table ON equals(left_table.id, middle_table.id)
-ALL INNER JOIN right_table ON equals(middle_table.id, right_table.id)
+ALL INNER JOIN middle_table ON left_table.id = middle_table.id
+ALL INNER JOIN right_table ON middle_table.id = right_table.id
 ORDER BY
     left_table.id ASC,
     val_left ASC,

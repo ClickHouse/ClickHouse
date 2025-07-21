@@ -5,10 +5,10 @@ SELECT
     square_number
 FROM
 (
-    WITH multiply(number, 2) AS square_number
+    WITH number * 2 AS square_number
     SELECT
         number,
         square_number
     FROM numbers_indexed
 ) AS squares
-WHERE equals(number, 999)
+WHERE number = 999
