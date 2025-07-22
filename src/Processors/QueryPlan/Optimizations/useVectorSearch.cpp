@@ -285,6 +285,20 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
     if (read_from_mergetree_step->isParallelReadingFromReplicas())
         return false;
 
+    /// If there is an explicit PREWHERE, we disable the optimization. The Prewhere optimization
+    /// is slightly at odds with vector search optimizations. There are 2 optimizations in vector
+    /// search -
+    /// 1. Lookup the vector index and shortlist a handful of granules containing neighbours.
+    /// 2. The rescoring optimization goes even further and does not read the 'heavy' vector column at all and
+    ///    only sends the exact neighbour rows to the Sorting + Output step.
+    /// Thus explicit or implicit Prewhere after the above 2 optimizations does not bring additional benefit. Also,
+    /// the Prewhere filter implementation conflicts with rescoring optimization filter. If explicit PREWHERE is
+    /// requested, we turn OFF the rescoring optimization. If there is a WHERE clause and even with
+    /// optimize_move_to_prewhere=True, we retain the rescoring optimization and disable the implicit Prewhere
+    /// optimization. (check optimizePrewhere.cpp)
+    if (const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo())
+        return false;
+
     /// Not 100% sure but other sort types are likely not what we want
     SortingStep::Type sorting_step_type = sorting_step->getType();
     if (sorting_step_type != SortingStep::Type::Full)
