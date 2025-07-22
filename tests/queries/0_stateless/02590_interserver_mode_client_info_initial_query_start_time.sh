@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-async-insert
 # Tag no-fasttest: interserver mode requires SSL
+# Tag no-async-insert: last check which counts queries from query log doesnt count query with query_kind: AsyncInsertFlush
 #
 # Test that checks that some of ClientInfo correctly passed in inter-server mode.
 # NOTE: we need .sh test (.sql is not enough) because queries on remote nodes does not have current_database = currentDatabase()
@@ -13,7 +14,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function get_query_id() { random_str 10; }
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     drop table if exists buf;
     drop table if exists dist;
     drop table if exists data;
@@ -31,8 +32,8 @@ query_id="$(get_query_id)"
 # test, since we care about the difference between NOW() and there should
 # not be any significant difference.
 $CLICKHOUSE_CLIENT --prefer_localhost_replica=0 --query_id "$query_id" -q "select * from dist"
-$CLICKHOUSE_CLIENT -nm --param_query_id "$query_id" -q "
-    system flush logs;
+$CLICKHOUSE_CLIENT -m --param_query_id "$query_id" -q "
+    system flush logs query_log;
     select count(), count(distinct initial_query_start_time_microseconds) from system.query_log where type = 'QueryFinish' and initial_query_id = {query_id:String};
 "
 
@@ -42,26 +43,26 @@ query_id="$(get_query_id)"
 # this query (and all subsequent) should reuse the previous connection (at least most of the time)
 $CLICKHOUSE_CLIENT --prefer_localhost_replica=0 --query_id "$query_id" -q "select * from dist"
 
-$CLICKHOUSE_CLIENT -nm --param_query_id "$query_id" -q "
-    system flush logs;
+$CLICKHOUSE_CLIENT -m --param_query_id "$query_id" -q "
+    system flush logs query_log;
     select count(), count(distinct initial_query_start_time_microseconds) from system.query_log where type = 'QueryFinish' and initial_query_id = {query_id:String};
 "
 
 echo "INSERT"
 query_id="$(get_query_id)"
-$CLICKHOUSE_CLIENT --prefer_localhost_replica=0 --query_id "$query_id" -nm -q "
+$CLICKHOUSE_CLIENT --prefer_localhost_replica=0 --query_id "$query_id" -m -q "
     insert into dist_dist values (1),(2);
     select * from data;
 "
 
 sleep 1
-$CLICKHOUSE_CLIENT -nm --param_query_id "$query_id" -q "system flush distributed dist_dist"
+$CLICKHOUSE_CLIENT -m --param_query_id "$query_id" -q "system flush distributed dist_dist"
 sleep 1
-$CLICKHOUSE_CLIENT -nm --param_query_id "$query_id" -q "system flush distributed dist"
+$CLICKHOUSE_CLIENT -m --param_query_id "$query_id" -q "system flush distributed dist"
 
 echo "CHECK"
-$CLICKHOUSE_CLIENT -nm --param_query_id "$query_id" -q "
+$CLICKHOUSE_CLIENT -m --param_query_id "$query_id" -q "
     select * from data order by key;
-    system flush logs;
+    system flush logs query_log;
     select count(), count(distinct initial_query_start_time_microseconds) from system.query_log where type = 'QueryFinish' and initial_query_id = {query_id:String};
 "

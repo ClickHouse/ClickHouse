@@ -1,0 +1,15 @@
+initial
+A C
+simple copy
+A C D
+node-A
+simple move
+A C H
+node-A
+move node with childs -- must be error
+Transaction failed (Not empty): Op #2, path: /test-keeper-client-default/A
+A C H
+move node to existing
+Transaction failed (Node exists): Op #1, path: /test-keeper-client-default/A
+A C H
+clean up

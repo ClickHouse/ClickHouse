@@ -15,12 +15,12 @@ public:
         const Settings & settings_,
         const ClientInfo & client_info_)
       : RemoteInserter(connection_, timeouts, query_, settings_, client_info_)
-      , SinkToStorage(RemoteInserter::getHeader())
+      , SinkToStorage(std::make_shared<const Block>(RemoteInserter::initializeAndGetHeader()))
     {
     }
 
     String getName() const override { return "RemoteSink"; }
-    void consume (Chunk chunk) override { write(RemoteInserter::getHeader().cloneWithColumns(chunk.detachColumns())); }
+    void consume (Chunk & chunk) override { write(RemoteInserter::getHeader().cloneWithColumns(chunk.getColumns())); }
     void onFinish() override { RemoteInserter::onFinish(); }
 };
 

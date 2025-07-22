@@ -6,8 +6,8 @@
 #include <memory>
 #include <optional>
 #include <Poco/Event.h>
-#include "ZooKeeper.h"
-#include "Common.h"
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/Common.h>
 
 namespace DB
 {
@@ -45,6 +45,8 @@ public:
 
     ZNode get(const std::string & path, EventPtr watch_event);
     ZNode get(const std::string & path, Coordination::WatchCallback watch_callback);
+
+    void sync();
 
 private:
     GetZooKeeper get_zookeeper;

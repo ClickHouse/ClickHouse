@@ -23,7 +23,7 @@ public:
         std::shared_ptr<bool> active_ptr_,
         const bool has_limit_, const UInt64 limit_,
         const UInt64 heartbeat_interval_sec_)
-        : ISource(storage_->getHeader())
+        : ISource(std::make_shared<const Block>(storage_->getHeader()))
         , storage(std::move(storage_)), blocks_ptr(std::move(blocks_ptr_)),
           blocks_metadata_ptr(std::move(blocks_metadata_ptr_)),
           active_ptr(active_ptr_),
@@ -36,7 +36,7 @@ public:
 
     String getName() const override { return "LiveViewSource"; }
 
-    void onCancel() override
+    void onCancel() noexcept override
     {
         if (storage->shutdown_called)
             return;
@@ -153,12 +153,10 @@ protected:
                         {
                             break;
                         }
-                        else
-                        {
-                            // heartbeat
-                            last_event_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
-                            return { getPort().getHeader(), true };
-                        }
+
+                        // heartbeat
+                        last_event_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
+                        return {getPort().getHeader(), true};
                     }
                 }
             }

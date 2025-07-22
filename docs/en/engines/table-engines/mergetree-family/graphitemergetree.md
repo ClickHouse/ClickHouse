@@ -1,7 +1,9 @@
 ---
-slug: /en/engines/table-engines/mergetree-family/graphitemergetree
+description: 'Designed for thinning and aggregating/averaging (rollup) Graphite data.'
+sidebar_label: 'GraphiteMergeTree'
 sidebar_position: 90
-sidebar_label:  GraphiteMergeTree
+slug: /engines/table-engines/mergetree-family/graphitemergetree
+title: 'GraphiteMergeTree'
 ---
 
 # GraphiteMergeTree
@@ -12,9 +14,9 @@ You can use any ClickHouse table engine to store the Graphite data if you do not
 
 The engine inherits properties from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md).
 
-## Creating a Table {#creating-table}
+## Creating a table {#creating-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     Path String,
@@ -29,7 +31,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-See a detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
+See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
 
 A table for the Graphite data should have the following columns for the following data:
 
@@ -59,7 +61,7 @@ When creating a `GraphiteMergeTree` table, the same [clauses](../../../engines/t
 Do not use this method in new projects and, if possible, switch old projects to the method described above.
 :::
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     EventDate Date,
@@ -77,35 +79,35 @@ All of the parameters excepting `config_section` have the same meaning as in `Me
 
 </details>
 
-## Rollup Configuration {#rollup-configuration}
+## Rollup configuration {#rollup-configuration}
 
-The settings for rollup are defined by the [graphite_rollup](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite) parameter in the server configuration. The name of the parameter could be any. You can create several configurations and use them for different tables.
+The settings for rollup are defined by the [graphite_rollup](../../../operations/server-configuration-parameters/settings.md#graphite) parameter in the server configuration. The name of the parameter could be any. You can create several configurations and use them for different tables.
 
 Rollup configuration structure:
 
       required-columns
       patterns
 
-### Required Columns {#required-columns}
+### Required columns {#required-columns}
 
-#### path_column_name
+#### `path_column_name` {#path_column_name}
 
 `path_column_name` — The name of the column storing the metric name (Graphite sensor). Default value: `Path`.
 
-#### time_column_name
+#### `time_column_name` {#time_column_name}
 `time_column_name` — The name of the column storing the time of measuring the metric. Default value: `Time`.
 
-#### value_column_name
+#### `value_column_name` {#value_column_name}
 `value_column_name` — The name of the column storing the value of the metric at the time set in `time_column_name`. Default value: `Value`.
 
-#### version_column_name
+#### `version_column_name` {#version_column_name}
 `version_column_name` — The name of the column storing the version of the metric. Default value: `Timestamp`.
 
 ### Patterns {#patterns}
 
 Structure of the `patterns` section:
 
-``` text
+```text
 pattern
     rule_type
     regexp
@@ -156,7 +158,7 @@ Valid values:
 
 ### Configuration Example without rules types {#configuration-example}
 
-``` xml
+```xml
 <graphite_rollup>
     <version_column_name>Version</version_column_name>
     <pattern>
@@ -191,7 +193,7 @@ Valid values:
 
 ### Configuration Example with rules types {#configuration-typed-example}
 
-``` xml
+```xml
 <graphite_rollup>
     <version_column_name>Version</version_column_name>
     <pattern>

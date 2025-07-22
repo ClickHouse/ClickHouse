@@ -23,7 +23,7 @@ using FunctionHasSubsequenceCaseInsensitive = HasSubsequenceImpl<NameHasSubseque
 
 REGISTER_FUNCTION(hasSubsequenceCaseInsensitive)
 {
-    factory.registerFunction<FunctionHasSubsequenceCaseInsensitive>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionHasSubsequenceCaseInsensitive>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

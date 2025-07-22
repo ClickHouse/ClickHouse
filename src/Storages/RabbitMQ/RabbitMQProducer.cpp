@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <Columns/ColumnString.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <amqpcpp.h>
 #include <boost/algorithm/string/split.hpp>
@@ -83,6 +84,18 @@ void RabbitMQProducer::produce(const String & message, size_t, const Columns &, 
     LOG_TEST(log, "Pushing message with id {}", payload.id);
     if (!payloads.push(std::move(payload)))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to payloads queue");
+}
+
+void RabbitMQProducer::cancel() noexcept
+{
+    try
+    {
+      finish();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void RabbitMQProducer::setupChannel()

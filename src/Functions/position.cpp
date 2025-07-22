@@ -1,6 +1,6 @@
-#include "FunctionsStringSearch.h"
-#include "FunctionFactory.h"
-#include "PositionImpl.h"
+#include <Functions/FunctionsStringSearch.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/PositionImpl.h>
 
 
 namespace DB
@@ -19,6 +19,6 @@ using FunctionPosition = FunctionsStringSearch<PositionImpl<NamePosition, Positi
 
 REGISTER_FUNCTION(Position)
 {
-    factory.registerFunction<FunctionPosition>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionPosition>({}, FunctionFactory::Case::Insensitive);
 }
 }

@@ -21,10 +21,36 @@ std::vector<UUID> Role::findDependencies() const
     return res;
 }
 
+bool Role::hasDependencies(const std::unordered_set<UUID> & ids) const
+{
+    return granted_roles.hasDependencies(ids) || settings.hasDependencies(ids);
+}
+
 void Role::replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids)
 {
     granted_roles.replaceDependencies(old_to_new_ids);
     settings.replaceDependencies(old_to_new_ids);
+}
+
+void Role::copyDependenciesFrom(const IAccessEntity & src, const std::unordered_set<UUID> & ids)
+{
+    if (getType() != src.getType())
+        return;
+    const auto & src_role = typeid_cast<const Role &>(src);
+    granted_roles.copyDependenciesFrom(src_role.granted_roles, ids);
+    settings.copyDependenciesFrom(src_role.settings, ids);
+}
+
+void Role::removeDependencies(const std::unordered_set<UUID> & ids)
+{
+    granted_roles.removeDependencies(ids);
+    settings.removeDependencies(ids);
+}
+
+void Role::clearAllExceptDependencies()
+{
+    access = {};
+    settings.removeSettingsKeepProfiles();
 }
 
 }

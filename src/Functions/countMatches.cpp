@@ -1,5 +1,5 @@
-#include "FunctionFactory.h"
-#include "countMatches.h"
+#include <Functions/FunctionFactory.h>
+#include <Functions/countMatches.h>
 
 namespace
 {
@@ -22,8 +22,8 @@ namespace DB
 
 REGISTER_FUNCTION(CountMatches)
 {
-    factory.registerFunction<FunctionCountMatches<FunctionCountMatchesCaseSensitive>>({}, FunctionFactory::CaseSensitive);
-    factory.registerFunction<FunctionCountMatches<FunctionCountMatchesCaseInsensitive>>({}, FunctionFactory::CaseSensitive);
+    factory.registerFunction<FunctionCountMatches<FunctionCountMatchesCaseSensitive>>();
+    factory.registerFunction<FunctionCountMatches<FunctionCountMatchesCaseInsensitive>>();
 }
 
 }

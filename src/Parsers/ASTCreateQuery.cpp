@@ -2,43 +2,44 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/CreateQueryUUIDs.h>
 #include <Common/quoteString.h>
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
 
 namespace DB
 {
 
-void ASTSQLSecurity::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTSQLSecurity::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     if (!type)
         return;
 
     if (definer || is_definer_current_user)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "DEFINER" << (settings.hilite ? hilite_none : "");
-        settings.ostr << " = ";
+        ostr << "DEFINER";
+        ostr << " = ";
         if (definer)
-            definer->formatImpl(settings, state, frame);
+            definer->format(ostr, settings, state, frame);
         else
-            settings.ostr << "CURRENT_USER";
-        settings.ostr << " ";
+            ostr << "CURRENT_USER";
+        ostr << " ";
     }
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "SQL SECURITY" << (settings.hilite ? hilite_none : "");
+    ostr << "SQL SECURITY";
     switch (*type)
     {
         case SQLSecurityType::INVOKER:
-            settings.ostr << " INVOKER";
+            ostr << " INVOKER";
             break;
         case SQLSecurityType::DEFINER:
-            settings.ostr << " DEFINER";
+            ostr << " DEFINER";
             break;
         case SQLSecurityType::NONE:
-            settings.ostr << " NONE";
+            ostr << " NONE";
             break;
     }
 }
@@ -67,42 +68,44 @@ ASTPtr ASTStorage::clone() const
     return res;
 }
 
-void ASTStorage::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTStorage::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
+    auto modified_frame{frame};
     if (engine)
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "ENGINE" << (s.hilite ? hilite_none : "") << " = ";
-        engine->formatImpl(s, state, frame);
+        modified_frame.create_engine_name = engine->name;
+        ostr << s.nl_or_ws << "ENGINE" << " = ";
+        engine->format(ostr, s, state, modified_frame);
     }
     if (partition_by)
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "PARTITION BY " << (s.hilite ? hilite_none : "");
-        partition_by->formatImpl(s, state, frame);
+        ostr << s.nl_or_ws << "PARTITION BY ";
+        partition_by->format(ostr, s, state, modified_frame);
     }
     if (primary_key)
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "PRIMARY KEY " << (s.hilite ? hilite_none : "");
-        primary_key->formatImpl(s, state, frame);
+        ostr << s.nl_or_ws << "PRIMARY KEY ";
+        primary_key->format(ostr, s, state, modified_frame);
     }
     if (order_by)
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "ORDER BY " << (s.hilite ? hilite_none : "");
-        order_by->formatImpl(s, state, frame);
+        ostr << s.nl_or_ws << "ORDER BY ";
+        order_by->format(ostr, s, state, modified_frame);
     }
     if (sample_by)
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "SAMPLE BY " << (s.hilite ? hilite_none : "");
-        sample_by->formatImpl(s, state, frame);
+        ostr << s.nl_or_ws << "SAMPLE BY ";
+        sample_by->format(ostr, s, state, modified_frame);
     }
     if (ttl_table)
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "TTL " << (s.hilite ? hilite_none : "");
-        ttl_table->formatImpl(s, state, frame);
+        ostr << s.nl_or_ws << "TTL ";
+        ttl_table->format(ostr, s, state, modified_frame);
     }
     if (settings)
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "SETTINGS " << (s.hilite ? hilite_none : "");
-        settings->formatImpl(s, state, frame);
+        ostr << s.nl_or_ws << "SETTINGS ";
+        settings->format(ostr, s, state, modified_frame);
     }
 }
 
@@ -122,12 +125,13 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
-
     void forEachPointerToChild(std::function<void(void**)> f) override
     {
         f(reinterpret_cast<void **>(&elem));
     }
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };
 
 ASTPtr ASTColumnsElement::clone() const
@@ -139,20 +143,19 @@ ASTPtr ASTColumnsElement::clone() const
     return res;
 }
 
-void ASTColumnsElement::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTColumnsElement::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
     if (!elem)
         return;
 
     if (prefix.empty())
     {
-        elem->formatImpl(s, state, frame);
+        elem->format(ostr, s, state, frame);
         return;
     }
 
-    s.ostr << (s.hilite ? hilite_keyword : "") << prefix << (s.hilite ? hilite_none : "");
-    s.ostr << ' ';
-    elem->formatImpl(s, state, frame);
+    ostr << prefix << ' ';
+    elem->format(ostr, s, state, frame);
 }
 
 
@@ -176,7 +179,7 @@ ASTPtr ASTColumns::clone() const
     return res;
 }
 
-void ASTColumns::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTColumns::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
     ASTExpressionList list;
 
@@ -224,9 +227,9 @@ void ASTColumns::formatImpl(const FormatSettings & s, FormatState & state, Forma
     if (!list.children.empty())
     {
         if (s.one_line)
-            list.formatImpl(s, state, frame);
+            list.format(ostr, s, state, frame);
         else
-            list.formatImplMultiline(s, state, frame);
+            list.formatImplMultiline(ostr, s, state, frame);
     }
 }
 
@@ -238,14 +241,16 @@ ASTPtr ASTCreateQuery::clone() const
 
     if (columns_list)
         res->set(res->columns_list, columns_list->clone());
+    if (aliases_list)
+        res->set(res->aliases_list, aliases_list->clone());
     if (storage)
         res->set(res->storage, storage->clone());
-    if (inner_storage)
-        res->set(res->inner_storage, inner_storage->clone());
     if (select)
         res->set(res->select, select->clone());
     if (table_overrides)
         res->set(res->table_overrides, table_overrides->clone());
+    if (targets)
+        res->set(res->targets, targets->clone());
 
     if (dictionary)
     {
@@ -254,6 +259,8 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->dictionary, dictionary->clone());
     }
 
+    if (refresh_strategy)
+        res->set(res->refresh_strategy, refresh_strategy->clone());
     if (as_table_function)
         res->set(res->as_table_function, as_table_function->clone());
     if (comment)
@@ -265,40 +272,46 @@ ASTPtr ASTCreateQuery::clone() const
     return res;
 }
 
-void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+String ASTCreateQuery::getID(char delim) const
+{
+    String res = attach ? "AttachQuery" : "CreateQuery";
+    String database = getDatabase();
+    if (!database.empty())
+        res += (delim + getDatabase());
+    res += (delim + getTable());
+    return res;
+}
+
+void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.need_parens = false;
 
     if (database && !table)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "")
+        ostr
             << (attach ? "ATTACH DATABASE " : "CREATE DATABASE ")
-            << (if_not_exists ? "IF NOT EXISTS " : "")
-            << (settings.hilite ? hilite_none : "");
+            << (if_not_exists ? "IF NOT EXISTS " : "");
 
-        database->formatImpl(settings, state, frame);
+        database->format(ostr, settings, state, frame);
 
         if (uuid != UUIDHelpers::Nil)
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " UUID " << (settings.hilite ? hilite_none : "")
-                          << quoteString(toString(uuid));
-        }
+            ostr << " UUID " << quoteString(toString(uuid));
 
-        formatOnCluster(settings);
+        formatOnCluster(ostr, settings);
 
         if (storage)
-            storage->formatImpl(settings, state, frame);
+            storage->format(ostr, settings, state, frame);
 
         if (table_overrides)
         {
-            settings.ostr << settings.nl_or_ws;
-            table_overrides->formatImpl(settings, state, frame);
+            ostr << settings.nl_or_ws;
+            table_overrides->format(ostr, settings, state, frame);
         }
 
         if (comment)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "COMMENT " << (settings.hilite ? hilite_none : "");
-            comment->formatImpl(settings, state, frame);
+            ostr << settings.nl_or_ws << "COMMENT ";
+            comment->format(ostr, settings, state, frame);
         }
 
         return;
@@ -326,32 +339,38 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         else if (is_window_view)
             what = "WINDOW VIEW";
 
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << action << (settings.hilite ? hilite_none : "");
-        settings.ostr << " ";
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << (temporary ? "TEMPORARY " : "")
+        ostr << action;
+        ostr << " ";
+        ostr << (temporary ? "TEMPORARY " : "")
                 << what << " "
                 << (if_not_exists ? "IF NOT EXISTS " : "")
-            << (settings.hilite ? hilite_none : "");
+           ;
 
         if (database)
         {
-            database->formatImpl(settings, state, frame);
-            settings.ostr << '.';
+            database->format(ostr, settings, state, frame);
+            ostr << '.';
         }
 
         chassert(table);
-        table->formatImpl(settings, state, frame);
+        table->format(ostr, settings, state, frame);
 
         if (uuid != UUIDHelpers::Nil)
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " UUID " << (settings.hilite ? hilite_none : "")
-                          << quoteString(toString(uuid));
+            ostr << " UUID " << quoteString(toString(uuid));
 
         assert(attach || !attach_from_path);
         if (attach_from_path)
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "")
-                          << quoteString(*attach_from_path);
+            ostr << " FROM " << quoteString(*attach_from_path);
 
-        formatOnCluster(settings);
+        if (attach_as_replicated.has_value())
+        {
+            if (attach_as_replicated.value())
+                ostr << " AS REPLICATED";
+            else
+                ostr << " AS NOT REPLICATED";
+        }
+
+        formatOnCluster(ostr, settings);
     }
     else
     {
@@ -364,50 +383,66 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             action = "REPLACE";
 
         /// Always DICTIONARY
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << action << " DICTIONARY "
-                      << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "");
+        ostr << action << " DICTIONARY " << (if_not_exists ? "IF NOT EXISTS " : "");
 
         if (database)
         {
-            database->formatImpl(settings, state, frame);
-            settings.ostr << '.';
+            database->format(ostr, settings, state, frame);
+            ostr << '.';
         }
 
         chassert(table);
-        table->formatImpl(settings, state, frame);
+        table->format(ostr, settings, state, frame);
 
         if (uuid != UUIDHelpers::Nil)
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " UUID " << (settings.hilite ? hilite_none : "")
-                          << quoteString(toString(uuid));
-        formatOnCluster(settings);
+            ostr << " UUID " << quoteString(toString(uuid));
+        formatOnCluster(ostr, settings);
     }
 
     if (refresh_strategy)
     {
-        settings.ostr << settings.nl_or_ws;
-        refresh_strategy->formatImpl(settings, state, frame);
+        ostr << settings.nl_or_ws;
+        refresh_strategy->format(ostr, settings, state, frame);
     }
 
-    if (to_table_id)
+    if (auto to_table_id = getTargetTableID(ViewTarget::To))
     {
-        assert((is_materialized_view || is_window_view) && to_inner_uuid == UUIDHelpers::Nil);
-        settings.ostr
-            << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "")
-            << (!to_table_id.database_name.empty() ? backQuoteIfNeed(to_table_id.database_name) + "." : "")
-            << backQuoteIfNeed(to_table_id.table_name);
+        ostr <<  " " << toStringView(Keyword::TO)
+              << " "
+              << (!to_table_id.database_name.empty() ? backQuoteIfNeed(to_table_id.database_name) + "." : "")
+              << backQuoteIfNeed(to_table_id.table_name);
     }
 
-    if (to_inner_uuid != UUIDHelpers::Nil)
+    if (auto to_inner_uuid = getTargetInnerUUID(ViewTarget::To); to_inner_uuid != UUIDHelpers::Nil)
     {
-        assert(is_materialized_view && !to_table_id);
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO INNER UUID " << (settings.hilite ? hilite_none : "")
-                      << quoteString(toString(to_inner_uuid));
+        ostr << " " << toStringView(Keyword::TO_INNER_UUID)
+                      << " " << quoteString(toString(to_inner_uuid));
     }
+
+    bool should_add_empty = is_create_empty;
+    auto add_empty_if_needed = [&]
+    {
+        if (!should_add_empty)
+            return;
+        should_add_empty = false;
+        ostr << " EMPTY";
+    };
+
+    bool should_add_clone = is_clone_as;
+    auto add_clone_if_needed = [&]
+    {
+        if (!should_add_clone)
+            return;
+        should_add_clone = false;
+        ostr << " CLONE";
+    };
 
     if (!as_table.empty())
     {
-        settings.ostr
-            << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "")
+        add_empty_if_needed();
+        add_clone_if_needed();
+        ostr
+            << " AS "
             << (!as_database.empty() ? backQuoteIfNeed(as_database) + "." : "") << backQuoteIfNeed(as_table);
     }
 
@@ -416,96 +451,114 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         if (columns_list && !columns_list->empty())
         {
             frame.expression_list_always_start_on_new_line = true;
-            settings.ostr << (settings.one_line ? " (" : "\n(");
-            FormatStateStacked frame_nested = frame;
-            columns_list->formatImpl(settings, state, frame_nested);
-            settings.ostr << (settings.one_line ? ")" : "\n)");
+            ostr << (settings.one_line ? " (" : "\n(");
+            columns_list->format(ostr, settings, state, frame);
+            ostr << (settings.one_line ? ")" : "\n)");
             frame.expression_list_always_start_on_new_line = false;
         }
 
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
-        as_table_function->formatImpl(settings, state, frame);
+        add_empty_if_needed();
+        add_clone_if_needed();
+        ostr << " AS ";
+        as_table_function->format(ostr, settings, state, frame);
     }
 
     frame.expression_list_always_start_on_new_line = true;
 
     if (columns_list && !columns_list->empty() && !as_table_function)
     {
-        settings.ostr << (settings.one_line ? " (" : "\n(");
-        FormatStateStacked frame_nested = frame;
-        columns_list->formatImpl(settings, state, frame_nested);
-        settings.ostr << (settings.one_line ? ")" : "\n)");
+        ostr << (settings.one_line ? " (" : "\n(");
+        columns_list->format(ostr, settings, state, frame);
+        ostr << (settings.one_line ? ")" : "\n)");
+    }
+
+    frame.expression_list_always_start_on_new_line = true;
+
+    if (is_ordinary_view && aliases_list && !as_table_function)
+    {
+        ostr << (settings.one_line ? " (" : "\n(");
+        aliases_list->format(ostr, settings, state, frame);
+        ostr << (settings.one_line ? ")" : "\n)");
     }
 
     if (dictionary_attributes_list)
     {
-        settings.ostr << (settings.one_line ? " (" : "\n(");
-        FormatStateStacked frame_nested = frame;
+        ostr << (settings.one_line ? " (" : "\n(");
         if (settings.one_line)
-            dictionary_attributes_list->formatImpl(settings, state, frame_nested);
+            dictionary_attributes_list->format(ostr, settings, state, frame);
         else
-            dictionary_attributes_list->formatImplMultiline(settings, state, frame_nested);
-        settings.ostr << (settings.one_line ? ")" : "\n)");
+            dictionary_attributes_list->formatImplMultiline(ostr, settings, state, frame);
+        ostr << (settings.one_line ? ")" : "\n)");
     }
 
     frame.expression_list_always_start_on_new_line = false;
 
-    if (inner_storage)
+    if (storage)
+        storage->format(ostr, settings, state, frame);
+
+    if (auto inner_storage = getTargetInnerEngine(ViewTarget::Inner))
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " INNER" << (settings.hilite ? hilite_none : "");
-        inner_storage->formatImpl(settings, state, frame);
+        ostr << " " << toStringView(Keyword::INNER);
+        inner_storage->format(ostr, settings, state, frame);
     }
 
-    if (storage)
-        storage->formatImpl(settings, state, frame);
+    if (auto to_storage = getTargetInnerEngine(ViewTarget::To))
+        to_storage->format(ostr, settings, state, frame);
+
+    if (targets)
+    {
+        targets->formatTarget(ViewTarget::Data, ostr, settings, state, frame);
+        targets->formatTarget(ViewTarget::Tags, ostr, settings, state, frame);
+        targets->formatTarget(ViewTarget::Metrics, ostr, settings, state, frame);
+    }
 
     if (dictionary)
-        dictionary->formatImpl(settings, state, frame);
+        dictionary->format(ostr, settings, state, frame);
 
     if (is_watermark_strictly_ascending)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WATERMARK STRICTLY_ASCENDING" << (settings.hilite ? hilite_none : "");
+        ostr << " WATERMARK STRICTLY_ASCENDING";
     }
     else if (is_watermark_ascending)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WATERMARK ASCENDING" << (settings.hilite ? hilite_none : "");
+        ostr << " WATERMARK ASCENDING";
     }
     else if (is_watermark_bounded)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WATERMARK " << (settings.hilite ? hilite_none : "");
-        watermark_function->formatImpl(settings, state, frame);
+        ostr << " WATERMARK ";
+        watermark_function->format(ostr, settings, state, frame);
     }
 
     if (allowed_lateness)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " ALLOWED_LATENESS " << (settings.hilite ? hilite_none : "");
-        lateness_function->formatImpl(settings, state, frame);
+        ostr << " ALLOWED_LATENESS ";
+        lateness_function->format(ostr, settings, state, frame);
     }
 
     if (is_populate)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " POPULATE" << (settings.hilite ? hilite_none : "");
-    else if (is_create_empty)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " EMPTY" << (settings.hilite ? hilite_none : "");
+        ostr << " POPULATE";
+
+    add_empty_if_needed();
 
     if (sql_security && supportSQLSecurity() && sql_security->as<ASTSQLSecurity &>().type.has_value())
     {
-        settings.ostr << settings.nl_or_ws;
-        sql_security->formatImpl(settings, state, frame);
+        ostr << settings.nl_or_ws;
+        sql_security->format(ostr, settings, state, frame);
     }
 
     if (select)
     {
-        settings.ostr << settings.nl_or_ws;
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "AS "
-                      << (comment ? "(" : "") << (settings.hilite ? hilite_none : "");
-        select->formatImpl(settings, state, frame);
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << (comment ? ")" : "") << (settings.hilite ? hilite_none : "");
+        ostr << settings.nl_or_ws;
+        ostr << "AS "
+                      << (comment ? "(" : "");
+        select->format(ostr, settings, state, frame);
+        ostr << (comment ? ")" : "");
     }
 
     if (comment)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "COMMENT " << (settings.hilite ? hilite_none : "");
-        comment->formatImpl(settings, state, frame);
+        ostr << settings.nl_or_ws << "COMMENT ";
+        comment->format(ostr, settings, state, frame);
     }
 }
 
@@ -516,49 +569,65 @@ bool ASTCreateQuery::isParameterizedView() const
     return false;
 }
 
-
-ASTCreateQuery::UUIDs::UUIDs(const ASTCreateQuery & query)
-    : uuid(query.uuid)
-    , to_inner_uuid(query.to_inner_uuid)
+NameToNameMap ASTCreateQuery::getQueryParameters() const
 {
+    if (!select || !isParameterizedView())
+        return {};
+
+    return select->getQueryParameters();
 }
 
-String ASTCreateQuery::UUIDs::toString() const
+void ASTCreateQuery::generateRandomUUIDs()
 {
-    WriteBufferFromOwnString out;
-    out << "{" << uuid << "," << to_inner_uuid << "}";
-    return out.str();
+    CreateQueryUUIDs{*this, /* generate_random= */ true}.copyToQuery(*this);
 }
 
-ASTCreateQuery::UUIDs ASTCreateQuery::UUIDs::fromString(const String & str)
+void ASTCreateQuery::resetUUIDs()
 {
-    ReadBufferFromString in{str};
-    ASTCreateQuery::UUIDs res;
-    in >> "{" >> res.uuid >> "," >> res.to_inner_uuid >> "}";
-    return res;
+    CreateQueryUUIDs{}.copyToQuery(*this);
 }
 
-ASTCreateQuery::UUIDs ASTCreateQuery::generateRandomUUID(bool always_generate_new_uuid)
+
+StorageID ASTCreateQuery::getTargetTableID(ViewTarget::Kind target_kind) const
 {
-    if (always_generate_new_uuid)
-        setUUID({});
-
-    if (uuid == UUIDHelpers::Nil)
-        uuid = UUIDHelpers::generateV4();
-
-    /// If destination table (to_table_id) is not specified for materialized view,
-    /// then MV will create inner table. We should generate UUID of inner table here.
-    bool need_uuid_for_inner_table = !attach && is_materialized_view && !to_table_id;
-    if (need_uuid_for_inner_table && (to_inner_uuid == UUIDHelpers::Nil))
-        to_inner_uuid = UUIDHelpers::generateV4();
-
-    return UUIDs{*this};
+    if (targets)
+        return targets->getTableID(target_kind);
+    return StorageID::createEmpty();
 }
 
-void ASTCreateQuery::setUUID(const UUIDs & uuids)
+bool ASTCreateQuery::hasTargetTableID(ViewTarget::Kind target_kind) const
 {
-    uuid = uuids.uuid;
-    to_inner_uuid = uuids.to_inner_uuid;
+    if (targets)
+        return targets->hasTableID(target_kind);
+    return false;
+}
+
+UUID ASTCreateQuery::getTargetInnerUUID(ViewTarget::Kind target_kind) const
+{
+    if (targets)
+        return targets->getInnerUUID(target_kind);
+    return UUIDHelpers::Nil;
+}
+
+bool ASTCreateQuery::hasInnerUUIDs() const
+{
+    if (targets)
+        return targets->hasInnerUUIDs();
+    return false;
+}
+
+std::shared_ptr<ASTStorage> ASTCreateQuery::getTargetInnerEngine(ViewTarget::Kind target_kind) const
+{
+    if (targets)
+        return targets->getInnerEngine(target_kind);
+    return nullptr;
+}
+
+void ASTCreateQuery::setTargetInnerEngine(ViewTarget::Kind target_kind, ASTPtr storage_def)
+{
+    if (!targets)
+        set(targets, std::make_shared<ASTViewTargets>());
+    targets->setInnerEngine(target_kind, storage_def);
 }
 
 }

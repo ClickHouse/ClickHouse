@@ -8,21 +8,16 @@
 
 #include <base/types.h>
 
-#include <Columns/IColumn.h>
 #include <Columns/ColumnString.h>
-#include <Common/Exception.h>
-#include <Common/HashTable/Hash.h>
-#include <Common/HashTable/HashSet.h>
+#include <Columns/IColumn.h>
 #include <Core/Block.h>
-#include <Core/Field.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/Regexps.h>
 #include <QueryPipeline/Pipe.h>
+#include <Common/Exception.h>
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
-
-#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -114,12 +109,10 @@ public:
             IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
             return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, default_mask).front();
         }
-        else
-        {
-            const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
-            const Columns & columns= Columns({default_values_column});
-            return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, columns).front();
-        }
+
+        const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
+        const Columns & columns = Columns({default_values_column});
+        return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, columns).front();
     }
 
     Columns getColumns(

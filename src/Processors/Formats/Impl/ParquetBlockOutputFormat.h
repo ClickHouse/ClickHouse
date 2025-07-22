@@ -30,12 +30,10 @@ class CHColumnToArrowColumn;
 class ParquetBlockOutputFormat : public IOutputFormat
 {
 public:
-    ParquetBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
+    ParquetBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_);
     ~ParquetBlockOutputFormat() override;
 
     String getName() const override { return "ParquetBlockOutputFormat"; }
-
-    String getContentType() const override { return "application/octet-stream"; }
 
 private:
     struct MemoryToken
@@ -112,7 +110,7 @@ private:
     void consume(Chunk) override;
     void finalizeImpl() override;
     void resetFormatterImpl() override;
-    void onCancel() override;
+    void onCancel() noexcept override;
 
     void writeRowGroup(std::vector<Chunk> chunks);
     void writeUsingArrow(std::vector<Chunk> chunks);
@@ -137,9 +135,8 @@ private:
 
     Parquet::WriteOptions options;
     Parquet::SchemaElements schema;
-    std::vector<parquet::format::RowGroup> row_groups_complete;
-    size_t base_offset = 0;
-
+    Parquet::FileWriteState file_state;
+    size_t base_offset = 0; // initial out.count(), just for assert
 
     std::mutex mutex;
     std::condition_variable condvar; // wakes up consume()

@@ -1,3 +1,4 @@
+#include <Core/Settings.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -114,6 +115,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table name is empty");
 
     bool has_column;
+    bool has_alias_column;
     if (host_name.empty())
     {
         // FIXME this (probably) needs a non-constant access to query context,
@@ -124,6 +126,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
             const_pointer_cast<Context>(getContext()));
         auto table_metadata = table->getInMemoryMetadataPtr();
         has_column = table_metadata->getColumns().hasPhysical(column_name);
+        has_alias_column = table_metadata->getColumns().hasAlias(column_name);
     }
     else
     {
@@ -138,11 +141,12 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
             treat_local_as_remote,
             treat_local_port_as_remote,
             /* secure= */ false,
+            /* bind_host= */ "",
             /* priority= */ Priority{1},
             /* cluster_name= */ "",
             /* password= */ ""
         };
-        auto cluster = std::make_shared<Cluster>(getContext()->getSettings(), host_names, params);
+        auto cluster = std::make_shared<Cluster>(getContext()->getSettingsRef(), host_names, params);
 
         // FIXME this (probably) needs a non-constant access to query context,
         // because it might initialized a storage. Ideally, the tables required
@@ -152,9 +156,10 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
             const_pointer_cast<Context>(getContext()));
 
         has_column = remote_columns.hasPhysical(column_name);
+        has_alias_column = remote_columns.hasAlias(column_name);
     }
 
-    return DataTypeUInt8().createColumnConst(input_rows_count, Field{static_cast<UInt64>(has_column)});
+    return DataTypeUInt8().createColumnConst(input_rows_count, Field{static_cast<UInt64>(has_column || has_alias_column)});
 }
 
 }

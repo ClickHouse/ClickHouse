@@ -3,6 +3,10 @@
 #include <Processors/Merges/IMergingTransform.h>
 #include <Processors/Merges/Algorithms/VersionedCollapsingAlgorithm.h>
 
+namespace ProfileEvents
+{
+    extern const Event VersionedCollapsingSortedMilliseconds;
+}
 
 namespace DB
 {
@@ -13,7 +17,7 @@ class VersionedCollapsingTransform final : public IMergingTransform<VersionedCol
 public:
     /// Don't need version column. It's in primary key.
     VersionedCollapsingTransform(
-        const Block & header, size_t num_inputs,
+        SharedHeader header, size_t num_inputs,
         SortDescription description_, const String & sign_column_,
         size_t max_block_size_rows,
         size_t max_block_size_bytes,
@@ -33,6 +37,11 @@ public:
     }
 
     String getName() const override { return "VersionedCollapsingTransform"; }
+
+    void onFinish() override
+    {
+        logMergedStats(ProfileEvents::VersionedCollapsingSortedMilliseconds, "Versioned collapsed sorted", getLogger("VersionedCollapsingTransform"));
+    }
 };
 
 }

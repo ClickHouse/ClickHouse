@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-s3-storage
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-object-storage
 
 drop table if exists t_multi_prewhere;
 drop row policy if exists policy_02834 on t_multi_prewhere;
@@ -13,7 +13,7 @@ insert into t_multi_prewhere select number, number, number from numbers(10000);
 system drop mark cache;
 select sum(b) from t_multi_prewhere prewhere a < 5000;
 
-system flush logs;
+system flush logs query_log;
 
 select ProfileEvents['FileOpen'] from system.query_log
 where

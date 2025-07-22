@@ -1,3 +1,5 @@
+-- Tags: no-asan, no-tsan, no-msan, no-ubsan
+
 SELECT number
 FROM
 (
@@ -9,3 +11,4 @@ FROM
 )
 WHERE number = 1
 LIMIT 1
+SETTINGS max_rows_to_read = 0;

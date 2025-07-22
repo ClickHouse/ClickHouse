@@ -3,6 +3,8 @@
 #include <Access/AccessControl.h>
 #include <Access/User.h>
 
+#include <Core/Settings.h>
+
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/quoteString.h>
@@ -11,9 +13,12 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTSQLSecurity.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 
 namespace DB
@@ -114,7 +119,7 @@ UUID StorageInMemoryMetadata::getDefinerID(DB::ContextPtr context) const
     return access_control.getID<User>(*definer);
 }
 
-ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(ContextPtr context) const
+ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(ContextPtr context, const ClientInfo * client_info) const
 {
     if (!sql_security_type)
         return Context::createCopy(context);
@@ -123,11 +128,14 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
         return Context::createCopy(context);
 
     auto new_context = Context::createCopy(context->getGlobalContext());
-    new_context->setClientInfo(context->getClientInfo());
+    if (client_info)
+        new_context->setClientInfo(*client_info);
+    else
+        new_context->setClientInfo(context->getClientInfo());
     new_context->makeQueryContext();
 
     const auto & database = context->getCurrentDatabase();
-    if (!database.empty())
+    if (!database.empty() && database != new_context->getCurrentDatabase())
         new_context->setCurrentDatabase(database);
 
     new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames());
@@ -151,6 +159,7 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     auto changed_settings = context->getSettingsRef().changes();
     new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
     new_context->applySettingsChanges(changed_settings);
+    new_context->setSetting("allow_ddl", 1);
 
     return new_context;
 }
@@ -257,6 +266,12 @@ bool StorageInMemoryMetadata::hasAnyTableTTL() const
     return hasAnyMoveTTL() || hasRowsTTL() || hasAnyRecompressionTTL() || hasAnyGroupByTTL() || hasAnyRowsWhereTTL();
 }
 
+bool StorageInMemoryMetadata::hasOnlyRowsTTL() const
+{
+    bool has_any_other_ttl = hasAnyMoveTTL() || hasAnyRecompressionTTL() || hasAnyGroupByTTL() || hasAnyRowsWhereTTL() || hasAnyColumnTTL();
+    return hasRowsTTL() && !has_any_other_ttl;
+}
+
 TTLColumnsDescription StorageInMemoryMetadata::getColumnTTLs() const
 {
     return column_ttls_by_name;
@@ -332,10 +347,17 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
     NameSet required_ttl_columns;
     NameSet updated_ttl_columns;
 
-    auto add_dependent_columns = [&updated_columns](const Names & required_columns, auto & to_set)
+    auto add_dependent_columns = [&updated_columns](const Names & required_columns, auto & to_set, bool is_projection = false)
     {
         for (const auto & dependency : required_columns)
         {
+            /// useful in the case of lightweight delete with wide part and option of rebuild projection
+            if (is_projection && updated_columns.contains(RowExistsColumn::name))
+            {
+                to_set.insert(required_columns.begin(), required_columns.end());
+                return true;
+            }
+
             if (updated_columns.contains(dependency))
             {
                 to_set.insert(required_columns.begin(), required_columns.end());
@@ -355,7 +377,7 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
     for (const auto & projection : getProjections())
     {
         if (has_dependency(projection.name, ColumnDependency::PROJECTION))
-            add_dependent_columns(projection.getRequiredColumns(), projections_columns);
+            add_dependent_columns(projection.getRequiredColumns(), projections_columns, true);
     }
 
     auto add_for_rows_ttl = [&](const auto & expression, auto & to_set)
@@ -445,6 +467,16 @@ Block StorageInMemoryMetadata::getSampleBlock() const
     return res;
 }
 
+Block StorageInMemoryMetadata::getSampleBlockWithSubcolumns() const
+{
+    Block res;
+
+    for (const auto & column : getColumns().get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()))
+        res.insert({column.type->createColumn(), column.type, column.name});
+
+    return res;
+}
+
 const KeyDescription & StorageInMemoryMetadata::getPartitionKey() const
 {
     return partition_key;
@@ -494,6 +526,13 @@ Names StorageInMemoryMetadata::getSortingKeyColumns() const
 {
     if (hasSortingKey())
         return sorting_key.column_names;
+    return {};
+}
+
+std::vector<bool> StorageInMemoryMetadata::getSortingKeyReverseFlags() const
+{
+    if (hasSortingKey())
+        return sorting_key.reverse_flags;
     return {};
 }
 

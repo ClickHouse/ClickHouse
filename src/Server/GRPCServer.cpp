@@ -1,4 +1,4 @@
-#include "GRPCServer.h"
+#include <Server/GRPCServer.h>
 #include <limits>
 #include <memory>
 #include <Poco/Net/SocketAddress.h>
@@ -7,10 +7,12 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/SettingsChanges.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <QueryPipeline/ProfileInfo.h>
 #include <Interpreters/Context.h>
@@ -44,6 +46,13 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include <base/range.h>
 #include <Common/logger_useful.h>
+
+#include <absl/base/log_severity.h>
+#include <absl/log/globals.h>
+#include <absl/log/initialize.h>
+#include <absl/log/log_sink_registry.h>
+
+#include <grpc/support/log.h>
 #include <grpc++/security/server_credentials.h>
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
@@ -58,6 +67,21 @@ using GRPCObsoleteTransportCompression = clickhouse::grpc::ObsoleteTransportComp
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsBool calculate_text_stack_trace;
+    extern const SettingsUInt64 interactive_delay;
+    extern const SettingsLogsLevel send_logs_level;
+    extern const SettingsString send_logs_source_regexp;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsBool throw_if_no_data_to_insert;
+    extern const SettingsBool use_concurrency_control;
+}
+
 namespace ErrorCodes
 {
     extern const int INVALID_CONFIG_PARAMETER;
@@ -73,34 +97,68 @@ namespace ErrorCodes
 namespace
 {
     /// Make grpc to pass logging messages to ClickHouse logging system.
+    class GrpcLogSink : public absl::LogSink
+    {
+    public:
+        void Send(const absl::LogEntry & entry) override
+        {
+            static LoggerRawPtr logger = getRawLogger("grpc");
+
+            const auto msg = std::string(entry.text_message());
+            const auto file = entry.source_filename();
+            int line = entry.source_line();
+
+            switch (entry.log_severity())
+            {
+                case absl::LogSeverity::kInfo:
+                    LOG_INFO(logger, "{} ({}:{})", msg, file, line);
+                    break;
+                case absl::LogSeverity::kWarning:
+                    LOG_WARNING(logger, "{} ({}:{})", msg, file, line);
+                    break;
+                case absl::LogSeverity::kError:
+                    LOG_ERROR(logger, "{} ({}:{})", msg, file, line);
+                    break;
+                case absl::LogSeverity::kFatal:
+                    LOG_ERROR(logger, "FATAL: {} ({}:{})", msg, file, line);
+                    break;
+            }
+        }
+    };
+    GrpcLogSink grpc_log_sink;
+
+    /// See also contrib/grpc/src/core/util/log.cc
     void initGRPCLogging(const Poco::Util::AbstractConfiguration & config)
     {
         static std::once_flag once_flag;
         std::call_once(once_flag, [&config]
         {
-            static LoggerRawPtr logger = getRawLogger("grpc");
-            gpr_set_log_function([](gpr_log_func_args* args)
-            {
-                if (args->severity == GPR_LOG_SEVERITY_DEBUG)
-                    LOG_DEBUG(logger, "{} ({}:{})", args->message, args->file, args->line);
-                else if (args->severity == GPR_LOG_SEVERITY_INFO)
-                    LOG_INFO(logger, "{} ({}:{})", args->message, args->file, args->line);
-                else if (args->severity == GPR_LOG_SEVERITY_ERROR)
-                    LOG_ERROR(logger, "{} ({}:{})", args->message, args->file, args->line);
-            });
+            absl::AddLogSink(&grpc_log_sink);
+            absl::SetStderrThreshold(absl::LogSeverityAtLeast::kInfinity);
+            absl::InitializeLog();
 
-            if (config.getBool("grpc.verbose_logs", false))
-            {
-                gpr_set_log_verbosity(GPR_LOG_SEVERITY_DEBUG);
+            absl::SetStderrThreshold(absl::LogSeverityAtLeast::kInfinity);
+
+            const bool verbose = config.getBool("grpc.verbose_logs", false);
+            static LoggerRawPtr logger = getRawLogger("grpc");
+
+            if (verbose)
                 grpc_tracer_set_enabled("all", true);
-            }
-            else if (logger->is(Poco::Message::PRIO_DEBUG))
+
+            if (logger->is(Poco::Message::PRIO_DEBUG))
             {
-                gpr_set_log_verbosity(GPR_LOG_SEVERITY_DEBUG);
+                absl::SetMinLogLevel(absl::LogSeverityAtLeast::kInfo);
+                absl::SetVLogLevel("*grpc*/*", 2);
             }
             else if (logger->is(Poco::Message::PRIO_INFORMATION))
             {
-                gpr_set_log_verbosity(GPR_LOG_SEVERITY_INFO);
+                absl::SetMinLogLevel(absl::LogSeverityAtLeast::kInfo);
+                absl::SetVLogLevel("*grpc*/*", -1);
+            }
+            else
+            {
+                absl::SetMinLogLevel(absl::LogSeverityAtLeast::kWarning);
+                absl::SetVLogLevel("*grpc*/*", -1);
             }
         });
     }
@@ -877,13 +935,13 @@ namespace
 
         /// Prepare for sending exceptions and logs.
         const Settings & settings = query_context->getSettingsRef();
-        send_exception_with_stacktrace = settings.calculate_text_stack_trace;
-        const auto client_logs_level = settings.send_logs_level;
+        send_exception_with_stacktrace = settings[Setting::calculate_text_stack_trace];
+        const auto client_logs_level = settings[Setting::send_logs_level];
         if (client_logs_level != LogsLevel::none)
         {
             logs_queue = std::make_shared<InternalTextLogsQueue>();
             logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
-            logs_queue->setSourceRegexp(settings.send_logs_source_regexp);
+            logs_queue->setSourceRegexp(settings[Setting::send_logs_source_regexp]);
             CurrentThread::attachInternalTextLogsQueue(logs_queue, client_logs_level);
         }
 
@@ -896,15 +954,15 @@ namespace
             responder->setTransportCompression(*transport_compression);
 
         /// The interactive delay will be used to show progress.
-        interactive_delay = settings.interactive_delay;
+        interactive_delay = settings[Setting::interactive_delay];
         query_context->setProgressCallback([this](const Progress & value) { return progress.incrementPiecewiseAtomically(value); });
 
         /// Parse the query.
         query_text = std::move(*(query_info.mutable_query()));
         const char * begin = query_text.data();
         const char * end = begin + query_text.size();
-        ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
-        ast = parseQuery(parser, begin, end, "", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+        ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert]);
+        ast = parseQuery(parser, begin, end, "", settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
         /// Choose input format.
         insert_query = ast->as<ASTInsertQuery>();
@@ -920,9 +978,9 @@ namespace
         /// Choose output format.
         query_context->setDefaultFormat(query_info.output_format());
         if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
-            ast_query_with_output && ast_query_with_output->format)
+            ast_query_with_output && ast_query_with_output->format_ast)
         {
-            output_format = getIdentifierName(ast_query_with_output->format);
+            output_format = getIdentifierName(ast_query_with_output->format_ast);
         }
         if (output_format.empty())
             output_format = query_context->getDefaultFormat();
@@ -964,7 +1022,7 @@ namespace
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in InputBlocksReader");
 
             Block block;
-            while (!block && pipeline_executor->pull(block));
+            while (block.empty() && pipeline_executor->pull(block));
 
             return block;
         });
@@ -990,14 +1048,12 @@ namespace
         {
             if (!insert_query)
                 throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "Query requires data to insert, but it is not an INSERT query");
-            else
-            {
-                const auto & settings = query_context->getSettingsRef();
-                if (settings.throw_if_no_data_to_insert)
-                    throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
-                else
-                    return;
-            }
+
+            const auto & settings = query_context->getSettingsRef();
+            if (settings[Setting::throw_if_no_data_to_insert])
+                throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
+
+            return;
         }
 
         /// This is significant, because parallel parsing may be used.
@@ -1010,7 +1066,7 @@ namespace
         Block block;
         while (pipeline_executor->pull(block))
         {
-            if (block)
+            if (!block.empty())
                 executor.push(block);
         }
 
@@ -1022,7 +1078,7 @@ namespace
 
     void Call::initializePipeline(const Block & header)
     {
-        assert(!read_buffer);
+        chassert(!read_buffer);
         read_buffer = std::make_unique<ReadBufferFromCallback>([this]() -> std::pair<const void *, size_t>
         {
             if (need_input_data_from_insert_query)
@@ -1082,8 +1138,8 @@ namespace
         read_buffer = wrapReadBufferWithCompressionMethod(std::move(read_buffer), input_compression_method);
 
         assert(!pipeline);
-        auto source = query_context->getInputFormat(
-            input_format, *read_buffer, header, query_context->getSettings().max_insert_block_size);
+        auto source
+            = query_context->getInputFormat(input_format, *read_buffer, header, query_context->getSettingsRef()[Setting::max_insert_block_size]);
 
         pipeline = std::make_unique<QueryPipeline>(std::move(source));
         pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
@@ -1151,13 +1207,12 @@ namespace
                         external_table_context->applySettingsChanges(settings_changes);
                     }
                     auto in = external_table_context->getInputFormat(
-                        format, *buf, metadata_snapshot->getSampleBlock(),
-                        external_table_context->getSettings().max_insert_block_size);
+                        format, *buf, metadata_snapshot->getSampleBlock(), external_table_context->getSettingsRef()[Setting::max_insert_block_size]);
 
                     QueryPipelineBuilder cur_pipeline;
                     cur_pipeline.init(Pipe(std::move(in)));
                     cur_pipeline.addTransform(std::move(sink));
-                    cur_pipeline.setSinks([&](const Block & header, Pipe::StreamType)
+                    cur_pipeline.setSinks([&](const SharedHeader & header, Pipe::StreamType)
                     {
                         return std::make_shared<EmptySink>(header);
                     });
@@ -1232,6 +1287,7 @@ namespace
         if (io.pipeline.pulling())
         {
             auto executor = std::make_shared<PullingAsyncPipelineExecutor>(io.pipeline);
+            io.pipeline.setConcurrencyControl(query_context->getSettingsRef()[Setting::use_concurrency_control]);
             auto check_for_cancel = [&]
             {
                 if (isQueryCancelled())
@@ -1255,7 +1311,7 @@ namespace
                 if (!check_for_cancel())
                     break;
 
-                if (block && !io.null_format)
+                if (!block.empty() && !io.null_format)
                     output_format_processor->write(materializeBlock(block));
 
                 if (after_send_progress.elapsedMicroseconds() >= interactive_delay)
@@ -1472,8 +1528,7 @@ namespace
         {
             if (initial_query_info_read)
                 throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to read extra QueryInfo");
-            else
-                throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to read initial QueryInfo");
+            throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to read initial QueryInfo");
         }
     }
 
@@ -1535,7 +1590,7 @@ namespace
 
     void Call::addTotalsToResult(const Block & totals)
     {
-        if (!totals)
+        if (totals.empty())
             return;
 
         PODArray<char> memory;
@@ -1553,7 +1608,7 @@ namespace
 
     void Call::addExtremesToResult(const Block & extremes)
     {
-        if (!extremes)
+        if (extremes.empty())
             return;
 
         PODArray<char> memory;
@@ -1577,6 +1632,8 @@ namespace
         stats.set_allocated_bytes(info.bytes);
         stats.set_applied_limit(info.hasAppliedLimit());
         stats.set_rows_before_limit(info.getRowsBeforeLimit());
+        stats.set_applied_aggregation(info.hasAppliedAggregation());
+        stats.set_rows_before_aggregation(info.getRowsBeforeAggregation());
     }
 
     void Call::addLogsToResult()
@@ -1735,10 +1792,19 @@ namespace
 class GRPCServer::Runner
 {
 public:
-    explicit Runner(GRPCServer & owner_) : owner(owner_) {}
+    explicit Runner(GRPCServer & owner_) : owner(owner_), log(owner.log) {}
 
     ~Runner()
     {
+        try
+        {
+            stop();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "~Runner");
+        }
+
         if (queue_thread.joinable())
             queue_thread.join();
     }
@@ -1756,13 +1822,27 @@ public:
             }
             catch (...)
             {
-                tryLogCurrentException("GRPCServer");
+                tryLogCurrentException(log, "run");
             }
         };
         queue_thread = ThreadFromGlobalPool{runner_function};
     }
 
-    void stop() { stopReceivingNewCalls(); }
+    void stop()
+    {
+        std::lock_guard lock{mutex};
+        should_stop = true;
+
+        if (current_calls.empty())
+        {
+            /// If there are no current calls then we call shutdownQueue() to signal the queue to stop waiting for next events.
+            /// The following line will make CompletionQueue::Next() stop waiting if the queue is empty and return false instead.
+            shutdownQueue();
+
+            /// If there are some current calls then we can't call shutdownQueue() right now because we want to let the current calls finish.
+            /// In this case function shutdownQueue() will be called later in run().
+        }
+    }
 
     size_t getNumCurrentCalls() const
     {
@@ -1787,12 +1867,6 @@ private:
         responders_for_new_calls[call_type]->start(
             owner.grpc_service, *owner.queue, *owner.queue,
             [this, call_type](bool ok) { onNewCall(call_type, ok); });
-    }
-
-    void stopReceivingNewCalls()
-    {
-        std::lock_guard lock{mutex};
-        should_stop = true;
     }
 
     void onNewCall(CallType call_type, bool responder_started_ok)
@@ -1827,38 +1901,47 @@ private:
     void run()
     {
         setThreadName("GRPCServerQueue");
-        while (true)
+
+        bool ok = false;
+        void * tag = nullptr;
+
+        while (owner.queue->Next(&tag, &ok))
         {
-            {
-                std::lock_guard lock{mutex};
-                finished_calls.clear(); /// Destroy finished calls.
-
-                /// If (should_stop == true) we continue processing until there is no active calls.
-                if (should_stop && current_calls.empty())
-                {
-                    bool all_responders_gone = std::all_of(
-                        responders_for_new_calls.begin(), responders_for_new_calls.end(),
-                        [](std::unique_ptr<BaseResponder> & responder) { return !responder; });
-                    if (all_responders_gone)
-                        break;
-                }
-            }
-
-            bool ok = false;
-            void * tag = nullptr;
-            if (!owner.queue->Next(&tag, &ok))
-            {
-                /// Queue shutted down.
-                break;
-            }
-
             auto & callback = *static_cast<CompletionCallback *>(tag);
             callback(ok);
+
+            std::lock_guard lock{mutex};
+            finished_calls.clear(); /// Destroy finished calls.
+
+            /// If (should_stop == true) we continue processing while there are current calls.
+            if (should_stop && current_calls.empty())
+                shutdownQueue();
         }
+
+        /// CompletionQueue::Next() returns false if the queue is fully drained and shut down.
+    }
+
+    /// Shutdown the queue if that isn't done yet.
+    void shutdownQueue()
+    {
+        chassert(should_stop);
+        if (queue_is_shut_down)
+            return;
+
+        queue_is_shut_down = true;
+
+        /// Server should be shut down before CompletionQueue.
+        if (owner.grpc_server)
+            owner.grpc_server->Shutdown();
+
+        if (owner.queue)
+            owner.queue->Shutdown();
     }
 
     GRPCServer & owner;
+    LoggerRawPtr log;
     ThreadFromGlobalPool queue_thread;
+    bool queue_is_shut_down = false;
     std::vector<std::unique_ptr<BaseResponder>> responders_for_new_calls;
     std::map<Call *, std::unique_ptr<Call>> current_calls;
     std::vector<std::unique_ptr<Call>> finished_calls;
@@ -1876,16 +1959,6 @@ GRPCServer::GRPCServer(IServer & iserver_, const Poco::Net::SocketAddress & addr
 
 GRPCServer::~GRPCServer()
 {
-    /// Server should be shutdown before CompletionQueue.
-    if (grpc_server)
-        grpc_server->Shutdown();
-
-    /// Completion Queue should be shutdown before destroying the runner,
-    /// because the runner is now probably executing CompletionQueue::Next() on queue_thread
-    /// which is blocked until an event is available or the queue is shutting down.
-    if (queue)
-        queue->Shutdown();
-
     runner.reset();
 }
 

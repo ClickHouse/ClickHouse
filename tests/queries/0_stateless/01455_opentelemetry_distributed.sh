@@ -9,9 +9,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function check_log
 {
-${CLICKHOUSE_CLIENT} --format=JSONEachRow -nq "
-set allow_experimental_analyzer = 1;
-system flush logs;
+${CLICKHOUSE_CLIENT} --format=JSONEachRow -q "
+set enable_analyzer = 1;
+system flush logs opentelemetry_span_log;
 
 -- Show queries sorted by start time.
 select attribute['db.statement'] as query,
@@ -75,7 +75,7 @@ select uniqExact(value) "'"'"unique non-empty tracestate values"'"'"
 
 # Generate some random trace id so that the prevous runs of the test do not interfere.
 echo "===http==="
-trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4())))) settings allow_experimental_analyzer = 1")
+trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4())))) settings enable_analyzer = 1")
 
 # Check that the HTTP traceparent is read, and then passed through `remote`
 # table function. We expect 4 queries -- one initial, one SELECT and two
@@ -85,7 +85,7 @@ ${CLICKHOUSE_CURL} \
     --header "traceparent: 00-$trace_id-0000000000000073-01" \
     --header "tracestate: some custom state" "$CLICKHOUSE_URL" \
     --get \
-    --data-urlencode "query=select 1 from remote('127.0.0.2', system, one) settings allow_experimental_analyzer = 1 format Null"
+    --data-urlencode "query=select 1 from remote('127.0.0.2', system, one) settings enable_analyzer = 1 format Null"
 
 check_log
 
@@ -124,7 +124,7 @@ do
 done
 wait
 
-${CLICKHOUSE_CLIENT} -q "system flush logs"
+${CLICKHOUSE_CLIENT} -q "system flush logs opentelemetry_span_log"
 ${CLICKHOUSE_CLIENT} -q "
     -- expect 40 * 0.5 = 20 sampled events on average;
     -- probability of getting 0, 1, 39, or 40 sampled events: 82/2^40 = 1 in 13.4 B runs;

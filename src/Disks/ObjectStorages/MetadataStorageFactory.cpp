@@ -1,10 +1,9 @@
+#include <Common/assert_cast.h>
 #include <Disks/ObjectStorages/MetadataStorageFactory.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorage.h>
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 #include <Disks/ObjectStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
-#endif
 #include <Disks/DiskLocal.h>
 #include <Interpreters/Context.h>
 
@@ -102,9 +101,10 @@ void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
         auto metadata_keep_free_space_bytes = config.getUInt64(config_prefix + ".metadata_keep_free_space_bytes", 0);
 
         fs::create_directories(metadata_path);
-        auto metadata_disk = std::make_shared<DiskLocal>(name + "-metadata", metadata_path, metadata_keep_free_space_bytes, config, config_prefix);
+        auto db_disk
+            = std::make_shared<DiskLocal>(name + "-metadata", metadata_path, metadata_keep_free_space_bytes, config, config_prefix);
         auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
-        return std::make_shared<MetadataStorageFromDisk>(metadata_disk, key_compatibility_prefix);
+        return std::make_shared<MetadataStorageFromDisk>(db_disk, key_compatibility_prefix);
     });
 }
 
@@ -117,7 +117,8 @@ void registerPlainMetadataStorage(MetadataStorageFactory & factory)
         ObjectStoragePtr object_storage) -> MetadataStoragePtr
     {
         auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
-        return std::make_shared<MetadataStorageFromPlainObjectStorage>(object_storage, key_compatibility_prefix);
+        return std::make_shared<MetadataStorageFromPlainObjectStorage>(
+            object_storage, key_compatibility_prefix, config.getUInt64(config_prefix + ".object_metadata_cache_size", 0));
     });
 }
 
@@ -131,11 +132,11 @@ void registerPlainRewritableMetadataStorage(MetadataStorageFactory & factory)
            ObjectStoragePtr object_storage) -> MetadataStoragePtr
         {
             auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
-            return std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, key_compatibility_prefix);
+            return std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(
+                object_storage, key_compatibility_prefix, config.getUInt64(config_prefix + ".object_metadata_cache_size", 0));
         });
 }
 
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFactory & factory)
 {
     factory.registerMetadataStorageType("web", [](
@@ -147,7 +148,6 @@ void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFactory & fa
         return std::make_shared<MetadataStorageFromStaticFilesWebServer>(assert_cast<const WebObjectStorage &>(*object_storage));
     });
 }
-#endif
 
 void registerMetadataStorages()
 {
@@ -155,9 +155,7 @@ void registerMetadataStorages()
     registerMetadataStorageFromDisk(factory);
     registerPlainMetadataStorage(factory);
     registerPlainRewritableMetadataStorage(factory);
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     registerMetadataStorageFromStaticFilesWebServer(factory);
-#endif
 }
 
 }

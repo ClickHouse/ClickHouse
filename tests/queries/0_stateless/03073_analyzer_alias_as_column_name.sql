@@ -1,5 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/27068
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 CREATE TABLE test ( id String, create_time DateTime ) ENGINE = MergeTree ORDER BY id;
 
 insert into test values(1,'1970-02-01 00:00:00');

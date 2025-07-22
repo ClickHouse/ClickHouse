@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # pylint: disable=line-too-long
 
+import multiprocessing
 import os
 import subprocess
-import multiprocessing
 from tempfile import NamedTemporaryFile
-import pytest
 
+import pytest
 
 CPU_ID = 4
 

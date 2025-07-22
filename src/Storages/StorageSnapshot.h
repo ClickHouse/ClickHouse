@@ -1,5 +1,4 @@
 #pragma once
-#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/VirtualColumnsDescription.h>
 
 namespace DB
@@ -9,6 +8,9 @@ class IStorage;
 class ICompressionCodec;
 
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
+
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /// Snapshot of storage that fixes set columns that can be read in query.
 /// There are 3 sources of columns: regular columns from metadata,
@@ -29,9 +31,6 @@ struct StorageSnapshot
 
     using DataPtr = std::unique_ptr<Data>;
     DataPtr data;
-
-    /// Projection that is used in query.
-    mutable const ProjectionDescription * projection = nullptr;
 
     StorageSnapshot(
         const IStorage & storage_,
@@ -68,10 +67,6 @@ struct StorageSnapshot
     std::optional<NameAndTypePair> tryGetColumn(const GetColumnsOptions & options, const String & column_name) const;
     NameAndTypePair getColumn(const GetColumnsOptions & options, const String & column_name) const;
 
-    CompressionCodecPtr getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
-    CompressionCodecPtr getCodecOrDefault(const String & column_name) const;
-    ASTPtr getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
-
     /// Block with ordinary + materialized + aliases + virtuals + subcolumns.
     Block getSampleBlockForColumns(const Names & column_names) const;
 
@@ -82,11 +77,6 @@ struct StorageSnapshot
     void check(const Names & column_names) const;
 
     DataTypePtr getConcreteType(const String & column_name) const;
-
-    void addProjection(const ProjectionDescription * projection_) const { projection = projection_; }
-
-    /// If we have a projection then we should use its metadata.
-    StorageMetadataPtr getMetadataForQuery() const { return projection ? projection->metadata : metadata; }
 };
 
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;

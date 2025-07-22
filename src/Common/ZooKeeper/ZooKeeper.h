@@ -1,22 +1,24 @@
 #pragma once
 
-#include "Types.h"
-#include <Poco/Util/LayeredConfiguration.h>
-#include <future>
-#include <memory>
-#include <string>
+#include <Core/Types.h>
+
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/Stopwatch.h>
-#include <Common/ZooKeeper/IKeeper.h>
-#include <Common/ZooKeeper/KeeperException.h>
-#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
-#include <Common/thread_local_rng.h>
-#include <Coordination/KeeperFeatureFlags.h>
+#include <Common/ZooKeeper/KeeperException.h>
+
+#include <future>
+#include <memory>
+#include <string>
+#include <variant>
 #include <unistd.h>
 
+
+namespace Poco::Net
+{
+    class SocketAddress;
+}
 
 namespace ProfileEvents
 {
@@ -32,6 +34,7 @@ namespace DB
 {
 class ZooKeeperLog;
 class ZooKeeperWithFaultInjection;
+class BackgroundSchedulePoolTaskHolder;
 
 namespace ErrorCodes
 {
@@ -43,27 +46,14 @@ namespace ErrorCodes
 namespace zkutil
 {
 
-/// Preferred size of multi() command (in number of ops)
+/// Preferred size of multi command (in the number of operations)
 constexpr size_t MULTI_BATCH_SIZE = 100;
 
-struct ShuffleHost
-{
-    String host;
-    UInt8 original_index = 0;
-    Priority priority;
-    UInt64 random = 0;
+/// Path "default:/foo" refers to znode "/foo" in the default zookeeper,
+/// path "other:/foo" refers to znode "/foo" in auxiliary zookeeper named "other".
+constexpr std::string_view DEFAULT_ZOOKEEPER_NAME = "default";
 
-    void randomize()
-    {
-        random = thread_local_rng();
-    }
-
-    static bool compare(const ShuffleHost & lhs, const ShuffleHost & rhs)
-    {
-        return std::forward_as_tuple(lhs.priority, lhs.random)
-               < std::forward_as_tuple(rhs.priority, rhs.random);
-    }
-};
+struct ShuffleHost;
 
 struct RemoveException
 {
@@ -197,6 +187,9 @@ class ZooKeeper
 
     explicit ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
 
+    /// Allows to keep info about availability zones when starting a new session
+    ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, Strings availability_zones_, std::unique_ptr<Coordination::IKeeper> existing_impl);
+
     /** Config of the form:
         <zookeeper>
             <node>
@@ -227,6 +220,8 @@ class ZooKeeper
 public:
         using Ptr = std::shared_ptr<ZooKeeper>;
         using ErrorsList = std::initializer_list<Coordination::Error>;
+
+    ~ZooKeeper();
 
     std::vector<ShuffleHost> shuffleHosts() const;
 
@@ -459,15 +454,16 @@ public:
 
     Int64 getClientID();
 
-    /// Remove the node with the subtree. If someone concurrently adds or removes a node
-    /// in the subtree, the result is undefined.
-    void removeRecursive(const std::string & path);
+    /// Remove the node with the subtree.
+    /// If Keeper supports RemoveRecursive operation then it will be performed atomically.
+    /// Otherwise if someone concurrently adds or removes a node in the subtree, the result is undefined.
+    void removeRecursive(const std::string & path, uint32_t remove_nodes_limit = 1000);
 
-    /// Remove the node with the subtree. If someone concurrently removes a node in the subtree,
-    /// this will not cause errors.
+    /// Same as removeRecursive but in case if Keeper does not supports RemoveRecursive and
+    /// if someone concurrently removes a node in the subtree, this will not cause errors.
     /// For instance, you can call this method twice concurrently for the same node and the end
     /// result would be the same as for the single call.
-    void tryRemoveRecursive(const std::string & path);
+    Coordination::Error tryRemoveRecursive(const std::string & path, uint32_t remove_nodes_limit = 1000);
 
     /// Similar to removeRecursive(...) and tryRemoveRecursive(...), but does not remove path itself.
     /// Node defined as RemoveException will not be deleted.
@@ -493,6 +489,7 @@ public:
     /// If the node exists and its value is different, it will wait for it to disappear. It will throw a LOGICAL_ERROR if the node doesn't
     /// disappear automatically after 3x session_timeout.
     void deleteEphemeralNodeIfContentMatches(const std::string & path, const std::string & fast_delete_if_equal_value);
+    void deleteEphemeralNodeIfContentMatches(const std::string & path, std::function<bool(const std::string &)> condition);
 
     Coordination::ReconfigResponse reconfig(
         const std::string & joining,
@@ -596,15 +593,15 @@ public:
 
     UInt32 getSessionUptime() const { return static_cast<UInt32>(session_uptime.elapsedSeconds()); }
 
-    bool hasReachedDeadline() const { return impl->hasReachedDeadline(); }
-
     uint64_t getSessionTimeoutMS() const { return args.session_timeout_ms; }
 
     void setServerCompletelyStarted();
 
-    Int8 getConnectedHostIdx() const;
+    std::optional<int8_t> getConnectedHostIdx() const;
     String getConnectedHostPort() const;
-    int32_t getConnectionXid() const;
+    int64_t getConnectionXid() const;
+
+    String getConnectedHostAvailabilityZone() const;
 
     const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return impl->getKeeperFeatureFlags(); }
 
@@ -625,7 +622,8 @@ public:
     void addCheckSessionOp(Coordination::Requests & requests) const;
 
 private:
-    void init(ZooKeeperArgs args_);
+    void init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper> existing_impl);
+    void updateAvailabilityZones();
 
     /// The following methods don't any throw exceptions but return error codes.
     Coordination::Error createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
@@ -690,8 +688,11 @@ private:
     }
 
     std::unique_ptr<Coordination::IKeeper> impl;
+    mutable std::unique_ptr<Coordination::IKeeper> optimal_impl;
 
     ZooKeeperArgs args;
+
+    Strings availability_zones;
 
     LoggerPtr log = nullptr;
     std::shared_ptr<DB::ZooKeeperLog> zk_log;
@@ -699,6 +700,8 @@ private:
     AtomicStopwatch session_uptime;
 
     int32_t session_node_version;
+
+    std::unique_ptr<DB::BackgroundSchedulePoolTaskHolder> reconnect_task;
 };
 
 

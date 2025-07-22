@@ -1,6 +1,6 @@
-#include "FunctionStringReplace.h"
-#include "FunctionFactory.h"
-#include "ReplaceRegexpImpl.h"
+#include <Functions/FunctionStringReplace.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/ReplaceRegexpImpl.h>
 
 
 namespace DB
@@ -20,7 +20,7 @@ using FunctionReplaceRegexpAll = FunctionStringReplace<ReplaceRegexpImpl<NameRep
 REGISTER_FUNCTION(ReplaceRegexpAll)
 {
     factory.registerFunction<FunctionReplaceRegexpAll>();
-    factory.registerAlias("REGEXP_REPLACE", NameReplaceRegexpAll::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("REGEXP_REPLACE", NameReplaceRegexpAll::name, FunctionFactory::Case::Insensitive);
 }
 
 }

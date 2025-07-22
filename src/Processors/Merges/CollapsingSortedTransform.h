@@ -3,6 +3,11 @@
 #include <Processors/Merges/IMergingTransform.h>
 #include <Processors/Merges/Algorithms/CollapsingSortedAlgorithm.h>
 
+namespace ProfileEvents
+{
+    extern const Event CollapsingSortedMilliseconds;
+}
+
 namespace DB
 {
 
@@ -11,7 +16,7 @@ class CollapsingSortedTransform final : public IMergingTransform<CollapsingSorte
 {
 public:
     CollapsingSortedTransform(
-        const Block & header,
+        SharedHeader header,
         size_t num_inputs,
         SortDescription description_,
         const String & sign_column,
@@ -36,6 +41,11 @@ public:
     }
 
     String getName() const override { return "CollapsingSortedTransform"; }
+
+    void onFinish() override
+    {
+        logMergedStats(ProfileEvents::CollapsingSortedMilliseconds, "Collapsed sorted", getLogger("CollapsingSortedTransform"));
+    }
 };
 
 }

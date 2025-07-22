@@ -2,6 +2,7 @@
 
 #include <Interpreters/Squashing.h>
 #include <Processors/ISimpleTransform.h>
+#include <Processors/IInflatingTransform.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
 
@@ -12,7 +13,7 @@ class SquashingTransform : public ExceptionKeepingTransform
 {
 public:
     explicit SquashingTransform(
-        const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes);
+        SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes);
 
     String getName() const override { return "SquashingTransform"; }
 
@@ -29,22 +30,22 @@ private:
     Chunk finish_chunk;
 };
 
-/// Doesn't care about propagating exceptions and thus doesn't throw LOGICAL_ERROR if the following transform closes its input port.
-class SimpleSquashingTransform : public ISimpleTransform
+class SimpleSquashingChunksTransform : public IInflatingTransform
 {
 public:
-    explicit SimpleSquashingTransform(const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes);
+    explicit SimpleSquashingChunksTransform(SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes);
 
     String getName() const override { return "SimpleSquashingTransform"; }
 
 protected:
-    void transform(Chunk &) override;
-
-    IProcessor::Status prepare() override;
+    void consume(Chunk chunk) override;
+    bool canGenerate() override;
+    Chunk generate() override;
+    Chunk getRemaining() override;
 
 private:
     Squashing squashing;
-
-    bool finished = false;
+    Chunk squashed_chunk;
 };
+
 }

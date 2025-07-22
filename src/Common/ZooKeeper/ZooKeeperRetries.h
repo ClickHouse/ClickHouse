@@ -15,21 +15,26 @@ namespace ErrorCodes
 
 struct ZooKeeperRetriesInfo
 {
-    ZooKeeperRetriesInfo(UInt64 max_retries_, UInt64 initial_backoff_ms_, UInt64 max_backoff_ms_)
+    ZooKeeperRetriesInfo() = default;
+
+    ZooKeeperRetriesInfo(UInt64 max_retries_, UInt64 initial_backoff_ms_, UInt64 max_backoff_ms_, QueryStatusPtr query_status_)
         : max_retries(max_retries_), initial_backoff_ms(std::min(initial_backoff_ms_, max_backoff_ms_)), max_backoff_ms(max_backoff_ms_)
+        , query_status(query_status_)
     {
     }
 
-    UInt64 max_retries;
-    UInt64 initial_backoff_ms;
-    UInt64 max_backoff_ms;
+    UInt64 max_retries = 0; /// "max_retries = 0" means only one attempt.
+    UInt64 initial_backoff_ms = 0;
+    UInt64 max_backoff_ms = 0;
+
+    QueryStatusPtr query_status; /// can be nullptr
 };
 
 class ZooKeeperRetriesControl
 {
 public:
-    ZooKeeperRetriesControl(std::string name_, LoggerPtr logger_, ZooKeeperRetriesInfo retries_info_, QueryStatusPtr elem)
-        : name(std::move(name_)), logger(logger_), retries_info(retries_info_), process_list_element(elem)
+    ZooKeeperRetriesControl(std::string name_, LoggerPtr logger_, ZooKeeperRetriesInfo retries_info_)
+        : name(std::move(name_)), logger(logger_), retries_info(retries_info_)
     {
     }
 
@@ -38,7 +43,6 @@ public:
         , logger(other.logger)
         , retries_info(other.retries_info)
         , total_failures(other.total_failures)
-        , process_list_element(other.process_list_element)
         , current_backoff_ms(other.current_backoff_ms)
     {
     }
@@ -159,6 +163,8 @@ public:
     const std::string & getLastKeeperErrorMessage() const { return keeper_error.message; }
 
     /// action will be called only once and only after latest failed retry
+    /// NOTE: this one will be called only in case when retries finishes with Keeper exception
+    /// if it will be some other exception this function will not be called.
     void actionAfterLastFailedRetry(std::function<void()> f) { action_after_last_failed_retry = std::move(f); }
 
     const std::string & getName() const { return name; }
@@ -218,13 +224,18 @@ private:
             return false;
         }
 
-        if (process_list_element)
-            process_list_element->checkTimeLimit();
+        /// Check if the query was cancelled.
+        if (retries_info.query_status)
+            retries_info.query_status->checkTimeLimit();
 
         /// retries
         logLastError("will retry due to error");
         sleepForMilliseconds(current_backoff_ms);
         current_backoff_ms = std::min(current_backoff_ms * 2, retries_info.max_backoff_ms);
+
+        /// Check if the query was cancelled again after sleeping.
+        if (retries_info.query_status)
+            retries_info.query_status->checkTimeLimit();
 
         return true;
     }
@@ -280,7 +291,6 @@ private:
     std::function<void()> action_after_last_failed_retry = []() {};
     bool iteration_succeeded = true;
     bool stop_retries = false;
-    QueryStatusPtr process_list_element;
 
     UInt64 current_iteration = 0;
     UInt64 current_backoff_ms = 0;

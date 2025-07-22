@@ -1,7 +1,8 @@
 <clickhouse>
     <rocksdb>
         <options>
-            <info_log_level>DEBUG_LEVEL</info_log_level>
+            <!-- https://github.com/ClickHouse/ClickHouse/pull/67274#issuecomment-2255301116 -->
+            <info_log_level>ERROR_LEVEL</info_log_level>
         </options>
     </rocksdb>
 </clickhouse>

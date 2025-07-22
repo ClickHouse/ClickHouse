@@ -11,6 +11,7 @@ from typing import List, Tuple
 from pip._vendor.packaging.version import Version
 
 from build_download_helper import download_builds_filter
+from ci_utils import Shell
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPORT_PATH, TEMP_PATH
 from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
@@ -131,9 +132,9 @@ def main():
     check_name = args.check_name or os.getenv("CHECK_NAME")
     assert check_name
     check_glibc = True
-    # currently hardcoded to x86, don't enable for ARM
+    # currently hardcoded to x86, don't enable for AARCH64
     check_distributions = (
-        "aarch64" not in check_name.lower() and "arm64" not in check_name.lower()
+        "aarch64" not in check_name.lower() and "arm" not in check_name.lower()
     )
 
     stopwatch = Stopwatch()
@@ -151,7 +152,12 @@ def main():
             "clickhouse-common-static_" in url or "clickhouse-server_" in url
         )
 
-    download_builds_filter(check_name, reports_path, packages_path, url_filter)
+    if check_name in ("amd_release", "amd_debug", "arm_release"):
+        # this is praktika based CI
+        print("Copy input *.deb artifacts")
+        assert Shell.check(f"cp ./ci/tmp/*.deb {packages_path}", verbose=True)
+    else:
+        download_builds_filter(check_name, reports_path, packages_path, url_filter)
 
     for package in packages_path.iterdir():
         if package.suffix == ".deb":
@@ -196,9 +202,9 @@ def main():
 
     # See https://sourceware.org/glibc/wiki/Glibc%20Timeline
     max_glibc_version = ""
-    if "amd64" in check_name or "release" in check_name:
+    if "amd" in check_name or "(release)" in check_name:
         max_glibc_version = "2.4"
-    elif "aarch64" in check_name:
+    elif "aarch" in check_name or "arm" in check_name:
         max_glibc_version = "2.18"  # because of build with newer sysroot?
     else:
         raise RuntimeError("Can't determine max glibc version")

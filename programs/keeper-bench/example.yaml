@@ -1,0 +1,118 @@
+concurrency: 20
+iterations: 10000
+delay: 4
+timelimit: 300
+continue_on_errors: true
+
+connections:
+  operation_timeout_ms: 3000
+  connection_timeout_ms: 40000
+
+  connection:
+    secure: false
+    operation_timeout_ms: 2000
+    session_timeout_ms: 2000
+    connection_timeout_ms: 50000
+    host: "localhost:9181"
+    sessions: 1
+
+  host: "localhost:9181"
+
+setup:
+  node:
+    name: "test3"
+  node:
+    name: "test_create"
+  node:
+    name: "test4"
+  node:
+    name: "test"
+    data: "somedata"
+    node:
+      repeat: 4
+      name:
+        random_string:
+          size: 15
+      data:
+        random_string:
+          size:
+            min_value: 10
+            max_value: 20
+    node:
+      repeat: 2
+      node:
+        repeat: 2
+        name:
+          random_string:
+            size: 12
+      name:
+        random_string:
+          size: 15
+      data:
+        random_string:
+          size:
+            min_value: 10
+            max_value: 20
+  node:
+    name: "test2"
+    data: "somedata"
+
+generator:
+  requests:
+    create:
+      path: "/test_create"
+      name_length: 10
+      remove_factor: 0.5
+    multi:
+      size: 20
+      create:
+        path: "/test"
+        data:
+          random_string:
+            size:
+              min_value: 10
+              max_value: 20
+        remove_factor: 0.8
+      set:
+        weight: 2
+        path: 
+          - "/test3"
+          - "/test4"
+        path:
+          children_of: "/test"
+        data:
+          random_string:
+            size: 10
+    get:
+      path: 
+        - "/test3"
+        - "/test4"
+      path:
+        children_of: "/test"
+
+    multi:
+      weight: 10
+      get:
+        path: 
+          - "/test3"
+          - "/test4"
+        path:
+          children_of: "/test"
+      list:
+        path: 
+          - "/test3"
+        path:
+          children_of: "/test"
+
+    list:
+      path: 
+        - "/test3"
+        - "/test4"
+      path:
+        children_of: "/test"
+
+output:
+  file: 
+    path: "output.json"
+    with_timestamp: true
+  stdout: true

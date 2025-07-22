@@ -1,11 +1,16 @@
 #pragma once
+
+
 #include <boost/noncopyable.hpp>
+#include <base/isSharedPtrUnique.h>
 #include <Interpreters/Cache/Guards.h>
 #include <Interpreters/Cache/IFileCachePriority.h>
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Common/ThreadPool.h>
+
+#include <memory>
 #include <shared_mutex>
 
 namespace DB
@@ -30,7 +35,7 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     explicit FileSegmentMetadata(FileSegmentPtr && file_segment_);
 
-    bool releasable() const { return file_segment.unique(); }
+    bool releasable() const { return isSharedPtrUnique(file_segment); }
 
     size_t size() const;
 
@@ -68,7 +73,10 @@ struct FileSegmentMetadata : private boost::noncopyable
         auto iterator = getQueueIterator();
         if (!iterator)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Iterator is not set");
-        iterator->getEntry()->resetEvictingFlag();
+
+        const auto & entry = iterator->getEntry();
+        chassert(size() == entry->size);
+        entry->resetEvictingFlag();
     }
 
     Priority::IteratorPtr getQueueIterator() const { return file_segment->getQueueIterator(); }
@@ -205,6 +213,7 @@ public:
 
     bool setBackgroundDownloadThreads(size_t threads_num);
     size_t getBackgroundDownloadThreads() const { return download_threads.size(); }
+
     bool setBackgroundDownloadQueueSizeLimit(size_t size);
 
     bool isBackgroundDownloadEnabled();
@@ -320,7 +329,10 @@ struct LockedKey : private boost::noncopyable
         bool can_be_broken = false,
         bool invalidate_queue_entry = true);
 
-    void shrinkFileSegmentToDownloadedSize(size_t offset, const FileSegmentGuard::Lock &);
+    KeyMetadata::iterator removeFileSegmentIfExists(
+        size_t offset,
+        bool can_be_broken = false,
+        bool invalidate_queue_entry = true);
 
     bool addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &);
 

@@ -1,3 +1,5 @@
+SET use_query_condition_cache = 0;
+
 DROP TABLE IF EXISTS t_skip_index_insert;
 
 CREATE TABLE t_skip_index_insert
@@ -9,7 +11,7 @@ CREATE TABLE t_skip_index_insert
 )
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 SET materialize_skip_indexes_on_insert = 0;
 
 SYSTEM STOP MERGES t_skip_index_insert;
@@ -41,7 +43,7 @@ EXPLAIN indexes = 1 SELECT count() FROM t_skip_index_insert WHERE a >= 110 AND a
 
 DROP TABLE IF EXISTS t_skip_index_insert;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT count(), sum(ProfileEvents['MergeTreeDataWriterSkipIndicesCalculationMicroseconds'])
 FROM system.query_log

@@ -3,6 +3,11 @@
 #include <Processors/Merges/IMergingTransform.h>
 #include <Processors/Merges/Algorithms/SummingSortedAlgorithm.h>
 
+namespace ProfileEvents
+{
+    extern const Event SummingSortedMilliseconds;
+}
+
 namespace DB
 {
 
@@ -12,10 +17,10 @@ class SummingSortedTransform final : public IMergingTransform<SummingSortedAlgor
 public:
 
     SummingSortedTransform(
-        const Block & header, size_t num_inputs,
+        SharedHeader header, size_t num_inputs,
         SortDescription description_,
         /// List of columns to be summed. If empty, all numeric columns that are not in the description are taken.
-        const Names & column_names_to_sum,
+        const Names & partition_and_sorting_required_columns,
         const Names & partition_key_columns,
         size_t max_block_size_rows,
         size_t max_block_size_bytes
@@ -25,14 +30,20 @@ public:
             header,
             num_inputs,
             std::move(description_),
-            column_names_to_sum,
+            partition_and_sorting_required_columns,
             partition_key_columns,
             max_block_size_rows,
-            max_block_size_bytes)
+            max_block_size_bytes,
+            "sumWithOverflow")
     {
     }
 
     String getName() const override { return "SummingSortedTransform"; }
+
+    void onFinish() override
+    {
+        logMergedStats(ProfileEvents::SummingSortedMilliseconds, "Summed sorted", getLogger("SummingSortedTransform"));
+    }
 };
 
 }

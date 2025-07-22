@@ -1,6 +1,6 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/34697
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 SELECT table1_id FROM (
     SELECT first.table1_id

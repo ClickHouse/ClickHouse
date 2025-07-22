@@ -2,25 +2,24 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/misc.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
-#include <Parsers/queryToString.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Common/ProfileEvents.h>
 #include <Common/FieldVisitorToString.h>
-#include <IO/WriteBufferFromString.h>
+#include <Common/ProfileEvents.h>
 
 namespace ProfileEvents
 {
@@ -31,6 +30,14 @@ extern const Event ScalarSubqueriesCacheMiss;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool enable_scalar_subquery_optimization;
+    extern const SettingsBool extremes;
+    extern const SettingsUInt64 max_result_rows;
+    extern const SettingsBool use_concurrency_control;
+    extern const SettingsString implicit_table_at_top_level;
+}
 
 namespace ErrorCodes
 {
@@ -59,6 +66,18 @@ bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr 
             return false;
     }
 
+    if (auto * tables = node->as<ASTTablesInSelectQueryElement>())
+    {
+        /// Contrary to what's said in the code block above, ARRAY JOIN needs to resolve the subquery if possible
+        /// and assign an alias for 02367_optimize_trivial_count_with_array_join to pass. Otherwise it will fail in
+        /// ArrayJoinedColumnsVisitor (`No alias for non-trivial value in ARRAY JOIN: _a`)
+        /// This looks 100% as a incomplete code working on top of a bug, but this code has already been made obsolete
+        /// by the new analyzer, so it's an inconvenience we can live with until we deprecate it.
+        if (child == tables->array_join)
+            return true;
+        return false;
+    }
+
     return true;
 }
 
@@ -73,9 +92,10 @@ void ExecuteScalarSubqueriesMatcher::visit(ASTPtr & ast, Data & data)
 static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqueriesMatcher::Data & data)
 {
     auto subquery_context = Context::createCopy(data.getContext());
-    Settings subquery_settings = data.getContext()->getSettings();
-    subquery_settings.max_result_rows = 1;
-    subquery_settings.extremes = false;
+    Settings subquery_settings = data.getContext()->getSettingsCopy();
+    subquery_settings[Setting::max_result_rows] = 1;
+    subquery_settings[Setting::extremes] = false;
+    subquery_settings[Setting::implicit_table_at_top_level] = "";
     subquery_context->setSettings(subquery_settings);
 
     if (subquery_context->hasQueryContext())
@@ -175,7 +195,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         if (data.only_analyze)
         {
             /// If query is only analyzed, then constants are not correct.
-            block = interpreter->getSampleBlock();
+            block = *interpreter->getSampleBlock();
             for (auto & column : block)
             {
                 if (column.column->empty())
@@ -192,13 +212,14 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
             PullingAsyncPipelineExecutor executor(io.pipeline);
             io.pipeline.setProgressCallback(data.getContext()->getProgressCallback());
+            io.pipeline.setConcurrencyControl(data.getContext()->getSettingsRef()[Setting::use_concurrency_control]);
             while (block.rows() == 0 && executor.pull(block))
             {
             }
 
             if (block.rows() == 0)
             {
-                auto types = interpreter->getSampleBlock().getDataTypes();
+                auto types = interpreter->getSampleBlock()->getDataTypes();
                 if (types.size() != 1)
                     types = {std::make_shared<DataTypeTuple>(types)};
 
@@ -220,7 +241,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
                 ast = std::move(ast_new);
 
                 /// Empty subquery result is equivalent to NULL
-                block = interpreter->getSampleBlock().cloneEmpty();
+                block = interpreter->getSampleBlock()->cloneEmpty();
                 String column_name = block.columns() > 0 ?  block.safeGetByPosition(0).name : "dummy";
                 block = Block({
                     ColumnWithTypeAndName(type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(), type, column_name)
@@ -237,6 +258,8 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
             if (tmp_block.rows() != 0)
                 throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
+
+            logProcessorProfile(data.getContext(), io.pipeline.getProcessors());
         }
 
         block = materializeBlock(block);
@@ -267,9 +290,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     const Settings & settings = data.getContext()->getSettingsRef();
 
     // Always convert to literals when there is no query context.
-    if (data.only_analyze
-        || !settings.enable_scalar_subquery_optimization
-        || worthConvertingScalarToLiteral(scalar, data.max_literal_size)
+    if (data.only_analyze || !settings[Setting::enable_scalar_subquery_optimization] || worthConvertingScalarToLiteral(scalar, data.max_literal_size)
         || !data.getContext()->hasQueryContext())
     {
         auto lit = std::make_unique<ASTLiteral>((*scalar.safeGetByPosition(0).column)[0]);

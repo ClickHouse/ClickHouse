@@ -1,6 +1,6 @@
-#include "FunctionsStringSearch.h"
-#include "FunctionFactory.h"
-#include "MatchImpl.h"
+#include <Functions/FunctionsStringSearch.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/MatchImpl.h>
 
 
 namespace DB
@@ -20,7 +20,7 @@ using FunctionMatch = FunctionsStringSearch<MatchImpl<NameMatch, MatchTraits::Sy
 REGISTER_FUNCTION(Match)
 {
     factory.registerFunction<FunctionMatch>();
-    factory.registerAlias("REGEXP_MATCHES", NameMatch::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("REGEXP_MATCHES", NameMatch::name, FunctionFactory::Case::Insensitive);
 }
 
 }

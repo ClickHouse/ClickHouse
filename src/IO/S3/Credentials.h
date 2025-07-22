@@ -24,6 +24,7 @@ static inline constexpr char GCP_METADATA_SERVICE_ENDPOINT[] = "http://metadata.
 
 /// getRunningAvailabilityZone returns the availability zone of the underlying compute resources where the current process runs.
 std::string getRunningAvailabilityZone();
+std::string tryGetRunningAvailabilityZone();
 
 class AWSEC2MetadataClient : public Aws::Internal::AWSHttpResourceClient
 {
@@ -69,7 +70,7 @@ private:
     LoggerPtr logger;
 };
 
-std::shared_ptr<AWSEC2MetadataClient> InitEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration);
+std::shared_ptr<AWSEC2MetadataClient> createEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration);
 
 class AWSEC2InstanceProfileConfigLoader : public Aws::Config::AWSProfileConfigLoader
 {
@@ -99,6 +100,7 @@ protected:
     void Reload() override;
 
 private:
+    Aws::Auth::AWSCredentials GetAWSCredentialsImpl();
     void refreshIfExpired();
 
     std::shared_ptr<AWSEC2InstanceProfileConfigLoader> ec2_metadata_config_loader;
@@ -195,6 +197,7 @@ namespace DB
 namespace S3
 {
 std::string getRunningAvailabilityZone();
+std::string tryGetRunningAvailabilityZone();
 }
 
 }

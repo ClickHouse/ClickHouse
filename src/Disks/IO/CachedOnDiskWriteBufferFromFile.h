@@ -33,7 +33,8 @@ public:
         size_t reserve_space_lock_wait_timeout_milliseconds_,
         std::shared_ptr<FilesystemCacheLog> cache_log_,
         const String & query_id_,
-        const String & source_path_);
+        const String & source_path_,
+        bool is_distributed_cache_);
 
     /**
     * Write a range of file segments. Allocate file segment of `max_file_segment_size` and write to
@@ -44,6 +45,10 @@ public:
     void finalize();
 
     ~FileSegmentRangeWriter();
+
+    const FileSegmentsHolder * getFileSegments() const { return file_segments.get(); }
+
+    void jumpToPosition(size_t position);
 
 private:
     FileSegment & allocateFileSegment(size_t offset, FileSegmentKind segment_kind);
@@ -61,6 +66,7 @@ private:
     std::shared_ptr<FilesystemCacheLog> cache_log;
     const String query_id;
     const String source_path;
+    const bool is_distributed_cache;
 
     FileSegmentsHolderPtr file_segments;
 
@@ -69,11 +75,22 @@ private:
     bool finalized = false;
 };
 
+class IFilesystemCacheWriteBuffer
+{
+public:
+    virtual bool cachingStopped() const = 0;
+    virtual const FileSegmentsHolder * getFileSegments() const  = 0;
+    virtual void jumpToPosition(size_t position) = 0;
+
+    virtual WriteBuffer & getImpl() = 0;
+
+    virtual ~IFilesystemCacheWriteBuffer() = default;
+};
 
 /**
  *  Write buffer for filesystem caching on write operations.
  */
-class CachedOnDiskWriteBufferFromFile final : public WriteBufferFromFileDecorator
+class CachedOnDiskWriteBufferFromFile final : public WriteBufferFromFileDecorator, public IFilesystemCacheWriteBuffer
 {
 public:
     CachedOnDiskWriteBufferFromFile(
@@ -84,13 +101,20 @@ public:
         const String & query_id_,
         const WriteSettings & settings_,
         const FileCacheUserInfo & user_,
-        std::shared_ptr<FilesystemCacheLog> cache_log_);
+        std::shared_ptr<FilesystemCacheLog> cache_log_,
+        FileSegmentKind file_segment_kind_ = FileSegmentKind::Regular);
 
     void nextImpl() override;
 
     void finalizeImpl() override;
 
-    bool cachingStopped() const { return cache_in_error_state_or_disabled; }
+    bool cachingStopped() const override { return cache_in_error_state_or_disabled; }
+
+    const FileSegmentsHolder * getFileSegments() const override { return cache_writer ? cache_writer->getFileSegments() : nullptr; }
+
+    void jumpToPosition(size_t position) override;
+
+    WriteBuffer & getImpl() override { return *this; }
 
 private:
     void cacheData(char * data, size_t size, bool throw_on_error);
@@ -105,9 +129,12 @@ private:
     const FileCacheUserInfo user;
     const size_t reserve_space_lock_wait_timeout_milliseconds;
     const bool throw_on_error_from_cache;
+    const bool is_distributed_cache;
 
     size_t current_download_offset = 0;
     bool cache_in_error_state_or_disabled = false;
+
+    FileSegmentKind file_segment_kind;
 
     std::unique_ptr<FileSegmentRangeWriter> cache_writer;
     std::shared_ptr<FilesystemCacheLog> cache_log;

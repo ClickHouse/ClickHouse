@@ -2,7 +2,6 @@
 
 #include <atomic>
 #include <chrono>
-#include <optional>
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/VariableContext.h>
@@ -42,6 +41,11 @@ extern thread_local bool memory_tracker_always_throw_logical_error_on_allocation
 struct OvercommitRatio;
 struct OvercommitTracker;
 
+namespace DB
+{
+    class PageCache;
+}
+
 /** Tracks memory consumption.
   * It throws an exception if amount of consumed memory become greater than certain limit.
   * The same memory tracker could be simultaneously used in different threads.
@@ -57,9 +61,8 @@ private:
     std::atomic<Int64> soft_limit {0};
     std::atomic<Int64> hard_limit {0};
     std::atomic<Int64> profiler_limit {0};
-    std::atomic_bool allow_use_jemalloc_memory {true};
 
-    static std::atomic<Int64> free_memory_in_allocator_arenas;
+    std::atomic<Int64> rss{0};
 
     Int64 profiler_step = 0;
 
@@ -89,6 +92,8 @@ private:
 
     std::atomic<OvercommitTracker *> overcommit_tracker = nullptr;
 
+    std::atomic<DB::PageCache *> page_cache = nullptr;
+
     bool log_peak_memory_usage_in_destructor = true;
 
     bool updatePeak(Int64 will_be, bool log_memory_usage);
@@ -97,6 +102,12 @@ private:
     void setOrRaiseProfilerLimit(Int64 value);
 
     bool isSizeOkForSampling(UInt64 size) const;
+
+    /// helper fields for analyzing MemoryTracker
+    /// amount which is not corrected by external source like RSS
+    int64_t uncorrected_amount = 0;
+    /// last corrected amount we set to memory tracker
+    int64_t last_corrected_amount = 0;
 
     /// allocImpl(...) and free(...) should not be used directly
     friend struct CurrentMemoryTracker;
@@ -120,6 +131,11 @@ public:
     Int64 get() const
     {
         return amount.load(std::memory_order_relaxed);
+    }
+
+    Int64 getRSS() const
+    {
+        return rss.load(std::memory_order_relaxed);
     }
 
     // Merges and mutations may pass memory ownership to other threads thus in the end of execution
@@ -153,14 +169,6 @@ public:
     Int64 getSoftLimit() const
     {
         return soft_limit.load(std::memory_order_relaxed);
-    }
-    void setAllowUseJemallocMemory(bool value)
-    {
-        allow_use_jemalloc_memory.store(value, std::memory_order_relaxed);
-    }
-    bool getAllowUseJemallocMmemory() const
-    {
-        return allow_use_jemalloc_memory.load(std::memory_order_relaxed);
     }
 
     /** Set limit if it was not set.
@@ -243,16 +251,25 @@ public:
         overcommit_tracker.store(nullptr, std::memory_order_relaxed);
     }
 
+    void setPageCache(DB::PageCache * cache) noexcept
+    {
+        page_cache.store(cache);
+    }
+
+    void resetPageCache() noexcept
+    {
+        page_cache.store(nullptr);
+    }
+
     /// Reset the accumulated data
     void resetCounters();
 
     /// Reset the accumulated data.
     void reset();
 
-    /// Reset current counter to an RSS value.
-    /// Jemalloc may have pre-allocated arenas, they are accounted in RSS.
-    /// We can free this arenas in case of exception to avoid OOM.
-    static void setRSS(Int64 rss_, Int64 free_memory_in_allocator_arenas_);
+    /// update values based on external information (e.g. jemalloc's stat)
+    static void updateRSS(Int64 rss_);
+    static void updateAllocated(Int64 allocated_, bool log_change);
 
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage();

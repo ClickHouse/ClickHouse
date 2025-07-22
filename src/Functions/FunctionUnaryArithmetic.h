@@ -339,7 +339,7 @@ public:
         /// Special case when the function is negate, argument is tuple.
         if (auto function_builder = getFunctionForTupleArithmetic(arguments[0].type, context))
         {
-            return function_builder->build(arguments)->execute(arguments, result_type, input_rows_count);
+            return function_builder->build(arguments)->execute(arguments, result_type, input_rows_count, /* dry_run = */ false);
         }
 
         ColumnPtr result_column;
@@ -420,6 +420,10 @@ public:
                             memcpy(offset_res.data(), offset_col.data(), offset_res.size() * sizeof(UInt64));
 
                             FixedStringUnaryOperationImpl<Op<UInt8>>::vector(vec_col, vec_res);
+                            /// Restore zero terminator for strings rows
+                            /// (since FixedStringUnaryOperationImpl works on the whole chars array, ignoring the row boundaries)
+                            for (const auto & offset : offset_res)
+                                vec_res[offset - 1] = 0;
                             result_column = std::move(col_res);
                             return true;
                         }
@@ -542,9 +546,9 @@ public:
         return FunctionUnaryArithmeticMonotonicity<Name>::has();
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType &, const Field & left, const Field & right) const override
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
-        return FunctionUnaryArithmeticMonotonicity<Name>::get(left, right);
+        return FunctionUnaryArithmeticMonotonicity<Name>::get(type, left, right);
     }
 };
 
@@ -552,7 +556,7 @@ public:
 struct PositiveMonotonicity
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const Field &, const Field &)
+    static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
     {
         return { .is_monotonic = true };
     }

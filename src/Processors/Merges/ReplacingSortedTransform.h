@@ -3,6 +3,10 @@
 #include <Processors/Merges/IMergingTransform.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 
+namespace ProfileEvents
+{
+    extern const Event ReplacingSortedMilliseconds;
+}
 
 namespace DB
 {
@@ -12,7 +16,7 @@ class ReplacingSortedTransform final : public IMergingTransform<ReplacingSortedA
 {
 public:
     ReplacingSortedTransform(
-        const Block & header, size_t num_inputs,
+        SharedHeader header, size_t num_inputs,
         SortDescription description_,
         const String & is_deleted_column, const String & version_column,
         size_t max_block_size_rows,
@@ -38,6 +42,11 @@ public:
     }
 
     String getName() const override { return "ReplacingSorted"; }
+
+    void onFinish() override
+    {
+        logMergedStats(ProfileEvents::ReplacingSortedMilliseconds, "Replaced sorted", getLogger("ReplacingSortedTransform"));
+    }
 };
 
 }

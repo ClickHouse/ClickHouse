@@ -261,6 +261,11 @@ namespace Util
         ///
         /// Throws a NullPointerException if no Application instance exists.
 
+        static Application * instanceRawPtr();
+        /// Returns a raw pointer to the Application singleton.
+        ///
+        /// The caller should check whether the result is nullptr.
+
         const Poco::Timestamp & startTime() const;
         /// Returns the application start time (UTC).
 
@@ -357,7 +362,7 @@ namespace Util
         void setArgs(int argc, char * argv[]);
         void setArgs(const ArgVec & args);
         void getApplicationPath(Poco::Path & path) const;
-        void processOptions();
+        void processPocoOptions();
         bool findAppConfigFile(const std::string & appName, const std::string & extension, Poco::Path & path) const;
         bool findAppConfigFile(const Path & basePath, const std::string & appName, const std::string & extension, Poco::Path & path) const;
 
@@ -445,6 +450,12 @@ namespace Util
     {
         poco_check_ptr(_pInstance);
         return *_pInstance;
+    }
+
+
+    inline Application * Application::instanceRawPtr()
+    {
+        return _pInstance;
     }
 
 

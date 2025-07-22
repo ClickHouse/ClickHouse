@@ -3,23 +3,19 @@
 #include "config.h"
 
 #if USE_HDFS
-#include <string>
 #include <memory>
 
-#include <hdfs/hdfs.h>
-#include <Poco/Util/AbstractConfiguration.h>
-
-#include <base/types.h>
-#include <IO/ReadBuffer.h>
-#include <IO/BufferWithOwnMemory.h>
-#include <IO/SeekableReadBuffer.h>
-#include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
-#include <Interpreters/Context.h>
+#    include <IO/AsynchronousReader.h>
+#    include <IO/BufferWithOwnMemory.h>
+#    include <IO/SeekableReadBuffer.h>
+#    include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
+#    include <base/types.h>
 
 namespace DB
 {
 
 class IAsynchronousReader;
+struct ReadSettings;
 
 class AsynchronousReadBufferFromHDFS : public BufferWithOwnMemory<SeekableReadBuffer>, public WithFileName, public WithFileSize
 {
@@ -35,7 +31,7 @@ public:
 
     void prefetch(Priority priority) override;
 
-    size_t getFileSize() override;
+    std::optional<size_t> tryGetFileSize() override;
 
     String getFileName() const override;
 

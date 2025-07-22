@@ -1,8 +1,10 @@
+#include <Compression/CompressionFactory.h>
+#include <Compression/ICompressionCodec.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/IStorage.h>
 #include <DataTypes/ObjectUtils.h>
-#include <DataTypes/NestedUtils.h>
-#include <Storages/StorageView.h>
+#include <Common/quoteString.h>
+
 #include <sparsehash/dense_hash_set>
 
 namespace DB
@@ -63,7 +65,6 @@ std::shared_ptr<StorageSnapshot> StorageSnapshot::clone(DataPtr data_) const
 {
     auto res = std::make_shared<StorageSnapshot>(storage, metadata, object_columns);
 
-    res->projection = projection;
     res->data = std::move(data_);
 
     return res;
@@ -79,7 +80,7 @@ ColumnsDescription StorageSnapshot::getAllColumnsDescription() const
 
 NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options) const
 {
-    auto all_columns = getMetadataForQuery()->getColumns().get(options);
+    auto all_columns = metadata->getColumns().get(options);
 
     if (options.with_extended_objects)
         extendObjectColumns(all_columns, object_columns, options.with_subcolumns);
@@ -113,7 +114,7 @@ NamesAndTypesList StorageSnapshot::getColumnsByNames(const GetColumnsOptions & o
 
 std::optional<NameAndTypePair> StorageSnapshot::tryGetColumn(const GetColumnsOptions & options, const String & column_name) const
 {
-    const auto & columns = getMetadataForQuery()->getColumns();
+    const auto & columns = metadata->getColumns();
     auto column = columns.tryGetColumn(options, column_name);
     if (column && (!column->type->hasDynamicSubcolumnsDeprecated() || !options.with_extended_objects))
         return column;
@@ -144,52 +145,11 @@ NameAndTypePair StorageSnapshot::getColumn(const GetColumnsOptions & options, co
     return *column;
 }
 
-CompressionCodecPtr StorageSnapshot::getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
-{
-    auto get_codec_or_default = [&](const auto & column_desc)
-    {
-        return column_desc.codec
-            ? CompressionCodecFactory::instance().get(column_desc.codec, column_desc.type, default_codec)
-            : default_codec;
-    };
-
-    const auto & columns = metadata->getColumns();
-    if (const auto * column_desc = columns.tryGet(column_name))
-        return get_codec_or_default(*column_desc);
-
-    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
-        return get_codec_or_default(*virtual_desc);
-
-    return default_codec;
-}
-
-CompressionCodecPtr StorageSnapshot::getCodecOrDefault(const String & column_name) const
-{
-    return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
-}
-
-ASTPtr StorageSnapshot::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
-{
-    auto get_codec_or_default = [&](const auto & column_desc)
-    {
-        return column_desc.codec ? column_desc.codec : default_codec->getFullCodecDesc();
-    };
-
-    const auto & columns = metadata->getColumns();
-    if (const auto * column_desc = columns.tryGet(column_name))
-        return get_codec_or_default(*column_desc);
-
-    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
-        return get_codec_or_default(*virtual_desc);
-
-    return default_codec->getFullCodecDesc();
-}
-
 Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) const
 {
     Block res;
 
-    const auto & columns = getMetadataForQuery()->getColumns();
+    const auto & columns = metadata->getColumns();
     for (const auto & column_name : column_names)
     {
         auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
@@ -221,7 +181,7 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) cons
 ColumnsDescription StorageSnapshot::getDescriptionForColumns(const Names & column_names) const
 {
     ColumnsDescription res;
-    const auto & columns = getMetadataForQuery()->getColumns();
+    const auto & columns = metadata->getColumns();
     for (const auto & name : column_names)
     {
         auto column = columns.tryGetColumnOrSubcolumnDescription(GetColumnsOptions::All, name);
@@ -257,7 +217,7 @@ namespace
 
 void StorageSnapshot::check(const Names & column_names) const
 {
-    const auto & columns = getMetadataForQuery()->getColumns();
+    const auto & columns = metadata->getColumns();
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
 
     if (column_names.empty())

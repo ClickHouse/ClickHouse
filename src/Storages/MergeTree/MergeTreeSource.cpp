@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <IO/SharedThreadPools.h>
 #include <Common/EventFD.h>
@@ -133,9 +134,8 @@ private:
 };
 #endif
 
-MergeTreeSource::MergeTreeSource(MergeTreeSelectProcessorPtr processor_)
-    : ISource(processor_->getHeader())
-    , processor(std::move(processor_))
+MergeTreeSource::MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const std::string & log_name_)
+    : ISource(std::make_shared<const Block>(processor_->getHeader())), processor(std::move(processor_)), log_name(log_name_)
 {
 #if defined(OS_LINUX)
     if (processor->getSettings().use_asynchronous_read_from_pool)
@@ -150,7 +150,7 @@ std::string MergeTreeSource::getName() const
     return processor->getName();
 }
 
-void MergeTreeSource::onCancel()
+void MergeTreeSource::onCancel() noexcept
 {
     processor->cancel();
 }
@@ -183,6 +183,9 @@ Chunk MergeTreeSource::processReadResult(ChunkAndProgress chunk)
 
     finished = chunk.is_finished;
 
+    if (finished)
+        processor->onFinish();
+
     /// We can return a chunk with no rows even if are not finished.
     /// This allows to report progress when all the rows are filtered out inside MergeTreeSelectProcessor by PREWHERE logic.
     return std::move(chunk.chunk);
@@ -207,7 +210,7 @@ std::optional<Chunk> MergeTreeSource::tryGenerate()
 
             try
             {
-                OpenTelemetry::SpanHolder span{"MergeTreeSource::tryGenerate()"};
+                OpenTelemetry::SpanHolder span{fmt::format("MergeTreeSource({})::tryGenerate", log_name)};
                 holder->setResult(processor->read());
             }
             catch (...)
@@ -222,7 +225,7 @@ std::optional<Chunk> MergeTreeSource::tryGenerate()
     }
 #endif
 
-    OpenTelemetry::SpanHolder span{"MergeTreeSource::tryGenerate()"};
+    OpenTelemetry::SpanHolder span{fmt::format("MergeTreeSource({})::tryGenerate", log_name)};
     return processReadResult(processor->read());
 }
 

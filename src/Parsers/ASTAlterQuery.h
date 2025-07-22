@@ -75,13 +75,18 @@ public:
         DELETE,
         UPDATE,
         APPLY_DELETED_MASK,
+        APPLY_PATCHES,
 
         NO_TYPE,
 
         MODIFY_DATABASE_SETTING,
+        MODIFY_DATABASE_COMMENT,
 
         MODIFY_COMMENT,
+
         MODIFY_SQL_SECURITY,
+
+        UNLOCK_SNAPSHOT,
     };
 
     Type type = NO_TYPE;
@@ -214,6 +219,9 @@ public:
     String to_database;
     String to_table;
 
+    String snapshot_name;
+    IAST * snapshot_desc;
+
     /// Which property user want to remove
     String remove_property;
 
@@ -221,16 +229,10 @@ public:
 
     ASTPtr clone() const override;
 
-    // This function is only meant to be called during application startup
-    // For reasons see https://github.com/ClickHouse/ClickHouse/pull/59532
-    static void setFormatAlterCommandsWithParentheses(bool value) { format_alter_commands_with_parentheses = value; }
-
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     void forEachPointerToChild(std::function<void(void**)> f) override;
-
-    static inline bool format_alter_commands_with_parentheses = false;
 };
 
 class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
@@ -250,6 +252,8 @@ public:
     bool isSettingsAlter() const;
 
     bool isFreezeAlter() const;
+
+    bool isUnlockSnapshot() const;
 
     bool isAttachAlter() const;
 
@@ -273,7 +277,7 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Alter; }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     bool isOneCommandTypeOnly(const ASTAlterCommand::Type & type) const;
 

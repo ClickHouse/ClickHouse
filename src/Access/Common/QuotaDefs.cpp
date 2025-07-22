@@ -28,16 +28,14 @@ String QuotaTypeInfo::valueToString(QuotaValue value) const
 {
     if (!(value % output_denominator))
         return std::to_string(value / output_denominator);
-    else
-        return toString(static_cast<double>(value) / output_denominator);
+    return toString(static_cast<double>(value) / output_denominator);
 }
 
 QuotaValue QuotaTypeInfo::stringToValue(const String & str) const
 {
     if (output_denominator == 1)
         return static_cast<QuotaValue>(parse<UInt64>(str));
-    else
-        return static_cast<QuotaValue>(parse<Float64>(str) * output_denominator);
+    return static_cast<QuotaValue>(parse<Float64>(str) * output_denominator);
 }
 
 String QuotaTypeInfo::valueToStringWithName(QuotaValue value) const

@@ -9,7 +9,7 @@ template <typename T1, typename T2> using AggregateFunctionCorr = AggregateFunct
 
 void registerAggregateFunctionsStatisticsCorr(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("corr", createAggregateFunctionStatisticsBinary<AggregateFunctionCorr, StatisticsFunctionKind::corr>, AggregateFunctionFactory::CaseInsensitive);
+    factory.registerFunction("corr", createAggregateFunctionStatisticsBinary<AggregateFunctionCorr, StatisticsFunctionKind::corr>, AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

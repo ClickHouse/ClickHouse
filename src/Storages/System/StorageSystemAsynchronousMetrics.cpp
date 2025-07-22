@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/AsynchronousMetrics.h>
@@ -9,12 +10,18 @@ namespace DB
 
 ColumnsDescription StorageSystemAsynchronousMetrics::getColumnsDescription()
 {
-    return ColumnsDescription
+    auto description = ColumnsDescription
     {
         {"metric", std::make_shared<DataTypeString>(), "Metric name."},
         {"value", std::make_shared<DataTypeFloat64>(), "Metric value."},
         {"description", std::make_shared<DataTypeString>(), "Metric description."},
     };
+
+    description.setAliases({
+        {"name", std::make_shared<DataTypeString>(), "metric"}
+    });
+
+    return description;
 }
 
 

@@ -5,11 +5,11 @@ import shutil
 import time
 import xml.etree.ElementTree as ET
 
+import pytest
+
 import helpers.client
 import helpers.cluster
 from helpers.test_tools import TSV
-import pytest
-
 
 cluster = helpers.cluster.ClickHouseCluster(__file__)
 

@@ -38,7 +38,7 @@ namespace ErrorCodes
 /// Returns tuple of (t-statistic, p-value)
 /// https://cpb-us-w2.wpmucdn.com/voices.uchicago.edu/dist/9/1193/files/2016/01/05b-TandP.pdf
 template <typename Data>
-class AggregateFunctionTTest :
+class AggregateFunctionTTest final:
     public IAggregateFunctionDataHelper<Data, AggregateFunctionTTest<Data>>
 {
 private:
@@ -96,25 +96,18 @@ public:
                 std::move(names)
             );
         }
-        else
-        {
-            DataTypes types
-            {
-                std::make_shared<DataTypeNumber<Float64>>(),
-                std::make_shared<DataTypeNumber<Float64>>(),
-            };
 
-            Strings names
-            {
-                "t_statistic",
-                "p_value",
-            };
+        DataTypes types{
+            std::make_shared<DataTypeNumber<Float64>>(),
+            std::make_shared<DataTypeNumber<Float64>>(),
+        };
 
-            return std::make_shared<DataTypeTuple>(
-                std::move(types),
-                std::move(names)
-            );
-        }
+        Strings names{
+            "t_statistic",
+            "p_value",
+        };
+
+        return std::make_shared<DataTypeTuple>(std::move(types), std::move(names));
     }
 
     bool allocatesMemoryInArena() const override { return false; }

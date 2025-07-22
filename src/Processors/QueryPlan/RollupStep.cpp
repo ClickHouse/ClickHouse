@@ -2,6 +2,7 @@
 #include <Processors/Transforms/RollupTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
@@ -21,8 +22,8 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-RollupStep::RollupStep(const DataStream & input_stream_, Aggregator::Params params_, bool final_, bool use_nulls_)
-    : ITransformingStep(input_stream_, generateOutputHeader(params_.getHeader(input_stream_.header, final_), params_.keys, use_nulls_), getTraits())
+RollupStep::RollupStep(const SharedHeader & input_header_, Aggregator::Params params_, bool final_, bool use_nulls_)
+    : ITransformingStep(input_header_, std::make_shared<const Block>(generateOutputHeader(params_.getHeader(*input_header_, final_), params_.keys, use_nulls_)), getTraits())
     , params(std::move(params_))
     , keys_size(params.keys_size)
     , final(final_)
@@ -30,13 +31,13 @@ RollupStep::RollupStep(const DataStream & input_stream_, Aggregator::Params para
 {
 }
 
-ProcessorPtr addGroupingSetForTotals(const Block & header, const Names & keys, bool use_nulls, const BuildQueryPipelineSettings & settings, UInt64 grouping_set_number);
+ProcessorPtr addGroupingSetForTotals(SharedHeader header, const Names & keys, bool use_nulls, const BuildQueryPipelineSettings & settings, UInt64 grouping_set_number);
 
 void RollupStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     pipeline.resize(1);
 
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
         if (stream_type == QueryPipelineBuilder::StreamType::Totals)
             return addGroupingSetForTotals(header, params.keys, use_nulls, settings, keys_size);
@@ -46,13 +47,9 @@ void RollupStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     });
 }
 
-void RollupStep::updateOutputStream()
+void RollupStep::updateOutputHeader()
 {
-    output_stream = createOutputStream(
-        input_streams.front(),
-        generateOutputHeader(params.getHeader(input_streams.front().header, final), params.keys, use_nulls),
-        getDataStreamTraits());
+    output_header = std::make_shared<const Block>(generateOutputHeader(params.getHeader(*input_headers.front(), final), params.keys, use_nulls));
 }
-
 
 }

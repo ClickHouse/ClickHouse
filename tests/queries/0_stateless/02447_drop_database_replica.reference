@@ -12,11 +12,21 @@ t
 2
 rdb_default	1	1	s1	r1	1
 2
-2
-2
+skip inactive
 s1	r1	OK	2	0
 s1	r2	QUEUED	2	0
 s2	r1	QUEUED	2	0
+s1	r1	OK	2	0
+s1	r2	QUEUED	2	0
+s2	r1	QUEUED	2	0
+timeout on active
+2
+2
+s1	r1	OK	3	0
+s1	r2	QUEUED	3	0
+s2	r1	QUEUED	3	0
+s9	r9	QUEUED	3	0
+drop replica
 2
 rdb_default	1	1	s1	r1	1
 rdb_default	1	2	s1	r2	0
@@ -24,6 +34,9 @@ rdb_default	1	2	s1	r2	0
 2
 t
 t2
+t22
 t3
+t33
 t4
+t44
 rdb_default_4	1	1	s1	r1	1

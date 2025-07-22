@@ -80,8 +80,7 @@ public:
         auto col_to = ColumnVector<ToType>::create();
         typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
 
-        size_t size = input_rows_count;
-        vec_to.resize(size);
+        vec_to.resize(input_rows_count);
         RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(ToType));
 
         return col_to;

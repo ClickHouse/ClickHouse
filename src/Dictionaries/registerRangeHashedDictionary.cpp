@@ -1,12 +1,18 @@
 #include <Dictionaries/RangeHashedDictionary.h>
 
+#include <Core/Settings.h>
 #include <Dictionaries/DictionarySource.h>
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryFactory.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool dictionary_use_async_executor;
+}
 
 namespace ErrorCodes
 {
@@ -58,7 +64,7 @@ static DictionaryPtr createRangeHashedDictionary(const std::string & full_name,
 
     auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
     const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
-    bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && context->getSettingsRef().dictionary_use_async_executor;
+    bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && context->getSettingsRef()[Setting::dictionary_use_async_executor];
 
     RangeHashedDictionaryConfiguration configuration
     {

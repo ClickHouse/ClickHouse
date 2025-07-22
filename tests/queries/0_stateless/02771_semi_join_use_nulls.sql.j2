@@ -1,11 +1,11 @@
 
-{% for allow_experimental_analyzer in [0, 1] -%}
+{% for enable_analyzer in [0, 1] -%}
 {% for join_use_nulls in [0, 1] -%}
 {% for kind in ['LEFT', 'RIGHT'] -%}
 {% for strictness in ['SEMI', 'ANTI'] -%}
 {% for maybe_materialize in ['', 'materialize'] -%}
 
-SET allow_experimental_analyzer = {{ allow_experimental_analyzer }};
+SET enable_analyzer = {{ enable_analyzer }};
 
 SET join_use_nulls = {{ join_use_nulls }};
 

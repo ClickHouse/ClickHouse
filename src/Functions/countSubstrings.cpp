@@ -1,6 +1,6 @@
-#include "FunctionsStringSearch.h"
-#include "FunctionFactory.h"
-#include "CountSubstringsImpl.h"
+#include <Functions/FunctionsStringSearch.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/CountSubstringsImpl.h>
 
 
 namespace DB
@@ -19,6 +19,6 @@ using FunctionCountSubstrings = FunctionsStringSearch<CountSubstringsImpl<NameCo
 
 REGISTER_FUNCTION(CountSubstrings)
 {
-    factory.registerFunction<FunctionCountSubstrings>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionCountSubstrings>({}, FunctionFactory::Case::Insensitive);
 }
 }

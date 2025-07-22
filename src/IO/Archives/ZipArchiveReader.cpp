@@ -5,7 +5,10 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/quoteString.h>
 #include <base/errnoToString.h>
+
 #include <unzip.h>
+#include <zip.h>
+#include <mz.h>
 
 
 namespace DB
@@ -317,7 +320,7 @@ public:
 
     String getFileName() const override { return handle.getFileName(); }
 
-    size_t getFileSize() override { return handle.getFileInfo().uncompressed_size; }
+    std::optional<size_t> tryGetFileSize() override { return handle.getFileInfo().uncompressed_size; }
 
     /// Releases owned handle to pass it to an enumerator.
     HandleHolder releaseHandle() &&

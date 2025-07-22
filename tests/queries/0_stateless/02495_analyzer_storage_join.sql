@@ -2,7 +2,7 @@ DROP TABLE IF EXISTS t;
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS tj;
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 SET single_join_prefer_left_table = 0;
 
 CREATE TABLE tj (key2 UInt64, key1 Int64, a UInt64, b UInt64, x UInt64, y UInt64) ENGINE = Join(ALL, RIGHT, key1, key2);
@@ -23,7 +23,7 @@ SELECT x FROM t1 ALL RIGHT JOIN tj ON t1.id1 == tj.key1 AND t1.id2 == tj.key2 OR
 SELECT '--- name clashes ---';
 
 CREATE TABLE t (key2 UInt64, key1 Int64, b UInt64, x UInt64, val UInt64) ENGINE = Memory;
-INSERT INTO t VALUES (1, -1, 11, 111, 1111), (2, -2, 22, 222, 2222), (3, -3, 33, 333, 2222), (4, -4, 44, 444, 4444), (5, -5, 55, 555, 5555)
+INSERT INTO t VALUES (1, -1, 11, 111, 1111), (2, -2, 22, 222, 2222), (3, -3, 33, 333, 2222), (4, -4, 44, 444, 4444), (5, -5, 55, 555, 5555);
 
 SELECT '-- using --';
 
@@ -68,19 +68,22 @@ SELECT '--- unsupported and illegal conditions ---';
 SELECT * FROM t ALL RIGHT JOIN tj ON t.key1 == tj.key1 AND t.key2 == tj.key2 + 1 FORMAT TSVWithNames; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
 SELECT * FROM t ALL RIGHT JOIN tj ON t.key1 + 1 == tj.key1 AND toUInt64(t.key2 - 1) == tj.key2 ORDER BY t.key1, tj.key2 FORMAT TSVWithNames; -- Ok: expression on the left table
 
-SELECT * FROM t ALL RIGHT JOIN tj ON t.key1 == tj.key1 AND t.key2 == tj.key2 AND 1 == 1 FORMAT TSVWithNames; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
+SELECT * FROM t ALL RIGHT JOIN tj ON t.key1 == tj.key1 AND t.key2 == tj.key2 AND 1 == 1 ORDER BY ALL SETTINGS query_plan_use_new_logical_join_step = 0 FORMAT TSVWithNames; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
+SELECT * FROM t ALL RIGHT JOIN tj ON t.key1 == tj.key1 AND t.key2 == tj.key2 AND 1 == 1 ORDER BY ALL SETTINGS query_plan_use_new_logical_join_step = 1, enable_parallel_replicas=0 FORMAT TSVWithNames;
 SELECT * FROM t ALL RIGHT JOIN tj ON t.key1 == tj.key1 AND t.key2 == tj.key2 AND 1 == 2 FORMAT TSVWithNames; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
 
 SELECT * FROM t ALL RIGHT JOIN tj ON t.key1 == tj.key1 AND t.key2 == tj.key2 AND tj.a == 20 FORMAT TSVWithNames; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
 SELECT * FROM t ALL RIGHT JOIN tj ON t.key1 == tj.key1 AND t.key2 == tj.key2 AND t.b == 22 ORDER BY t.key1, tj.key2 FORMAT TSVWithNames; -- Ok: t.b from the left table
 
 SELECT * FROM t ALL RIGHT JOIN tj ON t.key1 == tj.key1 AND t.key2 == tj.key2 AND 1 != 1 FORMAT TSVWithNames; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
-SELECT * FROM t ALL RIGHT JOIN tj ON t.key1 == tj.key1 AND t.key2 == tj.key2 AND NULL FORMAT TSVWithNames; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
+SELECT * FROM t ALL RIGHT JOIN tj ON t.key1 == tj.key1 AND t.key2 == tj.key2 AND NULL ORDER BY ALL SETTINGS query_plan_use_new_logical_join_step = 0 FORMAT TSVWithNames; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
+SELECT * FROM t ALL RIGHT JOIN tj ON t.key1 == tj.key1 AND t.key2 == tj.key2 AND NULL ORDER BY ALL SETTINGS query_plan_use_new_logical_join_step = 1, enable_parallel_replicas=0 FORMAT TSVWithNames;
 
 SELECT * FROM t ALL RIGHT JOIN tj ON t.key1 == tj.key1 AND t.key2 == tj.key2 AND 'aaa' FORMAT TSVWithNames; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT * FROM t ALL RIGHT JOIN tj ON 'aaa' FORMAT TSVWithNames; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 
-SELECT * FROM t ALL RIGHT JOIN tj ON t.key1 == tj.key1 AND t.key2 == tj.key2 AND 1 FORMAT TSVWithNames; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
+SELECT * FROM t ALL RIGHT JOIN tj ON t.key1 == tj.key1 AND t.key2 == tj.key2 AND 1 ORDER BY ALL SETTINGS query_plan_use_new_logical_join_step = 0 FORMAT TSVWithNames; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
+SELECT * FROM t ALL RIGHT JOIN tj ON t.key1 == tj.key1 AND t.key2 == tj.key2 AND 1 ORDER BY ALL SETTINGS query_plan_use_new_logical_join_step = 1, enable_parallel_replicas=0 FORMAT TSVWithNames;
 SELECT * FROM t ALL RIGHT JOIN tj ON 0 FORMAT TSVWithNames; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
 SELECT * FROM t ALL RIGHT JOIN tj ON 1 FORMAT TSVWithNames; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
 

@@ -1,16 +1,13 @@
 #pragma once
 
-#include <base/arithmeticOverflow.h>
-#include <Core/Block.h>
-#include <Core/AccurateComparison.h>
-#include <Core/callOnTypeIndex.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnConst.h>
-#include <Functions/FunctionHelpers.h>  /// TODO Core should not depend on Functions
-
+#include <Core/ColumnsWithTypeAndName.h>
+#include <Core/DecimalFunctions.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <base/arithmeticOverflow.h>
 
 namespace DB
 {
@@ -52,8 +49,8 @@ struct DecCompareInt
     using TypeB = Type;
 };
 
-template <typename A, typename B, template <typename, typename> typename Operation, bool _check_overflow = true,
-    bool _actual = is_decimal<A> || is_decimal<B>>
+template <typename A, typename B, template <typename, typename> typename Operation>
+requires is_decimal<A> || is_decimal<B>
 class DecimalComparison
 {
 public:
@@ -65,20 +62,17 @@ public:
     using ArrayA = typename ColVecA::Container;
     using ArrayB = typename ColVecB::Container;
 
-    static ColumnPtr apply(const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
+    static ColumnPtr apply(const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right, bool check_overflow)
     {
-        if constexpr (_actual)
-        {
-            ColumnPtr c_res;
-            Shift shift = getScales<A, B>(col_left.type, col_right.type);
+        ColumnPtr c_res;
+        Shift shift = getScales<A, B>(col_left.type, col_right.type);
 
-            return applyWithScale(col_left.column, col_right.column, shift);
-        }
-        else
-            return nullptr;
+        if (check_overflow)
+            return applyWithScale<true>(col_left.column, col_right.column, shift);
+        return applyWithScale<false>(col_left.column, col_right.column, shift);
     }
 
-    static bool compare(A a, B b, UInt32 scale_a, UInt32 scale_b)
+    static bool compare(A a, B b, UInt32 scale_a, UInt32 scale_b, bool check_overflow)
     {
         static const UInt32 max_scale = DecimalUtils::max_precision<Decimal256>;
         if (scale_a > max_scale || scale_b > max_scale)
@@ -90,7 +84,9 @@ public:
         if (scale_a > scale_b)
             shift.b = static_cast<CompareInt>(DecimalUtils::scaleMultiplier<A>(scale_a - scale_b));
 
-        return applyWithScale(a, b, shift);
+        if (check_overflow)
+            return applyWithScale<true>(a, b, shift);
+        return applyWithScale<false>(a, b, shift);
     }
 
 private:
@@ -104,14 +100,14 @@ private:
         bool right() const { return b != 1; }
     };
 
-    template <typename T, typename U>
+    template <bool check_overflow, typename T, typename U>
     static auto applyWithScale(T a, U b, const Shift & shift)
     {
         if (shift.left())
-            return apply<true, false>(a, b, shift.a);
-        else if (shift.right())
-            return apply<false, true>(a, b, shift.b);
-        return apply<false, false>(a, b, 1);
+            return apply<check_overflow, true, false>(a, b, shift.a);
+        if (shift.right())
+            return apply<check_overflow, false, true>(a, b, shift.b);
+        return apply<check_overflow, false, false>(a, b, 1);
     }
 
     template <typename T, typename U>
@@ -125,8 +121,8 @@ private:
         if (decimal0 && decimal1)
         {
             auto result_type = DecimalUtils::binaryOpResult<false, false>(*decimal0, *decimal1);
-            shift.a = static_cast<CompareInt>(result_type.scaleFactorFor(decimal0->getTrait(), false).value);
-            shift.b = static_cast<CompareInt>(result_type.scaleFactorFor(decimal1->getTrait(), false).value);
+            shift.a = static_cast<CompareInt>(result_type.scaleFactorFor(DecimalUtils::DataTypeDecimalTrait<T>{decimal0->getPrecision(), decimal0->getScale()}, false).value);
+            shift.b = static_cast<CompareInt>(result_type.scaleFactorFor(DecimalUtils::DataTypeDecimalTrait<U>{decimal1->getPrecision(), decimal1->getScale()}, false).value);
         }
         else if (decimal0)
             shift.b = static_cast<CompareInt>(decimal0->getScaleMultiplier().value);
@@ -158,66 +154,63 @@ private:
         return shift;
     }
 
-    template <bool scale_left, bool scale_right>
+    template <bool check_overflow, bool scale_left, bool scale_right>
     static ColumnPtr apply(const ColumnPtr & c0, const ColumnPtr & c1, CompareInt scale)
     {
         auto c_res = ColumnUInt8::create();
 
-        if constexpr (_actual)
+        bool c0_is_const = isColumnConst(*c0);
+        bool c1_is_const = isColumnConst(*c1);
+
+        if (c0_is_const && c1_is_const)
         {
-            bool c0_is_const = isColumnConst(*c0);
-            bool c1_is_const = isColumnConst(*c1);
+            const ColumnConst & c0_const = checkAndGetColumnConst<ColVecA>(*c0);
+            const ColumnConst & c1_const = checkAndGetColumnConst<ColVecB>(*c1);
 
-            if (c0_is_const && c1_is_const)
+            A a = c0_const.template getValue<A>();
+            B b = c1_const.template getValue<B>();
+            UInt8 res = apply<check_overflow, scale_left, scale_right>(a, b, scale);
+            return DataTypeUInt8().createColumnConst(c0->size(), Field(res));
+        }
+
+        ColumnUInt8::Container & vec_res = c_res->getData();
+        vec_res.resize(c0->size());
+
+        if (c0_is_const)
+        {
+            const ColumnConst & c0_const = checkAndGetColumnConst<ColVecA>(*c0);
+            A a = c0_const.template getValue<A>();
+            if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
+                constantVector<check_overflow, scale_left, scale_right>(a, c1_vec->getData(), vec_res, scale);
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong column in Decimal comparison");
+        }
+        else if (c1_is_const)
+        {
+            const ColumnConst & c1_const = checkAndGetColumnConst<ColVecB>(*c1);
+            B b = c1_const.template getValue<B>();
+            if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
+                vectorConstant<check_overflow, scale_left, scale_right>(c0_vec->getData(), b, vec_res, scale);
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong column in Decimal comparison");
+        }
+        else
+        {
+            if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
             {
-                const ColumnConst & c0_const = checkAndGetColumnConst<ColVecA>(*c0);
-                const ColumnConst & c1_const = checkAndGetColumnConst<ColVecB>(*c1);
-
-                A a = c0_const.template getValue<A>();
-                B b = c1_const.template getValue<B>();
-                UInt8 res = apply<scale_left, scale_right>(a, b, scale);
-                return DataTypeUInt8().createColumnConst(c0->size(), toField(res));
-            }
-
-            ColumnUInt8::Container & vec_res = c_res->getData();
-            vec_res.resize(c0->size());
-
-            if (c0_is_const)
-            {
-                const ColumnConst & c0_const = checkAndGetColumnConst<ColVecA>(*c0);
-                A a = c0_const.template getValue<A>();
                 if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
-                    constantVector<scale_left, scale_right>(a, c1_vec->getData(), vec_res, scale);
-                else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong column in Decimal comparison");
-            }
-            else if (c1_is_const)
-            {
-                const ColumnConst & c1_const = checkAndGetColumnConst<ColVecB>(*c1);
-                B b = c1_const.template getValue<B>();
-                if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
-                    vectorConstant<scale_left, scale_right>(c0_vec->getData(), b, vec_res, scale);
+                    vectorVector<check_overflow, scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong column in Decimal comparison");
             }
             else
-            {
-                if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
-                {
-                    if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
-                        vectorVector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
-                    else
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong column in Decimal comparison");
-                }
-                else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong column in Decimal comparison");
-            }
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong column in Decimal comparison");
         }
 
         return c_res;
     }
 
-    template <bool scale_left, bool scale_right>
+    template <bool check_overflow, bool scale_left, bool scale_right>
     static NO_INLINE UInt8 apply(A a, B b, CompareInt scale [[maybe_unused]])
     {
         CompareInt x;
@@ -232,7 +225,7 @@ private:
         else
             y = static_cast<CompareInt>(b);
 
-        if constexpr (_check_overflow)
+        if constexpr (check_overflow)
         {
             bool overflow = false;
 
@@ -264,9 +257,8 @@ private:
         return Op::apply(x, y);
     }
 
-    template <bool scale_left, bool scale_right>
-    static void NO_INLINE vectorVector(const ArrayA & a, const ArrayB & b, PaddedPODArray<UInt8> & c,
-                                        CompareInt scale)
+    template <bool check_overflow, bool scale_left, bool scale_right>
+    static void NO_INLINE vectorVector(const ArrayA & a, const ArrayB & b, PaddedPODArray<UInt8> & c, CompareInt scale)
     {
         size_t size = a.size();
         const A * a_pos = a.data();
@@ -276,14 +268,14 @@ private:
 
         while (a_pos < a_end)
         {
-            *c_pos = apply<scale_left, scale_right>(*a_pos, *b_pos, scale);
+            *c_pos = apply<check_overflow, scale_left, scale_right>(*a_pos, *b_pos, scale);
             ++a_pos;
             ++b_pos;
             ++c_pos;
         }
     }
 
-    template <bool scale_left, bool scale_right>
+    template <bool check_overflow, bool scale_left, bool scale_right>
     static void NO_INLINE vectorConstant(const ArrayA & a, B b, PaddedPODArray<UInt8> & c, CompareInt scale)
     {
         size_t size = a.size();
@@ -293,13 +285,13 @@ private:
 
         while (a_pos < a_end)
         {
-            *c_pos = apply<scale_left, scale_right>(*a_pos, b, scale);
+            *c_pos = apply<check_overflow, scale_left, scale_right>(*a_pos, b, scale);
             ++a_pos;
             ++c_pos;
         }
     }
 
-    template <bool scale_left, bool scale_right>
+    template <bool check_overflow, bool scale_left, bool scale_right>
     static void NO_INLINE constantVector(A a, const ArrayB & b, PaddedPODArray<UInt8> & c, CompareInt scale)
     {
         size_t size = b.size();
@@ -309,7 +301,7 @@ private:
 
         while (b_pos < b_end)
         {
-            *c_pos = apply<scale_left, scale_right>(a, *b_pos, scale);
+            *c_pos = apply<check_overflow, scale_left, scale_right>(a, *b_pos, scale);
             ++b_pos;
             ++c_pos;
         }

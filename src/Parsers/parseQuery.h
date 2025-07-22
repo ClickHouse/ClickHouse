@@ -69,7 +69,8 @@ std::pair<const char *, bool> splitMultipartQuery(
     size_t max_query_size,
     size_t max_parser_depth,
     size_t max_parser_backtracks,
-    bool allow_settings_after_format_in_insert);
+    bool allow_settings_after_format_in_insert,
+    bool implicit_select);
 
 /** If the query contains raw data part, such as INSERT ... FORMAT ..., return a pointer to it.
   * The SQL parser stops at the raw data part, which is parsed by a separate parser.

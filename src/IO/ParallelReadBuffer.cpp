@@ -152,7 +152,7 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
     return offset;
 }
 
-size_t ParallelReadBuffer::getFileSize()
+std::optional<size_t> ParallelReadBuffer::tryGetFileSize()
 {
     return file_size;
 }

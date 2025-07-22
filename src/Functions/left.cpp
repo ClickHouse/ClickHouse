@@ -6,8 +6,8 @@ namespace DB
 
 REGISTER_FUNCTION(Left)
 {
-    factory.registerFunction<FunctionLeftRight<false, SubstringDirection::Left>>({}, FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionLeftRight<true, SubstringDirection::Left>>({}, FunctionFactory::CaseSensitive);
+    factory.registerFunction<FunctionLeftRight<false, SubstringDirection::Left>>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionLeftRight<true, SubstringDirection::Left>>({}, FunctionFactory::Case::Sensitive);
 }
 
 }

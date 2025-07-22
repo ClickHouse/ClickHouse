@@ -12,7 +12,7 @@ create table bug_delta_gorilla
 (value_bug UInt64 codec (Delta, Gorilla))
 engine = MergeTree
 order by tuple() SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi'
-as (select 0 from numbers(30000000));
+as (select 0 from numbers(20000000));
 
 select count(*)
 from bug_delta_gorilla

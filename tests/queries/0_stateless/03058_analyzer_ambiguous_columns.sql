@@ -1,5 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/4567
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 DROP TABLE IF EXISTS fact;
 DROP TABLE IF EXISTS animals;
 DROP TABLE IF EXISTS colors;
@@ -23,4 +23,3 @@ select  id, animal_name, animal_key, color_name, color_key
 from fact a
         left join (select toInt64(animal_key) animal_key, animal_name from animals) b on (a.animal_key = b.animal_key)
         left join (select toInt64(color_key) color_key, color_name from colors) c on (a.color_key = c.color_key);  -- { serverError AMBIGUOUS_IDENTIFIER }
-

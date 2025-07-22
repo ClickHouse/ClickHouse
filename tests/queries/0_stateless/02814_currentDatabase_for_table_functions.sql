@@ -13,7 +13,13 @@ CREATE MATERIALIZED VIEW null_mv Engine = Log AS SELECT * FROM null_table LEFT J
 
 CREATE TABLE null_table_buffer (number UInt64) ENGINE = Buffer(currentDatabase(), null_table, 1, 1, 1, 100, 200, 10000, 20000);
 INSERT INTO null_table_buffer VALUES (1);
-SELECT sleep(3) FORMAT Null;
+
+-- OPTIMIZE query should flush Buffer table, but still it is not guaranteed
+-- (see the comment StorageBuffer::optimize)
+-- But the combination of OPTIMIZE + sleep + OPTIMIZE should be enough.
+OPTIMIZE TABLE null_table_buffer;
+SELECT sleep(1) FORMAT Null;
+OPTIMIZE TABLE null_table_buffer;
 
 -- Insert about should've landed into `null_mv`
 SELECT count() FROM null_mv;

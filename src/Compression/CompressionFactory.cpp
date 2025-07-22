@@ -1,19 +1,21 @@
-#include "config.h"
-
 #include <Compression/CompressionFactory.h>
+#include <Compression/CompressionCodecMultiple.h>
+#include <Compression/CompressionCodecNone.h>
+#include <IO/ReadBuffer.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Poco/String.h>
-#include <IO/ReadBuffer.h>
-#include <Parsers/queryToString.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Compression/CompressionCodecMultiple.h>
-#include <Compression/CompressionCodecNone.h>
-#include <IO/WriteHelpers.h>
+#include <Parsers/parseQuery.h>
+#include <Poco/String.h>
+
+#include <Columns/IColumn.h>
+#include <algorithm>
 
 #include <boost/algorithm/string/join.hpp>
+
+#include "config.h"
 
 namespace DB
 {
@@ -39,11 +41,9 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
         auto level_literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
         return get(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), level_literal)), {});
     }
-    else
-    {
-        auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
-        return get(makeASTFunction("CODEC", identifier), {});
-    }
+
+    auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
+    return get(makeASTFunction("CODEC", identifier), {});
 }
 
 CompressionCodecPtr CompressionCodecFactory::get(const String & compression_codec) const
@@ -96,13 +96,12 @@ CompressionCodecPtr CompressionCodecFactory::get(
 
         if (codecs.size() == 1)
             return codecs.back();
-        else if (codecs.size() > 1)
+        if (codecs.size() > 1)
             return std::make_shared<CompressionCodecMultiple>(codecs);
-        else
-            return std::make_shared<CompressionCodecNone>();
+        return std::make_shared<CompressionCodecNone>();
     }
 
-    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST structure for compression codec: {}", queryToString(ast));
+    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST structure for compression codec: {}", ast->formatForErrorMessage());
 }
 
 
@@ -116,6 +115,27 @@ CompressionCodecPtr CompressionCodecFactory::get(uint8_t byte_code) const
     return family_code_and_creator->second({}, nullptr);
 }
 
+void CompressionCodecFactory::fillCodecDescriptions(MutableColumns & res_columns) const
+{
+    std::for_each(
+        family_name_with_codec.begin(),
+        family_name_with_codec.end(),
+        [&](const auto &it)
+        {
+            const std::string &name = it.first;
+            CompressionCodecPtr tmp = it.second({}, nullptr);
+
+            res_columns[0]->insert(name);
+            res_columns[1]->insert(tmp->getMethodByte());
+            res_columns[2]->insert(tmp->isCompression());
+            res_columns[3]->insert(tmp->isGenericCompression());
+            res_columns[4]->insert(tmp->isEncryption());
+            res_columns[5]->insert(tmp->isFloatingPointTimeSeriesCodec());
+            res_columns[6]->insert(tmp->isExperimental());
+            res_columns[7]->insert(tmp->getDescription());
+        }
+    );
+}
 
 CompressionCodecPtr CompressionCodecFactory::getImpl(const String & family_name, const ASTPtr & arguments, const IDataType * column_type) const
 {
@@ -175,17 +195,16 @@ void registerCodecNone(CompressionCodecFactory & factory);
 void registerCodecLZ4(CompressionCodecFactory & factory);
 void registerCodecLZ4HC(CompressionCodecFactory & factory);
 void registerCodecZSTD(CompressionCodecFactory & factory);
-#ifdef ENABLE_ZSTD_QAT_CODEC
+#if USE_QATLIB
 void registerCodecZSTDQAT(CompressionCodecFactory & factory);
 #endif
 void registerCodecMultiple(CompressionCodecFactory & factory);
-#ifdef ENABLE_QPL_COMPRESSION
+#if USE_QPL
 void registerCodecDeflateQpl(CompressionCodecFactory & factory);
 #endif
 
 /// Keeper use only general-purpose codecs, so we don't need these special codecs
 /// in standalone build
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 void registerCodecDelta(CompressionCodecFactory & factory);
 void registerCodecT64(CompressionCodecFactory & factory);
 void registerCodecDoubleDelta(CompressionCodecFactory & factory);
@@ -193,6 +212,8 @@ void registerCodecGorilla(CompressionCodecFactory & factory);
 void registerCodecEncrypted(CompressionCodecFactory & factory);
 void registerCodecFPC(CompressionCodecFactory & factory);
 void registerCodecGCD(CompressionCodecFactory & factory);
+#if USE_SZ3
+void registerCodecSZ3(CompressionCodecFactory & factory);
 #endif
 
 CompressionCodecFactory::CompressionCodecFactory()
@@ -200,22 +221,23 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecNone(*this);
     registerCodecLZ4(*this);
     registerCodecZSTD(*this);
-#ifdef ENABLE_ZSTD_QAT_CODEC
+#if USE_QATLIB
     registerCodecZSTDQAT(*this);
 #endif
     registerCodecLZ4HC(*this);
     registerCodecMultiple(*this);
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     registerCodecDelta(*this);
     registerCodecT64(*this);
     registerCodecDoubleDelta(*this);
     registerCodecGorilla(*this);
     registerCodecEncrypted(*this);
     registerCodecFPC(*this);
-#ifdef ENABLE_QPL_COMPRESSION
+#if USE_QPL
     registerCodecDeflateQpl(*this);
 #endif
     registerCodecGCD(*this);
+#if USE_SZ3
+    registerCodecSZ3(*this);
 #endif
 
     default_codec = get("LZ4", {});

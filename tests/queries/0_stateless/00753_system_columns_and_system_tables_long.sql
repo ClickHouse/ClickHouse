@@ -1,4 +1,4 @@
--- Tags: long, no-s3-storage, no-random-merge-tree-settings
+-- Tags: long, no-object-storage, no-random-merge-tree-settings
 SET output_format_pretty_row_numbers = 0;
 
 DROP TABLE IF EXISTS check_system_tables;
@@ -93,6 +93,7 @@ DROP TABLE check_system_tables;
 SELECT 'Check total_bytes/total_rows for Memory';
 CREATE TABLE check_system_tables (key UInt16) ENGINE = Memory();
 SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
+-- it will take 130 bytes, 2 + padding left+right (64x2)
 INSERT INTO check_system_tables VALUES (1);
 SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
 DROP TABLE check_system_tables;

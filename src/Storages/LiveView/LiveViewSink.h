@@ -19,7 +19,7 @@ class LiveViewSink : public SinkToStorage
     }
 
 public:
-    explicit LiveViewSink(StorageLiveView & storage_) : SinkToStorage(updateHeader(storage_.getHeader())), storage(storage_) {}
+    explicit LiveViewSink(StorageLiveView & storage_) : SinkToStorage(std::make_shared<const Block>(updateHeader(storage_.getHeader()))), storage(storage_) {}
 
     String getName() const override { return "LiveViewSink"; }
 
@@ -71,9 +71,9 @@ public:
         new_hash.reset();
     }
 
-    void consume(Chunk chunk) override
+    void consume(Chunk & chunk) override
     {
-        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+        auto block = getHeader().cloneWithColumns(chunk.getColumns());
         block.updateHash(*new_hash);
         new_blocks->push_back(std::move(block));
     }

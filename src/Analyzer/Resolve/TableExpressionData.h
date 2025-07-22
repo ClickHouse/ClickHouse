@@ -36,6 +36,7 @@ struct AnalysisTableExpressionData
     std::string database_name;
     std::string table_name;
     bool should_qualify_columns = true;
+    bool supports_subcolumns = false;
     NamesAndTypes column_names_and_types;
     ColumnNameToColumnNodeMap column_name_to_column_node;
     std::unordered_set<std::string> subcolumn_names; /// Subset columns that are subcolumns of other columns
@@ -53,22 +54,21 @@ struct AnalysisTableExpressionData
 
     [[maybe_unused]] void dump(WriteBuffer & buffer) const
     {
-        buffer << "Table expression name " << table_expression_name;
+        buffer << " Table expression name '" << table_expression_name << "'";
 
         if (!table_expression_description.empty())
-            buffer << " table expression description " << table_expression_description;
+            buffer << ", description '" << table_expression_description << "'\n";
 
         if (!database_name.empty())
-            buffer << " database name " << database_name;
+            buffer << "   database name '" << database_name << "'\n";
 
         if (!table_name.empty())
-            buffer << " table name " << table_name;
+            buffer << "   table name '" << table_name << "'\n";
 
-        buffer << " should qualify columns " << should_qualify_columns;
-        buffer << " columns size " << column_name_to_column_node.size() << '\n';
-
+        buffer << "   Should qualify columns " << should_qualify_columns << "\n";
+        buffer << "   Columns size " << column_name_to_column_node.size() << "\n";
         for (const auto & [column_name, column_node] : column_name_to_column_node)
-            buffer << "Column name " << column_name << " column node " << column_node->dumpTree() << '\n';
+            buffer << "    { " << column_name << " : " << column_node->dumpTree() << " }\n";
     }
 
     [[maybe_unused]] String dump() const

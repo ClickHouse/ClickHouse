@@ -1,9 +1,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionStringToString.h>
-#include <Functions/LowerUpperUTF8Impl.h>
 #include <Functions/FunctionFactory.h>
 #include <Poco/Unicode.h>
-
+#include <Common/UTF8Helpers.h>
 
 namespace DB
 {
@@ -22,7 +21,8 @@ struct InitcapUTF8Impl
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t /*input_rows_count*/)
     {
         if (data.empty())
             return;
@@ -31,7 +31,7 @@ struct InitcapUTF8Impl
         array(data.data(), data.data() + data.size(), offsets, res_data.data());
     }
 
-    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
+    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function initcapUTF8 cannot work with FixedString argument");
     }
@@ -39,7 +39,7 @@ struct InitcapUTF8Impl
     static void processCodePoint(const UInt8 *& src, const UInt8 * src_end, UInt8 *& dst, bool& prev_alphanum)
     {
         size_t src_sequence_length = UTF8::seqLength(*src);
-        auto src_code_point = UTF8::convertUTF8ToCodePoint(src, src_end - src);
+        auto src_code_point = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(src), src_end - src);
 
         if (src_code_point)
         {
@@ -59,7 +59,7 @@ struct InitcapUTF8Impl
             prev_alphanum = alphanum;
             if (dst_code_point > 0)
             {
-                size_t dst_sequence_length = UTF8::convertCodePointToUTF8(dst_code_point, dst, src_end - src);
+                size_t dst_sequence_length = UTF8::convertCodePointToUTF8(dst_code_point, reinterpret_cast<char *>(dst), src_end - src);
                 assert(dst_sequence_length <= 4);
 
                 if (dst_sequence_length == src_sequence_length)

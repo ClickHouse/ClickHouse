@@ -2,12 +2,14 @@
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
 #include <Common/GWPAsan.h>
+#include <Common/VersionNumber.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 
 #include <base/errnoToString.h>
 #include <base/getPageSize.h>
 
+#include <Poco/Environment.h>
 #include <Poco/Logger.h>
 #include <sys/mman.h> /// MADV_POPULATE_WRITE
 
@@ -42,11 +44,26 @@ auto adjustToPageSize(void * buf, size_t len, size_t page_size)
     const size_t next_page_start = ((address_numeric + page_size - 1) / page_size) * page_size;
     return std::make_pair(reinterpret_cast<void *>(next_page_start), len - (next_page_start - address_numeric));
 }
+
+bool madviseSupportsMadvPopulateWrite()
+{
+    /// Can't rely for detecton on madvise(MADV_POPULATE_WRITE) == EINVAL, since this will be returned in many other cases.
+    VersionNumber linux_version(Poco::Environment::osVersion());
+    VersionNumber supported_version(5, 14, 0);
+    bool is_supported = linux_version >= supported_version;
+    if (!is_supported)
+        LOG_TRACE(getLogger("Allocator"), "Disabled page pre-faulting (kernel is too old).");
+    return is_supported;
+}
 #endif
 
 void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
 {
 #if defined(MADV_POPULATE_WRITE)
+    static const bool is_supported_by_kernel = madviseSupportsMadvPopulateWrite();
+    if (!is_supported_by_kernel)
+        return;
+
     if (len_ < POPULATE_THRESHOLD)
         return;
 
@@ -58,7 +75,7 @@ void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
     if (::madvise(buf, len, MADV_POPULATE_WRITE) < 0)
         LOG_TRACE(
             LogFrequencyLimiter(getLogger("Allocator"), 1),
-            "Attempt to populate pages failed: {} (EINVAL is expected for kernels < 5.14)",
+            "Attempt to populate pages failed: {}",
             errnoToString(errno));
 #endif
 }
@@ -68,7 +85,7 @@ void * allocNoTrack(size_t size, size_t alignment)
 {
     void * buf;
 #if USE_GWP_ASAN
-    if (unlikely(GWPAsan::GuardedAlloc.shouldSample()))
+    if (unlikely(GWPAsan::shouldSample()))
     {
         if (void * ptr = GWPAsan::GuardedAlloc.allocate(size, alignment))
         {
@@ -82,10 +99,8 @@ void * allocNoTrack(size_t size, size_t alignment)
 
             return ptr;
         }
-        else
-        {
-            ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
-        }
+
+        ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
     }
 #endif
     if (alignment <= MALLOC_MIN_ALIGNMENT)
@@ -185,14 +200,11 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
     }
 
 #if USE_GWP_ASAN
-    if (unlikely(GWPAsan::GuardedAlloc.shouldSample()))
+    if (unlikely(GWPAsan::shouldSample()))
     {
+        auto trace_alloc = CurrentMemoryTracker::alloc(new_size);
         if (void * ptr = GWPAsan::GuardedAlloc.allocate(new_size, alignment))
         {
-            auto trace_free = CurrentMemoryTracker::free(old_size);
-            auto trace_alloc = CurrentMemoryTracker::alloc(new_size);
-            trace_free.onFree(buf, old_size);
-
             memcpy(ptr, buf, std::min(old_size, new_size));
             free(buf, old_size);
             trace_alloc.onAlloc(buf, new_size);
@@ -207,10 +219,9 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
             ProfileEvents::increment(ProfileEvents::GWPAsanAllocateSuccess);
             return ptr;
         }
-        else
-        {
-            ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
-        }
+
+        [[maybe_unused]] auto trace_free = CurrentMemoryTracker::free(new_size);
+        ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
     }
 
     if (unlikely(GWPAsan::GuardedAlloc.pointerIsMine(buf)))
@@ -231,13 +242,17 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
     if (alignment <= MALLOC_MIN_ALIGNMENT)
     {
         /// Resize malloc'd memory region with no special alignment requirement.
-        auto trace_free = CurrentMemoryTracker::free(old_size);
+        /// Realloc can do 2 possible things:
+        /// - expand existing memory region
+        /// - allocate new memory block and free the old one
+        /// Because we don't know which option will be picked we need to make sure there is enough
+        /// memory for all options
         auto trace_alloc = CurrentMemoryTracker::alloc(new_size);
-        trace_free.onFree(buf, old_size);
 
         void * new_buf = ::realloc(buf, new_size);
         if (nullptr == new_buf)
         {
+            [[maybe_unused]] auto trace_free = CurrentMemoryTracker::free(new_size);
             throw DB::ErrnoException(
                 DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY,
                 "Allocator: Cannot realloc from {} to {}",
@@ -245,8 +260,10 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
                 ReadableSize(new_size));
         }
 
+        auto trace_free = CurrentMemoryTracker::free(old_size);
+        trace_free.onFree(buf, old_size);
+        trace_alloc.onAlloc(new_buf, new_size);
         buf = new_buf;
-        trace_alloc.onAlloc(buf, new_size);
 
         if constexpr (clear_memory)
             if (new_size > old_size)

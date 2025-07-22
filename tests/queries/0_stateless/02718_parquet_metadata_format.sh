@@ -17,3 +17,4 @@ $CLICKHOUSE_LOCAL -q "select some_column from file('$CURDIR/data_parquet/02718_d
 $CLICKHOUSE_LOCAL -q "select num_columns from file('$CURDIR/data_parquet/02718_data.parquet', ParquetMetadata, 'num_columns Array(UInt32)')" 2>&1 | grep -c "BAD_ARGUMENTS"
 
 
+$CLICKHOUSE_LOCAL -q "select * from file('$CURDIR/data_parquet/ipv6_bloom_filter.gz.parquet', ParquetMetadata) format JSONEachRow" | python3 -m json.tool

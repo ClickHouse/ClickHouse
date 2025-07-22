@@ -4,7 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} -nq "
+${CLICKHOUSE_CLIENT} -q "
   CREATE TABLE event_envoy
   (
       timestamp_interval DateTime CODEC(DoubleDelta),
@@ -18,7 +18,7 @@ ${CLICKHOUSE_CLIENT} -nq "
   INSERT INTO event_envoy SELECT now() - number, 'us-east-1', 'ch_super_fast' FROM numbers_mt(1e5);
 "
 
-${CLICKHOUSE_CLIENT} -nq "
+${CLICKHOUSE_CLIENT} -q "
   CREATE TABLE event_envoy_remote
   (
       timestamp_interval DateTime CODEC(DoubleDelta),

@@ -1,4 +1,4 @@
-set allow_experimental_analyzer = 1;
+set enable_analyzer = 1;
 
 EXPLAIN QUERY TREE
 SELECT toString(toString(number + 1)) as val, count()

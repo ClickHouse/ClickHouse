@@ -266,6 +266,11 @@ inline bool haveAVX512VBMI2() noexcept
     return haveAVX512F() && ((CPUInfo(0x7, 0).registers.ecx >> 6) & 1u);
 }
 
+inline bool haveAVX512BF16() noexcept
+{
+    return haveAVX512F() && ((CPUInfo(0x7, 1).registers.eax >> 5) & 1u);
+}
+
 inline bool haveRDRAND() noexcept
 {
     return CPUInfo(0x0).registers.eax >= 0x7 && ((CPUInfo(0x1).registers.ecx >> 30) & 1u);
@@ -326,6 +331,7 @@ inline bool haveAMXINT8() noexcept
     OP(AVX512VL)             \
     OP(AVX512VBMI)           \
     OP(AVX512VBMI2)          \
+    OP(AVX512BF16)           \
     OP(PREFETCHWT1)          \
     OP(SHA)                  \
     OP(ADX)                  \

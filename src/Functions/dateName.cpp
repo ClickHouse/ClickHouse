@@ -106,17 +106,22 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     ColumnPtr executeImpl(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
-        [[maybe_unused]] size_t input_rows_count) const override
+        size_t input_rows_count) const override
     {
         ColumnPtr res;
 
-        if (!((res = executeType<DataTypeDate>(arguments, result_type))
-            || (res = executeType<DataTypeDate32>(arguments, result_type))
-            || (res = executeType<DataTypeDateTime>(arguments, result_type))
-            || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
+        if (!((res = executeType<DataTypeDate>(arguments, result_type, input_rows_count))
+            || (res = executeType<DataTypeDate32>(arguments, result_type, input_rows_count))
+            || (res = executeType<DataTypeDateTime>(arguments, result_type, input_rows_count))
+            || (res = executeType<DataTypeDateTime64>(arguments, result_type, input_rows_count))))
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column {} of function {}, must be Date or DateTime.",
@@ -127,7 +132,7 @@ public:
     }
 
     template <typename DataType>
-    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const
+    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
         auto * times = checkAndGetColumn<typename DataType::ColumnType>(arguments[1].column.get());
         if (!times)
@@ -144,7 +149,7 @@ public:
         String date_part = date_part_column->getValue<String>();
 
         const DateLUTImpl * time_zone_tmp;
-        if (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
+        if constexpr (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
             time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 1);
         else
             time_zone_tmp = &DateLUT::instance();
@@ -175,7 +180,7 @@ public:
         using TimeType = DateTypeToTimeType<DataType>;
         callOnDatePartWriter<TimeType>(date_part, [&](const auto & writer)
         {
-            for (size_t i = 0; i < times_data.size(); ++i)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
                 {
@@ -354,7 +359,49 @@ private:
 
 REGISTER_FUNCTION(DateName)
 {
-    factory.registerFunction<FunctionDateNameImpl>({}, FunctionFactory::CaseInsensitive);
+    FunctionDocumentation::Description description = R"(
+Returns the specified part of the date.
+
+Possible values:
+- 'year'
+- 'quarter'
+- 'month'
+- 'week'
+- 'dayofyear'
+- 'day'
+- 'weekday'
+- 'hour'
+- 'minute'
+- 'second'
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+dateName(date_part, date[, timezone])
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"date_part", "The part of the date that you want to extract.", {"String"}},
+        {"datetime", "A date or date with time value.", {"Date", "Date32", "DateTime", "DateTime64"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the specified part of date.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {"Extract different date parts", R"(
+WITH toDateTime('2021-04-14 11:22:33') AS date_value
+SELECT
+    dateName('year', date_value),
+    dateName('month', date_value),
+    dateName('day', date_value)
+        )",
+        R"(
+┌─dateName('year', date_value)─┬─dateName('month', date_value)─┬─dateName('day', date_value)─┐
+│ 2021                         │ April                         │ 14                          │
+└──────────────────────────────┴───────────────────────────────┴─────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 7};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionDateNameImpl>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

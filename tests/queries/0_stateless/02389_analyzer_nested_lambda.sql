@@ -1,4 +1,5 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
+SET max_execution_time = 300;
 
 -- { echoOn }
 

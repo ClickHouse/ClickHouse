@@ -6,6 +6,12 @@
 
 namespace DB
 {
+
+namespace ErrorCode
+{
+extern const int LOGICAL_ERROR;
+}
+
 void RewriteArrayExistsFunctionMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * func = ast->as<ASTFunction>())
@@ -20,21 +26,21 @@ void RewriteArrayExistsFunctionMatcher::visit(ASTPtr & ast, Data & data)
         if (join->using_expression_list)
         {
             auto * it = std::find(join->children.begin(), join->children.end(), join->using_expression_list);
+            if (it == join->children.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find join->using_expression_list in '{}'", join->formatForLogging());
 
             visit(join->using_expression_list, data);
-
-            if (it && *it != join->using_expression_list)
-                *it = join->using_expression_list;
+            *it = join->using_expression_list;
         }
 
         if (join->on_expression)
         {
             auto * it = std::find(join->children.begin(), join->children.end(), join->on_expression);
+            if (it == join->children.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find join->on_expression in '{}'", join->formatForLogging());
 
             visit(join->on_expression, data);
-
-            if (it && *it != join->on_expression)
-                *it = join->on_expression;
+            *it = join->on_expression;
         }
     }
 }
@@ -87,8 +93,7 @@ void RewriteArrayExistsFunctionMatcher::visit(const ASTFunction & func, ASTPtr &
         ast = std::move(new_func);
         return;
     }
-    else if (
-        (filter_id = filter_arguments[1]->as<ASTIdentifier>()) && filter_arguments[0]->as<ASTLiteral>()
+    if ((filter_id = filter_arguments[1]->as<ASTIdentifier>()) && filter_arguments[0]->as<ASTLiteral>()
         && filter_id->full_name == id->full_name)
     {
         /// arrayExists(x -> elem = x, arr) -> has(arr, elem)
@@ -102,7 +107,7 @@ void RewriteArrayExistsFunctionMatcher::visit(const ASTFunction & func, ASTPtr &
 bool RewriteArrayExistsFunctionMatcher::needChildVisit(const ASTPtr & ast, const ASTPtr &)
 {
     /// Children of ASTTableJoin are handled separately in visit() function
-    if (auto * join = ast->as<ASTTableJoin>())
+    if (auto * /*join*/ _ = ast->as<ASTTableJoin>())
         return false;
 
     return true;

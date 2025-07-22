@@ -4,11 +4,16 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnVector.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_nonconst_timezone_arguments;
+}
 
 namespace ErrorCodes
 {
@@ -31,7 +36,7 @@ public:
         return std::make_shared<FunctionNowInBlock>(context);
     }
     explicit FunctionNowInBlock(ContextPtr context)
-        : allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
+        : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
     {}
 
     String getName() const override
@@ -89,7 +94,41 @@ private:
 
 REGISTER_FUNCTION(NowInBlock)
 {
-    factory.registerFunction<FunctionNowInBlock>();
+    FunctionDocumentation::Description description = R"(
+Returns the current date and time at the moment of processing of each block of data. In contrast to the function [`now`](#now), it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
+
+It makes sense to use this function to generate the current time in long-running `INSERT SELECT` queries.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+nowInBlock([timezone])
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"timezone", "Optional. Timezone name for the returned value.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the current date and time at the moment of processing of each block of data.", {"DateTime"}};
+    FunctionDocumentation::Examples examples = {
+        {"Difference with the now() function", R"(
+SELECT
+    now(),
+    nowInBlock(),
+    sleep(1)
+FROM numbers(3)
+SETTINGS max_block_size = 1
+FORMAT PrettyCompactMonoBlock
+        )",
+        R"(
+┌───────────────now()─┬────────nowInBlock()─┬─sleep(1)─┐
+│ 2022-08-21 19:41:19 │ 2022-08-21 19:41:19 │        0 │
+│ 2022-08-21 19:41:19 │ 2022-08-21 19:41:20 │        0 │
+│ 2022-08-21 19:41:19 │ 2022-08-21 19:41:21 │        0 │
+└─────────────────────┴─────────────────────┴──────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 8};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionNowInBlock>(documentation);
 }
 
 }

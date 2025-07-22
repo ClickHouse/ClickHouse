@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-async-insert
+# no-async-insert: https://github.com/ClickHouse/ClickHouse/issues/80105
 
 set -e
 
@@ -34,7 +35,7 @@ do
         SELECT count() FROM t HAVING count() > 0;
         SELECT ${i};
         "
-done | ${CLICKHOUSE_CLIENT} --multiquery
+done | ${CLICKHOUSE_CLIENT}
 
 wait
 

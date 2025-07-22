@@ -1,0 +1,4 @@
+{"k1":"2","k2":{"k3":"qqq","k4":["44","55"]}}	{'k1':'Int64','k2.k3':'String','k2.k4':'Array(Nullable(Int64))'}
+{"k1":"2","k2":{"k3":"qqq","k4":["44","55"]}}	{'k1':'Int64','k2.k3':'String','k2.k4':'Array(Nullable(Int64))'}
+2	qqq	[44,55]
+2	qqq	[44,55]

@@ -5,6 +5,7 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -51,14 +52,20 @@ AccessRightsElements InterpreterMoveAccessEntityQuery::getRequiredAccess() const
     {
         case AccessEntityType::USER:
         {
-            res.emplace_back(AccessType::DROP_USER);
-            res.emplace_back(AccessType::CREATE_USER);
+            for (const auto & name: query.names)
+            {
+                res.emplace_back(AccessType::DROP_USER, name);
+                res.emplace_back(AccessType::CREATE_USER, name);
+            }
             return res;
         }
         case AccessEntityType::ROLE:
         {
-            res.emplace_back(AccessType::DROP_ROLE);
-            res.emplace_back(AccessType::CREATE_ROLE);
+            for (const auto & name: query.names)
+            {
+                res.emplace_back(AccessType::DROP_ROLE, name);
+                res.emplace_back(AccessType::CREATE_ROLE, name);
+            }
             return res;
         }
         case AccessEntityType::SETTINGS_PROFILE:

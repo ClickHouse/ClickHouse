@@ -7,6 +7,7 @@
 #include <Common/setThreadName.h>
 #include <IO/S3/Client.h>
 #include <Interpreters/Context.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -21,10 +22,16 @@ void BlobStorageLogWriter::addEvent(
     BlobStorageLogElement::EvenTime time_now)
 {
     if (!log)
+    {
+        LOG_TEST(getLogger("BlobStorageLogWriter"), "No log, skipping {}", remote_path);
         return;
+    }
 
     if (log->shouldIgnorePath(local_path_.empty() ? local_path : local_path_))
+    {
+        LOG_TRACE(getLogger("BlobStorageLogWriter"), "No log, skipping {}, because should ignore", remote_path);
         return;
+    }
 
     if (!time_now.time_since_epoch().count())
         time_now = std::chrono::system_clock::now();
@@ -56,7 +63,6 @@ void BlobStorageLogWriter::addEvent(
 
 BlobStorageLogWriterPtr BlobStorageLogWriter::create(const String & disk_name)
 {
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD /// Keeper standalone build doesn't have a context
     if (auto blob_storage_log = Context::getGlobalContextInstance()->getBlobStorageLog())
     {
         auto log_writer = std::make_shared<BlobStorageLogWriter>(std::move(blob_storage_log));
@@ -67,7 +73,6 @@ BlobStorageLogWriterPtr BlobStorageLogWriter::create(const String & disk_name)
 
         return log_writer;
     }
-#endif
     return {};
 }
 

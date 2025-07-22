@@ -1,4 +1,5 @@
--- Tags: zookeeper, no-parallel
+-- Tags: zookeeper, no-parallel, no-shared-merge-tree
+-- no-shared-merge-tree: This failure injection is only RMT specific
 
 DROP TABLE IF EXISTS t_hardware_error NO DELAY;
 

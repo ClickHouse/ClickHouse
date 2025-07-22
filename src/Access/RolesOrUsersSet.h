@@ -64,7 +64,10 @@ struct RolesOrUsersSet
     friend bool operator !=(const RolesOrUsersSet & lhs, const RolesOrUsersSet & rhs) { return !(lhs == rhs); }
 
     std::vector<UUID> findDependencies() const;
+    bool hasDependencies(const std::unordered_set<UUID> & dependencies_ids) const;
     void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids);
+    void copyDependenciesFrom(const RolesOrUsersSet & src, const std::unordered_set<UUID> & dependencies_ids);
+    void removeDependencies(const std::unordered_set<UUID> & dependencies_ids);
 
     bool all = false;
     boost::container::flat_set<UUID> ids;

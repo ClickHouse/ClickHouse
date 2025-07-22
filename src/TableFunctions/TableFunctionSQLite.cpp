@@ -7,7 +7,7 @@
 #include <Storages/StorageSQLite.h>
 
 #include <Databases/SQLite/SQLiteUtils.h>
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 
@@ -57,7 +57,7 @@ StoragePtr TableFunctionSQLite::executeImpl(const ASTPtr & /*ast_function*/,
                                          sqlite_db,
                                          database_path,
                                          remote_table_name,
-                                         cached_columns, ConstraintsDescription{}, context);
+                                         cached_columns, ConstraintsDescription{}, /* comment = */ "", context);
 
     storage->startup();
     return storage;

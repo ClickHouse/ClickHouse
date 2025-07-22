@@ -18,6 +18,9 @@ SELECT quantilesExactWeighted(0.2)(d, 1) FROM datetime;
 SELECT quantileInterpolatedWeighted(0.2)(d, 1) FROM datetime;
 SELECT quantilesInterpolatedWeighted(0.2)(d, 1) FROM datetime;
 
+SELECT quantileExactWeightedInterpolated(0.2)(d, 1) FROM datetime;
+SELECT quantilesExactWeightedInterpolated(0.2)(d, 1) FROM datetime;
+
 SELECT quantileTiming(0.2)(d) FROM datetime;
 SELECT quantilesTiming(0.2)(d) FROM datetime;
 

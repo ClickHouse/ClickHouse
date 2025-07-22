@@ -1,0 +1,32 @@
+set optimize_read_in_order=1;
+set enable_json_type=1;
+set allow_experimental_variant_type=1;
+set use_variant_as_common_type=1;
+
+drop table if exists test;
+
+{% for create_command in ['create table test (value UInt64, json JSON(a UInt32, b String), data String) engine=SummingMergeTree(value) order by (json.a, json.b) settings min_rows_for_wide_part=100000000, min_bytes_for_wide_part=1000000000, index_granularity = 1;',
+                          'create table test (value UInt64, json JSON(a UInt32, b String), data String) engine=SummingMergeTree(value) order by (json.a, json.b) settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_columns_to_activate=10, vertical_merge_algorithm_min_rows_to_activate=10000000000, index_granularity = 1;',
+                          'create table test (value UInt64, json JSON(a UInt32, b String), data String) engine=SummingMergeTree(value) order by (json.a, json.b) settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_columns_to_activate=1, vertical_merge_algorithm_min_rows_to_activate=1, index_granularity = 1;'] -%}
+
+select '{{ create_command }}';
+
+{{ create_command }}
+
+system stop merges test;
+
+insert into test select number, toJSONString(map('a', number % 2, 'b', 'str_' || number % 3, 'c', range(number % 10))), 'Hello, World!' from numbers(4);
+insert into test select number, toJSONString(map('a', number % 2, 'b', 'str_' || number % 3, 'c', range(number % 10))), 'Hello, World!' from numbers(4);
+
+select * from test final order by value;
+
+system start merges test;
+optimize table test final;
+select count() from system.parts where active and table = 'test' and database = currentDatabase();
+
+select * from test final order by value;
+
+drop table test;
+
+{% endfor -%}
+

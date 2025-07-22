@@ -1,0 +1,16 @@
+<clickhouse>
+    <tcp_port>9000</tcp_port>
+
+    <profiles>
+        <default>
+        </default>
+    </profiles>
+
+    <users>
+        <default>
+            <profile>default</profile>
+            <no_password></no_password>
+        </default>
+    </users>
+
+</clickhouse>

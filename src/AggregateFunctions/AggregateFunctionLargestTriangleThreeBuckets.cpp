@@ -21,16 +21,16 @@
 
 #include <boost/math/distributions/normal.hpp>
 
+namespace DB
+{
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int NOT_IMPLEMENTED;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-namespace DB
-{
 struct Settings;
 
 namespace
@@ -172,7 +172,7 @@ private:
 
 public:
     explicit AggregateFunctionLargestTriangleThreeBuckets(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<LargestTriangleThreeBucketsData, AggregateFunctionLargestTriangleThreeBuckets>({arguments}, {}, createResultType(arguments))
+        : IAggregateFunctionDataHelper<LargestTriangleThreeBucketsData, AggregateFunctionLargestTriangleThreeBuckets>({arguments}, params, createResultType(arguments))
     {
         if (params.size() != 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require one parameter", getName());
@@ -181,7 +181,7 @@ public:
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} require first parameter to be a UInt64", getName());
 
-        total_buckets = params[0].get<UInt64>();
+        total_buckets = params[0].safeGet<UInt64>();
 
         this->x_type = WhichDataType(arguments[0]).idx;
         this->y_type = WhichDataType(arguments[1]).idx;
@@ -329,7 +329,7 @@ public:
                 return [](IColumn & column, Float64 value)
                 {
                     auto & col = assert_cast<ColumnDateTime64 &>(column);
-                    col.getData().push_back(static_cast<UInt64>(value));
+                    col.getData().push_back(static_cast<Int64>(value));
                 };
             default:
                 return [](IColumn & column, Float64 value)

@@ -39,8 +39,8 @@ function check_span()
         extra_condition=""
     fi
 
-    ret=$(${CLICKHOUSE_CLIENT} -nq "
-        SYSTEM FLUSH LOGS;
+    ret=$(${CLICKHOUSE_CLIENT} -q "
+        SYSTEM FLUSH LOGS opentelemetry_span_log;
 
         SELECT count()
         FROM system.opentelemetry_span_log

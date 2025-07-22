@@ -4,8 +4,11 @@
 #include <Storages/IStorage.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/FileRenamer.h>
+#include <Formats/FormatSettings.h>
+#include <Formats/FormatParserGroup.h>
 #include <IO/Archives/IArchiveReader.h>
-#include <Processors/SourceWithKeyCondition.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Processors/ISource.h>
 
 #include <atomic>
 #include <shared_mutex>
@@ -89,6 +92,7 @@ public:
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
     bool supportsSubcolumns() const override { return true; }
+    bool supportsOptimizationToSubcolumns() const override { return false; }
 
     bool supportsDynamicSubcolumns() const override { return true; }
 
@@ -127,7 +131,7 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
 
-    static void parseFileSource(String source, String & filename, String & path_to_archive);
+    static void parseFileSource(String source, String & filename, String & path_to_archive, bool allow_archive_path_syntax);
 
     static ArchiveInfo getArchiveInfo(
         const std::string & path_to_archive,
@@ -137,6 +141,8 @@ public:
         size_t & total_bytes_to_read);
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
+
+    void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
 protected:
     friend class StorageFileSource;
@@ -198,7 +204,7 @@ private:
     bool distributed_processing = false;
 };
 
-class StorageFileSource : public SourceWithKeyCondition, WithContext
+class StorageFileSource : public ISource, WithContext
 {
 public:
     class FilesIterator : WithContext
@@ -249,8 +255,8 @@ private:
         UInt64 max_block_size_,
         FilesIteratorPtr files_iterator_,
         std::unique_ptr<ReadBuffer> read_buf_,
-        bool need_only_count_);
-
+        bool need_only_count_,
+        FormatParserGroupPtr);
 
     /**
       * If specified option --rename_files_after_processing and files created by TableFunctionFile
@@ -265,11 +271,11 @@ private:
         return storage->getName();
     }
 
-    void setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_) override;
-
     bool tryGetCountFromCache(const struct stat & file_stat);
 
     Chunk generate() override;
+
+    void onFinish() override { parser_group->finishStream(); }
 
     void addNumRowsToCache(const String & path, size_t num_rows) const;
 
@@ -287,6 +293,7 @@ private:
     InputFormatPtr input_format;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
+    FormatParserGroupPtr parser_group;
 
     std::shared_ptr<IArchiveReader> archive_reader;
     std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
@@ -295,6 +302,7 @@ private:
     NamesAndTypesList requested_columns;
     NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
+    SerializationInfoByName serialization_hints;
 
     UInt64 max_block_size;
 

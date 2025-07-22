@@ -1,5 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/14739
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 
 drop table if exists test_subquery;
 
@@ -28,7 +28,6 @@ FROM
 );
 
 -- query 3
--- it works with old analyzer
 SELECT my_field
 FROM
 (
@@ -36,4 +35,4 @@ FROM
         *,
         'redefined' AS my_field
 	from (select * from test_subquery)
-); -- {serverError AMBIGUOUS_COLUMN_NAME}
+);

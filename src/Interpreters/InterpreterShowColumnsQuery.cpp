@@ -3,10 +3,10 @@
 
 #include <Common/quoteString.h>
 #include <Common/escapeString.h>
+#include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTShowColumnsQuery.h>
-#include <Parsers/formatAST.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
@@ -14,6 +14,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool mysql_map_fixed_string_to_text_in_show_columns;
+    extern const SettingsBool mysql_map_string_to_text_in_show_columns;
+}
 
 
 InterpreterShowColumnsQuery::InterpreterShowColumnsQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
@@ -31,8 +36,8 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
     const bool use_mysql_types = (client_interface == ClientInfo::Interface::MYSQL); // connection made through MySQL wire protocol
 
     const auto & settings = getContext()->getSettingsRef();
-    const bool remap_string_as_text = settings.mysql_map_string_to_text_in_show_columns;
-    const bool remap_fixed_string_as_text = settings.mysql_map_fixed_string_to_text_in_show_columns;
+    const bool remap_string_as_text = settings[Setting::mysql_map_string_to_text_in_show_columns];
+    const bool remap_fixed_string_as_text = settings[Setting::mysql_map_fixed_string_to_text_in_show_columns];
 
     WriteBufferFromOwnString buf_database;
     String resolved_database = getContext()->resolveDatabase(query.database);
@@ -67,6 +72,7 @@ WITH map(
         'Map',         'JSON',
         'Tuple',       'JSON',
         'Object',      'JSON',
+        'JSON',        'JSON',
         'String',      '{}',
         'FixedString', '{}') AS native_to_mysql_mapping,
         )",
@@ -149,12 +155,12 @@ WHERE
         rewritten_query += fmt::format("'{}'", query.like);
     }
     else if (query.where_expression)
-        rewritten_query += fmt::format(" AND ({})", query.where_expression);
+        rewritten_query += fmt::format(" AND ({})", query.where_expression->formatWithSecretsOneLine());
 
     rewritten_query += " ORDER BY field, type, null, key, default, extra";
 
     if (query.limit_length)
-        rewritten_query += fmt::format(" LIMIT {}", query.limit_length);
+        rewritten_query += fmt::format(" LIMIT {}", query.limit_length->formatWithSecretsOneLine());
 
     return rewritten_query;
 }

@@ -1,7 +1,9 @@
 ---
-slug: /en/operations/system-tables/functions
+description: 'System table containing information about normal and aggregate functions.'
+keywords: ['system table', 'functions']
+slug: /operations/system-tables/functions
+title: 'system.functions'
 ---
-# functions
 
 Contains information about normal and aggregate functions.
 
@@ -9,7 +11,6 @@ Columns:
 
 - `name` ([String](../../sql-reference/data-types/string.md)) – The name of the function.
 - `is_aggregate` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Whether the function is an aggregate function.
-- `is_deterministic` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md))) - Whether the function is deterministic.
 - `case_insensitive`, ([UInt8](../../sql-reference/data-types/int-uint.md)) - Whether the function name can be used case-insensitively.
 - `alias_to`, ([String](../../sql-reference/data-types/string.md)) - The original function name, if the function name is an alias.
 - `create_query`, ([String](../../sql-reference/data-types/enum.md)) - Unused.
@@ -19,6 +20,7 @@ Columns:
 - `arguments`, ([String](../../sql-reference/data-types/string.md)) - What arguments does the function take.
 - `returned_value`, ([String](../../sql-reference/data-types/string.md)) - What does the function return.
 - `examples`, ([String](../../sql-reference/data-types/string.md)) - Example usage of the function.
+- `introduced_in`, ([String](../../sql-reference/data-types/string.md)) - ClickHouse version in which the function was first introduced.
 - `categories`, ([String](../../sql-reference/data-types/string.md)) - The category of the function.
 
 **Example**

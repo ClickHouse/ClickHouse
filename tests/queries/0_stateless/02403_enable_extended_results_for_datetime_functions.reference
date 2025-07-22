@@ -64,7 +64,7 @@ toStartOfMonth;toDateTime64;false	2099-07-07
 type;toStartOfMonth;toDateTime64;false	Date
 toStartOfWeek;toDate32;false	2099-07-07
 type;toStartOfWeek;toDate32;false	Date
-toStartOfWeek;toDateTime64;false	2099-07-07
+toStartOfWeek;toDateTime64;false	1970-01-01
 type;toStartOfWeek;toDateTime64;false	Date
 toMonday;toDate32;false	2099-07-08
 type;toMonday;toDate32;false	Date

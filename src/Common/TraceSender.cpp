@@ -23,8 +23,20 @@ namespace DB
 
 LazyPipeFDs TraceSender::pipe;
 
+static thread_local bool inside_send = false;
 void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Extras extras)
 {
+    /** The method shouldn't be called recursively or throw exceptions.
+      * There are several reasons:
+      * - avoid infinite recursion when some of subsequent functions invoke tracing;
+      * - avoid inconsistent writes if the method was interrupted by a signal handler in the middle of writing,
+      *   and then another tracing is invoked (e.g., from query profiler).
+      */
+    if (unlikely(inside_send))
+        return;
+    inside_send = true;
+    DENY_ALLOCATIONS_IN_SCOPE;
+
     constexpr size_t buf_size = sizeof(char) /// TraceCollector stop flag
         + sizeof(UInt8)                      /// String size
         + QUERY_ID_MAX_LEN                   /// Maximum query_id length
@@ -56,9 +68,9 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
 
         thread_id = CurrentThread::get().thread_id;
     }
-    else
+    else if (const auto * main_thread = MainThreadStatus::get())
     {
-        thread_id = MainThreadStatus::get()->thread_id;
+        thread_id = main_thread->thread_id;
     }
 
     writeChar(false, out);  /// true if requested to stop the collecting thread.
@@ -80,6 +92,9 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
     writePODBinary(extras.increment, out);
 
     out.next();
+    out.finalize();
+
+    inside_send = false;
 }
 
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-fasttest, no-cpu-aarch64
-# Tag no-fasttest: avoid dependency on qemu -- invonvenient when running locally
+# Tag no-fasttest: avoid dependency on qemu -- inconvenient when running locally
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -1,12 +1,14 @@
 #pragma once
 
+#include <unordered_map>
 #include <vector>
 
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MarkRange.h>
-#include "Storages/MergeTree/AlterConversions.h"
-#include "Storages/MergeTree/MergeTreePartInfo.h"
+#include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 
 
 namespace DB
@@ -36,29 +38,39 @@ struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescripti
     String describe() const;
     void deserialize(ReadBuffer & in);
 
-    void merge(RangesInDataPartsDescription & other);
+    void merge(const RangesInDataPartsDescription & other);
+};
+
+
+/// A vehicle which transports additional information to optimize searches
+struct RangesInDataPartReadHints
+{
+    /// Currently only information related to vector search
+    std::optional<NearestNeighbours> vector_search_results;
 };
 
 struct RangesInDataPart
 {
     DataPartPtr data_part;
-    AlterConversionsPtr alter_conversions;
+    DataPartPtr parent_part;
     size_t part_index_in_query;
+    size_t part_starting_offset_in_query;
     MarkRanges ranges;
     MarkRanges exact_ranges;
-
-    RangesInDataPart() = default;
+    RangesInDataPartReadHints read_hints;
 
     RangesInDataPart(
         const DataPartPtr & data_part_,
-        const AlterConversionsPtr & alter_conversions_,
-        const size_t part_index_in_query_,
-        const MarkRanges & ranges_ = MarkRanges{})
-        : data_part{data_part_}
-        , alter_conversions{alter_conversions_}
-        , part_index_in_query{part_index_in_query_}
-        , ranges{ranges_}
-    {}
+        const DataPartPtr & parent_part_,
+        size_t part_index_in_query_,
+        size_t part_starting_offset_in_query_,
+        const MarkRanges & ranges_);
+
+    explicit RangesInDataPart(
+        const DataPartPtr & data_part_,
+        const DataPartPtr & parent_part_ = nullptr,
+        size_t part_index_in_query_ = 0,
+        size_t part_starting_offset_in_query_ = 0);
 
     RangesInDataPartDescription getDescription() const;
 
@@ -66,10 +78,15 @@ struct RangesInDataPart
     size_t getRowsCount() const;
 };
 
-struct RangesInDataParts: public std::vector<RangesInDataPart>
+class IMergeTreeDataPart;
+using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
+using DataPartsVector = std::vector<DataPartPtr>;
+
+struct RangesInDataParts : public std::vector<RangesInDataPart>
 {
     using std::vector<RangesInDataPart>::vector; /// NOLINT(modernize-type-traits)
 
+    explicit RangesInDataParts(const DataPartsVector & parts);
     RangesInDataPartsDescription getDescriptions() const;
 
     size_t getMarksCountAllParts() const;

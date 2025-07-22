@@ -1,12 +1,16 @@
-#include "DatabaseSQLite.h"
+#include <Databases/SQLite/DatabaseSQLite.h>
 
 #if USE_SQLITE
 
+#include <Storages/AlterCommands.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
@@ -16,6 +20,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 namespace ErrorCodes
 {
@@ -153,6 +162,7 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
         table_name,
         ColumnsDescription{*columns},
         ConstraintsDescription{},
+        /* comment = */ "",
         local_context);
 
     return storage;
@@ -171,6 +181,10 @@ ASTPtr DatabaseSQLite::getCreateDatabaseQuery() const
     return create_query;
 }
 
+void DatabaseSQLite::alterDatabaseComment(const AlterCommand & command)
+{
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
+}
 
 ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {
@@ -196,8 +210,13 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
 
     const Settings & settings = getContext()->getSettingsRef();
 
-    auto create_table_query = DB::getCreateQueryFromStorage(storage, table_storage_define, true,
-        static_cast<uint32_t>(settings.max_parser_depth), static_cast<uint32_t>(settings.max_parser_backtracks), throw_on_error);
+    auto create_table_query = DB::getCreateQueryFromStorage(
+        storage,
+        table_storage_define,
+        true,
+        static_cast<uint32_t>(settings[Setting::max_parser_depth]),
+        static_cast<uint32_t>(settings[Setting::max_parser_backtracks]),
+        throw_on_error);
 
     return create_table_query;
 }
@@ -218,7 +237,7 @@ void registerDatabaseSQLite(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseSQLite>(args.context, engine_define, args.create_query.attach, database_path);
     };
-    factory.registerDatabase("SQLite", create_fn);
+    factory.registerDatabase("SQLite", create_fn, {.supports_arguments = true});
 }
 }
 

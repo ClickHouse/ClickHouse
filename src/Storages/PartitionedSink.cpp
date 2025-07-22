@@ -1,10 +1,11 @@
 // NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
 
-#include "PartitionedSink.h"
+#include <Storages/PartitionedSink.h>
 
 #include <Common/ArenaUtils.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 
@@ -25,7 +26,7 @@ namespace ErrorCodes
 PartitionedSink::PartitionedSink(
     const ASTPtr & partition_by,
     ContextPtr context_,
-    const Block & sample_block_)
+    SharedHeader sample_block_)
     : SinkToStorage(sample_block_)
     , context(context_)
     , sample_block(sample_block_)
@@ -33,7 +34,7 @@ PartitionedSink::PartitionedSink(
     ASTs arguments(1, partition_by);
     ASTPtr partition_by_string = makeASTFunction("toString", std::move(arguments));
 
-    auto syntax_result = TreeRewriter(context).analyze(partition_by_string, sample_block.getNamesAndTypesList());
+    auto syntax_result = TreeRewriter(context).analyze(partition_by_string, sample_block->getNamesAndTypesList());
     partition_by_expr = ExpressionAnalyzer(partition_by_string, syntax_result, context).getActions(false);
     partition_by_column_name = partition_by_string->getColumnName();
 }
@@ -51,11 +52,11 @@ SinkPtr PartitionedSink::getSinkForPartitionKey(StringRef partition_key)
     return it->second;
 }
 
-void PartitionedSink::consume(Chunk chunk)
+void PartitionedSink::consume(Chunk & chunk)
 {
     const auto & columns = chunk.getColumns();
 
-    Block block_with_partition_by_expr = sample_block.cloneWithoutColumns();
+    Block block_with_partition_by_expr = sample_block->cloneWithoutColumns();
     block_with_partition_by_expr.setColumns(columns);
     partition_by_expr->execute(block_with_partition_by_expr);
 
@@ -104,7 +105,7 @@ void PartitionedSink::consume(Chunk chunk)
     for (const auto & [partition_key, partition_index] : partition_id_to_chunk_index)
     {
         auto sink = getSinkForPartitionKey(partition_key);
-        sink->consume(std::move(partition_index_to_chunk[partition_index]));
+        sink->consume(partition_index_to_chunk[partition_index]);
     }
 }
 
@@ -146,6 +147,12 @@ String PartitionedSink::replaceWildcards(const String & haystack, const String &
     return boost::replace_all_copy(haystack, PartitionedSink::PARTITION_ID_WILDCARD, partition_id);
 }
 
+PartitionedSink::~PartitionedSink()
+{
+    if (isCancelled())
+        for (auto & item : partition_id_to_sink)
+            item.second->cancel();
+}
 }
 
 // NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)

@@ -187,7 +187,7 @@ public:
 
     static DataTypePtr createResultType()
     {
-        if constexpr (std::is_floating_point_v<T>)
+        if constexpr (is_floating_point<T>)
             return std::make_shared<DataTypeFloat64>();
         return std::make_shared<DataTypeUInt64>();
     }
@@ -227,7 +227,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        if constexpr (std::is_floating_point_v<T>)
+        if constexpr (is_floating_point<T>)
             assert_cast<ColumnFloat64 &>(to).getData().push_back(getIntervalLengthSum<Float64>(this->data(place)));
         else
             assert_cast<ColumnUInt64 &>(to).getData().push_back(getIntervalLengthSum<UInt64>(this->data(place)));

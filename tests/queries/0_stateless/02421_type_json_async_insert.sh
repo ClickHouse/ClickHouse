@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_json_async_insert"
-$CLICKHOUSE_CLIENT --allow_experimental_object_type=1 -q "CREATE TABLE t_json_async_insert (data JSON) ENGINE = MergeTree ORDER BY tuple()"
+$CLICKHOUSE_CLIENT --allow_experimental_object_type=1 -q "CREATE TABLE t_json_async_insert (data Object('json')) ENGINE = MergeTree ORDER BY tuple()"
 
 $CLICKHOUSE_CLIENT --async_insert=1 --wait_for_async_insert=1 -q 'INSERT INTO t_json_async_insert FORMAT JSONAsObject {"aaa"}' 2>&1 | grep -o -m1 "Cannot parse object"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM t_json_async_insert"

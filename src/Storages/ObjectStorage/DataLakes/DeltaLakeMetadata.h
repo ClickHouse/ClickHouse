@@ -1,30 +1,44 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_PARQUET
+
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Poco/JSON/Object.h>
 
 namespace DB
 {
 
+struct DeltaLakePartitionColumn
+{
+    NameAndTypePair name_and_type;
+    Field value;
+
+    bool operator ==(const DeltaLakePartitionColumn & other) const = default;
+};
+
+/// Data file -> partition columns
+using DeltaLakePartitionColumns = std::unordered_map<std::string, std::vector<DeltaLakePartitionColumn>>;
+
+
 class DeltaLakeMetadata final : public IDataLakeMetadata
 {
 public:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
     static constexpr auto name = "DeltaLake";
 
-    DeltaLakeMetadata(
-        ObjectStoragePtr object_storage_,
-        ConfigurationPtr configuration_,
-        ContextPtr context_);
+    DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_);
 
-    Strings getDataFiles() const override;
+    NamesAndTypesList getTableSchema() const override { return schema; }
 
-    NamesAndTypesList getTableSchema() const override { return {}; }
+    DeltaLakePartitionColumns getPartitionColumns() const { return partition_columns; }
 
-    bool operator ==(const IDataLakeMetadata & other) const override
+    bool operator==(const IDataLakeMetadata & other) const override
     {
         const auto * deltalake_metadata = dynamic_cast<const DeltaLakeMetadata *>(&other);
         return deltalake_metadata
@@ -34,16 +48,30 @@ public:
 
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
-        ConfigurationPtr configuration,
-        ContextPtr local_context)
-    {
-        return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
-    }
+        StorageObjectStorageConfigurationWeakPtr configuration,
+        ContextPtr local_context);
+
+    static DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
+    static DataTypePtr getSimpleTypeByName(const String & type_name);
+    static DataTypePtr getFieldValue(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
+    static Field getFieldValue(const String & value, DataTypePtr data_type);
+
+protected:
+    ObjectIterator iterate(
+        const ActionsDAG * filter_dag,
+        FileProgressCallback callback,
+        size_t list_batch_size,
+        ContextPtr context) const override;
 
 private:
-    struct Impl;
-    const std::shared_ptr<Impl> impl;
     mutable Strings data_files;
+    NamesAndTypesList schema;
+    DeltaLakePartitionColumns partition_columns;
+    ObjectStoragePtr object_storage;
+
+    Strings getDataFiles(const ActionsDAG *) const { return data_files; }
 };
 
 }
+
+#endif

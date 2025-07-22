@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest, no-s3-storage
+-- Tags: no-parallel, no-fasttest, no-object-storage
 
 DROP TABLE IF EXISTS t_sparse_s3;
 

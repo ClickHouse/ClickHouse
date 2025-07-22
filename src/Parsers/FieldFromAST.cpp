@@ -1,6 +1,4 @@
 #include <Parsers/FieldFromAST.h>
-#include <Disks/getOrCreateDiskFromAST.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -90,10 +88,10 @@ String FieldFromASTImpl::toString(bool show_secrets) const
         auto hidden = ast->clone();
         HideDiskConfigurationVisitor::Data data{};
         HideDiskConfigurationVisitor{data}.visit(hidden);
-        return serializeAST(*hidden);
+        return hidden->formatWithSecretsOneLine();
     }
 
-    return serializeAST(*ast);
+    return ast->formatWithSecretsOneLine();
 }
 
 }

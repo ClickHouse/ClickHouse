@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 {% for join_algorithm in ['partial_merge', 'full_sorting_merge', 'grace_hash'] -%}
 
@@ -14,7 +14,7 @@ SELECT * FROM (SELECT toLowCardinality(toNullable(dummy)) AS val FROM system.one
 SELECT * FROM (SELECT toLowCardinality(dummy) AS val FROM system.one) s1 ANY LEFT JOIN (SELECT toLowCardinality(toNullable(dummy)) AS val FROM system.one) s2 USING val ORDER BY val;
 SELECT * FROM (SELECT toLowCardinality(toNullable(dummy)) AS val FROM system.one) s1 ANY LEFT JOIN (SELECT toLowCardinality(toNullable(dummy)) AS val FROM system.one) s2 USING val ORDER BY val;
 SELECT '-';
-SELECT * FROM (SELECT dummy AS val FROM system.one) s1 ANY LEFT JOIN (SELECT dummy AS val FROM system.one) s2 ON val + 0 = val * 1 ORDER BY val; -- { serverError 403 }
+SELECT * FROM (SELECT dummy AS val FROM system.one) s1 ANY LEFT JOIN (SELECT dummy AS val FROM system.one) s2 ON val + 0 = val * 1 ORDER BY val; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 SELECT * FROM (SELECT dummy AS val FROM system.one) s1 ANY LEFT JOIN (SELECT dummy AS rval FROM system.one) s2 ON val + 0 = rval * 1 ORDER BY val;
 SELECT * FROM (SELECT toLowCardinality(dummy) AS val FROM system.one) s1 ANY LEFT JOIN (SELECT dummy AS rval FROM system.one) s2 ON val + 0 = rval * 1 ORDER BY val;
 SELECT * FROM (SELECT dummy AS val FROM system.one) s1 ANY LEFT JOIN (SELECT toLowCardinality(dummy) AS rval FROM system.one) s2 ON val + 0 = rval * 1 ORDER BY val;

@@ -31,13 +31,11 @@ public:
 
     std::string getName() const override { return "URLCluster"; }
 
-    RemoteQueryExecutor::Extension getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const override;
-
-    bool supportsSubcolumns() const override { return true; }
-
-    bool supportsDynamicSubcolumns() const override { return true; }
-
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
+    RemoteQueryExecutor::Extension getTaskIteratorExtension(
+        const ActionsDAG::Node * predicate,
+        const ActionsDAG * /* filter */,
+        const ContextPtr & context,
+        size_t number_of_replicas) const override;
 
 private:
     void updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) override;

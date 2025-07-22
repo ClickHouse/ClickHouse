@@ -1,9 +1,6 @@
-#include "hilbertEncode2DLUT.h"
-#include <Common/BitHelpers.h>
-#include <Functions/PerformanceAdaptors.h>
-#include <limits>
 #include <optional>
 #include <Functions/FunctionFactory.h>
+#include <Functions/hilbertEncode2DLUT.h>
 
 
 namespace DB
@@ -11,8 +8,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 
@@ -87,7 +84,7 @@ public:
             return col_res;
         }
 
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+        throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
                         "Illegal number of UInt arguments of function {}: should be not more than 2 dimensions",
                         getName());
     }
@@ -143,7 +140,7 @@ All overflow will be clamped to zero
             {"from_table", "SELECT hilbertEncode(n1, n2) FROM table", ""},
             {"from_table_range", "SELECT hilbertEncode((1,2), n1, n2) FROM table", ""},
         },
-        .categories {"Hilbert coding", "Hilbert Curve"}
+        .category = FunctionDocumentation::Category::Encoding
     });
 }
 

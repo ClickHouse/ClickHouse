@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
 import argparse
-import clickhouse_driver
-import itertools
 import functools
+import itertools
+import logging
 import math
 import os
 import pprint
@@ -14,9 +14,10 @@ import string
 import sys
 import time
 import traceback
-import logging
 import xml.etree.ElementTree as et
 from threading import Thread
+
+import clickhouse_driver
 from scipy import stats
 
 logging.basicConfig(
@@ -345,6 +346,16 @@ for query_index in queries_to_run:
 
     print(f"display-name\t{query_index}\t{tsv_escape(query_display_name)}")
 
+    for conn_index, c in enumerate(all_connections):
+        try:
+            c.execute("SYSTEM JEMALLOC PURGE")
+
+            print(f"purging jemalloc arenas\t{conn_index}\t{c.last_query.elapsed}")
+        except KeyboardInterrupt:
+            raise
+        except:
+            continue
+
     # Prewarm: run once on both servers. Helps to bring the data into memory,
     # precompile the queries, etc.
     # A query might not run on the old server if it uses a function added in the
@@ -467,6 +478,8 @@ for query_index in queries_to_run:
 
     client_seconds = time.perf_counter() - start_seconds
     print(f"client-time\t{query_index}\t{client_seconds}\t{server_seconds}")
+    median = [statistics.median(t) for t in all_server_times]
+    print(f"median\t{query_index}\t{median[0]}")
 
     # Run additional profiling queries to collect profile data, but only if test times appeared to be different.
     # We have to do it after normal runs because otherwise it will affect test statistics too much
@@ -480,7 +493,6 @@ for query_index in queries_to_run:
     pvalue = stats.ttest_ind(
         all_server_times[0], all_server_times[1], equal_var=False
     ).pvalue
-    median = [statistics.median(t) for t in all_server_times]
     # Keep this consistent with the value used in report. Should eventually move
     # to (median[1] - median[0]) / min(median), which is compatible with "times"
     # difference we use in report (max(median) / min(median)).

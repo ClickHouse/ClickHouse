@@ -5,6 +5,7 @@ XMbT	[1,2]
 86Rf07	[1,2,3]
 Td1EnWQo	[1,2,3,4]
 XMbT
+[]
 -- non-const UInt*
 Uk	[1]
 XMbT	[1,2]
@@ -13,5 +14,6 @@ Td1EnWQo	[1,2,3,4]
 XMbT
 -- invalid sqid
 []
+-- bug 69450
 -- alias
 XMbT

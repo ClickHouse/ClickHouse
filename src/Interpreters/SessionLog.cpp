@@ -4,6 +4,7 @@
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
+#include <Common/DateLUTImpl.h>
 #include <Core/Settings.h>
 #include <Core/Protocol.h>
 #include <DataTypes/DataTypeArray.h>
@@ -25,7 +26,10 @@
 #include <Access/SettingsProfilesInfo.h>
 #include <Interpreters/Context.h>
 
+#include <Poco/Net/SocketAddress.h>
+
 #include <cassert>
+
 
 namespace
 {
@@ -86,14 +90,16 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SHA256_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::DOUBLE_SHA1_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::LDAP),
+            AUTH_TYPE_NAME_AND_VALUE(AuthType::JWT),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::KERBEROS),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SSH_KEY),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SSL_CERTIFICATE),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::BCRYPT_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::HTTP),
+            AUTH_TYPE_NAME_AND_VALUE(AuthType::SCRAM_SHA256_PASSWORD),
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
-    static_assert(static_cast<int>(AuthenticationType::MAX) == 10);
+    static_assert(static_cast<int>(AuthenticationType::MAX) == 12);
 
     auto interface_type_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -104,9 +110,11 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             {"MySQL",                  static_cast<Int8>(Interface::MYSQL)},
             {"PostgreSQL",             static_cast<Int8>(Interface::POSTGRESQL)},
             {"Local",                  static_cast<Int8>(Interface::LOCAL)},
-            {"TCP_Interserver",        static_cast<Int8>(Interface::TCP_INTERSERVER)}
+            {"TCP_Interserver",        static_cast<Int8>(Interface::TCP_INTERSERVER)},
+            {"Prometheus",             static_cast<Int8>(Interface::PROMETHEUS)},
+            {"Background",             static_cast<Int8>(Interface::BACKGROUND)},
         });
-    static_assert(magic_enum::enum_count<Interface>() == 7);
+    static_assert(magic_enum::enum_count<Interface>() == 9, "Please update the array above to match the enum.");
 
     auto lc_string_datatype = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
@@ -192,8 +200,8 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
         offsets.push_back(settings_tuple_col.size());
     }
 
-    columns[i++]->insertData(IPv6ToBinary(client_info.current_address.host()).data(), 16);
-    columns[i++]->insert(client_info.current_address.port());
+    columns[i++]->insertData(IPv6ToBinary(client_info.current_address->host()).data(), 16);
+    columns[i++]->insert(client_info.current_address->port());
 
     columns[i++]->insert(client_info.interface);
 
@@ -212,7 +220,8 @@ void SessionLog::addLoginSuccess(const UUID & auth_id,
                                  const Settings & settings,
                                  const ContextAccessPtr & access,
                                  const ClientInfo & client_info,
-                                 const UserPtr & login_user)
+                                 const UserPtr & login_user,
+                                 const AuthenticationData & user_authenticated_with)
 {
     SessionLogElement log_entry(auth_id, SESSION_LOGIN_SUCCESS);
     log_entry.client_info = client_info;
@@ -220,9 +229,11 @@ void SessionLog::addLoginSuccess(const UUID & auth_id,
     if (login_user)
     {
         log_entry.user = login_user->getName();
-        log_entry.user_identified_with = login_user->auth_data.getType();
+        log_entry.user_identified_with = user_authenticated_with.getType();
     }
-    log_entry.external_auth_server = login_user ? login_user->auth_data.getLDAPServerName() : "";
+
+    log_entry.external_auth_server = user_authenticated_with.getLDAPServerName();
+
 
     log_entry.session_id = session_id;
 
@@ -232,8 +243,9 @@ void SessionLog::addLoginSuccess(const UUID & auth_id,
     if (const auto profile_info = access->getDefaultProfileInfo())
         log_entry.profiles = profile_info->getProfileNames();
 
-    for (const auto & s : settings.allChanged())
-        log_entry.settings.emplace_back(s.getName(), s.getValueString());
+    SettingsChanges changes = settings.changes();
+    for (const auto & change : changes)
+        log_entry.settings.emplace_back(change.name, Settings::valueToStringUtil(change.name, change.value));
 
     add(std::move(log_entry));
 }
@@ -254,15 +266,19 @@ void SessionLog::addLoginFailure(
     add(std::move(log_entry));
 }
 
-void SessionLog::addLogOut(const UUID & auth_id, const UserPtr & login_user, const ClientInfo & client_info)
+void SessionLog::addLogOut(
+    const UUID & auth_id,
+    const UserPtr & login_user,
+    const AuthenticationData & user_authenticated_with,
+    const ClientInfo & client_info)
 {
     auto log_entry = SessionLogElement(auth_id, SESSION_LOGOUT);
     if (login_user)
     {
         log_entry.user = login_user->getName();
-        log_entry.user_identified_with = login_user->auth_data.getType();
+        log_entry.user_identified_with = user_authenticated_with.getType();
     }
-    log_entry.external_auth_server = login_user ? login_user->auth_data.getLDAPServerName() : "";
+    log_entry.external_auth_server = user_authenticated_with.getLDAPServerName();
     log_entry.client_info = client_info;
 
     add(std::move(log_entry));

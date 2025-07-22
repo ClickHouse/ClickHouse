@@ -1,14 +1,21 @@
-#include "ReadBufferFromWebServer.h"
+#include <Disks/IO/ReadBufferFromWebServer.h>
 
-#include <Common/logger_useful.h>
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
+#include <IO/Operators.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
-#include <thread>
+#include <Interpreters/Context.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds http_connection_timeout;
+    extern const SettingsSeconds http_receive_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -43,15 +50,15 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
     if (read_until_position)
     {
         if (read_until_position < offset)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
     }
 
     const auto & settings = context->getSettingsRef();
     const auto & server_settings = context->getServerSettings();
 
-    auto connection_timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, server_settings.keep_alive_timeout);
-    connection_timeouts.withConnectionTimeout(std::max<Poco::Timespan>(settings.http_connection_timeout, Poco::Timespan(20, 0)));
-    connection_timeouts.withReceiveTimeout(std::max<Poco::Timespan>(settings.http_receive_timeout, Poco::Timespan(20, 0)));
+    auto connection_timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, server_settings);
+    connection_timeouts.withConnectionTimeout(std::max<Poco::Timespan>(settings[Setting::http_connection_timeout], Poco::Timespan(20, 0)));
+    connection_timeouts.withReceiveTimeout(std::max<Poco::Timespan>(settings[Setting::http_receive_timeout], Poco::Timespan(20, 0)));
 
     auto res = BuilderRWBufferFromHTTP(uri)
                    .withConnectionGroup(HTTPConnectionGroupType::DISK)
@@ -86,7 +93,7 @@ bool ReadBufferFromWebServer::nextImpl()
             return false;
 
         if (read_until_position < offset)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
     }
 
     if (!impl)

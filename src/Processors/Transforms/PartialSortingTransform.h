@@ -1,7 +1,7 @@
 #pragma once
-#include <Processors/ISimpleTransform.h>
-#include <Processors/RowsBeforeLimitCounter.h>
 #include <Core/SortDescription.h>
+#include <Processors/ISimpleTransform.h>
+#include <Processors/RowsBeforeStepCounter.h>
 #include <Common/PODArray.h>
 
 namespace DB
@@ -14,13 +14,13 @@ class PartialSortingTransform : public ISimpleTransform
 public:
     /// limit - if not 0, then you can sort each block not completely, but only `limit` first rows by order.
     PartialSortingTransform(
-        const Block & header_,
+        SharedHeader header_,
         const SortDescription & description_,
         UInt64 limit_ = 0);
 
     String getName() const override { return "PartialSortingTransform"; }
 
-    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { read_rows.swap(counter); }
+    void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { read_rows.swap(counter); }
 
 protected:
     void transform(Chunk & chunk) override;
@@ -29,7 +29,7 @@ private:
     const SortDescription description;
     SortDescriptionWithPositions description_with_positions;
     const UInt64 limit;
-    RowsBeforeLimitCounterPtr read_rows;
+    RowsBeforeStepCounterPtr read_rows;
 
     Columns sort_description_threshold_columns;
 

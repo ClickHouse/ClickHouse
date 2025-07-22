@@ -1,4 +1,4 @@
-#include "ConnectionParameters.h"
+#include <Client/ConnectionParameters.h>
 
 #include <Core/Defines.h>
 #include <Core/Protocol.h>
@@ -12,7 +12,6 @@
 
 #include <readpassphrase/readpassphrase.h>
 
-
 namespace DB
 {
 
@@ -25,7 +24,8 @@ namespace ErrorCodes
 namespace
 {
 
-bool enableSecureConnection(const Poco::Util::AbstractConfiguration & config, const std::string & connection_host)
+bool enableSecureConnection(const Poco::Util::AbstractConfiguration & config, const std::string & connection_host,
+                            const std::optional<UInt16> & connection_port = std::nullopt)
 {
     if (config.getBool("secure", false))
         return true;
@@ -33,50 +33,57 @@ bool enableSecureConnection(const Poco::Util::AbstractConfiguration & config, co
     if (config.getBool("no-secure", false))
         return false;
 
-    bool is_clickhouse_cloud = connection_host.ends_with(".clickhouse.cloud") || connection_host.ends_with(".clickhouse-staging.com");
-    return is_clickhouse_cloud;
+    if (connection_host.ends_with(".clickhouse.cloud") || connection_host.ends_with(".clickhouse-staging.com"))
+        return true;
+
+    if (connection_port && connection_port.value() == DBMS_DEFAULT_SECURE_PORT)
+        return true;
+
+    return false;
 }
 
+}
+
+ConnectionParameters ConnectionParameters::createForEmbedded(const String & user, const String & database)
+{
+    auto connection_params = ConnectionParameters();
+    connection_params.host = "localhost";
+    connection_params.security = Protocol::Secure::Disable;
+    connection_params.password = "";
+    connection_params.user = user;
+    connection_params.default_database = database;
+    connection_params.compression = Protocol::Compression::Disable;
+
+    /// We don't need to configure the timeouts for the embedded client.
+
+    connection_params.timeouts.sync_request_timeout = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0);
+    return connection_params;
 }
 
 ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfiguration & config,
-                                           std::string connection_host,
-                                           std::optional<UInt16> connection_port)
-    : host(connection_host)
-    , port(connection_port.value_or(getPortFromConfig(config, connection_host)))
+                                           const Host & host_,
+                                           const Database & database,
+                                           std::optional<UInt16> port_)
+    : host(host_)
+    , port(port_.value_or(getPortFromConfig(config, host_)))
+    , default_database(database)
 {
-    security = enableSecureConnection(config, connection_host) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
+    security = enableSecureConnection(config, host_) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
 
-    default_database = config.getString("database", "");
+    bind_host = config.getString("bind_host", "");
 
     /// changed the default value to "default" to fix the issue when the user in the prompt is blank
     user = config.getString("user", "default");
 
-    if (!config.has("ssh-key-file"))
+    if (config.has("jwt"))
     {
-        bool password_prompt = false;
-        if (config.getBool("ask-password", false))
-        {
-            if (config.has("password"))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specified both --password and --ask-password. Remove one of them");
-            password_prompt = true;
-        }
-        else
-        {
-            password = config.getString("password", "");
-            /// if the value of --password is omitted, the password will be set implicitly to "\n"
-            if (password == ASK_PASSWORD)
-                password_prompt = true;
-        }
-        if (password_prompt)
-        {
-            std::string prompt{"Password for user (" + user + "): "};
-            char buf[1000] = {};
-            if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
-                password = result;
-        }
+#if USE_JWT_CPP && USE_SSL
+        jwt = config.getString("jwt");
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is disabled, because ClickHouse is built without JWT or SSL support");
+#endif
     }
-    else
+    else if (config.has("ssh-key-file"))
     {
 #if USE_SSH
         std::string filename = config.getString("ssh-key-file");
@@ -102,6 +109,33 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
 #endif
     }
+    else
+    {
+        bool password_prompt = false;
+        if (config.getBool("ask-password", false))
+        {
+            if (config.has("password"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specified both --password and --ask-password. Remove one of them");
+            password_prompt = true;
+        }
+        else
+        {
+            password = config.getString("password", "");
+            /// if the value of --password is omitted, the password will be set implicitly to "\n"
+            if (password == ASK_PASSWORD)
+                password_prompt = true;
+        }
+        if (password_prompt)
+        {
+            std::string prompt{"Password for user (" + user + "): "};
+            char buf[1000] = {};
+            if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
+                password = result;
+        }
+    }
+
+    proto_send_chunked = config.getString("proto_caps.send", "notchunked");
+    proto_recv_chunked = config.getString("proto_caps.recv", "notchunked");
 
     quota_key = config.getString("quota_key", "");
 
@@ -132,14 +166,14 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
                 Poco::Timespan(config.getInt("sync_request_timeout", DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC), 0));
 }
 
-ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfiguration & config,
-                                           std::string connection_host)
-    : ConnectionParameters(config, config.getString("host", "localhost"), getPortFromConfig(config, connection_host))
+ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfiguration & config_, const Host & host_, const Database & database_)
+    : ConnectionParameters(config_, host_, database_, getPortFromConfig(config_, host_))
 {
+
 }
 
 UInt16 ConnectionParameters::getPortFromConfig(const Poco::Util::AbstractConfiguration & config,
-                                               std::string connection_host)
+                                               const std::string & connection_host)
 {
     bool is_secure = enableSecureConnection(config, connection_host);
     return config.getInt("port",

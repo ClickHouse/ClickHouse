@@ -1,5 +1,6 @@
 #include <Backups/SettingsFieldOptionalString.h>
 #include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -19,7 +20,7 @@ SettingFieldOptionalString::SettingFieldOptionalString(const Field & field)
 
     if (field.getType() == Field::Types::String)
     {
-        value = field.get<const String &>();
+        value = field.safeGet<String>();
         return;
     }
 
