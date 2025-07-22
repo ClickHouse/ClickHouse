@@ -54,24 +54,20 @@ bool DeepMergeJSONAggregateData::isObjectPath(const StringRef & path) const
         && it->first.data[path.size] == '.';
 }
 
-bool DeepMergeJSONAggregateData::handleDeletion(const StringRef & target_path, size_t order, Arena * arena)
+bool DeepMergeJSONAggregateData::handleDeletion(const StringRef & target_path, Arena * arena)
 {
     auto it = paths.find(target_path);
-
-    if (it != paths.end() && order <= it->second.row_order)
-        return false; // Skip if not newer
 
     if (it == paths.end())
     {
         // Need to intern the string for new deletion marker
         char * data = arena->alloc(target_path.size);
         memcpy(data, target_path.data, target_path.size);
-        paths[StringRef(data, target_path.size)] = PathData{Field(), order, true};
+        paths[StringRef(data, target_path.size)] = PathData{Field(), true};
     }
     else
     {
         it->second.value = Field();
-        it->second.row_order = order;
         it->second.is_deleted = true;
     }
 
@@ -79,21 +75,17 @@ bool DeepMergeJSONAggregateData::handleDeletion(const StringRef & target_path, s
     return true;
 }
 
-void DeepMergeJSONAggregateData::addPath(const StringRef & path, const Field & value, size_t order, Arena *)
+void DeepMergeJSONAggregateData::addPath(const StringRef & path, const Field & value, Arena *)
 {
     auto it = paths.find(path);
     if (it != paths.end())
     {
-        if (order > it->second.row_order)
-        {
-            it->second.value = value;
-            it->second.row_order = order;
-            it->second.is_deleted = false;
-        }
+        it->second.value = value;
+        it->second.is_deleted = false;
     }
     else
     {
-        paths[path] = PathData{value, order, false};
+        paths[path] = PathData{value, false};
     }
 
     /// Remove child paths if this is now a leaf value
@@ -118,7 +110,6 @@ void AggregateFunctionDeepMergeJSON::add(AggregateDataPtr __restrict place, cons
     const auto & col_object = assert_cast<const ColumnObject &>(*columns[0]);
 
     processColumnObject(col_object, row_num, aggregate_data, arena);
-    ++aggregate_data.row_count;
 }
 
 void AggregateFunctionDeepMergeJSON::processPath(
@@ -135,13 +126,13 @@ void AggregateFunctionDeepMergeJSON::processPath(
             && value.getType() == Field::Types::Bool && value.safeGet<bool>())
         {
             std::string target_path = path_str.substr(0, path_str.size() - unset_suffix.size());
-            aggregate_data.handleDeletion(StringRef(target_path), aggregate_data.row_count, arena);
+            aggregate_data.handleDeletion(StringRef(target_path), arena);
             return;
         }
     }
 
     auto interned_path = internString(path, arena);
-    aggregate_data.addPath(interned_path, value, aggregate_data.row_count, arena);
+    aggregate_data.addPath(interned_path, value, arena);
 }
 
 void AggregateFunctionDeepMergeJSON::processColumnObject(
@@ -204,15 +195,20 @@ void AggregateFunctionDeepMergeJSON::merge(AggregateDataPtr __restrict place, Co
     auto & aggregate_data = data(place);
     const auto & rhs_data = data(rhs);
 
-    /// Merge paths from rhs, keeping the one with higher row_order
+    /// Merge paths from rhs, treating them as latest values
     for (const auto & [path, path_data] : rhs_data.paths)
     {
-        size_t adjusted_order = path_data.row_order + aggregate_data.row_count;
         auto interned_path = internString(path, arena);
-        aggregate_data.addPath(interned_path, path_data.value, adjusted_order, arena);
+        if (path_data.is_deleted)
+        {
+            aggregate_data.handleDeletion(interned_path, arena);
+        }
+        else
+        {
+            aggregate_data.addPath(interned_path, path_data.value, arena);
+        }
     }
 
-    aggregate_data.row_count += rhs_data.row_count;
     validatePathsCount(aggregate_data.paths.size());
 }
 
@@ -222,14 +218,12 @@ void AggregateFunctionDeepMergeJSON::serialize(
     const auto & aggregate_data = data(place);
 
     writeVarUInt(aggregate_data.paths.size(), buf);
-    writeVarUInt(aggregate_data.row_count, buf);
 
     size_t total_size = 0;
 
     for (const auto & [path, path_data] : aggregate_data.paths)
     {
         writeStringBinary(path, buf);
-        writeVarUInt(path_data.row_order, buf);
         writeBinary(path_data.is_deleted, buf);
 
         /// Serialize Field
@@ -252,8 +246,6 @@ void AggregateFunctionDeepMergeJSON::deserialize(
     readVarUInt(num_paths, buf);
     validatePathsCount(num_paths);
 
-    readVarUInt(aggregate_data.row_count, buf);
-
     size_t total_size = 0;
 
     for (size_t i = 0; i < num_paths; ++i)
@@ -261,9 +253,6 @@ void AggregateFunctionDeepMergeJSON::deserialize(
         String path_str;
         readStringBinary(path_str, buf);
         validatePathLength(path_str.size());
-
-        size_t row_order;
-        readVarUInt(row_order, buf);
 
         bool is_deleted;
         readBinary(is_deleted, buf);
@@ -279,7 +268,7 @@ void AggregateFunctionDeepMergeJSON::deserialize(
         Field value = readFieldBinary(value_buf);
 
         auto interned_path = internString(path_str, arena);
-        aggregate_data.paths[interned_path] = DeepMergeJSONAggregateData::PathData{value, row_order, is_deleted};
+        aggregate_data.paths[interned_path] = DeepMergeJSONAggregateData::PathData{value, is_deleted};
     }
 }
 
@@ -342,7 +331,6 @@ void AggregateFunctionDeepMergeJSON::addBatchSinglePlace(
     for (size_t row = row_begin; row < row_end; ++row)
     {
         processColumnObject(col_object, row, aggregate_data, arena);
-        ++aggregate_data.row_count;
     }
 }
 
