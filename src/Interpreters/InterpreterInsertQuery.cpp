@@ -827,7 +827,7 @@ BlockIO InterpreterInsertQuery::execute()
     auto table_lock = table->lockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
 
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
-    
+
     // Rename columns if they are simple aliases (with no expressions).
     std::unordered_map<String, String> column_rename_map;
     for (const auto & column : metadata_snapshot->getColumns())
