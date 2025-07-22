@@ -420,6 +420,46 @@ ORDER BY event_time_microseconds;
 
 For production use-cases, we recommend that the cache is sized large enough so that all vector indexes remain in memory at all times.
 
+**Tuning Data Transfer**
+
+The reference vector in a vector search query is provided by the user and generally retrieved by making a call to a Large Language Model (LLM).
+Typical Python code which runs a vector search in ClickHouse might look like this
+
+```python
+search_v = openai_client.embeddings.create(input = "[Good Books]", model='text-embedding-3-large', dimensions=1536).data[0].embedding
+
+params = {'search_v': search_v}
+result = chclient.query(
+   "SELECT id FROM items
+    ORDER BY cosineDistance(vector, %(search_v)s)
+    LIMIT 10",
+    parameters = params)
+```
+
+Embedding vectors (`search_v` in above snippet) could have a very large dimension.
+For example, OpenAI provides models that generate embeddings vectors with 1536 or even 3072 dimensions.
+In above code, the ClickHouse Python driver substitutes the embedding vector by a human readable string and subsequently send the SELECT query entirely as a string.
+Assuming the embedding vector consists of 1536 single-precision floating point values, the sent string reaches a length of 20 kB.
+This creates a high CPU usage for tokenizing, parsing and performing thousands of string-to-float conversions.
+Also, significant space is required in the ClickHouse server log file, causing bloat in `system.query_log` as well.
+
+Note that most LLM models return an embedding vector as a list or NumPy array of native floats.
+We therefore recommend Python applications to bind the reference vector parameter in binary form by using the following style:
+
+```python
+search_v = openai_client.embeddings.create(input = "[Good Books]", model='text-embedding-3-large', dimensions=1536).data[0].embedding
+
+params = {'$search_v_binary$': np.array(search_v, dtype=np.float32).tobytes()}
+result = chclient.query(
+   "SELECT id FROM items
+    ORDER BY cosineDistance(vector, (SELECT reinterpret($search_v_binary$, 'Array(Float32)')))
+    LIMIT 10"
+    parameters = params)
+```
+
+In the example, the reference vector is sent as-is in binary form and reinterpreted as array of floats on the server.
+This saves CPU time on the server side, and avoids bloat in the server logs and `system.query_log`.
+
 ### Administration and monitoring {#administration}
 
 The on-disk size of vector similarity indexes can be obtained from [system.data_skipping_indices](../../../operations/system-tables/data_skipping_indices):
