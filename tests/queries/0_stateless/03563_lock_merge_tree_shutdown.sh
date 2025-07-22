@@ -80,15 +80,23 @@ reattach
 $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT remove_merge_tree_part_delay"
 
 $CLICKHOUSE_CLIENT -m << SQL 2>&1
-    SYSTEM FLUSH LOGS system.part_log;
-    SELECT if(
-        (max(duration_ms) / min(duration_ms)) < 3,
-        'Merges cancelled quickly',
-        printf(
-            'Probably merges were cancelled sequentially with global lock held, min: %i, max: %i, ratio: %.2f',
-            min(duration_ms),
-            max(duration_ms),
-            max(duration_ms) / min(duration_ms)
-        )
-    ) FROM system.part_log WHERE database = '$CLICKHOUSE_DATABASE' AND error != 0;
+  WITH (
+      SELECT
+        -- Use quantiles to avoid outliers
+        quantile(0.25)(duration_ms) AS q25,
+        quantile(0.75)(duration_ms) AS q75,
+        arrayStringConcat(arraySort(groupArray(duration_ms)), ',') AS all
+      FROM system.part_log
+      WHERE database = '$CLICKHOUSE_DATABASE' AND error != 0;
+    ) AS vals
+  SELECT if(
+    -- Without outliers, 3 is a good threshold
+    ((vals.q75 / vals.q25) AS rel) < 3,
+    'Merges cancelled quickly',
+    printf(
+      'Probably merges were cancelled sequentially with global lock held, values: [%s], ratio: %.2f',
+      vals.all,
+      rel
+    )
+  )
 SQL
