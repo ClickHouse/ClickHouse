@@ -29,7 +29,6 @@ struct DeepMergeJSONAggregateData
     struct PathData
     {
         Field value;
-        size_t row_order;
         // Track if this path was explicitly deleted
         bool is_deleted = false;
     };
@@ -37,16 +36,15 @@ struct DeepMergeJSONAggregateData
     /// Use std::map to keep paths sorted for consistent output
     /// StringRef will point to Arena-allocated memory
     std::map<StringRef, PathData> paths;
-    size_t row_count = 0;
 
     /// Check if a path represents an object (has children)
     bool isObjectPath(const StringRef & path) const;
 
     /// Add or update a path
-    void addPath(const StringRef & path, const Field & value, size_t order, Arena * arena);
+    void addPath(const StringRef & path, const Field & value, Arena * arena);
 
     /// Handle deletion of a path (returns true if deletion was processed)
-    bool handleDeletion(const StringRef & target_path, size_t order, Arena * arena);
+    bool handleDeletion(const StringRef & target_path, Arena * arena);
 
 private:
     void removeChildPaths(const StringRef & parent_path);
