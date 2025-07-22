@@ -97,7 +97,7 @@ FileNamesGenerator & FileNamesGenerator::operator=(const FileNamesGenerator & ot
 FileNamesGenerator::Result FileNamesGenerator::generateDataFileName()
 {
     auto uuid_str = uuid_generator.createRandom().toString();
-    
+
     return Result{
         .path_in_metadata = fmt::format("{}data-{}.parquet", data_dir, uuid_str),
         .path_in_storage = fmt::format("{}data-{}.parquet", storage_data_dir, uuid_str)
@@ -618,7 +618,7 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
         else
         {
             result_columns[0].second[col] = chunk.getColumns()[col]->cloneFinalized();
-        }    
+        }
     }
 
     std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>> result;
@@ -788,7 +788,6 @@ void IcebergStorageSink::cancelBuffers()
 bool IcebergStorageSink::initializeMetadata()
 {
     auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
-    Poco::JSON::Stringifier::stringify(metadata, std::cerr, 4);
 
     Int64 parent_snapshot = -1;
     if (metadata->has(Iceberg::f_current_snapshot_id))

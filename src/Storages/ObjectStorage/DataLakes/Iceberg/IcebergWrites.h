@@ -91,7 +91,7 @@ public:
     {
         Poco::JSON::Object::Ptr snapshot;
         String metadata_path;
-        String storage_metadata_path;  
+        String storage_metadata_path;
     };
 
     NextMetadataResult generateNextMetadata(

@@ -5,6 +5,7 @@
 #include <Databases/DataLake/StorageCredentials.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Databases/DataLake/DatabaseDataLakeStorageType.h>
+#include <Poco/JSON/Object.h>
 
 namespace DataLake
 {
