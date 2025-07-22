@@ -75,14 +75,27 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         num_streams = 1;
     }
 
-    auto parser_group = std::make_shared<FormatParserGroup>(context->getSettingsRef(), num_streams, filter_actions_dag, context);
-    parser_group->column_mapper = configuration->getColumnMapper();
+    auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
+
+    auto filter_info = std::make_shared<FormatFilterInfo>(
+        filter_actions_dag ? filter_actions_dag->getOutputs().at(0) : nullptr, virtual_columns, context);
+    filter_info->filter_actions_dag = filter_actions_dag;
+    filter_info->context = context;
 
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto source = std::make_shared<StorageObjectStorageSource>(
-            getName(), object_storage, configuration, info, format_settings,
-            context, max_block_size, iterator_wrapper, parser_group, need_only_count);
+            getName(),
+            object_storage,
+            configuration,
+            info,
+            format_settings,
+            context,
+            max_block_size,
+            iterator_wrapper,
+            parser_shared_resources,
+            filter_info,
+            need_only_count);
 
         pipes.emplace_back(std::move(source));
     }

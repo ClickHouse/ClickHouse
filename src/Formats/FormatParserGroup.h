@@ -43,6 +43,13 @@ using FormatFilterInfoPtr = std::shared_ptr<FormatFilterInfo>;
 /// because most implementations don't use most of this struct.
 struct FormatFilterInfo
 {
+    FormatFilterInfo(
+        std::shared_ptr<const ActionsDAG> filter_actions_dag_, const ContextPtr & context_, ColumnMapperPtr column_mapper_ = nullptr)
+        : filter_actions_dag(filter_actions_dag_)
+        , context(context_)
+        , column_mapper(column_mapper_)
+    {
+    }
     /// Total limits across all readers in the group.
     std::shared_ptr<const ActionsDAG> filter_actions_dag;
     ContextWeakPtr context; // required only if `filter_actions_dag` is set

@@ -37,6 +37,7 @@ public:
         UInt64 max_block_size_,
         std::shared_ptr<IObjectIterator> file_iterator_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
+        FormatFilterInfoPtr format_filter_info_,
         bool need_only_count_);
 
     ~StorageObjectStorageSource() override;
@@ -82,6 +83,7 @@ protected:
     const UInt64 max_block_size;
     const bool need_only_count;
     FormatParserSharedResourcesPtr parser_shared_resources;
+    FormatFilterInfoPtr format_filter_info;
     ReadFromFormatInfo read_from_format_info;
     const std::shared_ptr<ThreadPool> create_reader_pool;
 
@@ -136,7 +138,8 @@ protected:
         SchemaCache * schema_cache,
         const LoggerPtr & log,
         size_t max_block_size,
-        FormatParserGroupPtr parser_group,
+        FormatParserSharedResourcesPtr parser_shared_resources,
+        FormatFilterInfoPtr format_filter_info,
         bool need_only_count);
 
     ReaderHolder createReader();

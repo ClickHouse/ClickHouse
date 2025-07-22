@@ -374,6 +374,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         log,
         max_block_size,
         parser_shared_resources,
+        format_filter_info,
         need_only_count);
 }
 
@@ -388,7 +389,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     SchemaCache * schema_cache,
     const LoggerPtr & log,
     size_t max_block_size,
-    FormatParserGroupPtr parser_group,
+    FormatParserSharedResourcesPtr parser_shared_resources,
+    FormatFilterInfoPtr format_filter_info,
     bool need_only_count)
 {
     ObjectInfoPtr object_info;
@@ -493,7 +495,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             context_,
             max_block_size,
             format_settings,
-            !schema_was_changed ? parser_group : nullptr,
+            !schema_was_changed ? parser_shared_resources : nullptr,
             true /* is_remote_fs */,
             compression_method,
             need_only_count);

@@ -60,9 +60,9 @@ FormatParserSharedResources::FormatParserSharedResources(const Settings & settin
 
 FormatParserSharedResourcesPtr FormatParserSharedResources::singleThreaded(const Settings & settings)
 {
-    auto parser_group = std::make_shared<FormatParserSharedResources>(settings, 1);
-    parser_group->max_parsing_threads = 1;
-    return parser_group;
+    auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, 1);
+    parser_shared_resources->max_parsing_threads = 1;
+    return parser_shared_resources;
 }
 
 void FormatParserSharedResources::finishStream()
@@ -83,6 +83,7 @@ size_t FormatParserSharedResources::getIOThreadsPerReader() const
     n = std::max(n, 1ul);
     return (max_io_threads + n - 1) / n;
 }
+
 
 // bool FormatParserGroup::hasFilter() const
 // {
