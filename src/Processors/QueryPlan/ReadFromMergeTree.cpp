@@ -1851,16 +1851,14 @@ static void buildIndexes(
     {
         std::vector<size_t> index_sizes;
         index_sizes.reserve(skip_indexes.useful_indices.size());
-        size_t part_idx = 0;
         for (const auto& part : parts)
         {
-            skip_indexes.per_part_index_orders.emplace_back();
-            for (size_t i = 0; i < skip_indexes.useful_indices.size(); i++)
-            {
-                skip_indexes.per_part_index_orders[part_idx].push_back(i);
-            }
-
+            auto &index_order = skip_indexes.per_part_index_orders.emplace_back();
+            index_order.resize(skip_indexes.useful_indices.size());
+            std::iota(index_order.begin(), index_order.end(), 0);
+            
             index_sizes.clear();
+       
             for (const auto &idx : skip_indexes.useful_indices)
             {
                 const auto *extension = idx.index->getDeserializedFormat(part.data_part->getDataPartStorage(), idx.index->getFileName()).extension;
@@ -1868,7 +1866,7 @@ static void buildIndexes(
                 index_sizes.emplace_back(sz);
             }
             // Move minmax indices to first positions, so they will be applied first as cheapest ones
-            std::stable_sort(skip_indexes.per_part_index_orders[part_idx].begin(), skip_indexes.per_part_index_orders[part_idx].end(), [ &idx_sizes = std::as_const(index_sizes), &useful_indices = std::as_const(skip_indexes.useful_indices)](const auto & l, const auto & r)
+            std::stable_sort(index_order.begin(), index_order.end(), [ &idx_sizes = std::as_const(index_sizes), &useful_indices = std::as_const(skip_indexes.useful_indices)](const auto & l, const auto & r)
             {
                 auto l_index = useful_indices[l].index;
                 auto r_index = useful_indices[r].index;
@@ -1901,7 +1899,6 @@ static void buildIndexes(
                 return false; // right is min max but left is not
             });
 
-            ++part_idx;
         }
     }
 
