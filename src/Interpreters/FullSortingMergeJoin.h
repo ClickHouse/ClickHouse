@@ -101,12 +101,11 @@ public:
     }
 
     /// Used just to get result header
-    JoinResultPtr joinBlock(Block block) override
+    void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /* not_processed */) override
     {
         for (const auto & col : *right_sample_block)
             block.insert(col);
         block = materializeBlock(block).cloneEmpty();
-        return IJoinResult::createFromBlock(std::move(block));
     }
 
     void setTotals(const Block & block) override { totals = block; }
