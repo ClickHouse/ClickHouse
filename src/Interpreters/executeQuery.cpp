@@ -20,6 +20,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/copyData.h>
 
+#include <Parsers/ASTSetQuery.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Formats/Impl/NullFormat.h>
@@ -51,6 +52,7 @@
 #include <Access/EnabledQuota.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/EnsureAdditionalTableInSelectsSettingsVisitor.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -180,6 +182,7 @@ namespace Setting
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
+    extern const SettingsMap additional_table_filters;
 }
 
 namespace ServerSetting
@@ -1176,9 +1179,34 @@ static BlockIO executeQueryImpl(
             }
         }
 
+        bool has_params_in_additional_table_filters = false;
+        if (out_ast && !settings[Setting::additional_table_filters].value.empty() && context->hasQueryParameters())
+        {
+            for (const auto & additional_table_filter : settings[Setting::additional_table_filters].value)
+            {
+                const auto & tuple = additional_table_filter.safeGet<Tuple>();
+                const auto & filter = tuple.at(1).safeGet<String>();
+
+                if (!filter.contains('{'))
+                    continue;
+
+                has_params_in_additional_table_filters = true;
+                break;
+            }
+
+            /// Add additional_table_filters to select queries if they do not have any
+            /// so the query parameters can be replaced via ReplaceQueryParameterVisitor.
+            /// It covers a case when additional_table_filters is configured via a SET query.
+            if (has_params_in_additional_table_filters)
+            {
+                EnsureAdditionalTableInSelectsSettingsVisitor visitor(settings[Setting::additional_table_filters].value);
+                visitor.visit(out_ast);
+            }
+        }
+
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
         /// Even if we don't have parameters in query_context, check that AST doesn't have unknown parameters
-        bool probably_has_params = find_first_symbols<'{'>(begin, end) != end;
+        bool probably_has_params = find_first_symbols<'{'>(begin, end) != end || has_params_in_additional_table_filters;
         if (out_ast && !is_create_parameterized_view && probably_has_params)
         {
             ReplaceQueryParameterVisitor visitor(context->getQueryParameters());

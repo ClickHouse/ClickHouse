@@ -1,4 +1,5 @@
 #include <Columns/IColumn.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeString.h>
@@ -12,16 +13,25 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTViewTargets.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
+#include <Parsers/parseQuery.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+}
 
 namespace ErrorCodes
 {
@@ -43,6 +53,8 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
         visitQueryParameter(ast);
     else if (ast->as<ASTIdentifier>() || ast->as<ASTTableIdentifier>())
         visitIdentifier(ast);
+    else if (ast->as<ASTSetQuery>())
+        visitSetQuery(ast);
     else
     {
         if (auto * describe_query = dynamic_cast<ASTDescribeQuery *>(ast.get()); describe_query && describe_query->table_expression)
@@ -186,5 +198,47 @@ void ReplaceQueryParameterVisitor::resolveParameterizedAlias(ASTPtr & ast)
 
     if (ast_with_alias->parametrised_alias)
         setAlias(ast, getParamValue((*ast_with_alias->parametrised_alias)->name));
+}
+
+void ReplaceQueryParameterVisitor::visitSetQuery(ASTPtr & ast)
+{
+    auto & set_query = ast->as<ASTSetQuery &>();
+    auto * additional_table_filters = set_query.changes.tryGet("additional_table_filters");
+
+    if (set_query.is_standalone || !additional_table_filters)
+        return;
+
+    Map additional_filter_resolved;
+    ASTPtr additional_filter_ast;
+
+    for (const auto & additional_filter : additional_table_filters->safeGet<Map>())
+    {
+        const auto & tuple = additional_filter.safeGet<Tuple>();
+        const auto & table = tuple.at(0).safeGet<String>();
+        const auto & filter = tuple.at(1).safeGet<String>();
+
+        if (!filter.contains('{'))
+        {
+            additional_filter_resolved.emplace_back(tuple);
+            continue;
+        }
+
+        ParserExpression parser;
+        additional_filter_ast = parseQuery(
+            parser,
+            filter.data(),
+            filter.data() + filter.size(),
+            "additional filter",
+            DBMS_DEFAULT_MAX_QUERY_SIZE,
+            DBMS_DEFAULT_MAX_PARSER_DEPTH,
+            DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+        visit(additional_filter_ast);
+
+        auto filter_with_applied_params = additional_filter_ast->formatWithSecretsOneLine();
+        additional_filter_resolved.emplace_back(Tuple{table, filter_with_applied_params});
+    }
+
+    set_query.changes.setSetting("additional_table_filters", additional_filter_resolved);
 }
 }

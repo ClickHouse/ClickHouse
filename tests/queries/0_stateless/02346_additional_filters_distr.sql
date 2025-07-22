@@ -18,3 +18,7 @@ create table dist_02346 (x UInt32, y String) engine=Distributed('test_cluster_tw
 set max_rows_to_read=4;
 
 select * from dist_02346 order by x settings additional_table_filters={'dist_02346' : 'x > 3 and x < 7'};
+
+set param_a = 3;
+set param_b = 7;
+select * from dist_02346 order by x settings additional_table_filters={'dist_02346' : 'x > {a:UInt32} and x < {b:UInt32}'};
