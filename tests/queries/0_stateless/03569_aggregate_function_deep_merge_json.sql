@@ -236,4 +236,7 @@ INSERT INTO test_deep_merge_json VALUES
 
 SELECT id, deepMergeJSON(data) AS merged FROM test_deep_merge_json GROUP BY id;
 
+-- Test 21: Type conflict - object overwritten by primitive (using arrayJoin)
+SELECT deepMergeJSON(arrayJoin(['{"a": {"b": 42}}', '{"a": 42}']::Array(JSON))) AS merged;
+
 DROP TABLE test_deep_merge_json;
