@@ -69,4 +69,3 @@ Result:
 
 - [median](/sql-reference/aggregate-functions/reference/median)
 - [quantiles](/sql-reference/aggregate-functions/reference/quantiles#quantiles)
-
