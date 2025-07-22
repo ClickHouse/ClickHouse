@@ -196,6 +196,9 @@ void CompressionCodecSZ3::setAndCheckVectorDimension(size_t dimension_)
 
 void CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 /*uncompressed_size*/) const
 {
+    if (source_size == 0)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Can not decompress empty data");
+
     UInt8 width = static_cast<UInt8>(*source);
     --source_size;
     ++source;
