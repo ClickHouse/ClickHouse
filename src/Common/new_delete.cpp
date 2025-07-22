@@ -50,7 +50,7 @@ static struct InitializeJemallocZoneAllocatorForOSX
 void * operator new(std::size_t size)
 {
     AllocationTrace trace;
-    std::size_t actual_size = Memory::trackMemory(size, trace);
+    std::size_t actual_size = Memory::trackMemoryThrow(size, trace);
     void * ptr = Memory::newImpl(size);
     trace.onAlloc(ptr, actual_size);
     return ptr;
@@ -59,7 +59,7 @@ void * operator new(std::size_t size)
 void * operator new(std::size_t size, std::align_val_t align)
 {
     AllocationTrace trace;
-    std::size_t actual_size = Memory::trackMemory(size, trace, align);
+    std::size_t actual_size = Memory::trackMemoryThrow(size, trace, align);
     void * ptr = Memory::newImpl(size, align);
     trace.onAlloc(ptr, actual_size);
     return ptr;
@@ -68,7 +68,7 @@ void * operator new(std::size_t size, std::align_val_t align)
 void * operator new[](std::size_t size)
 {
     AllocationTrace trace;
-    std::size_t actual_size = Memory::trackMemory(size, trace);
+    std::size_t actual_size = Memory::trackMemoryThrow(size, trace);
     void * ptr = Memory::newImpl(size);
     trace.onAlloc(ptr, actual_size);
     return ptr;
@@ -77,7 +77,7 @@ void * operator new[](std::size_t size)
 void * operator new[](std::size_t size, std::align_val_t align)
 {
     AllocationTrace trace;
-    std::size_t actual_size = Memory::trackMemory(size, trace, align);
+    std::size_t actual_size = Memory::trackMemoryThrow(size, trace, align);
     void * ptr = Memory::newImpl(size, align);
     trace.onAlloc(ptr, actual_size);
     return ptr;
@@ -86,7 +86,7 @@ void * operator new[](std::size_t size, std::align_val_t align)
 void * operator new(std::size_t size, const std::nothrow_t &) noexcept
 {
     AllocationTrace trace;
-    std::size_t actual_size = Memory::trackMemoryNoThrow(size, trace);
+    std::size_t actual_size = Memory::trackMemory(size, trace);
     void * ptr = Memory::newNoExcept(size);
     trace.onAlloc(ptr, actual_size);
     return ptr;
@@ -95,7 +95,7 @@ void * operator new(std::size_t size, const std::nothrow_t &) noexcept
 void * operator new[](std::size_t size, const std::nothrow_t &) noexcept
 {
     AllocationTrace trace;
-    std::size_t actual_size = Memory::trackMemoryNoThrow(size, trace);
+    std::size_t actual_size = Memory::trackMemory(size, trace);
     void * ptr = Memory::newNoExcept(size);
     trace.onAlloc(ptr, actual_size);
     return ptr;
@@ -104,7 +104,7 @@ void * operator new[](std::size_t size, const std::nothrow_t &) noexcept
 void * operator new(std::size_t size, std::align_val_t align, const std::nothrow_t &) noexcept
 {
     AllocationTrace trace;
-    std::size_t actual_size = Memory::trackMemoryNoThrow(size, trace, align);
+    std::size_t actual_size = Memory::trackMemory(size, trace, align);
     void * ptr = Memory::newNoExcept(size, align);
     trace.onAlloc(ptr, actual_size);
     return ptr;
@@ -113,7 +113,7 @@ void * operator new(std::size_t size, std::align_val_t align, const std::nothrow
 void * operator new[](std::size_t size, std::align_val_t align, const std::nothrow_t &) noexcept
 {
     AllocationTrace trace;
-    std::size_t actual_size = Memory::trackMemoryNoThrow(size, trace, align);
+    std::size_t actual_size = Memory::trackMemory(size, trace, align);
     void * ptr = Memory::newNoExcept(size, align);
     trace.onAlloc(ptr, actual_size);
     return ptr;
