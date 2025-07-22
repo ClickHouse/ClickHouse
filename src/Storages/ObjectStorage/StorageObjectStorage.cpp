@@ -177,7 +177,7 @@ StorageObjectStorage::StorageObjectStorage(
 
     /*
      * If `partition_strategy=hive`, the partition columns shall be extracted from the `PARTITION BY` expression.
-     * There is no need to read from the filepath.
+     * There is no need to read from the file's path.
      *
      * Otherwise, in case `use_hive_partitioning=1`, we can keep the old behavior of extracting it from the sample path.
      * And if the schema was inferred (not specified in the table definition), we need to enrich it with the path partition columns
@@ -227,14 +227,11 @@ StorageObjectStorage::StorageObjectStorage(
     }
 
     // Assert file contains at least one column. The assertion only takes place if we were able to deduce the schema. The storage might be empty.
-    if (!columns.empty())
+    if (!columns.empty() && file_columns.empty())
     {
-        if (file_columns.empty())
-        {
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "File without physical columns is not supported. Give it a try with `use_hive_partitioning=0` and or `partition_strategy=wildcard`. File {}",
-                sample_path);
-        }
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "File without physical columns is not supported. Please try it with `use_hive_partitioning=0` and or `partition_strategy=wildcard`. File {}",
+            sample_path);
     }
 
     StorageInMemoryMetadata metadata;

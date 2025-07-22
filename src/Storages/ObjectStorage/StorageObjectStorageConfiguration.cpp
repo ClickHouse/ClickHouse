@@ -55,8 +55,6 @@ void StorageObjectStorageConfiguration::initialize(
     else
         configuration_to_initialize.fromAST(engine_args, local_context, with_table_structure);
 
-    const auto raw_path = configuration_to_initialize.getRawPath();
-
     if (configuration_to_initialize.isNamespaceWithGlobs())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Expression can not have wildcards inside {} name", configuration_to_initialize.getNamespaceType());
@@ -84,7 +82,7 @@ void StorageObjectStorageConfiguration::initialize(
         {
             configuration_to_initialize.format
                 = FormatFactory::instance()
-                      .tryGetFormatFromFileName(configuration_to_initialize.isArchive() ? configuration_to_initialize.getPathInArchive() : raw_path.path)
+                      .tryGetFormatFromFileName(configuration_to_initialize.isArchive() ? configuration_to_initialize.getPathInArchive() : configuration_to_initialize.getRawPath().path)
                       .value_or("auto");
         }
     }
