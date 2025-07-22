@@ -1,0 +1,62 @@
+-- { echoOn }
+SELECT tableNull.k1, joinInt.k1 FROM tableNull FULL JOIN joinInt USING (k1) ORDER BY ALL;
+1	1
+3	\N
+\N	2
+SELECT tableNull.k1, t1.k1, t2.k1 FROM tableNull FULL JOIN joinInt t2 USING (k1) FULL JOIN joinInt t1 USING (k1) ORDER BY ALL;
+1	1	1
+3	\N	\N
+\N	2	\N
+\N	\N	2
+SELECT k+1, t FROM (
+    SELECT joinInt.k1 as k, toTypeName(joinInt.k1) as t FROM tableNull FULL JOIN joinInt USING (k1)
+) ORDER BY ALL;
+2	Nullable(Int32)
+3	Nullable(Int32)
+\N	Nullable(Int32)
+SELECT tableInt.k1, joinNull.k1 FROM tableInt FULL JOIN joinNull USING (k1) ORDER BY ALL;
+1	1
+3	\N
+\N	2
+SELECT tableInt.k1, t1.k1, t2.k1 FROM tableInt FULL JOIN joinNull t2 USING (k1) FULL JOIN joinNull t1 USING (k1) ORDER BY ALL;
+1	1	1
+3	\N	\N
+\N	2	\N
+\N	\N	2
+SELECT k+1, t FROM (
+    SELECT joinNull.k1 as k, toTypeName(joinNull.k1) as t FROM tableInt FULL JOIN joinNull USING (k1)
+) ORDER BY ALL;
+2	Nullable(Int32)
+3	Nullable(Int32)
+\N	Nullable(Int32)
+-- { echoOn }
+SELECT tableNull.k1, joinInt.k1 FROM tableNull FULL JOIN joinInt USING (k1) ORDER BY ALL;
+1	1
+3	\N
+\N	2
+SELECT tableNull.k1, t1.k1, t2.k1 FROM tableNull FULL JOIN joinInt t2 USING (k1) FULL JOIN joinInt t1 USING (k1) ORDER BY ALL;
+1	1	1
+3	\N	\N
+\N	2	\N
+\N	\N	2
+SELECT k+1, t FROM (
+    SELECT joinInt.k1 as k, toTypeName(joinInt.k1) as t FROM tableNull FULL JOIN joinInt USING (k1)
+) ORDER BY ALL;
+2	Nullable(Int32)
+3	Nullable(Int32)
+\N	Nullable(Int32)
+SELECT tableInt.k1, joinNull.k1 FROM tableInt FULL JOIN joinNull USING (k1) ORDER BY ALL;
+1	1
+3	\N
+\N	2
+SELECT tableInt.k1, t1.k1, t2.k1 FROM tableInt FULL JOIN joinNull t2 USING (k1) FULL JOIN joinNull t1 USING (k1) ORDER BY ALL;
+1	1	1
+3	\N	\N
+\N	2	\N
+\N	\N	2
+SELECT k+1, t FROM (
+    SELECT joinNull.k1 as k, toTypeName(joinNull.k1) as t FROM tableInt FULL JOIN joinNull USING (k1)
+) ORDER BY ALL;
+2	Nullable(Int32)
+3	Nullable(Int32)
+\N	Nullable(Int32)

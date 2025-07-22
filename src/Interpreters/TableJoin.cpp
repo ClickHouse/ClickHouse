@@ -425,13 +425,26 @@ Block TableJoin::getRequiredRightKeys(const Block & right_table_keys, std::vecto
     if (required_keys.empty())
         return required_right_keys;
 
+    // Analyzer expects that key columns from USING expression were cast to the common type
+    // Keep the common type from the left column to prevent casts back to the source type and breaking pipeline
+    auto use_common_types = enable_analyzer && !join_use_nulls && hasUsing();
+
     forAllKeys(clauses, [&](const auto & left_key_name, const auto & right_key_name)
     {
         if (required_keys.contains(right_key_name) && !required_right_keys.has(right_key_name))
         {
-            const auto & right_key = right_table_keys.getByName(right_key_name);
-            required_right_keys.insert(right_key);
-            keys_sources.push_back(left_key_name);
+            if (use_common_types)
+            {
+                const auto & left = std::ranges::find_if(this->columns_from_left_table, [&](const auto & col) {return col.name == left_key_name; });
+                chassert(left != this->columns_from_left_table.end());
+                required_right_keys.insert(ColumnWithTypeAndName(left->type, right_key_name));
+                keys_sources.push_back(left->name);
+            } else
+            {
+                const auto & right_key = right_table_keys.getByName(right_key_name);
+                required_right_keys.insert(right_key);
+                keys_sources.push_back(left_key_name);
+            }
         }
         return true;
     });
