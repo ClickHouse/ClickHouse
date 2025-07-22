@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.8",
         {
             {"optimize_rewrite_regexp_functions", false, true, "A new setting"},
+            {"azure_max_single_part_upload_size", 100 * 1024 * 1024, 32 * 1024 * 1024, "Align with S3"},
             {"azure_max_redirects", 10, 10, "New setting"},
             {"azure_max_get_rps", 0, 0, "New setting"},
             {"azure_max_get_burst", 0, 0, "New setting"},
@@ -52,6 +53,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"azure_connect_timeout_ms", 1000, 1000, "New setting"},
             {"azure_sdk_use_native_client", false, true, "New setting"},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
+            {"vector_search_with_rescoring", true, true, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
