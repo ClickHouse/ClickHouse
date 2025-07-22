@@ -156,6 +156,64 @@ def rabbitmq_monitor():
 
 # Tests
 
+def _common_restore_failed_connection_without_losses(rabbitmq_cluster, rabbitmq_monitor, messages_num, table_src, table_dst):
+    rabbitmq_monitor.set_expectations(published=None, delivered=messages_num)
+
+    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    while time.monotonic() < deadline:
+        try:
+            instance.query(
+                f"INSERT INTO {table_src} SELECT number, number FROM numbers({messages_num})"
+            )
+            break
+        except QueryRuntimeException as e:
+            if "Local: Timed out." in str(e):
+                continue
+            else:
+                raise
+    else:
+        pytest.fail(
+            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The query could not be executed successfully."
+        )
+
+    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    while time.monotonic() < deadline:
+        number = int(instance.query(f"SELECT count() FROM {table_dst}"))
+        if number != 0:
+            logging.debug(f"{number}/{messages_num} before suspending RabbitMQ")
+            break
+        time.sleep(0.1)
+    else:
+        pytest.fail(f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The count is still 0.")
+
+    with rabbitmq_cluster.pause_rabbitmq(rabbitmq_monitor):
+        number = int(instance.query(f"SELECT count() FROM {table_dst}"))
+        logging.debug(f"{number}/{messages_num} after suspending RabbitMQ")
+        if number == messages_num:
+            pytest.fail("All RabbitMQ messages have been consumed before resuming the RabbitMQ server")
+
+    deadline = time.monotonic() + CLICKHOUSE_VIEW_TIMEOUT_SEC
+    prev_result = 0
+    while time.monotonic() < deadline:
+        result = int(instance.query(f"SELECT count(DISTINCT key) FROM {table_dst}"))
+        # In case it's consuming successfully from RabbitMQ in latest iteration, extend the deadline
+        if result > prev_result:
+            deadline += 1
+        prev_result = result
+        if result == messages_num:
+            break
+        logging.debug(f"Result: {result} / {messages_num}. Now {time.monotonic()}, deadline {deadline}")
+        time.sleep(1)
+    else:
+        pytest.fail(
+            f"Time limit of {CLICKHOUSE_VIEW_TIMEOUT_SEC} seconds reached without any RabbitMQ consumption. The result did not match the expected value."
+        )
+
+    assert int(result) == messages_num, "ClickHouse lost some messages: {}".format(
+        result
+    )
+
+
 def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, rabbitmq_monitor):
     """
     This test checks that after inserting through a RabbitMQ Engine, we can keep consuming from it
@@ -195,61 +253,14 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, r
     )
 
     messages_num = 10000
-    rabbitmq_monitor.set_expectations(published=None, delivered=messages_num)
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        try:
-            instance.query(
-                f"INSERT INTO test.producer_reconnect SELECT number, number FROM numbers({messages_num})"
-            )
-            break
-        except QueryRuntimeException as e:
-            if "Local: Timed out." in str(e):
-                continue
-            else:
-                raise
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The query could not be executed successfully."
-        )
-
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        number = int(instance.query("SELECT count() FROM test.view"))
-        if number != 0:
-            logging.debug(f"{number}/{messages_num} before suspending RabbitMQ")
-            break
-        time.sleep(0.1)
-    else:
-        pytest.fail(f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The count is still 0.")
-
-    with rabbitmq_cluster.pause_rabbitmq(rabbitmq_monitor):
-        number = int(instance.query("SELECT count() FROM test.view"))
-        logging.debug(f"{number}/{messages_num} after suspending RabbitMQ")
-        if number == messages_num:
-            pytest.fail("All RabbitMQ messages have been consumed before resuming the RabbitMQ server")
-
-    deadline = time.monotonic() + CLICKHOUSE_VIEW_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        result = instance.query("SELECT count(DISTINCT key) FROM test.view")
-        if int(result) == messages_num:
-            break
-        logging.debug(f"Result: {result} / {messages_num}")
-        time.sleep(1)
-    else:
-        pytest.fail(
-            f"Time limit of {CLICKHOUSE_VIEW_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
-        )
+    _common_restore_failed_connection_without_losses(rabbitmq_cluster, rabbitmq_monitor, messages_num, "test.producer_reconnect", "test.view")
 
     instance.query(
         """
         DROP TABLE test.consume;
         DROP TABLE test.producer_reconnect;
-    """
-    )
-
-    assert int(result) == messages_num, "ClickHouse lost some messages: {}".format(
-        result
+        DROP TABLE test.view;
+        """
     )
 
 
@@ -283,65 +294,12 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster, r
     )
 
     messages_num = 10000
-    rabbitmq_monitor.set_expectations(published=None, delivered=messages_num)
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        try:
-            instance.query(
-                f"INSERT INTO test.consumer_reconnect SELECT number, number FROM numbers({messages_num})"
-            )
-            break
-        except QueryRuntimeException as e:
-            if "Local: Timed out." in str(e):
-                continue
-            else:
-                raise
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The query could not be executed successfully."
-        )
-
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        number = int(instance.query("SELECT count() FROM test.view"))
-        if number != 0:
-            logging.debug(f"{number}/{messages_num} before suspending RabbitMQ")
-            break
-        time.sleep(0.1)
-    else:
-        pytest.fail(f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The count is still 0.")
-
-    with rabbitmq_cluster.pause_rabbitmq(rabbitmq_monitor):
-        number = int(instance.query("SELECT count() FROM test.view"))
-        logging.debug(f"{number}/{messages_num} after suspending RabbitMQ")
-        if number == messages_num:
-            pytest.fail("All RabbitMQ messages have been consumed before resuming the RabbitMQ server")
-
-    # while int(instance.query('SELECT count() FROM test.view')) == 0:
-    #    time.sleep(0.1)
-
-    # kill_rabbitmq()
-    # revive_rabbitmq()
-
-    deadline = time.monotonic() + CLICKHOUSE_VIEW_TIMEOUT_SEC
-    while time.monotonic() < deadline:
-        result = instance.query("SELECT count(DISTINCT key) FROM test.view").strip()
-        if int(result) == messages_num:
-            break
-        logging.debug(f"Result: {result} / {messages_num}")
-        time.sleep(1)
-    else:
-        pytest.fail(
-            f"Time limit of {CLICKHOUSE_VIEW_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
-        )
+    _common_restore_failed_connection_without_losses(rabbitmq_cluster, rabbitmq_monitor, messages_num, "test.consumer_reconnect", "test.view")
 
     instance.query(
         """
         DROP TABLE test.consumer;
         DROP TABLE test.consumer_reconnect;
-    """
-    )
-
-    assert int(result) == messages_num, "ClickHouse lost some messages: {}".format(
-        result
+        DROP TABLE test.view;
+        """
     )
