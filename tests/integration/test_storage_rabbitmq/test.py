@@ -702,15 +702,20 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
     result1 = ""
     deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
     expected = messages_num * threads_num
+    prev_result = 0
     while time.monotonic() < deadline:
-        result1 = instance.query("SELECT count() FROM test.view")
+        result1 = int(instance.query("SELECT count() FROM test.view"))
+        # In case it's consuming successfully from RabbitMQ in latest iteration, extend the deadline
+        if result1 > prev_result:
+            deadline += 1
+        prev_result = result1
         time.sleep(1)
-        if int(result1) == expected:
+        if result1 == expected:
             break
-        logging.debug(f"Result {result1} / {expected}")
+        logging.debug(f"Result {result1} / {expected}. Now {time.monotonic()}, deadline {deadline}")
     else:
         pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The result did not match the expected value."
+            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached without any RabbitMQ consumption. The result did not match the expected value."
         )
 
     result2 = instance.query("SELECT count(DISTINCT channel_id) FROM test.view")
