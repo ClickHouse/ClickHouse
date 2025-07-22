@@ -27,7 +27,10 @@ namespace DB::S3
 namespace
 {
     Aws::S3::Model::HeadObjectOutcome headObject(
-        const S3::Client & client, const String & bucket, const String & key, const String & version_id)
+        const S3::Client & client,
+        const String & bucket,
+        const String & key,
+        const String & version_id)
     {
         ProfileEvents::increment(ProfileEvents::S3HeadObject);
         if (client.isClientForDisk())
@@ -44,7 +47,10 @@ namespace
     }
 
     Aws::S3::Model::GetObjectTaggingOutcome getObjectTagging(
-        const S3::Client & client, const String & bucket, const String & key, const String & version_id)
+        const S3::Client & client,
+        const String & bucket,
+        const String & key,
+        const String & version_id)
     {
         ProfileEvents::increment(ProfileEvents::S3GetObjectAttributes);
         if (client.isClientForDisk())
@@ -61,8 +67,12 @@ namespace
 
     /// Performs a request to get the size and last modification time of an object.
     std::pair<std::optional<ObjectInfo>, Aws::S3::S3Error> tryGetObjectInfo(
-        const S3::Client & client, const String & bucket, const String & key, const String & version_id,
-        bool with_metadata, bool with_tags)
+        const S3::Client & client,
+        const String & bucket,
+        const String & key,
+        const String & version_id,
+        bool with_metadata,
+        bool with_tags)
     {
         auto outcome = headObject(client, bucket, key, version_id);
         if (!outcome.IsSuccess())
@@ -116,9 +126,8 @@ ObjectInfo getObjectInfo(
     auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, with_metadata, with_tags);
 
     if (object_info)
-    {
         return *object_info;
-    }
+
     if (throw_on_error)
     {
         throw S3Exception(
