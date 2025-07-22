@@ -210,6 +210,20 @@ SELECT json.a.b, json.a.g, json.c, json.d FROM test;
 └──────────┴──────────┴─────────┴────────────┘
 ```
 
+You can also use `getSubcolumn` function to read subcolumns from JSON type:
+
+```sql title="Query"
+SELECT getSubcolumn(json, 'a.b'), getSubcolumn(json, 'a.g'), getSubcolumn(json, 'c'), getSubcolumn(json, 'd') FROM test;
+```
+
+```text title="Response"
+┌─getSubcolumn(json, 'a.b')─┬─getSubcolumn(json, 'a.g')─┬─getSubcolumn(json, 'c')─┬─getSubcolumn(json, 'd')─┐
+│                        42 │ 42.42                     │ [1,2,3]                 │ 2020-01-01              │
+│                         0 │ ᴺᵁᴸᴸ                      │ ᴺᵁᴸᴸ                    │ 2020-01-02              │
+│                        43 │ 43.43                     │ [4,5,6]                 │ ᴺᵁᴸᴸ                    │
+└───────────────────────────┴───────────────────────────┴─────────────────────────┴─────────────────────────┘
+```
+
 If the requested path wasn't found in the data, it will be filled with `NULL` values:
 
 ```sql title="Query"
@@ -490,6 +504,114 @@ SELECT json.a.b[].^k FROM test
 │ []                                   │
 │ ['{}','{"j":"3000"}']                │
 └──────────────────────────────────────┘
+```
+
+## Handling JSON keys with dots {#handling-json-keys-with-dots}
+
+Internally JSON column stores all paths and values in a flattened form. It means that by default these 2 objects are considered as the same:
+```json
+{"a" : {"b" : 42}}
+{"a.b" : 42}
+```
+
+They both will be stored internally as a pair of path `a.b` and value `42`. During formatting of JSON we always form nested objects based on the path parts separated by dot:
+
+```sql title="Query"
+SELECT '{"a" : {"b" : 42}}'::JSON AS json1, '{"a.b" : 42}'::JSON AS json2, JSONAllPaths(json1), JSONAllPaths(json2);
+```
+
+```text title="Response"
+┌─json1────────────┬─json2────────────┬─JSONAllPaths(json1)─┬─JSONAllPaths(json2)─┐
+│ {"a":{"b":"42"}} │ {"a":{"b":"42"}} │ ['a.b']             │ ['a.b']             │
+└──────────────────┴──────────────────┴─────────────────────┴─────────────────────┘
+```
+
+As you can see, initial JSON `{"a.b" : 42}` is now formatted as `{"a" : {"b" : 42}}`.
+
+This limitation also leads to the failure of parsing valid JSON objects like this:
+
+```sql title="Query"
+SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json;
+```
+
+```text title="Response"
+Code: 117. DB::Exception: Cannot insert data into JSON column: Duplicate path found during parsing JSON object: a.b. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert: In scope SELECT CAST('{"a.b" : 42, "a" : {"b" : "Hello, World"}}', 'JSON') AS json. (INCORRECT_DATA)
+```
+
+If you want to keep keys with dots and avoid formatting them as nested objects, you can enable
+setting [json_type_escape_dots_in_keys](../../operations) (available starting from version `25.8`). In this case during parsing all dots in JSON keys will be
+escaped into `%2E` and unescaped back during formatting.
+
+```sql title="Query"
+SET json_type_escape_dots_in_keys=1;
+SELECT '{"a" : {"b" : 42}}'::JSON AS json1, '{"a.b" : 42}'::JSON AS json2, JSONAllPaths(json1), JSONAllPaths(json2);
+```
+
+```text title="Response"
+┌─json1────────────┬─json2────────┬─JSONAllPaths(json1)─┬─JSONAllPaths(json2)─┐
+│ {"a":{"b":"42"}} │ {"a.b":"42"} │ ['a.b']             │ ['a%2Eb']           │
+└──────────────────┴──────────────┴─────────────────────┴─────────────────────┘
+```
+
+```sql title="Query"
+SET json_type_escape_dots_in_keys=1;
+SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json, JSONAllPaths(json);
+```
+
+```text title="Response"
+┌─json──────────────────────────────────┬─JSONAllPaths(json)─┐
+│ {"a.b":"42","a":{"b":"Hello World!"}} │ ['a%2Eb','a.b']    │
+└───────────────────────────────────────┴────────────────────┘
+```
+
+To read key with escaped dot as a subcolumn you have to use escaped dot in the subcolumn name:
+
+```sql title="Query"
+SET json_type_escape_dots_in_keys=1;
+SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json, json.`a%2Eb`, json.a.b;
+```
+
+```text title="Response"
+┌─json──────────────────────────────────┬─json.a%2Eb─┬─json.a.b─────┐
+│ {"a.b":"42","a":{"b":"Hello World!"}} │ 42         │ Hello World! │
+└───────────────────────────────────────┴────────────┴──────────────┘
+```
+
+Note: due to identifiers parser and analyzer limitations subcolumn ``json.`a.b`\`` is equivalent to subcolumn `json.a.b` and won't read path with escaped dot:
+
+```sql title="Query"
+SET json_type_escape_dots_in_keys=1;
+SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json, json.`a%2Eb`, json.`a.b`, json.a.b;
+```
+
+```text title="Response"
+┌─json──────────────────────────────────┬─json.a%2Eb─┬─json.a.b─────┬─json.a.b─────┐
+│ {"a.b":"42","a":{"b":"Hello World!"}} │ 42         │ Hello World! │ Hello World! │
+└───────────────────────────────────────┴────────────┴──────────────┴──────────────┘
+```
+
+Also, if you want to specify a hint for a JSON path that contains keys with dots (or use it in the `SKIP`/`SKIP REGEX` sections), you have to use escaped dots in the hint:
+
+```sql title="Query"
+SET json_type_escape_dots_in_keys=1;
+SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON(`a%2Eb` UInt8) as json, json.`a%2Eb`, toTypeName(json.`a%2Eb`);
+```
+
+```text title="Response"
+┌─json────────────────────────────────┬─json.a%2Eb─┬─toTypeName(json.a%2Eb)─┐
+│ {"a.b":42,"a":{"b":"Hello World!"}} │         42 │ UInt8                  │
+└─────────────────────────────────────┴────────────┴────────────────────────┘
+```
+
+```sql title="Query"
+SET json_type_escape_dots_in_keys=1;
+SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON(SKIP `a%2Eb`) as json, json.`a%2Eb`;
+```
+
+```text title="Response"
+┌─json───────────────────────┬─json.a%2Eb─┐
+│ {"a":{"b":"Hello World!"}} │ ᴺᵁᴸᴸ       │
+└────────────────────────────┴────────────┘
 ```
 
 ## Reading JSON type from data {#reading-json-type-from-data}
