@@ -1,22 +1,25 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
--- Tests that SYSTEM DROP QUERY CONDITION CACHE works
+-- Test for issue #81506 (recursive CTEs return wrong results if the query condition cache is on)
 
 SET allow_experimental_analyzer = 1;
 
 -- (it's silly to use what will be tested below but we have to assume other tests cluttered the query cache)
 SYSTEM DROP QUERY CONDITION CACHE;
 
-CREATE TABLE objects
+-- Prepare data
+
+DROP TABLE tab;
+CREATE TABLE tab
 (
-    `id` String,
-    `parent` String,
+    id String,
+    parent String,
 )
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY tuple();
 
-INSERT INTO objects (`id`, `parent`) VALUES
+INSERT INTO tab (id, parent) VALUES
   ('uuid1', 'uuid2'),
   ('uuid3', 'uuid4'),
   ('uuid4', 'uuid2'),
@@ -29,9 +32,9 @@ WITH RECURSIVE
         'empty' AS zero,
         _data AS (SELECT arrayJoin(['uuid3']) AS id),
         rec AS (
-                SELECT id FROM objects WHERE id IN _data
+                SELECT id FROM tab WHERE id IN _data
                 UNION ALL
-                SELECT parent AS id FROM objects WHERE objects.id IN rec AND parent != zero GROUP BY parent
+                SELECT parent AS id FROM tab WHERE tab.id IN rec AND parent != zero GROUP BY parent
         )
 SELECT * FROM rec GROUP BY id ORDER BY id;
 
@@ -40,11 +43,11 @@ WITH RECURSIVE
         'empty' AS zero,
         _data AS (SELECT arrayJoin(['uuid3']) AS id),
         rec AS (
-                SELECT id FROM objects WHERE id IN _data
+                SELECT id FROM tab WHERE id IN _data
                 UNION ALL
-                SELECT parent AS id FROM objects WHERE objects.id IN rec AND parent != zero GROUP BY parent
+                SELECT parent AS id FROM tab WHERE tab.id IN rec AND parent != zero GROUP BY parent
         )
 SELECT * FROM rec GROUP BY id ORDER BY id;
 
-DROP TABLE objects;
+DROP TABLE tab;
 
