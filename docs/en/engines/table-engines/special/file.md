@@ -60,7 +60,7 @@ one 1
 two 2
 ```
 
-* *3.** Query the data:
+**3.** Query the data:
 
 ```sql
 SELECT * FROM file_engine_table

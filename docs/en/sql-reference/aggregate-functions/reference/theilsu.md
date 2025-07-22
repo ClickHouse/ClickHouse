@@ -24,7 +24,7 @@ theilsU(column1, column2)
 
 - a value between -1 and 1
 
-* *Return type** is always [Float64](../../../sql-reference/data-types/float.md).
+**Return type** is always [Float64](../../../sql-reference/data-types/float.md).
 
 **Example**
 

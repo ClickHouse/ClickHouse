@@ -430,7 +430,7 @@ SELECT v2, v2.`Array(UInt32)`, variantType(v2) FROM test WHERE variantType(v2) =
 └────┴──────────────────┴─────────────────┘
 ```
 
-* *Note:** values of variants with different numeric types are considered as different variants and not compared between each other, their type names are compared instead.
+**Note:** values of variants with different numeric types are considered as different variants and not compared between each other, their type names are compared instead.
 
 Example:
 

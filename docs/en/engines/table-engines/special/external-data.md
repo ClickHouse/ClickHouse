@@ -26,12 +26,12 @@ In the command-line client, you can specify a parameters section in the format
 
 You may have multiple sections like this, for the number of tables being transmitted.
 
-* *–external** – Marks the beginning of a clause.
-* *–file** – Path to the file with the table dump, or -, which refers to stdin.
+**–external** – Marks the beginning of a clause.
+**–file** – Path to the file with the table dump, or -, which refers to stdin.
 Only a single table can be retrieved from stdin.
 
 The following parameters are optional: **–name**– Name of the table. If omitted, _data is used.
-* *–format** – Data format in the file. If omitted, TabSeparated is used.
+**–format** – Data format in the file. If omitted, TabSeparated is used.
 
 One of the following parameters is required:**–types** – A list of comma-separated column types. For example: `UInt64,String`. The columns will be named _1, _2, ...
 **–structure**– The table structure in the format`UserID UInt64`, `URL String`. Defines the column names and types.

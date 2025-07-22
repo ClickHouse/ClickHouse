@@ -56,7 +56,7 @@ CREATE TABLE url_engine_table (word String, value UInt64)
 ENGINE=URL('http://127.0.0.1:12345/', CSV)
 ```
 
-* *2.** Create a basic HTTP server using the standard Python 3 tools and
+**2.** Create a basic HTTP server using the standard Python 3 tools and
 start it:
 
 ```python3
@@ -79,7 +79,7 @@ if __name__ == "__main__":
 $ python3 server.py
 ```
 
-* *3.** Request data:
+**3.** Request data:
 
 ```sql
 SELECT * FROM url_engine_table

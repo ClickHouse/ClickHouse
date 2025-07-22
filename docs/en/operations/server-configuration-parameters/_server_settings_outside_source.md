@@ -97,7 +97,7 @@ Data compression settings for [MergeTree](../../engines/table-engines/mergetree-
 We recommend not changing this if you have just started using ClickHouse.
 :::
 
-* *Configuration template**:
+**Configuration template**:
 
 ```xml
 <compression>
@@ -122,7 +122,7 @@ We recommend not changing this if you have just started using ClickHouse.
 You can configure multiple `<case>` sections.
 :::
 
-* *Actions when conditions are met**:
+**Actions when conditions are met**:
 
 - If a data part matches a condition set, ClickHouse uses the specified compression method.
 - If a data part matches multiple condition sets, ClickHouse uses the first matched condition set.
@@ -810,7 +810,7 @@ So even if you have `TcpExtListenOverflows` (from `nstat`) non-zero and this cou
 
 The location and format of log messages.
 
-* *Keys**:
+**Keys**:
 
 | Key                 | Description                                                                                                                                                                         |
 |---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -1777,7 +1777,7 @@ sensitive data leakage from SQL queries such as names, emails, personal identifi
 </query_masking_rules>
 ```
 
-* *Config fields**:
+**Config fields**:
 
 | Setting   | Description                                                                   |
 |-----------|-------------------------------------------------------------------------------|

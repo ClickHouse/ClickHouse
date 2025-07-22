@@ -65,7 +65,7 @@ WITH <expression> AS <identifier>
 
 ### Examples {#common-scalar-expressions-examples}
 
-* *Example 1:** Using constant expression as "variable"
+**Example 1:** Using constant expression as "variable"
 
 ```sql
 WITH '2019-08-01 15:23:00' AS ts_upper_bound
@@ -76,7 +76,7 @@ WHERE
     EventTime <= ts_upper_bound;
 ```
 
-* *Example 2:** Using higher-order functions to bound the identifiers
+**Example 2:** Using higher-order functions to bound the identifiers
 
 ```sql
 WITH
@@ -91,7 +91,7 @@ SELECT gen_name('test', '.sql') as file_name;
    └───────────┘
 ```
 
-* *Example 3:** Using higher-order functions with free variables
+**Example 3:** Using higher-order functions with free variables
 
 The following example queries show that unbound identifiers resolve into an entity in the closest scope.
 Here, `extension` is not bound in the `gen_name` lambda function body.
@@ -121,7 +121,7 @@ SELECT file_name FROM generated_names;
    └───────────┘
 ```
 
-* *Example 4:** Evicting a sum(bytes) expression result from the SELECT clause column list
+**Example 4:** Evicting a sum(bytes) expression result from the SELECT clause column list
 
 ```sql
 WITH sum(bytes) AS s
@@ -133,7 +133,7 @@ GROUP BY table
 ORDER BY s;
 ```
 
-* *Example 5:** Using results of a scalar subquery
+**Example 5:** Using results of a scalar subquery
 
 ```sql
 /* this example would return TOP 10 of most huge tables */
@@ -152,7 +152,7 @@ ORDER BY table_disk_usage DESC
 LIMIT 10;
 ```
 
-* *Example 6:** Reusing expression in a subquery
+**Example 6:** Reusing expression in a subquery
 
 ```sql
 WITH test1 AS (SELECT i + 1, j + 1 FROM test1)
@@ -163,7 +163,7 @@ SELECT * FROM test1;
 
 The optional `RECURSIVE` modifier allows for a WITH query to refer to its own output. Example:
 
-* *Example:** Sum integers from 1 through 100
+**Example:** Sum integers from 1 through 100
 
 ```sql
 WITH RECURSIVE test_table AS (
@@ -194,7 +194,7 @@ The general form of a recursive `WITH` query is always a non-recursive term, the
 
 Recursive queries are typically used to work with hierarchical or tree-structured data. For example, we can write a query that performs tree traversal:
 
-* *Example:** Tree traversal
+**Example:** Tree traversal
 
 First let's create tree table:
 
@@ -212,7 +212,7 @@ INSERT INTO tree VALUES (0, NULL, 'ROOT'), (1, 0, 'Child_1'), (2, 0, 'Child_2'),
 
 We can traverse those tree with such query:
 
-* *Example:** Tree traversal
+**Example:** Tree traversal
 ```sql
 WITH RECURSIVE search_tree AS (
     SELECT id, parent_id, data
@@ -239,7 +239,7 @@ SELECT * FROM search_tree;
 
 To create a depth-first order, we compute for each result row an array of rows that we have already visited:
 
-* *Example:** Tree traversal depth-first order
+**Example:** Tree traversal depth-first order
 ```sql
 WITH RECURSIVE search_tree AS (
     SELECT id, parent_id, data, [t.id] AS path
@@ -264,7 +264,7 @@ SELECT * FROM search_tree ORDER BY path;
 
 To create a breadth-first order, standard approach is to add column that tracks the depth of the search:
 
-* *Example:** Tree traversal breadth-first order
+**Example:** Tree traversal breadth-first order
 ```sql
 WITH RECURSIVE search_tree AS (
     SELECT id, parent_id, data, [t.id] AS path, toUInt64(0) AS depth
@@ -305,7 +305,7 @@ INSERT INTO graph VALUES (1, 2, '1 -> 2'), (1, 3, '1 -> 3'), (2, 3, '2 -> 3'), (
 
 We can traverse that graph with such query:
 
-* *Example:** Graph traversal without cycle detection
+**Example:** Graph traversal without cycle detection
 ```sql
 WITH RECURSIVE search_graph AS (
     SELECT from, to, label FROM graph g
@@ -347,7 +347,7 @@ Code: 306. DB::Exception: Received from localhost:9000. DB::Exception: Maximum r
 
 The standard method for handling cycles is to compute an array of the already visited nodes:
 
-* *Example:** Graph traversal with cycle detection
+**Example:** Graph traversal with cycle detection
 ```sql
 WITH RECURSIVE search_graph AS (
     SELECT from, to, label, false AS is_cycle, [tuple(g.from, g.to)] AS path FROM graph g
@@ -371,7 +371,7 @@ SELECT * FROM search_graph WHERE is_cycle ORDER BY from;
 
 It is also possible to use infinite recursive CTE queries if `LIMIT` is used in outer query:
 
-* *Example:** Infinite recursive CTE query
+**Example:** Infinite recursive CTE query
 ```sql
 WITH RECURSIVE test_table AS (
     SELECT 1 AS number

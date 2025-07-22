@@ -35,7 +35,7 @@ It supports all [DataTypes](../../../sql-reference/data-types/index.md) that can
 CREATE TABLE generate_engine_table (name String, value UInt32) ENGINE = GenerateRandom(1, 5, 3)
 ```
 
-* *2.** Query the data:
+**2.** Query the data:
 
 ```sql
 SELECT * FROM generate_engine_table LIMIT 3

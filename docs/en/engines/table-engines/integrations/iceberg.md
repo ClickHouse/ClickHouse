@@ -270,7 +270,7 @@ After identifying candidate files using the above rules, the system determines w
   * The file with the highest version number is selected
   * (Version appears as `V` in filenames formatted as `V.metadata.json` or `V-uuid.metadata.json`)
 
-* *Note**: All mentioned settings are engine-level settings and must be specified during table creation as shown below:
+**Note**: All mentioned settings are engine-level settings and must be specified during table creation as shown below:
 
 ```sql 
 CREATE TABLE example_table ENGINE = Iceberg(

@@ -111,7 +111,7 @@ SELECT toDateTime(now(), 'Asia/Istanbul') AS column, toTypeName(column) AS x
 └─────────────────────┴───────────────────────────┘
 ```
 
-* *4.** Timezone conversion
+**4.** Timezone conversion
 
 ```sql
 SELECT

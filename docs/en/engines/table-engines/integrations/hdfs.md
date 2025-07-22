@@ -47,13 +47,13 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 CREATE TABLE hdfs_engine_table (name String, value UInt32) ENGINE=HDFS('hdfs://hdfs1:9000/other_storage', 'TSV')
 ```
 
-* *2.** Fill file:
+**2.** Fill file:
 
 ```sql
 INSERT INTO hdfs_engine_table VALUES ('one', 1), ('two', 2), ('three', 3)
 ```
 
-* *3.** Query the data:
+**3.** Query the data:
 
 ```sql
 SELECT * FROM hdfs_engine_table LIMIT 2

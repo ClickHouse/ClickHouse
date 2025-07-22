@@ -35,6 +35,8 @@ Columns:
 - `rabbitmq_message_delivery_tag` ([UInt64](../../sql-reference/data-types/int-uint.md)) - RabbitMQ delivery tag.
 - `rabbitmq_channel_id` ([String](../../sql-reference/data-types/string.md)) - RabbitMQ channel id.
 
+**Example**
+
 Query:
 
 ``` sql

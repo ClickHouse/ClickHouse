@@ -31,7 +31,7 @@ To predict, we use the function [evalMLMethod](/sql-reference/functions/machine-
 
 <a name="stochasticlinearregression-usage-fitting"></a>
 
-* *1.** Fitting
+**1.** Fitting
 
 Such query may be used.
 
@@ -51,7 +51,7 @@ AS state FROM train_data;
 Here, we also need to insert data into the `train_data` table. The number of parameters is not fixed, it depends only on the number of arguments passed into `linearRegressionState`. They all must be numeric values.
 Note that the column with target value (which we would like to learn to predict) is inserted as the first argument.
 
-* *2.** Predicting
+**2.** Predicting
 
 After saving a state into the table, we may use it multiple times for prediction or even merge with other states and create new, even better models.
 

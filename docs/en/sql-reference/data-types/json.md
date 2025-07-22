@@ -13,7 +13,7 @@ import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
 
 <DeprecatedBadge/>
 
-* *This feature is not production-ready and deprecated.** If you need to work with JSON documents, consider using [this guide](/integrations/data-formats/json/overview) instead. A new implementation to support JSON object is in Beta. Further details [here](/sql-reference/data-types/newjson).
+**This feature is not production-ready and deprecated.** If you need to work with JSON documents, consider using [this guide](/integrations/data-formats/json/overview) instead. A new implementation to support JSON object is in Beta. Further details [here](/sql-reference/data-types/newjson).
 
 <hr />
 

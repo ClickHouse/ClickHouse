@@ -419,7 +419,7 @@ Type: `UInt8`.
 
 Let's consider an example of calculating the `retention` function to determine site traffic.
 
-* *1.** Create a table to illustrate an example.
+**1.** Create a table to illustrate an example.
 
 ```sql
 CREATE TABLE retention_test(date Date, uid Int32) ENGINE = Memory;
@@ -514,7 +514,7 @@ Result:
 └─────┴─────────┘
 ```
 
-* *3.** Calculate the total number of site visits per day.
+**3.** Calculate the total number of site visits per day.
 
 Query:
 

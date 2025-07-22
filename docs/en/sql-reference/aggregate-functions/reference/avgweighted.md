@@ -29,7 +29,7 @@ but may have different types.
 - `NaN` if all the weights are equal to 0 or the supplied weights parameter is empty.
 - Weighted mean otherwise.
 
-* *Return type** is always [Float64](../../../sql-reference/data-types/float.md).
+**Return type** is always [Float64](../../../sql-reference/data-types/float.md).
 
 **Example**
 

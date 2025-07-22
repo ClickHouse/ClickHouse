@@ -549,7 +549,7 @@ SELECT d, dynamicType(d) FROM test ORDER BY d SETTINGS allow_suspicious_types_in
 └─────────┴────────────────┘
 ```
 
-* *Note:** values of dynamic types with different numeric types are considered as different values and not compared between each other, their type names are compared instead.
+**Note:** values of dynamic types with different numeric types are considered as different values and not compared between each other, their type names are compared instead.
 
 Example:
 
