@@ -15,13 +15,8 @@
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Columns/IColumn.h>
 #include <Common/ProfileEvents.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
-#include <Common/TTLCachePolicy.h>
-#include <Common/formatReadable.h>
-#include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
 #include <Formats/NativeReader.h>
@@ -33,12 +28,6 @@ namespace ProfileEvents
 {
     extern const Event QueryCacheHits;
     extern const Event QueryCacheMisses;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric QueryCacheBytes;
-    extern const Metric QueryCacheEntries;
 }
 
 namespace DB
@@ -283,14 +272,6 @@ String queryStringFromAST(ASTPtr ast)
 
 }
 
-QueryResultCache::QueryResultCache()
-{
-}
-
-QueryResultCache::~QueryResultCache()
-{
-}
-
 QueryResultCache::Key::Key(
     ASTPtr ast_,
     const String & current_database,
@@ -300,19 +281,18 @@ QueryResultCache::Key::Key(
     std::optional<UUID> user_id_,
     const std::vector<UUID> & current_user_roles_,
     bool is_shared_,
-    const uint32_t ttl_seconds_,
+    std::chrono::time_point<std::chrono::system_clock> expires_at_,
     bool is_compressed_)
     : ast_hash(calculateAstHash(ast_, current_database, settings))
     , header(header_)
     , user_id(user_id_)
     , current_user_roles(current_user_roles_)
     , is_shared(is_shared_)
-    , expires_at(std::chrono::system_clock::now() + std::chrono::seconds(ttl_seconds))
+    , expires_at(expires_at_)
     , is_compressed(is_compressed_)
     , query_string(queryStringFromAST(ast_))
     , query_id(query_id_)
     , tag(settings[Setting::query_cache_tag])
-    , ttl_seconds(ttl_seconds_)
 {
 }
 
@@ -345,7 +325,7 @@ String QueryResultCache::Key::encodeTo() const
 
 namespace
 {
-static size_t timePointToSizeT(const std::chrono::time_point<std::chrono::system_clock>& tp)
+size_t timePointToSizeT(const std::chrono::time_point<std::chrono::system_clock>& tp)
 {
     auto duration = tp.time_since_epoch();
     return std::chrono::duration_cast<std::chrono::seconds>(duration).count();
@@ -356,14 +336,14 @@ std::chrono::time_point<std::chrono::system_clock> sizeTToTimePoint(size_t times
     using namespace std::chrono;
     return system_clock::from_time_t(0) + seconds(timestamp);
 }
-
 }
+
 void QueryResultCache::Key::serialize(WriteBuffer & buffer) const
 {
     NativeWriter writer { buffer, 0, header};
 
     writeBinary(ast_hash, buffer);
-    writer.write(header);
+    writer.write(*header);
     if (user_id)
     {
         writeVarInt(1, buffer);
@@ -377,7 +357,7 @@ void QueryResultCache::Key::serialize(WriteBuffer & buffer) const
     {
         writeVarInt(1, buffer);
         writeVarInt(current_user_roles.size(), buffer);
-        for (auto & role : current_user_roles)
+        for (const auto & role : current_user_roles)
             writeUUIDBinary(role, buffer);
     }
     else
@@ -396,8 +376,8 @@ void QueryResultCache::Key::deserialize(DB::ReadBuffer & buffer)
 {
     readBinary(ast_hash, buffer);
     NativeReader reader {buffer, 0};
-    if (auto block = reader.read())
-        header = block;
+    auto block = reader.read();
+    header = std::make_shared<Block>(block);
     Int64 flag = -1;
     readVarInt(flag, buffer);
     if (flag)
@@ -452,7 +432,7 @@ void QueryResultCache::Entry::serializeWithKey(const QueryResultCache::Key & key
     NativeWriter writer { buffer, 0, key.header };
     for (auto & chunk : chunks)
     {
-        auto block = key.header.cloneWithColumns(chunk.detachColumns());
+        auto block = key.header->cloneWithColumns(chunk.detachColumns());
         writer.write(block);
         writer.flush();
     }
@@ -461,7 +441,7 @@ void QueryResultCache::Entry::serializeWithKey(const QueryResultCache::Key & key
         if (chunk)
         {
             writeVarInt(1, buffer);
-            auto block = key.header.cloneWithColumns(chunk->detachColumns());
+            auto block = key.header->cloneWithColumns(chunk->detachColumns());
             writer.write(block);
         }
         else
@@ -474,7 +454,7 @@ void QueryResultCache::Entry::serializeWithKey(const QueryResultCache::Key & key
 void QueryResultCache::Entry::deserializeWithKey(QueryResultCache::Key & key, ReadBuffer & buffer)
 {
     key.deserialize(buffer);
-    NativeReader reader {buffer, key.header, 0};
+    NativeReader reader {buffer, *key.header, 0};
     Int64 count = 0;
     readVarInt(count, buffer);
     for (Int64 i = 0; i < count; i++)

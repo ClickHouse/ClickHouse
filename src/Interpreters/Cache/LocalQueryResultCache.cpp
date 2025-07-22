@@ -1,21 +1,10 @@
 #include <Interpreters/Cache/LocalQueryResultCache.h>
 #include <Interpreters/Cache/QueryResultCacheFactory.h>
 #include <Parsers/TokenIterator.h>
-#include <Columns/IColumn.h>
-#include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
 #include <Common/TTLCachePolicy.h>
-#include <Common/formatReadable.h>
-#include <Common/quoteString.h>
 #include <Core/Settings.h>
-
-
-namespace ProfileEvents
-{
-    extern const Event QueryCacheHits;
-    extern const Event QueryCacheMisses;
-}
 
 namespace CurrentMetrics
 {
@@ -29,14 +18,13 @@ namespace Setting
 {
     extern const SettingsString query_cache_tag;
 }
-
 bool LocalQueryResultCache::IsStale::operator()(const Key & key) const
 {
     return (key.expires_at < std::chrono::system_clock::now());
 };
 
 LocalQueryResultCache::LocalQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
-    : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, QueryResultCacheEntryWeight, IsStale>>(
+    : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, EntryWeight, IsStale>>(
             CurrentMetrics::QueryCacheBytes, CurrentMetrics::QueryCacheEntries, std::make_unique<PerUserTTLCachePolicyUserQuota>()))
 {
     updateConfigurationImpl(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_);
@@ -134,10 +122,10 @@ std::vector<QueryResultCache::KeyMapped> LocalQueryResultCache::dump() const
 
 void registerLocalQueryResultCache(QueryResultCacheFactory & factory)
 {
-    factory.registerQueryResultCache(DEFAULT_QUERY_RESULT_CACHE_TYPE, [] (size_t max_cache_size, const Poco::Util::AbstractConfiguration & config) {
+    factory.registerQueryResultCache(DEFAULT_QUERY_RESULT_CACHE_TYPE, [] (size_t max_cache_size, const Poco::Util::AbstractConfiguration & config)
+    {
         size_t query_result_cache_max_size_in_bytes = config.getUInt64("query_cache.max_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_SIZE);
-        if (query_result_cache_max_size_in_bytes > max_cache_size)
-            query_result_cache_max_size_in_bytes = max_cache_size;
+        query_result_cache_max_size_in_bytes = std::min<size_t>(query_result_cache_max_size_in_bytes, max_cache_size);
         size_t query_result_cache_max_entries = config.getUInt64("query_cache.max_entries", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRIES);
         size_t query_result_cache_max_entry_size_in_bytes = config.getUInt64("query_cache.max_entry_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
         size_t query_result_cache_max_entry_size_in_rows = config.getUInt64("query_cache.max_entry_rows_in_rows", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_ROWS);

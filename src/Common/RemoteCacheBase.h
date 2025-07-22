@@ -1,7 +1,6 @@
 #pragma once
 #include <Common/Exception.h>
 #include <Common/ICachePolicy.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <base/UUID.h>
@@ -25,56 +24,6 @@ extern const int UNKNOWN_REDIS_SCRIPT;
 extern const int DUPLICATED_REDIS_SCRIPT;
 }
 
-namespace
-{
-static auto constexpr EVALSHA = "EVALSHA";
-
-/// Save key-value to external redis with expiration.
-static auto constexpr SET_SCRIPT = R"(
-    if redis.call("setnx", KEYS[1], ARGV[1]) == 1 then
-        redis.call("pexpire", KEYS[1], ARGV[2])
-        return 1
-    else
-        return 0
-    end
-)";
-
-///  Batch read entries via SCAN+MGET commands.
-static auto constexpr DUMP_SCRIPT = R"(
-    local cursor = ARGV[1]
-    local pattern = ARGV[2]
-    local count = tonumber(ARGV[3]) or 100
-    local all_keys = {}
-    local max_keys = tonumber(ARGV[4]) or 1024
-    repeat
-        local reply = redis.call("SCAN", cursor, "MATCH", pattern, "COUNT", count)
-        cursor = reply[1]
-        local keys = reply[2]
-        for _, key in ipairs(keys) do
-        if #all_keys < max_keys then
-            table.insert(all_keys, key)
-        end
-    end
-    if #all_keys >= max_keys then
-        break
-    end
-    until cursor == "0"
-    if #all_keys == 0 then
-        return {}
-    end
-    return redis.call("MGET", unpack(all_keys))
-)";
-
-/// Batch clear key-values via SCAN + DEL commands.
-static auto constexpr CLEAR_SCRIPT = R"(
-    local keys = redis.call('SCAN', 0, 'MATCH', ARGV[1], 'COUNT', ARGV[2])
-    if #keys > 0 then
-        return redis.call('DEL', unpack(keys))
-    else
-        return 0
-    end
-)";
-}
 /// This is a thread-safe cache backed by an external distributed storage system.
 /// It caches query results to avoid redundant executions across multiple nodes.
 /// In contrast to local caching, external cache systems handle storage capacity and data expiration.
@@ -83,6 +32,52 @@ static auto constexpr CLEAR_SCRIPT = R"(
 template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = EqualWeightFunction<TMapped>>
 class RemoteCacheBase
 {
+    static auto constexpr EVALSHA = "EVALSHA";
+        /// Save key-value to external redis with expiration.
+    static auto constexpr SET_SCRIPT = R"(
+        if redis.call("setnx", KEYS[1], ARGV[1]) == 1 then
+            redis.call("pexpire", KEYS[1], ARGV[2])
+            return 1
+        else
+            return 0
+        end
+    )";
+
+    ///  Batch read entries via SCAN+MGET commands.
+    static auto constexpr DUMP_SCRIPT = R"(
+        local cursor = ARGV[1]
+        local pattern = ARGV[2]
+        local count = tonumber(ARGV[3]) or 100
+        local all_keys = {}
+        local max_keys = tonumber(ARGV[4]) or 1024
+        repeat
+            local reply = redis.call("SCAN", cursor, "MATCH", pattern, "COUNT", count)
+            cursor = reply[1]
+            local keys = reply[2]
+            for _, key in ipairs(keys) do
+            if #all_keys < max_keys then
+                table.insert(all_keys, key)
+            end
+        end
+        if #all_keys >= max_keys then
+            break
+        end
+        until cursor == "0"
+        if #all_keys == 0 then
+            return {}
+        end
+        return redis.call("MGET", unpack(all_keys))
+    )";
+
+    /// Batch clear key-values via SCAN + DEL commands.
+    static auto constexpr CLEAR_SCRIPT = R"(
+        local keys = redis.call('SCAN', 0, 'MATCH', ARGV[1], 'COUNT', ARGV[2])
+        if #keys > 0 then
+            return redis.call('DEL', unpack(keys))
+        else
+            return 0
+        end
+    )";
 public:
     using Key = TKey;
     using Mapped = TMapped;
@@ -149,11 +144,12 @@ public:
         auto store_key = key.encodeTo();
         WriteBufferFromOwnString val_buffer;
         val->serializeWithKey(key, val_buffer);
+        auto ttl_ms = std::chrono::duration_cast<std::chrono::milliseconds>(key.expires_at - std::chrono::system_clock::now()).count();
         try
         {
             auto conn = getConnection();
             RedisCommand eval(EVALSHA);
-            eval << getLuaScriptHash("SET") << "1" << store_key << val_buffer.str() << std::to_string(key.ttl_seconds * 1000);
+            eval << getLuaScriptHash("SET") << "1" << store_key << val_buffer.str() << std::to_string(ttl_ms);
             conn->client->template execute<Poco::Int64>(eval);
         }
         catch (const Exception & e)
@@ -290,26 +286,7 @@ public:
 
     size_t sizeInBytes() const
     {
-        static auto constexpr INFO_MEMORY = "INFO MEMORY";
-        try
-        {
-            auto conn = getConnection();
-            RedisCommand info_memory(INFO_MEMORY);
-            auto memory_info = conn->client->template execute<std::string>(info_memory);
-            return parseDatasetMemory(memory_info);
-        }
-        catch (const Exception & e)
-        {
-            LOG_ERROR(logger, "Failed to execute INFO MEMORY, caused by {}", e.displayText());
-            throw Exception(ErrorCodes::EXTERNAL_QUERY_RESULT_CACHE_ERROR, "Failed to execute INFO MEMORY, caused by {}", e.displayText());
-        }
-        catch (...)
-        {
-            auto message = getCurrentExceptionMessage(false);
-            LOG_ERROR(logger, "Failed to execute INFO MEMORY, caused by {}", message);
-            throw Exception(ErrorCodes::EXTERNAL_QUERY_RESULT_CACHE_ERROR, "Failed to execute INFO MEMORY, caused by {}", message);
-        }
-        std::unreachable();
+        return 0;
     }
 
     size_t count() const
@@ -402,19 +379,6 @@ private:
     {
         auto config_ = std::atomic_load(&config);
         return getRedisConnection(pool, *config);
-    }
-    static size_t parseDatasetMemory(const std::string& info)
-    {
-        std::istringstream iss(info);
-        std::string line;
-        while (std::getline(iss, line))
-        {
-            if (line.find("used_memory_dataset:") != std::string::npos)
-            {
-                return std::stoi(line.substr(18));
-            }
-        }
-        return 0;
     }
 };
 
