@@ -4,8 +4,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
 
-#include <iostream>
-
 namespace DB
 {
 

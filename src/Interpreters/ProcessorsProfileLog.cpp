@@ -147,13 +147,14 @@ void logProcessorProfile(ContextPtr context, const Processors & processors)
             }
         }
 
-        auto logger = ::getLogger("ProcessorProfileLog");
-        if (logger->getLevel() >= Poco::Message::PRIO_DEBUG)
+        auto dump_pipeline = [&]()
         {
             WriteBufferFromOwnString out;
             printPipeline(processors, out, true);
-            LOG_DEBUG(logger, "Processors profile log:\n{}", out.str());
-        }
+            return out.str();
+        };
+        auto logger = ::getLogger("ProcessorProfileLog");
+        LOG_TEST(logger, "Processors profile log:\n{}", dump_pipeline());
     }
 }
 }
