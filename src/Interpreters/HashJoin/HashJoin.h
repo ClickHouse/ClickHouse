@@ -142,7 +142,7 @@ public:
     bool addBlockToJoin(const Block & source_block_, bool check_limits) override;
 
     /// Called directly from ConcurrentJoin::addBlockToJoin
-    bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits);
+    bool addBlockToJoin(ScatteredBlock & source_block_, bool check_limits);
 
     void checkTypesOfKeys(const Block & block) const override;
 
@@ -151,10 +151,10 @@ public:
     /** Join data from the map (that was previously built by calls to addBlockToJoin) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */
-    JoinResultPtr joinBlock(Block block) override;
+    void joinBlock(Block & block, ExtraBlockPtr & not_processed) override;
 
     /// Called directly from ConcurrentJoin::joinBlock
-    JoinResultPtr joinScatteredBlock(ScatteredBlock block);
+    void joinBlock(ScatteredBlock & block, ScatteredBlock & remaining_block);
 
     /// Check joinGet arguments and infer the return type.
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
@@ -450,13 +450,10 @@ public:
 
     std::shared_ptr<JoinStuff::JoinUsedFlags> getUsedFlags() const { return used_flags; }
 
-    static bool isUsedByAnotherAlgorithm(const TableJoin & table_join);
-    static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
-
 private:
     friend class NotJoinedHash;
+
     friend class JoinSource;
-    friend class CrossJoinResult;
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
     friend class HashJoinMethods;
@@ -525,7 +522,7 @@ private:
 
     void initRightBlockStructure(Block & saved_block_sample);
 
-    JoinResultPtr joinBlockImplCross(Block block) const;
+    void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
 
     bool empty() const;
 
