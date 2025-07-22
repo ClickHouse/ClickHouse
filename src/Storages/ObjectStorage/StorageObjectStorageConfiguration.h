@@ -81,8 +81,7 @@ public:
 
     // Path provided by the user in the query
     virtual Path getRawPath() const = 0;
-    // Path used for reading, by default it is the same as `getRawPath`
-    // When using `partition_strategy=hive`, a recursive reading pattern will be appended `'table_root/**.parquet'
+
     const Path & getPathForRead() const;
     // Path used for writing, it should not be globbed and might contain a partition key
     Path getPathForWrite(const std::string & partition_id = "") const;
@@ -194,6 +193,8 @@ protected:
     bool initialized = false;
 
 private:
+    // Path used for reading, by default it is the same as `getRawPath`
+    // When using `partition_strategy=hive`, a recursive reading pattern will be appended `'table_root/**.parquet'
     Path read_path;
 };
 

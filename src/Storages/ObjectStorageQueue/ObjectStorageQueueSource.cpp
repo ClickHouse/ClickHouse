@@ -103,7 +103,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     if (configuration->isNamespaceWithGlobs())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression can not have wildcards inside namespace name");
 
-    const auto reading_path = configuration->getPathForRead();
+    const auto & reading_path = configuration->getPathForRead();
 
     if (!reading_path.hasGlobs())
     {
