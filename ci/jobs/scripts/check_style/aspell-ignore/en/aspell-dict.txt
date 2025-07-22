@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3283 
+personal_ws-1.1 en 3286 
 AArch
 ACLs
 ALTERs
@@ -27,6 +27,7 @@ AggregatorThreadsActive
 Akka
 AlertManager
 Alexey
+Anthropic
 AnyEvent
 AppleClang
 Approximative
@@ -234,6 +235,7 @@ DIEs
 DOGEFI
 Damerau
 DataGrip
+DataLakeCatalog
 DataLens
 DataPacket
 DataTypes
@@ -246,6 +248,7 @@ DatabaseOnDiskThreads
 DatabaseOnDiskThreadsActive
 DatabaseOrdinaryThreads
 DatabaseOrdinaryThreadsActive
+Databricks
 DateTime
 DateTimeInputFormat
 DateTimeOutputFormat
@@ -306,6 +309,7 @@ Ethereum
 ExactEdgeLengthKm
 ExactEdgeLengthM
 ExactEdgeLengthRads
+Excel's
 ExecutablePool
 ExperimentalBadge
 ExtType
@@ -341,6 +345,7 @@ FixedString
 FixedStrings
 FlameGraph
 Flink
+FlyQL
 ForEach
 FreeBSD
 Fuzzer
@@ -581,6 +586,7 @@ LogsLevel
 Logstash
 LookML
 LoongArch
+Lossy
 LowCardinality
 LpDistance
 LpNorm
@@ -716,8 +722,13 @@ NumberOfDatabases
 NumberOfDetachedByUserParts
 NumberOfDetachedParts
 NumberOfTables
+NumericIndexedVector
+NumericIndexedVectors
+OAuth
 ODBCDriver
 OFNS
+OKLCH
+OKLab
 OLAP
 OLTP
 ORCCompression
@@ -775,9 +786,11 @@ Observability
 Octonica
 Ok
 OnTime
+OpenAI
 OpenCelliD
 OpenFileForRead
 OpenFileForWrite
+OpenRouter
 OpenSSL
 OpenSUSE
 OpenSky
@@ -800,8 +813,6 @@ PagerDuty
 ParallelFormattingOutputFormatThreads
 ParallelFormattingOutputFormatThreadsActive
 ParallelParsingInputFormat
-ParallelParsingInputFormatThreads
-ParallelParsingInputFormatThreadsActive
 ParallelReplicasMode
 ParquetCompression
 ParquetMetadata
@@ -901,7 +912,9 @@ RWLockWaitingWriters
 RabbitMQ
 Rabl
 RangeHashed
+Raphson
 RawBLOB
+RawSum
 RawWithNames
 RawWithNamesAndTypes
 ReDoS
@@ -942,6 +955,7 @@ ReplicatedSend
 ReplicatedSummingMergeTree
 ReplicatedVersionedCollapsingMergeTree
 Resample
+Rescoring
 RestartReplicaThreads
 RestartReplicaThreadsActive
 RestoreThreads
@@ -1204,6 +1218,8 @@ WriteBuffer
 WriteBuffers
 XCode
 XHTML
+XIRR
+XNPV
 XORs
 Xeon
 YAML
@@ -1479,6 +1495,8 @@ cardinalities
 cardinality
 cartesian
 caseWithExpression
+cashflow
+cashflows
 cassandra
 catboost
 catboostEvaluate
@@ -1517,6 +1535,7 @@ checksumming
 checksums
 childern
 chproxy
+chroma
 chunksize
 cickhouse
 cipherList
@@ -1545,6 +1564,8 @@ codepoint
 codepoints
 codespell
 collapsingmergetree
+colorOKLCHToSRGB
+colorSRGBToOKLCH
 combinator
 combinators
 compareSubstrings
@@ -1828,6 +1849,10 @@ filesystemFree
 filesystemUnreserved
 filesystems
 finalizeAggregation
+financialInternalRateOfReturn
+financialInternalRateOfReturnExtended
+financialNetPresentValue
+financialNetPresentValueExtended
 fips
 firstLine
 firstSignficantSubdomain
@@ -1890,12 +1915,14 @@ geoToS
 geobase
 geobases
 geocode
+geocoding
 geohash
 geohashDecode
 geohashEncode
 geohashes
 geohashesInBox
 geoip
+geolocation
 geospatial
 getClientHTTPHeader
 getMacro
@@ -1947,6 +1974,7 @@ groupBitmapAnd
 groupBitmapOr
 groupBitmapXor
 groupConcat
+groupNumericIndexedVector
 groupUniqArray
 grouparray
 grouparrayinsertat
@@ -1964,6 +1992,7 @@ groupbitmapxor
 groupbitor
 groupbitxor
 groupconcat
+groupnumericindexedvector
 groupuniqarray
 grpc
 grpcio
@@ -2027,6 +2056,7 @@ iTerm
 icebergCluster
 icosahedron
 icudata
+idelta
 idempotency
 idnaDecode
 idnaEncode
@@ -2064,12 +2094,14 @@ intervalLengthSum
 invalidCertificateHandler
 invariants
 invertedindexes
+irate
 isConstant
 isDecimalOverflow
 isFinite
 isIPAddressInRange
 isIPv
 isInfinite
+isMergeTreePartCoveredBy
 isNaN
 isNotDistinctFrom
 isNotNull
@@ -2078,7 +2110,6 @@ isNullable
 isValidJSON
 isValidUTF
 isZeroOrNull
-isMergeTreePartCoveredBy
 iteratively
 jaccard
 jaccardIndex
@@ -2183,6 +2214,7 @@ libuv
 libvirt
 linearizability
 linearizable
+linearize
 linearized
 lineasstring
 linefeeds
@@ -2201,6 +2233,7 @@ loghouse
 london
 lookups
 loongarch
+lossy
 lowCardinalityIndices
 lowCardinalityKeys
 lowcardinality
@@ -2253,9 +2286,11 @@ mdadm
 meanZTest
 meanztest
 mebibytes
+memcheck
 memtable
 memtables
 mergeTreeIndex
+mergeTreePartInfo
 mergeTreeProjection
 mergeable
 mergetree
@@ -2264,7 +2299,6 @@ metacharacters
 metasymbols
 metrica
 metroHash
-mergeTreePartInfo
 mfedotov
 mflix
 minMap
@@ -2412,6 +2446,23 @@ nullable
 nullables
 nullptr
 num
+numericIndexedVector
+numericIndexedVectorAllValueSum
+numericIndexedVectorBuild
+numericIndexedVectorCardinality
+numericIndexedVectorGetValue
+numericIndexedVectorPointwiseAdd
+numericIndexedVectorPointwiseDivide
+numericIndexedVectorPointwiseEqual
+numericIndexedVectorPointwiseGreater
+numericIndexedVectorPointwiseGreaterEqual
+numericIndexedVectorPointwiseLess
+numericIndexedVectorPointwiseLessEqual
+numericIndexedVectorPointwiseMultiply
+numericIndexedVectorPointwiseNotEqual
+numericIndexedVectorPointwiseSubtract
+numericIndexedVectorShortDebugString
+numericIndexedVectorToMap
 numerics
 nypd
 obfuscator
@@ -2479,6 +2530,7 @@ plantuml
 poco
 pointInEllipses
 pointInPolygon
+pointwise
 polygonAreaCartesian
 polygonAreaSpherical
 polygonConvexHullCartesian
@@ -2487,6 +2539,8 @@ polygonPerimeterSpherical
 polygonsDistanceCartesian
 polygonsDistanceSpherical
 polygonsEqualsCartesian
+polygonsIntersectCartesian
+polygonsIntersectSpherical
 polygonsIntersectionCartesian
 polygonsIntersectionSpherical
 polygonsSymDifferenceCartesian
@@ -2634,6 +2688,11 @@ randomStringUTF
 rankCorr
 rapidjson
 rawblob
+readWKBLineString
+readWKBMultiLineString
+readWKBMultiPolygon
+readWKBPoint
+readWKBPolygon
 readWKTLineString
 readWKTMultiLineString
 readWKTMultiPolygon
@@ -2699,6 +2758,7 @@ representable
 requestor
 requireTLSv
 rerange
+rescoring
 resharding
 reshards
 resolvers
@@ -2744,11 +2804,14 @@ russian
 rustc
 rustup
 rw
+sRGB
 sasl
 satisfiable
 scala
 sccache
 schemas
+searchAll
+searchAny
 seekable
 seektable
 sequenceCount
@@ -2980,7 +3043,13 @@ throwIf
 throwif
 timeDiff
 timeSeriesData
+timeSeriesDeltaToGrid
+timeSeriesInstantDeltaToGrid
+timeSeriesInstantRateToGrid
+timeSeriesLastTwoSamples
 timeSeriesMetrics
+timeSeriesRateToGrid
+timeSeriesResampleToGridWithStaleness
 timeSeriesTags
 timeSlot
 timeSlots
@@ -3067,6 +3136,7 @@ toStartOfYear
 toString
 toStringCutToZero
 toTime
+toTimeWithFixedDate
 toTimeZone
 toType
 toTypeName
@@ -3086,8 +3156,10 @@ toYear
 toYearWeek
 tokenbf
 tokenization
+tokenize
 tokenized
 tokenizer
+tokenizing
 toml
 toolchain
 toolset

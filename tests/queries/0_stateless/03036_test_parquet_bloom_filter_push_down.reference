@@ -503,7 +503,20 @@ Invalid column conversion with in operation. String type can not be hashed again
     "bytes_read": 47419
   }
 }
-Transformations on key column shall not be allowed. Should read everything
+Transformations on key column shall not be allowed (=). Should read everything
+{
+  "data": [
+    {
+      "uint64_logical": "7711695863945021976"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 1000,
+    "bytes_read": 47419
+  }
+}
+Transformations on key column shall not be allowed (IN). Should read everything
 {
   "data": [
     {

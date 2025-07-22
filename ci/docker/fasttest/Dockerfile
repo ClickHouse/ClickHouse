@@ -2,7 +2,7 @@
 FROM ubuntu:22.04
 
 # ARG for quick switch to a given ubuntu mirror
-ARG apt_archive="https://archive.ubuntu.com"
+ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i -e "s|http://archive.ubuntu.com|$apt_archive|g" -e "s|https://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 ARG LLVM_APT_VERSION="1:19.1.4"
 
@@ -54,6 +54,7 @@ RUN apt-get update \
         libclang-rt-${LLVM_VERSION}-dev \
         lld-${LLVM_VERSION} \
         llvm-${LLVM_VERSION}-dev \
+        libmpfr6 \
         lsof \
         ninja-build \
         python3 \
@@ -71,7 +72,8 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-COPY --from=clickhouse/cctools:4670e95dde3de689f103 /opt/gdb /opt/gdb
+# Note, libmpfr6 is also a requirement for gdb
+COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb
 # Give suid to gdb to grant it attach permissions
 RUN chmod u+s /opt/gdb/bin/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"

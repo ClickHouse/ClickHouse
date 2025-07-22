@@ -697,21 +697,13 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     if (function_name == "mapContainsValue" || function_name == "mapContainsKey" || function_name == "mapContains" || function_name == "has")
     {
         auto map_keys_index_column_name = fmt::format("mapKeys({})", key_column_name);
-        auto map_values_index_column_name = fmt::format("mapValues({})", key_column_name);
-        size_t position = 0;
+        if (function_name == "mapContainsValue")
+            map_keys_index_column_name = fmt::format("mapValues({})", key_column_name);
 
-        if (header.has(map_keys_index_column_name))
-        {
-            position = header.getPositionByName(map_keys_index_column_name);
-        }
-        else if (header.has(map_values_index_column_name))
-        {
-            position = header.getPositionByName(map_values_index_column_name);
-        }
-        else
-        {
+        if (!header.has(map_keys_index_column_name))
             return false;
-        }
+
+        size_t position = header.getPositionByName(map_keys_index_column_name);
 
         const DataTypePtr & index_type = header.getByPosition(position).type;
         const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
@@ -880,7 +872,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const
 
 static void assertIndexColumnsType(const Block & header)
 {
-    if (!header || !header.columns())
+    if (header.empty() || !header.columns())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Index must have columns.");
 
     const DataTypes & columns_data_types = header.getDataTypes();

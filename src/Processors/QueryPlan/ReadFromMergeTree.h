@@ -90,6 +90,24 @@ public:
     };
 
     using IndexStats = std::vector<IndexStat>;
+
+    /// Information about used projections.
+    struct ProjectionStat
+    {
+        std::string name = {};
+        std::string description = {};
+        std::string condition = {};
+        MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};
+        UInt64 selected_parts = 0;
+        UInt64 selected_ranges = 0;
+        UInt64 selected_marks = 0;
+        UInt64 selected_rows = 0;
+        UInt64 filtered_parts = 0;
+    };
+
+    /// `deque` is used to ensure stable addresses during projection analysis stats building.
+    using ProjectionStats = std::deque<ProjectionStat>;
+
     using ReadType = MergeTreeReadType;
 
     struct AnalysisResult
@@ -98,6 +116,7 @@ public:
         SplitPartsByRanges split_parts;
         MergeTreeDataSelectSamplingData sampling;
         IndexStats index_stats;
+        ProjectionStats projection_stats;
         Names column_names_to_read;
         ReadType read_type = ReadType::Default;
         UInt64 total_parts = 0;
@@ -135,7 +154,7 @@ public:
         std::optional<size_t> number_of_current_replica_ = std::nullopt);
 
     ReadFromMergeTree(const ReadFromMergeTree &) = default;
-    ReadFromMergeTree(ReadFromMergeTree &&) = default;
+    ReadFromMergeTree(ReadFromMergeTree &&) noexcept = default;
 
     std::unique_ptr<ReadFromMergeTree> createLocalParallelReplicasReadingStep(
         AnalysisResultPtr analyzed_result_ptr_,
@@ -152,9 +171,11 @@ public:
 
     void describeActions(FormatSettings & format_settings) const override;
     void describeIndexes(FormatSettings & format_settings) const override;
+    void describeProjections(FormatSettings & format_settings) const override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
+    void describeProjections(JSONBuilder::JSONMap & map) const override;
 
     const Names & getAllColumnNames() const { return all_column_names; }
 
@@ -195,8 +216,6 @@ public:
         std::optional<Indexes> & indexes,
         bool find_exact_ranges);
 
-    AnalysisResultPtr selectRangesToRead(RangesInDataParts parts, bool find_exact_ranges = false) const;
-
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
@@ -212,6 +231,10 @@ public:
     void updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_read_info_value);
     bool isQueryWithSampling() const;
 
+    /// Special stuff for vector search - replace vector column in read list with virtual "_distance" column
+    void replaceVectorColumnWithDistanceColumn(const String & vector_column);
+    bool isVectorColumnReplaced() const;
+
     /// Returns true if the optimization is applicable (and applies it then).
     bool requestOutputEachPartitionThroughSeparatePort();
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
@@ -219,7 +242,7 @@ public:
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
-    const RangesInDataParts & getParts() const { return prepared_parts; }
+    const RangesInDataParts & getParts() const { return analyzed_result_ptr ? analyzed_result_ptr->parts_with_ranges : prepared_parts; }
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot() const { return mutations_snapshot; }
 
     const MergeTreeData & getMergeTreeData() const { return data; }
@@ -230,6 +253,9 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     void setVectorSearchParameters(std::optional<VectorSearchParameters> && vector_search_parameters_) { vector_search_parameters = vector_search_parameters_; }
+    std::optional<VectorSearchParameters> getVectorSearchParameters() const { return vector_search_parameters; }
+
+    bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
 
 private:
     MergeTreeReaderSettings reader_settings;
@@ -292,7 +318,9 @@ private:
     Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts, size_t num_streams, const Names & origin_column_names, const Names & column_names, std::optional<ActionsDAG> & out_projection);
 
-    ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
+    ReadFromMergeTree::AnalysisResult & getAnalysisResultImpl() const;
+    const ReadFromMergeTree::AnalysisResult & getAnalysisResult() const { return getAnalysisResultImpl(); }
+    ReadFromMergeTree::AnalysisResult & getAnalysisResult() { return getAnalysisResultImpl(); }
 
     int getSortDirection() const;
     void updateSortDescription();

@@ -22,6 +22,7 @@
 #    include <mongocxx/client.hpp>
 #    include <mongocxx/collection.hpp>
 #    include <mongocxx/database.hpp>
+#    include <mongocxx/exception/exception.hpp>
 #endif
 
 #if USE_LIBPQXX
@@ -43,7 +44,9 @@ enum class IntegrationCall
     SQLite = 3,
     Redis = 4,
     MongoDB = 5,
-    MinIO = 6
+    MinIO = 6,
+    Azurite = 7,
+    HTTP = 8
 };
 
 class ClickHouseIntegration
@@ -78,7 +81,7 @@ public:
     {
     }
 
-    virtual bool performQuery(const String &) { return false; }
+    virtual int performQuery(const String &) { return 1; }
 
     virtual String getTableName(std::shared_ptr<SQLDatabase>, uint32_t) { return String(); }
 
@@ -136,7 +139,7 @@ public:
     static std::unique_ptr<MySQLIntegration>
     testAndAddMySQLConnection(FuzzConfig & fcc, const ServerCredentials & scc, bool read_log, const String & server);
 
-    void setEngineDetails(RandomGenerator & rg, const SQLBase &, const String & tname, TableEngine * te) override;
+    void setEngineDetails(RandomGenerator & rg, const SQLBase & b, const String & tname, TableEngine * te) override;
 
     String getTableName(std::shared_ptr<SQLDatabase> db, uint32_t tname) override;
 
@@ -144,7 +147,7 @@ public:
 
     bool optimizeTableForOracle(PeerTableDatabase pt, const SQLTable & t) override;
 
-    bool performQuery(const String & query) override;
+    int performQuery(const String & query) override;
 
     String columnTypeAsString(RandomGenerator & rg, bool is_deterministic, SQLType * tp) const override;
 #else
@@ -168,6 +171,8 @@ private:
 
     PostgreSQLUniqueKeyPtr postgres_connection;
 
+    int sqlstateToInt(const String & sqlstate);
+
 public:
     PostgreSQLIntegration(FuzzConfig & fcc, const ServerCredentials & scc, PostgreSQLUniqueKeyPtr pcon)
         : ClickHouseIntegratedDatabase(fcc, scc)
@@ -178,7 +183,7 @@ public:
     static std::unique_ptr<PostgreSQLIntegration>
     testAndAddPostgreSQLIntegration(FuzzConfig & fcc, const ServerCredentials & scc, bool read_log);
 
-    void setEngineDetails(RandomGenerator & rg, const SQLBase &, const String & tname, TableEngine * te) override;
+    void setEngineDetails(RandomGenerator & rg, const SQLBase & b, const String & tname, TableEngine * te) override;
 
     String getTableName(std::shared_ptr<SQLDatabase>, uint32_t tname) override;
 
@@ -186,7 +191,7 @@ public:
 
     String columnTypeAsString(RandomGenerator & rg, bool is_deterministic, SQLType * tp) const override;
 
-    bool performQuery(const String & query) override;
+    int performQuery(const String & query) override;
 #else
 public:
     PostgreSQLIntegration(FuzzConfig & fcc, const ServerCredentials & scc)
@@ -228,7 +233,7 @@ public:
 
     String columnTypeAsString(RandomGenerator & rg, bool is_deterministic, SQLType * tp) const override;
 
-    bool performQuery(const String & query) override;
+    int performQuery(const String & query) override;
 #else
 public:
     const std::filesystem::path sqlite_path;
@@ -320,7 +325,7 @@ public:
     {
     }
 
-    String getConnectionURL();
+    String getConnectionURL(bool client);
 
     void setEngineDetails(RandomGenerator &, const SQLBase & b, const String & tname, TableEngine * te) override;
 
@@ -330,6 +335,41 @@ public:
         RandomGenerator &, std::shared_ptr<SQLDatabase>, uint32_t tname, bool, bool, std::vector<ColumnPathChain> &) override;
 
     ~MinIOIntegration() override = default;
+};
+
+class AzuriteIntegration : public ClickHouseIntegration
+{
+public:
+    explicit AzuriteIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
+        : ClickHouseIntegration(fcc, ssc)
+    {
+    }
+
+    void setEngineDetails(RandomGenerator &, const SQLBase & b, const String & tname, TableEngine * te) override;
+
+    void setBackupDetails(const String & filename, BackupRestore * br);
+
+    bool performIntegration(
+        RandomGenerator &, std::shared_ptr<SQLDatabase>, uint32_t tname, bool, bool, std::vector<ColumnPathChain> &) override;
+
+    ~AzuriteIntegration() override = default;
+};
+
+class HTTPIntegration : public ClickHouseIntegration
+{
+public:
+    explicit HTTPIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
+        : ClickHouseIntegration(fcc, ssc)
+    {
+    }
+
+    String getConnectionURL(bool client);
+
+    void setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te) override;
+
+    bool performIntegration(RandomGenerator &, std::shared_ptr<SQLDatabase>, uint32_t, bool, bool, std::vector<ColumnPathChain> &) override;
+
+    ~HTTPIntegration() override = default;
 };
 
 class ExternalIntegrations
@@ -342,6 +382,8 @@ private:
     std::unique_ptr<RedisIntegration> redis;
     std::unique_ptr<MongoDBIntegration> mongodb;
     std::unique_ptr<MinIOIntegration> minio;
+    std::unique_ptr<AzuriteIntegration> azurite;
+    std::unique_ptr<HTTPIntegration> http;
     std::unique_ptr<MySQLIntegration> clickhouse;
 
     std::filesystem::path default_sqlite_path;
@@ -371,6 +413,10 @@ public:
 
     bool hasMinIOConnection() const { return minio != nullptr; }
 
+    bool hasAzuriteConnection() const { return azurite != nullptr; }
+
+    bool hasHTTPConnection() const { return http != nullptr; }
+
     bool hasClickHouseExtraServerConnection() const { return clickhouse != nullptr; }
 
     const std::filesystem::path & getSQLitePath() const { return sqlite ? sqlite->sqlite_path : default_sqlite_path; }
@@ -395,7 +441,7 @@ public:
 
     void dropPeerTableOnRemote(const SQLTable & t);
 
-    bool performQuery(PeerTableDatabase pt, const String & query);
+    int performQuery(PeerTableDatabase pt, const String & query);
 
     bool getPerformanceMetricsForLastQuery(PeerTableDatabase pt, PerformanceResult & res);
 
@@ -403,7 +449,7 @@ public:
 
     void replicateSettings(PeerTableDatabase pt);
 
-    void setBackupDetails(const String & filename, BackupRestore * br);
+    void setBackupDetails(IntegrationCall dc, const String & filename, BackupRestore * br);
 };
 
 }
