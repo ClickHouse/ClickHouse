@@ -830,17 +830,21 @@ BlockIO InterpreterInsertQuery::execute()
     
     // Rename columns if they are simple aliases (with no expressions).
     std::unordered_map<String, String> column_rename_map;
-    for (const auto & column : metadata_snapshot->getColumns()){
-        if (column.default_desc.kind == ColumnDefaultKind::Alias){
+    for (const auto & column : metadata_snapshot->getColumns())
+    {
+        if (column.default_desc.kind == ColumnDefaultKind::Alias)
+        {
             const ASTPtr & alias_expression = column.default_desc.expression;
-            if (const ASTIdentifier * actual_column = typeid_cast<const ASTIdentifier *>(alias_expression.get())) column_rename_map[column.name] = actual_column->full_name;
+            if (const ASTIdentifier * actual_column = typeid_cast<const ASTIdentifier *>(alias_expression.get()))
+                column_rename_map[column.name] = actual_column->full_name;
         }
     }
 
     RenameMultipleColumnsData rename_data{column_rename_map};
     RenameMultipleColumnsVisitor rename_columns_visitor{rename_data};
 
-    if (query.columns){
+    if (query.columns)
+    {
         rename_columns_visitor.visit(query.columns);
     }
 
