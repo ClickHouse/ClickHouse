@@ -53,7 +53,7 @@ def test_path_acl(started_cluster):
 
             compare_acls(acls_test_path, expected_acls)
 
-            # Find a child of /test_path and verify its ACLs
+            # Find a child of path and verify its ACLs
             children = zk.get_children(path)
             assert len(children) > 0
             child_path = f"/{path}/{children[0]}"
