@@ -256,7 +256,7 @@ private:
         FilesIteratorPtr files_iterator_,
         std::unique_ptr<ReadBuffer> read_buf_,
         bool need_only_count_,
-        FormatParserGroupPtr);
+        FormatParserSharedResourcesPtr parser_shared_resources_);
 
     /**
       * If specified option --rename_files_after_processing and files created by TableFunctionFile
@@ -275,7 +275,7 @@ private:
 
     Chunk generate() override;
 
-    void onFinish() override { parser_group->finishStream(); }
+    void onFinish() override { parser_shared_resources->finishStream(); }
 
     void addNumRowsToCache(const String & path, size_t num_rows) const;
 
@@ -293,7 +293,7 @@ private:
     InputFormatPtr input_format;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
-    FormatParserGroupPtr parser_group;
+    FormatParserSharedResourcesPtr parser_shared_resources;
 
     std::shared_ptr<IArchiveReader> archive_reader;
     std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;

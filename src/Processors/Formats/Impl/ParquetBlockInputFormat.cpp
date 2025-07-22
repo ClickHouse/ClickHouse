@@ -572,26 +572,26 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
     ReadBuffer & buf,
     SharedHeader header_,
     const FormatSettings & format_settings_,
-    FormatParserGroupPtr parser_group_,
+    FormatParserSharedResourcesPtr parser_shared_resources_,
     size_t min_bytes_for_seek_)
     : IInputFormat(header_, &buf)
     , format_settings(format_settings_)
     , skip_row_groups(format_settings.parquet.skip_row_groups)
-    , parser_group(std::move(parser_group_))
+    , parser_shared_resources(std::move(parser_shared_resources_))
     , min_bytes_for_seek(min_bytes_for_seek_)
-    , pending_chunks(PendingChunk::Compare { .row_group_first = format_settings_.parquet.preserve_order })
+    , pending_chunks(PendingChunk::Compare{.row_group_first = format_settings_.parquet.preserve_order})
     , previous_block_missing_values(getPort().getHeader().columns())
 {
-    use_thread_pool = parser_group->max_parsing_threads > 1;
+    use_thread_pool = parser_shared_resources->max_parsing_threads > 1;
 
-    bool row_group_prefetch =
-        !use_thread_pool && parser_group->max_io_threads > 0 &&
-        format_settings.parquet.enable_row_group_prefetch &&
-        !format_settings.parquet.use_native_reader;
+    bool row_group_prefetch = !use_thread_pool && parser_shared_resources->max_io_threads > 0
+        && format_settings.parquet.enable_row_group_prefetch && !format_settings.parquet.use_native_reader;
     if (row_group_prefetch)
         io_pool = std::make_shared<ThreadPool>(
-            CurrentMetrics::IOThreads, CurrentMetrics::IOThreadsActive, CurrentMetrics::IOThreadsScheduled,
-            parser_group->getIOThreadsPerReader());
+            CurrentMetrics::IOThreads,
+            CurrentMetrics::IOThreadsActive,
+            CurrentMetrics::IOThreadsScheduled,
+            parser_shared_resources->getIOThreadsPerReader());
 }
 
 ParquetBlockInputFormat::~ParquetBlockInputFormat()
@@ -1260,23 +1260,20 @@ std::optional<size_t> ParquetSchemaReader::readNumberOrRows()
 void registerInputFormatParquet(FormatFactory & factory)
 {
     factory.registerRandomAccessInputFormat(
-            "Parquet",
-            [](ReadBuffer & buf,
-               const Block & sample,
-               const FormatSettings & settings,
-               const ReadSettings & read_settings,
-               bool is_remote_fs,
-               FormatParserGroupPtr parser_group) -> InputFormatPtr
-            {
-                size_t min_bytes_for_seek = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
-                auto ptr = std::make_shared<ParquetBlockInputFormat>(
-                    buf,
-                    std::make_shared<const Block>(sample),
-                    settings,
-                    std::move(parser_group),
-                    min_bytes_for_seek);
-                return ptr;
-            });
+        "Parquet",
+        [](ReadBuffer & buf,
+           const Block & sample,
+           const FormatSettings & settings,
+           const ReadSettings & read_settings,
+           bool is_remote_fs,
+           FormatParserSharedResourcesPtr parser_shared_resources) -> InputFormatPtr
+        {
+            size_t min_bytes_for_seek
+                = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
+            auto ptr = std::make_shared<ParquetBlockInputFormat>(
+                buf, std::make_shared<const Block>(sample), settings, std::move(parser_shared_resources), min_bytes_for_seek);
+            return ptr;
+        });
     factory.markFormatSupportsSubsetOfColumns("Parquet");
 }
 

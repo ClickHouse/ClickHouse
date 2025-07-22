@@ -288,7 +288,7 @@ public:
                     context,
                     max_block_size,
                     updateFormatSettings(current_file),
-                    FormatParserGroup::singleThreaded(context->getSettingsRef()));
+                    FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
 
                 Pipe pipe(input_format);
                 if (columns_description.hasDefaults())
@@ -626,7 +626,7 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
         context,
         context->getSettingsRef()[Setting::max_block_size],
         std::nullopt,
-        FormatParserGroup::singleThreaded(context->getSettingsRef()));
+        FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
     auto pipeline = QueryPipeline(std::move(format));
     auto reader = std::make_unique<PullingPipelineExecutor>(pipeline);
     Block block;

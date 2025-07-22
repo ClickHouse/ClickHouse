@@ -1210,12 +1210,13 @@ StorageFileSource::StorageFileSource(
     FilesIteratorPtr files_iterator_,
     std::unique_ptr<ReadBuffer> read_buf_,
     bool need_only_count_,
-    FormatParserGroupPtr parser_group_)
-    : ISource(std::make_shared<const Block>(info.source_header), false), WithContext(context_)
+    FormatParserSharedResourcesPtr parser_shared_resources_)
+    : ISource(std::make_shared<const Block>(info.source_header), false)
+    , WithContext(context_)
     , storage(std::move(storage_))
     , files_iterator(std::move(files_iterator_))
     , read_buf(std::move(read_buf_))
-    , parser_group(std::move(parser_group_))
+    , parser_shared_resources(std::move(parser_shared_resources_))
     , columns_description(info.columns_description)
     , requested_columns(info.requested_columns)
     , requested_virtual_columns(info.requested_virtual_columns)
@@ -1440,9 +1441,16 @@ Chunk StorageFileSource::generate()
             chassert(file_num > 0);
 
             input_format = FormatFactory::instance().getInput(
-                storage->format_name, *read_buf, block_for_format, getContext(), max_block_size,
-                storage->format_settings, parser_group,
-                /*is_remote_fs=*/ false, CompressionMethod::None, need_only_count);
+                storage->format_name,
+                *read_buf,
+                block_for_format,
+                getContext(),
+                max_block_size,
+                storage->format_settings,
+                parser_shared_resources,
+                /*is_remote_fs=*/false,
+                CompressionMethod::None,
+                need_only_count);
 
             input_format->setSerializationHints(serialization_hints);
 
@@ -1694,6 +1702,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         progress_callback(FileProgress(0, storage->total_bytes_to_read));
 
     auto parser_group = std::make_shared<FormatParserGroup>(ctx->getSettingsRef(), num_streams, filter_actions_dag, ctx);
+    auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(ctx->getSettingsRef(), num_streams);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -1706,14 +1715,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             read_buffer = std::move(storage->peekable_read_buffer_from_fd);
 
         auto source = std::make_shared<StorageFileSource>(
-            info,
-            storage,
-            ctx,
-            max_block_size,
-            files_iterator,
-            std::move(read_buffer),
-            need_only_count,
-            parser_group);
+            info, storage, ctx, max_block_size, files_iterator, std::move(read_buffer), need_only_count, parser_shared_resources);
 
         pipes.emplace_back(std::move(source));
     }

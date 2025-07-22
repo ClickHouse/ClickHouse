@@ -373,7 +373,7 @@ InputFormatPtr FormatFactory::getInput(
     const ContextPtr & context,
     UInt64 max_block_size,
     const std::optional<FormatSettings> & _format_settings,
-    std::shared_ptr<FormatParserGroup> parser_group,
+    FormatParserSharedResourcesPtr parser_shared_resources,
     bool is_remote_fs,
     CompressionMethod compression,
     bool need_only_count) const
@@ -389,12 +389,8 @@ InputFormatPtr FormatFactory::getInput(
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     const Settings & settings = context->getSettingsRef();
 
-    if (!parser_group)
-        parser_group = std::make_shared<FormatParserGroup>(
-            settings,
-            /*num_streams_=*/ 1,
-            /*filter_actions_dag_=*/ nullptr,
-            /*context_=*/ nullptr);
+    if (!parser_shared_resources)
+        parser_shared_resources = FormatParserSharedResources::singleThreaded(settings);
 
     RowInputFormatParams row_input_format_params;
     row_input_format_params.max_block_size = max_block_size;
@@ -409,12 +405,12 @@ InputFormatPtr FormatFactory::getInput(
 
     // Add ParallelReadBuffer and decompression if needed.
 
-    auto owned_buf = wrapReadBufferIfNeeded(_buf, compression, creators, format_settings, settings, is_remote_fs, parser_group);
+    auto owned_buf = wrapReadBufferIfNeeded(_buf, compression, creators, format_settings, settings, is_remote_fs, parser_shared_resources);
     auto & buf = owned_buf ? *owned_buf : _buf;
 
     // Decide whether to use ParallelParsingInputFormat.
 
-    size_t max_parsing_threads = parser_group->getParsingThreadsPerReader();
+    size_t max_parsing_threads = parser_shared_resources->getParsingThreadsPerReader();
     bool parallel_parsing = max_parsing_threads > 1 && settings[Setting::input_format_parallel_parsing]
         && creators.file_segmentation_engine_creator && !creators.random_access_input_creator && !need_only_count;
 
@@ -465,7 +461,7 @@ InputFormatPtr FormatFactory::getInput(
     else if (creators.random_access_input_creator)
     {
         format = creators.random_access_input_creator(
-            buf, sample, format_settings, context->getReadSettings(), is_remote_fs, parser_group);
+            buf, sample, format_settings, context->getReadSettings(), is_remote_fs, parser_shared_resources, nullptr);
     }
     else
     {
@@ -498,11 +494,11 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
     const FormatSettings & format_settings,
     const Settings & settings,
     bool is_remote_fs,
-    const FormatParserGroupPtr & parser_group) const
+    const FormatParserSharedResourcesPtr & parser_shared_resources) const
 {
     std::unique_ptr<ReadBuffer> res;
 
-    size_t max_download_threads = parser_group->getIOThreadsPerReader();
+    size_t max_download_threads = parser_shared_resources->getIOThreadsPerReader();
     bool parallel_read = is_remote_fs && max_download_threads > 1 && format_settings.seekable_read && isBufferWithFileSize(buf);
     if (creators.random_access_input_creator)
         parallel_read &= compression != CompressionMethod::None;

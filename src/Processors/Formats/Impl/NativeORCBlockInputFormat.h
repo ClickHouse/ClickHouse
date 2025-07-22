@@ -63,7 +63,12 @@ class NativeORCBlockInputFormat : public IInputFormat
 {
 public:
     NativeORCBlockInputFormat(
-        ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_, bool use_prefetch_, size_t min_bytes_for_seek_, FormatParserGroupPtr parser_group_);
+        ReadBuffer & in_,
+        SharedHeader header_,
+        const FormatSettings & format_settings_,
+        bool use_prefetch_,
+        size_t min_bytes_for_seek_,
+        FormatFilterInfoPtr filter_info_);
 
     String getName() const override { return "ORCBlockInputFormat"; }
 
@@ -104,7 +109,7 @@ private:
     const std::unordered_set<int> & skip_stripes;
     const bool use_prefetch;
     const size_t min_bytes_for_seek;
-    FormatParserGroupPtr parser_group;
+    FormatFilterInfoPtr filter_info;
 
     std::vector<int> selected_stripes;
     size_t read_iterator;

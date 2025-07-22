@@ -504,14 +504,12 @@ void registerInputFormatParquetMetadata(FormatFactory & factory)
     factory.registerRandomAccessInputFormat(
         "ParquetMetadata",
         [](ReadBuffer & buf,
-            const Block & sample,
-            const FormatSettings & settings,
-            const ReadSettings &,
-            bool /* is_remote_fs */,
-            FormatParserGroupPtr)
-        {
-            return std::make_shared<ParquetMetadataInputFormat>(buf, std::make_shared<const Block>(sample), settings);
-        });
+           const Block & sample,
+           const FormatSettings & settings,
+           const ReadSettings &,
+           bool /* is_remote_fs */,
+           FormatParserSharedResourcesPtr)
+        { return std::make_shared<ParquetMetadataInputFormat>(buf, std::make_shared<const Block>(sample), settings); });
     factory.markFormatSupportsSubsetOfColumns("ParquetMetadata");
 }
 

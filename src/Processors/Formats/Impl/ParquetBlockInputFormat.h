@@ -58,7 +58,7 @@ public:
         ReadBuffer & buf,
         SharedHeader header,
         const FormatSettings & format_settings_,
-        FormatParserGroupPtr parser_group_,
+        FormatParserSharedResourcesPtr parser_shared_resources_,
         size_t min_bytes_for_seek_);
 
     ~ParquetBlockInputFormat() override;
@@ -294,7 +294,7 @@ private:
 
     const FormatSettings format_settings;
     const std::unordered_set<int> & skip_row_groups;
-    FormatParserGroupPtr parser_group;
+    FormatParserSharedResourcesPtr parser_shared_resources;
     size_t min_bytes_for_seek;
     const size_t max_pending_chunks_per_row_group_batch = 2;
 
