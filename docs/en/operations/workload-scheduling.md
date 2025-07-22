@@ -355,7 +355,7 @@ Do not set `throw_on_unknown_workload` to `true` unless `CREATE WORKLOAD default
 - [merge_workload](/operations/settings/merge-tree-settings.md#merge_workload) merge tree setting
 - [merge_workload](/operations/server-configuration-parameters/settings.md#merge_workload) global server setting
 - [mutation_workload](/operations/settings/merge-tree-settings.md#mutation_workload) merge tree setting
-- [mutation_workload](/operations/server-configuration-parameters/settings.md#mutation_workload) global server settin
+- [mutation_workload](/operations/server-configuration-parameters/settings.md#mutation_workload) global server setting
 - [workload_path](/operations/server-configuration-parameters/settings.md#workload_path) global server setting
 - [workload_zookeeper_path](/operations/server-configuration-parameters/settings.md#workload_zookeeper_path) global server setting
 - [cpu_slot_preemption](/operations/server-configuration-parameters/settings.md#cpu_slot_preemption) global server setting
