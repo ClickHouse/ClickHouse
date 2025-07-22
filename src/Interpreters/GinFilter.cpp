@@ -235,13 +235,9 @@ std::vector<uint32_t> GinFilter::getIndices(
     const size_t full_start = ranges.front().begin + 1;
     const size_t full_end = ranges.back().end + 1;
 
-    //std::println("  Full range: [{} {}]", full_start, full_end);
-
     GinIndexPostingsList range_bitset;
     for (const MarkRange &range : ranges)
         range_bitset.addRange(range.begin + 1, range.end + 2); // Yes, i know how it looks...
-
-    //std::println("  range_bitset {}", range_bitset.cardinality());
 
     const GinPostingsCachePtr postings_cache = cache_store->getCachedPostings(*filter);
     GinIndexPostingsList posting_bitset;
@@ -275,13 +271,9 @@ std::vector<uint32_t> GinFilter::getIndices(
         }
 
         posting_bitset |= range_matches;
-
-        //std::println("  posting_bitset {}", posting_bitset.cardinality());
     }
 
     range_bitset &= posting_bitset;
-
-    //std::println("  range_bitset2 {}", range_bitset.cardinality());
 
     const size_t cardinality = range_bitset.cardinality();
     std::vector<uint32_t> indices(cardinality);

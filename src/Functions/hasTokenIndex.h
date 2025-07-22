@@ -112,16 +112,6 @@ class FunctionIndex : public IFunction
     {
         const PaddedPODArray<UInt64> &offsets = col_part_offset_vector->getData();
 
-        // std::println("  postingArrayToOutput [{} - {}] [{} - {}] -> [{} - {}]",
-        //     start, end,
-        //     matching_rows.front(), matching_rows.back(),
-        //     col_part_offset_vector->getElement(start),
-        //     col_part_offset_vector->getElement(end - 1)
-        // );
-
-        // size_t inserted = 0;
-        // size_t total = 0;
-
         const UInt64 *it = std::lower_bound(offsets.begin(), offsets.end(), matching_rows.front() - 1);
         const UInt64 *end_it = std::upper_bound(it, offsets.end(), matching_rows.back());
 
@@ -129,29 +119,24 @@ class FunctionIndex : public IFunction
         {
             const size_t match_offset = row - 1;
 
-            it = std::lower_bound(it, end_it, match_offset);
+            chassert(*it <= match_offset);
 
-            size_t idx = std::distance(offsets.begin(), it);
+            if (*it != match_offset)
+                it = std::lower_bound(it, end_it, match_offset);
 
-            chassert(offsets[idx] >= match_offset);
+            chassert(*it >= match_offset);
 
-            if (offsets[idx] == match_offset)
+            if (*it == match_offset)
             {
+                const size_t idx = std::distance(offsets.begin(), it);
                 chassert(result[idx] == 0);
                 result[idx] = 1;
-                // ++inserted;
-            } // else {
+            }
 
-            //     throw Exception(ErrorCodes::BAD_ARGUMENTS, "HEEE skipped {} vs {} {} {}!!",
-            //         match_offset, offsets[idx - 1], offsets[idx], offsets[idx + 1]);
-            // }
-
-            // ++total;
-            /// if (lower_bound_offset > match_offset) continue; /// there is a hole... just continue
+            std::advance(it, 1);
         }
+    }
 
-        // std::println("  Inserted {} total {}", inserted, total);
-	}
 
 public:
     static constexpr auto name = Impl::name;
@@ -277,14 +262,6 @@ public:
                 ranges_map[current_index_mark].attachOrMergeLastRange(MarkRange(mark_start, mark_end));
             }
         }
-
-        // for ( const auto &[index_mark, subranges] : ranges_map)
-        // {
-        //     std::print("index {} :", index_mark);
-        //     for (const MarkRange &range : subranges)
-        //         std::print(" {}:{},", range.begin, range.end);
-        //     std::print("\n");
-        // }
 
         const size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
         const size_t index_marks_count = (marks_count + index_granularity - 1) / index_granularity;
