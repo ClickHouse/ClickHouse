@@ -24,7 +24,7 @@ public:
     /// @param main_table_ if Shards contains main_table then this parameter will be ignored
     ReadFromRemote(
         ClusterProxy::SelectStreamFactory::Shards shards_,
-        Block header_,
+        SharedHeader header_,
         QueryProcessingStage::Enum stage_,
         StorageID main_table_,
         ASTPtr table_func_ptr_,
@@ -63,18 +63,18 @@ private:
     const String cluster_name;
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
 
-    Pipes addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const Header & out_header);
+    Pipes addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const SharedHeader & out_header);
 
     void addLazyPipe(
         Pipes & pipes,
         const ClusterProxy::SelectStreamFactory::Shard & shard,
-        const Header & out_header,
+        const SharedHeader & out_header,
         size_t parallel_marshalling_threads);
 
     void addPipe(
         Pipes & pipes,
         const ClusterProxy::SelectStreamFactory::Shard & shard,
-        const Header & out_header,
+        const SharedHeader & out_header,
         size_t parallel_marshalling_threads);
 };
 
@@ -87,7 +87,7 @@ public:
         ClusterPtr cluster_,
         const StorageID & storage_id_,
         ParallelReplicasReadingCoordinatorPtr coordinator_,
-        Block header_,
+        SharedHeader header_,
         QueryProcessingStage::Enum stage_,
         ContextMutablePtr context_,
         ThrottlerPtr throttler_,
@@ -112,9 +112,9 @@ public:
     ParallelReplicasReadingCoordinatorPtr getCoordinator() const { return coordinator; }
 
 private:
-    Pipes addPipes(ASTPtr ast, const Header & out_header);
+    Pipes addPipes(ASTPtr ast, const SharedHeader & out_header);
 
-    Pipe createPipeForSingeReplica(const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const Header & out_header,
+    Pipe createPipeForSingeReplica(const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const SharedHeader & out_header,
                                    size_t parallel_marshalling_threads);
 
     ClusterPtr cluster;

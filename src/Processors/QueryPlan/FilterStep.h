@@ -10,7 +10,7 @@ class FilterStep : public ITransformingStep
 {
 public:
     FilterStep(
-        const Header & input_header_,
+        const SharedHeader & input_header_,
         ActionsDAG actions_dag_,
         String filter_column_name_,
         bool remove_filter_column_);

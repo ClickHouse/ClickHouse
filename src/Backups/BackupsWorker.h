@@ -139,6 +139,7 @@ private:
 
     const bool allow_concurrent_backups;
     const bool allow_concurrent_restores;
+    const bool shutdown_wait_backups_and_restores;
     const bool remove_backup_files_after_failure;
     const bool test_randomize_order;
     const bool test_inject_sleep;
