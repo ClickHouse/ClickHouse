@@ -105,7 +105,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
 
     const auto reading_path = configuration->getPathForRead();
 
-    if (!reading_path.withGlobs())
+    if (!reading_path.hasGlobs())
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -114,7 +114,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     }
 
     const auto globbed_key = reading_path.path;
-    object_storage_iterator = object_storage->iterate(reading_path.withoutGlobs(), list_objects_batch_size_);
+    object_storage_iterator = object_storage->iterate(reading_path.cutGlobs(configuration->supportsPartialPathPrefix()), list_objects_batch_size_);
 
     matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_key));
     if (!matcher->ok())

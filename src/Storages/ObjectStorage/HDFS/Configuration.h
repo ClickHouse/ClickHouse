@@ -39,23 +39,19 @@ public:
     std::string getSignatures(bool with_structure = true) const { return with_structure ? signatures_with_structure : signatures_without_structure; }
     size_t getMaxNumberOfArguments(bool with_structure = true) const { return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure; }
 
+    bool supportsPartialPathPrefix() const override { return false; }
+
     /// Unlike s3 and azure, which are object storages,
     /// hdfs is a filesystem, so it cannot list files by partial prefix,
     /// only by directory.
     /// Therefore in the below methods we use supports_partial_prefix=false.
     Path getRawPath() const override { return path; }
-    void setRawPath(const Path & path_) override { path = {path_.path, /* supports_partial_prefix=false */ false}; }
+    void setRawPath(const Path & path_) override { path = path_; }
 
     const Paths & getPaths() const override { return paths; }
     void setPaths(const Paths & paths_) override
     {
-        paths.clear();
-        paths.reserve(paths_.size());
-        // copy paths adjusting `supports_partial_prefix=false` since partial prefixes are not allowed in HDFS
-        for (const auto & p : paths_)
-        {
-            paths.emplace_back(p.path, /* supports_partial_prefix */false);
-        }
+        paths = paths_;
     }
 
     String getNamespace() const override { return ""; }

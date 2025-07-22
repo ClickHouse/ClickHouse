@@ -162,7 +162,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     std::unique_ptr<IObjectIterator> iterator;
     const auto reading_path = configuration->getPathForRead();
-    if (reading_path.withGlobs())
+    if (reading_path.hasGlobs())
     {
         if (hasExactlyOneBracketsExpansion(reading_path.path))
         {
@@ -725,10 +725,10 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     , file_progress_callback(file_progress_callback_)
 {
     const auto reading_path = configuration->getPathForRead();
-    if (reading_path.withGlobs())
+    if (reading_path.hasGlobs())
     {
         const auto & key_with_globs = reading_path;
-        const auto key_prefix = reading_path.withoutGlobs();
+        const auto key_prefix = reading_path.cutGlobs(configuration->supportsPartialPathPrefix());
 
         object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size);
 

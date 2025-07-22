@@ -205,7 +205,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     {
         configuration->setRawPath({raw_path.path + '*'});
     }
-    else if (!raw_path.withGlobs())
+    else if (!raw_path.hasGlobs())
     {
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");
     }

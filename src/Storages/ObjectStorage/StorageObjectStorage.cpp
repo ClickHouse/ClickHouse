@@ -80,7 +80,7 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
 
     const auto path = configuration->getRawPath();
 
-    if (!configuration->isArchive() && !path.withGlobs() && !local_distributed_processing)
+    if (!configuration->isArchive() && !path.hasGlobs() && !local_distributed_processing)
         return path.path;
 
     if (auto file = file_iterator->next(0))
@@ -426,7 +426,7 @@ SinkToStoragePtr StorageObjectStorage::write(
                         raw_path.path);
     }
 
-    if (raw_path.withGlobsIgnorePartitionWildcard())
+    if (raw_path.hasGlobsIgnorePartitionWildcard())
     {
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                         "Non partitioned table with path '{}' that contains globs, the table is in readonly mode",
@@ -494,7 +494,7 @@ void StorageObjectStorage::truncate(
                         path.path);
     }
 
-    if (path.withGlobs())
+    if (path.hasGlobs())
     {
         throw Exception(
             ErrorCodes::DATABASE_ACCESS_DENIED,

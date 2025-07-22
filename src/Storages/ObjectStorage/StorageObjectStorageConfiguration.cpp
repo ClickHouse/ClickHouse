@@ -102,8 +102,8 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
         columns.getOrdinary(),
         context,
         format,
-        getRawPath().withGlobs(),
-        getRawPath().withPartitionWildcard(),
+        getRawPath().hasGlobs(),
+        getRawPath().hasPartitionWildcard(),
         partition_columns_in_data_file);
 
     if (partition_strategy)
@@ -130,25 +130,25 @@ StorageObjectStorageConfiguration::Path StorageObjectStorageConfiguration::getPa
     return Path {partition_strategy->getPathForWrite(raw_path.path, partition_id)};
 }
 
-bool StorageObjectStorageConfiguration::Path::withPartitionWildcard() const
+bool StorageObjectStorageConfiguration::Path::hasPartitionWildcard() const
 {
     static const String PARTITION_ID_WILDCARD = "{_partition_id}";
     return path.find(PARTITION_ID_WILDCARD) != String::npos;
 }
 
-bool StorageObjectStorageConfiguration::Path::withGlobsIgnorePartitionWildcard() const
+bool StorageObjectStorageConfiguration::Path::hasGlobsIgnorePartitionWildcard() const
 {
-    if (!withPartitionWildcard())
-        return withGlobs();
+    if (!hasPartitionWildcard())
+        return hasGlobs();
     return PartitionedSink::replaceWildcards(path, "").find_first_of("*?{") != std::string::npos;
 }
 
-bool StorageObjectStorageConfiguration::Path::withGlobs() const
+bool StorageObjectStorageConfiguration::Path::hasGlobs() const
 {
     return path.find_first_of("*?{") != std::string::npos;
 }
 
-std::string StorageObjectStorageConfiguration::Path::withoutGlobs() const
+std::string StorageObjectStorageConfiguration::Path::cutGlobs(bool supports_partial_prefix) const
 {
     if (supports_partial_prefix)
     {
