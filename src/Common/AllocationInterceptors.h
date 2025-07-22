@@ -8,7 +8,7 @@
 
 // NOLINTBEGIN
 
-#if defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER) || defined(UNDEFINED_BEHAVIOR_SANITIZER)
+#if defined(SANITIZER) || defined(SANITIZE_COVERAGE)
 
 #define __real_malloc(size) ::malloc(size)
 #define __real_calloc(nmemb, size) ::calloc(nmemb, size)
