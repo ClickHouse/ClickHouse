@@ -21,23 +21,20 @@
 #define SZ_DYNAMIC_DISPATCH 0
 
 #if USE_MULTITARGET_CODE
-#    define SZ_USE_X86_AVX512 1
-#    define SZ_USE_X86_AVX2 1
+#    define SZ_USE_SKYLAKE 1
+#    define SZ_USE_HASWELL 1
+#elif defined(__x86_64__) && defined(__AVX512__)
+#    define SZ_USE_SKYLAKE 1
+#elif defined(__x86_64__) && defined(__AVX2__)
+#    define SZ_USE_HASWELL 1
+#elif defined(__aarch64__) && defined(__ARM_FEATURE_SVE)
+#    define SZ_USE_SVE 1
 #elif defined(__aarch64__) && defined(__ARM_NEON)
-#    define SZ_USE_ARM_NEON 1
+#    define SZ_USE_NEON 1
 #endif
 
-#pragma clang diagnostic ignored "-Wold-style-cast"
-#pragma clang diagnostic ignored "-Wcast-align"
-#pragma clang diagnostic ignored "-Wreserved-identifier"
-#pragma clang diagnostic ignored "-Wcomma"
-#pragma clang diagnostic ignored "-Wunknown-pragmas"
-#pragma clang diagnostic ignored "-Wdocumentation"
-#pragma clang diagnostic ignored "-Wcast-qual"
-#pragma clang diagnostic ignored "-Wcast-function-type-strict"
-#pragma clang diagnostic ignored "-Wextra-semi-stmt"
-#pragma clang diagnostic ignored "-Wduplicate-enum"
-#include <stringzilla/stringzilla.h>
+#include <stringzilla/compare.h>
+#include <stringzilla/find.h>
 
 namespace DB::impl
 {
@@ -51,15 +48,53 @@ class StringSearcherImpl;
 template <bool ASCII>
 class StringSearcherImpl<true, ASCII> : public StringSearcherBase
 {
+    using FindFunction = decltype(sz_find);
+    using EqualFunction = decltype(sz_equal);
+
     /// string to be searched for
     sz_cptr_t const needle;
     sz_cptr_t const needle_end;
+
+    FindFunction * find;
+    EqualFunction * equal;
 
 public:
     StringSearcherImpl(const UInt8 * needle_, size_t needle_size)
         : needle(reinterpret_cast<sz_cptr_t>(needle_))
         , needle_end(needle + needle_size)
     {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX512BW))
+        {
+            find = sz_find_skylake;
+            equal = sz_equal_skylake;
+        }
+        else if (isArchSupported(TargetArch::AVX2))
+        {
+            find = sz_find_haswell;
+            equal = sz_equal_haswell;
+        }
+        else
+        {
+            find = sz_find_serial;
+            equal = sz_equal_serial;
+        }
+#elif defined(__aarch64__) && defined(__ARM_FEATURE_SVE)
+        {
+            find = sz_find_sve;
+            equal = sz_equal_neon; /// No SVE specific implementation
+        }
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+        {
+            find = sz_find_neon;
+            equal = sz_equal_neon;
+        }
+#else
+        {
+            find = sz_find_serial;
+            equal = sz_equal_serial;
+        }
+#endif
     }
 
     bool compare(const UInt8 * /*haystack*/, const UInt8 * /*haystack_end*/, const UInt8 * pos) const override
@@ -67,17 +102,7 @@ public:
         sz_cptr_t pos_cptr = reinterpret_cast<sz_cptr_t>(pos);
         size_t needle_size = needle_end - needle;
 
-#if defined(__aarch64__) && defined(__ARM_NEON)
-        return sz_equal_neon(pos_cptr, needle, needle_size);
-#else
-#    if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
-            return sz_equal_avx512(pos_cptr, needle, needle_size);
-        else if (isArchSupported(TargetArch::AVX2))
-            return sz_equal_avx2(pos_cptr, needle, needle_size);
-#    endif
-        return sz_equal_serial(pos_cptr, needle, needle_size);
-#endif
+        return equal(pos_cptr, needle, needle_size);
     }
 
     const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const override
@@ -85,27 +110,11 @@ public:
         if (needle == needle_end)
             return haystack;
 
-        const char * res = nullptr;
         sz_cptr_t haystack_cptr = reinterpret_cast<sz_cptr_t>(haystack);
         size_t haystack_size = haystack_end - haystack;
         size_t needle_size = needle_end - needle;
 
-#if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
-            res = sz_find_avx512(haystack_cptr, haystack_size, needle, needle_size);
-        else if (isArchSupported(TargetArch::AVX2))
-            res = sz_find_avx2(haystack_cptr, haystack_size, needle, needle_size);
-        else
-            res = sz_find_serial(haystack_cptr, haystack_size, needle, needle_size);
-#elif defined(__aarch64__) && defined(__ARM_NEON)
-        {
-            res = sz_find_neon(haystack_cptr, haystack_size, needle, needle_size);
-        }
-#else
-        {
-            res = sz_find_serial(haystack_cptr, haystack_size, needle, needle_size);
-        }
-#endif
+        const char * res = find(haystack_cptr, haystack_size, needle, needle_size);
 
         if (!res)
             return haystack_end;

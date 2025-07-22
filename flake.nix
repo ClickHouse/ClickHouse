@@ -237,6 +237,6 @@
     contrib-ai-sdk-cpp = { url = "github:ClickHouse/ai-sdk-cpp/5ae9bfe8cab2fd930764501d7203dbe3651fc9b5"; flake = false; };
     contrib-nlohmann-json = { url = "github:nlohmann/json/55f93686c01528224f448c19128836e7df245f72"; flake = false; };
     contrib-crc32c = { url = "github:google/crc32c/02e65f4fd3065d27b2e29324800ca6d04df16126"; flake = false; };
-    contrib-StringZilla = { url = "github:ashvardanian/StringZilla/960967d78c7facf6de2de9d5eecc0ac7f5ce19b8"; flake = false; };
+    contrib-StringZilla = { url = "github:ashvardanian/StringZilla/1fc1caba5261bcc9eda9e0c5e0c53533b5c06ddf"; flake = false; };
   };
 }
