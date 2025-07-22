@@ -40,6 +40,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     ParserKeyword s_modify_order_by(Keyword::MODIFY_ORDER_BY);
     ParserKeyword s_modify_sample_by(Keyword::MODIFY_SAMPLE_BY);
+    ParserKeyword s_materialize(Keyword::MATERIALIZE);
     ParserKeyword s_modify_ttl(Keyword::MODIFY_TTL);
     ParserKeyword s_materialize_ttl(Keyword::MATERIALIZE_TTL);
     ParserKeyword s_modify_setting(Keyword::MODIFY_SETTING);
@@ -123,6 +124,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_remove_ttl(Keyword::REMOVE_TTL);
     ParserKeyword s_remove_sample_by(Keyword::REMOVE_SAMPLE_BY);
     ParserKeyword s_apply_deleted_mask(Keyword::APPLY_DELETED_MASK);
+    ParserKeyword s_apply_patches(Keyword::APPLY_PATCHES);
 
     ParserToken parser_opening_round_bracket(TokenType::OpeningRoundBracket);
     ParserToken parser_closing_round_bracket(TokenType::ClosingRoundBracket);
@@ -885,6 +887,13 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_modify_ttl.ignore(pos, expected))
             {
+                /// MODIFY TTL MATERIALIZE|REMOVE|MODIFY is illegal
+                /// because MATERIALIZE|REMOVE|MODIFY TTL is used instead.
+                if (s_materialize.checkWithoutMoving(pos, expected) ||
+                    s_remove.checkWithoutMoving(pos, expected) ||
+                    s_modify.checkWithoutMoving(pos, expected))
+                    return false;
+
                 if (!parser_ttl_list.parse(pos, command_ttl, expected))
                     return false;
                 command->type = ASTAlterCommand::MODIFY_TTL;
@@ -951,6 +960,16 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             else if (s_apply_deleted_mask.ignore(pos, expected))
             {
                 command->type = ASTAlterCommand::APPLY_DELETED_MASK;
+
+                if (s_in_partition.ignore(pos, expected))
+                {
+                    if (!parser_partition.parse(pos, command_partition, expected))
+                        return false;
+                }
+            }
+            else if (s_apply_patches.ignore(pos, expected))
+            {
+                command->type = ASTAlterCommand::APPLY_PATCHES;
 
                 if (s_in_partition.ignore(pos, expected))
                 {

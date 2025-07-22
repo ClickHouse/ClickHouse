@@ -500,7 +500,7 @@ The `SHOW CLUSTER(S)` statement returns a list of clusters.
 All available clusters are listed in the [`system.clusters`](../../operations/system-tables/clusters.md) table.
 
 :::note
-The `SHOW CLUSTER name` query displays the contents of `system.clusters` table for the specified cluster name.
+The `SHOW CLUSTER name` query displays `cluster`, `shard_num`, `replica_num`, `host_name`, `host_address`, and `port` of the `system.clusters` table for the specified cluster name.
 :::
 
 ### Syntax {#syntax-20}
@@ -546,16 +546,10 @@ Row 1:
 ──────
 cluster:                 test_shard_localhost
 shard_num:               1
-shard_weight:            1
 replica_num:             1
 host_name:               localhost
 host_address:            127.0.0.1
 port:                    9000
-is_local:                1
-user:                    default
-default_database:
-errors_count:            0
-estimated_recovery_time: 0
 ```
 
 ## SHOW SETTINGS {#show-settings}

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-async-insert
+# no-async-insert: https://github.com/ClickHouse/ClickHouse/issues/80105
 
 set -e
 

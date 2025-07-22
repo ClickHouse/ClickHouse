@@ -23,7 +23,23 @@ cluster = ClickHouseCluster(__file__)
 cluster.add_instance(
     "node",
     main_configs=[
-        "configs/postresql.xml",
+        "configs/postgresql.xml",
+        "configs/log.xml",
+        "configs/ssl_conf.xml",
+        "configs/dhparam.pem",
+        "configs/server.crt",
+        "configs/server.key",
+    ],
+    user_configs=["configs/default_passwd.xml"],
+    with_postgres=True,
+    with_postgresql_java_client=True,
+    env_variables={"UBSAN_OPTIONS": "print_stacktrace=1"},
+)
+
+cluster.add_instance(
+    "node_secure",
+    main_configs=[
+        "configs/postgresql_secure.xml",
         "configs/log.xml",
         "configs/ssl_conf.xml",
         "configs/dhparam.pem",
@@ -133,6 +149,47 @@ def test_psql_client(started_cluster):
             "INSERT 0 0",
             "SELECT 0\n",
         ]
+    )
+
+def test_psql_client_secure(started_cluster):
+    node = cluster.instances["node_secure"]
+
+    started_cluster.copy_file_to_container(
+        started_cluster.postgres_id,
+        os.path.join(SCRIPT_DIR, "queries", "query1.sql"),
+        "/query1.sql",
+    )
+
+    cmd_prefix = [
+        "/usr/bin/psql",
+        f"sslmode=require host={node.hostname} port={server_port} user=user_with_sha256 dbname=default password=abacaba",
+    ]
+    cmd_prefix += ["--no-align", "--field-separator=' '"]
+
+    res = started_cluster.exec_in_container(
+        started_cluster.postgres_id, cmd_prefix + ["-f", "/query1.sql"], shell=True
+    )
+    logging.debug(res)
+    assert res == "\n".join(["a", "1", "(1 row)", ""])
+
+
+    postgres_container = started_cluster.get_docker_handle(started_cluster.postgres_id);
+
+    cmd_prefix = [
+        "/usr/bin/psql",
+        f"sslmode=disable host={node.hostname} port={server_port} user=user_with_sha256 dbname=default password=abacaba",
+    ]
+    cmd_prefix += ["--no-align", "--field-separator=' '"]
+
+    code, (stdout, stderr) = postgres_container.exec_run(cmd_prefix + ["-f", "/query1.sql"], demux=True,)
+    logging.debug(f"test_psql_client_secure code:{code} stdout:{stdout}, stderr:{stderr}")
+    assert (
+        "ERROR:  SSL connection required.\n"
+        in stderr.decode()
+    )
+
+    assert node.contains_in_log(
+        f"<Error> PostgreSQLHandler: DB::Exception: SSL connection required."
     )
 
 

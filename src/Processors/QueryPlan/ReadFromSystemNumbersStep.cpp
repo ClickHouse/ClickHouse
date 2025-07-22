@@ -1,8 +1,10 @@
+#include <memory>
 #include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
 
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Sources/NullSource.h>
@@ -73,9 +75,9 @@ public:
     }
     String getName() const override { return "Numbers"; }
 
-    static Block createHeader(const std::string & column_name)
+    static SharedHeader createHeader(const std::string & column_name)
     {
-        return {ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), column_name)};
+        return std::make_shared<const Block>(Block{ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), column_name)});
     }
 
 protected:
@@ -421,7 +423,7 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
     size_t max_block_size_,
     size_t num_streams_)
     : SourceStepWithFilter(
-        storage_snapshot_->getSampleBlockForColumns(column_names_),
+        std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(column_names_)),
         column_names_,
         query_info_,
         storage_snapshot_,
@@ -448,8 +450,8 @@ void ReadFromSystemNumbersStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     if (pipe.empty())
     {
-        assert(output_header != std::nullopt);
-        pipe = Pipe(std::make_shared<NullSource>(*output_header));
+        chassert(output_header != nullptr);
+        pipe = Pipe(std::make_shared<NullSource>(output_header));
     }
 
     /// Add storage limits.
@@ -461,6 +463,11 @@ void ReadFromSystemNumbersStep::initializePipeline(QueryPipelineBuilder & pipeli
         processors.emplace_back(processor);
 
     pipeline.init(std::move(pipe));
+}
+
+QueryPlanStepPtr ReadFromSystemNumbersStep::clone() const
+{
+    return std::make_unique<ReadFromSystemNumbersStep>(column_names, getQueryInfo(), getStorageSnapshot(), getContext(), storage, max_block_size, num_streams);
 }
 
 Pipe ReadFromSystemNumbersStep::makePipe()

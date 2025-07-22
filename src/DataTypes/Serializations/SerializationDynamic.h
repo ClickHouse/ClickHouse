@@ -31,6 +31,15 @@ public:
             V1 = 1,
             /// V2 serialization: the same as V1 but without max_dynamic_types parameter in DynamicStructure stream.
             V2 = 2,
+            /// FLATTENED serialization:
+            /// - DynamicStructure stream:
+            ///     <list of all types stored in Dynamic column>
+            /// - DynamicData stream:
+            ///     <indexes of types stored in each row, have type UInt(8|16|32|64) depending on the total number of types>
+            ///     <data for each type in order from the types list>
+            ///
+            /// This serialization is used in Native format only for easier support for Dynamic type in clients.
+            FLATTENED = 3,
         };
 
         Value value;
@@ -128,6 +137,10 @@ private:
         DataTypePtr variant_type;
         size_t num_dynamic_types;
         ColumnDynamic::StatisticsPtr statistics;
+
+        /// For flattened serialization only.
+        DataTypes flattened_data_types;
+        DataTypePtr flattened_indexes_type;
 
         explicit DeserializeBinaryBulkStateDynamicStructure(UInt64 structure_version_)
             : structure_version(structure_version_)

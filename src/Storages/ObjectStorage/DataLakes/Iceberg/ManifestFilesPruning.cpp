@@ -1,3 +1,4 @@
+#include <optional>
 #include "config.h"
 
 #if USE_AVRO
@@ -18,67 +19,41 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
 using namespace DB;
 
 namespace ProfileEvents
 {
-    extern const Event IcebergPartitionPrunnedFiles;
-    extern const Event IcebergMinMaxIndexPrunnedFiles;
+    extern const Event IcebergPartitionPrunedFiles;
+    extern const Event IcebergMinMaxIndexPrunedFiles;
 }
-
 
 namespace Iceberg
 {
 
 DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name)
 {
+    auto transform_and_argument = parseTransformAndArgument(transform_name_src);
+    if (!transform_and_argument)
+    {
+        LOG_WARNING(&Poco::Logger::get("Iceberg Partition Pruning"), "Cannot parse iceberg transform name: {}.", transform_name_src);
+        return nullptr;
+    }
+
     std::string transform_name = Poco::toLower(transform_name_src);
-
-    if (transform_name == "year" || transform_name == "years")
-        return makeASTFunction("toYearNumSinceEpoch", std::make_shared<DB::ASTIdentifier>(column_name));
-
-    if (transform_name == "month" || transform_name == "months")
-        return makeASTFunction("toMonthNumSinceEpoch", std::make_shared<DB::ASTIdentifier>(column_name));
-
-    if (transform_name == "day" || transform_name == "date" || transform_name == "days" || transform_name == "dates")
-        return makeASTFunction("toRelativeDayNum", std::make_shared<DB::ASTIdentifier>(column_name));
-
-    if (transform_name == "hour" || transform_name == "hours")
-        return makeASTFunction("toRelativeHourNum", std::make_shared<DB::ASTIdentifier>(column_name));
-
     if (transform_name == "identity")
         return std::make_shared<ASTIdentifier>(column_name);
 
     if (transform_name == "void")
         return makeASTFunction("tuple");
 
-    if (transform_name.starts_with("truncate"))
+    if (transform_and_argument->argument.has_value())
     {
-        /// should look like transform[N]
-
-        if (transform_name.back() != ']')
-            return nullptr;
-
-        auto argument_start = transform_name.find('[');
-
-        if (argument_start == std::string::npos)
-            return nullptr;
-
-        auto argument_width = transform_name.length() - 2 - argument_start;
-        std::string width = transform_name.substr(argument_start + 1, argument_width);
-        size_t truncate_width;
-        bool parsed = DB::tryParse<size_t>(truncate_width, width);
-
-        if (!parsed)
-            return nullptr;
-
-        return makeASTFunction("icebergTruncate", std::make_shared<DB::ASTLiteral>(truncate_width), std::make_shared<DB::ASTIdentifier>(column_name));
+        return makeASTFunction(
+                transform_and_argument->transform_name, std::make_shared<DB::ASTLiteral>(*transform_and_argument->argument), std::make_shared<DB::ASTIdentifier>(column_name));
     }
-    else
-    {
-        return nullptr;
-    }
+    return makeASTFunction(transform_and_argument->transform_name, std::make_shared<DB::ASTIdentifier>(column_name));
 }
 
 std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManifest(const DB::ActionsDAG * source_dag, std::vector<Int32> & used_columns_in_filter) const
@@ -191,7 +166,7 @@ bool ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
 
         if (!can_be_true)
         {
-            ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunnedFiles);
+            ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedFiles);
             return true;
         }
     }
@@ -207,7 +182,7 @@ bool ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
         auto hyperrectangle = entry.columns_infos.at(column_id).hyperrectangle;
         if (hyperrectangle.has_value() && !key_condition.mayBeTrueInRange(1, &hyperrectangle->left, &hyperrectangle->right, {name_and_type->type}))
         {
-            ProfileEvents::increment(ProfileEvents::IcebergMinMaxIndexPrunnedFiles);
+            ProfileEvents::increment(ProfileEvents::IcebergMinMaxIndexPrunedFiles);
             return true;
         }
     }

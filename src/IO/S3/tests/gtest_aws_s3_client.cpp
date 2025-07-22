@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "IO/S3/Credentials.h"
+#include <IO/S3/Credentials.h>
 #include "config.h"
 
 
@@ -28,7 +28,7 @@
 #include <IO/S3Settings.h>
 #include <Poco/Util/ServerApplication.h>
 
-#include "TestPocoHTTPServer.h"
+#include <IO/S3/tests/TestPocoHTTPServer.h>
 
 namespace DB::S3RequestSetting
 {
@@ -124,16 +124,19 @@ void testServerSideEncryption(
     DB::RemoteHostFilter remote_host_filter;
     unsigned int s3_max_redirects = 100;
     unsigned int s3_retry_attempts = 0;
+    bool s3_slow_all_threads_after_network_error = true;
     DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientAppendExtraHeaders/test.txt");
     String access_key_id = "ACCESS_KEY_ID";
     String secret_access_key = "SECRET_ACCESS_KEY";
     String region = "us-east-1";
     bool enable_s3_requests_logging = false;
+
     DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
         region,
         remote_host_filter,
         s3_max_redirects,
         s3_retry_attempts,
+        s3_slow_all_threads_after_network_error,
         enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
         /* get_request_throttler = */ {},

@@ -37,7 +37,7 @@ size_t chooseSegmentSize(
     /// it would be a huge waste of cache space.
     constexpr std::array<size_t, 3> borders{128, 1024, 16384};
 
-    LOG_DEBUG(
+    LOG_TRACE(
         log,
         "mark_segment_size={}, min_marks_per_task*threads={}, sum_marks/number_of_replicas^2={}",
         mark_segment_size,
@@ -62,7 +62,7 @@ size_t chooseSegmentSize(
     {
         if (mark_segment_size >= border)
         {
-            LOG_DEBUG(log, "Chosen segment size: {}", border);
+            LOG_TRACE(log, "Chosen segment size: {}", border);
             return border;
         }
     }
@@ -150,19 +150,27 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
 
     if (buffered_ranges.empty())
     {
-        auto result = extension.sendReadRequest(
+        std::optional<ParallelReadResponse> response = extension.sendReadRequest(
             coordination_mode,
             min_marks_per_task * pool_settings.threads,
             /// For Default coordination mode we don't need to pass part names.
             RangesInDataPartsDescription{});
 
-        if (!result || result->finish)
+        if (response)
         {
-            no_more_tasks_available = true;
-            return nullptr;
+            LOG_DEBUG(log, "Got response: {}", response->describe());
+            if (response->description.empty() || response->finish)
+                no_more_tasks_available = true;
         }
+        else
+        {
+            LOG_DEBUG(log, "Got no response");
+            no_more_tasks_available = true;
+        }
+        if (no_more_tasks_available)
+            return nullptr;
 
-        buffered_ranges = std::move(result->description);
+        buffered_ranges = std::move(response->description);
     }
 
     if (buffered_ranges.empty())
