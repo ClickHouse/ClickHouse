@@ -2,19 +2,18 @@
 
 #if USE_BECH32
 
-#    include <Columns/ColumnFixedString.h>
-#    include <Columns/ColumnString.h>
-#    include <Columns/ColumnTuple.h>
-#    include <DataTypes/DataTypeString.h>
-#    include <DataTypes/DataTypeTuple.h>
-#    include <Functions/FunctionFactory.h>
-#    include <Functions/IFunction.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
 
-#    include <bech32.h>
+#include <bech32.h>
 
 namespace
 {
-
 /** Max length of Bech32 or Bech32m encoding is 90 chars, this includes:
  *
  *      HRP: 1 - 83 human readable characters, 'bc' or 'tb' for a SegWit address
@@ -97,10 +96,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int ILLEGAL_COLUMN;
-extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_COLUMN;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 /// Encode string to Bech32 or Bech32m address
@@ -186,8 +185,7 @@ public:
             const ColumnString::Chars & col0_vec = col0_fixed_string->getChars();
             const ColumnString::Offsets * col0_offsets = nullptr; /// dummy
 
-            return chooseCol1AndExecute(
-                col0_vec, col0_offsets, col1, col2, input_rows_count, have_witness_version, col0_fixed_string->getN());
+            return chooseCol1AndExecute(col0_vec, col0_offsets, col1, col2, input_rows_count, have_witness_version, col0_fixed_string->getN());
         }
 
         throw Exception(
@@ -218,15 +216,7 @@ private:
             const ColumnString::Offsets * col1_offsets = nullptr; /// dummy
 
             return execute(
-                col0_vec,
-                col0_offsets,
-                col1_vec,
-                col1_offsets,
-                col2,
-                input_rows_count,
-                have_witness_version,
-                col0_width,
-                col1_fstr_ptr->getN());
+                col0_vec, col0_offsets, col1_vec, col1_offsets, col2, input_rows_count, have_witness_version, col0_width, col1_fstr_ptr->getN());
         }
 
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", col1->getName(), getName());
@@ -263,21 +253,17 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            size_t human_readable_part_new_offset = human_readable_part_width == 0
-                ? (*human_readable_part_offsets)[i]
-                : human_readable_part_prev_offset + human_readable_part_width;
+            size_t human_readable_part_new_offset = human_readable_part_width == 0 ? (*human_readable_part_offsets)[i] : human_readable_part_prev_offset + human_readable_part_width;
             size_t data_new_offset = data_width == 0 ? (*data_offsets)[i] : data_prev_offset + data_width;
 
             /// NUL chars are used to pad fixed width strings, so we remove them here since they are not valid inputs anyway
-            while (human_readable_part_width > 0 && human_readable_part_vec[human_readable_part_new_offset - 1] == 0
-                   && human_readable_part_new_offset > human_readable_part_prev_offset)
+            while (human_readable_part_width > 0 && human_readable_part_vec[human_readable_part_new_offset - 1] == 0 && human_readable_part_new_offset > human_readable_part_prev_offset)
                 --human_readable_part_new_offset;
 
             /// max encodable data to stay within 90-char limit on Bech32 output
             /// human_readable_part must be at least 1 character and no more than 83
             auto data_len = data_new_offset - data_prev_offset - data_zero_offset;
-            auto human_readable_part_len
-                = human_readable_part_new_offset - human_readable_part_prev_offset - human_readable_part_zero_offset;
+            auto human_readable_part_len = human_readable_part_new_offset - human_readable_part_prev_offset - human_readable_part_zero_offset;
             if (data_len > max_data_len || human_readable_part_len > max_human_readable_part_len || human_readable_part_len < 1)
             {
                 finalizeRow(out_offsets, out_pos, out_begin, i);
@@ -300,8 +286,7 @@ private:
             bech32_data input_5bit;
             input_5bit.push_back(witness_version);
             convertbits<8, 5, true>(input_5bit, input); /// squash input from 8-bit -> 5-bit bytes
-            std::string address = bech32::encode(
-                human_readable_part, input_5bit, witness_version > 0 ? bech32::Encoding::BECH32M : bech32::Encoding::BECH32);
+            std::string address = bech32::encode(human_readable_part, input_5bit, witness_version > 0 ? bech32::Encoding::BECH32M : bech32::Encoding::BECH32);
 
             if (address.empty() || address.size() > max_address_len)
             {
@@ -476,10 +461,7 @@ private:
 
         chassert(
             static_cast<size_t>(human_readable_part_pos - human_readable_part_begin) <= human_readable_part_vec.size(),
-            fmt::format(
-                "too small amount of memory was preallocated: needed {}, but have only {}",
-                human_readable_part_pos - human_readable_part_begin,
-                human_readable_part_vec.size()));
+            fmt::format("too small amount of memory was preallocated: needed {}, but have only {}", human_readable_part_pos - human_readable_part_begin, human_readable_part_vec.size()));
         chassert(
             static_cast<size_t>(data_pos - data_begin) <= data_vec.size(),
             fmt::format(
