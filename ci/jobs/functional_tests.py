@@ -340,7 +340,9 @@ def main():
                 extra_args=runner_options,
             )
         else:
-            run_specific_tests(tests=tests, runs=50 if is_flaky_check else 1, extra_args=runner_options)
+            run_specific_tests(
+                tests=tests, runs=50 if is_flaky_check else 1, extra_args=runner_options
+            )
 
         if not info.is_local_run:
             CH.stop_log_exports()
@@ -412,7 +414,7 @@ def main():
                 f"NOTE: Failed {failures_cnt} tests - do not block pipeline, exit with 0"
             )
             force_ok_exit = True
-        elif failures_cnt > 0 and "ci-non-blocking" in info.pr_number:
+        elif failures_cnt > 0 and "ci-non-blocking" in info.pr_labels:
             print(
                 f"NOTE: Failed {failures_cnt} tests, label 'ci-non-blocking' is set - do not block pipeline - exit with 0"
             )
