@@ -75,7 +75,7 @@ $ mkdir rawdata_dir && cd rawdata_dir
 ```
 
 Use [`dbgen`](/getting-started/example-datasets/star-schema) to generate 100 million rows data with the parameters:
-- s 20
+-s 20
 
 The files like `*.tbl` are expected to output under `./benchmark_sample/rawdata_dir/ssb-dbgen`:
 
