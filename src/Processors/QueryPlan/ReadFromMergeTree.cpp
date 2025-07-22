@@ -1859,7 +1859,6 @@ static void buildIndexes(
             {
                 skip_indexes.per_part_index_orders[part_idx].push_back(i);
             }
-       
 
             index_sizes.clear();
             for (const auto &idx : skip_indexes.useful_indices)
