@@ -1,8 +1,9 @@
-First run
+-- Prepare data
+-- First run
 uuid2
 uuid3
 uuid4
-Second run (copy-paste of the same query)
+-- Second run
 uuid2
 uuid3
 uuid4

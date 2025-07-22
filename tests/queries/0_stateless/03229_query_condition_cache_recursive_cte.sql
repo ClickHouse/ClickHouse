@@ -3,14 +3,14 @@
 
 -- Test for issue #81506 (recursive CTEs return wrong results if the query condition cache is on)
 
-SET allow_experimental_analyzer = 1;
+SET allow_experimental_analyzer = 1; -- needed by recursive CTEs
 
--- (it's silly to use what will be tested below but we have to assume other tests cluttered the query cache)
+-- Start from a clean query condition cache
 SYSTEM DROP QUERY CONDITION CACHE;
 
--- Prepare data
+SELECT '-- Prepare data';
 
-DROP TABLE tab;
+DROP TABLE IF EXISTS tab;
 CREATE TABLE tab
 (
     id String,
@@ -27,27 +27,36 @@ INSERT INTO tab (id, parent) VALUES
   ('uuid5', 'uuid2'),
   ('uuid6', 'uuid4');
 
-SELECT 'First run';
-WITH RECURSIVE
-        'empty' AS zero,
-        _data AS (SELECT arrayJoin(['uuid3']) AS id),
-        rec AS (
-                SELECT id FROM tab WHERE id IN _data
-                UNION ALL
-                SELECT parent AS id FROM tab WHERE tab.id IN rec AND parent != zero GROUP BY parent
-        )
-SELECT * FROM rec GROUP BY id ORDER BY id;
+SELECT '-- First run';
 
-SELECT 'Second run (copy-paste of the same query)';
 WITH RECURSIVE
-        'empty' AS zero,
-        _data AS (SELECT arrayJoin(['uuid3']) AS id),
-        rec AS (
-                SELECT id FROM tab WHERE id IN _data
-                UNION ALL
-                SELECT parent AS id FROM tab WHERE tab.id IN rec AND parent != zero GROUP BY parent
+        recursive AS (
+                SELECT id FROM tab WHERE id = 'uuid3'
+            UNION ALL
+                SELECT parent AS id
+                FROM tab
+                WHERE tab.id IN recursive AND parent != 'empty'
+                GROUP BY parent
         )
-SELECT * FROM rec GROUP BY id ORDER BY id;
+SELECT *
+FROM recursive
+GROUP BY id
+ORDER BY id;
+
+SELECT '-- Second run'; -- same query
+
+WITH RECURSIVE
+        recursive AS (
+                SELECT id FROM tab WHERE id = 'uuid3'
+            UNION ALL
+                SELECT parent AS id
+                FROM tab
+                WHERE tab.id IN recursive AND parent != 'empty'
+                GROUP BY parent
+        )
+SELECT *
+FROM recursive
+GROUP BY id
+ORDER BY id;
 
 DROP TABLE tab;
-
