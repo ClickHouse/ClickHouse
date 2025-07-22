@@ -26,7 +26,7 @@ namespace ErrorCodes
 PartitionedSink::PartitionedSink(
     const ASTPtr & partition_by,
     ContextPtr context_,
-    const Block & sample_block_)
+    SharedHeader sample_block_)
     : SinkToStorage(sample_block_)
     , context(context_)
     , sample_block(sample_block_)
@@ -34,7 +34,7 @@ PartitionedSink::PartitionedSink(
     ASTs arguments(1, partition_by);
     ASTPtr partition_by_string = makeASTFunction("toString", std::move(arguments));
 
-    auto syntax_result = TreeRewriter(context).analyze(partition_by_string, sample_block.getNamesAndTypesList());
+    auto syntax_result = TreeRewriter(context).analyze(partition_by_string, sample_block->getNamesAndTypesList());
     partition_by_expr = ExpressionAnalyzer(partition_by_string, syntax_result, context).getActions(false);
     partition_by_column_name = partition_by_string->getColumnName();
 }
@@ -56,7 +56,7 @@ void PartitionedSink::consume(Chunk & chunk)
 {
     const auto & columns = chunk.getColumns();
 
-    Block block_with_partition_by_expr = sample_block.cloneWithoutColumns();
+    Block block_with_partition_by_expr = sample_block->cloneWithoutColumns();
     block_with_partition_by_expr.setColumns(columns);
     partition_by_expr->execute(block_with_partition_by_expr);
 

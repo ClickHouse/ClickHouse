@@ -149,7 +149,39 @@ private:
 
 REGISTER_FUNCTION(Now)
 {
-    factory.registerFunction<NowOverloadResolver>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+Returns the current date and time at the moment of query analysis. The function is a constant expression.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+now([timezone])
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"timezone", "Optional. Timezone name for the returned value.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the current date and time.", {"DateTime"}};
+    FunctionDocumentation::Examples examples = {
+        {"Query without timezone", R"(
+SELECT now()
+        )",
+        R"(
+┌───────────────now()─┐
+│ 2020-10-17 07:42:09 │
+└─────────────────────┘
+        )"},
+        {"Query with specified timezone", R"(
+SELECT now('Asia/Istanbul')
+        )",
+        R"(
+┌─now('Asia/Istanbul')─┐
+│  2020-10-17 10:42:23 │
+└──────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<NowOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_timestamp", NowOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }
 

@@ -32,7 +32,7 @@ class DetachedTablesBlockSource : public ISource
 public:
     DetachedTablesBlockSource(
         std::vector<UInt8> columns_mask_,
-        Block header_,
+        SharedHeader header_,
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ColumnPtr detached_tables_,
@@ -216,7 +216,7 @@ ReadFromSystemDetachedTables::ReadFromSystemDetachedTables(
     Block sample_block,
     std::vector<UInt8> columns_mask_,
     size_t max_block_size_)
-    : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
+    : SourceStepWithFilter(std::make_shared<const Block>(std::move(sample_block)), column_names_, query_info_, storage_snapshot_, context_)
     , columns_mask(std::move(columns_mask_))
     , max_block_size(max_block_size_)
 {

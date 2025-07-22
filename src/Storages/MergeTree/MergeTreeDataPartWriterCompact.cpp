@@ -205,7 +205,7 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
 
     result_block = permuteBlockIfNeeded(result_block, permutation);
 
-    if (!header)
+    if (header.empty())
         header = result_block.cloneEmpty();
 
     size_t current_mark_rows = index_granularity->getMarkRows(getCurrentMark());
@@ -222,7 +222,7 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
             flushed_block = header.cloneWithColumns(columns_buffer.releaseColumns());
     }
 
-    if (flushed_block)
+    if (!flushed_block.empty())
     {
         auto granules_to_write = getGranulesToWrite(*index_granularity, flushed_block.rows(), getCurrentMark(), /* last_block = */ false);
         writeDataBlockPrimaryIndexAndSkipIndices(flushed_block, granules_to_write);
@@ -396,7 +396,8 @@ void MergeTreeDataPartWriterCompact::initColumnsSubstreamsIfNeeded(const Block &
             return &buf;
         };
 
-        writeColumnSingleGranule(sample.getByName(name_and_type.name), getSerialization(name_and_type.name), buffer_getter, 0, 0, settings);
+        const auto & column = sample.getByName(name_and_type.name);
+        writeColumnSingleGranule(column, getSerialization(name_and_type.name), buffer_getter, column.column->size(), 0, settings);
     }
 }
 

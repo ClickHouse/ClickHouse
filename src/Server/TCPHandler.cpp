@@ -270,7 +270,7 @@ struct TurnOffBoolSettingTemporary
 
 Block convertColumnsToBLOBs(const Block & block, CompressionCodecPtr codec, UInt64 client_revision, const FormatSettings & format_settings)
 {
-    if (!block || !codec || client_revision < DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING)
+    if (block.empty() || !codec || client_revision < DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING)
         return block;
 
     /// Until parallel marshalling is supported for aggregation w/o key states, this safeguard should be there.
@@ -1147,7 +1147,7 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
     using PushResult = AsynchronousInsertQueue::PushResult;
 
     startInsertQuery(state);
-    Squashing squashing(state.input_header, 0, state.query_context->getSettingsRef()[Setting::async_insert_max_data_size]);
+    Squashing squashing(std::make_shared<const Block>(state.input_header), 0, state.query_context->getSettingsRef()[Setting::async_insert_max_data_size]);
 
     while (receivePacketsExpectDataConcurrentWithExecutor(state))
     {
@@ -1159,7 +1159,7 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
 
         if (result_chunk)
         {
-            auto result = squashing.getHeader().cloneWithColumns(result_chunk.detachColumns());
+            auto result = squashing.getHeader()->cloneWithColumns(result_chunk.detachColumns());
             return PushResult
             {
                 .status = PushResult::TOO_MUCH_DATA,
@@ -1171,10 +1171,10 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
     Chunk result_chunk = Squashing::squash(squashing.flush());
     if (!result_chunk)
     {
-        return insert_queue.pushQueryWithBlock(state.parsed_query, squashing.getHeader().cloneWithoutColumns(), state.query_context);
+        return insert_queue.pushQueryWithBlock(state.parsed_query, squashing.getHeader()->cloneWithoutColumns(), state.query_context);
     }
 
-    auto result = squashing.getHeader().cloneWithColumns(result_chunk.detachColumns());
+    auto result = squashing.getHeader()->cloneWithColumns(result_chunk.detachColumns());
     return insert_queue.pushQueryWithBlock(state.parsed_query, std::move(result), state.query_context);
 }
 
@@ -1192,7 +1192,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
             /// client receive exception before sending data.
             executor.start();
 
-            if (processed_data)
+            if (!processed_data.empty())
                 executor.push(std::move(processed_data));
             else
                 startInsertQuery(state);
@@ -1300,7 +1300,7 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
     {
         const auto & header = pipeline.getHeader();
 
-        if (header)
+        if (!header.empty())
         {
             sendData(state, header);
         }
@@ -1340,7 +1340,7 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
                     sendLogs(state);
 
                     // Block might be empty in case of timeout, i.e. there is no data to process
-                    if (block && !state.io.null_format)
+                    if (!block.empty() && !state.io.null_format)
                         sendData(state, block);
                 }
             }
@@ -1502,7 +1502,7 @@ void TCPHandler::sendProfileInfo(QueryState &, const ProfileInfo & info)
 
 void TCPHandler::sendTotals(QueryState & state, const Block & totals)
 {
-    if (!totals)
+    if (totals.empty())
         return;
 
     initBlockOutput(state, totals);
@@ -1520,7 +1520,7 @@ void TCPHandler::sendTotals(QueryState & state, const Block & totals)
 
 void TCPHandler::sendExtremes(QueryState & state, const Block & extremes)
 {
-    if (!extremes)
+    if (extremes.empty())
         return;
 
     initBlockOutput(state, extremes);
@@ -1996,7 +1996,7 @@ ClusterFunctionReadTaskResponsePtr TCPHandler::receiveClusterFunctionReadTaskRes
     switch (packet_type)
     {
         case Protocol::Client::Cancel:
-            processCancel(state, /* throw_exception */ true);
+            processCancel(state);
             return {};
 
         case Protocol::Client::ReadTaskResponse:
@@ -2021,7 +2021,7 @@ std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTas
     switch (packet_type)
     {
         case Protocol::Client::Cancel:
-            processCancel(state, /* throw_exception */ true);
+            processCancel(state);
             return {};
 
         case Protocol::Client::MergeTreeReadTaskResponse:
@@ -2342,7 +2342,7 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
     /// Read one block from the network and write it down
     Block block = state.block_in->read();
 
-    if (!block)
+    if (block.empty())
         return false;
 
     if (scalar)
@@ -2403,7 +2403,7 @@ bool TCPHandler::processUnexpectedData()
         maybe_compressed_in = in;
 
     auto skip_block_in = std::make_shared<NativeReader>(*maybe_compressed_in, client_tcp_protocol_version);
-    bool empty_block = !skip_block_in->read();
+    bool empty_block = skip_block_in->read().empty();
     return !empty_block;
 }
 
@@ -2475,7 +2475,7 @@ void TCPHandler::initBlockOutput(QueryState & state, const Block & block)
         state.block_out = std::make_unique<NativeWriter>(
             *state.maybe_compressed_out,
             client_tcp_protocol_version,
-            block.cloneEmpty(),
+            std::make_shared<const Block>(block.cloneEmpty()),
             getFormatSettings(state.query_context),
             !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
@@ -2489,7 +2489,7 @@ void TCPHandler::initLogsBlockOutput(QueryState & state, const Block & block)
         /// Use uncompressed stream since log blocks usually contain only one row
         const Settings & query_settings = state.query_context->getSettingsRef();
         state.logs_block_out = std::make_unique<NativeWriter>(
-            *out, client_tcp_protocol_version, block.cloneEmpty(), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
+            *out, client_tcp_protocol_version, std::make_shared<const Block>(block.cloneEmpty()), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
 
@@ -2500,7 +2500,7 @@ void TCPHandler::initProfileEventsBlockOutput(QueryState & state, const Block & 
     {
         const Settings & query_settings = state.query_context->getSettingsRef();
         state.profile_events_block_out = std::make_unique<NativeWriter>(
-            *out, client_tcp_protocol_version, block.cloneEmpty(), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
+            *out, client_tcp_protocol_version, std::make_shared<const Block>(block.cloneEmpty()), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
 
@@ -2510,7 +2510,7 @@ void TCPHandler::checkIfQueryCanceled(QueryState & state)
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Packet 'Cancel' has been received from the client, canceling the query.");
 }
 
-void TCPHandler::processCancel(QueryState & state, bool throw_exception)
+void TCPHandler::processCancel(QueryState & state)
 {
     if (state.allow_partial_result_on_first_cancel && !state.stop_read_return_partial_result)
     {
@@ -2522,10 +2522,7 @@ void TCPHandler::processCancel(QueryState & state, bool throw_exception)
     state.read_all_data = true;
     state.stop_query = true;
 
-    if (throw_exception)
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
-    else
-        LOG_INFO(log, "Received 'Cancel' packet from the client. Queries callbacks return nothing.");
+    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
 }
 
 void TCPHandler::receivePacketsExpectCancel(QueryState & state)

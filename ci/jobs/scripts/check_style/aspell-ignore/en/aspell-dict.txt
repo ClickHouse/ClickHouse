@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3285 
+personal_ws-1.1 en 3286 
 AArch
 ACLs
 ALTERs
@@ -27,8 +27,8 @@ AggregatorThreadsActive
 Akka
 AlertManager
 Alexey
-AnyEvent
 Anthropic
+AnyEvent
 AppleClang
 Approximative
 ArrayJoin
@@ -234,8 +234,8 @@ DESC
 DIEs
 DOGEFI
 Damerau
-Databricks
 DataGrip
+DataLakeCatalog
 DataLens
 DataPacket
 DataTypes
@@ -248,7 +248,7 @@ DatabaseOnDiskThreads
 DatabaseOnDiskThreadsActive
 DatabaseOrdinaryThreads
 DatabaseOrdinaryThreadsActive
-DataLakeCatalog
+Databricks
 DateTime
 DateTimeInputFormat
 DateTimeOutputFormat
@@ -625,7 +625,6 @@ MaxThreads
 Mbps
 McNeal
 Memcheck
-memcheck
 MemoryCode
 MemoryDataAndStack
 MemoryResident
@@ -728,6 +727,8 @@ NumericIndexedVectors
 OAuth
 ODBCDriver
 OFNS
+OKLCH
+OKLab
 OLAP
 OLTP
 ORCCompression
@@ -785,14 +786,15 @@ Observability
 Octonica
 Ok
 OnTime
+OpenAI
 OpenCelliD
 OpenFileForRead
 OpenFileForWrite
+OpenRouter
 OpenSSL
 OpenSUSE
 OpenSky
 OpenStack
-OpenAI
 OpenTelemetry
 OrDefault
 OrNull
@@ -953,6 +955,7 @@ ReplicatedSend
 ReplicatedSummingMergeTree
 ReplicatedVersionedCollapsingMergeTree
 Resample
+Rescoring
 RestartReplicaThreads
 RestartReplicaThreadsActive
 RestoreThreads
@@ -1532,6 +1535,7 @@ checksumming
 checksums
 childern
 chproxy
+chroma
 chunksize
 cickhouse
 cipherList
@@ -1560,6 +1564,8 @@ codepoint
 codepoints
 codespell
 collapsingmergetree
+colorOKLCHToSRGB
+colorSRGBToOKLCH
 combinator
 combinators
 compareSubstrings
@@ -2208,6 +2214,7 @@ libuv
 libvirt
 linearizability
 linearizable
+linearize
 linearized
 lineasstring
 linefeeds
@@ -2279,6 +2286,7 @@ mdadm
 meanZTest
 meanztest
 mebibytes
+memcheck
 memtable
 memtables
 mergeTreeIndex
@@ -2531,10 +2539,10 @@ polygonPerimeterSpherical
 polygonsDistanceCartesian
 polygonsDistanceSpherical
 polygonsEqualsCartesian
-polygonsIntersectionCartesian
-polygonsIntersectionSpherical
 polygonsIntersectCartesian
 polygonsIntersectSpherical
+polygonsIntersectionCartesian
+polygonsIntersectionSpherical
 polygonsSymDifferenceCartesian
 polygonsSymDifferenceSpherical
 polygonsUnionCartesian
@@ -2750,6 +2758,7 @@ representable
 requestor
 requireTLSv
 rerange
+rescoring
 resharding
 reshards
 resolvers
@@ -2795,13 +2804,14 @@ russian
 rustc
 rustup
 rw
+sRGB
 sasl
 satisfiable
 scala
 sccache
 schemas
-searchAny
 searchAll
+searchAny
 seekable
 seektable
 sequenceCount
@@ -3034,10 +3044,10 @@ throwif
 timeDiff
 timeSeriesData
 timeSeriesDeltaToGrid
-timeSeriesMetrics
 timeSeriesInstantDeltaToGrid
 timeSeriesInstantRateToGrid
 timeSeriesLastTwoSamples
+timeSeriesMetrics
 timeSeriesRateToGrid
 timeSeriesResampleToGridWithStaleness
 timeSeriesTags
@@ -3149,6 +3159,7 @@ tokenization
 tokenize
 tokenized
 tokenizer
+tokenizing
 toml
 toolchain
 toolset
