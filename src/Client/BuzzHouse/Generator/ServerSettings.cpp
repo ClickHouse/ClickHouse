@@ -1059,7 +1059,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     }
     if (fc.allow_transactions)
     {
-        serverSettings.insert({{"implicit_transaction", trueOrFalseSettingNoOracle}}),
+        serverSettings.insert({{"implicit_transaction", trueOrFalseSettingNoOracle}});
     }
 
     /// When measuring performance use bigger block sizes
