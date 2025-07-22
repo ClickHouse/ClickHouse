@@ -77,14 +77,18 @@ done | sort -n &
 disable_failpoint &
 
 # Detach sometimes fails, repeat until it succeeds
-while ! $CLICKHOUSE_CLIENT -m -q "DETACH DATABASE $CLICKHOUSE_DATABASE;" 2>/dev/null; do
+# re-attaching must be done after detach to ensure that the database present for the following queries
+# Otherwise, it causes `DB::Exception: Database default does not exist. (UNKNOWN_DATABASE)`
+while ! $CLICKHOUSE_CLIENT -m 2>/dev/null << SQL
+  DETACH DATABASE $CLICKHOUSE_DATABASE;
+  ATTACH DATABASE $CLICKHOUSE_DATABASE;
+SQL
+do
   sleep 0.05
 done
 
-# Re-attach the database to ensure that it is in a consistent state
-$CLICKHOUSE_CLIENT -m -q "ATTACH DATABASE $CLICKHOUSE_DATABASE;"
-
 $CLICKHOUSE_CLIENT -m << SQL 2>&1
+  SYSTEM FLUSH LOGS system.part_log;
   WITH (
       SELECT
         -- Use quantiles to avoid outliers
@@ -92,16 +96,18 @@ $CLICKHOUSE_CLIENT -m << SQL 2>&1
         quantile(0.75)(duration_ms) AS q75,
         arrayStringConcat(arraySort(groupArray(duration_ms)), ',') AS all
       FROM system.part_log
-      WHERE database = '$CLICKHOUSE_DATABASE' AND error != 0;
+      WHERE database = '$CLICKHOUSE_DATABASE' AND error != 0
     ) AS vals
   SELECT if(
     -- Without outliers, 3 is a good threshold
     ((vals.q75 / vals.q25) AS rel) < 3,
     'Merges cancelled quickly',
     printf(
-      'Probably merges were cancelled sequentially with global lock held, values: [%s], ratio: %.2f',
+      'Probably merges were cancelled sequentially with global lock held, values: [%s], q25: %.2f, q75: %.2f, ratio: %.2f',
       vals.all,
+      vals.q25,
+      vals.q75,
       rel
     )
-  )
+  );
 SQL
