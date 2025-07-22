@@ -1863,7 +1863,7 @@ static void buildIndexes(
             index_sizes.clear();
             for (const auto &idx : skip_indexes.useful_indices)
             {
-                auto extension = idx.index->getDeserializedFormat(part.data_part->getDataPartStorage(), idx.index->getFileName()).extension;
+                const auto *extension = idx.index->getDeserializedFormat(part.data_part->getDataPartStorage(), idx.index->getFileName()).extension;
                 auto sz = part.data_part->getFileSizeOrZero(idx.index->getFileName() + extension);
                 index_sizes.emplace_back(sz);
             }
