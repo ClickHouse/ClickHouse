@@ -68,4 +68,11 @@ items.name:         ['item1','item2']
 items.int_value:    [10,0]
 items.string_value: ['','foo']
 items.value:        ['int_value','string_value']
->> string_or_string_exception
+>> string_or_string_exception_enum
+>> string_or_string_exception_float
+>> string_or_string_int32
+Row 1:
+──────
+string1:      string1
+string2:      
+string_oneof: 1

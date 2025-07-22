@@ -14,7 +14,7 @@ $CLICKHOUSE_CLIENT <<EOF
 SET input_format_protobuf_oneof_presence=true;
 DROP TABLE IF EXISTS string_or_string_3447;
 SELECT '>> string_or_string';
-CREATE TABLE string_or_string_3447 ( string1 String, string2 String, string_oneof Enum('no'=0, 'hello' = 1, 'world' = 2))  Engine=MergeTree ORDER BY tuple();
+CREATE TABLE string_or_string_3447 ( string1 String, string2 String, string_oneof Enum('no'=0, 'hello' = 1, 'world' = 2) )  Engine=MergeTree ORDER BY tuple();
 INSERT INTO string_or_string_3447 from INFILE '$CURDIR/data_protobuf/String1' SETTINGS format_schema='$SCHEMADIR/03447_string_or_string.proto:StringOrString' FORMAT ProtobufSingle;
 INSERT INTO string_or_string_3447 from INFILE '$CURDIR/data_protobuf/String2' SETTINGS format_schema='$SCHEMADIR/03447_string_or_string.proto:StringOrString' FORMAT ProtobufSingle;
 SELECT * FROM string_or_string_3447 ORDER BY string1 Format pretty;
@@ -34,7 +34,7 @@ $CLICKHOUSE_CLIENT <<EOF
 SET input_format_protobuf_oneof_presence=true;
 DROP TABLE IF EXISTS inner_string_or_string_3447;
 SELECT '>> inner_string_or_string';
-CREATE TABLE inner_string_or_string_3447 ( \`outer.string\` String, \`inner.string1\` String, \`inner.string15_not_used\` String, \`inner.string2\` String, \`inner.string.oneof\` Enum('no'=0, 'hello' = 1, 'world' = 2))  Engine=MergeTree ORDER BY tuple();
+CREATE TABLE inner_string_or_string_3447 ( \`outer.string\` String, \`inner.string1\` String, \`inner.string15_not_used\` String, \`inner.string2\` String, \`inner.string.oneof\` Enum('no'=0, 'hello' = 1, 'world' = 2) )  Engine=MergeTree ORDER BY tuple();
 INSERT INTO inner_string_or_string_3447 from INFILE '$CURDIR/data_protobuf/InnerString1' SETTINGS format_schema='$SCHEMADIR/03447_inner_string_or_string.proto:InnerStringOrString' FORMAT ProtobufSingle;
 INSERT INTO inner_string_or_string_3447 from INFILE '$CURDIR/data_protobuf/InnerString2' SETTINGS format_schema='$SCHEMADIR/03447_inner_string_or_string.proto:InnerStringOrString' FORMAT ProtobufSingle;
 INSERT INTO inner_string_or_string_3447 from INFILE '$CURDIR/data_protobuf/String1' SETTINGS format_schema='$SCHEMADIR/03447_inner_string_or_string.proto:InnerStringOrString' FORMAT ProtobufSingle;
@@ -111,8 +111,31 @@ EOF
 # string_oneof column does not contain tag 2
 $CLICKHOUSE_CLIENT <<EOF
 SET input_format_protobuf_oneof_presence=true;
-DROP TABLE IF EXISTS string_or_string_expception_3447;
-SELECT '>> string_or_string_exception';
-CREATE TABLE string_or_string_exception_3447 ( string1 String, string2 String, string_oneof Enum('no'=0, 'hello' = 1, 'world' = 42))  Engine=MergeTree ORDER BY tuple();
-INSERT INTO string_or_string_exception_3447 from INFILE '$CURDIR/data_protobuf/String1' SETTINGS format_schema='$SCHEMADIR/03447_string_or_string.proto:StringOrString' FORMAT ProtobufSingle; -- { clientError DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD }
+DROP TABLE IF EXISTS string_or_string_exception_enum_3447;
+SELECT '>> string_or_string_exception_enum';
+CREATE TABLE string_or_string_exception_enum_3447 ( string1 String, string2 String, string_oneof Enum('no'=0, 'hello' = 1, 'world' = 42) )  Engine=MergeTree ORDER BY tuple();
+INSERT INTO string_or_string_exception_enum_3447 from INFILE '$CURDIR/data_protobuf/String1' SETTINGS format_schema='$SCHEMADIR/03447_string_or_string.proto:StringOrString' FORMAT ProtobufSingle; -- { clientError DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD }
+EOF
+
+# string1: "string1"
+# string2: "string2"
+# string_oneof column is float, which is inappropriate
+$CLICKHOUSE_CLIENT <<EOF
+SET input_format_protobuf_oneof_presence=true;
+DROP TABLE IF EXISTS string_or_string_exception_float_3447;
+SELECT '>> string_or_string_exception_float';
+CREATE TABLE string_or_string_exception_float_3447 ( string1 String, string2 String, string_oneof Float )  Engine=MergeTree ORDER BY tuple();
+INSERT INTO string_or_string_exception_float_3447 from INFILE '$CURDIR/data_protobuf/String1' SETTINGS format_schema='$SCHEMADIR/03447_string_or_string.proto:StringOrString' FORMAT ProtobufSingle; -- { clientError DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD }
+EOF
+
+# string1: "string1"
+# string2: "string2"
+# string_oneof column is Int32
+$CLICKHOUSE_CLIENT <<EOF
+SET input_format_protobuf_oneof_presence=true;
+DROP TABLE IF EXISTS string_or_string_int32_3447;
+SELECT '>> string_or_string_int32';
+CREATE TABLE string_or_string_int32_3447 ( string1 String, string2 String, string_oneof Int32 )  Engine=MergeTree ORDER BY tuple();
+INSERT INTO string_or_string_int32_3447 from INFILE '$CURDIR/data_protobuf/String1' SETTINGS format_schema='$SCHEMADIR/03447_string_or_string.proto:StringOrString' FORMAT ProtobufSingle;
+SELECT * FROM string_or_string_int32_3447 FORMAT Vertical;
 EOF

@@ -1975,10 +1975,10 @@ namespace
     class ProtobufSerializerOneOf : public ProtobufSerializer
     {
     public:
-        explicit ProtobufSerializerOneOf(std::unique_ptr<ProtobufSerializer> nested_serializer_, std::string_view oneof_column_name_, size_t column_idx_, int field_tag_)
+        explicit ProtobufSerializerOneOf(std::unique_ptr<ProtobufSerializer> nested_serializer_, std::string_view oneof_column_name_, size_t presence_column_idx_, int field_tag_)
             : nested_serializer(std::move(nested_serializer_))
             , oneof_column_name(oneof_column_name_)
-            , column_idx(column_idx_)
+            , presence_column_idx(presence_column_idx_)
             , field_tag(field_tag_)
         {
         }
@@ -1991,9 +1991,9 @@ namespace
             cols.reserve(num_columns - 1);
             for (size_t i : collections::range(num_columns))
             {
-                if (i == column_idx)
+                if (i == presence_column_idx)
                 {
-                    presence_column = columns[column_idx]->assumeMutable();
+                    presence_column = columns[presence_column_idx]->assumeMutable();
                 }
                 else
                 {
@@ -2036,14 +2036,14 @@ namespace
 
         void describeTree(WriteBuffer & out, size_t indent) const override
         {
-            writeIndent(out, indent) << "ProtobufSerializerOneOf " << oneof_column_name << ", idx " << column_idx << "->\n";
+            writeIndent(out, indent) << "ProtobufSerializerOneOf " << oneof_column_name << ", idx " << presence_column_idx << "->\n";
             nested_serializer->describeTree(out, indent + 1);
         }
 
     private:
         const std::unique_ptr<ProtobufSerializer> nested_serializer;
         std::string_view oneof_column_name;
-        size_t column_idx;
+        size_t presence_column_idx;
         int field_tag;
         MutableColumnPtr presence_column;
     };
@@ -3438,9 +3438,19 @@ namespace
                 }
             };
 
+
+            auto throw_incompatible_oneof = [](std::string_view oneof_name)
+            {
+                throw Exception(
+                    ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD,
+                    "Column `{}` is not suitable as OneOf presence indicator. Ensure that Enum has all tags and there is one extra with "
+                    "value 0 that indicates absence of the element.",
+                    oneof_name);
+            };
+
             /// oneof presence indicator contains all tags
             ///   although it is Ok if there is discrepancy in names
-            auto check_enum = [](const auto * data_type_enum, const OneofDescriptor * oneof_descriptor)
+            auto check_enum = [&throw_incompatible_oneof](const auto * data_type_enum, const OneofDescriptor * oneof_descriptor)
             {
                 int64_t expected_size = data_type_enum->getValues().size();
 
@@ -3462,20 +3472,23 @@ namespace
                         return;
                 }
 
-                throw Exception(
-                    ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD,
-                    "Column `{}` is not suitable as OneOf presence indicator. Ensure that Enum has all tags and there is one extra with "
-                    "value 0 that indicates absence of the element.",
-                    oneof_descriptor->name());
+                throw_incompatible_oneof(oneof_descriptor->name());
+            };
+
+            auto check_int_type_suitable_for_oneof_presence
+                = [&throw_incompatible_oneof](TypeIndex data_type_id, std::string_view oneof_name)
+            {
+                if (!leastDecimalPrecisionFor(data_type_id))
+                    throw_incompatible_oneof(oneof_name);
             };
 
             auto maybe_add_oneof_wrapper = [&](std::unique_ptr<ProtobufSerializer> & serializer_ptr_ref,
-                                              const OneofDescriptor * oneof_descriptor,
-                                              int field_tag,
-                                              size_t num_columns_,
-                                              const std::string_view * column_names_,
-                                              const DataTypePtr * data_types_,
-                                              std::vector<size_t> & used_columns_for_field)
+                                               const OneofDescriptor * oneof_descriptor,
+                                               int field_tag,
+                                               size_t num_columns_,
+                                               const std::string_view * column_names_,
+                                               const DataTypePtr * data_types_,
+                                               std::vector<size_t> & used_columns_for_field)
             {
                 if (oneof_presence && serializer_ptr_ref && oneof_descriptor)
                 {
@@ -3488,32 +3501,24 @@ namespace
 
                         if (ColumnNameWithProtobufFieldNameComparator::equals(name, expected_name))
                         {
-                            if ((data_type_id == TypeIndex::Enum8 || data_type_id == TypeIndex::Enum16 || data_type_id == TypeIndex::Int8
-                                 || data_type_id == TypeIndex::Int16))
+                            if (data_type_id == TypeIndex::Enum8)
                             {
-                                if (data_type_id == TypeIndex::Enum8)
-                                {
-                                    const auto * data_type_enum8 = typeid_cast<const DataTypeEnum8 *>(data_types_[idx].get());
-                                    assert(data_type_enum8);
-
-                                    check_enum(data_type_enum8, oneof_descriptor);
-                                }
-
-
-                                if (data_type_id == TypeIndex::Enum16)
-                                {
-                                    const auto * data_type_enum16 = typeid_cast<const DataTypeEnum16 *>(data_types_[idx].get());
-                                    assert(data_type_enum16);
-
-                                    check_enum(data_type_enum16, oneof_descriptor);
-                                }
-
-                                serializer_ptr_ref = std::make_unique<ProtobufSerializerOneOf>(
-                                    std::move(serializer_ptr_ref), oneof_descriptor->name(), used_columns_for_field.size(), field_tag);
-
-                                used_columns_for_field.push_back(idx);
-                                return;
+                                const auto * data_type_enum8 = assert_cast<const DataTypeEnum8 *>(data_types_[idx].get());
+                                check_enum(data_type_enum8, oneof_descriptor);
                             }
+                            else if (data_type_id == TypeIndex::Enum16)
+                            {
+                                const auto * data_type_enum16 = assert_cast<const DataTypeEnum16 *>(data_types_[idx].get());
+                                check_enum(data_type_enum16, oneof_descriptor);
+                            }
+                            else
+                                check_int_type_suitable_for_oneof_presence(data_type_id, oneof_descriptor->name());
+
+                            serializer_ptr_ref = std::make_unique<ProtobufSerializerOneOf>(
+                                std::move(serializer_ptr_ref), oneof_descriptor->name(), used_columns_for_field.size(), field_tag);
+
+                            used_columns_for_field.push_back(idx);
+                            return;
                         }
                     }
                 }
