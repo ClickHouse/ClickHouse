@@ -797,7 +797,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
             for (size_t idx = 0; index_order.has_value() && idx < index_order.value().size(); ++idx)
             {
-                auto idx_order = index_order.value();
+                const auto &idx_order = index_order.value();
                 if (ranges.ranges.empty())
                     break;
 
