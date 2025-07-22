@@ -37,7 +37,7 @@
 #pragma clang diagnostic ignored "-Wcast-function-type-strict"
 #pragma clang diagnostic ignored "-Wextra-semi-stmt"
 #pragma clang diagnostic ignored "-Wduplicate-enum"
-#include <../../contrib/StringZilla/include/stringzilla/stringzilla.h>
+#include <stringzilla/stringzilla.h>
 
 namespace DB::impl
 {
@@ -588,7 +588,7 @@ public:
 
             if (*haystack == l || *haystack == u)
             {
-                auto haystack_pos = haystack + first_needle_symbol_is_ascii;
+                const auto * haystack_pos = haystack + first_needle_symbol_is_ascii;
                 const auto * needle_pos = needle + first_needle_symbol_is_ascii;
 
                 if (compareTrivial(haystack_pos, haystack_end, needle_pos))
