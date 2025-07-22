@@ -63,7 +63,7 @@ for table in "${TABLES[@]}"; do
 SQL
 done
 
-# $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT remove_merge_tree_part_delay"
+$CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT remove_merge_tree_part_delay"
 
 for table in "${TABLES[@]}"; do
   # Should raise either ABORTED or UNKNOWN_TABLE exception
