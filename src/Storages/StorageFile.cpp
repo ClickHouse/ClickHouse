@@ -2036,7 +2036,7 @@ SinkToStoragePtr StorageFile::write(
         auto partition_strategy = PartitionStrategyFactory::get(
             PartitionStrategyFactory::StrategyType::WILDCARD,
             insert_query->partition_by,
-            metadata_snapshot->getSampleBlock(),
+            metadata_snapshot->getColumns().getAll(),
             context,
             format_name,
             is_path_with_globs,

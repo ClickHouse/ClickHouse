@@ -1398,7 +1398,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
         auto partition_strategy = PartitionStrategyFactory::get(
             PartitionStrategyFactory::StrategyType::WILDCARD,
             partition_by_ast,
-            metadata_snapshot->getSampleBlock(),
+            metadata_snapshot->getColumns().getAll(),
             context,
             format_name,
             urlWithGlobs(uri),

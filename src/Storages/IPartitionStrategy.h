@@ -61,16 +61,6 @@ struct PartitionStrategyFactory
     static std::shared_ptr<IPartitionStrategy> get(
         StrategyType strategy,
         ASTPtr partition_by,
-        const Block & sample_block,
-        ContextPtr context,
-        const std::string & file_format,
-        bool globbed_path,
-        bool contains_partition_wildcard,
-        bool partition_columns_in_data_file);
-
-    static std::shared_ptr<IPartitionStrategy> get(
-        StrategyType strategy,
-        ASTPtr partition_by,
         const NamesAndTypesList & partition_columns,
         ContextPtr context,
         const std::string & file_format,

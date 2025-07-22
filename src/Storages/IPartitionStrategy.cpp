@@ -201,38 +201,6 @@ const KeyDescription & IPartitionStrategy::getPartitionKeyDescription() const
 
 std::shared_ptr<IPartitionStrategy> PartitionStrategyFactory::get(StrategyType strategy,
                                                                  ASTPtr partition_by,
-                                                                 const Block & sample_block,
-                                                                 ContextPtr context,
-                                                                 const std::string & file_format,
-                                                                 bool globbed_path,
-                                                                 bool contains_partition_wildcard,
-                                                                 bool partition_columns_in_data_file)
-{
-    switch (strategy)
-    {
-        case StrategyType::WILDCARD:
-            return createWildcardPartitionStrategy(
-                partition_by,
-                sample_block,
-                context,
-                contains_partition_wildcard,
-                partition_columns_in_data_file);
-        case StrategyType::HIVE:
-            return createHivePartitionStrategy(
-                partition_by,
-                sample_block,
-                context,
-                file_format,
-                globbed_path,
-                partition_columns_in_data_file);
-        case StrategyType::NONE:
-            /// Unreachable for plain object storage, used only by Data Lakes for now
-            return nullptr;
-    }
-}
-
-std::shared_ptr<IPartitionStrategy> PartitionStrategyFactory::get(StrategyType strategy,
-                                                                 ASTPtr partition_by,
                                                                  const NamesAndTypesList & partition_columns,
                                                                  ContextPtr context,
                                                                  const std::string & file_format,
@@ -246,7 +214,27 @@ std::shared_ptr<IPartitionStrategy> PartitionStrategyFactory::get(StrategyType s
         block.insert({partition_column.type, partition_column.name});
     }
 
-    return get(strategy, partition_by, block, context, file_format, globbed_path, contains_partition_wildcard, partition_columns_in_data_file);
+    switch (strategy)
+    {
+        case StrategyType::WILDCARD:
+            return createWildcardPartitionStrategy(
+                partition_by,
+                block,
+                context,
+                contains_partition_wildcard,
+                partition_columns_in_data_file);
+        case StrategyType::HIVE:
+            return createHivePartitionStrategy(
+                partition_by,
+                block,
+                context,
+                file_format,
+                globbed_path,
+                partition_columns_in_data_file);
+        case StrategyType::NONE:
+            /// Unreachable for plain object storage, used only by Data Lakes for now
+            return nullptr;
+    }
 }
 
 WildcardPartitionStrategy::WildcardPartitionStrategy(KeyDescription partition_key_description_, const Block & sample_block_, ContextPtr context_)
