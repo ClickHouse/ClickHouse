@@ -1,0 +1,20 @@
+-- https://github.com/ClickHouse/ClickHouse/issues/84157
+DROP TABLE IF EXISTS t0;
+CREATE TABLE t0 (i Int64, j Int16) ENGINE = Memory;
+INSERT INTO t0 VALUES (1, 1), (2, 2);
+SELECT i FROM t0 ANY JOIN (SELECT arrayJoin([3]) AS k) AS x ON x.k = j;
+SELECT i FROM t0 ANY JOIN (SELECT arrayJoin([3]) AS k) AS x ON x.k = j;
+SELECT i FROM t0 ANY JOIN (SELECT arrayJoin([3]) AS k) AS x ON x.k = j;
+SELECT i FROM t0 ANY JOIN (SELECT arrayJoin([3]) AS k) AS x ON x.k = j;
+SELECT i FROM t0 ANY JOIN (SELECT arrayJoin([3]) AS k) AS x ON x.k = j;
+SELECT i FROM t0 ANY JOIN (SELECT arrayJoin([3]) AS k) AS x ON x.k = j;
+SELECT i FROM t0 ANY JOIN (SELECT arrayJoin([3]) AS k) AS x ON x.k = j;
+SELECT i FROM t0 ANY JOIN (SELECT arrayJoin([3]) AS k) AS x ON x.k = j;
+SELECT i FROM t0 ANY JOIN (SELECT arrayJoin([3]) AS k) AS x ON x.k = j;
+SELECT i FROM t0 ANY JOIN (SELECT arrayJoin([3]) AS k) AS x ON x.k = j;
+SELECT i FROM t0 ANY JOIN (SELECT arrayJoin([3]) AS k) AS x ON x.k = j;
+SELECT i FROM t0 ANY JOIN (SELECT arrayJoin([3]) AS k) AS x ON x.k = j;
+SELECT i FROM t0 ANY JOIN (SELECT arrayJoin([3]) AS k) AS x ON x.k = j;
+SELECT i FROM t0 ANY JOIN (SELECT arrayJoin([3]) AS k) AS x ON x.k = j;
+SELECT i FROM t0 ANY JOIN (SELECT arrayJoin([3]) AS k) AS x ON x.k = j;
+SELECT i FROM t0 ANY JOIN (SELECT arrayJoin([3]) AS k) AS x ON x.k = j;

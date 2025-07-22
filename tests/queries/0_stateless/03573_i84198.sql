@@ -1,3 +1,4 @@
+-- https://github.com/ClickHouse/ClickHouse/issues/84198
 DROP TABLE IF EXISTS test_table_join_1 SYNC;
 DROP TABLE IF EXISTS test_table_join_2 SYNC;
 DROP TABLE IF EXISTS test_table_join_3 SYNC;
