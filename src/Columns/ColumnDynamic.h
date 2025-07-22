@@ -498,6 +498,16 @@ private:
     std::unordered_map<String, SerializationPtr> serialization_cache;
 };
 
+struct DynamicColumnCheckpoint : public ColumnCheckpoint
+{
+    DynamicColumnCheckpoint(size_t size_, std::unordered_map<String, ColumnCheckpointPtr> variants_checkpoints_) : ColumnCheckpoint(size_), variants_checkpoints(variants_checkpoints_)
+    {
+    }
+
+    std::unordered_map<String, ColumnCheckpointPtr> variants_checkpoints;
+};
+
+
 void extendVariantColumn(
     IColumn & variant_column,
     const DataTypePtr & old_variant_type,

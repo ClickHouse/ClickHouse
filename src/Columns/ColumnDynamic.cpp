@@ -1021,20 +1021,6 @@ ColumnPtr ColumnDynamic::compress(bool force_compression) const
         });
 }
 
-namespace
-{
-
-struct DynamicColumnCheckpoint : public ColumnCheckpoint
-{
-    DynamicColumnCheckpoint(size_t size_, std::unordered_map<String, ColumnCheckpointPtr> variants_checkpoints_) : ColumnCheckpoint(size_), variants_checkpoints(variants_checkpoints_)
-    {
-    }
-
-    std::unordered_map<String, ColumnCheckpointPtr> variants_checkpoints;
-};
-
-}
-
 ColumnCheckpointPtr ColumnDynamic::getCheckpoint() const
 {
     std::unordered_map<String, ColumnCheckpointPtr> variants_checkpoints;
