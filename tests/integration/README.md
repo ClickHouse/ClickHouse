@@ -200,7 +200,7 @@ docker build -t clickhouse/integration-test .
 ```
 
 The helper container used by the `runner` script is in `docker/test/integration/runner/Dockerfile`.
-It can be rebuild with 
+It can be rebuild with
 
 ```
 cd docker/test/integration/runner
@@ -222,6 +222,49 @@ named `test.py` containing tests in it. All functions with names starting with `
 To assert that two TSV files must be equal, wrap them in the `TSV` class and use the regular `assert`
 statement. Example: `assert TSV(result) == TSV(reference)`. In case the assertion fails, `pytest`
 will automagically detect the types of variables and only the small diff of two files is printed.
+
+### Debug mode
+
+Here is how you run a debugger for the server under integration test:
+
+1. Put the **_statically linked binary_** of your debugger into the ClickHouse root folder of your repo. The [nnd](https://github.com/al13n321/nnd) debugger is ideal for this purpose (and for ClickHouse debugging in general).
+2. Go to the integration test `test.py` file and add a new line with a single `breakpoint()` command to debug specific point in your test (to make the server work forever and not die after the test).
+3. Run the integration test with `runner` script as usual but add `--debug` option. It will produce helper shell commands in stdout and start testing:
+```bash
+    # =====> DEBUG MODE <=====
+    # ClickHouse root folder will be read=only mounted into /ClickHouse in all containers.
+    # Use the following command to list node containers.
+    runner-nodes() {
+        docker exec clickhouse_integration_tests_160lfw docker ps | grep node
+    }
+
+    # You can use the following command to log into the container and run clickhouse client or debugger.
+    # Tip: place a `breakpoint()` somewhere in your integration test python code before run.
+    runner-bash() {
+        docker exec -it clickhouse_integration_tests_160lfw docker exec -it $1 bash
+    }
+    # =====> DEBUG MODE <=====
+```
+4. When the test hits a breakpoint, it will show the Python debugger prompt, which is useful by itself for debugging purposes. For example:
+```bash
+test_throttling/test.py::test_write_throttling[user_remote_throttling]
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> PDB set_trace (IO-capturing turned off) >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+> /ClickHouse/tests/integration/test_throttling/test.py(493)test_write_throttling()
+-> assert_took(took, should_take)
+(Pdb)
+```
+5. Open another shell and paste the DEBUG MODE commands there to set up the environment. Then run:
+```bash
+❯ runner-nodes
+2e2a25260eae   clickhouse/integration-test:latest         "bash -c 'trap 'pkil…"   4 minutes ago   Up 4 minutes                               roottestthrottling-node-1
+```
+6. You can use either Container ID or Container Name to log into the required node:
+```
+❯ runner-bash roottestthrottling-node-1
+root@node:/#
+```
+7. Run `clickhouse client` to connect to the server running in the node container.
+8. Find the PID with `ps aux` and run the debugger in the the node container with `/ClickHouse/nnd -p 767 -d /ClickHouse`
 
 ### Troubleshooting
 
