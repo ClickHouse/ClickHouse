@@ -45,7 +45,7 @@ WHERE event_date >= yesterday() AND query_id = (
     WHERE event_date >= yesterday() AND query LIKE '%test_host_api%'
     AND type = 'QueryFinish' AND query_kind = 'Select'
     AND log_comment = '03208_wasm_import_export_ok'
-    AND database = currentDatabase()
+    AND current_database = currentDatabase()
     ORDER BY event_time DESC
     LIMIT 1
 )
@@ -57,7 +57,7 @@ FROM system.query_log
 WHERE event_date >= yesterday() AND query LIKE '%test_host_api%'
 AND query_kind = 'Select' AND toString(type) LIKE 'Exception%'
 AND log_comment = '03208_wasm_import_export_err'
-AND database = currentDatabase()
+AND current_database = currentDatabase()
 ORDER BY event_time DESC
 LIMIT 1
 ;

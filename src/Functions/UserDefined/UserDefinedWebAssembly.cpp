@@ -39,11 +39,6 @@
 #include <QueryPipeline/QueryPipeline.h>
 
 
-namespace ProfileEvents
-{
-extern const Event WasmMemoryAllocated;
-}
-
 namespace DB
 {
 
@@ -76,10 +71,8 @@ using namespace WebAssembly;
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
-extern const int ILLEGAL_COLUMN;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int LOGICAL_ERROR;
-extern const int NOT_IMPLEMENTED;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int RESOURCE_NOT_FOUND;
 extern const int TOO_LARGE_STRING_SIZE;
@@ -151,12 +144,12 @@ public:
     static bool tryExecuteForColumnTypes(Callable && callable, Args &&... args)
     {
         return (
-            callable.template operator()<Int32>(std::forward<Args>(args)...)
-            || callable.template operator()<UInt32>(std::forward<Args>(args)...)
-            || callable.template operator()<Int64>(std::forward<Args>(args)...)
-            || callable.template operator()<UInt64>(std::forward<Args>(args)...)
-            || callable.template operator()<Float32>(std::forward<Args>(args)...)
-            || callable.template operator()<Float64>(std::forward<Args>(args)...));
+            callable.template operator()<Int32>(args...)
+            || callable.template operator()<UInt32>(args...)
+            || callable.template operator()<Int64>(args...)
+            || callable.template operator()<UInt64>(args...)
+            || callable.template operator()<Float32>(args...)
+            || callable.template operator()<Float64>(args...));
     }
 
     static void checkDataTypeWithWasmValKind(const IDataType * type, WasmValKind kind)

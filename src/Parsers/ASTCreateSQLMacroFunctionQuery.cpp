@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 ASTPtr ASTCreateSQLMacroFunctionQuery::clone() const
 {
     auto res = std::make_shared<ASTCreateSQLMacroFunctionQuery>(*this);

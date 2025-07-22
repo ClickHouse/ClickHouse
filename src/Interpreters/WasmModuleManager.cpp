@@ -27,11 +27,8 @@ using WebAssembly::WasmTimeRuntime;
 namespace ErrorCodes
 {
 extern const int RESOURCE_NOT_FOUND;
-extern const int WASM_ERROR;
 extern const int FILE_ALREADY_EXISTS;
-extern const int FUNCTION_ALREADY_EXISTS;
 extern const int CANNOT_DROP_FUNCTION;
-extern const int TYPE_MISMATCH;
 extern const int SUPPORT_IS_DISABLED;
 extern const int INCORRECT_DATA;
 }
@@ -83,7 +80,7 @@ std::string hashToHex(const UInt256 & hash)
 template <typename ResultType>
 ResultType checkValidWasmCode(std::string_view name, std::string_view wasm_code)
 {
-    if (name.size() < 1 || 128 < name.size() || !std::all_of(name.data(), name.data() + name.size(), isWordCharASCII))
+    if (name.empty() || 128 < name.size() || !std::all_of(name.data(), name.data() + name.size(), isWordCharASCII))
     {
         return onError<ResultType>(
             ErrorCodes::INCORRECT_DATA,
@@ -94,7 +91,7 @@ ResultType checkValidWasmCode(std::string_view name, std::string_view wasm_code)
     /// Detect magic number for WebAssembly module
     /// Reference: https://webassembly.github.io/spec/core/binary/modules.html#binary-module
     constexpr std::array<uint8_t, 8> wasm_magic_number = {0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00};
-    if (wasm_code.size() < wasm_magic_number.size() || !std::equal(wasm_magic_number.begin(), wasm_magic_number.end(), wasm_code.data()))
+    if (!std::ranges::equal(wasm_magic_number, std::views::take(wasm_code, wasm_magic_number.size())))
     {
         return onError<ResultType>(
             ErrorCodes::INCORRECT_DATA,
@@ -256,7 +253,7 @@ void WasmModuleManager::registerExistingModules()
         ReadSettings read_settings;
         auto read_buf = user_scripts_disk->readFile(file_path, read_settings);
         std::string file_header(16, '\0');
-        size_t n = read_buf->read(&file_header[0], file_header.size());
+        size_t n = read_buf->read(file_header.data(), file_header.size());
         if (n != file_header.size())
         {
             LOG_DEBUG(log, "Ignoring file '{}' with illegal header", file_path);

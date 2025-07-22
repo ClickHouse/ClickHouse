@@ -64,7 +64,7 @@ wasmtime::ValKind toWasmTimeValKind(WasmValKind value)
         case WasmValKind::F64:
             return wasmtime::ValKind::F64;
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 WasmVal fromWasmTimeValue(const wasmtime::Val & wasm_val)

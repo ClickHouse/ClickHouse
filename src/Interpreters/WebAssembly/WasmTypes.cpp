@@ -59,7 +59,7 @@ String toString(WebAssembly::WasmValKind kind)
         case WebAssembly::WasmValKind::F32: return "F32";
         case WebAssembly::WasmValKind::F64: return "F64";
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 }

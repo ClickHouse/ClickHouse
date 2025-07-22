@@ -7,8 +7,6 @@
 
 namespace DB::ErrorCodes
 {
-extern const int TOO_LARGE_STRING_SIZE;
-extern const int WASM_ERROR;
 }
 
 namespace DB::WebAssembly

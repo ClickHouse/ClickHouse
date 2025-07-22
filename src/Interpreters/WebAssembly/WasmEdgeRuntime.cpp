@@ -36,7 +36,6 @@ extern const Event WasmExecuteMicroseconds;
 namespace DB::ErrorCodes
 {
 extern const int TOO_LARGE_STRING_SIZE;
-extern const int LOGICAL_ERROR;
 extern const int WASM_ERROR;
 }
 

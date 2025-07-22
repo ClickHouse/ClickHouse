@@ -11,6 +11,7 @@
 
 
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <Common/randomSeed.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/formatBlock.h>
@@ -38,6 +39,11 @@
 
 using namespace DB;
 using namespace DB::WebAssembly;
+
+namespace DB::ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 
 struct CmdArgs
 {
@@ -148,12 +154,13 @@ void printBlock(const Block & block, const String & format_name = "PrettyCompact
 template <typename T>
 DB::ColumnVector<T>::Ptr getRandomColumn(size_t size, T min, T max)
 {
-    std::random_device rd;
-    std::mt19937 gen(rd());
+    pcg64_fast rng{randomSeed()};
+    std::uniform_int_distribution<T> dist(min, max);
+
     auto column = DB::ColumnVector<T>::create(size);
     auto & data = column->getData();
     for (size_t i = 0; i < size; ++i)
-        data[i] = std::uniform_int_distribution<T>(min, max)(gen);
+        data[i] = dist(rng);
     return column;
 }
 
@@ -175,8 +182,6 @@ try
 
     // std::unique_ptr<IWasmEngine> wasm_engine = std::make_unique<WasmEdgeRuntime>();
     std::unique_ptr<IWasmEngine> wasm_engine = std::make_unique<WasmTimeRuntime>();
-
-
 
     std::shared_ptr<WasmModule> wasm_module;
     {
