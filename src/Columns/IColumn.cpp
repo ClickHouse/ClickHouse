@@ -599,8 +599,21 @@ void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemoryWithNull(std::
 {
     const auto & self = static_cast<const Derived &>(*this);
     chassert(memories.size() == self.size());
-    for (size_t i = 0; i < self.size(); ++i)
-        memories[i] = self.serializeValueIntoMemoryWithNull(i, memories[i], is_null);
+
+    if (!is_null)
+    {
+        self.batchSerializeValueIntoMemory(memories);
+        return;
+    }
+
+    size_t rows = self.size();
+    for (size_t i = 0; i < rows; ++i)
+    {
+        *memories[i] = is_null[i];
+        ++memories[i];
+        if (!is_null[i])
+            memories[i] = self.serializeValueIntoMemory(i, memories[i]);
+    }
 }
 
 template <typename Derived, typename Parent>
@@ -644,12 +657,7 @@ void IColumnHelper<Derived, Parent>::collectSerializedValueSizes(PaddedPODArray<
     if (is_null)
     {
         for (size_t i = 0; i < rows; ++i)
-        {
-            if (is_null[i])
-                ++sizes[i];
-            else
-                sizes[i] += element_size + 1 /* null byte */;
-        }
+            sizes[i] += !!is_null[i] + !is_null[i] * (element_size + 1 /* null byte */);
     }
     else
     {
