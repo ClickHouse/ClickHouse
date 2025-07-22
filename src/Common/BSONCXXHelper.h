@@ -250,6 +250,7 @@ static T BSONElementAsNumber(const T2 & value, const std::string & name)
         case bsoncxx::type::k_int64:
             return static_cast<T>(value.get_int64());
         case bsoncxx::type::k_double:
+            parse<Int32>("fda");
             return static_cast<T>(value.get_double());
         default:
             throw Exception(

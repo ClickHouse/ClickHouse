@@ -5697,6 +5697,12 @@ void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr
 
 void MergeTreeData::calculateColumnAndSecondaryIndexSizesIfNeeded(DataPartsLock * lock) const
 {
+    if (are_columns_and_secondary_indices_sizes_calculated)
+        return;
+
+    column_sizes.clear();
+    secondary_index_sizes.clear();
+
     /// If we already have data parts lock, just iterate over parts and calculate sizes.
     if (lock)
     {
@@ -5729,6 +5735,8 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesIfNeeded(DataPartsLock 
         for (const auto & part : committed_parts_range)
             addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
     }
+
+    are_columns_and_secondary_indices_sizes_calculated = true;
 }
 
 void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
