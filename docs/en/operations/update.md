@@ -55,7 +55,11 @@ These are the recommended steps for a zero-downtime ClickHouse upgrade:
 3. Make any updates identified in the breaking changes that can be made before upgrading, and a list of the changes that will need to be made after the upgrade.
 4. Identify one or more replicas for each shard to keep up while the rest of the replicas for each shard are upgraded.
 5. On the replicas that will be upgraded, one at a time:
-- shutdown ClickHouse server  - upgrade the server to the target version  - bring ClickHouse server up  - wait for the Keeper messages to indicate that the system is stable  - continue to the next replica6. Check for errors in the Keeper log and the ClickHouse log
+- shutdown ClickHouse server  
+- upgrade the server to the target version  
+- bring ClickHouse server up  
+- wait for the Keeper messages to indicate that the system is stable  
+- continue to the next replica6. Check for errors in the Keeper log and the ClickHouse log
 7. Upgrade the replicas identified in step 4 to the new version
 8. Refer to the list of changes made in steps 1 through 3 and make the changes that need to be made after the upgrade.
 
