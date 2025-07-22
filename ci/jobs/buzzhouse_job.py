@@ -1,7 +1,7 @@
 from ci.jobs.scripts.clickhouse_proc import ClickHouseLight
 from ci.praktika.info import Info
 from ci.praktika.result import Result
-from ci.praktika.utils import Utils
+from ci.praktika.utils import Shell, Utils
 
 from pathlib import Path
 import json, random
@@ -203,7 +203,7 @@ def main():
         # out triggers. After that, it'll send a SIGKILL to the fuzzer to make sure it finishes within
         # a reasonable time.
         results.append(
-            Result.from_commands_run(
+            Shell.run(
                 name="Buzzing",
                 command=[
                     f"timeout --verbose --signal TERM --kill-after=5m --preserve-status 30m clickhouse-client --stacktrace --buzz-house-config={buzz_config_file}"
@@ -211,7 +211,8 @@ def main():
                 with_log=True,
             )
         )
-        res = results[-1].is_ok()
+        # On SIGTERM due to timeout, exit code is 143, ignore it
+        res = results[-1] == 0 or results[-1] == 143
 
     Result.create_from(
         results=results, stopwatch=stop_watch, files=[buzz_config_file, log_file]
