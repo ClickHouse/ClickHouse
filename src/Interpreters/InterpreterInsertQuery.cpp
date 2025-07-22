@@ -828,6 +828,7 @@ BlockIO InterpreterInsertQuery::execute()
 
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
     
+    // Rename columns if they are simple aliases (with no expressions).
     std::unordered_map<String, String> column_rename_map;
     for (const auto & column : metadata_snapshot->getColumns()){
         if (column.default_desc.kind == ColumnDefaultKind::Alias){
