@@ -1985,7 +1985,7 @@ namespace
 
         void setColumns(const ColumnPtr * columns, size_t num_columns) override
         {
-            assert(num_columns > column_idx);
+            assert(num_columns > presence_column_idx);
 
             Columns cols;
             cols.reserve(num_columns - 1);
