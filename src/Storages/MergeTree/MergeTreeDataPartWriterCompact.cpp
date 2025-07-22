@@ -396,7 +396,8 @@ void MergeTreeDataPartWriterCompact::initColumnsSubstreamsIfNeeded(const Block &
             return &buf;
         };
 
-        writeColumnSingleGranule(sample.getByName(name_and_type.name), getSerialization(name_and_type.name), buffer_getter, 0, 0, settings);
+        const auto & column = sample.getByName(name_and_type.name);
+        writeColumnSingleGranule(column, getSerialization(name_and_type.name), buffer_getter, column.column->size(), 0, settings);
     }
 }
 

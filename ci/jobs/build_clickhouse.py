@@ -167,6 +167,7 @@ def main():
 
     files = []
     if res and JobStages.BUILD in stages:
+        run_shell("sccache start server", "sccache --start-server", retries=3)
         run_shell("sccache stats", "sccache --show-stats")
         if build_type == BuildTypes.AMD_DEBUG:
             targets = "-k0 all"
@@ -190,8 +191,11 @@ def main():
             clang_tidy_cache_log = "./ci/tmp/clang-tidy-cache.log"
             Shell.check(f"cp /tmp/clang-tidy-cache.log {clang_tidy_cache_log}")
             files.append(clang_tidy_cache_log)
-            run_shell("clang-tidy-cache.log stats", f'echo "$(grep "exists in cache" {clang_tidy_cache_log} | wc -l) in cache\n'
-                                                    f'$(grep "does not exist in cache" {clang_tidy_cache_log} | wc -l) not in cache"')
+            run_shell(
+                "clang-tidy-cache.log stats",
+                f'echo "$(grep "exists in cache" {clang_tidy_cache_log} | wc -l) in cache\n'
+                f'$(grep "does not exist in cache" {clang_tidy_cache_log} | wc -l) not in cache"',
+            )
         run_shell("Output programs", f"ls -l {build_dir}/programs/", verbose=True)
         Shell.check("pwd")
         res = results[-1].is_ok()
@@ -222,7 +226,9 @@ def main():
         )
         res = results[-1].is_ok()
 
-    Result.create_from(results=results, stopwatch=stop_watch, files=files).complete_job()
+    Result.create_from(
+        results=results, stopwatch=stop_watch, files=files
+    ).complete_job()
 
 
 if __name__ == "__main__":
