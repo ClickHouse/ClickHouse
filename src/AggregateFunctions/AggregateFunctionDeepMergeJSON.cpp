@@ -121,11 +121,9 @@ void AggregateFunctionDeepMergeJSON::processPath(
     if (deletion_key.has_value())
     {
         std::string path_str = path.toString();
-        std::string unset_suffix = std::string(".") + *deletion_key;
-        if (path_str.size() > unset_suffix.size() && path_str.substr(path_str.size() - unset_suffix.size()) == unset_suffix
-            && value.getType() == Field::Types::Bool && value.safeGet<bool>())
+        if (path_str.ends_with(std::string(".") + *deletion_key) && value.getType() == Field::Types::Bool && value.safeGet<bool>())
         {
-            std::string target_path = path_str.substr(0, path_str.size() - unset_suffix.size());
+            std::string target_path = path_str.substr(0, path_str.size() - (*deletion_key).size() - 1);
             aggregate_data.handleDeletion(StringRef(target_path), arena);
             return;
         }
