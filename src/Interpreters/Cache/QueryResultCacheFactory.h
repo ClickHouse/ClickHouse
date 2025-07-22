@@ -1,13 +1,7 @@
 #pragma once
-
-#include <Common/NamePrompter.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Databases/LoadingStrictnessLevel.h>
-#include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
-#include <Storages/registerStorages.h>
-#include <Access/Common/AccessType.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <unordered_map>
 

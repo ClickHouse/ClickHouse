@@ -1,37 +1,13 @@
 #include <Interpreters/Cache/RemoteQueryResultCache.h>
 #include <Interpreters/Cache/QueryResultCacheFactory.h>
 #include <Parsers/TokenIterator.h>
-#include <Common/ProfileEvents.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
-#include <Common/TTLCachePolicy.h>
 #include <Core/Settings.h>
 #include <Common/RedisCommon.h>
 
 
-namespace ProfileEvents
-{
-    extern const Event QueryCacheHits;
-    extern const Event QueryCacheMisses;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric QueryCacheBytes;
-    extern const Metric QueryCacheEntries;
-}
-
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsString query_cache_tag;
-}
-
-namespace ErrorCodes
-{
-    extern const int UNSUPPORTED_DROP_QUERY_CACHE_BY_TAG;
-}
 
 RemoteQueryResultCache::RemoteQueryResultCache(std::shared_ptr<RedisConfiguration> config, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
     : cache(config)
@@ -134,7 +110,8 @@ std::vector<QueryResultCache::KeyMapped> RemoteQueryResultCache::dump() const
 void registerRemoteQueryResultCache(QueryResultCacheFactory & factory)
 {
     static auto constexpr remote_cache_name = "redis";
-    factory.registerQueryResultCache(remote_cache_name, [] (size_t, const Poco::Util::AbstractConfiguration & config) {
+    factory.registerQueryResultCache(remote_cache_name, [] (size_t, const Poco::Util::AbstractConfiguration & config)
+    {
         auto remote_cache_config = std::make_shared<RedisConfiguration>();
         remote_cache_config->host = config.getString("query_cache.redis.host", "");
         remote_cache_config->port = config.getInt("query_cache.redis.port", 6379);
