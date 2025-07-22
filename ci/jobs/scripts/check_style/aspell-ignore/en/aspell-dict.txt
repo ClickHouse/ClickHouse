@@ -2492,6 +2492,7 @@ notequals
 notlike
 notretry
 nowInBlock
+now64InBlock
 ntile
 nullIf
 nullability
