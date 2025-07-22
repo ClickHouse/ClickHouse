@@ -515,6 +515,11 @@ macro (clickhouse_add_executable target)
             "LINKER:--wrap=memalign"
             "LINKER:--wrap=reallocarray"
         )
+        if (NOT USE_MUSL)
+            target_link_options(${target} PRIVATE
+                "LINKER:--wrap=pvalloc"
+            )
+        endif()
     endif()
 
     get_target_property (type ${target} TYPE)
