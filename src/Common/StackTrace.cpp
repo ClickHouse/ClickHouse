@@ -294,7 +294,7 @@ void StackTrace::forEachFrame(
             }
         }
 
-        if (const auto * symbol = symbol_index.findSymbol(current_frame.virtual_addr))
+        if (const auto * symbol = symbol_index.findSymbol(current_frame.physical_addr))
             current_frame.symbol = demangle(symbol->name);
 
         for (const auto & frame : inline_frames)
