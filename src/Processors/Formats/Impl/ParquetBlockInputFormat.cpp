@@ -34,7 +34,6 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
-#include <shared_mutex>
 #include <boost/algorithm/string/case_conv.hpp>
 
 namespace ProfileEvents
