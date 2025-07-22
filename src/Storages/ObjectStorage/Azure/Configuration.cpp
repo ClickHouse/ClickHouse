@@ -3,6 +3,7 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
+#include <Common/assert_cast.h>
 #include <azure/storage/common/storage_credential.hpp>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
