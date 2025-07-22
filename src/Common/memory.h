@@ -40,13 +40,18 @@ inline ALWAYS_INLINE size_t alignToSizeT(std::align_val_t align) noexcept
     return static_cast<size_t>(align);
 }
 
+inline ALWAYS_INLINE size_t alignUp(size_t size, size_t align) noexcept
+{
+    return (size + align - 1) / align * align;
+}
+
 template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
 {
     void * ptr = nullptr;
     if constexpr (sizeof...(TAlign) == 1)
-        ptr = aligned_alloc(alignToSizeT(align...), size);
+        ptr = aligned_alloc(alignToSizeT(align...), alignUp(size, alignToSizeT(align...)));
     else
         ptr = malloc(size);
 
