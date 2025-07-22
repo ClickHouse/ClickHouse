@@ -520,11 +520,7 @@ macro (clickhouse_add_executable target)
 
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
-        # Disabled if memory tracking is disabled
-        if (TARGET clickhouse_new_delete)
-            # operator::new/delete for executables (MemoryTracker stuff)
-            target_link_libraries (${target} PRIVATE clickhouse_new_delete)
-        endif()
+        target_link_libraries (${target} PUBLIC clickhouse_new_delete)
 
         # In case of static jemalloc, because zone_register() is located in zone.c and
         # is never used outside (it is declared as constructor) it is omitted
