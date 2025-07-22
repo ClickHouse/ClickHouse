@@ -430,7 +430,7 @@ protected:
 
     /// Text to prepopulate in the next query prompt
     String next_query_to_prepopulate;
-    /// When buzz_house set to 2, cut client the output
+    /// When buzz_house set to 2, cut the client output
     int buzz_house = 0;
     int error_code = 0;
 
