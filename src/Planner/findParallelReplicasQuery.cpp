@@ -382,7 +382,8 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
             new_stack.pop_back();
         }
     }
-    else {
+    else
+    {
         LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "findQueryforParallelReplicas() returned NULL");
     }
 
