@@ -50,7 +50,6 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 interactive_delay;
-    extern const SettingsBool json_type_escape_dots_in_keys;
 }
 
 namespace ErrorCodes
