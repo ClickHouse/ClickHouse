@@ -88,8 +88,8 @@ void DeepMergeJSONAggregateData::addPath(const StringRef & path, const Field & v
         paths[path] = PathData{value, false};
     }
 
-    /// Remove child paths if this is now a leaf value
-    if (!value.isNull() && !isObjectPath(path))
+    /// Remove child paths if this is now a leaf value (non-object)
+    if (!value.isNull() && value.getType() != Field::Types::Object)
         removeChildPaths(path);
 }
 
@@ -174,15 +174,12 @@ void AggregateFunctionDeepMergeJSON::processColumnObject(
         ReadBufferFromMemory buf(value_data.data, value_data.size);
         auto type = decodeDataType(buf);
 
-        if (!isNothing(type))
-        {
-            const auto column = type->createColumn();
-            type->getDefaultSerialization()->deserializeBinary(*column, buf, FormatSettings());
+        const auto column = type->createColumn();
+        type->getDefaultSerialization()->deserializeBinary(*column, buf, FormatSettings());
 
-            Field value;
-            column->get(0, value);
-            processPath(path, value, aggregate_data, arena);
-        }
+        Field value;
+        column->get(0, value);
+        processPath(path, value, aggregate_data, arena);
     }
 
     validatePathsCount(aggregate_data.paths.size());
