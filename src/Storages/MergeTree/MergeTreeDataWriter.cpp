@@ -90,9 +90,6 @@ namespace ErrorCodes
     extern const int NOT_ENOUGH_SPACE;
 }
 
-namespace
-{
-
 void buildScatterSelector(
         const ColumnRawPtrs & columns,
         PODArray<size_t> & partition_num_to_first_row,
@@ -160,6 +157,9 @@ void buildScatterSelector(
                          client_info.initial_user, client_info.initial_query_id, partitions_count);
     }
 }
+
+namespace
+{
 
 /// Computes ttls and updates ttl infos
 void updateTTL(
@@ -337,7 +337,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, AsyncInsertInfoPtr async_insert_info)
 {
     BlocksWithPartition result;
-    if (!block || !block.rows())
+    if (block.empty() || !block.rows())
         return result;
 
     metadata_snapshot->check(block, true);
@@ -432,11 +432,12 @@ Block MergeTreeDataWriter::mergeBlock(
     IColumn::Permutation *& permutation,
     const MergeTreeData::MergingParams & merging_params)
 {
+    SharedHeader header = std::make_shared<const Block>(std::move(block));
     OpenTelemetry::SpanHolder span("MergeTreeDataWriter::mergeBlock");
 
-    size_t block_size = block.rows();
+    size_t block_size = header->rows();
     span.addAttribute("clickhouse.rows", block_size);
-    span.addAttribute("clickhouse.columns", block.columns());
+    span.addAttribute("clickhouse.columns", header->columns());
 
     auto get_merging_algorithm = [&]() -> std::shared_ptr<IMergingAlgorithm>
     {
@@ -447,33 +448,33 @@ Block MergeTreeDataWriter::mergeBlock(
                 return nullptr;
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedAlgorithm>(
-                    block, 1, sort_description, merging_params.is_deleted_column, merging_params.version_column, block_size + 1, /*block_size_bytes=*/0);
+                    header, 1, sort_description, merging_params.is_deleted_column, merging_params.version_column, block_size + 1, /*block_size_bytes=*/0);
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedAlgorithm>(
-                    block, 1, sort_description, merging_params.sign_column,
+                    header, 1, sort_description, merging_params.sign_column,
                     false, block_size + 1, /*block_size_bytes=*/0, getLogger("MergeTreeDataWriter"), /*out_row_sources_buf_=*/ nullptr,
                     /*use_average_block_sizes=*/ false, /*throw_if_invalid_sign=*/ true);
             case MergeTreeData::MergingParams::Summing: {
                 auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<SummingSortedAlgorithm>(
-                    block, 1, sort_description, merging_params.columns_to_sum,
+                    header, 1, sort_description, merging_params.columns_to_sum,
                     required_columns, block_size + 1, /*block_size_bytes=*/0, "sumWithOverflow");
             }
             case MergeTreeData::MergingParams::Aggregating:
-                return std::make_shared<AggregatingSortedAlgorithm>(block, 1, sort_description, block_size + 1, /*block_size_bytes=*/0);
+                return std::make_shared<AggregatingSortedAlgorithm>(header, 1, sort_description, block_size + 1, /*block_size_bytes=*/0);
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 return std::make_shared<VersionedCollapsingAlgorithm>(
-                    block, 1, sort_description, merging_params.sign_column, block_size + 1, /*block_size_bytes=*/0);
+                    header, 1, sort_description, merging_params.sign_column, block_size + 1, /*block_size_bytes=*/0);
             case MergeTreeData::MergingParams::Graphite:
                 return std::make_shared<GraphiteRollupSortedAlgorithm>(
-                    block, 1, sort_description, block_size + 1, /*block_size_bytes=*/0, merging_params.graphite_params, time(nullptr));
+                    header, 1, sort_description, block_size + 1, /*block_size_bytes=*/0, merging_params.graphite_params, time(nullptr));
             case MergeTreeData::MergingParams::Coalescing:
             {
                 auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<SummingSortedAlgorithm>(
-                    block, 1, sort_description, merging_params.columns_to_sum,
+                    header, 1, sort_description, merging_params.columns_to_sum,
                     required_columns, block_size + 1, /*block_size_bytes=*/0, "last_value");
             }
         }
@@ -481,11 +482,11 @@ Block MergeTreeDataWriter::mergeBlock(
 
     auto merging_algorithm = get_merging_algorithm();
     if (!merging_algorithm)
-        return block;
+        return *header;
 
     span.addAttribute("clickhouse.merging_algorithm", merging_algorithm->getName());
 
-    Chunk chunk(block.getColumns(), block_size);
+    Chunk chunk(header->getColumns(), block_size);
 
     IMergingAlgorithm::Input input;
     input.set(std::move(chunk));
@@ -510,7 +511,7 @@ Block MergeTreeDataWriter::mergeBlock(
     /// Merged Block is sorted and we don't need to use permutation anymore
     permutation = nullptr;
 
-    return block.cloneWithColumns(status.chunk.getColumns());
+    return header->cloneWithColumns(status.chunk.getColumns());
 }
 
 

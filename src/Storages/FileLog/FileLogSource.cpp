@@ -22,7 +22,7 @@ FileLogSource::FileLogSource(
     size_t stream_number_,
     size_t max_streams_number_,
     StreamingHandleErrorMode handle_error_mode_)
-    : ISource(storage_snapshot_->getSampleBlockForColumns(columns))
+    : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)

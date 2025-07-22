@@ -76,7 +76,7 @@ namespace
     }
 }
 
-ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
+ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
     : IOutputFormat(header_, out_), format_settings{format_settings_}
 {
     if (format_settings.parquet.use_custom_encoder)
@@ -105,6 +105,7 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Blo
         options.output_string_as_string = format_settings.parquet.output_string_as_string;
         options.output_fixed_string_as_fixed_byte_array = format_settings.parquet.output_fixed_string_as_fixed_byte_array;
         options.output_datetime_as_uint32 = format_settings.parquet.output_datetime_as_uint32;
+        options.output_enum_as_byte_array = format_settings.parquet.output_enum_as_byte_array;
         options.data_page_size = format_settings.parquet.data_page_size;
         options.write_batch_size = format_settings.parquet.write_batch_size;
         options.write_page_index = format_settings.parquet.write_page_index;
@@ -113,7 +114,7 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Blo
         options.bloom_filter_flush_threshold_bytes = format_settings.parquet.bloom_filter_flush_threshold_bytes;
         options.write_geometadata = format_settings.parquet.write_geometadata;
 
-        schema = convertSchema(header_, options);
+        schema = convertSchema(*header_, options);
     }
 }
 
@@ -590,7 +591,7 @@ void registerOutputFormatParquet(FormatFactory & factory)
            const Block & sample,
            const FormatSettings & format_settings)
         {
-            return std::make_shared<ParquetBlockOutputFormat>(buf, sample, format_settings);
+            return std::make_shared<ParquetBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings);
         });
     factory.markFormatHasNoAppendSupport("Parquet");
     factory.markOutputFormatNotTTYFriendly("Parquet");

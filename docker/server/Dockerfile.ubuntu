@@ -20,15 +20,17 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
     && useradd -r -g clickhouse --uid=101 --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse \
     && apt-get update \
     && apt-get install --yes --no-install-recommends \
+        busybox \
         ca-certificates \
         locales \
         tzdata \
         wget \
+    && busybox --install -s \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION="25.6.3.116"
+ARG VERSION="25.6.4.12"
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
 #docker-official-library:off

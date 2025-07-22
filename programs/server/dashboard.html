@@ -1071,7 +1071,9 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
         /// This will make the balloon to the right of the cursor when the cursor is on the left side, and vise-versa,
         /// avoiding the borders of the chart.
         left -= legendEl.clientWidth * (left / u.width);
-        top -= legendEl.clientHeight;
+        if (top >= legendEl.clientHeight) {
+            top -= legendEl.clientHeight;
+        }
         legendEl.style.transform = "translate(" + left + "px, " + top + "px)";
 
         if (multiline) {
