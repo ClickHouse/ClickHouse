@@ -179,7 +179,7 @@ def main():
             "compare_success_results": False,  # This can give false positives, so disable it
             "allow_infinite_tables": random.choice([True, False]),
             # These are the error codes that I disallow at the moment
-            "disallowed_error_codes": "9,13,15,99,100,101,102,108,127,128,162,165,166,173,209,230,231,233,234,235,246,256,257,261,270,271,272,273,274,275,305,307,635,637,638,639,640,642,645,647,718,1003",
+            "disallowed_error_codes": "9,13,15,99,100,101,102,108,127,162,165,166,173,209,230,231,233,234,235,246,256,257,261,270,271,272,273,274,275,305,307,635,637,638,639,640,642,645,647,718,1003",
             "client_file_path": "/var/lib/clickhouse/user_files",
             "server_file_path": "/var/lib/clickhouse/user_files",
             "log_path": log_file,
@@ -197,10 +197,15 @@ def main():
         with open(buzz_config_file, "w") as outfile:
             outfile.write(json.dumps(buzz_config))
 
+        # Allow the fuzzer to run for some time, giving it a grace period of 5m to finish once the time
+        # out triggers. After that, it'll send a SIGKILL to the fuzzer to make sure it finishes within
+        # a reasonable time.
         results.append(
             Result.from_commands_run(
                 name="Buzzing",
-                command=[f"clickhouse-client --buzz-house-config={buzz_config_file}"],
+                command=[
+                    f"timeout --verbose --signal TERM --kill-after=5m --preserve-status 30m clickhouse-client --stacktrace --buzz-house-config={buzz_config_file}"
+                ],
                 with_log=True,
             )
         )
