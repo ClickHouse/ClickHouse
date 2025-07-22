@@ -177,9 +177,6 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy {} can not be used with partition_columns_in_data_file=0", "wildcard");
         }
 
-        // in theory, we should not accept wildcard partition strategy without a wildcard in the path
-        // but it has been made that way by default, it just won't include the partition id in the filepath
-
         return std::make_shared<WildcardPartitionStrategy>(
             KeyDescription::getKeyFromAST(partition_by, ColumnsDescription::fromNamesAndTypes(sample_block.getNamesAndTypes()), context),
             sample_block,
