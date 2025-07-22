@@ -1,4 +1,3 @@
-#include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 
@@ -36,7 +35,6 @@
 #include <Processors/Transforms/ApplySquashingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/ColumnDefault.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageDistributed.h>
@@ -46,7 +44,6 @@
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
 #include <Common/ProfileEvents.h>
-#include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Processors/Sources/RemoteSource.h>
