@@ -8,10 +8,10 @@ import pika
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-from .test import check_query_result
+from .test import check_expected_result_polling
 
 DEFAULT_TIMEOUT_SEC = 120
-CLICKHOUSE_VIEW_TIMEOUT_SEC = 240
+CLICKHOUSE_VIEW_TIMEOUT_SEC = 120
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -193,11 +193,7 @@ def common_restore_failed_connection_without_losses(rabbitmq_cluster, rabbitmq_m
         if number == messages_num:
             pytest.fail("All RabbitMQ messages have been consumed before resuming the RabbitMQ server")
 
-    result = check_query_result(messages_num, instance, f"SELECT count(DISTINCT key) FROM {table_dst}", CLICKHOUSE_VIEW_TIMEOUT_SEC)
-
-    assert result == messages_num, "ClickHouse lost some messages: {}".format(
-        result
-    )
+    check_expected_result_polling(messages_num, f"SELECT count(DISTINCT key) FROM {table_dst}", instance=instance, timeout=CLICKHOUSE_VIEW_TIMEOUT_SEC)
 
 
 def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, rabbitmq_monitor):
