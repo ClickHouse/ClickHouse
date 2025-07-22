@@ -48,6 +48,7 @@ public:
         std::optional<FormatSettings> format_settings_,
         LoadingStrictnessLevel mode,
         bool if_not_exists_,
+        bool is_datalake_query,
         bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr,
         bool is_table_function_ = false,

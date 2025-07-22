@@ -7,6 +7,7 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Parsers/ASTFunction.h>
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
@@ -321,6 +322,8 @@ Poco::Dynamic::Var getIcebergType(DataTypePtr type, Int32 & iter)
         case TypeIndex::Float64:
             return "double";
         case TypeIndex::Date32:
+        case TypeIndex::DateTime:
+        case TypeIndex::DateTime64:
             return "date";
         case TypeIndex::Time:
             return "time";
@@ -374,8 +377,13 @@ Poco::Dynamic::Var getIcebergType(DataTypePtr type, Int32 & iter)
             field->set(Iceberg::f_value_requires, false);
             return field;
         }
+        case TypeIndex::Nullable:
+        {
+            auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
+            return getIcebergType(type_nullable->getNestedType(), iter);
+        }
         default:
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
     }
 }
 

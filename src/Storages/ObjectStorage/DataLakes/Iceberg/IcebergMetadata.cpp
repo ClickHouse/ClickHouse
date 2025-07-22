@@ -462,10 +462,15 @@ void IcebergMetadata::createInitial(
 {
     auto configuration_ptr = configuration.lock();
 
-    auto metadata_content = createEmptyMetadataFile(configuration_ptr->getPath(), *columns, partition_by, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
-    auto filename = configuration_ptr->getPath() + "metadata/v1.metadata.json";
-
-    const auto metadata_files = listFiles(*object_storage, *configuration_ptr, "metadata", ".metadata.json");
+    std::vector<String> metadata_files;
+    try
+    {
+        metadata_files = listFiles(*object_storage, *configuration_ptr, "metadata", ".metadata.json");
+    }
+    catch (const Exception & ex)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "NoSuchBucket: {}", ex.what());
+    }
     if (!metadata_files.empty())
     {
         if (if_not_exists)
@@ -474,6 +479,8 @@ void IcebergMetadata::createInitial(
             throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Iceberg table with path {} already exists", configuration_ptr->getPath());
     }
 
+    auto metadata_content = createEmptyMetadataFile(configuration_ptr->getPath(), *columns, partition_by, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
+    auto filename = configuration_ptr->getPath() + "metadata/v1.metadata.json";
     auto buffer_metadata = object_storage->writeObject(
         StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, local_context->getWriteSettings());
     buffer_metadata->write(metadata_content.data(), metadata_content.size());

@@ -72,6 +72,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         format_settings,
         args.mode,
         args.query.if_not_exists,
+        /* is_datalake_query*/ false,
         /* distributed_processing */ false,
         partition_by);
 }
