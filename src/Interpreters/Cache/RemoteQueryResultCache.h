@@ -1,17 +1,7 @@
 #pragma once
 
 #include <Interpreters/Cache/QueryResultCache.h>
-#include <Common/CacheBase.h>
-#include <Common/logger_useful.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Interpreters/Cache/QueryResultCacheUsage.h>
-#include <Interpreters/Context_fwd.h>
-#include <Core/Block.h>
-#include <Parsers/IASTHash.h>
-#include <Processors/Chunk.h>
-#include <Processors/Sources/SourceFromChunks.h>
-#include <QueryPipeline/Pipe.h>
-#include <base/UUID.h>
 #include <Common/RemoteCacheBase.h>
 
 #include <optional>
@@ -27,9 +17,9 @@ class RemoteQueryResultCache : public QueryResultCache
 {
 public:
     /// query --> query result
-    using Cache = RemoteCacheBase<Key, Entry, KeyHasher, QueryResultCacheEntryWeight>;
+    using Cache = RemoteCacheBase<Key, Entry, KeyHasher, EntryWeight>;
     RemoteQueryResultCache(std::shared_ptr<RedisConfiguration> config, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
-    virtual ~RemoteQueryResultCache() override {}
+    ~RemoteQueryResultCache() override = default;
 
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config) override;
 
@@ -92,12 +82,8 @@ public:
     {
         initializeWriter<Cache, RemoteQueryResultCache::IsStale>(cache_, key_);
     }
-    RemoteQueryResultCacheWriter(const RemoteQueryResultCacheWriter & other)
-        : QueryResultCacheWriter(other)
-        , cache(other.cache)
-    {
-    }
-    virtual ~RemoteQueryResultCacheWriter() override = default;
+    RemoteQueryResultCacheWriter(const RemoteQueryResultCacheWriter &) = default;
+    ~RemoteQueryResultCacheWriter() override = default;
     void finalizeWrite() override
     {
         finalizeWriteImpl<Cache, RemoteQueryResultCache::IsStale>(cache);

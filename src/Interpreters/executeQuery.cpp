@@ -1591,7 +1591,7 @@ static BlockIO executeQueryImpl(
                                 context->getCurrentQueryId(),
                                 context->getUserID(), context->getCurrentRoles(),
                                 settings[Setting::query_cache_share_between_users],
-                                static_cast<uint32_t>(settings[Setting::query_cache_ttl].totalSeconds()),
+                                std::chrono::system_clock::now() + std::chrono::seconds(settings[Setting::query_cache_ttl]),
                                 settings[Setting::query_cache_compress_entries]);
 
                             const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_result_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()

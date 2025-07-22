@@ -99,7 +99,6 @@ public:
         /// compute the tag from the query AST.
         String tag;
 
-        uint32_t ttl_seconds;
         /// Ctor to construct a Key for deserialization from buffer.
         Key() = default;
         /// Ctor to construct a Key for writing into query result cache.
@@ -110,7 +109,7 @@ public:
             const String & query_id_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
             bool is_shared_,
-            const uint32_t ttl_seconds,
+            std::chrono::time_point<std::chrono::system_clock> expires_at_,
             bool is_compressed);
 
         /// Ctor to construct a Key for reading from query result cache (this operation only needs the AST + user name).
@@ -146,9 +145,8 @@ public:
         size_t operator()(const Entry & entry) const;
     };
 
-public:
-    QueryResultCache();
-    virtual ~QueryResultCache();
+    QueryResultCache() = default;
+    virtual ~QueryResultCache() = default;
 
     virtual void updateConfiguration(const Poco::Util::AbstractConfiguration & config) = 0;
 
@@ -200,7 +198,7 @@ public:
         bool squash_partial_results_,
         size_t max_block_size_);
     QueryResultCacheWriter(const QueryResultCacheWriter & other);
-    virtual ~QueryResultCacheWriter() {}
+    virtual ~QueryResultCacheWriter() = default;
 
     enum class ChunkType : uint8_t
     {
@@ -322,7 +320,7 @@ protected:
             return res;
         };
 
-        size_t new_entry_size_in_bytes = QueryResultCache::QueryResultCacheEntryWeight()(*query_result);
+        size_t new_entry_size_in_bytes = QueryResultCache::EntryWeight()(*query_result);
         size_t new_entry_size_in_rows = count_rows_in_chunks(*query_result);
 
         if ((new_entry_size_in_bytes > max_entry_size_in_bytes) || (new_entry_size_in_rows > max_entry_size_in_rows))
@@ -338,7 +336,7 @@ protected:
 
         was_finalized = true;
     }
-protected:
+
     std::mutex mutex;
     const QueryResultCache::Key key;
     const size_t max_entry_size_in_bytes;
@@ -371,10 +369,6 @@ protected:
     {
         auto entry = cache_.getWithKey(key_);
 
-<<<<<<< HEAD
-    QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &);
-    void buildSourceFromChunks(SharedHeader header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
-=======
         if (!entry.has_value())
         {
             LOG_TRACE(logger, "No query result found for query {}", doubleQuoteString(key_.query_string));
@@ -434,8 +428,7 @@ protected:
 
         LOG_TRACE(logger, "Query result found for query {}", doubleQuoteString(key_.query_string));
     }
-    void buildSourceFromChunks(Block header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
-protected:
+    void buildSourceFromChunks(SharedHeader header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
     std::unique_ptr<SourceFromChunks> source_from_chunks;
     std::unique_ptr<SourceFromChunks> source_from_chunks_totals;
     std::unique_ptr<SourceFromChunks> source_from_chunks_extremes;
