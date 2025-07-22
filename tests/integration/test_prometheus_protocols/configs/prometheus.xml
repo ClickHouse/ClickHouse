@@ -1,6 +1,6 @@
 <clickhouse>
     <prometheus>
-        <port>9092</port>
+        <port>9093</port>
         <handlers>
             <my_rule_1>
                 <url>/write</url>

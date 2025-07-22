@@ -721,23 +721,23 @@ class ClickHouseCluster:
         # available when with_prometheus == True
         self.with_prometheus = False
         self.prometheus_writer_host = "prometheus_writer"
-        self.prometheus_writer_ip = None
         self.prometheus_writer_port = 9090
-        self.prometheus_writer_logs_dir = p.abspath(
-            p.join(self.instances_dir, "prometheus_writer/logs")
-        )
+        self.prometheus_writer_enabled = False
+        self.prometheus_writer_ip = None
         self.prometheus_reader_host = "prometheus_reader"
-        self.prometheus_reader_ip = None
         self.prometheus_reader_port = 9091
-        self.prometheus_reader_logs_dir = p.abspath(
-            p.join(self.instances_dir, "prometheus_reader/logs")
-        )
+        self.prometheus_reader_enabled = False
+        self.prometheus_reader_ip = None
+        self.prometheus_receiver_host = "prometheus_receiver"
+        self.prometheus_receiver_port = 9092
+        self.prometheus_receiver_enabled = False
+        self.prometheus_receiver_ip = None
         self.prometheus_remote_write_handler_host = None
-        self.prometheus_remote_write_handler_port = 9092
-        self.prometheus_remote_write_handler_path = "/write"
+        self.prometheus_remote_write_handler_port = None
+        self.prometheus_remote_write_handler_path = None
         self.prometheus_remote_read_handler_host = None
-        self.prometheus_remote_read_handler_port = 9092
-        self.prometheus_remote_read_handler_path = "/read"
+        self.prometheus_remote_read_handler_port = None
+        self.prometheus_remote_read_handler_path = None
 
         self.docker_client: docker.DockerClient = None
         self.is_up = False
@@ -1578,14 +1578,19 @@ class ClickHouseCluster:
         return self.base_hive_cmd
 
     def setup_prometheus_cmd(self, instance, env_variables, docker_compose_yml_dir):
-        env_variables["PROMETHEUS_WRITER_HOST"] = self.prometheus_writer_host
-        env_variables["PROMETHEUS_WRITER_PORT"] = str(self.prometheus_writer_port)
-        env_variables["PROMETHEUS_WRITER_LOGS"] = self.prometheus_writer_logs_dir
-        env_variables["PROMETHEUS_WRITER_LOGS_FS"] = "bind"
-        env_variables["PROMETHEUS_READER_HOST"] = self.prometheus_reader_host
-        env_variables["PROMETHEUS_READER_PORT"] = str(self.prometheus_reader_port)
-        env_variables["PROMETHEUS_READER_LOGS"] = self.prometheus_reader_logs_dir
-        env_variables["PROMETHEUS_READER_LOGS_FS"] = "bind"
+        for kind in self.get_prometheus_server_kinds():
+            env_var_prefix = f"PROMETHEUS_{kind.upper()}"
+            env_variables[f"{env_var_prefix}_HOST"] = self.get_prometheus_server_host(
+                kind
+            )
+            env_variables[f"{env_var_prefix}_PORT"] = str(
+                self.get_prometheus_server_port(kind)
+            )
+            env_variables[f"{env_var_prefix}_LOGS"] = (
+                self.get_prometheus_server_logs_dir(kind)
+            )
+            env_variables[f"{env_var_prefix}_LOGS_FS"] = "bind"
+
         if self.prometheus_remote_write_handler_host:
             env_variables["PROMETHEUS_REMOTE_WRITE_HANDLER"] = (
                 f"http://{self.prometheus_remote_write_handler_host}:{self.prometheus_remote_write_handler_port}/{self.prometheus_remote_write_handler_path.strip('/')}"
@@ -1594,6 +1599,7 @@ class ClickHouseCluster:
             env_variables["PROMETHEUS_REMOTE_READ_HANDLER"] = (
                 f"http://{self.prometheus_remote_read_handler_host}:{self.prometheus_remote_read_handler_port}/{self.prometheus_remote_read_handler_path.strip('/')}"
             )
+
         if not self.with_prometheus:
             self.with_prometheus = True
             self.base_cmd.extend(
@@ -1652,12 +1658,14 @@ class ClickHouseCluster:
         with_jdbc_bridge=False,
         with_hive=False,
         with_coredns=False,
-        with_prometheus=False,
+        with_prometheus_writer=False,
+        with_prometheus_reader=False,
+        with_prometheus_receiver=False,
         with_iceberg_catalog=False,
         with_glue_catalog=False,
         with_hms_catalog=False,
-        handle_prometheus_remote_write=False,
-        handle_prometheus_remote_read=False,
+        handle_prometheus_remote_write=None,
+        handle_prometheus_remote_read=None,
         use_old_analyzer=None,
         use_distributed_plan=None,
         hostname=None,
@@ -2039,11 +2047,19 @@ class ClickHouseCluster:
                 self.setup_hive(instance, env_variables, docker_compose_yml_dir)
             )
 
-        if with_prometheus:
-            if handle_prometheus_remote_write:
-                self.prometheus_remote_write_handler_host = instance.hostname
-            if handle_prometheus_remote_read:
-                self.prometheus_remote_read_handler_host = instance.hostname
+        if with_prometheus_writer:
+            self.prometheus_writer_enabled = True
+        if with_prometheus_reader:
+            self.prometheus_reader_enabled = True
+        if with_prometheus_receiver:
+            self.prometheus_receiver_enabled = True
+        if handle_prometheus_remote_write and not self.prometheus_remote_write_handler_host:
+            self.prometheus_remote_write_handler_host = instance.hostname
+            (self.prometheus_remote_write_handler_port, self.prometheus_remote_write_handler_path) = handle_prometheus_remote_write
+        if handle_prometheus_remote_read and not self.prometheus_remote_read_handler_host:
+            self.prometheus_remote_read_handler_host = instance.hostname
+            (self.prometheus_remote_read_handler_port, self.prometheus_remote_read_handler_path) = handle_prometheus_remote_read
+        if with_prometheus_writer or with_prometheus_reader or with_prometheus_receiver:
             cmds.append(
                 self.setup_prometheus_cmd(
                     instance, env_variables, docker_compose_yml_dir
@@ -2243,30 +2259,25 @@ class ClickHouseCluster:
             with open(local_path, "wb") as f:
                 f.write(decoded_data)
         else:
-            raise RuntimeError(f"Failed to read or empty content from {src_path} in container {container_id}")
+            raise RuntimeError(
+                f"Failed to read or empty content from {src_path} in container {container_id}"
+            )
 
     def file_exists_in_container(self, container_id, path):
         try:
-            self.exec_in_container(
-                container_id,
-                ["bash", "-c", f"test -f {path}"]
-            )
+            self.exec_in_container(container_id, ["bash", "-c", f"test -f {path}"])
             return True
         except Exception:
             return False
-        
+
     def get_files_list_in_container(self, container_id, path):
         result = self.exec_in_container(
             container_id,
-            [
-                "bash",
-                "-c",
-                f"find {path} -type f"
-            ],
+            ["bash", "-c", f"find {path} -type f"],
         )
 
         files = result.strip().splitlines() if result else []
-        return files            
+        return files
 
     def move_file_in_container(self, container_id, old_path, new_path):
         self.exec_in_container(
@@ -2894,14 +2905,11 @@ class ClickHouseCluster:
         raise Exception("Can't wait LDAP to start")
 
     def wait_prometheus_to_start(self):
-        self.prometheus_reader_ip = self.get_instance_ip(self.prometheus_reader_host)
-        self.prometheus_writer_ip = self.get_instance_ip(self.prometheus_writer_host)
-        self.wait_for_url(
-            f"http://{self.prometheus_reader_ip}:{self.prometheus_reader_port}/api/v1/query?query=time()"
-        )
-        self.wait_for_url(
-            f"http://{self.prometheus_writer_ip}:{self.prometheus_writer_port}/api/v1/query?query=time()"
-        )
+        for kind in self.get_prometheus_server_kinds():
+            prom_ip = self.get_instance_ip(self.get_prometheus_server_host(kind))
+            prom_port = self.get_prometheus_server_port(kind)
+            self.set_prometheus_server_ip(kind, prom_ip)
+            self.wait_for_url(f"http://{prom_ip}:{prom_port}/api/v1/status/runtimeinfo")
 
     def start(self):
         pytest_xdist_logging_to_separate_files.setup()
@@ -3329,10 +3337,10 @@ class ClickHouseCluster:
                 )
 
             if self.with_prometheus and self.base_prometheus_cmd:
-                os.makedirs(self.prometheus_writer_logs_dir)
-                os.chmod(self.prometheus_writer_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-                os.makedirs(self.prometheus_reader_logs_dir)
-                os.chmod(self.prometheus_reader_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                for kind in self.get_prometheus_server_kinds():
+                    prom_logs_dir = self.get_prometheus_server_logs_dir(kind)
+                    os.makedirs(prom_logs_dir)
+                    os.chmod(prom_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 prometheus_start_cmd = self.base_prometheus_cmd + common_opts
 
@@ -3558,6 +3566,65 @@ class ClickHouseCluster:
                 time.sleep(sleep_for)
         kazoo_callback(zk)
         zk.stop()
+
+    # Returns a list of the enabled prometheus services.
+    def get_prometheus_server_kinds(self):
+        kinds = []
+        if self.prometheus_writer_enabled:
+            kinds.append("writer")
+        if self.prometheus_reader_enabled:
+            kinds.append("reader")
+        if self.prometheus_receiver_enabled:
+            kinds.append("receiver")
+        return kinds
+
+    def get_prometheus_server_host(self, kind):
+        if kind == "writer":
+            return self.prometheus_writer_host
+        elif kind == "reader":
+            return self.prometheus_reader_host
+        elif kind == "receiver":
+            return self.prometheus_receiver_host
+        raise ValueError(
+            f"kind ({kind}) must be one of {self.get_prometheus_server_kinds()}"
+        )
+
+    def get_prometheus_server_port(self, kind):
+        if kind == "writer":
+            return self.prometheus_writer_port
+        elif kind == "reader":
+            return self.prometheus_reader_port
+        elif kind == "receiver":
+            return self.prometheus_receiver_port
+        raise ValueError(
+            f"kind ({kind}) must be one of {self.get_prometheus_server_kinds()}"
+        )
+
+    def get_prometheus_server_logs_dir(self, kind):
+        return p.abspath(p.join(self.instances_dir, f"prometheus_{kind}/logs"))
+
+    def get_prometheus_server_ip(self, kind):
+        if kind == "writer":
+            return self.prometheus_writer_ip
+        elif kind == "reader":
+            return self.prometheus_reader_ip
+        elif kind == "receiver":
+            return self.prometheus_receiver_ip
+        raise ValueError(
+            f"kind ({kind}) must be one of {self.get_prometheus_server_kinds()}"
+        )
+
+    def set_prometheus_server_ip(self, kind, ip):
+        if kind == "writer":
+            self.prometheus_writer_ip = ip
+        elif kind == "reader":
+            self.prometheus_reader_ip = ip
+        elif kind == "receiver":
+            self.prometheus_receiver_ip = ip
+        else:
+            raise ValueError(
+                f"kind ({kind}) must be one of {self.get_prometheus_server_kinds()}"
+            )
 
     def add_zookeeper_startup_command(self, command):
         self.pre_zookeeper_commands.append(command)
@@ -4503,14 +4570,10 @@ class ClickHouseInstance:
         )
 
     def file_exists_in_container(self, path):
-        return self.cluster.file_exists_in_container(
-            self.docker_id, path
-        )
-    
+        return self.cluster.file_exists_in_container(self.docker_id, path)
+
     def get_files_list_in_container(self, path):
-        return self.cluster.get_files_list_in_container(
-            self.docker_id, path
-        )
+        return self.cluster.get_files_list_in_container(self.docker_id, path)
 
     def move_file_in_container(self, old_path, new_path):
         return self.cluster.move_file_in_container(self.docker_id, old_path, new_path)
