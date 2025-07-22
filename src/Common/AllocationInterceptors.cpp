@@ -285,4 +285,15 @@ extern "C" void __wrap_free(void * ptr) // NOLINT
     __real_free(ptr);
 }
 
+#if !defined(USE_MUSL)
+extern "C" void * __wrap_pvalloc(size_t size) // NOLINT
+{
+    AllocationTrace trace;
+    size_t actual_size = Memory::trackMemory(size, trace);
+    void * res = __real_pvalloc(size);
+    trace.onAlloc(res, actual_size);
+    return res;
+}
+#endif
+
 #pragma clang diagnostic pop
