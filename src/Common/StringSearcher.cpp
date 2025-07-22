@@ -82,6 +82,9 @@ public:
 
     const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const override
     {
+        if (needle == needle_end)
+            return haystack;
+
         const char * res = nullptr;
         sz_cptr_t haystack_cptr = reinterpret_cast<sz_cptr_t>(haystack);
         size_t haystack_size = haystack_end - haystack;
