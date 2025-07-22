@@ -2326,6 +2326,17 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
     }
 }
 
+void MergeTreeSettings::dumpToSystemCompletionsColumns(MutableColumns & res_columns) const
+{
+    static constexpr const char * MERGE_TREE_SETTING_CONTEXT = "merge tree setting";
+    for (const auto & setting : impl->all())
+    {
+        const auto & setting_name = setting.getName();
+        res_columns[0]->insert(setting_name);
+        res_columns[1]->insert(MERGE_TREE_SETTING_CONTEXT);
+        res_columns[2]->insertDefault();
+    }
+}
 
 namespace
 {
