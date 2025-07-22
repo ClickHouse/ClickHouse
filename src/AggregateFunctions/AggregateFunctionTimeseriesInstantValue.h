@@ -26,10 +26,10 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-template <bool array_agruments_, typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_rate_>
+template <bool array_arguments_, typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_rate_>
 struct AggregateFunctionTimeseriesInstantValueTraits
 {
-    static constexpr bool array_agruments = array_agruments_;
+    static constexpr bool array_arguments = array_arguments_;
     static constexpr bool is_rate = is_rate_;
 
     using TimestampType = TimestampType_;

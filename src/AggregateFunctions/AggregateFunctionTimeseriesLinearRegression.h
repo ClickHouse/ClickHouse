@@ -24,11 +24,11 @@
 namespace DB
 {
 
-template <bool array_arguments_, typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_rate_>
-struct AggregateFunctionTimeseriesExtrapolatedValueTraits
+template <bool array_arguments_, typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_predict_>
+struct AggregateFunctionTimeseriesLinearRegressionTraits
 {
     static constexpr bool array_arguments = array_arguments_;
-    static constexpr bool is_rate = is_rate_;
+    static constexpr bool is_predict = is_predict_;
 
     using TimestampType = TimestampType_;
     using IntervalType = IntervalType_;
@@ -36,7 +36,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 
     static String getName()
     {
-        return is_rate ? "timeSeriesRateToGrid" : "timeSeriesDeltaToGrid";
+        return is_predict ? "timeSeriesPredictLinearToGrid" : "timeSeriesDerivToGrid";
     }
 
     struct Bucket
@@ -62,21 +62,20 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
     };
 };
 
-/// Aggregate function to calculate extrapolated values (rate and delta) of timeseries on the specified grid
 template <typename Traits>
-class AggregateFunctionTimeseriesExtrapolatedValue final :
-    public AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesExtrapolatedValue<Traits>, Traits>
+class AggregateFunctionTimeseriesLinearRegression final :
+    public AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesLinearRegression<Traits>, Traits>
 {
 public:
     static constexpr bool DateTime64Supported = true;
 
-    static constexpr bool is_rate = Traits::is_rate;
+    static constexpr bool is_predict = Traits::is_predict;
 
     using TimestampType = typename Traits::TimestampType;
     using IntervalType = typename Traits::IntervalType;
     using ValueType = typename Traits::ValueType;
 
-    using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesExtrapolatedValue<Traits>, Traits>;
+    using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesLinearRegression<Traits>, Traits>;
 
     using Base::Base;
 
@@ -112,13 +111,25 @@ public:
     }
 
 private:
+    std::pair<Float64, Float64> kahanSumInc(Float64 inc, Float64 sum, Float64 c) const
+    {
+        Float64 new_sum = sum + inc;
+
+        // Using Neumaier improvement, swap if next term larger than sum.
+        if (std::abs(sum) >= std::abs(inc))
+            c += (sum - new_sum) + inc;
+        else
+            c += (inc - new_sum) + sum;
+
+        return std::make_pair(new_sum, c);
+    }
+
     void fillResultValue(const TimestampType current_timestamp,
         const std::deque<std::pair<TimestampType, ValueType>> & samples_in_window,
-        Float64 accumulated_resets_in_window,
         ValueType & result, UInt8 & null) const
     {
-        /// Need at least two samples to calculate the rate or delta
-        if (samples_in_window.size() < 2)
+        size_t n = samples_in_window.size();
+        if (n < 2)
         {
             result = 0;
             null = 1;
@@ -127,7 +138,7 @@ private:
 
         const TimestampType first_timestamp = samples_in_window.front().first;
         const TimestampType last_timestamp = samples_in_window.back().first;
-
+        
         const TimestampType time_difference = last_timestamp - first_timestamp;
         if (time_difference == 0)
         {
@@ -136,68 +147,39 @@ private:
             return;
         }
 
-        const ValueType first_value = samples_in_window.front().second;
-        const ValueType last_value = samples_in_window.back().second;
+        // The following least-square linear regression logic is copied from Prometheus:
+        // https://github.com/prometheus/prometheus/blob/9a0bbb60bc3eb68d045aae7535d34f4d02b959f1/promql/functions.go#L1209
+        const TimestampType intercept_time = is_predict ? current_timestamp : first_timestamp;
+        Float64 sum_x = 0, c_x = 0, sum_y = 0, c_y = 0, sum_xy = 0, c_xy = 0, sum_xx = 0, c_xx = 0;
 
-        Float64 value_difference = last_value - first_value + accumulated_resets_in_window;
-
-        const auto range_end = current_timestamp;
-        const auto range_start = current_timestamp - Base::window;
-
-        /// The following logic is copied from Prometheus' rate calculation
-        /// https://github.com/prometheus/prometheus/blob/5e124cf4f2b9467e4ae1c679840005e727efd599/promql/functions.go#L127
-        /// which is licensed under the Apache License 2.0
-        // Duration between first/last samples and boundary of range.
-        Float64 duration_to_start = first_timestamp - range_start;
-        Float64 duration_to_end = range_end - last_timestamp;
-
-        const auto sampled_interval = time_difference;
-        const Float64 average_duration_between_samples = sampled_interval / Float64(samples_in_window.size() - 1);
-
-        // If samples are close enough to the (lower or upper) boundary of the
-        // range, we extrapolate the rate all the way to the boundary in
-        // question. "Close enough" is defined as "up to 10% more than the
-        // average duration between samples within the range", see
-        // extrapolationThreshold below. Essentially, we are assuming a more or
-        // less regular spacing between samples, and if we don't see a sample
-        // where we would expect one, we assume the series does not cover the
-        // whole range, but starts and/or ends within the range. We still
-        // extrapolate the rate in this case, but not all the way to the
-        // boundary, but only by half of the average duration between samples
-        // (which is our guess for where the series actually starts or ends).
-
-        const auto extrapolation_threshold = average_duration_between_samples * 1.1;
-        Float64 extrapolate_to_interval = sampled_interval;
-
-        if (duration_to_start >= extrapolation_threshold)
-            duration_to_start = average_duration_between_samples / 2;
-
-        if (is_rate && value_difference > 0 && first_value >= 0)
+        for (const auto& sample : samples_in_window)
         {
-            // Counters cannot be negative. If we have any slope at all
-            // (i.e. resultFloat went up), we can extrapolate the zero point
-            // of the counter. If the duration to the zero point is shorter
-            // than the durationToStart, we take the zero point as the start
-            // of the series, thereby avoiding extrapolation to negative
-            // counter values.
-            Float64 duration_to_zero = sampled_interval * (first_value / value_difference);
-            duration_to_start = std::min(duration_to_zero, duration_to_start);
+            Float64 x = static_cast<Float64>(sample.first) - static_cast<Float64>(intercept_time);
+            Float64 y = static_cast<Float64>(sample.second);
+            std::tie(sum_x, c_x) = kahanSumInc(x, sum_x, c_x);
+            std::tie(sum_y, c_y) = kahanSumInc(y, sum_y, c_y);
+            std::tie(sum_xy, c_xy) = kahanSumInc(x * y, sum_xy, c_xy);
+            std::tie(sum_xx, c_xx) = kahanSumInc(x * x, sum_xx, c_xx);
         }
+        sum_x += c_x;
+        sum_y += c_y;
+        sum_xy += c_xy;
+        sum_xx += c_xx;
 
-        extrapolate_to_interval += duration_to_start;
+        Float64 cov_xy = sum_xy - sum_x * sum_y / n;
+        Float64 var_x = sum_xx - sum_x * sum_x / n;
 
-        if (duration_to_end >= extrapolation_threshold)
-            duration_to_end = average_duration_between_samples / 2;
-        extrapolate_to_interval += duration_to_end;
-
-        Float64 factor = extrapolate_to_interval / sampled_interval;
-
-        if constexpr (is_rate)
-            factor = factor * Base::timestamp_scale_multiplier / Base::window;
-
-        value_difference *= factor;
-
-        result = static_cast<ValueType>(value_difference);
+        Float64 slope = cov_xy / var_x;
+        if (is_predict) 
+        {
+            Float64 intercept = sum_y / n - slope * sum_x / n;
+            Float64 predicted_value = slope * Base::predict_offset + intercept;
+            result = static_cast<ValueType>(predicted_value);
+        }
+        else 
+        {
+            result = static_cast<ValueType>(slope);
+        }
         null = 0;
     }
 
@@ -230,11 +212,7 @@ public:
 
         std::deque<std::pair<TimestampType, ValueType>> samples_in_window;
         std::vector<std::pair<TimestampType, ValueType>> timestamps_buffer;
-        Float64 accumulated_resets_in_window = 0;
 
-        /// Resets must be take into account for `rate` function because it expects counter timeseries that only increase.
-        /// But `delta` function expects gauge timeseries that can decrease and it is not considered to be a reset.
-        constexpr bool adjust_to_resets = is_rate;
 
         /// Fill the data for missing buckets
         for (UInt32 i = 0; i < Base::bucket_count; ++i)
@@ -252,28 +230,18 @@ public:
 
                 /// Add samples from the current bucket
                 for (const auto & [timestamp, value] : timestamps_buffer)
-                {
-                    /// Check for resets in the timeseries
-                    if (adjust_to_resets && !samples_in_window.empty() && samples_in_window.back().second > value)
-                        accumulated_resets_in_window += samples_in_window.back().second;
                     samples_in_window.push_back({timestamp, value});
-                }
             }
 
             /// Remove samples that are out of the window
             while (!samples_in_window.empty() && samples_in_window.front().first + Base::window < current_timestamp)
             {
-                Float64 removed_value = samples_in_window.front().second;
                 samples_in_window.pop_front();
-                /// Subtract resets that are out of the window
-                if (adjust_to_resets && !samples_in_window.empty() && samples_in_window.front().second < removed_value)
-                    accumulated_resets_in_window -= removed_value;
             }
 
             fillResultValue(
                 current_timestamp,
                 samples_in_window,
-                accumulated_resets_in_window,
                 values[i],
                 nulls[i]);
         }

@@ -49,5 +49,12 @@ SELECT
     arrayZip(grid, timeSeriesInstantRateToGrid(start, end, step, 18)(timestamp, value)) as irate_18s -- previous timestamp is outside the window
 FROM ts_raw_data FORMAT Vertical;
 
+WITH
+    1734955380 AS start, 1734955680 AS end, 15 AS step, 300 AS window, 60 as predict_offset,
+    range(start, end + 1, step) as grid
+SELECT
+    arrayZip(grid, timeSeriesDerivToGrid(start, end, step, window)(toUnixTimestamp(timestamp), value)) as deriv_5m,
+    arrayZip(grid, timeSeriesPredictLinearToGrid(start, end, step, window, predict_offset)(timestamp, value)) as predict_linear_5m_offset_1m
+FROM ts_raw_data FORMAT Vertical;
 
 DROP TABLE ts_raw_data;
