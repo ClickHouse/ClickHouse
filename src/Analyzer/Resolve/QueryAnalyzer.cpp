@@ -93,6 +93,7 @@ namespace Setting
     extern const SettingsBool asterisk_include_materialized_columns;
     extern const SettingsString count_distinct_implementation;
     extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool enable_scopes_for_with_statement;
     extern const SettingsBool enable_order_by_all;
     extern const SettingsBool enable_positional_arguments;
     extern const SettingsBool enable_scalar_subquery_optimization;
@@ -4925,7 +4926,26 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 table_function_node_to_resolve_typed->getArgumentsNode() = table_function_argument_function->getArgumentsNode();
 
                 QueryTreeNodePtr table_function_node_to_resolve = std::move(table_function_node_to_resolve_typed);
-                resolveTableFunction(table_function_node_to_resolve, scope, expressions_visitor, true /*nested_table_function*/);
+                if (table_function_argument_function_name == "view")
+                {
+                    /// Subquery in view() table function can reference tables that don't exist on the initiator.
+                    /// In the following example `users` table may be not available on the initiator:
+                    /// SELECT *
+                    /// FROM remoteSecure(<address>, view(
+                    ///     SELECT
+                    ///         t1.age,
+                    ///         t1.name,
+                    ///         t2.name
+                    ///     FROM users AS t1
+                    ///     INNER JOIN users AS t2 ON t1.uid = t2.uid
+                    /// ), <user>, <password>)
+                    /// SETTINGS prefer_localhost_replica = 0
+                    skip_analysis_arguments_indexes.push_back(table_function_argument_index);
+                }
+                else
+                {
+                    resolveTableFunction(table_function_node_to_resolve, scope, expressions_visitor, true /*nested_table_function*/);
+                }
 
                 result_table_function_arguments.push_back(std::move(table_function_node_to_resolve));
                 continue;
@@ -5691,8 +5711,17 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     /// Initialize aliases in query node scope
     QueryExpressionsAliasVisitor visitor(scope.aliases);
 
-    if (query_node_typed.hasWith())
+    if (scope.context->getSettingsRef()[Setting::enable_scopes_for_with_statement])
+    {
         visitor.visit(query_node_typed.getWithNode());
+    }
+    else
+    {
+        QueryExpressionsAliasVisitor alias_collector(scope.global_with_aliases);
+        alias_collector.visit(query_node_typed.getWithNode());
+
+        scope.aliases = scope.global_with_aliases;
+    }
 
     if (!query_node_typed.getProjection().getNodes().empty())
         visitor.visit(query_node_typed.getProjectionNode());

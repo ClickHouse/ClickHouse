@@ -69,30 +69,15 @@ private:
     const RE2 string_to_string_regexp;
 };
 
-
-class OutputStreamWriteBufferAdapter : public avro::OutputStream
+bool OutputStreamWriteBufferAdapter::next(uint8_t ** data, size_t * len)
 {
-public:
-    explicit OutputStreamWriteBufferAdapter(WriteBuffer & out_) : out(out_) {}
+    out.nextIfAtEnd();
+    *data = reinterpret_cast<uint8_t *>(out.position());
+    *len = out.available();
+    out.position() += out.available();
 
-    bool next(uint8_t ** data, size_t * len) override
-    {
-        out.nextIfAtEnd();
-        *data = reinterpret_cast<uint8_t *>(out.position());
-        *len = out.available();
-        out.position() += out.available();
-
-        return true;
-    }
-
-    void backup(size_t len) override { out.position() -= len; }
-
-    uint64_t byteCount() const override { return out.count(); }
-    void flush() override {}
-
-private:
-    WriteBuffer & out;
-};
+    return true;
+}
 
 namespace
 {

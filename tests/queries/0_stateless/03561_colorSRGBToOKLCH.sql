@@ -48,3 +48,7 @@ WITH colorSRGBToOKLCH((53, 134, 180), 1000) AS t
 SELECT tuple(round(t.1, 6), round(t.2, 6), round(t.3, 6));
 WITH  colorSRGBToOKLCH((1e-3, 1e-6, 180)) AS t
 SELECT tuple(round(t.1, 6), round(t.2, 6), round(t.3, 6));
+
+SELECT '--- Fuzzing';
+WITH colorSRGBToOKLCH((128, 128, 128), materialize(1.)) AS t
+SELECT tuple(round(t.1, 6), round(t.2, 6), round(t.3, 6));
