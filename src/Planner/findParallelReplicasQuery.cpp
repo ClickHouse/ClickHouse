@@ -59,7 +59,7 @@ static bool canUseTableForParallelReplicas(const TableNode & table_node, const C
 /// subquery has only LEFT / RIGHT / ALL INNER JOIN (or none), and left / right part is MergeTree table or subquery candidate as well.
 ///
 /// Additional checks are required, so we return many candidates. The innermost subquery is on top.
-std::vector<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
+std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
 {
     std::vector<const QueryNode *> res;
 
@@ -181,6 +181,7 @@ QueryTreeNodePtr replaceTablesWithDummyTables(QueryTreeNodePtr query, const Cont
     return query->cloneAndReplace(visitor.replacement_map);
 }
 
+#define DUMP_PARALLEL_REPLICAS_QUERY_CANDIDATES 1
 #ifdef DUMP_PARALLEL_REPLICAS_QUERY_CANDIDATES
 #include <ranges>
 
@@ -228,7 +229,13 @@ const QueryNode * findQueryForParallelReplicas(
         auto it = mapping.find(subquery_node);
         /// This should not happen ideally.
         if (it == mapping.end())
+        {
+            LOG_DEBUG(
+                getLogger(__PRETTY_FUNCTION__),
+                "Plan node is not found for {}",
+                CityHash_v1_0_2::Hash128to64(subquery_node->getTreeHash()));
             break;
+        }
 
         std::stack<Frame> nodes_to_check;
         nodes_to_check.push({.node = it->second, .inside_join = false});
@@ -320,15 +327,19 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     if (!context->canUseParallelReplicasOnInitiator())
         return nullptr;
 
-    auto stack = getSupportingParallelReplicasQuery(query_tree_node.get(), context);
+    auto stack = getSupportingParallelReplicasQueries(query_tree_node.get(), context);
     /// Empty stack means that storage does not support parallel replicas.
     if (stack.empty())
+    {
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Query can be executed with parallel replicas. Stack is empty");
         return nullptr;
+    }
 
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Chosen query\n{}", stack.back()->dumpTree());
     /// We don't have any subquery and storage can process parallel replicas by itself.
     if (stack.back() == query_tree_node.get())
     {
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Stack top match query_tree_node. Stack size: {}", stack.size());
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Chosen query\n{}", stack.back()->dumpTree());
         return nullptr;
     }
 
@@ -352,7 +363,7 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     /// We updated a query_tree with dummy storages, and mapping is using updated_query_tree now.
     /// But QueryNode result should be taken from initial query tree.
     /// So that we build a list of candidates again, and call findQueryForParallelReplicas for it.
-    auto new_stack = getSupportingParallelReplicasQuery(updated_query_tree.get(), context);
+    auto new_stack = getSupportingParallelReplicasQueries(updated_query_tree.get(), context);
     const auto & mapping = planner.getQueryNodeToPlanStepMapping();
     const auto * res = findQueryForParallelReplicas(new_stack, mapping, context->getSettingsRef());
 
@@ -371,6 +382,10 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
             new_stack.pop_back();
         }
     }
+    else {
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "findQueryforParallelReplicas() returned NULL");
+    }
+
     if (res)
         LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Result\n{}", res->dumpTree());
     else
@@ -486,8 +501,8 @@ const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tr
 
     auto context = query_node ? query_node->getContext() : union_node->getContext();
 
-    if (!context->canUseParallelReplicasOnFollower())
-        return nullptr;
+    // if (!context->canUseParallelReplicasOnFollower())
+    //     return nullptr;
 
     return findTableForParallelReplicas(query_tree_node.get(), context);
 }
