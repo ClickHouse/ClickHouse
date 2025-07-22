@@ -196,16 +196,16 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , can_be_moved_between_databases((*queue_settings_)[ObjectStorageQueueSetting::keeper_path].changed)
     , keep_data_in_keeper(keep_data_in_keeper_)
 {
-    const auto raw_path = configuration->getRawPath();
-    if (raw_path.path.empty())
+    const auto & read_path = configuration->getPathForRead();
+    if (read_path.path.empty())
     {
-        configuration->setRawPath({"/*"});
+        configuration->setPathForRead({"/*"});
     }
-    else if (raw_path.path.ends_with('/'))
+    else if (read_path.path.ends_with('/'))
     {
-        configuration->setRawPath({raw_path.path + '*'});
+        configuration->setPathForRead({read_path.path + '*'});
     }
-    else if (!raw_path.hasGlobs())
+    else if (!read_path.hasGlobs())
     {
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");
     }

@@ -87,7 +87,10 @@ public:
     // Path used for writing, it should not be globbed and might contain a partition key
     Path getPathForWrite(const std::string & partition_id = "") const;
 
-    virtual void setRawPath(const Path & path) = 0;
+    void setPathForRead(const Path & path)
+    {
+        read_path = path;
+    }
 
     /*
      * When using `s3_create_new_file_on_insert`, each new file path generated will be appended to the path list.
