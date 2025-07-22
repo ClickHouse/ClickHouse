@@ -111,6 +111,7 @@ ln -sf $SRC_PATH/config.d/prometheus.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/top_level_domains_lists.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/top_level_domains_path.xml $DEST_SERVER_PATH/config.d/
 
+ln -sf $SRC_PATH/config.d/transactions_info_log.xml $DEST_SERVER_PATH/config.d/
 if [[ "$USE_ENCRYPTED_STORAGE" == "0" ]]; then
     ln -sf $SRC_PATH/config.d/transactions.xml $DEST_SERVER_PATH/config.d/
 fi
