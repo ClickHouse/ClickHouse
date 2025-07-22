@@ -604,7 +604,7 @@ void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemoryWithNull(std::
 }
 
 template <typename Derived, typename Parent>
-char * IColumnHelper<Derived, Parent>::serializeValueIntoMemory(size_t n, char * memory) const
+ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemory(size_t n, char * memory) const
 {
     if constexpr (!std::is_base_of_v<ColumnFixedSizeHelper, Derived>)
         return IColumn::serializeValueIntoMemory(n, memory);
