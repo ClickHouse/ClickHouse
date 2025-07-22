@@ -278,8 +278,7 @@ std::string DatabaseDataLake::getStorageEndpointForTable(const DataLake::TableMe
     auto endpoint_from_settings = settings[DatabaseDataLakeSetting::storage_endpoint].value;
     if (endpoint_from_settings.empty())
         return table_metadata.getLocation();
-    else
-        return table_metadata.getLocationWithEndpoint(endpoint_from_settings);
+    return table_metadata.getLocationWithEndpoint(endpoint_from_settings);
 }
 
 bool DatabaseDataLake::empty() const
@@ -392,12 +391,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         auto metadata_location = table_specific_properties->iceberg_metadata_file_location;
         if (!metadata_location.empty())
         {
-            const auto data_location = table_metadata.getLocation();
-            if (metadata_location.starts_with(data_location))
-            {
-                size_t remove_slash = metadata_location[data_location.size()] == '/' ? 1 : 0;
-                metadata_location = metadata_location.substr(data_location.size() + remove_slash);
-            }
+            metadata_location = table_metadata.getMetadataLocation(metadata_location);
         }
 
         (*storage_settings)[DB::DataLakeStorageSetting::iceberg_metadata_file_path] = metadata_location;

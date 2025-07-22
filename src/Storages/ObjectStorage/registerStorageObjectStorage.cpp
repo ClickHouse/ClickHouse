@@ -129,6 +129,11 @@ void registerStorageOSS(StorageFactory & factory)
     registerStorageS3Impl("OSS", factory);
 }
 
+void registerStorageGCS(StorageFactory & factory)
+{
+    registerStorageS3Impl("GCS", factory);
+}
+
 #endif
 
 #if USE_HDFS
@@ -155,6 +160,7 @@ void registerStorageObjectStorage(StorageFactory & factory)
     registerStorageS3(factory);
     registerStorageCOS(factory);
     registerStorageOSS(factory);
+    registerStorageGCS(factory);
 #endif
 #if USE_AZURE_BLOB_STORAGE
     registerStorageAzure(factory);
