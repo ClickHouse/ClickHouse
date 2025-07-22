@@ -9,7 +9,7 @@ function wait_for_mutation()
 
     for _ in {1..300}
     do
-        sleep 0.1
+        sleep 0.3
         if [[ $(${CLICKHOUSE_CLIENT} --query="SELECT min(is_done) FROM system.mutations WHERE database='$database' AND table='$table' AND mutation_id='$mutation_id'") -eq 1 ]]; then
             return
         fi

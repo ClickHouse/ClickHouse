@@ -2,11 +2,13 @@
 
 #include <Columns/ColumnConst.h>
 #include <Core/Defines.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTProjectionDeclaration.h>
@@ -27,6 +29,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <base/range.h>
 #include <Common/iota.h>
+#include <DataTypes/NestedUtils.h>
 
 
 namespace DB
@@ -126,7 +129,7 @@ public:
         size_t /*max_block_size*/,
         size_t /*num_streams*/) override
     {
-        return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
+        return Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
     }
 };
 
@@ -134,9 +137,9 @@ public:
 class ProjectionDataSource : public ISource
 {
 public:
-    explicit ProjectionDataSource(Block block)
-        : ISource(block.cloneEmpty())
-        , chunk(block.getColumns(), block.rows())
+    explicit ProjectionDataSource(SharedHeader block)
+        : ISource(std::make_shared<const Block>(block->cloneEmpty()))
+        , chunk(block->getColumns(), block->rows())
     {
     }
 
@@ -157,7 +160,7 @@ private:
 class ProjectionDataSink : public ISink
 {
 public:
-    ProjectionDataSink(Block header, size_t max_rows_allowed_)
+    ProjectionDataSink(SharedHeader header, size_t max_rows_allowed_)
         : ISink(std::move(header))
         , max_rows_allowed(max_rows_allowed_)
     {
@@ -238,7 +241,7 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
             .ignoreSettingConstraints());
 
     result.required_columns = select.getRequiredColumns();
-    result.sample_block = select.getSampleBlock();
+    result.sample_block = *select.getSampleBlock();
 
     StorageInMemoryMetadata metadata;
     metadata.partition_key = KeyDescription::buildEmptyKey();
@@ -306,13 +309,27 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     auto block = result.sample_block;
     for (const auto & [name, type] : metadata.sorting_key.expression->getRequiredColumnsWithTypes())
         block.insertUnique({nullptr, type, name});
+    NamesAndTypesList metadata_columns;
     for (const auto & column_with_type_name : block)
     {
         if (column_with_type_name.column && isColumnConst(*column_with_type_name.column))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections cannot contain constant columns: {}", column_with_type_name.name);
+
+        /// Subcolumns can be used in projection only when the original column is used.
+        if (columns.hasSubcolumn(column_with_type_name.name))
+        {
+            if (!block.has(Nested::splitName(column_with_type_name.name).first))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections cannot contain individual subcolumns: {}", column_with_type_name.name);
+            /// Also remove this subcolumn from the required columns as we have the original column.
+            std::erase_if(result.required_columns, [&](const String & column_name){ return column_name == column_with_type_name.name; });
+        }
+        else
+        {
+            metadata_columns.emplace_back(column_with_type_name.name, column_with_type_name.type);
+        }
     }
 
-    metadata.setColumns(ColumnsDescription(block.getNamesAndTypesList()));
+    metadata.setColumns(ColumnsDescription(metadata_columns));
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
     return result;
 }
@@ -366,7 +383,7 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
             .ignoreASTOptimizations()
             .ignoreSettingConstraints());
     result.required_columns = select.getRequiredColumns();
-    result.sample_block = select.getSampleBlock();
+    result.sample_block = *select.getSampleBlock();
 
     std::set<size_t> constant_positions;
     for (size_t i = 0; i < result.sample_block.columns(); ++i)
@@ -467,7 +484,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context, 
     auto builder = InterpreterSelectQuery(
                        query_ast_copy ? query_ast_copy : query_ast,
                        mut_context,
-                       Pipe(std::make_shared<ProjectionDataSource>(std::move(source_block))),
+                       Pipe(std::make_shared<ProjectionDataSource>(std::make_shared<const Block>(std::move(source_block)))),
                        SelectQueryOptions{
                            type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
                                                                        : QueryProcessingStage::WithMergeableState}
@@ -478,7 +495,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context, 
 
     // Generate aggregated blocks with rows less or equal than the original block.
     // There should be only one output block after this transformation.
-    auto sink = std::make_shared<ProjectionDataSink>(builder.getHeader(), block.rows());
+    auto sink = std::make_shared<ProjectionDataSink>(builder.getSharedHeader(), block.rows());
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     pipeline.complete(sink);
     CompletedPipelineExecutor executor(pipeline);

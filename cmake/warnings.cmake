@@ -46,4 +46,5 @@ no_warning(weak-vtables)
 no_warning(thread-safety-negative) # experimental flag, too many false positives
 no_warning(unsafe-buffer-usage) # too aggressive
 no_warning(switch-default) # conflicts with "defaults in a switch covering all enum values"
+no_warning(nrvo) # not eliding copy on return - too aggressive
 # TODO Enable conversion, sign-conversion, double-promotion warnings.

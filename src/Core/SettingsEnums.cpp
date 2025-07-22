@@ -148,7 +148,8 @@ IMPLEMENT_SETTING_ENUM(DistributedDDLOutputMode, ErrorCodes::BAD_ARGUMENTS,
 
 IMPLEMENT_SETTING_ENUM(StreamingHandleErrorMode, ErrorCodes::BAD_ARGUMENTS,
     {{"default",      StreamingHandleErrorMode::DEFAULT},
-     {"stream",       StreamingHandleErrorMode::STREAM}})
+     {"stream",       StreamingHandleErrorMode::STREAM},
+     {"dead_letter_queue", StreamingHandleErrorMode::DEAD_LETTER_QUEUE}})
 
 IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS,
     {{"enable",          ShortCircuitFunctionEvaluation::ENABLE},
@@ -306,10 +307,24 @@ IMPLEMENT_SETTING_ENUM(
      {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE}})
 
 IMPLEMENT_SETTING_ENUM(
+    FileCachePolicy,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"lru", FileCachePolicy::LRU},
+     {"LRU", FileCachePolicy::LRU},
+     {"slru", FileCachePolicy::SLRU},
+     {"SLRU", FileCachePolicy::SLRU}})
+
+IMPLEMENT_SETTING_ENUM(
     VectorSearchFilterStrategy,
     ErrorCodes::BAD_ARGUMENTS,
     {{"auto", VectorSearchFilterStrategy::AUTO},
      {"prefilter", VectorSearchFilterStrategy::PREFILTER},
      {"postfilter", VectorSearchFilterStrategy::POSTFILTER}})
+
+IMPLEMENT_SETTING_ENUM(
+    GeoToH3ArgumentOrder,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"lat_lon", GeoToH3ArgumentOrder::LAT_LON},
+     {"lon_lat", GeoToH3ArgumentOrder::LON_LAT}})
 
 }

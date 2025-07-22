@@ -10,6 +10,8 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MarkCache.h>
+#include <Columns/IColumn_fwd.h>
+#include <Compression/ICompressionCodec.h>
 
 namespace DB
 {
@@ -176,6 +178,9 @@ protected:
     /// the structure from the sample.
     void initOrAdjustDynamicStructureIfNeeded(Block & block);
 
+    /// This is useful only for vector codecs (like SZ3).
+    static void setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column);
+
     const MergeTreeIndices skip_indices;
 
     const ColumnsStatistics stats;
@@ -215,7 +220,6 @@ protected:
     Block block_sample;
 
     /// List of substreams for each column in order of serialization.
-    /// Right now used only in Compact parts.
     ColumnsSubstreams columns_substreams;
 
 private:

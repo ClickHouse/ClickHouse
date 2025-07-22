@@ -132,6 +132,14 @@ private:
     std::optional<ReadBufferFromFilePRead> file_nr TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> uptime TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> net_dev TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> net_tcp TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> net_tcp6 TSA_GUARDED_BY(data_mutex);
+
+    std::optional<ReadBufferFromFilePRead> cpu_pressure TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> memory_pressure TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> io_pressure TSA_GUARDED_BY(data_mutex);
+
+    std::unordered_map<String /* PSI stall type */, uint64_t> prev_pressure_vals TSA_GUARDED_BY(data_mutex);
 
     std::optional<ReadBufferFromFilePRead> cgroupmem_limit_in_bytes TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupmem_usage_in_bytes TSA_GUARDED_BY(data_mutex);
@@ -235,6 +243,10 @@ private:
     void openBlockDevices();
     void openSensorsChips();
     void openEDAC();
+
+    std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::string & filename);
+    void openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out);
+    void openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out);
 
     void applyCPUMetricsUpdate(
         AsynchronousMetricValues & new_values, const std::string & cpu_suffix, const ProcStatValuesCPU & delta_values, double multiplier);

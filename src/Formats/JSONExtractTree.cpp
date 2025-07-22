@@ -30,6 +30,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -728,6 +730,73 @@ public:
     }
 };
 
+template <typename JSONParser>
+class TimeNode : public JSONExtractTreeNode<JSONParser>
+{
+public:
+    explicit TimeNode(const DataTypeTime &) { }
+
+    bool insertResultToColumn(
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings & insert_settings,
+        const FormatSettings & format_settings,
+        String & error) const override
+    {
+        if (element.isNull() && format_settings.null_as_default)
+        {
+            column.insertDefault();
+            return true;
+        }
+
+        time_t value;
+        if (element.isString())
+        {
+            if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
+            {
+                error = fmt::format("cannot parse Time value here: {}", element.getString());
+                return false;
+            }
+        }
+        else if (element.isUInt64() && insert_settings.allow_type_conversion)
+        {
+            value = element.getUInt64();
+        }
+        else
+        {
+            error = fmt::format("cannot read Time value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
+            return false;
+        }
+
+        assert_cast<ColumnTime &>(column).insert(value);
+        return true;
+    }
+
+    bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat time_input_format) const
+    {
+        ReadBufferFromMemory buf(data.data(), data.size());
+        const auto & date_lut = DateLUT::instance();
+
+        switch (time_input_format)
+        {
+            case FormatSettings::DateTimeInputFormat::Basic:
+                if (tryReadTimeText(value, buf, date_lut) && buf.eof())
+                    return true;
+                break;
+            case FormatSettings::DateTimeInputFormat::BestEffort:
+                if (tryParseTimeBestEffort(value, buf, date_lut, date_lut) && buf.eof())
+                    return true;
+                break;
+            case FormatSettings::DateTimeInputFormat::BestEffortUS:
+                if (tryParseTimeBestEffortUS(value, buf, date_lut, date_lut) && buf.eof())
+                    return true;
+                break;
+        }
+
+        return false;
+    }
+};
+
 template <typename JSONParser, typename DecimalType>
 class DecimalNode : public JSONExtractTreeNode<JSONParser>
 {
@@ -830,10 +899,10 @@ public:
                     value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DateTime64>>(element.getDouble(), scale);
                     break;
                 case ElementType::UINT64:
-                    value = convertToDecimal<DataTypeNumber<UInt64>, DataTypeDecimal<DateTime64>>(element.getUInt64(), scale);
+                    value.value = element.getUInt64();
                     break;
                 case ElementType::INT64:
-                    value = convertToDecimal<DataTypeNumber<Int64>, DataTypeDecimal<DateTime64>>(element.getInt64(), scale);
+                    value.value = element.getInt64();
                     break;
                 default:
                     error = fmt::format("cannot read DateTime64 value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
@@ -860,6 +929,90 @@ public:
                 break;
             case FormatSettings::DateTimeInputFormat::BestEffortUS:
                 if (tryParseDateTime64BestEffortUS(value, scale, buf, time_zone, utc_time_zone) && buf.eof())
+                    return true;
+                break;
+        }
+
+        return false;
+    }
+
+private:
+    UInt32 scale;
+};
+
+template <typename JSONParser>
+class Time64Node : public JSONExtractTreeNode<JSONParser>
+{
+public:
+    explicit Time64Node(const DataTypeTime64 & time64_type) : scale(time64_type.getScale())
+    {
+    }
+
+    bool insertResultToColumn(
+        IColumn & column,
+        const typename JSONParser::Element & element,
+        const JSONExtractInsertSettings & insert_settings,
+        const FormatSettings & format_settings,
+        String & error) const override
+    {
+        if (element.isNull() && format_settings.null_as_default)
+        {
+            column.insertDefault();
+            return true;
+        }
+
+        Time64 value;
+        if (element.isString())
+        {
+            if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
+            {
+                error = fmt::format("cannot parse Time64 value here: {}", element.getString());
+                return false;
+            }
+        }
+        else
+        {
+            if (!insert_settings.allow_type_conversion)
+                return false;
+
+            switch (element.type())
+            {
+                case ElementType::DOUBLE:
+                    value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<Time64>>(element.getDouble(), scale);
+                    break;
+                case ElementType::UINT64:
+                    value.value = element.getUInt64();
+                    break;
+                case ElementType::INT64:
+                    value.value = element.getInt64();
+                    break;
+                default:
+                    error = fmt::format("cannot read Time64 value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
+                    return false;
+            }
+        }
+
+        assert_cast<ColumnTime64 &>(column).insert(value);
+        return true;
+    }
+
+    bool tryParse(Time64 & value, std::string_view data, FormatSettings::DateTimeInputFormat time_input_format) const
+    {
+        ReadBufferFromMemory buf(data.data(), data.size());
+        const auto & date_lut = DateLUT::instance();
+
+        switch (time_input_format)
+        {
+            case FormatSettings::DateTimeInputFormat::Basic:
+                if (tryReadTime64Text(value, scale, buf, date_lut) && buf.eof())
+                    return true;
+                break;
+            case FormatSettings::DateTimeInputFormat::BestEffort:
+                if (tryParseTime64BestEffort(value, scale, buf, date_lut, date_lut) && buf.eof())
+                    return true;
+                break;
+            case FormatSettings::DateTimeInputFormat::BestEffortUS:
+                if (tryParseTime64BestEffortUS(value, scale, buf, date_lut, date_lut) && buf.eof())
                     return true;
                 break;
         }
@@ -1889,6 +2042,10 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
             return std::make_unique<DateTimeNode<JSONParser>>(assert_cast<const DataTypeDateTime &>(*type));
         case TypeIndex::DateTime64:
             return std::make_unique<DateTime64Node<JSONParser>>(assert_cast<const DataTypeDateTime64 &>(*type));
+        case TypeIndex::Time:
+            return std::make_unique<TimeNode<JSONParser>>(assert_cast<const DataTypeTime &>(*type));
+        case TypeIndex::Time64:
+            return std::make_unique<Time64Node<JSONParser>>(assert_cast<const DataTypeTime64 &>(*type));
         case TypeIndex::Decimal32:
             return std::make_unique<DecimalNode<JSONParser, Decimal32>>(type);
         case TypeIndex::Decimal64:
@@ -1952,7 +2109,7 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
             elements.reserve(tuple_elements.size());
             for (const auto & tuple_element : tuple_elements)
                 elements.emplace_back(buildJSONExtractTree<JSONParser>(tuple_element, source_for_exception_message));
-            return std::make_unique<TupleNode<JSONParser>>(std::move(elements), tuple.haveExplicitNames() ? tuple.getElementNames() : Strings{});
+            return std::make_unique<TupleNode<JSONParser>>(std::move(elements), tuple.hasExplicitNames() ? tuple.getElementNames() : Strings{});
         }
         case TypeIndex::Map:
         {

@@ -1,4 +1,4 @@
-#include "ClickHouseDictionarySource.h"
+#include <Dictionaries/ClickHouseDictionarySource.h>
 #include <memory>
 #include <Client/ConnectionPool.h>
 #include <Common/DateLUTImpl.h>
@@ -12,17 +12,18 @@
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/Context.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
-#include "DictionarySourceFactory.h"
-#include "DictionaryStructure.h"
-#include "ExternalQueryBuilder.h"
-#include "readInvalidateQuery.h"
-#include "DictionaryFactory.h"
-#include "DictionarySourceHelpers.h"
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/ExternalQueryBuilder.h>
+#include <Dictionaries/readInvalidateQuery.h>
+#include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 
 namespace DB
 {
@@ -165,7 +166,7 @@ QueryPipeline ClickHouseDictionarySource::createStreamForQuery(const String & qu
     QueryPipeline pipeline;
 
     /// Sample block should not contain first row default values
-    auto empty_sample_block = sample_block.cloneEmpty();
+    auto empty_sample_block = std::make_shared<const Block>(sample_block.cloneEmpty());
 
     /// Copy context because results of scalar subqueries potentially could be cached
     auto context_copy = Context::createCopy(context);
@@ -182,7 +183,7 @@ QueryPipeline ClickHouseDictionarySource::createStreamForQuery(const String & qu
     if (configuration.is_local)
     {
         pipeline = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second.pipeline;
-        pipeline.convertStructureTo(empty_sample_block.getColumnsWithTypeAndName());
+        pipeline.convertStructureTo(empty_sample_block->getColumnsWithTypeAndName());
     }
     else
     {
@@ -207,7 +208,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
     }
 
     /// We pass empty block to RemoteQueryExecutor, because we don't know the structure of the result.
-    Block invalidate_sample_block;
+    auto invalidate_sample_block = std::make_shared<const Block>(Block{});
     QueryPipeline pipeline(std::make_shared<RemoteSource>(
         std::make_shared<RemoteQueryExecutor>(pool, request, invalidate_sample_block, context_copy), false, false, false));
     return readInvalidateQuery(std::move(pipeline));

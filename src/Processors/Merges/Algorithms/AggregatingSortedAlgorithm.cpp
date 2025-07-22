@@ -252,13 +252,13 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::initAggregateDescription
 
 
 AggregatingSortedAlgorithm::AggregatingSortedAlgorithm(
-    const Block & header_,
+    SharedHeader header_,
     size_t num_inputs,
     SortDescription description_,
     size_t max_block_size_rows_,
     size_t max_block_size_bytes_)
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, description_)
-    , columns_definition(defineColumns(header_, description_))
+    , columns_definition(defineColumns(*header_, description_))
     , merged_data(max_block_size_rows_, max_block_size_bytes_, columns_definition)
 {
 }
@@ -266,7 +266,7 @@ AggregatingSortedAlgorithm::AggregatingSortedAlgorithm(
 void AggregatingSortedAlgorithm::initialize(Inputs inputs)
 {
     removeConstAndSparse(inputs);
-    merged_data.initialize(header, inputs);
+    merged_data.initialize(*header, inputs);
 
     for (auto & input : inputs)
         if (input.chunk)

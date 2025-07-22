@@ -19,8 +19,8 @@ Unicode "code points" and it is not the same as the number of Unicode "grapheme 
 It is ok to have ASCII NUL bytes in strings, and they will be counted as well.
     )";
     FunctionDocumentation::Syntax syntax = "length(x)";
-    FunctionDocumentation::Arguments arguments = {{"x", "String, FixedString or Array for which to calculate the number of bytes (for String/FixedString) or elements (for Array)."}};
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the number of number of bytes in the String/FixedString `x` / the number of elements in array `x`";
+    FunctionDocumentation::Arguments arguments = {{"x", "Value for which to calculate the number of bytes (for String/FixedString) or elements (for Array).", {"String", "FixedString", "Array(T)"}}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of number of bytes in the String/FixedString `x` / the number of elements in array `x`", {"UInt64"}};
     FunctionDocumentation::Examples examples {
         {"string1", "SELECT length('Hello, world!')", "13"},
         {"arr1", "SELECT length(['Hello', 'world'])", "2"},

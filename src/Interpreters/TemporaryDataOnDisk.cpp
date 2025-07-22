@@ -149,21 +149,23 @@ public:
     }
 
     ~TemporaryFileOnLocalDisk() override
-    try
     {
-        if (disk->existsFile(path_to_file))
+        try
         {
-            LOG_TRACE(getLogger("TemporaryFileOnLocalDisk"), "Removing temporary file '{}'", path_to_file);
-            disk->removeRecursive(path_to_file);
+            if (disk->existsFile(path_to_file))
+            {
+                LOG_TRACE(getLogger("TemporaryFileOnLocalDisk"), "Removing temporary file '{}'", path_to_file);
+                disk->removeRecursive(path_to_file);
+            }
+            else
+            {
+                LOG_WARNING(getLogger("TemporaryFileOnLocalDisk"), "Temporary path '{}' does not exist in '{}' on disk {}", path_to_file, disk->getPath(), disk->getName());
+            }
         }
-        else
+        catch (...)
         {
-            LOG_WARNING(getLogger("TemporaryFileOnLocalDisk"), "Temporary path '{}' does not exist in '{}' on disk {}", path_to_file, disk->getPath(), disk->getName());
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
 private:
@@ -332,9 +334,9 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
     stat.uncompressed_size += uncompressed_delta;
 }
 
-TemporaryBlockStreamHolder::TemporaryBlockStreamHolder(const Block & header_, TemporaryDataOnDiskScope * parent_, size_t reserve_size)
+TemporaryBlockStreamHolder::TemporaryBlockStreamHolder(SharedHeader header_, TemporaryDataOnDiskScope * parent_, size_t reserve_size)
     : WrapperGuard(std::make_unique<TemporaryDataBuffer>(parent_, reserve_size), DBMS_TCP_PROTOCOL_VERSION, header_)
-    , header(header_.cloneWithoutColumns()) /// header is copied without columns to exclude constant columns since they are not supported in (de/)serialization
+    , header(header_->cloneWithoutColumns()) /// header is copied without columns to exclude constant columns since they are not supported in (de/)serialization
 {
 }
 
