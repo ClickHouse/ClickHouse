@@ -1,6 +1,6 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/17319
 SET enable_analyzer=1;
-CREATE TEMPORARY TABLE hits (date Date, data Float64) engine=Memory();
+CREATE TABLE hits (date Date, data Float64) engine=Memory();
 
 SELECT
     subquery1.period AS period,

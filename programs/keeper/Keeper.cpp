@@ -1,13 +1,13 @@
-#include "Keeper.h"
+#include <Keeper.h>
 
 #include <Common/ClickHouseRevision.h>
+#include <Common/formatReadable.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/DNSResolver.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Coordination/Defines.h>
 #include <Common/Config/ConfigReloader.h>
 #include <filesystem>
-#include <IO/UseSSL.h>
 #include <Core/ServerUUID.h>
 #include <Common/logger_useful.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
@@ -43,7 +43,7 @@
 #include <Server/PrometheusRequestHandlerFactory.h>
 #include <Server/TCPServer.h>
 
-#include "Core/Defines.h"
+#include <Core/Defines.h>
 #include "config.h"
 #include <Common/config_version.h>
 #include "config_tools.h"
@@ -311,8 +311,6 @@ try
     setJemallocBackgroundThreads(true);
 #endif
     Poco::Logger * log = &logger();
-
-    UseSSL use_ssl;
 
     MainThreadStatus::getInstance();
 

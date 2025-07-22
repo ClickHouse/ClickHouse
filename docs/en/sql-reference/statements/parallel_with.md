@@ -12,7 +12,7 @@ Allows to execute multiple statements in parallel.
 
 ## Syntax {#syntax}
 
-``` sql
+```sql
 statement1 PARALLEL WITH statement2 [PARALLEL WITH statement3 ...]
 ```
 
@@ -24,7 +24,7 @@ Executing statements in parallel may be faster than just a sequence of the same 
 
 Creates two tables in parallel:
 
-``` sql
+```sql
 CREATE TABLE table1(x Int32) ENGINE = MergeTree ORDER BY tuple()
 PARALLEL WITH
 CREATE TABLE table2(y String) ENGINE = MergeTree ORDER BY tuple();
@@ -32,7 +32,7 @@ CREATE TABLE table2(y String) ENGINE = MergeTree ORDER BY tuple();
 
 Drops two tables in parallel:
 
-``` sql
+```sql
 DROP TABLE table1
 PARALLEL WITH
 DROP TABLE table2;

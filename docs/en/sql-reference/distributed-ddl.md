@@ -10,7 +10,7 @@ By default, the `CREATE`, `DROP`, `ALTER`, and `RENAME` queries affect only the 
 
 For example, the following query creates the `all_hits` `Distributed` table on each host in `cluster`:
 
-``` sql
+```sql
 CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE = Distributed(cluster, default, hits)
 ```
 

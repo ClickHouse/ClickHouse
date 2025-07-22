@@ -16,13 +16,13 @@ This can be useful to create custom dashboards.
 
 Example:
 
-``` sql
+```sql
 SELECT *
 FROM system.dashboards
 WHERE title ILIKE '%CPU%'
 ```
 
-``` text
+```text
 Row 1:
 ──────
 dashboard: overview

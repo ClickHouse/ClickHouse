@@ -157,7 +157,7 @@ size_t estimateValueSize(
 }
 
 ColumnPtr fillColumnWithRandomData(
-    const DataTypePtr type,
+    DataTypePtr type,
     UInt64 limit,
     UInt64 max_array_length,
     UInt64 max_string_length,
@@ -558,7 +558,7 @@ public:
         Block block_header_,
         ContextPtr context_,
         GenerateRandomStatePtr state_)
-        : ISource(Nested::flattenNested(prepareBlockToFill(block_header_)))
+        : ISource(std::make_shared<const Block>(Nested::flattenNested(prepareBlockToFill(block_header_))))
         , block_size(block_size_)
         , max_array_length(max_array_length_)
         , max_string_length(max_string_length_)

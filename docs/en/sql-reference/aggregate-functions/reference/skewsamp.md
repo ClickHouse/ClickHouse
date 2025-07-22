@@ -11,7 +11,7 @@ Computes the [sample skewness](https://en.wikipedia.org/wiki/Skewness) of a sequ
 
 It represents an unbiased estimate of the skewness of a random variable if passed values form its sample.
 
-``` sql
+```sql
 skewSamp(expr)
 ```
 
@@ -25,6 +25,6 @@ The skewness of the given distribution. Type — [Float64](../../../sql-referenc
 
 **Example**
 
-``` sql
+```sql
 SELECT skewSamp(value) FROM series_with_value_column;
 ```

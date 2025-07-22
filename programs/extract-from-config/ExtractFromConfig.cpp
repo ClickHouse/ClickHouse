@@ -41,7 +41,7 @@ static void setupLogging(const std::string & log_level)
 }
 
 
-static std::vector<std::string> extactFromConfigAccordingToGlobs(DB::ConfigurationPtr configuration, const std::string & pattern, bool try_get)
+static std::vector<std::string> extactFromConfigAccordingToGlobs(DB::ConfigurationPtr configuration, const std::string & pattern, bool ignore_errors)
 {
     auto pattern_prefix = pattern.substr(0, pattern.find_first_of("*?{"));
     boost::algorithm::trim_if(pattern_prefix, [](char s){ return s == '.'; });
@@ -68,7 +68,7 @@ static std::vector<std::string> extactFromConfigAccordingToGlobs(DB::Configurati
                 continue;
 
 
-            if (try_get)
+            if (ignore_errors)
             {
                 auto value = configuration->getString(node, "");
                 if (!value.empty())
@@ -90,9 +90,13 @@ static std::vector<std::string> extactFromConfigAccordingToGlobs(DB::Configurati
 }
 
 
-static DB::ConfigurationPtr get_configuration(const std::string & config_path, bool process_zk_includes)
+static DB::ConfigurationPtr get_configuration(const std::string & config_path, bool process_zk_includes, bool throw_on_bad_include_from)
 {
-    DB::ConfigProcessor processor(config_path, /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+    DB::ConfigProcessor processor(config_path,
+        /* throw_on_bad_incl = */ false,
+        /* log_to_console = */ false,
+        /* substitutions= */ {},
+        /* throw_on_bad_include_from= */ throw_on_bad_include_from);
     bool has_zk_includes;
     DB::XMLDocumentPtr config_xml = processor.processConfig(&has_zk_includes);
     if (has_zk_includes && process_zk_includes)
@@ -111,30 +115,29 @@ static DB::ConfigurationPtr get_configuration(const std::string & config_path, b
 }
 
 
-static std::vector<std::string> extractFromConfig(
-        const std::string & config_path, const std::string & key, bool process_zk_includes, bool try_get = false, bool get_users = false)
+static std::vector<std::string> extractFromConfig(const std::string & config_path, const std::string & key, bool process_zk_includes, bool ignore_errors, bool get_users)
 {
-    DB::ConfigurationPtr configuration = get_configuration(config_path, process_zk_includes);
+    DB::ConfigurationPtr configuration = get_configuration(config_path, process_zk_includes, !ignore_errors);
 
     if (get_users)
     {
         bool has_user_directories = configuration->has("user_directories");
-        if (!has_user_directories && !try_get)
+        if (!has_user_directories && !ignore_errors)
             throw DB::Exception(DB::ErrorCodes::CANNOT_LOAD_CONFIG, "Can't load config for users");
 
         std::string users_config_path = configuration->getString("user_directories.users_xml.path");
         const auto config_dir = fs::path{config_path}.remove_filename().string();
         if (fs::path(users_config_path).is_relative() && fs::exists(fs::path(config_dir) / users_config_path))
             users_config_path = fs::path(config_dir) / users_config_path;
-        configuration = get_configuration(users_config_path, process_zk_includes);
+        configuration = get_configuration(users_config_path, process_zk_includes, !ignore_errors);
     }
 
     /// Check if a key has globs.
     if (key.find_first_of("*?{") != std::string::npos)
-        return extactFromConfigAccordingToGlobs(configuration, key, try_get);
+        return extactFromConfigAccordingToGlobs(configuration, key, ignore_errors);
 
     /// Do not throw exception if not found.
-    if (try_get)
+    if (ignore_errors)
         return {configuration->getString(key, "")};
     return {configuration->getString(key)};
 }
@@ -146,7 +149,7 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
 {
     bool print_stacktrace = false;
     bool process_zk_includes = false;
-    bool try_get = false;
+    bool ignore_errors = false;
     bool get_users = false;
     std::string log_level;
     std::string config_path;
@@ -160,7 +163,7 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
         ("stacktrace", po::bool_switch(&print_stacktrace), "print stack traces of exceptions")
         ("process-zk-includes", po::bool_switch(&process_zk_includes),
          "if there are from_zk elements in config, connect to ZooKeeper and process them")
-        ("try", po::bool_switch(&try_get), "Do not warn about missing keys")
+        ("try", po::bool_switch(&ignore_errors), "Do not warn about missing keys, missing users configurations or non existing file from include_from tag")
         ("users", po::bool_switch(&get_users), "Return values from users.xml config")
         ("log-level", po::value<std::string>(&log_level)->default_value("error"), "log level")
         ("config-file,c", po::value<std::string>(&config_path)->required(), "path to config file")
@@ -175,7 +178,7 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
         po::variables_map options;
         po::store(po::command_line_parser(argc, argv).options(options_desc).positional(positional_desc).run(), options);
 
-        if (options.count("help"))
+        if (options.contains("help"))
         {
             std::cerr << "Preprocess config file and extract value of the given key." << std::endl
                 << std::endl;
@@ -188,7 +191,7 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
         po::notify(options);
 
         setupLogging(log_level);
-        for (const auto & value : extractFromConfig(config_path, key, process_zk_includes, try_get, get_users))
+        for (const auto & value : extractFromConfig(config_path, key, process_zk_includes, ignore_errors, get_users))
             std::cout << value << std::endl;
     }
     catch (...)

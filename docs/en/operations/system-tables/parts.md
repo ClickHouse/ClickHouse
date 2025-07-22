@@ -132,11 +132,11 @@ The `move_ttl_info.expression` array is kept mostly for backward compatibility, 
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.parts LIMIT 1 FORMAT Vertical;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 partition:                             tuple()

@@ -48,6 +48,7 @@ namespace ErrorCodes
   * - otherwise, an empty array
   *
   * alphaTokens(s[, max_substrings])            - select from the string subsequence `[a-zA-Z]+`.
+  * sparseGrams(s[, min_length])                - find all substrings where border ngrams hashes are bigger than internal.
   *
   * URL functions are located separately.
   */

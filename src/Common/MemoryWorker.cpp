@@ -9,6 +9,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 
 #include <fmt/ranges.h>
 
@@ -64,10 +65,11 @@ Metrics readAllMetricsFromStatFile(ReadBufferFromFile & buf)
     return metrics;
 }
 
-uint64_t readMetricsFromStatFile(ReadBufferFromFile & buf, std::initializer_list<std::string_view> keys)
+uint64_t readMetricsFromStatFile(ReadBufferFromFile & buf, std::initializer_list<std::string_view> keys, std::initializer_list<std::string_view> optional_keys, bool * warnings_printed)
 {
     uint64_t sum = 0;
     uint64_t found_mask = 0;
+    bool print_warnings = !*warnings_printed;
     while (!buf.eof())
     {
         std::string current_key;
@@ -78,24 +80,33 @@ uint64_t readMetricsFromStatFile(ReadBufferFromFile & buf, std::initializer_list
         {
             std::string dummy;
             readStringUntilNewlineInto(dummy, buf);
-            buf.ignore();
+            buf.tryIgnore(1); /// skip EOL (if not EOF)
             continue;
         }
-        if (found_mask & (1l << (it - keys.begin())))
-            LOG_WARNING(LogFrequencyLimiter(getLogger("CgroupsReader"), 300), "Duplicate key '{}' in '{}'", current_key, buf.getFileName());
+
+        if (print_warnings && (found_mask & (1l << (it - keys.begin()))))
+        {
+            *warnings_printed = true;
+            LOG_ERROR(getLogger("CgroupsReader"), "Duplicate key '{}' in '{}'", current_key, buf.getFileName());
+        }
         found_mask |= 1ll << (it - keys.begin());
 
         assertChar(' ', buf);
         uint64_t value = 0;
         readIntText(value, buf);
         sum += value;
+        buf.tryIgnore(1); /// skip EOL (if not EOF)
     }
-    if (found_mask != (1l << keys.size()) - 1)
+
+    /// Did we see all keys?
+    for (const auto * it = keys.begin(); it != keys.end(); ++it)
     {
-        for (const auto * it = keys.begin(); it != keys.end(); ++it)
+        if (print_warnings
+                && !(found_mask & (1l << (it - keys.begin())))
+                && std::find(optional_keys.begin(), optional_keys.end(), *it) == optional_keys.end())
         {
-            if (!(found_mask & (1l << (it - keys.begin()))))
-                LOG_WARNING(LogFrequencyLimiter(getLogger("CgroupsReader"), 300), "Cannot find '{}' in '{}'", *it, buf.getFileName());
+            *warnings_printed = true;
+            LOG_ERROR(getLogger("CgroupsReader"), "Cannot find '{}' in '{}'", *it, buf.getFileName());
         }
     }
     return sum;
@@ -109,7 +120,7 @@ struct CgroupsV1Reader : ICgroupsReader
     {
         std::lock_guard lock(mutex);
         buf.rewind();
-        return readMetricsFromStatFile(buf, {"rss"});
+        return readMetricsFromStatFile(buf, {"rss"}, {}, &warnings_printed);
     }
 
     std::string dumpAllStats() override
@@ -122,6 +133,7 @@ struct CgroupsV1Reader : ICgroupsReader
 private:
     std::mutex mutex;
     ReadBufferFromFile buf TSA_GUARDED_BY(mutex);
+    bool warnings_printed TSA_GUARDED_BY(mutex) = false;
 };
 
 struct CgroupsV2Reader : ICgroupsReader
@@ -132,7 +144,7 @@ struct CgroupsV2Reader : ICgroupsReader
     {
         std::lock_guard lock(mutex);
         stat_buf.rewind();
-        return readMetricsFromStatFile(stat_buf, {"anon", "sock", "kernel"});
+        return readMetricsFromStatFile(stat_buf, {"anon", "sock", "kernel"}, {"kernel"}, &warnings_printed);
     }
 
     std::string dumpAllStats() override
@@ -145,6 +157,7 @@ struct CgroupsV2Reader : ICgroupsReader
 private:
     std::mutex mutex;
     ReadBufferFromFile stat_buf TSA_GUARDED_BY(mutex);
+    bool warnings_printed TSA_GUARDED_BY(mutex) = false;
 };
 
 /// Caveats:
@@ -291,6 +304,7 @@ uint64_t MemoryWorker::getMemoryUsage()
             return cgroups_reader != nullptr ? cgroups_reader->readMemoryUsage() : 0;
         case MemoryUsageSource::Jemalloc:
 #if USE_JEMALLOC
+            epoch_mib.setValue(0);
             return resident_mib.getValue();
 #else
             return 0;
@@ -302,6 +316,8 @@ uint64_t MemoryWorker::getMemoryUsage()
 
 void MemoryWorker::backgroundThread()
 {
+    setThreadName("MemoryWorker");
+
     std::chrono::milliseconds chrono_period_ms{period_ms};
     [[maybe_unused]] bool first_run = true;
     std::unique_lock lock(mutex);
@@ -313,16 +329,11 @@ void MemoryWorker::backgroundThread()
 
         Stopwatch total_watch;
 
-#if USE_JEMALLOC
-        if (source == MemoryUsageSource::Jemalloc)
-            epoch_mib.setValue(0);
-#endif
-
         Int64 resident = getMemoryUsage();
         MemoryTracker::updateRSS(resident);
 
         if (page_cache)
-            page_cache->autoResize(resident, total_memory_tracker.getHardLimit());
+            page_cache->autoResize(std::max(resident, total_memory_tracker.get()), total_memory_tracker.getHardLimit());
 
 #if USE_JEMALLOC
         if (resident > total_memory_tracker.getHardLimit())
@@ -338,19 +349,9 @@ void MemoryWorker::backgroundThread()
         ///  - MemoryTracker stores a negative value
         ///  - `correct_tracker` is set to true
         if (unlikely(first_run || total_memory_tracker.get() < 0))
-        {
-            if (source != MemoryUsageSource::Jemalloc)
-                epoch_mib.setValue(0);
-
-            MemoryTracker::updateAllocated(allocated_mib.getValue(), /*log_change=*/true);
-        }
+            MemoryTracker::updateAllocated(resident, /*log_change=*/true);
         else if (correct_tracker)
-        {
-            if (source != MemoryUsageSource::Jemalloc)
-                epoch_mib.setValue(0);
-
-            MemoryTracker::updateAllocated(allocated_mib.getValue(), /*log_change=*/false);
-        }
+            MemoryTracker::updateAllocated(resident, /*log_change=*/false);
 #else
         /// we don't update in the first run if we don't have jemalloc
         /// because we can only use resident memory information
@@ -359,7 +360,6 @@ void MemoryWorker::backgroundThread()
         /// before MemoryTracker initialization
         if (unlikely(total_memory_tracker.get() < 0) || correct_tracker)
             MemoryTracker::updateAllocated(resident, /*log_change=*/false);
-
 #endif
 
         ProfileEvents::increment(ProfileEvents::MemoryWorkerRun);

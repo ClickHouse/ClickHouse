@@ -8,7 +8,7 @@ title: 'EXISTS Statement'
 
 # EXISTS Statement
 
-``` sql
+```sql
 EXISTS [TEMPORARY] [TABLE|DICTIONARY|DATABASE] [db.]name [INTO OUTFILE filename] [FORMAT format]
 ```
 

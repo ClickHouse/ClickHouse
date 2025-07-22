@@ -60,13 +60,13 @@ Columns:
 
 Query:
 
-``` sql
+```sql
 SELECT * FROM system.query_views_log LIMIT 1 \G;
 ```
 
 Result:
 
-``` text
+```text
 Row 1:
 ──────
 hostname:                clickhouse.eu-central1.internal

@@ -9,7 +9,7 @@ title: 'uniqExact'
 
 Calculates the exact number of different argument values.
 
-``` sql
+```sql
 uniqExact(x[, ...])
 ```
 

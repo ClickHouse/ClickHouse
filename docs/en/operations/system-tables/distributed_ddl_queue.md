@@ -29,7 +29,7 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
 SELECT *
 FROM system.distributed_ddl_queue
 WHERE cluster = 'test_cluster'

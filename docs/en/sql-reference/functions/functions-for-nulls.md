@@ -1,12 +1,11 @@
 ---
 description: 'Documentation for Functions for Working with Nullable Values'
 sidebar_label: 'Nullable'
-sidebar_position: 135
 slug: /sql-reference/functions/functions-for-nulls
 title: 'Functions for Working with Nullable Values'
 ---
 
-# Functions for Working with Nullable Values
+# Functions for working with nullable values
 
 ## isNull {#isnull}
 
@@ -16,7 +15,7 @@ See also operator [`IS NULL`](../operators/index.md#is_null).
 
 **Syntax**
 
-``` sql
+```sql
 isNull(x)
 ```
 
@@ -35,7 +34,7 @@ Alias: `ISNULL`.
 
 Table:
 
-``` text
+```text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 │ 2 │    3 │
@@ -44,13 +43,13 @@ Table:
 
 Query:
 
-``` sql
+```sql
 SELECT x FROM t_null WHERE isNull(y);
 ```
 
 Result:
 
-``` text
+```text
 ┌─x─┐
 │ 1 │
 └───┘
@@ -62,7 +61,7 @@ Returns `1` if a column is [Nullable](../data-types/nullable.md) (i.e allows `NU
 
 **Syntax**
 
-``` sql
+```sql
 isNullable(x)
 ```
 
@@ -79,7 +78,7 @@ isNullable(x)
 
 Query:
 
-``` sql
+```sql
 CREATE TABLE tab (ordinary_col UInt32, nullable_col Nullable(UInt32)) ENGINE = Log;
 INSERT INTO tab (ordinary_col, nullable_col) VALUES (1,1), (2, 2), (3,3);
 SELECT isNullable(ordinary_col), isNullable(nullable_col) FROM tab;    
@@ -87,7 +86,7 @@ SELECT isNullable(ordinary_col), isNullable(nullable_col) FROM tab;
 
 Result:
 
-``` text
+```text
    ┌───isNullable(ordinary_col)──┬───isNullable(nullable_col)──┐
 1. │                           0 │                           1 │
 2. │                           0 │                           1 │
@@ -101,7 +100,7 @@ Returns whether the argument is not [NULL](/operations/settings/formats#input_fo
 
 See also operator [`IS NOT NULL`](../operators/index.md#is_not_null).
 
-``` sql
+```sql
 isNotNull(x)
 ```
 
@@ -118,7 +117,7 @@ isNotNull(x)
 
 Table:
 
-``` text
+```text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 │ 2 │    3 │
@@ -127,13 +126,13 @@ Table:
 
 Query:
 
-``` sql
+```sql
 SELECT x FROM t_null WHERE isNotNull(y);
 ```
 
 Result:
 
-``` text
+```text
 ┌─x─┐
 │ 2 │
 └───┘
@@ -151,7 +150,7 @@ This function is an internal function used by the implementation of JOIN ON. Ple
 
 **Syntax**
 
-``` sql
+```sql
 isNotDistinctFrom(x, y)
 ```
 
@@ -173,7 +172,7 @@ For a complete example see: [NULL values in JOIN keys](../../sql-reference/state
 
 Returns whether the argument is 0 (zero) or [NULL](/operations/settings/formats#input_format_null_as_default).
 
-``` sql
+```sql
 isZeroOrNull(x)
 ```
 
@@ -190,7 +189,7 @@ isZeroOrNull(x)
 
 Table:
 
-``` text
+```text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 │ 2 │    0 │
@@ -200,13 +199,13 @@ Table:
 
 Query:
 
-``` sql
+```sql
 SELECT x FROM t_null WHERE isZeroOrNull(y);
 ```
 
 Result:
 
-``` text
+```text
 ┌─x─┐
 │ 1 │
 │ 2 │
@@ -217,7 +216,7 @@ Result:
 
 Returns the leftmost non-`NULL` argument.
 
-``` sql
+```sql
 coalesce(x,...)
 ```
 
@@ -234,7 +233,7 @@ coalesce(x,...)
 
 Consider a list of contacts that may specify multiple ways to contact a customer.
 
-``` text
+```text
 ┌─name─────┬─mail─┬─phone─────┬──telegram─┐
 │ client 1 │ ᴺᵁᴸᴸ │ 123-45-67 │       123 │
 │ client 2 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ      │      ᴺᵁᴸᴸ │
@@ -245,11 +244,11 @@ The `mail` and `phone` fields are of type String, but the `telegram` field is `U
 
 Get the first available contact method for the customer from the contact list:
 
-``` sql
+```sql
 SELECT name, coalesce(mail, phone, CAST(telegram,'Nullable(String)')) FROM aBook;
 ```
 
-``` text
+```text
 ┌─name─────┬─coalesce(mail, phone, CAST(telegram, 'Nullable(String)'))─┐
 │ client 1 │ 123-45-67                                                 │
 │ client 2 │ ᴺᵁᴸᴸ                                                      │
@@ -260,7 +259,7 @@ SELECT name, coalesce(mail, phone, CAST(telegram,'Nullable(String)')) FROM aBook
 
 Returns an alternative value if the argument is `NULL`.
 
-``` sql
+```sql
 ifNull(x, alt)
 ```
 
@@ -278,13 +277,13 @@ ifNull(x, alt)
 
 Query:
 
-``` sql
+```sql
 SELECT ifNull('a', 'b');
 ```
 
 Result:
 
-``` text
+```text
 ┌─ifNull('a', 'b')─┐
 │ a                │
 └──────────────────┘
@@ -292,13 +291,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT ifNull(NULL, 'b');
 ```
 
 Result:
 
-``` text
+```text
 ┌─ifNull(NULL, 'b')─┐
 │ b                 │
 └───────────────────┘
@@ -308,7 +307,7 @@ Result:
 
 Returns `NULL` if both arguments are equal.
 
-``` sql
+```sql
 nullIf(x, y)
 ```
 
@@ -325,13 +324,13 @@ nullIf(x, y)
 
 Query:
 
-``` sql
+```sql
 SELECT nullIf(1, 1);
 ```
 
 Result:
 
-``` text
+```text
 ┌─nullIf(1, 1)─┐
 │         ᴺᵁᴸᴸ │
 └──────────────┘
@@ -339,13 +338,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT nullIf(1, 2);
 ```
 
 Result:
 
-``` text
+```text
 ┌─nullIf(1, 2)─┐
 │            1 │
 └──────────────┘
@@ -355,7 +354,7 @@ Result:
 
 Returns the corresponding non-`Nullable` value for a value of [Nullable](../data-types/nullable.md) type. If the original value is `NULL`, an arbitrary result can be returned. See also functions `ifNull` and `coalesce`.
 
-``` sql
+```sql
 assumeNotNull(x)
 ```
 
@@ -372,7 +371,7 @@ assumeNotNull(x)
 
 Table:
 
-``` text
+```text
 
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
@@ -382,13 +381,13 @@ Table:
 
 Query:
 
-``` sql
+```sql
 SELECT assumeNotNull(y) FROM table;
 ```
 
 Result:
 
-``` text
+```text
 ┌─assumeNotNull(y)─┐
 │                0 │
 │                3 │
@@ -397,13 +396,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT toTypeName(assumeNotNull(y)) FROM t_null;
 ```
 
 Result:
 
-``` text
+```text
 ┌─toTypeName(assumeNotNull(y))─┐
 │ Int8                         │
 │ Int8                         │
@@ -414,7 +413,7 @@ Result:
 
 Converts the argument type to `Nullable`.
 
-``` sql
+```sql
 toNullable(x)
 ```
 
@@ -430,13 +429,13 @@ toNullable(x)
 
 Query:
 
-``` sql
+```sql
 SELECT toTypeName(10);
 ```
 
 Result:
 
-``` text
+```text
 ┌─toTypeName(10)─┐
 │ UInt8          │
 └────────────────┘
@@ -444,14 +443,23 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT toTypeName(toNullable(10));
 ```
 
 Result:
 
-``` text
+```text
 ┌─toTypeName(toNullable(10))─┐
 │ Nullable(UInt8)            │
 └────────────────────────────┘
 ```
+
+<!-- 
+The inner content of the tags below are replaced at doc framework build time with 
+docs generated from system.functions. Please do not modify or remove the tags.
+See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+-->
+
+<!--AUTOGENERATED_START-->
+<!--AUTOGENERATED_END-->

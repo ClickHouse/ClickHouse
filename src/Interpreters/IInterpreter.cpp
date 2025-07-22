@@ -48,12 +48,12 @@ void IInterpreter::checkStorageSupportsTransactionsIfNeeded(const StoragePtr & s
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Storage {} (table {}) does not support transactions",
                         storage->getName(), storage->getStorageID().getNameForLogs());
 
-    /// Do not allow transactions with ReplicatedMergeTree anyway (unless it's a readonly SELECT query)
+    /// Do not allow transactions with replicated tables anyway (unless it's a readonly SELECT query)
     /// because it may try to process transaction on MergeTreeData-level,
-    /// but then fail with a logical error or something on StorageReplicatedMergeTree-level.
+    /// but then fail with a logical error or something on Storage{Replicated,Shared}MergeTree-level.
     if (!is_readonly_query && storage->supportsReplication())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ReplicatedMergeTree (table {}) does not support transactions",
-                        storage->getStorageID().getNameForLogs());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} (table {}) does not support transactions",
+                        storage->getName(), storage->getStorageID().getNameForLogs());
 }
 
 }

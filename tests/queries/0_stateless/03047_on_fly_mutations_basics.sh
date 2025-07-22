@@ -47,7 +47,7 @@ SELECT id FROM t_lightweight_mut_1 ORDER BY id SETTINGS apply_mutations_on_fly =
 SYSTEM DROP MARK CACHE;
 SELECT id, v FROM t_lightweight_mut_1 ORDER BY id SETTINGS apply_mutations_on_fly = 0;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT query, ProfileEvents['FileOpen'] FROM system.query_log
 WHERE

@@ -22,7 +22,7 @@ Using `quantileTDigestWeighted` [is not recommended for tiny data sets](https://
 
 **Syntax**
 
-``` sql
+```sql
 quantileTDigestWeighted(level)(expr, weight)
 ```
 
@@ -48,13 +48,13 @@ Type:
 
 Query:
 
-``` sql
+```sql
 SELECT quantileTDigestWeighted(number, 1) FROM numbers(10)
 ```
 
 Result:
 
-``` text
+```text
 ┌─quantileTDigestWeighted(number, 1)─┐
 │                                4.5 │
 └────────────────────────────────────┘

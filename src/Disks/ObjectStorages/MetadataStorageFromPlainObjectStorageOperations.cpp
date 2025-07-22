@@ -1,5 +1,8 @@
-#include "MetadataStorageFromPlainObjectStorageOperations.h"
+#include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
+
 #include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
+#include <Disks/ObjectStorages/StoredObject.h>
+#include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 
 #include <filesystem>
@@ -9,8 +12,10 @@
 #include <Poco/Timestamp.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
-#include <Common/SharedLockGuard.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/SharedLockGuard.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -28,6 +33,9 @@ namespace FailPoints
 {
 extern const char plain_object_storage_write_fail_on_directory_create[];
 extern const char plain_object_storage_write_fail_on_directory_move[];
+extern const char plain_object_storage_copy_fail_on_file_move[];
+extern const char plain_object_storage_copy_temp_source_file_fail_on_file_move[];
+extern const char plain_object_storage_copy_temp_target_file_fail_on_file_move[];
 }
 
 namespace
@@ -53,7 +61,7 @@ MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFr
     , metadata_key_prefix(metadata_key_prefix_)
     , object_key_prefix(object_storage->generateObjectKeyPrefixForDirectoryPath(path, "" /* object_key_prefix */).serialize())
 {
-    chassert(path.string().ends_with('/'));
+    chassert(path.empty() || path.string().ends_with('/'));
 }
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std::unique_lock<SharedMutex> &)
@@ -89,9 +97,8 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
 
     auto event = object_storage->getMetadataStorageMetrics().directory_created;
     ProfileEvents::increment(event);
-    [[maybe_unused]] auto result
-        = path_map.addPathIfNotExists(base_path, InMemoryDirectoryPathMap::RemotePathInfo{object_key_prefix, Poco::Timestamp{}.epochTime(), {}});
-    chassert(result.second);
+    auto metadata = object_storage->getObjectMetadata(metadata_object.remote_path);
+    path_map.addOrReplacePath(base_path, InMemoryDirectoryPathMap::RemotePathInfo{object_key_prefix, metadata.etag, metadata.last_modified.epochTime(), {}});
 }
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
@@ -115,8 +122,8 @@ MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFrom
     , object_storage(object_storage_)
     , metadata_key_prefix(metadata_key_prefix_)
 {
-    chassert(path_from.string().ends_with('/'));
-    chassert(path_to.string().ends_with('/'));
+    chassert(path_from.empty() || path_from.string().ends_with('/'));
+    chassert(path_to.empty() || path_to.string().ends_with('/'));
 }
 
 std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::createWriteBuf(
@@ -141,16 +148,17 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
 
     if (validate_content)
     {
-        MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+        LockMemoryExceptionInThread temporarily_lock_exceptions;
 
         std::string data;
         auto read_settings = getReadSettings();
-        read_settings.remote_fs_method = RemoteFSReadMethod::read;
+        read_settings.remote_fs_method = RemoteFSReadMethod::threadpool;
+        read_settings.remote_fs_prefetch = false;
         read_settings.remote_fs_buffer_size = 1024;
 
         auto read_buf = object_storage->readObject(metadata_object, read_settings);
         readStringUntilEOF(data, *read_buf);
-        if (data != path_from)
+        if (data != expected_path)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Incorrect data for object key {}, expected {}, got {}",
@@ -181,18 +189,30 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute(std::u
     constexpr bool validate_content = false;
 #endif
 
-    auto write_buf = createWriteBuf(path_from, path_to, validate_content);
-    writeString(path_to.string(), *write_buf);
-
-    fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_move,
+    std::unordered_set<std::string> subdirs = {""};
+    path_map.iterateSubdirectories(path_from.parent_path().string() + "/", [&](const auto & elem){ subdirs.emplace(elem); });
+    for (const auto & subdir : subdirs)
     {
-        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
-    });
+        auto sub_path_to = path_to / subdir;
+        auto sub_path_from = path_from / subdir;
 
-    write_buf->finalize();
+        auto write_buf = createWriteBuf(sub_path_from, sub_path_to, validate_content);
+        writeString(sub_path_to.string(), *write_buf);
 
-    /// parent_path() removes the trailing '/'.
-    path_map.moveDirectory(path_from.parent_path(), path_to.parent_path());
+        fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_move,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", sub_path_from, sub_path_to);
+        });
+
+        write_buf->finalize();
+
+        /// parent_path() removes the trailing '/'.
+        path_map.moveDirectory(sub_path_from.parent_path(), sub_path_to.parent_path());
+
+        LOG_TEST(
+            getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Moved directory '{}' to '{}'", sub_path_from, sub_path_to);
+    }
+
     write_finalized = true;
 }
 
@@ -216,7 +236,7 @@ MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::MetadataStorageFr
     const std::string & metadata_key_prefix_)
     : path(std::move(path_)), path_map(path_map_), object_storage(object_storage_), metadata_key_prefix(metadata_key_prefix_)
 {
-    chassert(path.string().ends_with('/'));
+    chassert(path.empty() || path.string().ends_with('/'));
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std::unique_lock<SharedMutex> & /* metadata_lock */)
@@ -249,7 +269,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo(std::un
         return;
 
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Reversing directory removal for '{}'", path);
-    path_map.addPathIfNotExists(path.parent_path(), info);
+    path_map.addOrReplacePath(path.parent_path(), info);
 
     auto metadata_object_key = createMetadataObjectKey(info.path, metadata_key_prefix);
     auto metadata_object = StoredObject(metadata_object_key.serialize(), path / PREFIX_PATH_FILE_NAME);
@@ -332,5 +352,201 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo(std:
             path);
     }
 }
+MetadataStorageFromPlainObjectStorageCopyFileOperation::MetadataStorageFromPlainObjectStorageCopyFileOperation(
+    std::filesystem::path path_from_,
+    std::filesystem::path path_to_,
+    InMemoryDirectoryPathMap & path_map_,
+    ObjectStoragePtr object_storage_)
+    : path_from(path_from_)
+    , remote_path_from(object_storage_->generateObjectKeyForPath(path_from_, std::nullopt).serialize())
+    , path_to(path_to_)
+    , remote_path_to(object_storage_->generateObjectKeyForPath(path_to_, std::nullopt).serialize())
+    , path_map(path_map_)
+    , object_storage(object_storage_)
+{
+}
 
+void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute(std::unique_lock<SharedMutex> & /*metadata_lock*/)
+{
+    LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation"), "Copying file from '{}' to '{}'", path_from, path_to);
+
+    if (!path_map.existsFile(path_from))
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata object for the source path '{}' does not exist", path_from);
+
+    const auto directory_to = path_to.parent_path();
+    if (!path_map.existsLocalPath(directory_to))
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata object for the target directory path '{}' does not exist", path_to);
+
+    if (path_map.existsFile(path_to))
+        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Target file '{}' already exists", path_to);
+
+    object_storage->copyObject(StoredObject(remote_path_from), StoredObject(remote_path_to), getReadSettings(), getWriteSettings());
+
+    copied = true;
+    [[maybe_unused]] bool added = path_map.addFile(path_to);
+    chassert(added);
+}
+
+void MetadataStorageFromPlainObjectStorageCopyFileOperation::undo(std::unique_lock<SharedMutex> & /*metadata_lock*/)
+{
+    if (!copied)
+        return;
+
+    LOG_WARNING(
+        getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation"),
+        "Removing file '{}' that was copied from '{}",
+        path_to,
+        path_from);
+
+    object_storage->removeObjectIfExists(StoredObject(remote_path_to));
+    path_map.removeFile(path_to);
+}
+
+
+MetadataStorageFromPlainObjectStorageMoveFileOperation::MetadataStorageFromPlainObjectStorageMoveFileOperation(
+    bool replaceable_,
+    std::filesystem::path path_from_,
+    std::filesystem::path path_to_,
+    InMemoryDirectoryPathMap & path_map_,
+    ObjectStoragePtr object_storage_)
+    : replaceable(replaceable_)
+    , path_from(path_from_)
+    , remote_path_from(object_storage_->generateObjectKeyForPath(path_from_, std::nullopt).serialize())
+    , path_to(path_to_)
+    , remote_path_to(object_storage_->generateObjectKeyForPath(path_to_, std::nullopt).serialize())
+    , path_map(path_map_)
+    , object_storage(object_storage_)
+{
+    {
+        auto tmp_path_from = path_to.string() + ".move_from." + getRandomASCIIString(16);
+        tmp_remote_path_from = object_storage->generateObjectKeyForPath(tmp_path_from, std::nullopt).serialize();
+    }
+    {
+        auto tmp_path_to = path_to.string() + ".move_to." + getRandomASCIIString(16);
+        tmp_remote_path_to = object_storage->generateObjectKeyForPath(tmp_path_to, std::nullopt).serialize();
+    }
+}
+
+void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute(std::unique_lock<SharedMutex> & /*metadata_lock*/)
+{
+    LOG_TEST(
+        getLogger("MetadataStorageFromPlainObjectStorageMoveFileOperation"),
+        "Moving file (replaceable = {}) from '{}' to '{}'",
+        replaceable,
+        path_from,
+        path_to);
+
+    if (!path_map.existsFile(path_from))
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata object for the source path '{}' does not exist", path_from);
+
+    const auto directory_to = path_to.parent_path();
+    if (!path_map.existsLocalPath(directory_to))
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata object for the target directory path '{}' does not exist", path_to);
+
+    const auto read_settings = getReadSettingsForMetadata();
+    const auto write_settings = getWriteSettingsForMetadata();
+
+    if (path_map.existsFile(path_to))
+    {
+        if (!replaceable)
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Target file '{}' already exists", path_to);
+
+        fiu_do_on(FailPoints::plain_object_storage_copy_temp_target_file_fail_on_file_move, {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
+        });
+
+        object_storage->copyObject(
+            /*object_from=*/StoredObject(remote_path_to),
+            /*object_to=*/StoredObject(tmp_remote_path_to),
+            read_settings,
+            write_settings);
+        moved_existing_target_file = true;
+        object_storage->removeObjectIfExists(StoredObject(remote_path_to));
+    }
+    else
+    {
+        [[maybe_unused]] bool added = path_map.addFile(path_to);
+        chassert(added);
+    }
+
+    {
+        fiu_do_on(FailPoints::plain_object_storage_copy_temp_source_file_fail_on_file_move, {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
+        });
+
+        object_storage->copyObject(
+            /*object_from=*/StoredObject(remote_path_from),
+            /*object_to=*/StoredObject(tmp_remote_path_from),
+            read_settings,
+            write_settings);
+        moved_existing_source_file = true;
+    }
+
+    {
+        fiu_do_on(FailPoints::plain_object_storage_copy_fail_on_file_move, {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
+        });
+        object_storage->copyObject(
+            /*object_from=*/StoredObject(remote_path_from), /*object_to=*/StoredObject(remote_path_to), read_settings, write_settings);
+        object_storage->removeObjectIfExists(StoredObject(remote_path_from));
+        moved_file = true;
+    }
+
+    path_map.removeFile(path_from);
+}
+
+void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo(std::unique_lock<SharedMutex> & /*metadata_lock*/)
+{
+    path_map.addFile(path_from);
+
+    const auto read_settings = getReadSettings();
+    const auto write_settings = getWriteSettings();
+
+    if (moved_file)
+    {
+        LOG_WARNING(
+            getLogger("MetadataStorageFromPlainObjectStorageMoveFileOperation"),
+            "Removing file '{}' that was moved (replaceable = {}) from '{}",
+            path_to,
+            replaceable,
+            path_from);
+
+        object_storage->removeObjectIfExists(StoredObject(remote_path_to));
+    }
+
+    if (moved_existing_source_file)
+    {
+        object_storage->copyObject(
+            /*object_from=*/StoredObject(tmp_remote_path_from),
+            /*object_to=*/StoredObject(remote_path_from),
+            read_settings,
+            write_settings);
+
+        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from));
+    }
+
+    if (moved_existing_target_file)
+    {
+        object_storage->copyObject(
+            /*object_from=*/StoredObject(tmp_remote_path_to),
+            /*object_to=*/StoredObject(remote_path_to),
+            read_settings,
+            write_settings);
+
+        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
+    }
+    else
+    {
+        path_map.removeFile(path_to);
+    }
+}
+
+void MetadataStorageFromPlainObjectStorageMoveFileOperation::finalize()
+{
+    if (moved_existing_source_file)
+        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from));
+
+    if (moved_existing_target_file)
+        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
+}
 }

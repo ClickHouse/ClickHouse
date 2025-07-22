@@ -56,6 +56,7 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -90,9 +91,10 @@ private:
 
     struct DeserializeBinaryBulkStateVariantElement;
 
-    static size_t deserializeCompactDiscriminators(
+    static std::pair<size_t, size_t> deserializeCompactDiscriminators(
         ColumnPtr & discriminators_column,
         ColumnVariant::Discriminator variant_discriminator,
+        size_t rows_offset,
         size_t limit,
         ReadBuffer * stream,
         bool continuous_reading,

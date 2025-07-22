@@ -15,7 +15,7 @@ This function implements stochastic linear regression. It supports custom parame
 
 There are 4 customizable parameters. They are passed to the function sequentially, but there is no need to pass all four - default values will be used, however good model required some parameter tuning.
 
-``` text
+```text
 stochasticLinearRegression(0.00001, 0.1, 15, 'Adam')
 ```
 
@@ -35,7 +35,7 @@ To predict, we use the function [evalMLMethod](/sql-reference/functions/machine-
 
 Such query may be used.
 
-``` sql
+```sql
 CREATE TABLE IF NOT EXISTS train_data
 (
     param1 Float64,
@@ -55,7 +55,7 @@ Note that the column with target value (which we would like to learn to predict)
 
 After saving a state into the table, we may use it multiple times for prediction or even merge with other states and create new, even better models.
 
-``` sql
+```sql
 WITH (SELECT state FROM your_model) AS model SELECT
 evalMLMethod(model, param1, param2) FROM test_data
 ```

@@ -11,12 +11,7 @@ ${CLICKHOUSE_CLIENT} --query "drop table if exists 03008_test_local_mt sync"
 ${CLICKHOUSE_CLIENT} -m --query "
 create table 03008_test_local_mt (a Int32, b Int64, c Int64)
 engine = MergeTree() partition by intDiv(a, 1000) order by tuple(a, b)
-settings disk = disk(
-    name = 03008_local_plain_rewritable,
-    type = object_storage,
-    object_storage_type = local,
-    metadata_type = plain_rewritable,
-    path = 'disks/local_plain_rewritable/')
+settings disk = 'local_plain_rewritable_03008'
 "
 
 ${CLICKHOUSE_CLIENT} -m --query "
@@ -32,7 +27,7 @@ select (*) from 03008_test_local_mt order by tuple(a, b) limit 10;
 ${CLICKHOUSE_CLIENT} --query "optimize table 03008_test_local_mt final;"
 
 ${CLICKHOUSE_CLIENT} -m --query "
-alter table 03008_test_local_mt modify setting disk = '03008_local_plain_rewritable', old_parts_lifetime = 3600;
+alter table 03008_test_local_mt modify setting disk = 'local_plain_rewritable_03008', old_parts_lifetime = 3600;
 select engine_full from system.tables WHERE database = currentDatabase() AND name = '03008_test_local_mt';
 " | grep -c "old_parts_lifetime = 3600"
 

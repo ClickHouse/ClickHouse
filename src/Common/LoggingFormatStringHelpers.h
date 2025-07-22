@@ -281,9 +281,9 @@ public:
 
     LogSeriesLimiter * operator->() { return this; }
     bool is(Poco::Message::Priority priority) { return logger->is(priority); }
-    LogSeriesLimiter * getChannel() {return this; }
     const String & name() const { return logger->name(); }
 
+    LogSeriesLimiter * getChannel();
     void log(Poco::Message & message);
 
     LoggerPtr getLogger() { return logger; }

@@ -50,11 +50,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.replicated_fetches LIMIT 1 FORMAT Vertical;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 database:                    default

@@ -162,6 +162,19 @@ def test_information_schema():
     )
 
     node.query("GRANT SELECT ON information_schema.* TO sqluser")
+    expected_error = (
+        "necessary to have the grant SELECT(database, `table`) ON system.parts"
+    )
+    assert expected_error in node.query_and_get_error(
+        "SELECT count() FROM information_schema.tables WHERE table_name='table1'",
+        user="sqluser",
+    )
+    assert expected_error in node.query_and_get_error(
+        "SELECT count() FROM information_schema.tables WHERE table_name='table2'",
+        user="sqluser",
+    )
+
+    node.query("GRANT SELECT ON system.parts TO sqluser")
     assert (
         node.query(
             "SELECT count() FROM information_schema.tables WHERE table_name='table1'",

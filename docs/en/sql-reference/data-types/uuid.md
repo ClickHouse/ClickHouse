@@ -15,13 +15,13 @@ UUIDs are internally treated as a sequence of 16 random bytes with [8-4-4-4-12 r
 
 Example UUID value:
 
-``` text
+```text
 61f0c404-5cb3-11e7-907b-a6006ad3dba0
 ```
 
 The default UUID is all-zero. It is used, for example, when a new record is inserted but no value for a UUID column is specified:
 
-``` text
+```text
 00000000-0000-0000-0000-000000000000
 ```
 
@@ -30,7 +30,7 @@ UUIDs should therefore not be used directly in a primary key, sorting key, or pa
 
 Example:
 
-``` sql
+```sql
 CREATE TABLE tab (uuid UUID) ENGINE = Memory;
 INSERT INTO tab SELECT generateUUIDv4() FROM numbers(50);
 SELECT * FROM tab ORDER BY uuid;
@@ -38,7 +38,7 @@ SELECT * FROM tab ORDER BY uuid;
 
 Result:
 
-``` text
+```text
 ┌─uuid─────────────────────────────────┐
 │ 36a0b67c-b74a-4640-803b-e44bb4547e3c │
 │ 3a00aeb8-2605-4eec-8215-08c0ecb51112 │
@@ -58,7 +58,7 @@ As a workaround, the UUID can be converted to a type with an intuitive sort orde
 
 Example using conversion to UInt128:
 
-``` sql
+```sql
 CREATE TABLE tab (uuid UUID) ENGINE = Memory;
 INSERT INTO tab SELECT generateUUIDv4() FROM numbers(50);
 SELECT * FROM tab ORDER BY toUInt128(uuid);
@@ -92,7 +92,7 @@ ClickHouse provides the [generateUUIDv4](../../sql-reference/functions/uuid-func
 
 This example demonstrates the creation of a table with a UUID column and the insertion of a value into the table.
 
-``` sql
+```sql
 CREATE TABLE t_uuid (x UUID, y String) ENGINE=TinyLog
 
 INSERT INTO t_uuid SELECT generateUUIDv4(), 'Example 1'
@@ -102,7 +102,7 @@ SELECT * FROM t_uuid
 
 Result:
 
-``` text
+```text
 ┌────────────────────────────────────x─┬─y─────────┐
 │ 417ddc5d-e556-4d27-95dd-a34d84e46a50 │ Example 1 │
 └──────────────────────────────────────┴───────────┘
@@ -112,13 +112,13 @@ Result:
 
 In this example, no UUID column value is specified when the record is inserted, i.e. the default UUID value is inserted:
 
-``` sql
+```sql
 INSERT INTO t_uuid (y) VALUES ('Example 2')
 
 SELECT * FROM t_uuid
 ```
 
-``` text
+```text
 ┌────────────────────────────────────x─┬─y─────────┐
 │ 417ddc5d-e556-4d27-95dd-a34d84e46a50 │ Example 1 │
 │ 00000000-0000-0000-0000-000000000000 │ Example 2 │

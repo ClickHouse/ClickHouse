@@ -6,7 +6,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeNothing.h>
-#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -152,7 +151,19 @@ private:
 
 REGISTER_FUNCTION(ArrayJaccardIndex)
 {
-    factory.registerFunction<FunctionArrayJaccardIndex>();
+    FunctionDocumentation::Description description = "Returns the [Jaccard index](https://en.wikipedia.org/wiki/Jaccard_index) of two arrays.";
+    FunctionDocumentation::Syntax syntax = "arrayJaccardIndex(arr_x, arr_y)";
+    FunctionDocumentation::Arguments arguments = {
+        {"arr_x", "First array.", {"Array(T)"}},
+        {"arr_y", "Second array.", {"Array(T)"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the Jaccard index of `arr_x` and `arr_y`", {"Float64"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayJaccardIndex([1, 2], [2, 3]) AS res", "0.3333333333333333"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 7};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayJaccardIndex>(documentation);
 }
 
 }

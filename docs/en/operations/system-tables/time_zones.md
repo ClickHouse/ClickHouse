@@ -16,11 +16,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.time_zones LIMIT 10
 ```
 
-``` text
+```text
 ┌─time_zone──────────┐
 │ Africa/Abidjan     │
 │ Africa/Accra       │

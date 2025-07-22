@@ -112,7 +112,7 @@ class HashJoin : public IJoin
 public:
     HashJoin(
         std::shared_ptr<TableJoin> table_join_,
-        const Block & right_sample_block,
+        SharedHeader right_sample_block,
         bool any_take_last_row_ = false,
         size_t reserve_num_ = 0,
         const String & instance_id_ = "",
@@ -126,12 +126,12 @@ public:
 
     bool isCloneSupported() const override
     {
-        return !getTotals() && getTotalRowCount() == 0;
+        return getTotals().empty() && getTotalRowCount() == 0;
     }
 
     std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
-        const Block &,
-        const Block & right_sample_block_) const override
+        SharedHeader,
+        SharedHeader right_sample_block_) const override
     {
         return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row, reserve_num, instance_id);
     }
@@ -142,7 +142,7 @@ public:
     bool addBlockToJoin(const Block & source_block_, bool check_limits) override;
 
     /// Called directly from ConcurrentJoin::addBlockToJoin
-    bool addBlockToJoin(ScatteredBlock & source_block_, bool check_limits);
+    bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits);
 
     void checkTypesOfKeys(const Block & block) const override;
 
@@ -151,10 +151,10 @@ public:
     /** Join data from the map (that was previously built by calls to addBlockToJoin) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */
-    void joinBlock(Block & block, ExtraBlockPtr & not_processed) override;
+    JoinResultPtr joinBlock(Block block) override;
 
     /// Called directly from ConcurrentJoin::joinBlock
-    void joinBlock(ScatteredBlock & block, ScatteredBlock & remaining_block);
+    JoinResultPtr joinScatteredBlock(ScatteredBlock block);
 
     /// Check joinGet arguments and infer the return type.
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
@@ -357,33 +357,44 @@ public:
 
     using MapsVariant = std::variant<MapsOne, MapsAll, MapsAsof>;
 
-    using RawBlockPtr = const ScatteredBlock *;
+    struct ScatteredColumns
+    {
+        Columns columns;
+        ScatteredBlock::Selector selector;
+
+        size_t allocatedBytes() const;
+    };
+
     struct NullMapHolder
     {
-        size_t allocatedBytes() const { return !column->empty() ? column->allocatedBytes() * block->rows() / column->size() : 0; }
-
-        RawBlockPtr block;
+        const ScatteredColumns * columns;
         ColumnPtr column;
-    };
-    using BlockNullmapList = std::deque<NullMapHolder>;
 
-    using ScatteredBlocksList = std::list<ScatteredBlock>;
+        size_t allocatedBytes() const;
+    };
+
+    using NullmapList = std::deque<NullMapHolder>;
+    using ScatteredColumnsList = std::list<ScatteredColumns>;
 
     struct RightTableData
     {
         Type type = Type::EMPTY;
         bool empty = true;
 
+        /// tab1 join tab2 on t1.x = t2.x or t1.y = t2.y
+        /// =>
+        /// tab1 join tab2 on t1.x = t2.x
+        /// join tab2 on [not_joined(t1.x = t2.x)] and t1.y = t2.y
         std::vector<MapsVariant> maps;
         Block sample_block; /// Block as it would appear in the BlockList
-        ScatteredBlocksList blocks; /// Blocks of "right" table.
-        BlockNullmapList blocks_nullmaps; /// Nullmaps for blocks of "right" table (if needed)
+        ScatteredColumnsList columns; /// Columns of "right" table.
+        NullmapList nullmaps; /// Nullmaps for blocks of "right" table (if needed)
 
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
         Arena pool;
 
-        size_t blocks_allocated_size = 0;
-        size_t blocks_nullmaps_allocated_size = 0;
+        size_t allocated_size = 0;
+        size_t nullmaps_allocated_size = 0;
         /// Number of rows of right table to join
         size_t rows_to_join = 0;
         /// Number of keys of right table to join
@@ -420,7 +431,7 @@ public:
     const Block & savedBlockSample() const { return data->sample_block; }
 
     bool isUsed(size_t off) const;
-    bool isUsed(const Block * block_ptr, size_t row_idx) const;
+    bool isUsed(const Columns * columns_ptr, size_t row_idx) const;
 
     void debugKeys() const;
 
@@ -439,10 +450,13 @@ public:
 
     std::shared_ptr<JoinStuff::JoinUsedFlags> getUsedFlags() const { return used_flags; }
 
+    static bool isUsedByAnotherAlgorithm(const TableJoin & table_join);
+    static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
+
 private:
     friend class NotJoinedHash;
-
     friend class JoinSource;
+    friend class CrossJoinResult;
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
     friend class HashJoinMethods;
@@ -488,6 +502,8 @@ private:
     /// Left table column names that are sources for required_right_keys columns
     std::vector<String> required_right_keys_sources;
 
+    std::vector<std::pair<size_t, size_t>> additional_filter_required_rhs_pos;
+
     /// Maximum number of rows in result block. If it is 0, then no limits.
     size_t max_joined_block_rows = 0;
 
@@ -509,7 +525,7 @@ private:
 
     void initRightBlockStructure(Block & saved_block_sample);
 
-    void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
+    JoinResultPtr joinBlockImplCross(Block block) const;
 
     bool empty() const;
 

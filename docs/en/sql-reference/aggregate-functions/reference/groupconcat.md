@@ -11,9 +11,11 @@ Calculates a concatenated string from a group of strings, optionally separated b
 
 **Syntax**
 
-``` sql
+```sql
 groupConcat[(delimiter [, limit])](expression);
 ```
+
+Alias: `group_concat`
 
 **Arguments**
 
@@ -40,7 +42,7 @@ Also, if different delimiters are specified as parameters and arguments, the del
 
 Input table:
 
-``` text
+```text
 ┌─id─┬─name─┐
 │  1 │ John │
 │  2 │ Jane │
@@ -52,13 +54,13 @@ Input table:
 
 Query:
 
-``` sql
+```sql
 SELECT groupConcat(Name) FROM Employees;
 ```
 
 Result:
 
-``` text
+```text
 JohnJaneBob
 ```
 
@@ -69,19 +71,19 @@ This concatenates all names into one continuous string without any separator.
 
 Query:
 
-``` sql
+```sql
 SELECT groupConcat(', ')(Name)  FROM Employees;
 ```
 
 or
 
-``` sql
+```sql
 SELECT groupConcat(Name, ', ')  FROM Employees;
 ```
 
 Result:
 
-``` text
+```text
 John, Jane, Bob
 ```
 
@@ -92,13 +94,13 @@ This output shows the names separated by a comma followed by a space.
 
 Query:
 
-``` sql
+```sql
 SELECT groupConcat(', ', 2)(Name) FROM Employees;
 ```
 
 Result:
 
-``` text
+```text
 John, Jane
 ```
 

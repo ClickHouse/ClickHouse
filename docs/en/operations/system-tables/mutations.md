@@ -58,7 +58,7 @@ If there were problems with mutating some data parts, the following columns cont
 
 To track the progress on the system.mutations table, use a query like the following - this requires read permissions on the system.* tables:
 
-``` sql
+```sql
 SELECT * FROM clusterAllReplicas('cluster_name', 'db', system.mutations)
 WHERE is_done=0 AND table='tmp';
 ```

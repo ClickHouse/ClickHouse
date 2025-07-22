@@ -2,7 +2,7 @@
     "num_columns": "3",
     "num_rows": "100000",
     "num_row_groups": "2",
-    "format_version": "2.6",
+    "format_version": "2",
     "metadata_size": "617",
     "total_uncompressed_size": "314147",
     "total_compressed_size": "27081",
@@ -172,7 +172,7 @@
 }
 {
     "num_columns": "3",
-    "format_version": "2.6"
+    "format_version": "2"
 }
 {
     "columns": [
@@ -235,7 +235,7 @@
     "num_columns": "1",
     "num_rows": "5",
     "num_row_groups": "1",
-    "format_version": "1.0",
+    "format_version": "1",
     "metadata_size": "267",
     "total_uncompressed_size": "105",
     "total_compressed_size": "128",
