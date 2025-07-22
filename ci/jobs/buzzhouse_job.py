@@ -193,6 +193,8 @@ def main():
             "disabled_engines": disabled_engines_str,
             # Make CI logs less verbose
             "truncate_output": True,
+            # Don't always run transactions, makes many statements fail
+            "allow_transactions": random.randint(1, 5) == 1,
         }
         with open(buzz_config_file, "w") as outfile:
             outfile.write(json.dumps(buzz_config))
