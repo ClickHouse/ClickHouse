@@ -17,7 +17,7 @@ extern const SettingsBool allow_nonconst_timezone_arguments;
 
 namespace ErrorCodes
 {
-extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -65,7 +65,7 @@ public:
     {
         if (arguments.empty() || arguments.size() > 2)
         {
-            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Arguments size of function {} should be 1 or 2", getName());
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 1 or 2", getName());
         }
 
         if (!isInteger(arguments[0].type))
@@ -89,10 +89,20 @@ public:
         return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 1, 1, allow_nonconst_timezone_arguments));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto scale = static_cast<UInt32>(arguments[0].column->get64(0));
-        return type->createColumnConst(input_rows_count, nowSubsecond(scale));
+
+        auto column_pointer = ColumnDateTime64::create(input_rows_count, scale);
+        auto & vec_res = column_pointer->getData();
+        const auto now_decimal = nowSubsecond(scale).safeGet<Decimal64>();
+        
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            vec_res[i] = now_decimal.getValue();
+        }
+
+        return column_pointer;
     }
 private:
     const bool allow_nonconst_timezone_arguments;
