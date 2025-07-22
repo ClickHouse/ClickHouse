@@ -967,6 +967,7 @@ ReplicatedSend
 ReplicatedSummingMergeTree
 ReplicatedVersionedCollapsingMergeTree
 Resample
+Rescoring
 RestartReplicaThreads
 RestartReplicaThreadsActive
 RestoreThreads
@@ -2818,6 +2819,7 @@ representable
 requestor
 requireTLSv
 rerange
+rescoring
 resharding
 reshards
 resolvers
@@ -3226,6 +3228,7 @@ tokenization
 tokenize
 tokenized
 tokenizer
+tokenizing
 toml
 toolchain
 toolset
