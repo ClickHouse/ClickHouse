@@ -50,6 +50,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 interactive_delay;
+    extern const SettingsBool json_type_escape_dots_in_keys;
 }
 
 namespace ErrorCodes
@@ -184,6 +185,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.pretty_print = settings[Setting::output_format_json_pretty_print];
     format_settings.json.write_map_as_array_of_tuples = settings[Setting::output_format_json_map_as_array_of_tuples];
     format_settings.json.read_map_as_array_of_tuples = settings[Setting::input_format_json_map_as_array_of_tuples];
+    format_settings.json.json_type_escape_dots_in_keys = settings[Setting::json_type_escape_dots_in_keys];
     format_settings.null_as_default = settings[Setting::input_format_null_as_default];
     format_settings.force_null_for_omitted_fields = settings[Setting::input_format_force_null_for_omitted_fields];
     format_settings.decimal_trailing_zeros = settings[Setting::output_format_decimal_trailing_zeros];

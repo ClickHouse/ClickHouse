@@ -20,6 +20,8 @@ struct JSONExtractInsertSettings
     /// If false, JSON value will be inserted into column only if type of the value is
     /// the same as column type (no conversions like Integer -> String, Integer -> Float, etc).
     bool allow_type_conversion = true;
+    /// If true, during constructing the JSON path dots in keys will be escaped.
+    bool escape_dots_in_json_keys = false;
 };
 
 template <typename JSONParser>

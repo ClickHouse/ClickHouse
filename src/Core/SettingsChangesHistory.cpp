@@ -53,6 +53,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"azure_sdk_use_native_client", false, true, "New setting"},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
             {"vector_search_with_rescoring", true, true, "New setting."},
+            {"json_type_escape_dots_in_keys", false, false, "Add new setting that allows to escape dots in JSON keys during JSON type parsing"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
