@@ -190,6 +190,7 @@ def check_repo_submodules():
         out += err
     return out
 
+
 def check_nix_submodule_inputs():
     res, out, err = Shell.get_res_stdout_stderr(
         "./ci/jobs/scripts/check_style/check_nix_submodule_inputs.sh"

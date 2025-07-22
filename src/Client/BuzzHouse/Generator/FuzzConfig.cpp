@@ -97,6 +97,29 @@ loadPerformanceMetric(const JSONParserImpl::Element & jobj, const uint32_t defau
     return PerformanceMetric(enabled, threshold, minimum);
 }
 
+static std::function<void(const JSONObjectType &)>
+parseDisabledOptions(uint64_t & res, const String & text, const std::unordered_map<std::string_view, uint64_t> & entries)
+{
+    return [&](const JSONObjectType & value)
+    {
+        using std::operator""sv;
+        constexpr auto delim{","sv};
+        String input = String(value.getString());
+        std::transform(input.begin(), input.end(), input.begin(), ::tolower);
+
+        for (const auto word : std::views::split(input, delim))
+        {
+            const auto & entry = std::string_view(word);
+
+            if (entries.find(entry) == entries.end())
+            {
+                throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown type option for {}: {}", text, String(entry));
+            }
+            res &= (~entries.at(entry));
+        }
+    };
+}
+
 static std::function<void(const JSONObjectType &)> parseErrorCodes(std::unordered_set<uint32_t> & res)
 {
     return [&](const JSONObjectType & value)
@@ -145,6 +168,66 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
     {
         throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Parsed BuzzHouse JSON configuration file is not an object");
     }
+
+    static const std::unordered_map<std::string_view, uint64_t> type_entries
+        = {{"bool", allow_bool},          {"uint", allow_unsigned_int},
+           {"int8", allow_int8},          {"int64", allow_int64},
+           {"int128", allow_int128},      {"float", allow_floating_points},
+           {"date", allow_dates},         {"date32", allow_date32},
+           {"time", allow_time},          {"time64", allow_time64},
+           {"datetime", allow_datetimes}, {"datetime64", allow_datetime64},
+           {"string", allow_strings},     {"decimal", allow_decimals},
+           {"uuid", allow_uuid},          {"enum", allow_enum},
+           {"dynamic", allow_dynamic},    {"json", allow_JSON},
+           {"nullable", allow_nullable},  {"lcard", allow_low_cardinality},
+           {"array", allow_array},        {"map", allow_map},
+           {"tuple", allow_tuple},        {"variant", allow_variant},
+           {"nested", allow_nested},      {"ipv4", allow_ipv4},
+           {"ipv6", allow_ipv6},          {"geo", allow_geo}};
+
+    static const std::unordered_map<std::string_view, uint64_t> engine_entries
+        = {{"replacingmergetree", allow_replacing_mergetree},
+           {"coalescingmergetree", allow_coalescing_mergetree},
+           {"summingmergetree", allow_summing_mergetree},
+           {"aggregatingmergetree", allow_aggregating_mergetree},
+           {"collapsingmergetree", allow_collapsing_mergetree},
+           {"versionedcollapsingmergetree", allow_versioned_collapsing_mergetree},
+           {"file", allow_file},
+           {"null", allow_null},
+           {"set", allow_setengine},
+           {"join", allow_join},
+           {"memory", allow_memory},
+           {"stripelog", allow_stripelog},
+           {"log", allow_log},
+           {"tinylog", allow_tinylog},
+           {"embeddedrocksdb", allow_embedded_rocksdb},
+           {"buffer", allow_buffer},
+           {"mysql", allow_mysql},
+           {"postgresql", allow_postgresql},
+           {"sqlite", allow_sqlite},
+           {"mongodb", allow_mongodb},
+           {"redis", allow_redis},
+           {"s3", allow_S3},
+           {"s3queue", allow_S3queue},
+           {"hudi", allow_hudi},
+           {"deltalakes3", allow_deltalakeS3},
+           {"deltalakeazure", allow_deltalakeAzure},
+           {"deltalakelocal", allow_deltalakelocal},
+           {"icebergs3", allow_icebergS3},
+           {"icebergazure", allow_icebergAzure},
+           {"iceberglocal", allow_icebergLocal},
+           {"merge", allow_merge},
+           {"distributed", allow_distributed},
+           {"dictionary", allow_dictionary},
+           {"generaterandom", allow_generaterandom},
+           {"azureblobstorage", allow_AzureBlobStorage},
+           {"azurequeue", allow_AzureQueue},
+           {"url", allow_URL},
+           {"keepermap", allow_keepermap},
+           {"externaldistributed", allow_external_distributed},
+           {"materializedpostgresql", allow_materialized_postgresql},
+           {"replicated", allow_replicated},
+           {"shared", allow_shared}};
 
     static const SettingEntries configEntries = {
         {"client_file_path",
@@ -204,6 +287,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
          { time_to_sleep_between_reconnects = std::max(UINT32_C(1000), static_cast<uint32_t>(value.getUInt64())); }},
         {"enable_fault_injection_settings", [&](const JSONObjectType & value) { enable_fault_injection_settings = value.getBool(); }},
         {"enable_force_settings", [&](const JSONObjectType & value) { enable_force_settings = value.getBool(); }},
+        {"disable_new_analyzer", [&](const JSONObjectType & value) { disable_new_analyzer = value.getBool(); }},
         {"clickhouse", [&](const JSONObjectType & value) { clickhouse_server = loadServerCredentials(value, "clickhouse", 9004, 9005); }},
         {"mysql", [&](const JSONObjectType & value) { mysql_server = loadServerCredentials(value, "mysql", 3306, 3306); }},
         {"postgresql", [&](const JSONObjectType & value) { postgresql_server = loadServerCredentials(value, "postgresql", 5432); }},
@@ -213,56 +297,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"minio", [&](const JSONObjectType & value) { minio_server = loadServerCredentials(value, "minio", 9000); }},
         {"http", [&](const JSONObjectType & value) { http_server = loadServerCredentials(value, "http", 80); }},
         {"azurite", [&](const JSONObjectType & value) { azurite_server = loadServerCredentials(value, "azurite", 0); }},
-        {"disabled_types",
-         [&](const JSONObjectType & value)
-         {
-             using std::operator""sv;
-             constexpr auto delim{","sv};
-             String input = String(value.getString());
-             std::transform(input.begin(), input.end(), input.begin(), ::tolower);
-
-             static const std::unordered_map<std::string_view, uint32_t> type_entries
-                 = {{"bool", allow_bool},
-                    {"uint", allow_unsigned_int},
-                    {"int8", allow_int8},
-                    {"int64", allow_int64},
-                    {"int128", allow_int128},
-                    {"float", allow_floating_points},
-                    {"date", allow_dates},
-                    {"date32", allow_date32},
-                    {"time", allow_time},
-                    {"time64", allow_time64},
-                    {"datetime", allow_datetimes},
-                    {"datetime64", allow_datetime64},
-                    {"string", allow_strings},
-                    {"decimal", allow_decimals},
-                    {"uuid", allow_uuid},
-                    {"enum", allow_enum},
-                    {"uuid", allow_uuid},
-                    {"dynamic", allow_dynamic},
-                    {"json", allow_JSON},
-                    {"nullable", allow_nullable},
-                    {"lcard", allow_low_cardinality},
-                    {"array", allow_array},
-                    {"map", allow_map},
-                    {"tuple", allow_tuple},
-                    {"variant", allow_variant},
-                    {"nested", allow_nested},
-                    {"ipv4", allow_ipv4},
-                    {"ipv6", allow_ipv6},
-                    {"geo", allow_geo}};
-
-             for (const auto word : std::views::split(input, delim))
-             {
-                 const auto & entry = std::string_view(word);
-
-                 if (type_entries.find(entry) == type_entries.end())
-                 {
-                     throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown type option for disabled_types: {}", String(entry));
-                 }
-                 type_mask &= (~type_entries.at(entry));
-             }
-         }},
+        {"disabled_types", parseDisabledOptions(type_mask, "disabled_types", type_entries)},
+        {"disabled_engines", parseDisabledOptions(engine_mask, "disabled_engines", engine_entries)},
         {"disallowed_error_codes", parseErrorCodes(disallowed_error_codes)},
         {"oracle_ignore_error_codes", parseErrorCodes(oracle_ignore_error_codes)}};
 
