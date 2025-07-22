@@ -9,9 +9,6 @@ namespace DB
 class ActionsDAG;
 struct Settings;
 class KeyCondition;
-struct FormatParserGroup;
-
-using FormatParserGroupPtr = std::shared_ptr<FormatParserGroup>;
 
 /// Some formats needs to custom mapping between columns in file and clickhouse columns.
 class ColumnMapper
