@@ -27,7 +27,7 @@ class RemoteQueryResultCache : public QueryResultCache
 {
 public:
     /// query --> query result
-    using Cache = RemoteCacheBase<Key, Entry, KeyHasher, QueryResultCacheEntryWeight>;
+    using Cache = RemoteCacheBase<Key, Entry, KeyHasher, EntryWeight>;
     RemoteQueryResultCache(std::shared_ptr<RedisConfiguration> config, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
     virtual ~RemoteQueryResultCache() override {}
 

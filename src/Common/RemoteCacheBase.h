@@ -149,11 +149,12 @@ public:
         auto store_key = key.encodeTo();
         WriteBufferFromOwnString val_buffer;
         val->serializeWithKey(key, val_buffer);
+        auto ttl_ms = std::chrono::duration_cast<std::chrono::milliseconds>(key.expires_at - std::chrono::system_clock::now()).count();
         try
         {
             auto conn = getConnection();
             RedisCommand eval(EVALSHA);
-            eval << getLuaScriptHash("SET") << "1" << store_key << val_buffer.str() << std::to_string(key.ttl_seconds * 1000);
+            eval << getLuaScriptHash("SET") << "1" << store_key << val_buffer.str() << std::to_string(ttl_ms);
             conn->client->template execute<Poco::Int64>(eval);
         }
         catch (const Exception & e)
@@ -290,26 +291,7 @@ public:
 
     size_t sizeInBytes() const
     {
-        static auto constexpr INFO_MEMORY = "INFO MEMORY";
-        try
-        {
-            auto conn = getConnection();
-            RedisCommand info_memory(INFO_MEMORY);
-            auto memory_info = conn->client->template execute<std::string>(info_memory);
-            return parseDatasetMemory(memory_info);
-        }
-        catch (const Exception & e)
-        {
-            LOG_ERROR(logger, "Failed to execute INFO MEMORY, caused by {}", e.displayText());
-            throw Exception(ErrorCodes::EXTERNAL_QUERY_RESULT_CACHE_ERROR, "Failed to execute INFO MEMORY, caused by {}", e.displayText());
-        }
-        catch (...)
-        {
-            auto message = getCurrentExceptionMessage(false);
-            LOG_ERROR(logger, "Failed to execute INFO MEMORY, caused by {}", message);
-            throw Exception(ErrorCodes::EXTERNAL_QUERY_RESULT_CACHE_ERROR, "Failed to execute INFO MEMORY, caused by {}", message);
-        }
-        std::unreachable();
+        return 0;
     }
 
     size_t count() const
@@ -402,19 +384,6 @@ private:
     {
         auto config_ = std::atomic_load(&config);
         return getRedisConnection(pool, *config);
-    }
-    static size_t parseDatasetMemory(const std::string& info)
-    {
-        std::istringstream iss(info);
-        std::string line;
-        while (std::getline(iss, line))
-        {
-            if (line.find("used_memory_dataset:") != std::string::npos)
-            {
-                return std::stoi(line.substr(18));
-            }
-        }
-        return 0;
     }
 };
 
