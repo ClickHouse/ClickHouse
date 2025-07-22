@@ -17,9 +17,9 @@ FROM numbers(10);
 
 SET allow_experimental_analyzer = 1;
 SELECT n FROM t_param_filter SETTINGS additional_table_filters = {'t_param_filter': 'n < {b:String}'};
-SELECT n FROM t_param_filter WHERE n > {a:String} SETTINGS additional_table_filters = {'t_param_filter': 'n < {b:String}'};
+SELECT n FROM t_param_filter WHERE n > {a:String} SETTINGS additional_table_filters = {'t_param_filter': 'n < {b:String}'}, parallel_replicas_local_plan=1;
+SELECT n FROM t_param_filter WHERE n > {a:String} SETTINGS additional_table_filters = {'t_param_filter': 'n < {b:String}'}, parallel_replicas_local_plan=0;
 
-SET allow_experimental_analyzer = 0;
-SELECT n FROM t_param_filter SETTINGS additional_table_filters = {'t_param_filter': 'n < {b:String}'};
-SELECT n FROM t_param_filter WHERE n > {a:String} SETTINGS additional_table_filters = {'t_param_filter': 'n < {b:String}'};
-
+SET additional_table_filters = {'t_param_filter': 'n < {b:String}'};
+SELECT n FROM t_param_filter WHERE n > {a:String} SETTINGS parallel_replicas_local_plan=1;
+SELECT n FROM t_param_filter WHERE n > {a:String} SETTINGS parallel_replicas_local_plan=0;
