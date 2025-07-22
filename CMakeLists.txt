@@ -513,7 +513,6 @@ macro (clickhouse_add_executable target)
             "LINKER:--wrap=posix_memalign"
             "LINKER:--wrap=valloc"
             "LINKER:--wrap=memalign"
-            "LINKER:--wrap=sallocx"
             "LINKER:--wrap=reallocarray"
         )
     endif()

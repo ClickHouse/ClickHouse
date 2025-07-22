@@ -268,13 +268,6 @@ extern "C" void * __wrap_memalign(size_t alignment, size_t size) // NOLINT
     return res;
 }
 
-extern "C" size_t __wrap_sallocx(const void *ptr, int flags) // NOLINT
-{
-    extern size_t __real_sallocx(const void *ptr, int flags); // NOLINT
-    size_t res = __real_sallocx(ptr, flags);
-    return res;
-}
-
 extern "C" void * __wrap_reallocarray(void * ptr, size_t number_of_members, size_t size) // NOLINT
 {
     size_t real_size = 0;
