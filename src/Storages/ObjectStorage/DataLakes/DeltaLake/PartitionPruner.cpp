@@ -96,29 +96,27 @@ bool PartitionPruner::canBePruned(const DB::ObjectInfo & object_info) const
 
     if (!object_info.data_lake_metadata.has_value())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data lake metadata is not set");
-    //if (!object_info.data_lake_metadata->transform)
-    //    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data lake expression transform is not set");
+    if (!object_info.data_lake_metadata->transform)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data lake expression transform is not set");
 
-    if (object_info.data_lake_metadata->partition_values.empty())
+    const auto partition_values = DeltaLake::getConstValuesFromExpression(
+        physical_partition_columns,
+        *object_info.data_lake_metadata->transform);
+
+    if (partition_values.empty())
     {
         return false;
     }
 
-    //const auto partition_values = DeltaLake::getConstValuesFromExpression(
-    //    physical_partition_columns,
-    //    *object_info.data_lake_metadata->transform);
-
-    LOG_TEST(getLogger("DeltaLakePartitionPruner"), "Partition values: {}", object_info.data_lake_metadata->partition_values.size());
-
     DB::Row partition_key_values;
-    partition_key_values.reserve(object_info.data_lake_metadata->partition_values.size());
+    partition_key_values.reserve(partition_values.size());
 
-    for (const auto & [name, value] : object_info.data_lake_metadata->partition_values)
+    for (auto && value : partition_values)
     {
         if (value.isNull())
             partition_key_values.push_back(DB::POSITIVE_INFINITY); /// NULL_LAST
         else
-            partition_key_values.push_back(value);
+            partition_key_values.push_back(std::move(value));
     }
 
     std::vector<DB::FieldRef> partition_key_values_ref(partition_key_values.begin(), partition_key_values.end());

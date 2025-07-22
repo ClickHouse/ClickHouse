@@ -117,21 +117,30 @@ public:
     }
 
 private:
+    static constexpr uint64_t VISITOR_FAILED = 0;
+    static constexpr uint64_t VISITOR_END = 0;
+
     static const void * getNext(void * data_)
     {
         auto * iterator_data = static_cast<EngineIteratorData *>(data_);
         LOG_TEST(iterator_data->log(), "Next");
+        uintptr_t result = VISITOR_FAILED;
         try
         {
-            auto result = getNextImpl(*iterator_data);
-            if (result)
-                return reinterpret_cast<const void *>(result);
+            result = getNextImpl(*iterator_data);
         }
         catch (...)
         {
             iterator_data->setException(std::current_exception());
         }
-        return {};
+
+        if (result == VISITOR_FAILED || result == VISITOR_END)
+        {
+            LOG_TEST(iterator_data->log(), "Returning NULL");
+            return nullptr;
+        }
+        LOG_TEST(iterator_data->log(), "Returning VALID");
+        return reinterpret_cast<const void *>(result);
     }
 
     static uintptr_t getNextImpl(EngineIteratorData & iterator_data);
@@ -202,7 +211,7 @@ uintptr_t EngineIterator::visitLiteralValue(
         //}
         default:
         {
-            return {};
+            return VISITOR_FAILED;
         }
     }
 }
@@ -210,13 +219,13 @@ uintptr_t EngineIterator::visitLiteralValue(
 uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data)
 {
     if (iterator_data.hasException())
-        return {};
+        return VISITOR_FAILED;
 
     const auto * node = iterator_data.next();
     if (!node)
     {
         LOG_TEST(iterator_data.log(), "Iterator finished");
-        return {};
+        return VISITOR_END;
     }
 
     LOG_TEST(iterator_data.log(), "Node name: {}, node type: {}", node->result_name, node->type);
@@ -276,7 +285,7 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data)
                     if (!constant)
                     {
                         LOG_TEST(iterator_data.log(), "Unsupported literal type: {}", type_index);
-                        return {};
+                        return VISITOR_FAILED;
                     }
 
                     return ffi::visit_predicate_eq(iterator_data.state, column, constant);
@@ -290,7 +299,7 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data)
             break;
         }
     }
-    return {};
+    return VISITOR_FAILED;
 }
 
 }
