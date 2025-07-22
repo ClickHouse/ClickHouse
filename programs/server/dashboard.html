@@ -1318,7 +1318,7 @@ async function draw(idx, chart, url_params, query) {
     let max_value = Number.NEGATIVE_INFINITY;
     for (let i = 1; i < series_count; i++) {
         let label = reply.meta[i].name;
-        series.push({ label, stroke: palette[i - 1], fill });
+        series.push({ label, stroke: palette[i - 1], fill, points: { size: 3, fill: palette[i - 1] }});
         data.push(reply.data[label]);
         max_value = Math.max(max_value, ...reply.data[label]);
     }
