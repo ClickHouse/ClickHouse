@@ -748,7 +748,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
     /// We need to track this change, this map tracks input columns and how they are transformed
     /// Each next step uses mapped columns as inputs
     std::unordered_map<const ActionsDAG::Node *, size_t> input_node_map;
-    std::vector<std::pair<size_t, const ActionsDAG::Node *>> casted_input_nodes;
+    std::vector<std::pair<size_t, const ActionsDAG::Node *>> current_input_nodes;
 
     const auto & global_inputs = global_actions_dag->getInputs();
     for (size_t input_idx = 0; input_idx < global_inputs.size(); ++input_idx)
@@ -758,7 +758,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
         if (src_rels.count() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Input node {} has {} source relations, expected 1", input->result_name, toString(src_rels));
         auto rel_idx = src_rels.findFirstSet();
-        casted_input_nodes.emplace_back(safe_cast<size_t>(rel_idx), input);
+        current_input_nodes.emplace_back(safe_cast<size_t>(rel_idx), input);
         input_node_map[input] = input_idx;
     }
 
@@ -827,9 +827,9 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             }
 
             ActionsDAG::NodeMapping current_inputs;
-            for (size_t input_pos = 0; input_pos < casted_input_nodes.size(); ++input_pos)
+            for (size_t input_pos = 0; input_pos < current_input_nodes.size(); ++input_pos)
             {
-                auto [rel_idx, input_node] = casted_input_nodes[input_pos];
+                auto [rel_idx, input_node] = current_input_nodes[input_pos];
                 if (!joined_mask.test(rel_idx))
                     continue;
                 current_inputs[input_node] = input_node;
@@ -861,13 +861,13 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             dag_outputs.clear();
             for (auto [input_pos, new_input] : current_step_type_changes)
             {
-                casted_input_nodes.at(input_pos).second = new_input;
+                current_input_nodes.at(input_pos).second = new_input;
             }
 
             /// Columns returned from JOIN is input with possibly corrected type
-            for (size_t input_pos = 0; input_pos < casted_input_nodes.size(); ++input_pos)
+            for (size_t input_pos = 0; input_pos < current_input_nodes.size(); ++input_pos)
             {
-                auto [rel_idx, input_node] = casted_input_nodes[input_pos];
+                auto [rel_idx, input_node] = current_input_nodes[input_pos];
                 if (!joined_mask.test(rel_idx))
                     continue;
 
@@ -908,10 +908,28 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
 
     if (nodeStack.size() != 1 || nodeStack.top() != &nodes.back())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal join sequence produced: [{}]",
-            fmt::join(sequence | std::views::transform([](const auto * dpe) { return dpe ? dpe->dump() : "null"; }), ", "));
+            fmt::join(sequence | std::views::transform([](const auto * e) { return e ? e->dump() : "null"; }), ", "));
 
     auto result = std::move(nodes.back());
     nodes.pop_back();
+
+    {
+        ActionsDAG::NodeMapping current_inputs;
+        auto all_outputs = global_actions_dag->getOutputs();
+        size_t outputs_num = all_outputs.size();
+        for (size_t input_pos = 0; input_pos < current_input_nodes.size(); ++input_pos)
+        {
+            auto [rel_idx, input_node] = current_input_nodes[input_pos];
+            current_inputs[input_node] = input_node;
+            /// Add all inputs to outputs to make sure all of them are used in this dag
+            all_outputs.push_back(input_node);
+        }
+        auto final_dag = ActionsDAG::foldActionsByProjection(current_inputs, all_outputs);
+        /// Keep only original outputs
+        final_dag.getOutputs().resize(outputs_num);
+        makeExpressionNodeOnTopOf(result, std::move(final_dag), nodes, "Actions After Join Reorder");
+    }
+
     return result;
 }
 
