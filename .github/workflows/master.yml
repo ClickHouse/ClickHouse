@@ -2523,11 +2523,11 @@ jobs:
             python3 -m praktika run 'Stateless tests (arm_binary, sequential)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_arm_asan_azure_parallel:
+  stateless_tests_azure_arm_asan_parallel:
     runs-on: [self-hosted, func-tester-aarch64]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_arm_asan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYXNhbiwgYXp1cmUsIHBhcmFsbGVsKQ==') }}
-    name: "Stateless tests (arm_asan, azure, parallel)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhenVyZSwgYXJtX2FzYW4sIHBhcmFsbGVsKQ==') }}
+    name: "Stateless tests (azure, arm_asan, parallel)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -2556,16 +2556,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (arm_asan, azure, parallel)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (azure, arm_asan, parallel)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (arm_asan, azure, parallel)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (azure, arm_asan, parallel)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_arm_asan_azure_sequential:
+  stateless_tests_azure_arm_asan_sequential:
     runs-on: [self-hosted, func-tester-aarch64]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_arm_asan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYXNhbiwgYXp1cmUsIHNlcXVlbnRpYWwp') }}
-    name: "Stateless tests (arm_asan, azure, sequential)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhenVyZSwgYXJtX2FzYW4sIHNlcXVlbnRpYWwp') }}
+    name: "Stateless tests (azure, arm_asan, sequential)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -2594,9 +2594,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (arm_asan, azure, sequential)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (azure, arm_asan, sequential)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (arm_asan, azure, sequential)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (azure, arm_asan, sequential)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
   integration_tests_asan_old_analyzer_1_6:
@@ -3777,11 +3777,11 @@ jobs:
             python3 -m praktika run 'Stress test (amd_msan)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stress_test_azure_tsan:
+  stress_test_tsan_azure:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_amd_tsan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKGF6dXJlLCB0c2FuKQ==') }}
-    name: "Stress test (azure, tsan)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKHRzYW4sIGF6dXJlKQ==') }}
+    name: "Stress test (tsan, azure)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -3810,16 +3810,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stress test (azure, tsan)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (tsan, azure)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stress test (azure, tsan)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (tsan, azure)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stress_test_azure_msan:
+  stress_test_msan_azure:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, build_amd_msan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKGF6dXJlLCBtc2FuKQ==') }}
-    name: "Stress test (azure, msan)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKG1zYW4sIGF6dXJlKQ==') }}
+    name: "Stress test (msan, azure)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -3848,9 +3848,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stress test (azure, msan)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (msan, azure)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stress test (azure, msan)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stress test (msan, azure)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
   ast_fuzzer_amd_debug:

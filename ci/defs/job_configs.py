@@ -455,8 +455,8 @@ class JobConfigs:
                 RunnerLabels.FUNC_TESTER_ARM,
             ],
             parameter=[
-                "arm_asan, azure, parallel",
-                "arm_asan, azure, sequential",
+                "azure, arm_asan, parallel",
+                "azure, arm_asan, sequential",
             ],
             requires=[
                 [
@@ -560,8 +560,8 @@ class JobConfigs:
         allow_merge_on_failure=True,
     ).parametrize(
         parameter=[
-            "azure, tsan",
-            "azure, msan",
+            "tsan, azure",
+            "msan, azure",
         ],
         runs_on=[
             RunnerLabels.FUNC_TESTER_AMD,
