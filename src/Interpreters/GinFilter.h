@@ -6,6 +6,8 @@
 namespace DB
 {
 
+struct MarkRanges;
+
 static inline constexpr auto TEXT_INDEX_NAME = "text";
 static inline constexpr UInt64 UNLIMITED_ROWS_PER_POSTINGS_LIST = 0;
 static inline constexpr UInt64 DEFAULT_NGRAM_SIZE = 3;
@@ -74,7 +76,7 @@ public:
     bool contains(const GinFilter & filter, PostingsCacheForStore & cache_store, GinSearchMode mode = GinSearchMode::All) const;
 
 	// Get a vector of indices.
-	std::vector<uint32_t> getIndices(const GinFilter * filter, const PostingsCacheForStore *cache_store) const;
+	std::vector<uint32_t> getIndices(const GinFilter * filter, const PostingsCacheForStore *cache_store, const MarkRanges &ranges) const;
 
     /// Set the query string of the filter
     void setQueryString(const char * data, size_t len)
