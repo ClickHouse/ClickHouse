@@ -139,12 +139,9 @@ void AggregateFunctionDeepMergeJSON::processColumnObject(
     /// Process typed paths
     for (const auto & [path, column] : col_object.getTypedPaths())
     {
-        if (!column->isDefaultAt(row_num))
-        {
-            Field value;
-            column->get(row_num, value);
-            processPath(StringRef(path), value, aggregate_data, arena);
-        }
+        Field value;
+        column->get(row_num, value);
+        processPath(StringRef(path), value, aggregate_data, arena);
     }
 
     /// Process dynamic paths
