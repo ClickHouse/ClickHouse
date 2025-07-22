@@ -94,8 +94,9 @@ namespace DB
 
     RedisDictionarySource::~RedisDictionarySource() = default;
 
-    QueryPipeline RedisDictionarySource::loadAll()
+    BlockIO RedisDictionarySource::loadAll()
     {
+        BlockIO io;
         auto connection = getRedisConnection(pool, configuration);
 
         RedisCommand command_for_keys("KEYS");
@@ -104,9 +105,12 @@ namespace DB
         /// Get only keys for specified storage type.
         auto all_keys = connection->client->execute<RedisArray>(command_for_keys);
         if (all_keys.isNull())
-            return QueryPipeline(std::make_shared<RedisSource>(
+        {
+            io.pipeline = QueryPipeline(std::make_shared<RedisSource>(
                 std::move(connection), RedisArray{},
                 configuration.storage_type, sample_block, REDIS_MAX_BLOCK_SIZE));
+            return io;
+        }
 
         RedisArray keys;
         auto key_type = storageTypeToKeyType(configuration.storage_type);
@@ -119,9 +123,10 @@ namespace DB
             keys = *getRedisHashMapKeys(connection, keys);
         }
 
-        return QueryPipeline(std::make_shared<RedisSource>(
+        io.pipeline = QueryPipeline(std::make_shared<RedisSource>(
             std::move(connection), std::move(keys),
             configuration.storage_type, sample_block, REDIS_MAX_BLOCK_SIZE));
+        return io;
     }
 
     QueryPipeline RedisDictionarySource::loadIds(const std::vector<UInt64> & ids)

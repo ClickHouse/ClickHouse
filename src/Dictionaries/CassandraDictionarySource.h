@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Dictionaries/CassandraHelpers.h>
+#include <QueryPipeline/BlockIO.h>
 
 #if USE_CASSANDRA
 
@@ -50,7 +51,7 @@ public:
             const String & config_prefix,
             Block & sample_block);
 
-    QueryPipeline loadAll() override;
+    BlockIO loadAll() override;
 
     bool supportsSelectiveLoad() const override { return true; }
 

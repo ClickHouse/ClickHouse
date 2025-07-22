@@ -19,7 +19,7 @@ public:
 
     NullDictionarySource(const NullDictionarySource & other);
 
-    QueryPipeline loadAll() override;
+    BlockIO loadAll() override;
 
     QueryPipeline loadUpdatedAll() override
     {
