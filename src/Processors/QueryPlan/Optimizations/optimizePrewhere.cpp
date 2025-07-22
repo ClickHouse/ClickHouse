@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/optimizePrewhere.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageDummy.h>
@@ -140,6 +141,11 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
 
     const auto & storage_prewhere_info = source_step_with_filter->getPrewhereInfo();
     if (storage_prewhere_info)
+        return;
+
+    /// Vector index lookup and exact row seeks is a more targetted optimization, hence priority for that.
+    auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
+    if (read_from_merge_tree_step && read_from_merge_tree_step->getVectorSearchParameters().has_value())
         return;
 
     /// TODO: We can also check for UnionStep, such as StorageBuffer and local distributed plans.

@@ -383,16 +383,20 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
                 filter_expression.removeUnusedActions();
 
                 /// Update the node with new Step
+                auto description = filter_or_prewhere_node->step->getStepDescription();
                 if (prewhere_expression_step)
                     filter_or_prewhere_node->step = std::make_unique<ExpressionStep>(read_from_mergetree_step->getOutputHeader(), std::move(filter_expression));
                 else
                     filter_or_prewhere_node->step = std::make_unique<FilterStep>(read_from_mergetree_step->getOutputHeader(), std::move(filter_expression), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
+               filter_or_prewhere_node->step->setStepDescription(description);
             }
         }
 
         /// Update the node with new Step
+        auto description = expression_node->step->getStepDescription();
         expression_node->step = std::make_unique<ExpressionStep>(
             filter_or_prewhere_node ? filter_or_prewhere_node->step.get()->getOutputHeader() : read_from_mergetree_step->getOutputHeader(), std::move(expression));
+        expression_node->step->setStepDescription(description);
     }
 
     return true;
