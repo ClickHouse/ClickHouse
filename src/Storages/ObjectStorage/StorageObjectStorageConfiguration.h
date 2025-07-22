@@ -86,7 +86,7 @@ public:
     virtual Path getRawPath() const = 0;
     // Path used for reading, by default it is the same as `getRawPath`
     // When using `partition_strategy=hive`, a recursive reading pattern will be appended `'table_root/**.parquet'
-    Path getPathForRead() const;
+    const Path & getPathForRead() const;
     // Path used for writing, it should not be globbed and might contain a partition key
     Path getPathForWrite(const std::string & partition_id = "") const;
 
@@ -190,6 +190,9 @@ protected:
     void assertInitialized() const;
 
     bool initialized = false;
+
+private:
+    Path read_path;
 };
 
 using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;

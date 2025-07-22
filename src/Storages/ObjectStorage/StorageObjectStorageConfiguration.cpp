@@ -89,6 +89,8 @@ void StorageObjectStorageConfiguration::initialize(
     else
         FormatFactory::instance().checkFormatName(configuration_to_initialize.format);
 
+    /// It might be changed on `StorageObjectStorageConfiguration::initPartitionStrategy`
+    configuration_to_initialize.read_path = configuration_to_initialize.getRawPath();
     configuration_to_initialize.initialized = true;
 }
 
@@ -106,20 +108,14 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
 
     if (partition_strategy)
     {
+        read_path = partition_strategy->getPathForRead(getRawPath().path);
         LOG_DEBUG(getLogger("StorageObjectStorageConfiguration"), "Initialized partition strategy {}", magic_enum::enum_name(partition_strategy_type));
     }
 }
 
-StorageObjectStorageConfiguration::Path StorageObjectStorageConfiguration::getPathForRead() const
+const StorageObjectStorageConfiguration::Path & StorageObjectStorageConfiguration::getPathForRead() const
 {
-    auto raw_path = getRawPath();
-
-    if (!partition_strategy)
-    {
-        return raw_path;
-    }
-
-    return Path {partition_strategy->getPathForRead(raw_path.path)};
+    return read_path;
 }
 
 StorageObjectStorageConfiguration::Path StorageObjectStorageConfiguration::getPathForWrite(const std::string & partition_id) const
