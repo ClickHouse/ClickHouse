@@ -7,15 +7,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# to make shellcheck happy about splitting command
-function reattach () {
-  while ! $CLICKHOUSE_CLIENT -m -q "DETACH DATABASE $CLICKHOUSE_DATABASE; ATTACH DATABASE $CLICKHOUSE_DATABASE;" 2>/dev/null; do
-    sleep 0.05
-  done
-}
-
-export -f reattach
-
 TABLES=( test_shutdown_lock_{01..20} )
 
 for table in "${TABLES[@]}"; do
@@ -65,6 +56,13 @@ done
 
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT remove_merge_tree_part_delay"
 
+disable_failpoint() {
+  $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT remove_merge_tree_part_delay"
+}
+
+# Ensure that failpoint is disabled on exit
+trap disable_failpoint EXIT
+
 for table in "${TABLES[@]}"; do
   # Should raise either ABORTED or UNKNOWN_TABLE exception
   { $CLICKHOUSE_CLIENT -m << SQL 2>&1
@@ -75,9 +73,16 @@ SQL
     || echo "Table ${table} raise neither ABORTED nor UNKNOWN_TABLE" &
 done | sort -n &
 
-reattach
+# Disable failpoint in background to execute close to DETACH
+disable_failpoint &
 
-$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT remove_merge_tree_part_delay"
+# Detach sometimes fails, repeat until it succeeds
+while ! $CLICKHOUSE_CLIENT -m -q "DETACH DATABASE $CLICKHOUSE_DATABASE;" 2>/dev/null; do
+  sleep 0.05
+done
+
+# Re-attach the database to ensure that it is in a consistent state
+$CLICKHOUSE_CLIENT -m -q "ATTACH DATABASE $CLICKHOUSE_DATABASE;"
 
 $CLICKHOUSE_CLIENT -m << SQL 2>&1
   WITH (
