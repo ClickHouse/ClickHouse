@@ -85,42 +85,44 @@ size_t FormatParserSharedResources::getIOThreadsPerReader() const
 }
 
 
-// bool FormatParserGroup::hasFilter() const
-// {
-//     return filter_actions_dag != nullptr;
-// }
+bool FormatFilterInfo::hasFilter() const
+{
+    return filter_actions_dag != nullptr;
+}
 
 
-// void FormatParserGroup::initKeyCondition(const Block & keys)
-// {
-//     if (!filter_actions_dag)
-//         return;
+void FormatFilterInfo::initKeyCondition(const Block & keys)
+{
+    if (!filter_actions_dag)
+        return;
 
-//     auto ctx = context.lock();
-//     if (!ctx) throw Exception(ErrorCodes::LOGICAL_ERROR, "Context has expired");
+    auto ctx = context.lock();
+    if (!ctx)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Context has expired");
 
-//     ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), ctx);
-//     key_condition = std::make_shared<const KeyCondition>(
-//         inverted_dag, ctx, keys.getNames(),
-//         std::make_shared<ExpressionActions>(ActionsDAG(keys.getColumnsWithTypeAndName())));
-// }
+    ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), ctx);
+    key_condition = std::make_shared<const KeyCondition>(
+        inverted_dag, ctx, keys.getNames(), std::make_shared<ExpressionActions>(ActionsDAG(keys.getColumnsWithTypeAndName())));
+}
 
-// void FormatParserGroup::initOnce(std::function<void()> f)
-// {
-//     std::call_once(init_flag, [&]
-//         {
-//             if (init_exception)
-//                 std::rethrow_exception(init_exception);
+void FormatFilterInfo::initOnce(std::function<void()> f)
+{
+    std::call_once(
+        init_flag,
+        [&]
+        {
+            if (init_exception)
+                std::rethrow_exception(init_exception);
 
-//             try
-//             {
-//                 f();
-//             }
-//             catch (...)
-//             {
-//                 init_exception = std::current_exception();
-//                 throw;
-//             }
-//         });
-// }
+            try
+            {
+                f();
+            }
+            catch (...)
+            {
+                init_exception = std::current_exception();
+                throw;
+            }
+        });
+}
 }

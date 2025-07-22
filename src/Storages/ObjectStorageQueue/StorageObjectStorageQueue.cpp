@@ -660,7 +660,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         sources.reserve(threads);
 
         auto parser_shared_resources
-            = std::make_shared<FormatParserSharedResources>(queue_context->getSettingsRef(), /*num_streams_=*/threads, nullptr, nullptr);
+            = std::make_shared<FormatParserSharedResources>(queue_context->getSettingsRef(), /*num_streams_=*/threads);
 
         auto processing_progress = std::make_shared<ProcessingProgress>();
         for (size_t i = 0; i < threads; ++i)

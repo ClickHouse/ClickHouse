@@ -1008,7 +1008,8 @@ void registerInputFormatDWARF(FormatFactory & factory)
            const FormatSettings & settings,
            const ReadSettings &,
            bool /* is_remote_fs */,
-           FormatParserSharedResourcesPtr parser_shared_resources)
+           FormatParserSharedResourcesPtr parser_shared_resources,
+           FormatFilterInfoPtr) -> InputFormatPtr
         {
             return std::make_shared<DWARFBlockInputFormat>(
                 buf, std::make_shared<const Block>(sample), settings, parser_shared_resources->getParsingThreadsPerReader());

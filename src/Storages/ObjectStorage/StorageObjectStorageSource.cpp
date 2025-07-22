@@ -76,6 +76,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     UInt64 max_block_size_,
     std::shared_ptr<IObjectIterator> file_iterator_,
     FormatParserSharedResourcesPtr parser_shared_resources_,
+    FormatFilterInfoPtr format_filter_info_,
     bool need_only_count_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , name(std::move(name_))
@@ -86,6 +87,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
     , parser_shared_resources(std::move(parser_shared_resources_))
+    , format_filter_info(std::move(format_filter_info_))
     , read_from_format_info(info)
     , create_reader_pool(
           std::make_shared<ThreadPool>(
@@ -333,7 +335,7 @@ Chunk StorageObjectStorageSource::generate()
         }
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && !parser_shared_resources->filter_actions_dag)
+            && !format_filter_info->filter_actions_dag)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -390,7 +392,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     const LoggerPtr & log,
     size_t max_block_size,
     FormatParserSharedResourcesPtr parser_shared_resources,
-    FormatFilterInfoPtr format_filter_info,
+    FormatFilterInfoPtr,
     bool need_only_count)
 {
     ObjectInfoPtr object_info;
