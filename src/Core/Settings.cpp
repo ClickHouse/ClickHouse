@@ -6646,6 +6646,9 @@ If a vector search query has a WHERE clause, this setting determines if it is ev
     DECLARE(Float, vector_search_postfilter_multiplier, 1.0, R"(
 Multiply the fetched nearest neighbors from the vector similarity index by this number before performing post-filtering on other predicates.
 )", BETA) \
+    DECLARE(Float, vector_search_rescoring_multiplier, 1.0, R"(
+Multiply the fetched nearest neighbors from the vector similarity index by this number if the rescoring option is ON. This setting can be used to potentially improve the search result quality when the vector index is a highly quantized type like 'i8'.
+)", BETA) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
 If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply when 'allow_experimental_analyzer=0'.
 )", 0) \
