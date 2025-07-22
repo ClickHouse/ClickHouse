@@ -70,9 +70,9 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 - Reads and writes can be parallel.
 - Not supported:
-    - `ALTER` and `SELECT...SAMPLE` operations.
-    - Indexes.
-    - [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not recommended.
+  - `ALTER` and `SELECT...SAMPLE` operations.
+  - Indexes.
+  - [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not recommended.
 
   :::note Zero-copy replication is not ready for production
   Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
@@ -153,7 +153,6 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 
 #### Supported by libhdfs3 {#supported-by-libhdfs3}
 
-
 | **parameter**                                         | **default value**       |
 | -                                                  | -                    |
 | rpc\_client\_connect\_tcpnodelay                      | true                    |
@@ -198,9 +197,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 | dfs\_client\_log\_severity                            | "INFO"                  |
 | dfs\_domain\_socket\_path                             | ""                      |
 
-
 [HDFS Configuration Reference](https://hawq.apache.org/docs/userguide/2.3.0.0-incubating/reference/HDFSConfigurationParameterReference.html) might explain some parameters.
-
 
 #### ClickHouse extras {#clickhouse-extras}
 
@@ -236,7 +233,6 @@ libhdfs3 support HDFS namenode HA.
 ```
 
 - Then use `dfs.nameservices` tag value of `hdfs-site.xml` as the namenode address in the HDFS URI. For example, replace `hdfs://appadmin@192.168.101.11:8020/abc/` with `hdfs://appadmin@my_nameservice/abc/`.
-
 
 ## Virtual columns {#virtual-columns}
 

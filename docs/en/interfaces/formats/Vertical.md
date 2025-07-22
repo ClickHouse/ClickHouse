@@ -48,4 +48,3 @@ test: string with 'quotes' and      with some special
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
 ## Format settings {#format-settings}
-
