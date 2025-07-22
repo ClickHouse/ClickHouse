@@ -71,6 +71,27 @@ def rabbitmq_setup_teardown():
     cluster.reset_rabbitmq()
 
 
+def check_query_result(expected, instance, query, timeout=DEFAULT_TIMEOUT_SEC):
+    deadline = time.monotonic() + timeout
+    prev_result = 0
+    result = None
+    while time.monotonic() < deadline:
+        result = int(instance.query(query))
+        # In case it's consuming successfully from RabbitMQ in latest iteration, extend the deadline
+        if result > prev_result:
+            deadline += 1
+        prev_result = result
+        if result == expected:
+            break
+        logging.debug(f"Result: {result} / {expected}. Now {time.monotonic()}, deadline {deadline}")
+        time.sleep(1)
+    else:
+        pytest.fail(
+            f"Time limit of {timeout} seconds reached without any RabbitMQ consumption. The result did not match the expected value."
+        )
+    return result
+
+
 # Tests
 
 
@@ -636,8 +657,6 @@ def test_rabbitmq_big_message(rabbitmq_cluster):
 
 
 def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
-    NUM_CONSUMERS = 10
-    NUM_QUEUES = 10
     logging.getLogger("pika").propagate = False
 
     instance.query(
@@ -699,25 +718,8 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
         time.sleep(random.uniform(0, 1))
         thread.start()
 
-    result1 = ""
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
     expected = messages_num * threads_num
-    prev_result = 0
-    while time.monotonic() < deadline:
-        result1 = int(instance.query("SELECT count() FROM test.view"))
-        # In case it's consuming successfully from RabbitMQ in latest iteration, extend the deadline
-        if result1 > prev_result:
-            deadline += 1
-        prev_result = result1
-        time.sleep(1)
-        if result1 == expected:
-            break
-        logging.debug(f"Result {result1} / {expected}. Now {time.monotonic()}, deadline {deadline}")
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached without any RabbitMQ consumption. The result did not match the expected value."
-        )
-
+    result1 = check_query_result(expected, instance, "SELECT count() FROM test.view")
     result2 = instance.query("SELECT count(DISTINCT channel_id) FROM test.view")
 
     for thread in threads:
@@ -731,7 +733,6 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
 
 def test_rabbitmq_mv_combo(rabbitmq_cluster):
     NUM_MV = 5
-    NUM_CONSUMERS = 4
     logging.getLogger("pika").propagate = False
 
     instance.query(

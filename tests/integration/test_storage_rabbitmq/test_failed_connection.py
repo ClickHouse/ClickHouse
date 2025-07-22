@@ -8,6 +8,7 @@ import pika
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from .test import check_query_result
 
 DEFAULT_TIMEOUT_SEC = 120
 CLICKHOUSE_VIEW_TIMEOUT_SEC = 240
@@ -156,7 +157,7 @@ def rabbitmq_monitor():
 
 # Tests
 
-def _common_restore_failed_connection_without_losses(rabbitmq_cluster, rabbitmq_monitor, messages_num, table_src, table_dst):
+def common_restore_failed_connection_without_losses(rabbitmq_cluster, rabbitmq_monitor, messages_num, table_src, table_dst):
     rabbitmq_monitor.set_expectations(published=None, delivered=messages_num)
 
     deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
@@ -192,24 +193,9 @@ def _common_restore_failed_connection_without_losses(rabbitmq_cluster, rabbitmq_
         if number == messages_num:
             pytest.fail("All RabbitMQ messages have been consumed before resuming the RabbitMQ server")
 
-    deadline = time.monotonic() + CLICKHOUSE_VIEW_TIMEOUT_SEC
-    prev_result = 0
-    while time.monotonic() < deadline:
-        result = int(instance.query(f"SELECT count(DISTINCT key) FROM {table_dst}"))
-        # In case it's consuming successfully from RabbitMQ in latest iteration, extend the deadline
-        if result > prev_result:
-            deadline += 1
-        prev_result = result
-        if result == messages_num:
-            break
-        logging.debug(f"Result: {result} / {messages_num}. Now {time.monotonic()}, deadline {deadline}")
-        time.sleep(1)
-    else:
-        pytest.fail(
-            f"Time limit of {CLICKHOUSE_VIEW_TIMEOUT_SEC} seconds reached without any RabbitMQ consumption. The result did not match the expected value."
-        )
+    result = check_query_result(messages_num, instance, f"SELECT count(DISTINCT key) FROM {table_dst}", CLICKHOUSE_VIEW_TIMEOUT_SEC)
 
-    assert int(result) == messages_num, "ClickHouse lost some messages: {}".format(
+    assert result == messages_num, "ClickHouse lost some messages: {}".format(
         result
     )
 
@@ -253,7 +239,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, r
     )
 
     messages_num = 10000
-    _common_restore_failed_connection_without_losses(rabbitmq_cluster, rabbitmq_monitor, messages_num, "test.producer_reconnect", "test.view")
+    common_restore_failed_connection_without_losses(rabbitmq_cluster, rabbitmq_monitor, messages_num, "test.producer_reconnect", "test.view")
 
     instance.query(
         """
@@ -294,7 +280,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster, r
     )
 
     messages_num = 10000
-    _common_restore_failed_connection_without_losses(rabbitmq_cluster, rabbitmq_monitor, messages_num, "test.consumer_reconnect", "test.view")
+    common_restore_failed_connection_without_losses(rabbitmq_cluster, rabbitmq_monitor, messages_num, "test.consumer_reconnect", "test.view")
 
     instance.query(
         """
