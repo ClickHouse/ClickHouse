@@ -731,7 +731,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexGin::createIndexAggregatorForPart(cons
     return std::make_shared<MergeTreeIndexAggregatorGin>(store, index.column_names, index.name, token_extractor.get(), settings);
 }
 
-MergeTreeIndexConditionPtr MergeTreeIndexGin::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr /*context*/) const
+MergeTreeIndexConditionPtr MergeTreeIndexGin::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionGin>(predicate, context, index.sample_block, gin_filter_params, token_extractor.get());
 }
