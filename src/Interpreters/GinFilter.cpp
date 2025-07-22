@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 #include <Storages/MergeTree/MergeTreeIndexGin.h>
+#include <Storages/MergeTree/MarkRange.h>
 #include <city.h>
 
 namespace DB
@@ -221,18 +222,40 @@ bool GinFilter::contains(const GinFilter & filter, PostingsCacheForStore & cache
 }
 
 
-std::vector<uint32_t> GinFilter::getIndices(const GinFilter *filter, const PostingsCacheForStore *cache_store) const
+std::vector<uint32_t> GinFilter::getIndices(
+    const GinFilter *filter,
+    const PostingsCacheForStore *cache_store,
+    const MarkRanges &ranges) const
 {
+    chassert(ranges.size() > 0);
+
     if (filter->getTerms().empty())
         return {};
 
-    const GinPostingsCachePtr postings_cache = cache_store->getCachedPostings(*filter);
+    const size_t full_start = ranges.front().begin + 1;
+    const size_t full_end = ranges.back().end + 1;
+
+    //std::println("  Full range: [{} {}]", full_start, full_end);
 
     GinIndexPostingsList range_bitset;
+    for (const MarkRange &range : ranges)
+        range_bitset.addRange(range.begin + 1, range.end + 2); // Yes, i know how it looks...
+
+    //std::println("  range_bitset {}", range_bitset.cardinality());
+
+    const GinPostingsCachePtr postings_cache = cache_store->getCachedPostings(*filter);
+    GinIndexPostingsList posting_bitset;
 
     for (const GinSegmentWithRowIdRange &range : rowid_ranges)
     {
-        range_bitset.addRange(range.range_start, range.range_end + 1);
+        if (range.range_end < full_start)
+            continue;
+
+        if (range.range_start > full_end)
+            break;
+
+        GinIndexPostingsList range_matches;
+        range_matches.addRange(range.range_start, range.range_end + 1);
 
         for (const auto & term_postings : *postings_cache)
         {
@@ -240,30 +263,28 @@ std::vector<uint32_t> GinFilter::getIndices(const GinFilter *filter, const Posti
             const GinSegmentedPostingsListContainer & container = term_postings.second;
             auto container_it = container.find(range.segment_id);
 
-            if (container_it == container.cend()) {
-                range_bitset.removeRange(range.range_start, range.range_end);
+            if (container_it == container.cend()
+                || container_it->second->maximum() < range.range_start
+                || container_it->second->minimum() > range.range_end) {
+
+                range_matches.removeRange(range.range_start, range.range_end + 1);
                 break;
             }
 
-            if (hasAlwaysMatchFlag(*container_it->second))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "The gin range [{}:{}] has an all match flag.", range.range_start, range.range_end);
-
-            auto min_in_container = container_it->second->minimum();
-            auto max_in_container = container_it->second->maximum();
-
-            if (range.range_start > max_in_container || min_in_container > range.range_end)
-            {
-                range_bitset.removeRange(range.range_start, range.range_end);
-                break;
-            }
-
-            range_bitset &= *container_it->second;
+            range_matches &= *container_it->second;
         }
+
+        posting_bitset |= range_matches;
+
+        //std::println("  posting_bitset {}", posting_bitset.cardinality());
     }
 
+    range_bitset &= posting_bitset;
+
+    //std::println("  range_bitset2 {}", range_bitset.cardinality());
+
     const size_t cardinality = range_bitset.cardinality();
-    std::vector<uint32_t> indices;
-    indices.resize(cardinality);
+    std::vector<uint32_t> indices(cardinality);
 
     range_bitset.toUint32Array(indices.data());
 

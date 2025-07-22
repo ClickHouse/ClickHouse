@@ -48,6 +48,8 @@ struct MarkRanges : public std::deque<MarkRange>
     String describe() const;
     void deserialize(ReadBuffer & in);
 
+    void attachOrMergeLastRange(const MarkRange &range);
+
     SearchAlgorithm search_algorithm = {SearchAlgorithm::Unknown};
 };
 

@@ -123,6 +123,18 @@ void MarkRanges::deserialize(ReadBuffer & in)
     }
 }
 
+void MarkRanges::attachOrMergeLastRange(const MarkRange &range)
+{
+    /// check if we can merge with a previous range
+    if (this->size() > 0 && this->back().end == range.begin)
+    {
+        chassert(this->back().end <= range.begin);
+        this->back().end = range.end;
+    }
+    else /// or create a new one
+        this->push_back(range);
+}
+
 MarkRangesInfo::MarkRangesInfo(UUID table_uuid_, const String & part_name_, size_t marks_count_, bool has_final_mark_, MarkRanges mark_ranges_)
     : table_uuid(table_uuid_)
     , part_name(part_name_)

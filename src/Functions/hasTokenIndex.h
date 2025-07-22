@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <Columns/ColumnVector.h>
 #include <Common/StringSearcher.h>
+#include "Storages/MergeTree/MarkRange.h"
 #include "Storages/MergeTree/MergeTreeIndices.h"
 #include "base/defines.h"
 
@@ -28,6 +29,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <iterator>
 #include <print>
+#include <algorithm>
 
 namespace DB
 {
@@ -103,47 +105,52 @@ class FunctionIndex : public IFunction
     }
 
 
-    static size_t postingArrayToOutput(
+    static void postingArrayToOutput(
         const std::vector<uint32_t> matching_rows,
         const ColumnVector<UInt64> * col_part_offset_vector,
-        PaddedPODArray<typename Impl::ResultType> & result, size_t idx, size_t mark_end)
+        PaddedPODArray<typename Impl::ResultType> & result)
     {
-        const size_t input_rows_count = col_part_offset_vector->size();
+        const PaddedPODArray<UInt64> &offsets = col_part_offset_vector->getData();
 
-        /// col_part_offset_vector may have some "holes" but will be always strictly increasing, so in the worst case the distance
-        /// to the next mark start will be smaller or equal to mark_size.
-        /// If we detect a performance issue here, then we could use bisection as the array is sorted and the boundaries are
-        /// known.
-        size_t next_idx = idx;
-        while(next_idx < input_rows_count && col_part_offset_vector->getElement(next_idx) < mark_end)
-            ++next_idx;
+        // std::println("  postingArrayToOutput [{} - {}] [{} - {}] -> [{} - {}]",
+        //     start, end,
+        //     matching_rows.front(), matching_rows.back(),
+        //     col_part_offset_vector->getElement(start),
+        //     col_part_offset_vector->getElement(end - 1)
+        // );
 
-        /// Extra boundary check.
-        chassert(col_part_offset_vector->getElement(next_idx - 1) >= (matching_rows.back() - 1));
+        // size_t inserted = 0;
+        // size_t total = 0;
+
+        const UInt64 *it = std::lower_bound(offsets.begin(), offsets.end(), matching_rows.front() - 1);
+        const UInt64 *end_it = std::upper_bound(it, offsets.end(), matching_rows.back());
 
         for (uint32_t row : matching_rows)
         {
             const size_t match_offset = row - 1;
 
-            /// This is the same than an std::lower_bound, but simpler (and faster ;)
-            size_t lower_bound_offset = col_part_offset_vector->getElement(idx);
-            while (idx < next_idx && lower_bound_offset < match_offset)
-                lower_bound_offset = col_part_offset_vector->getElement(++idx);
+            it = std::lower_bound(it, end_it, match_offset);
 
-            if (idx == next_idx)
-                break;
+            size_t idx = std::distance(offsets.begin(), it);
 
-            chassert(lower_bound_offset >= match_offset);
+            chassert(offsets[idx] >= match_offset);
 
-            if (lower_bound_offset == match_offset)
+            if (offsets[idx] == match_offset)
             {
                 chassert(result[idx] == 0);
                 result[idx] = 1;
-            }
+                // ++inserted;
+            } // else {
+
+            //     throw Exception(ErrorCodes::BAD_ARGUMENTS, "HEEE skipped {} vs {} {} {}!!",
+            //         match_offset, offsets[idx - 1], offsets[idx], offsets[idx + 1]);
+            // }
+
+            // ++total;
             /// if (lower_bound_offset > match_offset) continue; /// there is a hole... just continue
         }
 
-        return next_idx;
+        // std::println("  Inserted {} total {}", inserted, total);
 	}
 
 public:
@@ -225,39 +232,61 @@ public:
         const size_t first_mark = part->index_granularity->getMarkRangeForRowOffset(first_row).begin;
         const size_t last_mark = part->index_granularity->getMarkRangeForRowOffset(last_row).begin;
 
-        // std::println("Called HasTokenIndex({}, {}, [{}], [{} -> {}]) diff: {} input_rows: {}",
-        //     index_name, token, part_idx, first_row, last_row, last_row - first_row, input_rows_count);
+        // std::println("\nCalled HasTokenIndex({}, {}, [{}: {} {}], [{} -> {}]) diff: {} input_rows: {}",
+        //     index_name, token, part_idx, first_mark, last_mark, first_row, last_row, last_row - first_row, input_rows_count);
 
         // Check that we have the right boundary marks
         chassert(first_row == part->index_granularity->getMarkStartingRow(first_mark));
         chassert(last_row + 1 == part->index_granularity->getMarkStartingRow(last_mark) + part->index_granularity->getMarkRows(last_mark));
         const MarkRange full_input_range(first_mark, last_mark);
 
-        // for (const auto & range : part_ranges.ranges)
-        // {
-        //     MarkRange index_range(
-        //         range.begin / index_granularity,
-        //         (range.end + index_granularity - 1) / index_granularity);
-        //     index_ranges.push_back(index_range);
-        // }
-
+        size_t idx = 0;
         MarkRanges index_ranges;
+        std::map<size_t, MarkRanges> ranges_map;
+
         for (const auto & range : part_info.ranges)
         {
-            if (range.end < full_input_range.begin)
-                continue;
-
-            if (full_input_range.end < range.begin) /// The range is on the right.
-                break;
-
-            MarkRange index_range(
+            /// For the reader
+            index_ranges.emplace_back(
                 range.begin / index_granularity,
                 (range.end + index_granularity - 1) / index_granularity);
-            index_ranges.push_back(index_range);
+
+            for (size_t mark = range.begin; mark < range.end; ++mark)
+            {
+                if (mark < first_mark)
+                    continue;
+                if (mark > last_mark)
+                    break;
+
+                const size_t mark_start = part->index_granularity->getMarkStartingRow(mark);
+                const size_t mark_size = part->index_granularity->getMarkRows(mark);
+                const size_t mark_end = mark_start + mark_size;
+
+                /// This mark is not consecutive with the last one because some intermediate ones were filtered/skipped
+                /// In that case we assume that there was not a match in that mark and go on
+                size_t offset = (idx < input_rows_count) ? col_part_offset_vector->getElement(idx) : last_row + 1;
+                while (offset < mark_start)
+                    offset = col_part_offset_vector->getElement(++idx);
+
+                /// This mark FULLY overlaps with a hole in the offsets?
+                if (offset > mark_end)
+                    continue;
+
+                const size_t current_index_mark = mark / index_granularity;
+
+                ranges_map[current_index_mark].attachOrMergeLastRange(MarkRange(mark_start, mark_end));
+            }
         }
 
-        const size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
+        // for ( const auto &[index_mark, subranges] : ranges_map)
+        // {
+        //     std::print("index {} :", index_mark);
+        //     for (const MarkRange &range : subranges)
+        //         std::print(" {}:{},", range.begin, range.end);
+        //     std::print("\n");
+        // }
 
+        const size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
         const size_t index_marks_count = (marks_count + index_granularity - 1) / index_granularity;
 
         MergeTreeIndexReader reader(
@@ -269,79 +298,20 @@ public:
             context->getVectorSimilarityIndexCache().get(),
             MergeTreeReaderSettings::Create(context, SelectQueryInfo()));
 
-        MergeTreeIndexGranulePtr granule = nullptr;
-        size_t last_index_mark = 0;
-        size_t idx = 0;
-        size_t offset = col_part_offset_vector->getElement(idx);
-
-        for (const MarkRange& irange : index_ranges)
+        for ( const auto &[index_mark, subranges] : ranges_map)
         {
-            for (size_t index_mark = irange.begin; index_mark < irange.end; ++index_mark)
-            {
-                if (index_mark < first_mark)
-                    continue;
-                if (index_mark > last_mark)
-                    break;
+            MergeTreeIndexGranulePtr granule = nullptr;
+            reader.read(index_mark, granule);
 
-                const size_t mark_start = part->index_granularity->getMarkStartingRow(index_mark);
-                const size_t mark_size = part->index_granularity->getMarkRows(index_mark);
-                const size_t mark_end = mark_start + mark_size;
+            const MergeTreeIndexGranuleGinPtr granule_gin = std::dynamic_pointer_cast<MergeTreeIndexGranuleGin>(granule);
+            if (!granule_gin)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "GinFilter index condition got a granule with the wrong type.");
 
-                chassert(mark_size > 0); /// yes let's be paranoiac.
+            const std::vector<uint32_t> matching_rows
+                = granule_gin->gin_filter.getIndices(filter.get(), cache_in_store.get(), subranges);
 
-                /// This mark is not consecutive with the last one because some intermediate ones were filtered/skipped
-                /// In that case we assume that there was not a match in that mark and go on
-                while (offset < mark_start)
-                    offset = col_part_offset_vector->getElement(++idx);
-
-                /// This mark FULLY overlaps with a hole in the offsets?
-                if (offset > mark_end)
-                    continue;
-
-                if (index_mark != irange.begin || !granule || last_index_mark != irange.begin)
-                    reader.read(index_mark, granule);
-
-                const MergeTreeIndexGranuleGinPtr granule_gin = std::dynamic_pointer_cast<MergeTreeIndexGranuleGin>(granule);
-                if (!granule_gin)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "GinFilter index condition got a granule with the wrong type.");
-
-                const std::vector<uint32_t> matching_rows = granule_gin->gin_filter.getIndices(filter.get(), cache_in_store.get());
-
-                idx = postingArrayToOutput(matching_rows, col_part_offset_vector, col_res->getData(), idx, mark_end);
-                offset = (idx < input_rows_count) ? col_part_offset_vector->getElement(idx) : 0;
-
-                // if (matching_rows.size() > 0)
-                // {
-                //     std::println("  Mark: {}:  [{} : {}] diff: {} tokens: {}",
-                //         index_mark,
-                //         mark_start,
-                //         mark_end,
-                //         mark_size,
-                //         matching_rows.size()
-                //     );
-
-                //     //counter += indices.size();
-                // }
-            }
-
-            last_index_mark = irange.end - 1;
+            postingArrayToOutput(matching_rows, col_part_offset_vector, col_res->getData());
         }
-
-        // RangesInDataParts parts_with_ranges = indexInfo.parts;
-
-        // skip_indexes = indexes->skip_indexes
-        // const auto & index_and_condition = skip_indexes.useful_indices[idx];
-
-        // MergeTreeIndexPtr index = index_and_condition.index;
-        // MergeTreeIndexConditionPtr condition = index_and_condition.condition;
-
-        // auto & ranges = parts_with_ranges[part_index];
-
-        // index_helper = index_and_condition.index;
-        // part = ranges.data_part
-        // ranges = ranges.ranges
-
-        // for idx in skip_indexes
 
         return col_res;
     }
