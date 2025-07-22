@@ -64,15 +64,13 @@ public:
     static GinIndexPostingsListPtr deserialize(ReadBuffer & buffer);
 
 private:
-    static constexpr size_t MIN_SIZE_FOR_ROARING_ENCODING = 16;
-
-    static constexpr size_t ROARING_ENCODING_COMPRESSION_CARDINALITY_THRESHOLD = 5000;
-
-    static constexpr size_t ARRAY_CONTAINER_MASK = 0x1;
-
-    static constexpr size_t ROARING_CONTAINER_MASK = 0x0;
-    static constexpr size_t ROARING_COMPRESSED_MASK = 0x1;
-    static constexpr size_t ROARING_UNCOMPRESSED_MASK = 0x0;
+#if defined(__AVX__) && defined(__AVX2__)
+    static constexpr std::string FASTPFOR_CODEC_NAME = "simdfastpfor256";
+    static constexpr size_t FASTPFOR_THRESHOLD = 8;
+#else
+    static constexpr std::string FASTPFOR_CODEC_NAME = "simdfastpfor128";
+    static constexpr size_t FASTPFOR_THRESHOLD = 4;
+#endif
 
     roaring::Roaring rowids;
 };

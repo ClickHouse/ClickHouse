@@ -368,6 +368,7 @@ target_link_libraries (clickhouse_compression
         PRIVATE
             ch_contrib::lz4
             ch_contrib::roaring
+            ch_contrib::fastpfor
 )
 
 # Use X86 AVX2/AVX512 instructions to accelerate filter operations
@@ -419,6 +420,7 @@ target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::abseil_swiss_tabl
 # Make dbms depend on roaring instead of clickhouse_common_io so that roaring itself can depend on clickhouse_common_io
 # That way we we can redirect malloc/free functions avoiding circular dependencies
 dbms_target_link_libraries(PUBLIC ch_contrib::roaring)
+dbms_target_link_libraries(PUBLIC ch_contrib::fastpfor)
 
 if (TARGET ch_contrib::rdkafka)
     dbms_target_link_libraries(PUBLIC ch_contrib::rdkafka ch_contrib::cppkafka)

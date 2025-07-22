@@ -384,3 +384,9 @@
 [submodule "contrib/crc32c"]
 	path = contrib/crc32c
 	url = https://github.com/google/crc32c.git
+[submodule "contrib/simde"]
+	path = contrib/simde
+	url = https://github.com/simd-everywhere/simde
+[submodule "contrib/FastPFOR"]
+	path = contrib/FastPFOR
+	url = https://github.com/fast-pack/FastPFOR
