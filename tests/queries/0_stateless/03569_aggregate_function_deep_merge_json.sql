@@ -13,7 +13,7 @@ CREATE TABLE test_deep_merge_json
 ENGINE = MergeTree()
 ORDER BY id;
 
--- Test 1: Basic deep merge
+-- Test 1: Basic deep merge (without deletion support)
 INSERT INTO test_deep_merge_json VALUES
 (1, '{"a": 1, "b": {"c": 2}}'),
 (1, '{"b": {"d": 3}, "e": 4}'),
@@ -21,7 +21,43 @@ INSERT INTO test_deep_merge_json VALUES
 
 SELECT id, deepMergeJSON(data) AS merged FROM test_deep_merge_json GROUP BY id;
 
--- Test 2: Multiple keys
+-- Test 2: Test that without deletion key parameter, $unset is treated as regular key
+TRUNCATE TABLE test_deep_merge_json;
+INSERT INTO test_deep_merge_json VALUES
+(1, '{"user": {"name": "Alice", "email": "alice@example.com"}}'),
+(1, '{"user": {"phone": {"$unset": true}}}'),
+(1, '{"user": {"$unset": {"nested": "value"}}}');
+
+SELECT id, deepMergeJSON(data) AS merged FROM test_deep_merge_json GROUP BY id;
+
+-- Test 3: Using deepMergeJSON with '$unset' deletion key
+TRUNCATE TABLE test_deep_merge_json;
+INSERT INTO test_deep_merge_json VALUES
+(1, '{"user": {"name": "Alice", "email": "alice@example.com", "phone": "+1234"}}'),
+(1, '{"user": {"phone": {"$unset": true}}}'),
+(1, '{"user": {"email": "newalice@example.com"}}');
+
+SELECT id, deepMergeJSON('$unset')(data) AS merged FROM test_deep_merge_json GROUP BY id;
+
+-- Test 4: Using custom deletion key
+TRUNCATE TABLE test_deep_merge_json;
+INSERT INTO test_deep_merge_json VALUES
+(1, '{"a": 1, "b": 2, "c": 3}'),
+(1, '{"b": {"$delete": true}}'),
+(1, '{"b": 4, "d": 5}');
+
+SELECT id, deepMergeJSON('$delete')(data) AS merged FROM test_deep_merge_json GROUP BY id;
+
+-- Test 5: Deletion suffix with custom key
+TRUNCATE TABLE test_deep_merge_json;
+INSERT INTO test_deep_merge_json VALUES
+(1, '{"config": {"setting1": "value1", "setting2": "value2"}}'),
+(1, '{"config": {"setting1.$remove": true}}'),
+(1, '{"config": {"setting3": "value3"}}');
+
+SELECT id, deepMergeJSON('$remove')(data) AS merged FROM test_deep_merge_json GROUP BY id;
+
+-- Test 6: Multiple keys
 TRUNCATE TABLE test_deep_merge_json;
 INSERT INTO test_deep_merge_json VALUES
 (1, '{"user": {"name": "Alice", "age": 25}}'),
@@ -87,14 +123,14 @@ INSERT INTO test_deep_merge_json VALUES
 
 SELECT id, deepMergeJSON(data) AS merged FROM test_deep_merge_json GROUP BY id;
 
--- Test 9: Deletion with $unset
+-- Test 9: Original deletion test with $unset (now requires parameter)
 TRUNCATE TABLE test_deep_merge_json;
 INSERT INTO test_deep_merge_json VALUES
 (1, '{"user": {"name": "Alice", "email": "alice@example.com", "phone": "+1234"}}'),
 (1, '{"user": {"phone": {"$unset": true}}}'),
 (1, '{"user": {"email": "newalice@example.com"}}');
 
-SELECT id, deepMergeJSON(data) AS merged FROM test_deep_merge_json GROUP BY id;
+SELECT id, deepMergeJSON('$unset')(data) AS merged FROM test_deep_merge_json GROUP BY id;
 
 -- Test 10: Deletion and re-insertion
 TRUNCATE TABLE test_deep_merge_json;
@@ -103,7 +139,7 @@ INSERT INTO test_deep_merge_json VALUES
 (1, '{"b": {"$unset": true}}'),
 (1, '{"b": 4, "d": 5}');
 
-SELECT id, deepMergeJSON(data) AS merged FROM test_deep_merge_json GROUP BY id;
+SELECT id, deepMergeJSON('$unset')(data) AS merged FROM test_deep_merge_json GROUP BY id;
 
 -- Test 11: Nested deletion
 TRUNCATE TABLE test_deep_merge_json;
@@ -112,7 +148,7 @@ INSERT INTO test_deep_merge_json VALUES
 (1, '{"level1": {"level2": {"$unset": true}}}'),
 (1, '{"level1": {"d": 4}}');
 
-SELECT id, deepMergeJSON(data) AS merged FROM test_deep_merge_json GROUP BY id;
+SELECT id, deepMergeJSON('$unset')(data) AS merged FROM test_deep_merge_json GROUP BY id;
 
 -- Test 12: MongoDB CDC simulation
 TRUNCATE TABLE test_deep_merge_json;
@@ -121,7 +157,7 @@ INSERT INTO test_deep_merge_json VALUES
 (1, '{"user": {"email": "alice.new@example.com", "preferences": {"notifications": {"$unset": true}}}}'),
 (1, '{"user": {"phone": "+1234567890", "preferences": {"language": "en"}}}');
 
-SELECT id, deepMergeJSON(data) AS merged FROM test_deep_merge_json GROUP BY id;
+SELECT id, deepMergeJSON('$unset')(data) AS merged FROM test_deep_merge_json GROUP BY id;
 
 -- Test 13: Object to primitive type conflicts
 TRUNCATE TABLE test_deep_merge_json;

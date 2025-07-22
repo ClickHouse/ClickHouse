@@ -1,4 +1,8 @@
 1	{"a":5,"b":{"c":6,"d":3,"e":7},"e":4}
+1	{"user":{"$unset":{"nested":"value"},"email":"alice@example.com","name":"Alice","phone":{"$unset":true}}}
+1	{"user":{"email":"newalice@example.com","name":"Alice"}}
+1	{"a":1,"b":4,"c":3,"d":5}
+1	{"config":{"setting2":"value2","setting3":"value3"}}
 1	{"user":{"age":25,"email":"alice@example.com","name":"Alice"}}
 2	{"user":{"age":30,"city":"NYC","name":"Bob"}}
 1	{"other":"data","tags":["c","d"],"values":[1,2]}

@@ -54,16 +54,6 @@ bool DeepMergeJSONAggregateData::isObjectPath(const StringRef & path) const
         && it->first.data[path.size] == '.';
 }
 
-bool DeepMergeJSONAggregateData::isUnsetMarker(const Field & value)
-{
-    if (value.getType() != Field::Types::Object)
-        return false;
-
-    const auto & obj = value.safeGet<Object>();
-    return obj.size() == 1 && obj.contains(UNSET_KEY) && obj.at(UNSET_KEY).getType() == Field::Types::Bool
-        && obj.at(UNSET_KEY).safeGet<bool>();
-}
-
 bool DeepMergeJSONAggregateData::handleDeletion(const StringRef & target_path, size_t order, Arena * arena)
 {
     auto it = paths.find(target_path);
@@ -89,27 +79,8 @@ bool DeepMergeJSONAggregateData::handleDeletion(const StringRef & target_path, s
     return true;
 }
 
-void DeepMergeJSONAggregateData::addPath(const StringRef & path, const Field & value, size_t order, Arena * arena)
+void DeepMergeJSONAggregateData::addPath(const StringRef & path, const Field & value, size_t order, Arena *)
 {
-    /// Check for ".$unset" suffix deletion
-    std::string path_str = path.toString();
-    std::string unset_suffix = std::string(".") + UNSET_KEY;
-    if (path_str.size() > unset_suffix.size() && path_str.substr(path_str.size() - unset_suffix.size()) == unset_suffix
-        && value.getType() == Field::Types::Bool && value.safeGet<bool>())
-    {
-        std::string target_path = path_str.substr(0, path_str.size() - unset_suffix.size());
-        handleDeletion(StringRef(target_path), order, arena);
-        return;
-    }
-
-    /// Check for deletion marker (backward compatibility)
-    if (isUnsetMarker(value))
-    {
-        handleDeletion(path, order, arena);
-        return;
-    }
-
-    /// Normal value update/insert
     auto it = paths.find(path);
     if (it != paths.end())
     {
@@ -154,6 +125,21 @@ void AggregateFunctionDeepMergeJSON::processPath(
     const StringRef & path, const Field & value, DeepMergeJSONAggregateData & aggregate_data, Arena * arena) const
 {
     validatePathLength(path.size);
+
+    /// Check for deletion suffix if deletion key is configured
+    if (deletion_key.has_value())
+    {
+        std::string path_str = path.toString();
+        std::string unset_suffix = std::string(".") + *deletion_key;
+        if (path_str.size() > unset_suffix.size() && path_str.substr(path_str.size() - unset_suffix.size()) == unset_suffix
+            && value.getType() == Field::Types::Bool && value.safeGet<bool>())
+        {
+            std::string target_path = path_str.substr(0, path_str.size() - unset_suffix.size());
+            aggregate_data.handleDeletion(StringRef(target_path), aggregate_data.row_count, arena);
+            return;
+        }
+    }
+
     auto interned_path = internString(path, arena);
     aggregate_data.addPath(interned_path, value, aggregate_data.row_count, arena);
 }
@@ -372,12 +358,10 @@ namespace
 AggregateFunctionPtr
 createAggregateFunctionDeepMergeJSON(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
-    assertNoParameters(name, parameters);
-
     if (argument_types.size() != 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires exactly one argument", name);
 
-    return std::make_shared<AggregateFunctionDeepMergeJSON>(argument_types);
+    return std::make_shared<AggregateFunctionDeepMergeJSON>(argument_types, parameters);
 }
 
 }

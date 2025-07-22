@@ -16,15 +16,13 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 /// Reasonable limits to prevent memory abuse
 constexpr size_t MAX_JSON_MERGE_PATHS = 10000;
 constexpr size_t MAX_JSON_MERGE_PATH_LENGTH = 1000;
 constexpr size_t MAX_JSON_MERGE_TOTAL_SIZE = 100_MiB;
-
-/// JSON unset marker key
-constexpr const char * UNSET_KEY = "$unset";
 
 struct DeepMergeJSONAggregateData
 {
@@ -44,23 +42,20 @@ struct DeepMergeJSONAggregateData
     /// Check if a path represents an object (has children)
     bool isObjectPath(const StringRef & path) const;
 
-    /// Check if a value is an unset marker
-    static bool isUnsetMarker(const Field & value);
-
     /// Add or update a path
     void addPath(const StringRef & path, const Field & value, size_t order, Arena * arena);
 
-private:
-    void removeChildPaths(const StringRef & parent_path);
-
     /// Handle deletion of a path (returns true if deletion was processed)
     bool handleDeletion(const StringRef & target_path, size_t order, Arena * arena);
+
+private:
+    void removeChildPaths(const StringRef & parent_path);
 };
 
 class AggregateFunctionDeepMergeJSON final : public IAggregateFunctionDataHelper<DeepMergeJSONAggregateData, AggregateFunctionDeepMergeJSON>
 {
 public:
-    explicit AggregateFunctionDeepMergeJSON(const DataTypes & argument_types_)
+    explicit AggregateFunctionDeepMergeJSON(const DataTypes & argument_types_, const Array & params)
         : IAggregateFunctionDataHelper<DeepMergeJSONAggregateData, AggregateFunctionDeepMergeJSON>(argument_types_, {}, argument_types_[0])
     {
         if (!isObject(argument_types_[0]))
@@ -69,6 +64,19 @@ public:
                 "Argument for aggregate function {} must be JSON, got {}",
                 getName(),
                 argument_types_[0]->getName());
+
+        // Handle optional deletion key parameter
+        if (!params.empty())
+        {
+            if (params.size() != 1)
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Aggregate function {} accepts only one optional parameter (deletion key), got {}",
+                    getName(),
+                    params.size());
+
+            deletion_key = params[0].safeGet<String>();
+        }
     }
 
     String getName() const override { return "deepMergeJSON"; }
@@ -96,6 +104,11 @@ public:
     void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const override;
 
 private:
+    /// Optional deletion key parameter (e.g., "$unset")
+    /// If empty, deletion logic is disabled
+    std::optional<String> deletion_key;
+
+
     /// Helper to intern strings in Arena
     static StringRef internString(const StringRef & str, Arena * arena)
     {
