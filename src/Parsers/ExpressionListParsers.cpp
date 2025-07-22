@@ -2026,7 +2026,7 @@ protected:
         if (elements.size() == 1)
             node = elements[0];
         else
-            node = makeASTFunction("tuple", std::move(elements));
+            node = makeASTOperator("tuple", std::move(elements));
 
         return true;
     }

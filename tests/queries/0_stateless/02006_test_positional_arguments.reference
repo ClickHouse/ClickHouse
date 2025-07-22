@@ -119,14 +119,14 @@ ORDER BY -2 ASC
 explain syntax select x3, if(x3 > 10, x3, plus(x1, x2)), x1 + x2 from test order by 2;
 SELECT
     x3,
-    if(x3 > 10, x3, x1 + x2),
+    if(x3 > 10, x3, plus(x1, x2)),
     x1 + x2
 FROM test
 ORDER BY 2 ASC
 explain syntax select x3, if(x3 > 10, x3, plus(x1, x2)), x1 + x2 from test order by -2;
 SELECT
     x3,
-    if(x3 > 10, x3, x1 + x2),
+    if(x3 > 10, x3, plus(x1, x2)),
     x1 + x2
 FROM test
 ORDER BY -2 ASC
@@ -199,7 +199,7 @@ select a, b, c, d, e, f  from (select 44 a, 88 b, 13 c, 14 d, 15 e, 16 f) t grou
 select a, b, c, d, e, f  from (select 44 a, 88 b, 13 c, 14 d, 15 e, 16 f) t group by 1,2,3,-3,-2,-1 order by a;
 44	88	13	14	15	16
 explain syntax select plus(1, 1) as a group by a;
-SELECT 1 + 1 AS a
+SELECT plus(1, 1) AS a
 FROM system.one
 GROUP BY a
 select substr('aaaaaaaaaaaaaa', 8) as a  group by a order by a;

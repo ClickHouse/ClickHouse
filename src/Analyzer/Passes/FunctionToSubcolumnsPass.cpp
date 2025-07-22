@@ -70,6 +70,7 @@ void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, Col
     function_arguments_nodes.push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(0)));
 
     const auto * function_name = positive ? "equals" : "notEquals";
+    function_node.markAsOperator();
     resolveOrdinaryFunctionNodeByName(function_node, function_name, ctx.context);
 }
 

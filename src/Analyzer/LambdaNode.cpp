@@ -79,6 +79,7 @@ ASTPtr LambdaNode::toASTImpl(const ConvertToASTOptions & options) const
     tuple_function->name = "tuple";
     tuple_function->children.push_back(children[arguments_child_index]->toAST(options));
     tuple_function->arguments = tuple_function->children.back();
+    tuple_function->is_operator = true;
 
     lambda_function_arguments_ast->children.push_back(std::move(tuple_function));
     lambda_function_arguments_ast->children.push_back(children[expression_child_index]->toAST(options));
