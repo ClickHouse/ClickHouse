@@ -525,13 +525,14 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
 
         for (const auto & additional_filter : settings[Setting::additional_table_filters].value)
         {
-            const auto & tuple  = additional_filter.safeGet<Tuple>();
-            const auto & table  = tuple.at(0).safeGet<String>();
+            const auto & tuple = additional_filter.safeGet<Tuple>();
+            const auto & table = tuple.at(0).safeGet<String>();
             const auto & filter = tuple.at(1).safeGet<String>();
 
             const char * table_end = table.data() + table.size();
 
-            if (find_first_symbols<'.'>(table.data(), table_end) != table_end) {
+            if (find_first_symbols<'.'>(table.data(), table_end) != table_end)
+            {
                 additional_filter_resolved.emplace_back(tuple);
                 continue;
             }
