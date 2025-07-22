@@ -577,7 +577,7 @@ bool MergeTreeIndexConditionGin::traverseASTEquals(
         else
         {
             out.gin_filter = std::make_unique<GinFilter>();
-            token_extractor->substringToGinFilter(required_substring.data(), required_substring.size(), *out.gin_filter, false, false);
+            token_extractor->substringToGinFilter(result.required_substring.data(), result.required_substring.size(), *out.gin_filter, false, false);
         }
 
         return true;
