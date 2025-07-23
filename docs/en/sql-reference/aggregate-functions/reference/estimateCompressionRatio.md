@@ -83,4 +83,3 @@ SELECT estimateCompressionRatio('T64, ZSTD')(number) AS estimate FROM compressio
 │ 143.60078980434392 │
 └────────────────────┘
 ```
-

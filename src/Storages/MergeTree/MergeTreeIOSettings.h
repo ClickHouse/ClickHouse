@@ -60,6 +60,7 @@ struct MergeTreeReaderSettings
     bool secondary_indices_enable_bulk_filtering = true;
     UInt64 merge_tree_min_bytes_for_seek = 0;
     UInt64 merge_tree_min_rows_for_seek = 0;
+    size_t filesystem_prefetches_limit = 0;
 };
 
 struct MergeTreeWriterSettings

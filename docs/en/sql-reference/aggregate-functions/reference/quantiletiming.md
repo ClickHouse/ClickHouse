@@ -28,8 +28,8 @@ Alias: `medianTiming`.
 
 - `expr` — [Expression](/sql-reference/syntax#expressions) over a column values returning a [Float\*](../../../sql-reference/data-types/float.md)-type number.
 
-    - If negative values are passed to the function, the behavior is undefined.
-    - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
+  - If negative values are passed to the function, the behavior is undefined.
+  - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
 
 **Accuracy**
 

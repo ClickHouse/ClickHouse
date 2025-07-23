@@ -13,7 +13,6 @@ import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 Information about [Refreshable Materialized Views](../../sql-reference/statements/create/view.md#refreshable-materialized-view). Contains all refreshable materialized views, regardless of whether there's a refresh in progress or not.
 
-
 Columns:
 
 - `database` ([String](../../sql-reference/data-types/string.md)) — The name of the database the table is in.

@@ -216,7 +216,7 @@ private:
     bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
     bool receiveEndOfQueryForInsert();
     void cancelQuery();
-    void sendCancel(std::exception_ptr exception_ptr = nullptr);
+    bool sendCancel(std::exception_ptr exception_ptr = nullptr);
 
     void onProgress(const Progress & value);
     void onTimezoneUpdate(const String & tz);

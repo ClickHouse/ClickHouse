@@ -193,6 +193,7 @@ namespace Setting
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
+    extern const SettingsUInt64 filesystem_prefetches_limit;
 }
 
 namespace MergeTreeSetting
@@ -230,6 +231,7 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
         .secondary_indices_enable_bulk_filtering = settings[Setting::secondary_indices_enable_bulk_filtering],
         .merge_tree_min_bytes_for_seek = settings[Setting::merge_tree_min_bytes_for_seek],
         .merge_tree_min_rows_for_seek = settings[Setting::merge_tree_min_rows_for_seek],
+        .filesystem_prefetches_limit = settings[Setting::filesystem_prefetches_limit],
     };
 }
 
@@ -1916,7 +1918,11 @@ static void buildIndexes(
         bool l_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(l.index.get());
         bool r_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(r.index.get());
         if (l_is_minmax == r_is_minmax)
-            return false;
+        {
+            const auto l_granularity = l.index->getGranularity();
+            const auto r_granularity = r.index->getGranularity();
+            return l_granularity > r_granularity;
+        }
 
 #if USE_USEARCH
         // A vector similarity index (if present) is the most selective, hence move it to front
