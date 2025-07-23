@@ -1244,14 +1244,15 @@ void StatementGenerator::generateEngineDetails(
             te->add_params()->set_num(keys_limit_dist(rg.generator));
         }
     }
-    else if (te->has_engine() && b.isAnyIcebergEngine())
+    else if (te->has_engine() && (b.isAnyIcebergEngine() || b.isAnyDeltaLakeEngine()))
     {
-        const std::filesystem::path & fpath = fc.server_file_path / ("/iceberg_data/default/t" + std::to_string(b.tname));
+        const bool isS3 = b.isIcebergS3Engine() || b.isDeltaLakeS3Engine();
+        const bool isAzure = b.isIcebergAzureEngine() || b.isDeltaLakeAzureEngine();
+        const std::filesystem::path & fpath = fc.server_file_path / ("/datalake/t" + std::to_string(b.tname));
 
-        if (b.isIcebergS3Engine() || b.isIcebergAzureEngine())
+        if (isS3 || isAzure)
         {
-            connections.createExternalDatabaseTable(
-                rg, b.isIcebergS3Engine() ? IntegrationCall::MinIO : IntegrationCall::Azurite, b, entries, te);
+            connections.createExternalDatabaseTable(rg, isS3 ? IntegrationCall::MinIO : IntegrationCall::Azurite, b, entries, te);
         }
         else
         {
@@ -1259,7 +1260,7 @@ void StatementGenerator::generateEngineDetails(
             te->add_params()->set_svalue(fname.generic_string());
         }
         /// Set path
-        const String & key = b.isIcebergS3Engine() ? "filename" : (b.isIcebergAzureEngine() ? "blob_path" : "path");
+        const String & key = isS3 ? "filename" : (isAzure ? "blob_path" : "path");
         KeyValuePair * kvp = te->add_params()->mutable_kvalue();
         kvp->set_key(key);
         kvp->set_value(fpath.generic_string());
@@ -1322,6 +1323,7 @@ void StatementGenerator::generateEngineDetails(
         }
         if (b.isS3QueueEngine() || b.isAzureQueueEngine())
         {
+            /// The mode setting is mandatory
             svs = svs ? svs : te->mutable_setting_values();
             SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
@@ -1330,6 +1332,7 @@ void StatementGenerator::generateEngineDetails(
         }
         if (b.isAnyIcebergEngine())
         {
+            /// The iceberg_format_version setting is mandatory?
             svs = svs ? svs : te->mutable_setting_values();
             SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
@@ -1836,6 +1839,10 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     {
         this->ids.emplace_back(IcebergLocal);
     }
+    if ((fc.engine_mask & allow_deltalakelocal) != 0)
+    {
+        this->ids.emplace_back(DeltaLakeLocal);
+    }
     if (fc.allow_memory_tables && (fc.engine_mask & allow_memory) != 0)
     {
         this->ids.emplace_back(Memory);
@@ -1913,6 +1920,10 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
             {
                 this->ids.emplace_back(IcebergS3);
             }
+            if ((fc.engine_mask & allow_deltalakeS3) != 0)
+            {
+                this->ids.emplace_back(DeltaLakeS3);
+            }
         }
         if (connections.hasAzuriteConnection())
         {
@@ -1927,6 +1938,10 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
             if ((fc.engine_mask & allow_icebergAzure) != 0)
             {
                 this->ids.emplace_back(IcebergAzure);
+            }
+            if ((fc.engine_mask & allow_deltalakeAzure) != 0)
+            {
+                this->ids.emplace_back(DeltaLakeAzure);
             }
         }
         if (connections.hasHTTPConnection() && (fc.engine_mask & allow_URL) != 0)
