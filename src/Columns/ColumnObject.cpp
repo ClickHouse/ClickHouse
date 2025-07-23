@@ -268,24 +268,20 @@ void ColumnObject::get(size_t n, Field & res) const
     res = (*this)[n];
 }
 
-std::pair<String, DataTypePtr> ColumnObject::getValueNameAndType(size_t n, const Options & options) const
+DataTypePtr ColumnObject::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
-    WriteBufferFromOwnString wb;
-    wb << '{';
+    name_buf << '{';
 
     bool first = true;
 
     for (const auto & [path, column] : typed_paths)
     {
-        const auto & [value, type] = column->getValueNameAndType(n, options);
-
         if (first)
             first = false;
         else
-            wb << ", ";
-
-        writeDoubleQuoted(path, wb);
-        wb << ": " << value;
+            name_buf << ", ";
+        writeDoubleQuoted(path, name_buf);
+        column->getValueNameAndTypeImpl(name_buf, n, options);
     }
 
     for (const auto & [path, column] : dynamic_paths_ptrs)
@@ -295,15 +291,12 @@ std::pair<String, DataTypePtr> ColumnObject::getValueNameAndType(size_t n, const
         if (column->isNullAt(n))
             continue;
 
-        const auto & [value, type] = column->getValueNameAndType(n, options);
-
         if (first)
             first = false;
         else
-            wb << ", ";
-
-        writeDoubleQuoted(path, wb);
-        wb << ": " << value;
+            name_buf << ", ";            
+        writeDoubleQuoted(path, name_buf);
+        column->getValueNameAndTypeImpl(name_buf, n, options);
     }
 
     const auto & shared_data_offsets = getSharedDataOffsets();
@@ -315,10 +308,10 @@ std::pair<String, DataTypePtr> ColumnObject::getValueNameAndType(size_t n, const
         if (first)
             first = false;
         else
-            wb << ", ";
+            name_buf << ", ";
 
         String path = shared_paths->getDataAt(i).toString();
-        writeDoubleQuoted(path, wb);
+        writeDoubleQuoted(path, name_buf);
 
         auto value_data = shared_values->getDataAt(i);
         ReadBufferFromMemory buf(value_data.data, value_data.size);
@@ -326,21 +319,19 @@ std::pair<String, DataTypePtr> ColumnObject::getValueNameAndType(size_t n, const
 
         if (isNothing(decoded_type))
         {
-            wb << ": NULL";
+            name_buf << ": NULL";
             continue;
         }
 
         const auto column = decoded_type->createColumn();
         decoded_type->getDefaultSerialization()->deserializeBinary(*column, buf, getFormatSettings());
 
-        const auto & [value, type] = column->getValueNameAndType(0, options);
-
-        wb << ": " << value;
+        column->getValueNameAndTypeImpl(name_buf, 0, options);
     }
 
-    wb << "}";
+    name_buf << "}";
 
-    return {wb.str(), std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON)};
+    return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
 }
 
 bool ColumnObject::isDefaultAt(size_t n) const

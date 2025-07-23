@@ -143,7 +143,7 @@ public:
 
     void get(size_t n, Field & res) const override;
 
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n, const Options &) const override;
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
 
     bool isDefaultAt(size_t n) const override
     {

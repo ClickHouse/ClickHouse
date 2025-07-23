@@ -475,7 +475,7 @@ void ColumnAggregateFunction::get(size_t n, Field & res) const
     res = operator[](n);
 }
 
-std::pair<String, DataTypePtr> ColumnAggregateFunction::getValueNameAndType(size_t n, const Options &) const
+DataTypePtr ColumnAggregateFunction::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options &) const
 {
     String state;
     {
@@ -484,8 +484,9 @@ std::pair<String, DataTypePtr> ColumnAggregateFunction::getValueNameAndType(size
         WriteBufferFromString wb(state);
         writeQuoted(buffer.str(), wb);
     }
+    name_buf << state;
 
-    return {state, DataTypeFactory::instance().get(type_string)};
+    return DataTypeFactory::instance().get(type_string);
 }
 
 StringRef ColumnAggregateFunction::getDataAt(size_t n) const

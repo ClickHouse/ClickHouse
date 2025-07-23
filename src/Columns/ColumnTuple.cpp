@@ -155,28 +155,27 @@ void ColumnTuple::get(size_t n, Field & res) const
         res_tuple.push_back((*columns[i])[n]);
 }
 
-std::pair<String, DataTypePtr> ColumnTuple::getValueNameAndType(size_t n, const Options & options) const
+DataTypePtr ColumnTuple::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     const size_t tuple_size = columns.size();
 
     if (optimize_const_tuple_name_size < 0 || tuple_size <= optimize_const_tuple_name_size)
     {
-        String value_name {tuple_size > 1 ? "(" : "tuple("};
+        name_buf << (tuple_size > 1 ? "(" : "tuple(");
 
         DataTypes element_types;
         element_types.reserve(tuple_size);
 
         for (size_t i = 0; i < tuple_size; ++i)
         {
-            const auto & [value, type] = columns[i]->getValueNameAndType(n, options);
-            element_types.push_back(type);
             if (i > 0)
-                value_name += ", ";
-            value_name += value;
+                name_buf << ", ";
+            const auto & type = columns[i]->getValueNameAndTypeImpl(name_buf, n, options);
+            element_types.push_back(type);
         }
-        value_name += ")";
+        name_buf << ")";
 
-        return {value_name, std::make_shared<DataTypeTuple>(element_types)};
+        return std::make_shared<DataTypeTuple>(element_types);
     }
 
     HashState h;
@@ -184,7 +183,8 @@ std::pair<String, DataTypePtr> ColumnTuple::getValueNameAndType(size_t n, const 
         columns[i]->updateHashWithValue(n, h);
 
     auto p = getSipHash128AsPair(h);
-    return {fmt::format("{}_{}", p.high64, p.low64), getDataTypeByColumn(*this)};
+    name_buf << fmt::format("{}_{}", p.high64, p.low64);
+    return getDataTypeByColumn(*this);
 }
 
 bool ColumnTuple::isDefaultAt(size_t n) const

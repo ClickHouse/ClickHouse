@@ -18,6 +18,7 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
+#include <IO/Operators.h>
 #include <cstring> // memcpy
 #include <city.h>
 
@@ -152,7 +153,7 @@ void ColumnArray::get(size_t n, Field & res) const
         res_arr.push_back(getData()[offset + i]);
 }
 
-std::pair<String, DataTypePtr> ColumnArray::getValueNameAndType(size_t n, const Options & options) const
+DataTypePtr ColumnArray::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     size_t offset = offsetAt(n);
     size_t size = sizeAt(n);
@@ -160,21 +161,20 @@ std::pair<String, DataTypePtr> ColumnArray::getValueNameAndType(size_t n, const 
 
     if (optimize_const_array_name_size < 0 || size <= optimize_const_array_name_size)
     {
-        String value_name {"["};
+        name_buf << "[";
         DataTypes element_types;
         element_types.reserve(size);
 
         for (size_t i = 0; i < size; ++i)
         {
-            const auto & [value, type] = getData().getValueNameAndType(offset + i, options);
-            element_types.push_back(type);
             if (i > 0)
-                value_name += ", ";
-            value_name += value;
+                name_buf << ", ";
+            const auto & type = getData().getValueNameAndTypeImpl(name_buf, offset + i, options);
+            element_types.push_back(type);
         }
-        value_name += "]";
+        name_buf << "]";
 
-        return {value_name, std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types))};
+        return std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types));
     }
 
     HashState h;
@@ -183,7 +183,8 @@ std::pair<String, DataTypePtr> ColumnArray::getValueNameAndType(size_t n, const 
         data_column.updateHashWithValue(offset + i, h);
 
     auto p = getSipHash128AsPair(h);
-    return {fmt::format("{}_{}", p.high64, p.low64), getDataTypeByColumn(*this)};
+    name_buf << fmt::format("{}_{}", p.high64, p.low64);
+    return getDataTypeByColumn(*this);
 }
 
 StringRef ColumnArray::getDataAt(size_t n) const

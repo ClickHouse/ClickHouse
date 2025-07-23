@@ -84,7 +84,7 @@ public:
     TypeIndex getDataType() const override { throwMustBeDecompressed(); }
     Field operator[](size_t) const override { throwMustBeDecompressed(); }
     void get(size_t, Field &) const override { throwMustBeDecompressed(); }
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t, const Options &) const override { throwMustBeDecompressed(); }
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const override { throwMustBeDecompressed(); }
     StringRef getDataAt(size_t) const override { throwMustBeDecompressed(); }
     bool isDefaultAt(size_t) const override { throwMustBeDecompressed(); }
     void insert(const Field &) override { throwMustBeDecompressed(); }

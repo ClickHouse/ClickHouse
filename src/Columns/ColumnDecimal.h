@@ -11,6 +11,7 @@
 #include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -123,9 +124,10 @@ public:
 
     Field operator[](size_t n) const override { return DecimalField(data[n], scale); }
     void get(size_t n, Field & res) const override { res = (*this)[n]; }
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n, const IColumn::Options &) const override
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &) const override
     {
-        return {FieldVisitorToString()(data[n], scale), FieldToDataType()(data[n], scale)};
+        name_buf << FieldVisitorToString()(data[n], scale);
+        return FieldToDataType()(data[n], scale);
     }
     bool getBool(size_t n) const override { return bool(data[n].value); }
     Int64 getInt(size_t n) const override { return Int64(data[n].value); }

@@ -406,13 +406,16 @@ void ColumnVariant::get(size_t n, Field & res) const
         variants[discr]->get(offsetAt(n), res);
 }
 
-std::pair<String, DataTypePtr> ColumnVariant::getValueNameAndType(size_t n, const Options & options) const
+DataTypePtr ColumnVariant::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     Discriminator discr = localDiscriminatorAt(n);
     if (discr == NULL_DISCRIMINATOR)
-        return {"NULL", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())};
+    {
+        name_buf << "NULL";
+        return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+    }
 
-    return variants[discr]->getValueNameAndType(offsetAt(n), options);
+    return variants[discr]->getValueNameAndTypeImpl(name_buf, offsetAt(n), options);
 }
 
 bool ColumnVariant::isDefaultAt(size_t n) const

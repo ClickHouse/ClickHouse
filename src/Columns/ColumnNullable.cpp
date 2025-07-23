@@ -11,6 +11,7 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/MaskOperations.h>
+#include <IO/Operators.h>
 
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
@@ -117,12 +118,15 @@ void ColumnNullable::get(size_t n, Field & res) const
         getNestedColumn().get(n, res);
 }
 
-std::pair<String, DataTypePtr> ColumnNullable::getValueNameAndType(size_t n, const Options & options) const
+DataTypePtr ColumnNullable::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     if (isNullAt(n))
-        return {"NULL", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())};
+    {
+        name_buf << "NULL";
+        return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+    }
 
-    return getNestedColumn().getValueNameAndType(n, options);
+    return getNestedColumn().getValueNameAndTypeImpl(name_buf, n, options);
 }
 
 Float64 ColumnNullable::getFloat64(size_t n) const
