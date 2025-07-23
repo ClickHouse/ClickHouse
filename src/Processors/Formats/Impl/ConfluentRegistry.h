@@ -52,7 +52,9 @@ public:
 #endif
 
 private:
+#if USE_PROTOBUF
     google::protobuf::DescriptorPool independent_pool;
+#endif
     Poco::UUIDGenerator generator;
     String fetchSchema(uint32_t id);
 
