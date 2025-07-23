@@ -2892,7 +2892,7 @@ void ReadFromMergeTree::describeProjections(JSONBuilder::JSONMap & map) const
     }
 }
 
-void ReadFromMergeTree::detachParallelReadingExtension()
+void ReadFromMergeTree::clearParallelReadingExtension()
 {
     if (!is_parallel_reading_from_replicas)
         return;

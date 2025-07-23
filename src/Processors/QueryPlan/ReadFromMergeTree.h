@@ -259,8 +259,8 @@ public:
     bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
 
     /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and the ParallelReadingExtension must be forwarded to the new step.
-    /// Meanwhile, the ParallelReadingExtension originally in ReadFromMergeTree might be detached.
-    void detachParallelReadingExtension();
+    /// Meanwhile, the ParallelReadingExtension originally in ReadFromMergeTree might be clear.
+    void clearParallelReadingExtension();
     std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
 
 private:

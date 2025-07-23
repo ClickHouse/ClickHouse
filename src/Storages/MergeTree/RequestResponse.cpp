@@ -30,7 +30,13 @@ CoordinationMode validateAndGet(uint8_t candidate)
 
 void ParallelReadRequest::serialize(WriteBuffer & out, UInt64 initiator_protocol_version) const
 {
-    writeIntBinary(initiator_protocol_version, out);
+    /// Previously we didn't maintain backward compatibility and every change was breaking.
+    /// Particularly, we had an equality check for the version. To work around that code
+    /// in previous server versions we now have to lie to them about the version.
+    const UInt64 version = initiator_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL
+        ? DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION
+        : DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION;
+    writeIntBinary(version, out);
 
     writeIntBinary(mode, out);
     writeIntBinary(replica_num, out);
@@ -46,7 +52,7 @@ String ParallelReadRequest::describe() const
     return result;
 }
 
-ParallelReadRequest ParallelReadRequest::deserialize(ReadBuffer & in)
+ParallelReadRequest ParallelReadRequest::deserialize(ReadBuffer & in, UInt64 replica_protocol_version)
 {
     UInt64 version;
     readIntBinary(version, in);
@@ -67,7 +73,7 @@ ParallelReadRequest ParallelReadRequest::deserialize(ReadBuffer & in)
     mode = validateAndGet(mode_candidate);
     readIntBinary(replica_num, in);
     readIntBinary(min_number_of_marks, in);
-    description.deserialize(in, version);
+    description.deserialize(in, replica_protocol_version);
 
     return ParallelReadRequest(mode, replica_num, min_number_of_marks, std::move(description));
 }
@@ -82,8 +88,14 @@ void ParallelReadRequest::merge(ParallelReadRequest & other)
 
 void ParallelReadResponse::serialize(WriteBuffer & out, UInt64 replica_protocol_version) const
 {
+    /// Previously we didn't maintain backward compatibility and every change was breaking.
+    /// Particularly, we had an equality check for the version. To work around that code
+    /// in previous server versions we now have to lie to them about the version.
+    UInt64 version = replica_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL
+        ? DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION
+        : DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION;
     /// Must be the first
-    writeIntBinary(replica_protocol_version, out);
+    writeIntBinary(version, out);
 
     writeBoolText(finish, out);
     description.serialize(out, replica_protocol_version);
@@ -94,7 +106,7 @@ String ParallelReadResponse::describe() const
     return fmt::format("{}. Finish: {}", description.describe(), finish);
 }
 
-void ParallelReadResponse::deserialize(ReadBuffer & in)
+void ParallelReadResponse::deserialize(ReadBuffer & in, UInt64 replica_protocol_version)
 {
     UInt64 version;
     readIntBinary(version, in);
@@ -106,13 +118,19 @@ void ParallelReadResponse::deserialize(ReadBuffer & in)
             DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
     readBoolText(finish, in);
-    description.deserialize(in, version);
+    description.deserialize(in, replica_protocol_version);
 }
 
 
 void InitialAllRangesAnnouncement::serialize(WriteBuffer & out, UInt64 initiator_protocol_version) const
 {
-    writeIntBinary(initiator_protocol_version, out);
+    /// Previously we didn't maintain backward compatibility and every change was breaking.
+    /// Particularly, we had an equality check for the version. To work around that code
+    /// in previous server versions we now have to lie to them about the version.
+    UInt64 version = initiator_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL
+        ? DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION
+        : DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION;
+    writeIntBinary(version, out);
 
     writeIntBinary(mode, out);
     description.serialize(out, initiator_protocol_version);

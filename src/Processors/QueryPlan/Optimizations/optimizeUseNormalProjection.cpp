@@ -77,7 +77,7 @@ static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header,
 std::optional<String> optimizeUseNormalProjections(
     Stack & stack,
     QueryPlan::Nodes & nodes,
-    bool optimize_projection_on_parallel_replicas_initiator)
+    bool is_parallel_replicas_initiator)
 {
     const auto & frame = stack.back();
 
@@ -350,7 +350,17 @@ std::optional<String> optimizeUseNormalProjections(
         reading->isParallelReadingEnabled(),
         reading->getParallelReadingExtension());
 
-    if (!projection_reading)
+    /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
+    filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
+
+    /// Only the initiator should read the projection to avoid potential data duplication.
+    bool is_parallel_reading_on_remote_replicas = reading->isParallelReadingEnabled() && !is_parallel_replicas_initiator;
+    bool has_parent_parts = !parent_reading_select_result->parts_with_ranges.empty();
+    bool should_skip_projection_reading_on_remote_replicas = is_parallel_reading_on_remote_replicas
+        && projection_reading && typeid_cast<ReadFromMergeTree *>(projection_reading.get())
+        && has_parent_parts;
+
+    if (!projection_reading || should_skip_projection_reading_on_remote_replicas)
     {
         Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(proj_snapshot->getSampleBlockForColumns(required_columns))));
         if (projection_query_info.prewhere_info)
@@ -369,8 +379,20 @@ std::optional<String> optimizeUseNormalProjections(
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
     }
 
-    /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
-    filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
+    /// The result contains both the projection stream and the part stream.
+    /// -------------------------------------------------------------------------------------------
+    ///                                                 Union
+    ///  ReadFromMergeTree  ---is replaced by--->           ReadFromMergeTree (part)
+    ///                                                     ReadFromMergeTree (projection_normal)
+    /// -------------------------------------------------------------------------------------------
+    /// The coordinator does not support reading from two streams at the moment, so read projections are performed directly on the initial replica.
+    auto * reading_from_projection = typeid_cast<ReadFromMergeTree *>(projection_reading.get());
+    if (reading_from_projection && reading_from_projection->isParallelReadingEnabled() && is_parallel_replicas_initiator
+        && has_parent_parts)
+    {
+        reading_from_projection->clearParallelReadingExtension();
+        LOG_DEBUG(logger, "Parallel replicas initiator falls back to reading projection locally");
+    }
 
     if (!query_info.is_internal && context->hasQueryContext())
     {
@@ -396,50 +418,11 @@ std::optional<String> optimizeUseNormalProjections(
 
     if (parent_reading_select_result->parts_with_ranges.empty())
     {
-        /// Reading from projections has completely replaced reading from parts, disable parallel reading to avoid affecting the state of the coordinator.
-        if (reading->isParallelReadingEnabled())
-            reading->detachParallelReadingExtension();
-
         /// All parts are taken from projection
         iter->node->children[iter->next_child - 1] = next_node;
     }
     else
     {
-        /// The result contains both the projection stream and the part stream.
-        /// -------------------------------------------------------------------------------------------
-        ///                                                 Union
-        ///  ReadFromMergeTree  ---is replaced by--->           ReadFromMergeTree (part)
-        ///                                                     ReadFromMergeTree (projection_normal)
-        /// -------------------------------------------------------------------------------------------
-        ///                                         or
-        /// -------------------------------------------------------------------------------------------
-        ///                                                 Union
-        ///  ReadFromMergeTree  ---is replaced by--->           ReadFromMergeTree (part)
-        ///                                                     ReadFromPreparedSource
-        /// -------------------------------------------------------------------------------------------
-        /// The coordinator does not support reading from two streams at the moment, so read projections are performed directly on the initial replica.
-        if (reading->isParallelReadingEnabled() && optimize_projection_on_parallel_replicas_initiator)
-        {
-            if (auto * read_from_projections = typeid_cast<ReadFromMergeTree *>(projection_reading_node.step.get()))
-            {
-                read_from_projections->detachParallelReadingExtension();
-                LOG_DEBUG(logger, "Parallel replicas initiator falls back to reading projection locally");
-            }
-        }
-
-        /// Only the initiator should read the projection to avoid potential data duplication.
-        if (reading->isParallelReadingEnabled() && !optimize_projection_on_parallel_replicas_initiator)
-        {
-            if (auto * read_from_projections = typeid_cast<ReadFromMergeTree *>(projection_reading_node.step.get()))
-            {
-                auto header = read_from_projections->getOutputHeader();
-                Pipe pipe(std::make_shared<NullSource>(header));
-                QueryPlanStepPtr null_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-                projection_reading_node.step = std::move(null_reading);
-                LOG_DEBUG(logger, "Remote replicas skip reading from projection");
-            }
-        }
-
         const auto & main_stream = iter->node->children[iter->next_child - 1]->step->getOutputHeader();
         const auto * proj_stream = &next_node->step->getOutputHeader();
 

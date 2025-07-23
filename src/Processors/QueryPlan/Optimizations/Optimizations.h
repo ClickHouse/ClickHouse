@@ -166,12 +166,12 @@ std::optional<String> optimizeUseAggregateProjections(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
     bool allow_implicit_projections,
-    bool optimize_projection_on_parallel_replicas_initiator_);
+    bool is_parallel_replicas_initiator_);
 
 std::optional<String> optimizeUseNormalProjections(
     Stack & stack,
     QueryPlan::Nodes & nodes,
-    bool optimize_projection_on_parallel_replicas_initiator_);
+    bool is_parallel_replicas_initiator_);
 
 bool addPlansForSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 
