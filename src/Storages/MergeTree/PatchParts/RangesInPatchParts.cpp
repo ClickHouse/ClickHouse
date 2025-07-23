@@ -251,6 +251,8 @@ static std::pair<UInt64, UInt64> getMinMaxValues(const IMergeTreeIndexGranule & 
 
 MaybePatchRangesStats getPatchRangesStats(const DataPartPtr & patch_part, const MarkRanges & ranges, const String & column_name)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AnalyzePatchRangesMicroseconds);
+
     auto metadata_snapshot = patch_part->getMetadataSnapshot();
     const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
 
@@ -311,6 +313,7 @@ MaybePatchRangesStats getPatchRangesStats(const DataPartPtr & patch_part, const 
 
 MarkRanges filterPatchRanges(const MarkRanges & ranges, const PatchRangesStats & patch_stats, const PatchRangeStats & result_stats)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AnalyzePatchRangesMicroseconds);
     chassert(ranges.size() == patch_stats.size());
 
     MarkRanges result;

@@ -1,3 +1,4 @@
+#include <shared_mutex>
 #include <Storages/MergeTree/PatchParts/applyPatches.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -8,12 +9,20 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/Stopwatch.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadPool.h>
 
 namespace ProfileEvents
 {
     extern const Event ApplyPatchesMicroseconds;
     extern const Event BuildPatchesJoinMicroseconds;
     extern const Event BuildPatchesMergeMicroseconds;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric IOThreads;
+    extern const Metric IOThreadsActive;
+    extern const Metric IOThreadsScheduled;
 }
 
 namespace DB
@@ -384,63 +393,205 @@ PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_
     return patch_to_apply;
 }
 
-std::shared_ptr<PatchJoinSharedData> buildPatchJoinData(const Block & patch_block)
+PatchJoinCache::PatchJoinCache(size_t num_buckets_, ThreadPool & thread_pool_)
+    : num_buckets(num_buckets_), thread_pool(thread_pool_)
+{
+}
+
+void PatchJoinCache::init(const RangesInPatchParts & ranges_in_pathces)
+{
+    const auto & all_ranges = ranges_in_pathces.getRanges();
+
+    for (const auto & [patch_name, ranges] : all_ranges)
+    {
+        if (ranges.empty())
+            continue;
+
+        size_t current_buckets = std::min(num_buckets, ranges.size());
+        size_t num_ranges_in_bucket = ranges.size() / current_buckets;
+
+        auto & entries = cache[patch_name];
+        auto & buckets = ranges_to_buckets[patch_name];
+
+        entries.reserve(current_buckets);
+        for (size_t i = 0; i < ranges.size(); ++i)
+        {
+            size_t idx = i / num_ranges_in_bucket;
+            buckets[ranges[i]] = idx;
+            entries.push_back(std::make_shared<PatchJoinCache::Entry>());
+        }
+    }
+}
+
+PatchJoinCache::Entries PatchJoinCache::getEntries(const String & patch_name, const MarkRanges & ranges, Reader reader)
+{
+    auto [entries, ranges_for_entries] = getEntriesAndRanges(patch_name, ranges);
+    std::vector<std::shared_future<void>> futures;
+
+    for (size_t i = 0; i < entries.size(); ++i)
+    {
+        auto entry_futures = entries[i]->addRangesAsync(ranges_for_entries[i], thread_pool, reader);
+        futures.insert(futures.end(), entry_futures.begin(), entry_futures.end());
+    }
+
+    for (const auto & future : futures)
+        future.get();
+
+    return entries;
+}
+
+std::pair<PatchJoinCache::Entries, std::vector<MarkRanges>> PatchJoinCache::getEntriesAndRanges(const String & patch_name, const MarkRanges & ranges)
+{
+    std::lock_guard lock(mutex);
+    const auto & entries = cache.at(patch_name);
+
+    if (entries.empty())
+        return {};
+
+    std::set<size_t> entries_indexes;
+    std::map<size_t, MarkRanges> ranges_for_entries;
+    const auto & buckets = ranges_to_buckets.at(patch_name);
+
+    for (const auto & range : ranges)
+    {
+        size_t idx = buckets.at(range);
+        entries_indexes.insert(idx);
+        ranges_for_entries[idx].push_back(range);
+    }
+
+    Entries result_entries;
+    std::vector<MarkRanges> result_ranges;
+
+    for (const auto & idx : entries_indexes)
+    {
+        result_entries.push_back(entries.at(idx));
+        result_ranges.push_back(ranges_for_entries.at(idx));
+    }
+
+    return {result_entries, result_ranges};
+}
+
+std::vector<std::shared_future<void>> PatchJoinCache::Entry::addRangesAsync(const MarkRanges & ranges, ThreadPool & pool, Reader reader)
+{
+    std::vector<std::shared_future<void>> futures;
+    std::vector<std::shared_ptr<std::promise<void>>> promises;
+    MarkRanges ranges_to_read;
+
+    {
+        std::lock_guard lock(mutex);
+
+        for (const auto & range : ranges)
+        {
+            if (ranges_futures.contains(range))
+            {
+                futures.push_back(ranges_futures.at(range));
+            }
+            else
+            {
+                ranges_to_read.push_back(range);
+
+                auto promise = std::make_shared<std::promise<void>>();
+                auto future = promise->get_future().share();
+
+                ranges_futures.emplace(range, future);
+                promises.push_back(promise);
+                futures.push_back(future);
+            }
+        }
+    }
+
+    if (!ranges_to_read.empty())
+    {
+        pool.scheduleOrThrowOnError([this, ranges_to_read, reader, promises]
+        {
+            try
+            {
+                auto read_block = reader(ranges_to_read);
+                addBlock(std::move(read_block));
+
+                for (const auto & promise : promises)
+                    promise->set_value();
+            }
+            catch (...)
+            {
+                for (const auto & promise : promises)
+                    promise->set_exception(std::current_exception());
+            }
+        });
+    }
+
+    return futures;
+}
+
+void PatchJoinCache::Entry::addBlock(Block read_block)
 {
     Stopwatch watch;
 
-    size_t num_patch_rows = patch_block.rows();
+    size_t old_num_rows = block.rows();
+    size_t num_read_rows = read_block.rows();
 
-    const auto & patch_block_number = getColumnUInt64Data(patch_block, BlockNumberColumn::name);
-    const auto & patch_block_offset = getColumnUInt64Data(patch_block, BlockOffsetColumn::name);
-    const auto & patch_data_version = getColumnUInt64Data(patch_block, PartDataVersionColumn::name);
+    if (num_read_rows == 0)
+        return;
 
-    auto data = std::make_shared<PatchJoinSharedData>();
-    if (num_patch_rows == 0)
-        return data;
+    std::lock_guard lock(mutex);
 
-    data->hash_map.reserve(num_patch_rows);
+    if (old_num_rows == 0)
+    {
+        block = read_block;
+    }
+    else
+    {
+        for (size_t i = 0; i < read_block.columns(); ++i)
+        {
+            auto & result_column = block.safeGetByPosition(i).column;
+            const auto & read_column = read_block.safeGetByPosition(i).column;
+            result_column->assumeMutableRef().insertRangeFrom(*read_column, 0, read_column->size());
+        }
+    }
+
+    const auto & block_number_column = getColumnUInt64Data(read_block, BlockNumberColumn::name);
+    const auto & block_offset_column = getColumnUInt64Data(read_block, BlockOffsetColumn::name);
+    const auto & data_version_column = getColumnUInt64Data(read_block, PartDataVersionColumn::name);
+
     UInt64 prev_block_number = std::numeric_limits<UInt64>::max();
     OffsetsHashMap * offsets_hash_map = nullptr;
 
-    data->min_block = prev_block_number;
-    data->max_block = 0;
-
-    for (size_t i = 0; i < num_patch_rows; ++i)
+    for (size_t i = 0; i < num_read_rows; ++i)
     {
-        UInt64 block_number = patch_block_number[i];
-        UInt64 block_offset = patch_block_offset[i];
+        UInt64 block_number = block_number_column[i];
+        UInt64 block_offset = block_offset_column[i];
 
         if (block_number != prev_block_number)
         {
             prev_block_number = block_number;
-            offsets_hash_map = &data->hash_map[block_number];
+            offsets_hash_map = &hash_map[block_number];
 
-            data->min_block = std::min(data->min_block, block_number);
-            data->max_block = std::max(data->max_block, block_number);
+            min_block = std::min(min_block, block_number);
+            max_block = std::max(max_block, block_number);
         }
 
         auto [it, inserted] = offsets_hash_map->try_emplace(block_offset);
 
         /// Keep only the row with the highest version.
-        if (inserted || patch_data_version[i] > patch_data_version[it->second])
-            it->second = i;
+        if (inserted || data_version_column[i] > data_version_column[it->second])
+            it->second = i + old_num_rows;
     }
 
     auto elapsed = watch.elapsedMicroseconds();
     ProfileEvents::increment(ProfileEvents::BuildPatchesJoinMicroseconds, elapsed);
-
-    return data;
 }
 
-PatchToApplyPtr applyPatchJoin(const Block & result_block, const Block & patch_block, const PatchJoinSharedData & join_data)
+PatchToApplyPtr applyPatchJoin(const Block & result_block, const Block & patch_block, const PatchJoinCache::Entry & join_entry)
 {
+    std::shared_lock lock(join_entry.mutex);
+
     auto patch_to_apply = std::make_shared<PatchToApply>();
     patch_to_apply->patch_block = patch_block;
 
     size_t num_rows = result_block.rows();
     size_t num_patch_rows = patch_block.rows();
 
-    if (num_rows == 0 || num_patch_rows == 0 || join_data.hash_map.empty())
+    if (num_rows == 0 || num_patch_rows == 0 || join_entry.hash_map.empty())
         return patch_to_apply;
 
     Stopwatch watch;
@@ -451,7 +602,7 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const Block & patch_b
     const auto & result_block_number = assert_cast<const ColumnUInt64 &>(*block_number_column).getData();
     const auto & result_block_offset = assert_cast<const ColumnUInt64 &>(*block_offset_column).getData();
 
-    size_t size_to_reserve = std::min(num_rows, join_data.hash_map.size());
+    size_t size_to_reserve = std::min(num_rows, join_entry.hash_map.size());
     patch_to_apply->result_indices.reserve(size_to_reserve);
     patch_to_apply->patch_indices.reserve(size_to_reserve);
 
@@ -460,7 +611,7 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const Block & patch_b
 
     for (size_t row = 0; row < num_rows; ++row)
     {
-        if (result_block_number[row] < join_data.min_block || result_block_number[row] > join_data.max_block)
+        if (result_block_number[row] < join_entry.min_block || result_block_number[row] > join_entry.max_block)
         {
             continue;
         }
@@ -468,8 +619,8 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const Block & patch_b
         if (result_block_number[row] != prev_block_number)
         {
             prev_block_number = result_block_number[row];
-            auto it = join_data.hash_map.find(prev_block_number);
-            offsets_hash_map = it != join_data.hash_map.end() ? &it->second : nullptr;
+            auto it = join_entry.hash_map.find(prev_block_number);
+            offsets_hash_map = it != join_entry.hash_map.end() ? &it->second : nullptr;
         }
 
         if (offsets_hash_map)

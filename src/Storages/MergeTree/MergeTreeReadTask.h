@@ -106,7 +106,7 @@ public:
     {
         UncompressedCache * uncompressed_cache = nullptr;
         MarkCache * mark_cache = nullptr;
-        PatchReadResultCache * patch_read_result_cache = nullptr;
+        PatchJoinCache * patch_join_cache = nullptr;
         MergeTreeReaderSettings reader_settings{};
         StorageSnapshotPtr storage_snapshot{};
         ValueSizeMap value_size_map{};

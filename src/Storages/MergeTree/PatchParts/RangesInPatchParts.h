@@ -15,6 +15,7 @@ public:
     void optimize();
     void addPart(const DataPartPtr & original_part, const PatchPartsForReader & patch_parts, const MarkRanges & original_ranges);
     std::vector<MarkRanges> getRanges(const DataPartPtr & original_part, const PatchPartsForReader & patch_parts, const MarkRanges & ranges) const;
+    const std::unordered_map<String, MarkRanges> & getRanges() const { return ranges_by_name; }
 
 private:
     std::set<MarkRange> getIntersectingRanges(const String & patch_name, const MarkRanges & ranges) const;
