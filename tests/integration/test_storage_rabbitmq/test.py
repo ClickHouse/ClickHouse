@@ -76,7 +76,7 @@ def check_expected_result_polling(expected, query, instance=instance, timeout=DE
     prev_result = 0
     result = None
     while time.monotonic() < deadline:
-        result = int(instance.query(query, ignore_error=True))
+        result = int(instance.query(query))
         # In case it's consuming successfully from RabbitMQ in latest iteration, extend the deadline
         if result > prev_result:
             deadline += 1
