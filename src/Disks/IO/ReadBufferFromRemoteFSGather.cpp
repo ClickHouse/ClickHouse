@@ -140,13 +140,6 @@ bool ReadBufferFromRemoteFSGather::readImpl()
 
 void ReadBufferFromRemoteFSGather::setReadUntilPosition(size_t position)
 {
-    LOG_TEST(
-        log,
-        "Set read until to {}, file_offset_of_buffer_end {}, working buffer size {}, working buffer available {}",
-        position,
-        file_offset_of_buffer_end,
-        working_buffer.size(),
-        available());
     if (position == read_until_position)
         return;
 
@@ -172,7 +165,6 @@ void ReadBufferFromRemoteFSGather::setReadUntilPosition(size_t position)
     }
 
     reset();
-    LOG_TEST(log, "Set read until to {}, current file_offset_buffer_end {}", position, file_offset_of_buffer_end);
     read_until_position = position;
 }
 
@@ -224,7 +216,6 @@ off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
         reset();
     }
 
-    LOG_TEST(log, "Seeking to {}", offset);
     file_offset_of_buffer_end = offset;
     return file_offset_of_buffer_end;
 }
