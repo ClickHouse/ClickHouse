@@ -11,12 +11,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace Setting
-{
-    extern const SettingsMaxThreads max_download_threads;
-    extern const SettingsMaxThreads max_parsing_threads;
-}
-
 void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_)
 {
     storage_encoding = std::move(storage_encoding_);
