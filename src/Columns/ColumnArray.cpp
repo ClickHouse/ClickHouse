@@ -159,7 +159,7 @@ DataTypePtr ColumnArray::getValueNameAndTypeImpl(WriteBufferFromOwnString & name
     size_t size = sizeAt(n);
 
 
-    if (optimize_const_array_name_size < 0 || size <= optimize_const_array_name_size)
+    if (options.optimize_const_array_and_tuple_name_size < 0 || size <= static_cast<size_t>(options.optimize_const_array_and_tuple_name_size))
     {
         name_buf << "[";
         DataTypes element_types;

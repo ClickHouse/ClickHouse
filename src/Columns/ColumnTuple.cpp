@@ -159,9 +159,12 @@ DataTypePtr ColumnTuple::getValueNameAndTypeImpl(WriteBufferFromOwnString & name
 {
     const size_t tuple_size = columns.size();
 
-    if (optimize_const_tuple_name_size < 0 || tuple_size <= optimize_const_tuple_name_size)
+    if (options.optimize_const_array_and_tuple_name_size < 0 || tuple_size <= static_cast<size_t>(options.optimize_const_array_and_tuple_name_size))
     {
-        name_buf << (tuple_size > 1 ? "(" : "tuple(");
+        if (tuple_size > 1)
+            name_buf << "(";
+        else
+            name_buf << "tuple(";
 
         DataTypes element_types;
         element_types.reserve(tuple_size);

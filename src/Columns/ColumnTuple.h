@@ -23,10 +23,6 @@ private:
     template <bool positive>
     struct Less;
 
-    /// Enables replacement of a constant tuple name with tuple's hash.
-    /// Possible values: positive integer - number of elements in a tuple, 0 — always, negative integer - never.
-    static const Int64 optimize_const_tuple_name_size = 10;
-
     explicit ColumnTuple(MutableColumns && columns);
     ColumnTuple(const ColumnTuple &) = default;
 
