@@ -22,12 +22,10 @@ add_warning(pedantic)
 no_warning(return-type-c-linkage) # Used in some 3rd party libraries like delta-kernel-rs ffi
 no_warning(zero-length-array) # Clang extension
 no_warning(c++98-compat-pedantic) # We don't care about C++98 compatibility (We use aliases, variadic macros...)
-#no_warning(c++98-compat) # We don't care about C++98 compatibility
 no_warning(c++20-compat) # Use C++20 features incompatible with older standards (consteval, constinit, implicit typename...)
 no_warning(sign-conversion) # TODO: Fix the code and enable it
 no_warning(implicit-int-conversion) # TODO: Fix the code and enable it
 no_warning(implicit-int-float-conversion) # TODO: Fix the code and enable it
-no_warning(ctad-maybe-unsupported)
 no_warning(disabled-macro-expansion)
 no_warning(documentation-unknown-command)
 no_warning(double-promotion)

@@ -122,7 +122,7 @@ public:
                 auto full_column = column->convertToFullIfNeeded();
                 auto serialization = arguments[i +1].type->getDefaultSerialization();
                 auto converted_col_str = ColumnString::create();
-                ColumnStringHelpers::WriteHelper write_helper(*converted_col_str, column->size());
+                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, column->size());
                 auto & write_buffer = write_helper.getWriteBuffer();
                 FormatSettings format_settings;
                 for (size_t row = 0; row < column->size(); ++row)
@@ -135,7 +135,8 @@ public:
                 /// Keep the pointer alive
                 converted_col_ptrs[i] = std::move(converted_col_str);
 
-                /// Same as the normal `ColumnString` branch
+                /// Same as
+                // the normal `ColumnString` branch
                 has_column_string = true;
                 data[2 * i] = &converted_col_ptrs[i]->getChars();
                 offsets[2 * i] = &converted_col_ptrs[i]->getOffsets();
