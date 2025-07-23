@@ -4,6 +4,8 @@
 
 DROP TABLE IF EXISTS t0 SYNC;
 
+SET implicit_transaction = 0;
+
 CREATE TABLE t0 (c0 Int32) ENGINE = MergeTree() ORDER BY c0
 SETTINGS disk='disk_encrypted_03517';
 
