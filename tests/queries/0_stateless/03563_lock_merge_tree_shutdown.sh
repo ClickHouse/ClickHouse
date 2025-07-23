@@ -27,12 +27,13 @@ SQL
 done
 
 for table in "${TABLES[@]}"; do
+  # use only subset of columns to avoid huge memory usage
   $CLICKHOUSE_CLIENT -m << SQL &
-    INSERT INTO ${CLICKHOUSE_DATABASE}.${table} SELECT * from generateRandom() LIMIT 10;
-    INSERT INTO ${CLICKHOUSE_DATABASE}.${table} SELECT * from generateRandom() LIMIT 10;
-    INSERT INTO ${CLICKHOUSE_DATABASE}.${table} SELECT * from generateRandom() LIMIT 10;
-    INSERT INTO ${CLICKHOUSE_DATABASE}.${table} SELECT * from generateRandom() LIMIT 10;
-    INSERT INTO ${CLICKHOUSE_DATABASE}.${table} SELECT * from generateRandom() LIMIT 10;
+    INSERT INTO ${CLICKHOUSE_DATABASE}.${table} (hostname, event_date, event_time, event_time_microseconds) SELECT * from generateRandom() LIMIT 10;
+    INSERT INTO ${CLICKHOUSE_DATABASE}.${table} (hostname, event_date, event_time, event_time_microseconds) SELECT * from generateRandom() LIMIT 10;
+    INSERT INTO ${CLICKHOUSE_DATABASE}.${table} (hostname, event_date, event_time, event_time_microseconds) SELECT * from generateRandom() LIMIT 10;
+    INSERT INTO ${CLICKHOUSE_DATABASE}.${table} (hostname, event_date, event_time, event_time_microseconds) SELECT * from generateRandom() LIMIT 10;
+    INSERT INTO ${CLICKHOUSE_DATABASE}.${table} (hostname, event_date, event_time, event_time_microseconds) SELECT * from generateRandom() LIMIT 10;
 SQL
 done
 
