@@ -712,10 +712,9 @@
         .u-over, .u-under, .u-axis {position: absolute;}
         .u-under {overflow: hidden;}
         .uplot canvas {display: block;position: relative;width: 100%;height: 100%;}
-        .u-legend {margin: auto;text-align: center; margin-top: 1em; font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, monospace;}
+        .u-legend {font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, monospace; border-spacing: 0; border-collapse: collapse;}
         .u-inline {display: block;}
         .u-inline * {display: inline-block;}
-        .u-inline tr {margin-right: 16px;}
         .u-legend th {font-weight: 600;}
         .u-legend th > * {vertical-align: middle;display: inline-block;}
         .u-legend td { min-width: 13em; }
@@ -1944,6 +1943,95 @@ function loadUplot() {
     return load_uplot_promise;
 }
 
+function legendAsTooltipPlugin({ className, style = {} } = {}) {
+    let legendEl;
+    let multiline;
+
+    function init(u, opts) {
+        legendEl = u.root.querySelector(".u-legend");
+        legendEl.classList.remove("u-inline");
+        className && legendEl.classList.add(className);
+
+        uPlot.assign(legendEl.style, {
+            textAlign: "right",
+            pointerEvents: "none",
+            display: "none",
+            position: "absolute",
+            left: 0,
+            top: 0,
+            zIndex: 100,
+            boxShadow: "2px 2px 10px rgba(0, 0, 0, 0.1)",
+            ...style
+        });
+
+        const nodes = legendEl.querySelectorAll("th");
+        for (let i = 0; i < nodes.length; i++)
+            nodes[i]._order = i;
+
+        if (opts.series.length == 2) {
+            multiline = false;
+            for (let i = 0; i < nodes.length; i++)
+                nodes[i].style.display = "none";
+        } else {
+            multiline = true;
+            legendEl.querySelector("th").remove();
+            legendEl.querySelector("td").setAttribute('colspan', '2');
+            legendEl.querySelector("td").style.textAlign = 'center';
+            let footer = legendEl.insertRow().insertCell();
+            footer.setAttribute('colspan', '2');
+            footer.style.textAlign = 'center';
+            footer.classList.add('u-value');
+            footer.parentNode.classList.add('u-series','footer');
+            footer.textContent = ". . .";
+        }
+
+        const overEl = u.over;
+        overEl.style.overflow = "visible";
+
+        overEl.appendChild(legendEl);
+
+        overEl.addEventListener("mouseenter", () => {legendEl.style.display = null;});
+        overEl.addEventListener("mouseleave", () => {legendEl.style.display = "none";});
+    }
+
+    function nodeListToArray(nodeList) {
+        return Array.prototype.slice.call(nodeList);
+    }
+
+    function update(u) {
+        let { left, top } = u.cursor;
+        /// This will make the balloon to the right of the cursor when the cursor is on the left side, and vise-versa,
+        /// avoiding the borders of the chart.
+        left -= legendEl.clientWidth * (left / u.width);
+        if (top >= legendEl.clientHeight) {
+            top -= legendEl.clientHeight;
+        }
+        legendEl.style.transform = "translate(" + left + "px, " + top + "px)";
+
+        if (multiline) {
+            let nodes = nodeListToArray(legendEl.querySelectorAll("tr"));
+            let header = nodes.shift();
+            let footer = nodes.pop();
+            let showLimit = Math.floor(u.height / 30);
+            nodes.forEach(function (node) { node._sort_key = nodes.length > showLimit ? +node.querySelector("td").textContent.replace(/,/g,'') : node._order; });
+            nodes.sort((a, b) => b._sort_key - a._sort_key);
+            nodes.forEach(function (node) { node.parentNode.appendChild(node); });
+            for (let i = 0; i < nodes.length; i++) {
+                nodes[i].style.display = i < showLimit ? null : "none";
+            }
+            footer.parentNode.appendChild(footer);
+            footer.style.display = nodes.length > showLimit ? null : "none";
+        }
+    }
+
+    return {
+        hooks: {
+            init: init,
+            setCursor: update,
+        }
+    };
+}
+
 let uplot;
 async function renderChart(json)
 {
@@ -1953,11 +2041,11 @@ async function renderChart(json)
     let chart = document.getElementById('chart');
     chart.style.display = 'block';
 
-    let paths = uPlot.paths.stepped({align:  1});
+    let paths = json[0].length < chart.clientWidth / 5 ? uPlot.paths.bars() : uPlot.paths.linear();
 
     const [line_color, fill_color, grid_color, axes_color] = theme == 'light'
-        ? ["#F8C", "#F8C", "#CCC", "#444"]
-        : ["#FF6", "#FF6", "#444", "#CCC"];
+        ? ["rgba(255, 0, 200, 100%)", "rgba(255, 128, 200, 50%)", "#CCC", "#444"]
+        : ["rgba(255, 255, 0, 100%)", "rgba(255, 255, 100, 50%)", "#444", "#CCC"];
 
     const opts = {
         width: chart.clientWidth,
@@ -1970,9 +2058,9 @@ async function renderChart(json)
                     grid: { width: 1 / devicePixelRatio, stroke: grid_color },
                     ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
         series: [ { label: "x" },
-                    { label: "y", stroke: line_color, fill: fill_color,
-                    drawStyle: 0, lineInterpolation: 1, paths } ],
+                    { label: "y", stroke: line_color, fill: fill_color, paths, points: { show: false } } ],
         padding: [ null, null, null, (Math.ceil(Math.log10(Math.max(...json[1]))) + Math.floor(Math.log10(Math.max(...json[1])) / 3)) * 6 ],
+        plugins: [ legendAsTooltipPlugin() ],
     };
 
     uplot = new uPlot(opts, json, chart);
