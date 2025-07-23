@@ -490,11 +490,9 @@ These codecs don't actually compress data, but instead encrypt data on disk. The
 
 Encryption codecs:
 
-
 #### AES_128_GCM_SIV {#aes_128_gcm_siv}
 
 `CODEC('AES-128-GCM-SIV')` — Encrypts data with AES-128 in [RFC 8452](https://tools.ietf.org/html/rfc8452) GCM-SIV mode.
-
 
 #### AES-256-GCM-SIV {#aes-256-gcm-siv}
 
@@ -762,7 +760,6 @@ Result:
 │ t1   │ The temporary table │
 └──────┴─────────────────────┘
 ```
-
 
 ## Related content {#related-content}
 
