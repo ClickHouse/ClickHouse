@@ -320,10 +320,10 @@ windowFunnel(window, [mode, [mode, ... ]])(timestamp, cond1, cond2, ..., condN)
 
 - `window` — Length of the sliding window, it is the time interval between the first and the last condition. The unit of `window` depends on the `timestamp` itself and varies. Determined using the expression `timestamp of cond1 <= timestamp of cond2 <= ... <= timestamp of condN <= timestamp of cond1 + window`.
 - `mode` — It is an optional argument. One or more modes can be set.
-    - `'strict_deduplication'` — If the same condition holds for the sequence of events, then such repeating event interrupts further processing. Note: it may work unexpectedly if several conditions hold for the same event.
-    - `'strict_order'` — Don't allow interventions of other events. E.g. in the case of `A->B->D->C`, it stops finding `A->B->C` at the `D` and the max event level is 2.
-    - `'strict_increase'` — Apply conditions only to events with strictly increasing timestamps.
-    - `'strict_once'` — Count each event only once in the chain even if it meets the condition several times
+  - `'strict_deduplication'` — If the same condition holds for the sequence of events, then such repeating event interrupts further processing. Note: it may work unexpectedly if several conditions hold for the same event.
+  - `'strict_order'` — Don't allow interventions of other events. E.g. in the case of `A->B->D->C`, it stops finding `A->B->C` at the `D` and the max event level is 2.
+  - `'strict_increase'` — Apply conditions only to events with strictly increasing timestamps.
+  - `'strict_once'` — Count each event only once in the chain even if it meets the condition several times
 
 **Returned value**
 
@@ -695,14 +695,14 @@ sequenceNextNode(direction, base)(timestamp, event_column, base_condition, event
 **Parameters**
 
 - `direction` — Used to navigate to directions.
-    - forward — Moving forward.
-    - backward — Moving backward.
+  - forward — Moving forward.
+  - backward — Moving backward.
 
 - `base` — Used to set the base point.
-    - head — Set the base point to the first event.
-    - tail — Set the base point to the last event.
-    - first_match — Set the base point to the first matched `event1`.
-    - last_match — Set the base point to the last matched `event1`.
+  - head — Set the base point to the first event.
+  - tail — Set the base point to the last event.
+  - first_match — Set the base point to the first matched `event1`.
+  - last_match — Set the base point to the last matched `event1`.
 
 **Arguments**
 
@@ -796,7 +796,6 @@ SELECT id, sequenceNextNode('backward', 'tail')(dt, page, page = 'Basket', page 
 1970-01-01 09:00:04    3   Basket // Base point, Matched with Basket
 ```
 
-
 **Behavior for `forward` and `first_match`**
 
 ```sql
@@ -837,7 +836,6 @@ SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, page = 'Gift', p
 1970-01-01 09:00:04    3   Basket
 ```
 
-
 **Behavior for `backward` and `last_match`**
 
 ```sql
@@ -877,7 +875,6 @@ SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, page = 'Gift', p
 1970-01-01 09:00:03    3   Gift // Base point
 1970-01-01 09:00:04    3   Basket
 ```
-
 
 **Behavior for `base_condition`**
 

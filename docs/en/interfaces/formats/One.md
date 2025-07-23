@@ -8,7 +8,6 @@ slug: /interfaces/formats/One
 title: 'One'
 ---
 
-
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✗      |       |
