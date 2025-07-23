@@ -88,7 +88,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , need_only_count(need_only_count_)
     , parser_shared_resources(std::move(parser_shared_resources_))
     , format_filter_info(std::move(format_filter_info_))
-    , format_filter_info_without_key_condition(format_filter_info_->cloneWithoutFilterDag())
+    , format_filter_info_without_key_condition(format_filter_info ? format_filter_info->cloneWithoutFilterDag() : nullptr)
     , read_from_format_info(info)
     , create_reader_pool(
           std::make_shared<ThreadPool>(
