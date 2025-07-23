@@ -153,7 +153,8 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
     size_t compressed_size;
     switch (float_width)
     {
-        case 4: {
+        case 4:
+        {
             try
             {
                 compressed.reset(SZ_compress(config, reinterpret_cast<const float *>(source), compressed_size));
@@ -164,7 +165,8 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
             }
             break;
         }
-        case 8: {
+        case 8:
+        {
             try
             {
                 compressed.reset(SZ_compress(config, reinterpret_cast<const double *>(source), compressed_size));
@@ -207,7 +209,8 @@ void CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_si
     SZ3::Config config;
     switch (width)
     {
-        case 4: {
+        case 4:
+        {
             try
             {
                 float * dest_typed = reinterpret_cast<float *>(dest);
@@ -219,7 +222,8 @@ void CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_si
             }
             break;
         }
-        case 8: {
+        case 8:
+        {
             try
             {
                 double * dest_typed = reinterpret_cast<double *>(dest);
