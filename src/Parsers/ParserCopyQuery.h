@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/IParserBase.h>
-#include "Parsers/ASTCopyQuery.h"
+#include <Parsers/ASTCopyQuery.h>
 
 
 namespace DB
