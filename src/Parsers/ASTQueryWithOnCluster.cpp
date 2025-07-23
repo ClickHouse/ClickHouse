@@ -10,7 +10,6 @@
 namespace DB
 {
 
-
 std::string ASTQueryWithOnCluster::getRewrittenQueryWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const
 {
     return getRewrittenASTWithoutOnCluster(params)->formatWithSecretsOneLine();
@@ -33,5 +32,6 @@ void ASTQueryWithOnCluster::formatOnCluster(WriteBuffer & ostr, const IAST::Form
         ostr << " ON CLUSTER " << backQuoteIfNeed(cluster);
     }
 }
+
 
 }
