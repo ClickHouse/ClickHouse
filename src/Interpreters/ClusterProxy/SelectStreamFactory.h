@@ -61,7 +61,7 @@ public:
 
         /// Used to check the table existence on remote node
         StorageID main_table;
-        Block header;
+        SharedHeader header;
 
         bool has_missing_objects = false;
 
@@ -76,7 +76,7 @@ public:
     using Shards = std::vector<Shard>;
 
     SelectStreamFactory(
-        const Block & header_,
+        SharedHeader header_,
         const ColumnsDescriptionByShardNum & objects_by_shard_,
         const StorageSnapshotPtr & storage_snapshot_,
         QueryProcessingStage::Enum processed_stage_);
@@ -105,7 +105,7 @@ public:
         bool parallel_replicas_enabled,
         AdditionalShardFilterGenerator shard_filter_generator);
 
-    const Block header;
+    SharedHeader header;
     const ColumnsDescriptionByShardNum objects_by_shard;
     const StorageSnapshotPtr storage_snapshot;
     QueryProcessingStage::Enum processed_stage;
@@ -123,7 +123,7 @@ private:
         UInt32 shard_count,
         bool parallel_replicas_enabled,
         AdditionalShardFilterGenerator shard_filter_generator,
-        bool has_missing_objects = false);
+        bool has_missing_objects = false) const;
 };
 
 }

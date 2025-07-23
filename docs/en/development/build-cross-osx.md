@@ -18,7 +18,7 @@ The following sections provide a walk-through for building ClickHouse for `x86_6
 If you're targeting ARM architecture, simply substitute all occurrences of `x86_64` with `aarch64`.
 For example, replace `x86_64-apple-darwin` with `aarch64-apple-darwin` throughout the steps.
 
-## Install Cross-Compilation Toolset {#install-cross-compilation-toolset}
+## Install cross-compilation toolset {#install-cross-compilation-toolset}
 
 Let's remember the path where we install `cctools` as `${CCTOOLS}`
 

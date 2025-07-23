@@ -1,4 +1,4 @@
-#include "MergeTreeDataPartCompact.h"
+#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <DataTypes/NestedUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompactSingleBuffer.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
@@ -86,7 +86,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartCompactWriter(
 }
 
 
-void MergeTreeDataPartCompact::calculateEachColumnSizes(ColumnSizeByName & /*each_columns_size*/, ColumnSize & total_size, std::optional<Block> /*columns_sample*/) const
+void MergeTreeDataPartCompact::calculateEachColumnSizes(ColumnSizeByName & /*each_columns_size*/, ColumnSize & total_size) const
 {
     auto bin_checksum = checksums.files.find(DATA_FILE_NAME_WITH_EXTENSION);
     if (bin_checksum != checksums.files.end())

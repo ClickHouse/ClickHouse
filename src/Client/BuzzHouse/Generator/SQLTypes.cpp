@@ -459,11 +459,9 @@ SQLType * StringType::typeDeepCopy() const
     return new StringType(precision);
 }
 
-String StringType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
+String StringType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
 {
-    std::uniform_int_distribution<uint32_t> strlens(0, gen.fc.max_string_length);
-
-    return rg.nextString("'", true, precision.value_or(strlens(rg.generator)));
+    return rg.nextString("'", true, precision.value_or(rg.nextStrlen()));
 }
 
 String UUIDType::typeName(const bool) const
@@ -676,7 +674,7 @@ SQLType * DynamicType::typeDeepCopy() const
 String DynamicType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
 {
     uint32_t col_counter = 0;
-    const uint32_t type_mask_backup = gen.next_type_mask;
+    const uint64_t type_mask_backup = gen.next_type_mask;
 
     gen.next_type_mask = gen.fc.type_mask & ~(allow_dynamic | allow_nested);
     auto next = std::unique_ptr<SQLType>(gen.randomNextType(rg, gen.next_type_mask, col_counter, nullptr));
@@ -1193,7 +1191,7 @@ NestedType::~NestedType()
     }
 }
 
-std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerator & rg, const uint32_t allowed_types)
+std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerator & rg, const uint64_t allowed_types)
 {
     chassert(this->ids.empty());
 
@@ -1270,13 +1268,13 @@ std::tuple<SQLType *, FloatingPoints> StatementGenerator::randomFloatType(Random
     return std::make_tuple(new FloatType(1 << (nopt + 3)), static_cast<FloatingPoints>(nopt));
 }
 
-std::tuple<SQLType *, Dates> StatementGenerator::randomDateType(RandomGenerator & rg, const uint32_t allowed_types) const
+std::tuple<SQLType *, Dates> StatementGenerator::randomDateType(RandomGenerator & rg, const uint64_t allowed_types) const
 {
     const bool use32 = (allowed_types & allow_date32) && rg.nextBool();
     return std::make_tuple(new DateType(use32), use32 ? Dates::Date32 : Dates::Date);
 }
 
-SQLType * StatementGenerator::randomTimeType(RandomGenerator & rg, const uint32_t allowed_types, TimeTp * dt) const
+SQLType * StatementGenerator::randomTimeType(RandomGenerator & rg, const uint64_t allowed_types, TimeTp * dt) const
 {
     const bool use64 = (allowed_types & allow_time64) && rg.nextBool();
     std::optional<uint32_t> precision;
@@ -1296,7 +1294,7 @@ SQLType * StatementGenerator::randomTimeType(RandomGenerator & rg, const uint32_
     return new TimeType(use64, precision);
 }
 
-SQLType * StatementGenerator::randomDateTimeType(RandomGenerator & rg, const uint32_t allowed_types, DateTimeTp * dt) const
+SQLType * StatementGenerator::randomDateTimeType(RandomGenerator & rg, const uint64_t allowed_types, DateTimeTp * dt) const
 {
     bool has_precision = false;
     const bool use64 = (allowed_types & allow_datetime64) && rg.nextBool();
@@ -1326,7 +1324,7 @@ SQLType * StatementGenerator::randomDateTimeType(RandomGenerator & rg, const uin
     return new DateTimeType(use64, precision, timezone);
 }
 
-SQLType * StatementGenerator::randomDecimalType(RandomGenerator & rg, const uint32_t allowed_types, BottomTypeName * tp) const
+SQLType * StatementGenerator::randomDecimalType(RandomGenerator & rg, const uint64_t allowed_types, BottomTypeName * tp) const
 {
     Decimal * dec = tp ? tp->mutable_decimal() : nullptr;
     std::optional<DecimalN_DecimalPrecision> short_notation;
@@ -1389,7 +1387,7 @@ SQLType * StatementGenerator::randomDecimalType(RandomGenerator & rg, const uint
     return new DecimalType(short_notation, precision, scale);
 }
 
-SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t allowed_types, const bool low_card, BottomTypeName * tp)
+SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_types, const bool low_card, BottomTypeName * tp)
 {
     SQLType * res = nullptr;
 
@@ -1462,9 +1460,9 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
         }
         else
         {
-            std::uniform_int_distribution<uint32_t> strlens(1, fc.max_string_length);
+            std::uniform_int_distribution<uint32_t> fwidth(1, fc.max_string_length);
 
-            swidth = std::optional<uint32_t>(rg.nextBool() ? rg.nextMediumNumber() : strlens(rg.generator));
+            swidth = std::optional<uint32_t>(rg.nextBool() ? rg.nextMediumNumber() : fwidth(rg.generator));
             if (tp)
             {
                 tp->set_fixed_string(swidth.value());
@@ -1635,7 +1633,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
                 }
                 desc += " ";
 
-                const uint32_t type_mask_backup = this->next_type_mask;
+                const uint64_t type_mask_backup = this->next_type_mask;
                 this->next_type_mask = fc.type_mask & ~(allow_nested | allow_enum);
                 SQLType * jtp = randomNextType(rg, this->next_type_mask, col_counter, tp ? jpt->mutable_type() : nullptr);
                 this->next_type_mask = type_mask_backup;
@@ -1687,7 +1685,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
     return res;
 }
 
-SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp)
+SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_types, uint32_t & col_counter, TopTypeName * tp)
 {
     const uint32_t non_nullable_type = 60;
     const uint32_t nullable_type = 25 * static_cast<uint32_t>((allowed_types & allow_nullable) != 0);
@@ -2090,13 +2088,10 @@ String strBuildJSONElement(RandomGenerator & rg)
         break;
         case 11:
         case 12:
-        case 13: {
+        case 13:
             /// String
-            std::uniform_int_distribution<uint32_t> strlens(0, 1009);
-
-            ret = rg.nextString("\"", false, strlens(rg.generator));
-        }
-        break;
+            ret = rg.nextString("\"", false, rg.nextStrlen());
+            break;
         case 14:
             /// Date
             ret = '"' + rg.nextDate() + '"';
