@@ -135,8 +135,7 @@ public:
                 /// Keep the pointer alive
                 converted_col_ptrs[i] = std::move(converted_col_str);
 
-                /// Same as
-                // the normal `ColumnString` branch
+                /// Same as the normal `ColumnString` branch
                 has_column_string = true;
                 data[2 * i] = &converted_col_ptrs[i]->getChars();
                 offsets[2 * i] = &converted_col_ptrs[i]->getOffsets();
