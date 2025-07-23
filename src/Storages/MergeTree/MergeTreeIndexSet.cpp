@@ -404,9 +404,13 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
     actions->execute(result);
 
     const auto & column = result.getByName(actions_output_column_name).column;
+    const bool nullable = column->isNullable();
 
     for (size_t i = 0; i < size; ++i)
-        if (!column->isNullAt(i) && (column->get64(i) & 1))
+        /// The first part of the condition checks if any of them pass the filter.
+        /// The second part of the conditions checks if column is nullable, in that case there is no need to check null map since filter function possibly handles null values.
+        /// Only in case the column is not nullable, check the null map.
+        if ((column->get64(i) & 1) && (nullable || !column->isNullAt(i)))
             return true;
 
     return false;
@@ -492,7 +496,7 @@ MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPoss
                     /// The first part of the condition checks if any of them pass the filter.
                     /// The second part of the conditions checks if column is nullable, in that case there is no need to check null map since filter function possibly handles null values.
                     /// Only in case the column is not nullable, check the null map.
-                    passed = (filter_result[block_pos] & 1) && (nullable || (!null_map || !(*null_map)[block_pos]));
+                    passed = (filter_result[block_pos] & 1) && (nullable || !null_map || !(*null_map)[block_pos]);
                     if (passed)
                         res.push_back(current_granule);
                     /// After we found that it passes, we just iterate over the block to the next granule or the end.
