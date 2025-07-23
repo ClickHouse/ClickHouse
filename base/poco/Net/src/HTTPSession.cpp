@@ -287,6 +287,8 @@ StreamSocket HTTPSession::detachSocket()
 void HTTPSession::attachSocket(const StreamSocket& socket)
 {
 	_socket = socket;
+	_socket.setReceiveThrottler(_receiveThrottler);
+	_socket.setSendThrottler(_sendThrottler);
 }
 
 

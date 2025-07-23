@@ -470,6 +470,12 @@ namespace Net
         void throttleRecv(size_t length, bool blocking);
         /// Properly throttles the recv operation.
 
+        void useSendThrottlerBudget(int rc);
+        /// Checks the return code `rc` and updates send throttler budget.
+
+        void useRecvThrottlerBudget(int rc);
+        /// Checks the return code `rc` and updates recv throttler budget.
+
     protected:
         SocketImpl(const SocketImpl &);
         SocketImpl & operator=(const SocketImpl &);

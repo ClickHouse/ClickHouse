@@ -310,11 +310,7 @@ int SocketImpl::sendBytes(const void* buffer, int length, int flags)
 			error(err);
 	}
 
-	if (_sndThrottler && rc > 0)
-	{
-		poco_assert(rc <= _sndThrottlerBudget);
-		_sndThrottlerBudget -= rc;
-	}
+	useSendThrottlerBudget(rc);
 
 	return rc;
 }
@@ -352,11 +348,7 @@ int SocketImpl::receiveBytes(void* buffer, int length, int flags)
 			error(err);
 	}
 
-	if (_recvThrottler && rc > 0)
-	{
-		poco_assert(rc <= _recvThrottlerBudget);
-		_recvThrottlerBudget -= rc;
-	}
+	useRecvThrottlerBudget(rc);
 
 	return rc;
 }
@@ -375,11 +367,7 @@ int SocketImpl::sendTo(const void* buffer, int length, const SocketAddress& addr
 	while (_blocking && rc < 0 && lastError() == POCO_EINTR);
 	if (rc < 0) error();
 
-	if (_sndThrottler && rc > 0)
-	{
-		poco_assert(rc <= _sndThrottlerBudget);
-		_sndThrottlerBudget -= rc;
-	}
+	useSendThrottlerBudget(rc);
 
 	return rc;
 }
@@ -423,11 +411,7 @@ int SocketImpl::receiveFrom(void* buffer, int length, SocketAddress& address, in
 			error(err);
 	}
 
-	if (_recvThrottler && rc > 0)
-	{
-		poco_assert(rc <= _recvThrottlerBudget);
-		_recvThrottlerBudget -= rc;
-	}
+	useRecvThrottlerBudget(rc);
 
 	return rc;
 }
@@ -1117,6 +1101,26 @@ void SocketImpl::throttleRecv(size_t length, bool blocking)
 		else
 			_recvThrottler->throttle(amount, 0);
 		_recvThrottlerBudget += amount;
+	}
+}
+
+
+void SocketImpl::useSendThrottlerBudget(int rc)
+{
+	if (_sndThrottler && rc > 0)
+	{
+		poco_assert(rc <= _sndThrottlerBudget);
+		_sndThrottlerBudget -= rc;
+	}
+}
+
+
+void SocketImpl::useRecvThrottlerBudget(int rc)
+{
+	if (_recvThrottler && rc > 0)
+	{
+		poco_assert(rc <= _recvThrottlerBudget);
+		_recvThrottlerBudget -= rc;
 	}
 }
 
