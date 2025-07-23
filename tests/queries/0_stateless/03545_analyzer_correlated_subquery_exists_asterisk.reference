@@ -53,6 +53,7 @@ Positions: 0
               Expression
               Actions: INPUT :: 0 -> __table4.i1 Int64 : 0
                        INPUT :: 1 -> __table4.i2 Int64 : 1
+                       INPUT :: 0 -> __table4.i2 Int64 : 2
               Positions: 1 0
                 Expression (Change column names to column identifiers)
                 Actions: INPUT : 0 -> i1 Int64 : 0

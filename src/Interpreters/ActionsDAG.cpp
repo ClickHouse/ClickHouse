@@ -1827,17 +1827,7 @@ void ActionsDAG::mergeInplace(ActionsDAG && second)
         first.outputs.swap(second.outputs);
     }
 
-    {
-        /// Add all nodes from `second` to `first` except inputs which are already in `first`.
-        auto it = second.nodes.begin();
-        while (it != second.nodes.end())
-        {
-            auto current = it++;
-            if (current->type == ActionType::INPUT && inputs_map.contains(&*current))
-                continue; /// Skip inputs which are already in `first`.
-            first.nodes.splice(first.nodes.end(), second.nodes, current);
-        }
-    }
+    first.nodes.splice(first.nodes.end(), std::move(second.nodes));
 }
 
 void ActionsDAG::mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs)
