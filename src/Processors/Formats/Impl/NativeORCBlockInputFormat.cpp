@@ -981,7 +981,8 @@ void NativeORCBlockInputFormat::prepareFileReader()
     if (is_stopped)
         return;
 
-    filter_info->initOnce([&] { filter_info->initKeyCondition(getPort().getHeader()); });
+    if (filter_info)
+        filter_info->initOnce([&] { filter_info->initKeyCondition(getPort().getHeader()); });
 
     std::unique_ptr<orc::StripeInformation> stripe_info;
     if (file_reader->getNumberOfStripes())
@@ -1007,7 +1008,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
     }
     include_indices.assign(include_typeids.begin(), include_typeids.end());
 
-    if (format_settings.orc.filter_push_down && filter_info->key_condition && !sargs)
+    if (format_settings.orc.filter_push_down && filter_info && filter_info->key_condition && !sargs)
         sargs = buildORCSearchArgument(*filter_info->key_condition, getPort().getHeader(), file_reader->getType(), format_settings);
 
     selected_stripes = calculateSelectedStripes(static_cast<int>(file_reader->getNumberOfStripes()), skip_stripes);

@@ -618,11 +618,10 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     if (std::exchange(is_initialized, true))
         return;
 
-    format_filter_info->initOnce(
-        [&]
-        {
-            format_filter_info->initKeyCondition(getPort().getHeader());
-        });
+    if (format_filter_info)
+    {
+        format_filter_info->initOnce([&] { format_filter_info->initKeyCondition(getPort().getHeader()); });
+    }
 
     // Create arrow file adapter.
     arrow_file = asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true, io_pool);
@@ -698,7 +697,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
     std::unique_ptr<KeyCondition> key_condition_with_bloom_filter_data;
 
-    if (format_filter_info->key_condition)
+    if (format_filter_info && format_filter_info->key_condition)
     {
         key_condition_with_bloom_filter_data = std::make_unique<KeyCondition>(*format_filter_info->key_condition);
 

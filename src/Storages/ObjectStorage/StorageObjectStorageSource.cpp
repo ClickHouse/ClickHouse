@@ -521,7 +521,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (transformer)
         {
-            chassert(schema_was_changed);
             auto schema_modifying_actions = std::make_shared<ExpressionActions>(transformer->clone());
             builder.addSimpleTransform([&](const SharedHeader & header)
             {

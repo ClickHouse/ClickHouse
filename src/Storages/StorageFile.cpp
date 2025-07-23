@@ -1512,7 +1512,7 @@ Chunk StorageFileSource::generate()
             finished_generate = true;
 
         if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && !filter_info->hasFilter())
+            && (!filter_info || !filter_info->hasFilter()))
             addNumRowsToCache(current_path, total_rows_in_file);
 
         total_rows_in_file = 0;
