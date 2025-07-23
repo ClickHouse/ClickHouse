@@ -5,7 +5,8 @@
 #if USE_ORC
 
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatParserGroup.h>
+#include <Formats/FormatParserSharedResources.h>
+#include <Formats/FormatFilterInfo.h>
 #include <IO/ReadBufferFromString.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>

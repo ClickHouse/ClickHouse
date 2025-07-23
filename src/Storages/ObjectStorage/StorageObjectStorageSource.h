@@ -8,9 +8,8 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
-#include <Formats/FormatParserGroup.h>
-
-
+#include <Formats/FormatParserSharedResources.h>
+#include <Formats/FormatFilterInfo.h>
 namespace DB
 {
 

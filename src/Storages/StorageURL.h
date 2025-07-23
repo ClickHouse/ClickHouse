@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatParserGroup.h>
+#include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <IO/CompressionMethod.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadWriteBufferFromHTTP.h>

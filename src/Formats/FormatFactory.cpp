@@ -2,7 +2,8 @@
 
 #include <unistd.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatParserGroup.h>
+#include <Formats/FormatParserSharedResources.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <IO/SharedThreadPools.h>
