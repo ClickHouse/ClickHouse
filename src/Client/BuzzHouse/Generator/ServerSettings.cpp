@@ -493,7 +493,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"ignore_on_cluster_for_replicated_named_collections_queries", trueOrFalseSettingNoOracle},
     {"ignore_on_cluster_for_replicated_udf_queries", trueOrFalseSettingNoOracle},
     {"implicit_select", trueOrFalseSettingNoOracle},
-    {"implicit_table_at_top_level", trueOrFalseSettingNoOracle},
     {"implicit_transaction", trueOrFalseSettingNoOracle},
     {"input_format_allow_errors_num", CHSetting(highRange, {}, false)},
     {"input_format_allow_errors_ratio", CHSetting(probRange, {}, false)},
