@@ -213,7 +213,7 @@ insertStmt: INSERT INTO TABLE? (tableIdentifier | FUNCTION tableFunctionExpr) co
 columnsClause: LPAREN nestedIdentifier (COMMA nestedIdentifier)* RPAREN;
 dataClause
     : FORMAT identifier                                                         # DataClauseFormat
-    | VALUES  assignmentValues (COMMA assignmentValues)*                       # DataClauseValues
+    | VALUES assignmentValues (COMMA assignmentValues)*                         # DataClauseValues
     | selectUnionStmt SEMICOLON? EOF                                            # DataClauseSelect
     ;
 
@@ -253,7 +253,13 @@ optimizeStmt: OPTIMIZE TABLE tableIdentifier clusterClause? partitionClause? FIN
 
 // RENAME statement
 
-renameStmt: RENAME TABLE tableIdentifier TO tableIdentifier (COMMA tableIdentifier TO tableIdentifier)* clusterClause?;
+renameStmt: RENAME renameEntityClause clusterClause?;
+
+renameEntityClause
+    : TABLE tableIdentifier TO tableIdentifier (COMMA tableIdentifier TO tableIdentifier)*
+    | DATABASE databaseIdentifier TO databaseIdentifier (COMMA databaseIdentifier TO databaseIdentifier)*
+    | DICTIONARY dictionaryIdentifier TO dictionaryIdentifier (COMMA dictionaryIdentifier TO dictionaryIdentifier)*
+    ;
 
 // PROJECTION SELECT statement
 
@@ -526,6 +532,10 @@ tableArgExpr
 // Databases
 
 databaseIdentifier: identifier;
+
+// Dictionaries
+
+dictionaryIdentifier: (databaseIdentifier DOT)? identifier;
 
 // Basics
 
