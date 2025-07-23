@@ -29,6 +29,9 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 backup_restore_s3_retry_attempts;
+    extern const SettingsUInt64 backup_restore_s3_retry_initial_backoff_ms;
+    extern const SettingsUInt64 backup_restore_s3_retry_max_backoff_ms;
+    extern const SettingsFloat backup_restore_s3_retry_jitter_factor;
     extern const SettingsBool enable_s3_requests_logging;
     extern const SettingsBool s3_disable_checksum;
     extern const SettingsUInt64 s3_max_connections;
@@ -88,7 +91,12 @@ namespace
             settings.auth_settings[S3AuthSetting::region],
             context->getRemoteHostFilter(),
             static_cast<unsigned>(local_settings[Setting::s3_max_redirects]),
-            static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_attempts]),
+            S3::PocoHTTPClientConfiguration::RetryStrategy{
+                .max_retries = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_attempts]),
+                .initial_delay_ms = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_initial_backoff_ms]),
+                .max_delay_ms = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_max_backoff_ms]),
+                .jitter_factor = local_settings[Setting::backup_restore_s3_retry_jitter_factor]},
+
             local_settings[Setting::s3_slow_all_threads_after_network_error],
             local_settings[Setting::enable_s3_requests_logging],
             /* for_disk_s3 = */ false,

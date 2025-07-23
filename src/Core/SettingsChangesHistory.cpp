@@ -60,6 +60,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"vector_search_with_rescoring", true, true, "New setting."},
             {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},
             {"write_full_path_in_iceberg_metadata", false, false, "New setting."},
+            {"backup_restore_s3_retry_initial_backoff_ms", 25, 25, "New setting"},
+            {"backup_restore_s3_retry_max_backoff_ms", 5000, 5000, "New setting"},
+            {"backup_restore_s3_retry_jitter_factor", 0.0, 0.1, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {

@@ -3326,6 +3326,15 @@ Approximate probability of failure for a keeper request during backup or restore
     DECLARE(UInt64, backup_restore_s3_retry_attempts, 1000, R"(
 Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries. It takes place only for backup/restore.
 )", 0) \
+    DECLARE(UInt64, backup_restore_s3_retry_initial_backoff_ms, 25, R"(
+    Initial backoff delay in milliseconds before the first retry attempt during backup and restore. Each subsequent retry increases the delay exponentially, up to the maximum specified by `backup_restore_s3_retry_max_backoff_ms`
+)", 0) \
+    DECLARE(UInt64, backup_restore_s3_retry_max_backoff_ms, 5000, R"(
+    Maximum delay in milliseconds between retries during backup and restore operations.
+)", 0) \
+    DECLARE(Float, backup_restore_s3_retry_jitter_factor, .1f, R"(
+    Jitter factor applied to the retry backoff delay in Aws::Client::RetryStrategy during backup and restore operations. The computed backoff delay is multiplied by a random factor in the range [1.0, 1.0 + jitter], up to the maximum `backup_restore_s3_retry_max_backoff_ms`. Must be in [0.0, 1.0] interval
+)", 0) \
     DECLARE(UInt64, max_backup_bandwidth, 0, R"(
 The maximum read speed in bytes per second for particular backup on server. Zero means unlimited.
 )", 0) \
