@@ -139,6 +139,13 @@ public:
         bool if_not_updated_before,
         bool check_consistent_with_previous_metadata);
 
+    virtual void create(
+        ObjectStoragePtr object_storage,
+        ContextPtr local_context,
+        const std::optional<ColumnsDescription> & columns,
+        ASTPtr partition_by,
+        bool if_not_exists);
+
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", getTypeName());
