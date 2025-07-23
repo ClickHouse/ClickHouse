@@ -154,36 +154,49 @@ public:
     void scanDataFunc()
     {
         initScanState();
-        while (!shutdown.load())
+        LOG_TEST(log, "Starting iterator loop");
+        try
         {
-            bool have_scan_data_res = KernelUtils::unwrapResult(
-                ffi::scan_metadata_next(scan_data_iterator.get(), this, visitData),
-                "scan_metadata_next");
-
-            if (have_scan_data_res)
+            while (!shutdown.load())
             {
-                std::unique_lock lock(next_mutex);
-                if (!shutdown.load() && list_batch_size && data_files.size() >= list_batch_size)
-                {
-                    LOG_TEST(log, "List batch size is {}/{}", data_files.size(), list_batch_size);
+                bool have_scan_data_res = KernelUtils::unwrapResult(
+                    ffi::scan_metadata_next(scan_data_iterator.get(), this, visitData),
+                    "scan_metadata_next");
 
-                    schedule_next_batch_cv.wait(
-                        lock,
-                        [&]() { return (data_files.size() < list_batch_size) || shutdown.load(); });
+                if (have_scan_data_res)
+                {
+                    std::unique_lock lock(next_mutex);
+                    if (!shutdown.load() && list_batch_size && data_files.size() >= list_batch_size)
+                    {
+                        LOG_TEST(log, "List batch size is {}/{}", data_files.size(), list_batch_size);
+
+                        schedule_next_batch_cv.wait(
+                            lock,
+                            [&]() { return (data_files.size() < list_batch_size) || shutdown.load(); });
+                    }
+                }
+                else
+                {
+                    LOG_TEST(log, "All data files were listed");
+                    {
+                        std::lock_guard lock(next_mutex);
+                        iterator_finished = true;
+                        LOG_TEST(log, "Set finished");
+                    }
+                    data_files_cv.notify_all();
+                    LOG_TEST(log, "Notified");
+                    return;
                 }
             }
-            else
+        }
+        catch (...)
+        {
+            if (!scan_exception)
             {
-                LOG_TEST(log, "All data files were listed");
-                {
-                    std::lock_guard lock(next_mutex);
-                    iterator_finished = true;
-                    LOG_TEST(log, "Set finished");
-                }
-                data_files_cv.notify_all();
-                LOG_TEST(log, "Notified");
-                return;
+                scan_exception = std::current_exception();
             }
+            shutdown = true;
+            data_files_cv.notify_all();
         }
     }
 
@@ -340,7 +353,7 @@ private:
     const KernelExternEngine & engine;
     const KernelSnapshot & snapshot;
     KernelScan & scan;
-    std::unique_ptr<ffi::EnginePredicate> predicate;
+    std::shared_ptr<EnginePredicate> predicate;
     KernelScanDataIterator scan_data_iterator;
     std::optional<PartitionPruner> pruner;
 
@@ -410,9 +423,18 @@ void TableSnapshot::initSnapshot() const
     initSnapshotImpl();
 }
 
+static void tracingCallback(struct ffi::Event event)
+{
+  LOG_TEST(getLogger("DeltaKernelTracing"),
+           "Level: {}, message: {}",
+           event.level, std::string_view(event.message.ptr, event.message.len));
+}
+
 void TableSnapshot::initSnapshotImpl() const
 {
     LOG_TEST(log, "Initializing snapshot");
+
+    ffi::enable_event_tracing(tracingCallback, ffi::Level::TRACE);
 
     auto * engine_builder = helper->createBuilder();
     engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");

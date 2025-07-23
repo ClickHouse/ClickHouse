@@ -2286,6 +2286,6 @@ def test_delta_kernel_internal_pruning(started_cluster):
     )
     assert 1 == int(
         instance.query(
-            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test5%'"
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
         )
     )

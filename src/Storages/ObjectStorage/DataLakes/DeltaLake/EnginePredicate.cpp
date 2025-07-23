@@ -9,8 +9,6 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 
-#include <delta_kernel_ffi.hpp>
-
 namespace DeltaLake
 {
 
@@ -25,45 +23,19 @@ namespace
     {
         return node->type == DB::ActionsDAG::ActionType::INPUT;
     }
+
+    DB::TypeIndex getTypeIndex(const DB::ActionsDAG::Node * node)
+    {
+        if (!node->result_type->isNullable())
+            return node->result_type->getTypeId();
+
+        const auto * nullable = assert_cast<const DB::DataTypeNullable *>(node->result_type.get());
+        return nullable->getNestedType()->getTypeId();
+    }
 }
 
-/// A predicate which allows to implement internal delta-kernel-rs filtering
-/// based on statistics and partitions pruning.
-class EnginePredicate : public ffi::EnginePredicate
-{
-    friend struct EngineIteratorData;
-public:
-    explicit EnginePredicate(
-        const DB::ActionsDAG & filter_,
-        std::exception_ptr & exception_)
-        : filter(filter_)
-        , exception(exception_)
-    {
-        predicate = this;
-        visitor = &visitPredicate;
-    }
-
-    void setException(std::exception_ptr exception_)
-    {
-        DB::tryLogException(exception_, log);
-        if (!exception)
-            exception = exception_;
-    }
-
-    const LoggerPtr log = getLogger("EnginePredicate");
-
-private:
-    /// Predicate expression.
-    const DB::ActionsDAG & filter;
-    /// Exception which will be set during EnginePredicate execution.
-    /// Exceptions cannot be rethrown as it will cause
-    /// panic from rust and server terminate.
-    std::exception_ptr & exception;
-
-    static uintptr_t visitPredicate(void * data, ffi::KernelExpressionVisitorState * state);
-};
-
-std::unique_ptr<ffi::EnginePredicate> getEnginePredicate(const DB::ActionsDAG & filter, std::exception_ptr & exception)
+std::shared_ptr<EnginePredicate> getEnginePredicate(
+    const DB::ActionsDAG & filter, std::exception_ptr & exception)
 {
     return std::make_unique<EnginePredicate>(filter, exception);
 }
@@ -116,38 +88,44 @@ public:
         get_next = &getNext;
     }
 
-private:
-    static constexpr uint64_t VISITOR_FAILED = 0;
-    static constexpr uint64_t VISITOR_END = 0;
+    static constexpr uint64_t VISITOR_FAILED_OR_UNSUPPORTED = ~0;
 
+private:
     static const void * getNext(void * data_)
     {
         auto * iterator_data = static_cast<EngineIteratorData *>(data_);
-        LOG_TEST(iterator_data->log(), "Next");
-        uintptr_t result = VISITOR_FAILED;
         try
         {
-            result = getNextImpl(*iterator_data);
+            LOG_TEST(iterator_data->log(), "Next");
+
+            if (iterator_data->hasException())
+            {
+                LOG_TEST(iterator_data->log(), "Exception during processing");
+                return nullptr;
+            }
+
+            const auto * node = iterator_data->next();
+            if (!node)
+            {
+                LOG_TEST(iterator_data->log(), "Iterator finished");
+                return nullptr;
+            }
+
+            LOG_TEST(iterator_data->log(), "Node name: {}, node type: {}", node->result_name, node->type);
+
+            auto result = getNextImpl(*iterator_data, node);
+            if (result && result != VISITOR_FAILED_OR_UNSUPPORTED)
+                return reinterpret_cast<const void *>(result);
         }
         catch (...)
         {
             iterator_data->setException(std::current_exception());
         }
 
-        if (result == VISITOR_FAILED || result == VISITOR_END)
-        {
-            LOG_TEST(iterator_data->log(), "Returning NULL");
-            return nullptr;
-        }
-        LOG_TEST(iterator_data->log(), "Returning VALID");
-        return reinterpret_cast<const void *>(result);
+        return nullptr;
     }
 
-    static uintptr_t getNextImpl(EngineIteratorData & iterator_data);
-    static uintptr_t visitLiteralValue(
-        const DB::Field & value,
-        DB::TypeIndex type_index,
-        ffi::KernelExpressionVisitorState * state);
+    static uintptr_t getNextImpl(EngineIteratorData & iterator_data, const DB::ActionsDAG::Node * node);
 };
 
 uintptr_t EnginePredicate::visitPredicate(void * data, ffi::KernelExpressionVisitorState * state)
@@ -155,10 +133,24 @@ uintptr_t EnginePredicate::visitPredicate(void * data, ffi::KernelExpressionVisi
     auto * predicate = static_cast<EnginePredicate *>(data);
     EngineIteratorData iterator_data(state, predicate->filter.getOutputs(), *predicate);
     EngineIterator engine_iterator(iterator_data);
-    return ffi::visit_predicate_and(state, &engine_iterator);
+    auto result = ffi::visit_predicate_and(state, &engine_iterator);
+    LOG_TEST(iterator_data.log(), "Engine predicate result: {}", result);
+    return result;
 }
 
-uintptr_t EngineIterator::visitLiteralValue(
+//template <typename T>
+//static bool convertToType(const DB::Field & field, T & result)
+//{
+//    if (!field.is
+//        return false;
+//    result = DB::Field::dispatch([](const auto & value) -> T
+//    {
+//        return value;
+//    }, field);
+//    return true;
+//}
+
+static uintptr_t visitLiteralValue(
     const DB::Field & value,
     DB::TypeIndex type_index,
     ffi::KernelExpressionVisitorState * state)
@@ -168,42 +160,48 @@ uintptr_t EngineIterator::visitLiteralValue(
         case DB::TypeIndex::String:
         case DB::TypeIndex::FixedString:
         {
-            static constexpr auto test = "test2";
-            //auto value_str = KernelUtils::toDeltaString(value.safeGet<String>());
-            auto value_str = KernelUtils::toDeltaString(test);
+            auto value_str = value.safeGet<String>();
+            auto value_delta_str = KernelUtils::toDeltaString(value_str);
             return KernelUtils::unwrapResult(
                 ffi::visit_expression_literal_string(
                     state,
-                    value_str,
+                    value_delta_str,
                     &KernelUtils::allocateError), "visit_expression_literal_string");
         }
         case DB::TypeIndex::Int8:
         {
-            return ffi::visit_expression_literal_byte(state, value.safeGet<Int8>());
+            auto result = value.safeGet<Int8>();
+            return ffi::visit_expression_literal_byte(state, result);
         }
         case DB::TypeIndex::UInt8:
         {
-            return ffi::visit_expression_literal_byte(state, value.safeGet<UInt8>());
+            auto result = value.safeGet<Int16>();
+            return ffi::visit_expression_literal_short(state, result);
         }
         case DB::TypeIndex::Int16:
         {
-            return ffi::visit_expression_literal_short(state, value.safeGet<Int16>());
+            auto result = value.safeGet<Int16>();
+            return ffi::visit_expression_literal_short(state, result);
         }
         case DB::TypeIndex::UInt16:
         {
-            return ffi::visit_expression_literal_short(state, value.safeGet<UInt16>());
+            auto result = value.safeGet<Int32>();
+            return ffi::visit_expression_literal_int(state, result);
         }
         case DB::TypeIndex::Int32:
         {
-            return ffi::visit_expression_literal_long(state, value.safeGet<Int32>());
+            auto result = value.safeGet<Int32>();
+            return ffi::visit_expression_literal_int(state, result);
         }
         case DB::TypeIndex::UInt32:
         {
-            return ffi::visit_expression_literal_long(state, value.safeGet<UInt32>());
+            auto result = value.safeGet<Int64>();
+            return ffi::visit_expression_literal_long(state, result);
         }
         case DB::TypeIndex::Int64:
         {
-            return ffi::visit_expression_literal_long(state, value.safeGet<Int64>());
+            auto result = value.safeGet<Int64>();
+            return ffi::visit_expression_literal_long(state, result);
         }
         //case DB::TypeIndex::UInt64:
         //{
@@ -211,25 +209,13 @@ uintptr_t EngineIterator::visitLiteralValue(
         //}
         default:
         {
-            return VISITOR_FAILED;
+            return EngineIterator::VISITOR_FAILED_OR_UNSUPPORTED;
         }
     }
 }
 
-uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data)
+uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const DB::ActionsDAG::Node * node)
 {
-    if (iterator_data.hasException())
-        return VISITOR_FAILED;
-
-    const auto * node = iterator_data.next();
-    if (!node)
-    {
-        LOG_TEST(iterator_data.log(), "Iterator finished");
-        return VISITOR_END;
-    }
-
-    LOG_TEST(iterator_data.log(), "Node name: {}, node type: {}", node->result_name, node->type);
-
     switch (node->type)
     {
         case DB::ActionsDAG::ActionType::FUNCTION:
@@ -239,7 +225,11 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data)
 
             if (func_name == DB::NameAnd::name)
             {
-                EngineIteratorData current_iterator_data(iterator_data.state, node->children, iterator_data.predicate);
+                EngineIteratorData current_iterator_data(
+                        iterator_data.state,
+                        node->children,
+                        iterator_data.predicate);
+
                 EngineIterator current_engine_iterator(current_iterator_data);
 
                 return ffi::visit_predicate_and(iterator_data.state, &current_engine_iterator);
@@ -275,17 +265,17 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data)
                                                     column_name,
                                                     &KernelUtils::allocateError), "visit_expression_column");
 
+                    const auto comparison_type_index = getTypeIndex(column_node);
+
                     DB::Field value;
                     literal_node->column->get(0, value);
-                    DB::TypeIndex type_index = literal_node->result_type->isNullable()
-                        ? assert_cast<const DB::DataTypeNullable *>(literal_node->result_type.get())->getNestedType()->getTypeId()
-                        : literal_node->result_type->getTypeId();
 
-                    uintptr_t constant = visitLiteralValue(value, type_index, iterator_data.state);
+                    uintptr_t constant = visitLiteralValue(
+                        value, comparison_type_index, iterator_data.state);
                     if (!constant)
                     {
-                        LOG_TEST(iterator_data.log(), "Unsupported literal type: {}", type_index);
-                        return VISITOR_FAILED;
+                        LOG_TEST(iterator_data.log(), "Unsupported literal type: {}", comparison_type_index);
+                        return VISITOR_FAILED_OR_UNSUPPORTED;
                     }
 
                     return ffi::visit_predicate_eq(iterator_data.state, column, constant);
@@ -299,7 +289,7 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data)
             break;
         }
     }
-    return VISITOR_FAILED;
+    return VISITOR_FAILED_OR_UNSUPPORTED;
 }
 
 }
