@@ -21,23 +21,23 @@ The `system.part_log` table contains the following columns:
 - `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — Identifier of the `INSERT` query that created this data part.
 - `event_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Type of the event that occurred with the data part. Can have one of the following values:
-    - `NewPart` — Inserting of a new data part.
-    - `MergePartsStart` — Merging of data parts has started.
-    - `MergeParts` — Merging of data parts has finished.
-    - `DownloadPart` — Downloading a data part.
-    - `RemovePart` — Removing or detaching a data part using [DETACH PARTITION](/sql-reference/statements/alter/partition#detach-partitionpart).
-    - `MutatePartStart` — Mutating of a data part has started.
-    - `MutatePart` — Mutating of a data part has finished.
-    - `MovePart` — Moving the data part from the one disk to another one.
+  - `NewPart` — Inserting of a new data part.
+  - `MergePartsStart` — Merging of data parts has started.
+  - `MergeParts` — Merging of data parts has finished.
+  - `DownloadPart` — Downloading a data part.
+  - `RemovePart` — Removing or detaching a data part using [DETACH PARTITION](/sql-reference/statements/alter/partition#detach-partitionpart).
+  - `MutatePartStart` — Mutating of a data part has started.
+  - `MutatePart` — Mutating of a data part has finished.
+  - `MovePart` — Moving the data part from the one disk to another one.
 - `merge_reason` ([Enum8](../../sql-reference/data-types/enum.md)) — The reason for the event with type `MERGE_PARTS`. Can have one of the following values:
-    - `NotAMerge` — The current event has the type other than `MERGE_PARTS`.
-    - `RegularMerge` — Some regular merge.
-    - `TTLDeleteMerge` — Cleaning up expired data.
-    - `TTLRecompressMerge` — Recompressing data part with the.
+  - `NotAMerge` — The current event has the type other than `MERGE_PARTS`.
+  - `RegularMerge` — Some regular merge.
+  - `TTLDeleteMerge` — Cleaning up expired data.
+  - `TTLRecompressMerge` — Recompressing data part with the.
 - `merge_algorithm` ([Enum8](../../sql-reference/data-types/enum.md)) — Merge algorithm for the event with type `MERGE_PARTS`. Can have one of the following values:
-    - `Undecided`
-    - `Horizontal`
-    - `Vertical`
+  - `Undecided`
+  - `Horizontal`
+  - `Vertical`
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
 - `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Event time with microseconds precision.
