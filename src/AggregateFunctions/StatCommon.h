@@ -17,11 +17,6 @@ namespace DB
 {
 struct Settings;
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 /// Because ranks are adjusted, we have to store each of them in Float type.
 using RanksArray = std::vector<Float64>;
 
