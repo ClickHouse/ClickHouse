@@ -63,6 +63,7 @@ private:
     bool flatten_google_wrappers;
 };
 
+/// Confluent framing + Protobuf binary datum encoding. Mainly used for Kafka.
 class ProtobufConfluentRowInputFormat final : public IRowInputFormat
 {
 public:
@@ -81,10 +82,10 @@ private:
 
     FormatSettings format_settings;
 
-    void createReaderAndSerializer();
+    void createReaderAndSerializer(SchemaId schema_id);
 
-    std::unique_ptr<ProtobufReader> reader;
-    std::unique_ptr<ProtobufSerializer> serializer;
+    CacheBase<SchemaId, ProtobufReader> readers;
+    CacheBase<SchemaId, ProtobufSerializer> serializers;
 
     const google::protobuf::Descriptor * descriptor;
     std::vector<size_t> missing_column_indices;

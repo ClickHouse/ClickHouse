@@ -57,8 +57,6 @@
 
 namespace CurrentMetrics
 {
-    extern const Metric AvroSchemaCacheBytes;
-    extern const Metric AvroSchemaCacheCells;
     extern const Metric AvroSchemaRegistryCacheBytes;
     extern const Metric AvroSchemaRegistryCacheCells;
 }

@@ -1,7 +1,7 @@
 #include <Processors/Formats/Impl/ConfluentRegistry.h>
 
 #include <IO/HTTPCommon.h>
-#include "Common/CurrentMetrics.h"
+#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 
 namespace CurrentMetrics

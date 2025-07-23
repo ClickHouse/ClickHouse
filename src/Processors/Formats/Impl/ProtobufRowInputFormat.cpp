@@ -12,9 +12,9 @@
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBufferFromString.h>
 
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 #include <Common/CacheBase.h>
-#include "Core/Block_fwd.h"
+#include <Core/Block_fwd.h>
 
 #include <Processors/Formats/Impl/ConfluentRegistry.h>
 
@@ -36,6 +36,8 @@ namespace CurrentMetrics
 {
     extern const Metric ProtobufSchemaRegistryCacheBytes;
     extern const Metric ProtobufSchemaRegistryCacheCells;
+    extern const Metric MarkCacheBytes;
+    extern const Metric MarkCacheFiles;
 }
 
 namespace DB
@@ -201,6 +203,8 @@ ProtobufConfluentRowInputFormat::ProtobufConfluentRowInputFormat(
     : IRowInputFormat(header_, in_, params_)
     , schema_registry(getConfluentSchemaRegistry(format_settings_))
     , format_settings(format_settings_)
+    , readers(CurrentMetrics::MarkCacheBytes, CurrentMetrics::MarkCacheFiles, 1024)
+    , serializers(CurrentMetrics::MarkCacheBytes, CurrentMetrics::MarkCacheFiles, 1024)
 {
 }
 
@@ -208,11 +212,13 @@ void ProtobufConfluentRowInputFormat::readPrefix()
 {
 }
 
-void ProtobufConfluentRowInputFormat::createReaderAndSerializer()
+void ProtobufConfluentRowInputFormat::createReaderAndSerializer(SchemaId schema_id)
 {
+    if (readers.contains(schema_id))
+        return;
 
-    reader = std::make_unique<ProtobufReader>(*in);
-    serializer = ProtobufSerializer::create(
+    readers.set(schema_id, std::make_shared<ProtobufReader>(*in));
+    serializers.set(schema_id, ProtobufSerializer::create(
         getPort().getHeader().getNames(),
         getPort().getHeader().getDataTypes(),
         missing_column_indices,
@@ -220,8 +226,8 @@ void ProtobufConfluentRowInputFormat::createReaderAndSerializer()
         with_length_delimiter,
         /* with_envelope = */ false,
         flatten_google_wrappers,
-        *reader,
-        true);
+        *readers.get(schema_id),
+        true));
 }
 
 bool ProtobufConfluentRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & row_read_extension)
@@ -242,12 +248,12 @@ bool ProtobufConfluentRowInputFormat::readRow(MutableColumns & columns, RowReadE
     in->ignore();
 
     if (descriptor)
-        createReaderAndSerializer();
+        createReaderAndSerializer(schema_id);
 
     size_t row_num = columns.empty() ? 0 : columns[0]->size();
 
-    serializer->setColumns(columns.data(), columns.size());
-    serializer->readRow(row_num);
+    serializers.get(schema_id)->setColumns(columns.data(), columns.size());
+    serializers.get(schema_id)->readRow(row_num);
 
     row_read_extension.read_columns.clear();
     row_read_extension.read_columns.resize(columns.size(), true);

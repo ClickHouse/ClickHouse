@@ -103,6 +103,7 @@ The supported formats are:
 | [PrettySpaceNoEscapesMonoBlock](#prettyspacenoescapesmonoblock)                           | ✗   | ✔     |
 | [Prometheus](#prometheus)                                                                 | ✗   | ✔     |
 | [Protobuf](#protobuf)                                                                     | ✔   | ✔     |
+| [ProtobufConfluent](#data-format-proto-confluent)                                              | ✔   | ✗     |
 | [ProtobufSingle](#protobufsingle)                                                         | ✔   | ✔     |
 | [ProtobufList](#protobuflist)                                                                                     | ✔   | ✔     |
 | [Avro](#data-format-avro)                                                                 | ✔   | ✔     |
@@ -396,6 +397,10 @@ See [ProtobufSingle](/interfaces/formats/ProtobufSingle)
 ### ProtobufList {#protobuflist}
 
 See [ProtobufList](/interfaces/formats/ProtobufList)
+
+### ProtobufConfluent {#data-format-proto-confluent}
+
+See [ProtobufConfluent](/interfaces/formats/ProtobufConfluent)
 
 ### Avro {#data-format-avro}
 
