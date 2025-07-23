@@ -146,7 +146,12 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
        {"min_age_to_force_merge_on_partition_only", trueOrFalseSetting},
        {"min_bytes_for_compact_part", bytesRangeSetting},
        {"min_bytes_for_full_part_storage", bytesRangeSetting},
-       {"min_bytes_for_wide_part", bytesRangeSetting},
+       {"min_bytes_for_wide_part",
+        CHSetting(
+            [](RandomGenerator & rg)
+            { return std::to_string(rg.thresholdGenerator<uint64_t>(0.4, 0.2, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024))); },
+            {},
+            false)},
        {"min_bytes_to_prewarm_caches", bytesRangeSetting},
        {"min_bytes_to_rebalance_partition_over_jbod", bytesRangeSetting},
        {"min_compress_block_size", bytesRangeSetting},
@@ -162,7 +167,9 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings
         CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); }, {}, false)},
        {"min_rows_to_fsync_after_merge",
         CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); }, {}, false)},
-       {"min_rows_for_wide_part", rowsRangeSetting},
+       {"min_rows_for_wide_part",
+        CHSetting(
+            [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.4, 0.2, 0, UINT32_C(8192))); }, {}, false)},
        {"non_replicated_deduplication_window", rowsRangeSetting},
        /// ClickHouse cloud setting
        {"notify_newest_block_number", trueOrFalseSetting},

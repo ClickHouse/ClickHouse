@@ -995,7 +995,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         const uint64_t type_mask_backup = this->next_type_mask;
         CastExpr * casexpr = expr->mutable_comp_expr()->mutable_cast_expr();
 
-        casexpr->set_simple(rg.nextBool());
+        casexpr->set_simple(rg.nextMediumNumber() < 16);
         this->depth++;
         this->next_type_mask = fc.type_mask & ~(allow_nested);
         auto tp
