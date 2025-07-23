@@ -84,6 +84,8 @@ protected:
     const bool need_only_count;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
+    FormatFilterInfoPtr format_filter_info_without_key_condition;
+
     ReadFromFormatInfo read_from_format_info;
     const std::shared_ptr<ThreadPool> create_reader_pool;
 
@@ -140,6 +142,7 @@ protected:
         size_t max_block_size,
         FormatParserSharedResourcesPtr parser_shared_resources,
         FormatFilterInfoPtr format_filter_info,
+        FormatFilterInfoPtr format_filter_info_without_key_condition,
         bool need_only_count);
 
     ReaderHolder createReader();

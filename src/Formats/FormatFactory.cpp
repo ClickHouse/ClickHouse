@@ -391,7 +391,9 @@ InputFormatPtr FormatFactory::getInput(
     const Settings & settings = context->getSettingsRef();
 
     if (!parser_shared_resources)
-        parser_shared_resources = FormatParserSharedResources::singleThreaded(settings);
+        parser_shared_resources = std::make_shared<FormatParserSharedResources>(
+            settings,
+            /*num_streams_=*/1);
 
     RowInputFormatParams row_input_format_params;
     row_input_format_params.max_block_size = max_block_size;
@@ -443,7 +445,7 @@ InputFormatPtr FormatFactory::getInput(
             (ReadBuffer & input) -> InputFormatPtr
             { return input_getter(input, sample, row_input_format_params, format_settings); };
 
-        /// TODO: Try using parser_group->parsing_runner instead of creating a ThreadPool in
+        /// TODO: Try using parser_shared_resources->parsing_runner instead of creating a ThreadPool in
         ///       ParallelParsingInputFormat.
         ParallelParsingInputFormat::Params params{
             buf,
@@ -531,7 +533,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
             max_download_threads,
             settings[Setting::max_download_buffer_size].value);
 
-        /// TODO: Consider using parser_group->io_runner instead of threadPoolCallbackRunnerUnsafe.
+        /// TODO: Consider using parser_shared_resources->io_runner instead of threadPoolCallbackRunnerUnsafe.
         res = wrapInParallelReadBufferIfSupported(
             buf,
             threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "ParallelRead"),

@@ -61,9 +61,10 @@ FormatParserSharedResources::FormatParserSharedResources(const Settings & settin
 FormatParserSharedResourcesPtr FormatParserSharedResources::singleThreaded(const Settings & settings)
 {
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, 1);
-    parser_shared_resources->max_parsing_threads = 1;
+    const_cast<size_t &>(parser_shared_resources->max_parsing_threads) = 1;
     return parser_shared_resources;
 }
+
 
 void FormatParserSharedResources::finishStream()
 {
@@ -83,6 +84,20 @@ size_t FormatParserSharedResources::getIOThreadsPerReader() const
     n = std::max(n, 1ul);
     return (max_io_threads + n - 1) / n;
 }
+
+    FormatFilterInfo::FormatFilterInfo(std::shared_ptr<const ActionsDAG> filter_actions_dag_, const ContextPtr & context_, ColumnMapperPtr column_mapper_)
+        : filter_actions_dag(filter_actions_dag_)
+        , context(context_)
+        , column_mapper(column_mapper_)
+    {
+    }
+
+    FormatFilterInfo::FormatFilterInfo()
+        : filter_actions_dag(nullptr)
+        , context(static_cast<const ContextPtr &>(nullptr))
+        , column_mapper(nullptr)
+    {
+    }
 
 
 bool FormatFilterInfo::hasFilter() const
@@ -124,5 +139,13 @@ void FormatFilterInfo::initOnce(std::function<void()> f)
                 throw;
             }
         });
+}
+
+FormatFilterInfoPtr FormatFilterInfo::cloneWithoutFilterDag() const
+{
+    auto clone = std::make_shared<FormatFilterInfo>();
+    clone->column_mapper = column_mapper;
+    clone->opaque = opaque;
+    return clone;
 }
 }

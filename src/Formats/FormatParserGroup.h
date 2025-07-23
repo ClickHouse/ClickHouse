@@ -40,13 +40,9 @@ using FormatFilterInfoPtr = std::shared_ptr<FormatFilterInfo>;
 /// because most implementations don't use most of this struct.
 struct FormatFilterInfo
 {
-    FormatFilterInfo(
-        std::shared_ptr<const ActionsDAG> filter_actions_dag_, const ContextPtr & context_, ColumnMapperPtr column_mapper_ = nullptr)
-        : filter_actions_dag(filter_actions_dag_)
-        , context(context_)
-        , column_mapper(column_mapper_)
-    {
-    }
+    FormatFilterInfo(std::shared_ptr<const ActionsDAG> filter_actions_dag_, const ContextPtr & context_, ColumnMapperPtr column_mapper_);
+
+    FormatFilterInfo();
     /// Total limits across all readers in the group.
     std::shared_ptr<const ActionsDAG> filter_actions_dag;
     ContextWeakPtr context; // required only if `filter_actions_dag` is set
@@ -73,6 +69,8 @@ public:
     /// Does std::call_once(init_flag, ...).
     /// If a previous init attempt threw exception, rethrows it instead retrying.
     void initOnce(std::function<void()> f);
+
+    FormatFilterInfoPtr cloneWithoutFilterDag() const;
 };
 
 struct FormatParserSharedResources;
@@ -80,13 +78,8 @@ using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResourc
 
 struct FormatParserSharedResources
 {
-    size_t max_parsing_threads = 0;
-    size_t max_io_threads = 0;
-
-    std::atomic<size_t> num_streams{0};
-
-    ThreadPoolCallbackRunnerFast parsing_runner;
-    ThreadPoolCallbackRunnerFast io_runner;
+    const size_t max_parsing_threads = 0;
+    const size_t max_io_threads = 0;
 
     FormatParserSharedResources(const Settings & settings, size_t num_streams_);
 
@@ -96,5 +89,11 @@ struct FormatParserSharedResources
 
     size_t getParsingThreadsPerReader() const;
     size_t getIOThreadsPerReader() const;
+
+
+private:
+    std::atomic<size_t> num_streams{0};
+    ThreadPoolCallbackRunnerFast parsing_runner;
+    ThreadPoolCallbackRunnerFast io_runner;
 };
 }

@@ -77,7 +77,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
 
-    auto filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, context);
+    auto filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, context, configuration->getColumnMapper());
 
     for (size_t i = 0; i < num_streams; ++i)
     {

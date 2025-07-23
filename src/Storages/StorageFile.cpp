@@ -1706,7 +1706,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         progress_callback(FileProgress(0, storage->total_bytes_to_read));
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(ctx->getSettingsRef(), num_streams);
-    auto filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, ctx);
+    auto filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, ctx, nullptr);
 
     for (size_t i = 0; i < num_streams; ++i)
     {

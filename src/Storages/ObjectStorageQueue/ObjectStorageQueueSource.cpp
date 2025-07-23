@@ -889,6 +889,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 max_block_size,
                 parser_shared_resources,
                 nullptr,
+                nullptr,
                 /* need_only_count */ false);
 
             if (!reader)
