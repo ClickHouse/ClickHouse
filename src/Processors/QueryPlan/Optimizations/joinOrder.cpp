@@ -14,6 +14,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <ranges>
 #include <stack>
+#include <unordered_map>
 #include <vector>
 
 
@@ -84,34 +85,40 @@ private:
 
     double computeSelectivity(const JoinActionRef & edge);
     double computeSelectivity(const std::vector<JoinActionRef *> & edges);
+    size_t getColumnStats(BitSet rels, const String & column_name);
 
     constexpr static auto APPLY_DP_THRESHOLD = 10;
 
     QueryGraph query_graph;
     std::unordered_map<JoinActionRef, bool> applied;
     std::unordered_map<JoinActionRef, double> expression_selectivity;
+    std::unordered_map<BitSet, DPJoinEntryPtr> dp_table;
 
     LoggerPtr log = getLogger("JoinOrderOptimizer");
 };
 
 
-const ColumnStats * getColumnStats(BitSet rels, const String & column_name, const std::vector<RelationStats> & relation_stats)
+size_t JoinOrderOptimizer::getColumnStats(BitSet rels, const String & column_name)
 {
+    const auto & relation_stats = query_graph.relation_stats;
     if (rels.count() != 1)
-        return nullptr;
+    {
+        /// Assume all keys are distinct
+        if (auto it = dp_table.find(rels); it != dp_table.end())
+            return it->second->estimated_rows;
+        return 0;
+    }
 
     auto rel_id = rels.findFirstSet();
     if (rel_id < 0 || relation_stats.size() <= static_cast<size_t>(rel_id))
-        return nullptr;
+        return 0;
 
-    const auto & column_stats = relation_stats.at(rel_id).column_stats;
-    auto it = column_stats.find(column_name);
-    if (it == column_stats.end())
-        return nullptr;
-
-    return &it->second;
+    const auto & relation_stat = relation_stats.at(rel_id);
+    const auto & column_stats = relation_stat.column_stats;
+    if (auto it = column_stats.find(column_name); it != column_stats.end())
+        return it->second.num_distinct_values;
+    return relation_stat.estimated_rows;
 }
-
 
 double JoinOrderOptimizer::computeSelectivity(const JoinActionRef & edge)
 {
@@ -125,10 +132,9 @@ double JoinOrderOptimizer::computeSelectivity(const JoinActionRef & edge)
     if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
         return 0.0;
 
-    const auto * lhs_stats = getColumnStats(lhs.getSourceRelations(), lhs.getColumnName(), query_graph.relation_stats);
-    const auto * rhs_stats = getColumnStats(rhs.getSourceRelations(), rhs.getColumnName(), query_graph.relation_stats);
-    UInt64 max_ndv = std::max(lhs_stats ? lhs_stats->num_distinct_values : 0,
-                              rhs_stats ? rhs_stats->num_distinct_values : 0);
+    UInt64 lhs_ndv = getColumnStats(lhs.getSourceRelations(), lhs.getColumnName());
+    UInt64 rhs_ndv = getColumnStats(rhs.getSourceRelations(), rhs.getColumnName());
+    UInt64 max_ndv = std::max(lhs_ndv, rhs_ndv);
     if (max_ndv > 0)
         selectivity = std::min(selectivity, 1.0 / max_ndv);
     return selectivity;
@@ -322,6 +328,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
         components.erase(components.begin() + std::max(best_i, best_j));
         components.erase(components.begin() + std::min(best_i, best_j));
         components.push_back(best_plan);
+        dp_table[best_plan->relations] = best_plan;
+
         for (auto * edge : applied_edge)
             *edge = nullptr;
     }
