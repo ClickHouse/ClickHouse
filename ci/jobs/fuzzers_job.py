@@ -1,7 +1,7 @@
 from praktika.result import Result
 from praktika.utils import Shell, Utils
 
-from ci.jobs.scripts.clickhouse_proc import ClickHouseLight
+from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
@@ -10,7 +10,7 @@ def main():
     res = True
     results = []
     stop_watch = Utils.Stopwatch()
-    ch = ClickHouseLight()
+    ch = ClickHouseProc()
 
     if res:
         print("Install ClickHouse")
