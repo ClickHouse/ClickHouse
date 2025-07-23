@@ -6,6 +6,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
@@ -44,6 +45,16 @@ public:
         return deltalake_metadata
             && !data_files.empty() && !deltalake_metadata->data_files.empty()
             && data_files == deltalake_metadata->data_files;
+    }
+
+    static void createInitial(
+        const ObjectStoragePtr & /*object_storage*/,
+        const StorageObjectStorageConfigurationWeakPtr & /*configuration*/,
+        const ContextPtr & /*local_context*/,
+        const std::optional<ColumnsDescription> & /*columns*/,
+        ASTPtr /*partition_by*/,
+        bool /*if_not_exists*/)
+    {
     }
 
     static DataLakeMetadataPtr create(

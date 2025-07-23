@@ -151,9 +151,7 @@ This applied for `Date`, `Date32`, `DateTime`, `Bool`, `UUID`.
 
 :::
 
-
 ## Usage example {#usage-example}
-
 
 Assuming MongoDB has [sample_mflix](https://www.mongodb.com/docs/atlas/sample-data/sample-mflix) dataset loaded
 
