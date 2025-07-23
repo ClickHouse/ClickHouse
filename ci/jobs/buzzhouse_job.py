@@ -14,10 +14,11 @@ def main():
     results = []
     stop_watch = Utils.Stopwatch()
     ch = ClickHouseLight()
-    log_file = f"{temp_dir}/fuzzer_out.sql"
+    shell_log_file = f"{temp_dir}/buzzing.log"
+    buzz_log_file = f"{temp_dir}/fuzzer_out.sql"
     buzz_config_file = f"{temp_dir}/fuzz.json"
 
-    Path(log_file).touch()
+    Path(buzz_log_file).touch()
     Path(buzz_config_file).touch()
 
     if res:
@@ -182,7 +183,7 @@ def main():
             "disallowed_error_codes": "9,13,15,99,100,101,102,108,127,162,165,166,173,209,230,231,233,234,235,246,256,257,261,270,271,272,273,274,275,305,307,635,637,638,639,640,642,645,647,718,1003",
             "client_file_path": "/var/lib/clickhouse/user_files",
             "server_file_path": "/var/lib/clickhouse/user_files",
-            "log_path": log_file,
+            "log_path": buzz_log_file,
             "read_log": False,
             "allow_memory_tables": random.choice([True, False]),
             "allow_client_restarts": random.choice([True, False]),
@@ -202,20 +203,29 @@ def main():
         # Allow the fuzzer to run for some time, giving it a grace period of 5m to finish once the time
         # out triggers. After that, it'll send a SIGKILL to the fuzzer to make sure it finishes within
         # a reasonable time.
+        run = Shell.run(
+            command=[
+                f"timeout --verbose --signal TERM --kill-after=5m --preserve-status 30m clickhouse-client --stacktrace --buzz-house-config={buzz_config_file}"
+            ],
+            verbose=True,
+            log_file=shell_log_file,
+        )
+
+        # On SIGTERM due to timeout, exit code is 143, ignore it
         results.append(
-            Shell.run(
-                name="Buzzing",
-                command=[
-                    f"timeout --verbose --signal TERM --kill-after=5m --preserve-status 30m clickhouse-client --stacktrace --buzz-house-config={buzz_config_file}"
-                ],
-                with_log=True,
+            Result.create_from(
+                name="Buzzing result",
+                status=(
+                    Result.Status.SUCCESS if run in (0, 143) else Result.Status.FAILED
+                ),
             )
         )
-        # On SIGTERM due to timeout, exit code is 143, ignore it
-        res = results[-1] == 0 or results[-1] == 143
+        res = results[-1].is_ok()
 
     Result.create_from(
-        results=results, stopwatch=stop_watch, files=[buzz_config_file, log_file]
+        results=results,
+        stopwatch=stop_watch,
+        files=[shell_log_file, buzz_config_file, buzz_log_file],
     ).complete_job()
 
 
