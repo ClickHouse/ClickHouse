@@ -602,7 +602,7 @@ Trigger an immediate out-of-schedule refresh of a given view.
 SYSTEM REFRESH VIEW [db.]name
 ```
 
-### REFRESH VIEW {#refresh-view-1}
+### WAIT VIEW {#wait-view}
 
 Wait for the currently running refresh to complete. If the refresh fails, throws an exception. If no refresh is running, completes immediately, throwing an exception if previous refresh failed.
 
