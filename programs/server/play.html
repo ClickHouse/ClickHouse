@@ -29,7 +29,6 @@
     Also, it can provide visual indication that credentials are correct.
 
     Nice to have:
-    - resizable columns
     - display totals
     - show/hide the editor
     - check for readonly
@@ -68,6 +67,11 @@
 
             --progress-color: #0C4;
             --progress: 0%;
+
+            ::selection {
+                color: #FFF;
+                background-color: #456;
+            }
         }
 
         [data-theme="dark"] {
@@ -95,6 +99,11 @@
             --menu-toggle-color: #FF0;
 
             --progress-color: #FF0;
+
+            ::selection {
+                color: #000;
+                background-color: #FF8;
+            }
         }
 
         *
@@ -445,12 +454,23 @@
             background-color: var(--element-background-color);
         }
 
+        #data_div.fixed
+        {
+            width: fit-content;
+        }
+
         #data-table
         {
             width: 100%;
             border-spacing: 0;
             background-color: var(--element-background-color);
         }
+
+        #data-table.fixed
+        {
+            table-layout: fixed;
+            width: var(--table-width);
+         }
 
         /* Will be displayed when user specified custom format. */
         #data-unparsed
@@ -496,6 +516,17 @@
             border: 1px solid var(--border-color);
         }
 
+        th .name {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        th:hover
+        {
+            z-index: 1;
+        }
+
         .type-hint
         {
             display: none;
@@ -513,6 +544,21 @@
         th:hover .type-hint
         {
             display: inline-block;
+        }
+
+        .resizer {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 5px;
+            cursor: col-resize;
+            user-select: none;
+            height: 100%;
+            transform: translateX(50%);
+        }
+
+        .resizer:hover {
+            background-color: var(--border-color-selected);
         }
 
         /* The row under mouse pointer is highlight for better legibility. */
@@ -539,13 +585,6 @@
             white-space: pre-wrap;
             max-width: none;
             outline: 2px solid var(--border-color-selected);
-        }
-
-        td.transposed
-        {
-            max-width: none;
-            overflow: auto;
-            white-space: pre-wrap;
         }
 
         td.empty-result
@@ -1405,6 +1444,8 @@ function clear()
     clearElement('error');
     clearElement('progress');
 
+    document.getElementById('data-table').classList.remove('fixed');
+    document.getElementById('data_div').classList.remove('fixed');
     document.getElementById('check-mark').display = 'none';
     document.getElementById('hourglass').display = 'none';
     document.getElementById('stats').innerText = '';
@@ -1541,6 +1582,7 @@ function transposeTableIfNeeded()
         let th = heads[1];
         th.className = 'right';
         th.style.width = '0';
+        th.removeChild(th.querySelector('.resizer'))
         tr.appendChild(th);
         if (values) {
             let td = values[1];
@@ -1652,6 +1694,73 @@ function updateProgress(progress) {
         rows && total_rows ? (100 * rows / total_rows) + '%' : '0');
 }
 
+function changeTableLayout() {
+    const table = document.getElementById('data-table');
+    const headers = table.querySelectorAll('th');
+
+    document.getElementById('data-table').style.setProperty('--table-width', `${table.offsetWidth}px`);
+
+    columnWidths = [];
+    headers.forEach(header => {
+        columnWidths.push(header.offsetWidth);
+    });
+
+    table.classList.add('fixed');
+    document.getElementById('data_div').classList.add('fixed');
+
+    headers.forEach((header, index) => {
+        header.style.width = `${columnWidths[index]}px`;
+    });
+}
+
+
+function appendHeaderResizer(header) {
+    let drag_state = {
+        is_dragging: true,
+        offset_x: null,
+        offset_width: null
+    };
+
+    const start = (e) => {
+        if (e.button !== 0) { return;}
+
+        changeTableLayout();
+        drag_state.offset_x = e.clientX;
+        drag_state.offset_width = header.offsetWidth;
+        drag_state.is_dragging = true;
+
+        document.addEventListener('pointermove', move);
+        document.addEventListener('pointerup', stop);
+        document.addEventListener('pointercancel', stop);
+    }
+
+    const move = (e) => {
+        if (!drag_state.is_dragging) { return; }
+
+        const dx = e.clientX - drag_state.offset_x;
+        header.style.width = `${drag_state.offset_width + dx}px`;
+        if(dx < 0) {
+            const table = document.getElementById('data-table');
+            table.style.setProperty('--table-width', `${table.offsetWidth + dx}px`)
+        };
+    }
+
+    const stop = (e) => {
+        drag_state.is_dragging = false;
+
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', stop);
+        document.removeEventListener('pointercancel', stop);
+    }
+
+    const resizer = document.createElement('div');
+    resizer.className = 'resizer';
+    resizer.addEventListener('pointerdown', start);
+    resizer.addEventListener('touchstart', (e) => e.preventDefault());
+
+    header.appendChild(resizer);
+}
+
 function appendHeader(meta) {
     if (meta.length == 0) { return; }
     header = meta;
@@ -1666,11 +1775,15 @@ function appendHeader(meta) {
     meta.forEach(elem => {
         let th = document.createElement('th');
         const name = document.createTextNode(elem.name);
-        th.appendChild(name);
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'name';
+        nameSpan.appendChild(name);
+        th.appendChild(nameSpan);
         let type_hint = document.createElement('span');
         type_hint.className = 'type-hint';
         type_hint.appendChild(document.createTextNode(elem.type));
         th.appendChild(type_hint);
+        appendHeaderResizer(th);
         thead.appendChild(th);
 
         column_is_number[elem.name] = !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/);

@@ -155,7 +155,6 @@ Avoid using `ReplicatedMergeTree` or specifying replication parameters, as repli
 | `replica_name`  | The replica name in ClickHouse Keeper.                                       |
 | `other_parameters` | Parameters of an engine used for creating the replicated version, for example, version in `ReplacingMergeTree`. |
 
-
 Example:
 
 ```sql

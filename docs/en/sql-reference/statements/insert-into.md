@@ -131,7 +131,6 @@ INSERT INTO x WITH y AS (SELECT * FROM numbers(10)) SELECT * FROM y;
 WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
 ```
 
-
 ## Inserting Data from a File {#inserting-data-from-a-file}
 
 **Syntax**

@@ -21,7 +21,6 @@ ClickHouse supports:
 - Dictionaries with a [set of functions](../../sql-reference/functions/ext-dict-functions.md).
 - [Embedded dictionaries](#embedded-dictionaries) with a specific [set of functions](../../sql-reference/functions/embedded-dict-functions.md).
 
-
 :::tip Tutorial
 If you are getting started with Dictionaries in ClickHouse we have a tutorial that covers that topic.  Take a look [here](tutorial.md).
 :::
@@ -81,7 +80,6 @@ The dictionary configuration file has the following format:
 ```
 
 You can [configure](#configuring-a-dictionary) any number of dictionaries in the same file.
-
 
 :::note
 You can convert values for a small dictionary by describing it in a `SELECT` query (see the [transform](../../sql-reference/functions/other-functions.md) function). This functionality is not related to dictionaries.
@@ -999,7 +997,7 @@ It is also possible for `Flat`, `Hashed`, `ComplexKeyHashed` dictionaries to onl
 - If the source is HTTP then `update_field` will be added as a query parameter with the last update time as the parameter value.
 - If the source is Executable then `update_field` will be added as an executable script argument with the last update time as the argument value.
 - If the source is ClickHouse, MySQL, PostgreSQL, ODBC there will be an additional part of `WHERE`, where `update_field` is compared as greater or equal with the last update time.
-    - Per default, this `WHERE`-condition is checked at the highest level of the SQL-Query. Alternatively, the condition can be checked in any other `WHERE`-clause within the query using the `{condition}`-keyword. Example:
+  - Per default, this `WHERE`-condition is checked at the highest level of the SQL-Query. Alternatively, the condition can be checked in any other `WHERE`-clause within the query using the `{condition}`-keyword. Example:
     ```sql
     ...
     SOURCE(CLICKHOUSE(...
@@ -1102,13 +1100,13 @@ Types of sources (`source_type`):
 - [Executable Pool](#executable-pool)
 - [HTTP(S)](#https)
 - DBMS
-    - [ODBC](#odbc)
-    - [MySQL](#mysql)
-    - [ClickHouse](#clickhouse)
-    - [MongoDB](#mongodb)
-    - [Redis](#redis)
-    - [Cassandra](#cassandra)
-    - [PostgreSQL](#postgresql)
+  - [ODBC](#odbc)
+  - [MySQL](#mysql)
+  - [ClickHouse](#clickhouse)
+  - [MongoDB](#mongodb)
+  - [Redis](#redis)
+  - [Cassandra](#cassandra)
+  - [PostgreSQL](#postgresql)
 
 ### Local File {#local-file}
 
@@ -1758,7 +1756,6 @@ Setting fields:
 
 [More information about the engine](../../engines/table-engines/integrations/mongodb.md)
 
-
 #### Redis {#redis}
 
 Example of settings:
@@ -1879,9 +1876,9 @@ Setting fields:
 - `user` – Name of the PostgreSQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
 - `password` – Password of the PostgreSQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
 - `replica` – Section of replica configurations. There can be multiple sections:
-    - `replica/host` – The PostgreSQL host.
-    - `replica/port` – The PostgreSQL port.
-    - `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
+  - `replica/host` – The PostgreSQL host.
+  - `replica/port` – The PostgreSQL port.
+  - `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
 - `db` – Name of the database.
 - `table` – Name of the table.
 - `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in PostgreSQL. For example, `id > 10 AND id < 20`. Optional parameter.
