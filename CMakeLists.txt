@@ -503,7 +503,7 @@ macro (clickhouse_add_executable target)
     # to inject memory tracking mechanism into them.
     # Sanitizers have their own way of intercepting the
     # allocations and deallocations, so we skip this step for them.
-    if (NOT (SANITIZE OR SANITIZE_COVERAGE) AND OS_LINUX)
+    if (NOT (SANITIZE OR SANITIZE_COVERAGE OR OS_DARWIN OR OS_FREEBSD))
         target_link_options(${target} PRIVATE
             "LINKER:--wrap=malloc"
             "LINKER:--wrap=free"
