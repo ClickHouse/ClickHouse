@@ -980,9 +980,6 @@ bool TCPHandler::receivePacketsExpectQuery(std::optional<QueryState> & state)
         default:
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet {} from client", toString(packet_type));
     }
-
-    chassert(server.isCancelled() || !tcp_server.isOpen());
-    throw Exception(ErrorCodes::ABORTED, "Server shutdown is called");
 }
 
 
