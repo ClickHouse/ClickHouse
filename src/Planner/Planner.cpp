@@ -254,6 +254,12 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         dummy_storage_to_table.emplace(dummy_storage, from_table_expression);
     }
 
+    /// disable parallel replicas to collect filters
+    if (auto * query_node = updated_query_tree->as<QueryNode>(); query_node)
+        query_node->getMutableContext()->setSetting("enable_parallel_replicas", false);
+    if (auto * union_node = updated_query_tree->as<UnionNode>(); union_node)
+        union_node->getMutableContext()->setSetting("enable_parallel_replicas", false);
+
     SelectQueryOptions select_query_options;
     Planner planner(updated_query_tree, select_query_options);
     planner.buildQueryPlanIfNeeded();
