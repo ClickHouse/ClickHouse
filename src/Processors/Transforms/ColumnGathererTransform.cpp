@@ -190,7 +190,7 @@ void ColumnGathererStream::consume(Input & input, size_t source_num)
 }
 
 ColumnGathererTransform::ColumnGathererTransform(
-    const Block & header,
+    SharedHeader header,
     size_t num_inputs,
     std::unique_ptr<ReadBuffer> row_sources_buf_,
     size_t block_preferred_size_rows_,
@@ -202,9 +202,9 @@ ColumnGathererTransform::ColumnGathererTransform(
     , row_sources_buf_holder(std::move(row_sources_buf_))
     , log(getLogger("ColumnGathererStream"))
 {
-    if (header.columns() != 1)
+    if (header->columns() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Header should have 1 column, but contains {}",
-            toString(header.columns()));
+            toString(header->columns()));
 }
 
 void ColumnGathererTransform::onFinish()

@@ -18,20 +18,11 @@ namespace DB
 
 GinFilterParameters::GinFilterParameters(
     String tokenizer_,
-    UInt64 max_rows_per_postings_list_,
     std::optional<UInt64> ngram_size_,
     std::optional<std::vector<String>> separators_)
     : tokenizer(std::move(tokenizer_))
-    , max_rows_per_postings_list(max_rows_per_postings_list_)
     , ngram_size(ngram_size_)
     , separators(separators_)
-{
-    if (max_rows_per_postings_list == UNLIMITED_ROWS_PER_POSTINGS_LIST)
-        max_rows_per_postings_list = std::numeric_limits<UInt64>::max();
-}
-
-GinFilter::GinFilter(const GinFilterParameters & params_)
-    : params(params_)
 {
 }
 
@@ -50,7 +41,7 @@ void GinFilter::add(const char * data, size_t len, UInt32 rowID, GinIndexStorePt
     }
     else
     {
-        auto builder = std::make_shared<GinIndexPostingsBuilder>(params.max_rows_per_postings_list);
+        auto builder = std::make_shared<GinIndexPostingsBuilder>();
         builder->add(rowID);
 
         store->setPostingsBuilder(term, builder);
@@ -121,10 +112,6 @@ bool matchAllInRange(const GinPostingsCache & postings_cache, UInt32 segment_id,
         auto min_in_container = container_it->second->minimum();
         auto max_in_container = container_it->second->maximum();
 
-        /// Check if the postings list has always match flag
-        if (container_it->second->cardinality() == 1 && UINT32_MAX == min_in_container)
-            continue; /// always match
-
         if (range_start > max_in_container || min_in_container > range_end)
             return false;
 
@@ -151,9 +138,7 @@ bool matchAnyInRange(const GinPostingsCache & postings_cache, UInt32 segment_id,
 
     GinIndexPostingsList range_bitset;
     range_bitset.addRange(range_start, range_end + 1);
-    range_bitset &= postings_bitset;
-
-    return !range_bitset.isEmpty();
+    return range_bitset.intersect(postings_bitset);
 }
 
 

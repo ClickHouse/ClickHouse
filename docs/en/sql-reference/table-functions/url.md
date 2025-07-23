@@ -72,7 +72,7 @@ When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-st
 Use virtual column, created with Hive-style partitioning
 
 ```sql
-SELECT * from url('http://data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
+SELECT * FROM url('http://data/path/date=*/country=*/code=*/*.parquet') WHERE _date > '2020-01-01' AND _country = 'Netherlands' AND _code = 42;
 ```
 
 ## Storage Settings {#storage-settings}
@@ -83,7 +83,6 @@ SELECT * from url('http://data/path/date=*/country=*/code=*/*.parquet') where _d
 ## Permissions {#permissions}
 
 `url` function requires `CREATE TEMPORARY TABLE` permission. As such - it'll not work for users with [readonly](/operations/settings/permissions-for-queries#readonly) = 1 setting. At least readonly = 2 is required.
-
 
 ## Related {#related}
 

@@ -9,7 +9,7 @@ namespace DB
 class OffsetStep : public ITransformingStep
 {
 public:
-    OffsetStep(const Header & input_header_, size_t offset_);
+    OffsetStep(const SharedHeader & input_header_, size_t offset_);
 
     String getName() const override { return "Offset"; }
 

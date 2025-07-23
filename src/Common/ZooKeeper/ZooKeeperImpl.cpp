@@ -3,6 +3,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
+#include <Coordination/KeeperCommon.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -28,7 +29,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/DNS.h>
 
-#include "Coordination/KeeperConstants.h"
+#include <Coordination/KeeperConstants.h>
 #include "config.h"
 
 #if USE_SSL
@@ -391,7 +392,7 @@ ZooKeeper::ZooKeeper(
     const zkutil::ShuffleHosts & nodes,
     const zkutil::ZooKeeperArgs & args_,
     std::shared_ptr<ZooKeeperLog> zk_log_)
-    : args(args_)
+    : path_acls(args_.path_acls), args(args_)
 {
     log = getLogger("ZooKeeperClient");
     std::atomic_store(&zk_log, std::move(zk_log_));
@@ -803,7 +804,8 @@ void ZooKeeper::sendThread()
                         break;
                     }
 
-                    info.request->addRootPath(args.chroot);
+                    if (info.request->add_root_path)
+                        info.request->addRootPath(args.chroot);
 
                     info.request->probably_sent = true;
                     info.request->write(getWriteBuffer(), use_xid_64);
@@ -1006,7 +1008,9 @@ void ZooKeeper::receiveEvent()
         else
         {
             response->readImpl(getReadBuffer());
-            response->removeRootPath(args.chroot);
+
+            if (!request_info.request || request_info.request->add_root_path)
+                response->removeRootPath(args.chroot);
         }
         /// Instead of setting the watch in sendEvent, set it in receiveEvent because need to check the response.
         /// The watch shouldn't be set if the node does not exist and it will never exist like sequential ephemeral nodes.
@@ -1322,12 +1326,17 @@ std::optional<String> ZooKeeper::tryGetSystemZnode(const std::string & path, con
     auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise](const Coordination::GetResponse & response) mutable
-    {
-        promise->set_value(response);
-    };
+    ZooKeeperGetRequest request;
+    request.path = path;
+    request.add_root_path = false;
 
-    get(path, std::move(callback), {});
+    RequestInfo request_info;
+    request_info.request = std::make_shared<ZooKeeperGetRequest>(std::move(request));
+    request_info.callback = [promise](const Response & response) { promise->set_value(dynamic_cast<const GetResponse &>(response)); };
+
+    pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperGet);
+
     if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
         throw Exception(Error::ZOPERATIONTIMEOUT, "Failed to get {}: timeout", description);
 
@@ -1410,7 +1419,20 @@ void ZooKeeper::create(
     request.data = data;
     request.is_ephemeral = is_ephemeral;
     request.is_sequential = is_sequential;
-    request.acls = acls.empty() ? default_acls : acls;
+
+    ACLs final_acls = acls.empty() ? default_acls : acls;
+
+    if (!path_acls.empty())
+    {
+        // Append path-specific ACLs if configured for this path
+        if (auto path_acls_it = path_acls.find(path); path_acls_it != path_acls.end())
+            final_acls.push_back(path_acls_it->second.acl);
+
+        if (auto path_acls_it = path_acls.find(parentNodePath(path)); path_acls_it != path_acls.end() && path_acls_it->second.apply_to_children)
+            final_acls.push_back(path_acls_it->second.acl);
+    }
+
+    request.acls = std::move(final_acls);
 
     Metrics::ResponseTime::instrument(callback, Metrics::ResponseTime::create);
 
@@ -1631,6 +1653,33 @@ void ZooKeeper::multi(
     std::span<const RequestPtr> requests,
     MultiCallback callback)
 {
+    // If path_acls is not empty, iterate through requests and apply path-specific ACLs to create requests
+    if (!path_acls.empty())
+    {
+        for (const auto & generic_request : requests)
+        {
+            if (auto * create_request = dynamic_cast<CreateRequest *>(generic_request.get()))
+            {
+                const auto add_acl = [&](const auto & acl)
+                {
+                    // If ACLs are empty, use default_acls first
+                    if (create_request->acls.empty())
+                        create_request->acls = default_acls;
+
+                    // Append the path-specific ACL
+                    create_request->acls.push_back(acl);
+                };
+
+                if (auto path_acls_it = path_acls.find(create_request->path); path_acls_it != path_acls.end())
+                    add_acl(path_acls_it->second.acl);
+
+                if (auto path_acls_it = path_acls.find(parentNodePath(create_request->path));
+                    path_acls_it != path_acls.end() && path_acls_it->second.apply_to_children)
+                    add_acl(path_acls_it->second.acl);
+            }
+        }
+    }
+
     ZooKeeperMultiRequest request(requests, default_acls);
 
     if (request.getOpNum() == OpNum::MultiRead && !isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))

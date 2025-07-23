@@ -98,7 +98,7 @@ DOCKERS = [
         name="clickhouse/stateless-test",
         path="./ci/docker/stateless-test",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
+        depends_on=["clickhouse/test-base"],
     ),
     Docker.Config(
         name="clickhouse/cctools",
@@ -107,16 +107,10 @@ DOCKERS = [
         depends_on=["clickhouse/fasttest"],
     ),
     Docker.Config(
-        name="clickhouse/test-util",
-        path="./ci/docker/test-util",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
-    Docker.Config(
         name="clickhouse/test-base",
         path="./ci/docker/test-base",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-util"],
+        depends_on=[],
     ),
     Docker.Config(
         name="clickhouse/stress-test",
@@ -138,13 +132,13 @@ DOCKERS = [
     ),
     Docker.Config(
         name="clickhouse/keeper-jepsen-test",
-        path="./ci/docker/keeper-jepsen",
+        path="./ci/docker/keeper-jepsen-test",
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/test-base"],
     ),
     Docker.Config(
         name="clickhouse/server-jepsen-test",
-        path="./ci/docker/server-jepsen",
+        path="./ci/docker/server-jepsen-test",
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/test-base"],
     ),
@@ -154,12 +148,6 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/test-base"],
     ),
-    # Docker.Config(
-    #     name="clickhouse/integration-test",
-    #     path="./ci/docker/integration/integration-test",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=[],
-    # ),
     Docker.Config(
         name="clickhouse/integration-tests-runner",
         path="./ci/docker/integration/runner",
@@ -169,6 +157,12 @@ DOCKERS = [
     Docker.Config(
         name="clickhouse/integration-test-with-unity-catalog",
         path="./ci/docker/integration/clickhouse_with_unity_catalog",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/integration-test-with-hms",
+        path="./ci/docker/integration/clickhouse_with_hms_catalog",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
@@ -342,7 +336,7 @@ class ArtifactNames:
     CH_ARM_ASAN = "CH_ARM_ASAN"
 
     CH_COV_BIN = "CH_COV_BIN"
-    CH_ARM_BIN = "CH_ARM_BIN"
+    CH_ARM_BINARY = "CH_ARM_BIN"
     CH_TIDY_BIN = "CH_TIDY_BIN"
     CH_AMD_DARWIN_BIN = "CH_AMD_DARWIN_BIN"
     CH_ARM_DARWIN_BIN = "CH_ARM_DARWIN_BIN"
@@ -354,16 +348,6 @@ class ArtifactNames:
     CH_RISCV64 = "CH_RISCV64_BIN"
     CH_S390X = "CH_S390X_BIN"
     CH_LOONGARCH64 = "CH_LOONGARCH64_BIN"
-
-    LEXER_AMD_DEBUG = "LEXER_AMD_DEBUG"
-    LEXER_AMD_ASAN = "LEXER_AMD_ASAN"
-    LEXER_AMD_TSAN = "LEXER_AMD_TSAN"
-    LEXER_AMD_MSAN = "LEXER_AMD_MSAN"
-    LEXER_AMD_UBSAN = "LEXER_AMD_UBSAN"
-    LEXER_AMD_BINARY = "LEXER_AMD_BINARY"
-    LEXER_ARM_ASAN = "LEXER_ARM_ASAN"
-    LEXER_ARM_BIN = "LEXER_ARM_BIN"
-    LEXER_COV_BIN = "LEXER_COV_BIN"
 
     FAST_TEST = "FAST_TEST"
     UNITTEST_AMD_ASAN = "UNITTEST_AMD_ASAN"
@@ -390,18 +374,6 @@ class ArtifactNames:
     FUZZERS = "FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
 
-    PERF_REPORTS_AMD_1 = "PERF_REPORTS_AMD_1"
-    PERF_REPORTS_AMD_2 = "PERF_REPORTS_AMD_2"
-    PERF_REPORTS_AMD_3 = "PERF_REPORTS_AMD_3"
-    PERF_REPORTS_ARM_1 = "PERF_REPORTS_ARM_1"
-    PERF_REPORTS_ARM_2 = "PERF_REPORTS_ARM_2"
-    PERF_REPORTS_ARM_3 = "PERF_REPORTS_ARM_3"
-    PERF_REPORTS_AMD_1_WITH_RELEASE = "PERF_REPORTS_AMD_1_WITH_RELEASE"
-    PERF_REPORTS_AMD_2_WITH_RELEASE = "PERF_REPORTS_AMD_2_WITH_RELEASE"
-    PERF_REPORTS_AMD_3_WITH_RELEASE = "PERF_REPORTS_AMD_3_WITH_RELEASE"
-
-    PERF_REPORTS_ARM = "PERF_REPORTS_ARM"
-
 
 class ArtifactConfigs:
     clickhouse_binaries = Artifact.Config(
@@ -420,7 +392,7 @@ class ArtifactConfigs:
             ArtifactNames.CH_ARM_RELEASE,
             ArtifactNames.CH_ARM_ASAN,
             ArtifactNames.CH_COV_BIN,
-            ArtifactNames.CH_ARM_BIN,
+            ArtifactNames.CH_ARM_BINARY,
             ArtifactNames.CH_TIDY_BIN,
             ArtifactNames.CH_AMD_DARWIN_BIN,
             ArtifactNames.CH_ARM_DARWIN_BIN,
@@ -432,23 +404,6 @@ class ArtifactConfigs:
             ArtifactNames.CH_RISCV64,
             ArtifactNames.CH_S390X,
             ArtifactNames.CH_LOONGARCH64,
-        ]
-    )
-    lexer_test = Artifact.Config(
-        name="...",
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/programs/lexer_test",
-    ).parametrize(
-        names=[
-            ArtifactNames.LEXER_AMD_DEBUG,
-            ArtifactNames.LEXER_AMD_ASAN,
-            ArtifactNames.LEXER_AMD_TSAN,
-            ArtifactNames.LEXER_AMD_MSAN,
-            ArtifactNames.LEXER_AMD_UBSAN,
-            ArtifactNames.LEXER_AMD_BINARY,
-            ArtifactNames.LEXER_ARM_ASAN,
-            ArtifactNames.LEXER_ARM_BIN,
-            ArtifactNames.LEXER_COV_BIN,
         ]
     )
     clickhouse_debians = Artifact.Config(
@@ -514,21 +469,4 @@ class ArtifactConfigs:
         name=ArtifactNames.FUZZERS_CORPUS,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/programs/*_seed_corpus.zip",
-    )
-    performance_reports = Artifact.Config(
-        name="*",
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/perf_wd/*.html",
-    ).parametrize(
-        names=[
-            ArtifactNames.PERF_REPORTS_AMD_1,
-            ArtifactNames.PERF_REPORTS_AMD_2,
-            ArtifactNames.PERF_REPORTS_AMD_3,
-            ArtifactNames.PERF_REPORTS_ARM_1,
-            ArtifactNames.PERF_REPORTS_ARM_2,
-            ArtifactNames.PERF_REPORTS_ARM_3,
-            ArtifactNames.PERF_REPORTS_AMD_1_WITH_RELEASE,
-            ArtifactNames.PERF_REPORTS_AMD_2_WITH_RELEASE,
-            ArtifactNames.PERF_REPORTS_AMD_3_WITH_RELEASE,
-        ]
     )
