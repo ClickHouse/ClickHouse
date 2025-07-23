@@ -69,7 +69,7 @@ public:
         const FormatSettings & format_settings_,
         bool use_prefetch_,
         size_t min_bytes_for_seek_,
-        FormatFilterInfoPtr filter_info_);
+        FormatFilterInfoPtr format_filter_info_);
 
     String getName() const override { return "ORCBlockInputFormat"; }
 
@@ -110,7 +110,7 @@ private:
     const std::unordered_set<int> & skip_stripes;
     const bool use_prefetch;
     const size_t min_bytes_for_seek;
-    FormatFilterInfoPtr filter_info;
+    FormatFilterInfoPtr format_filter_info;
 
     std::vector<int> selected_stripes;
     size_t read_iterator;

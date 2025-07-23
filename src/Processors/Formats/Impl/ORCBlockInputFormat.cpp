@@ -209,7 +209,7 @@ void registerInputFormatORC(FormatFactory & factory)
            const ReadSettings & read_settings,
            bool is_remote_fs,
            FormatParserSharedResourcesPtr,
-           FormatFilterInfoPtr filter_info)
+           FormatFilterInfoPtr format_filter_info)
         {
             InputFormatPtr res;
             if (settings.orc.use_fast_decoder)
@@ -220,7 +220,7 @@ void registerInputFormatORC(FormatFactory & factory)
                     && seekable_in->checkIfActuallySeekable() && seekable_in->supportsReadAt() && settings.seekable_read;
                 const size_t min_bytes_for_seek = use_prefetch ? read_settings.remote_read_min_bytes_for_seek : 0;
                 res = std::make_shared<NativeORCBlockInputFormat>(
-                    buf, std::make_shared<const Block>(sample), settings, use_prefetch, min_bytes_for_seek, filter_info);
+                    buf, std::make_shared<const Block>(sample), settings, use_prefetch, min_bytes_for_seek, format_filter_info);
             }
             else
                 res = std::make_shared<ORCBlockInputFormat>(buf, std::make_shared<const Block>(sample), settings);

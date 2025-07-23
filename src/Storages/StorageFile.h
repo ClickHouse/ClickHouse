@@ -258,7 +258,7 @@ private:
         std::unique_ptr<ReadBuffer> read_buf_,
         bool need_only_count_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
-        FormatFilterInfoPtr filter_info_);
+        FormatFilterInfoPtr format_filter_info_);
 
     /**
       * If specified option --rename_files_after_processing and files created by TableFunctionFile
@@ -296,7 +296,7 @@ private:
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
     FormatParserSharedResourcesPtr parser_shared_resources;
-    FormatFilterInfoPtr filter_info;
+    FormatFilterInfoPtr format_filter_info;
 
     std::shared_ptr<IArchiveReader> archive_reader;
     std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;

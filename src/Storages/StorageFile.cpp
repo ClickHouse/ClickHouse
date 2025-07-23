@@ -1211,14 +1211,14 @@ StorageFileSource::StorageFileSource(
     std::unique_ptr<ReadBuffer> read_buf_,
     bool need_only_count_,
     FormatParserSharedResourcesPtr parser_shared_resources_,
-    FormatFilterInfoPtr filter_info_)
+    FormatFilterInfoPtr format_filter_info_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , WithContext(context_)
     , storage(std::move(storage_))
     , files_iterator(std::move(files_iterator_))
     , read_buf(std::move(read_buf_))
     , parser_shared_resources(std::move(parser_shared_resources_))
-    , filter_info(std::move(filter_info_))
+    , format_filter_info(std::move(format_filter_info_))
     , columns_description(info.columns_description)
     , requested_columns(info.requested_columns)
     , requested_virtual_columns(info.requested_virtual_columns)
@@ -1450,7 +1450,7 @@ Chunk StorageFileSource::generate()
                 max_block_size,
                 storage->format_settings,
                 parser_shared_resources,
-                filter_info,
+                format_filter_info,
                 /*is_remote_fs=*/false,
                 CompressionMethod::None,
                 need_only_count);
@@ -1512,7 +1512,7 @@ Chunk StorageFileSource::generate()
             finished_generate = true;
 
         if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && (!filter_info || !filter_info->hasFilter()))
+            && (!format_filter_info || !format_filter_info->hasFilter()))
             addNumRowsToCache(current_path, total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -1706,7 +1706,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         progress_callback(FileProgress(0, storage->total_bytes_to_read));
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(ctx->getSettingsRef(), num_streams);
-    auto filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, ctx, nullptr);
+    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, ctx, nullptr);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -1727,7 +1727,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             std::move(read_buffer),
             need_only_count,
             parser_shared_resources,
-            filter_info);
+            format_filter_info);
 
         pipes.emplace_back(std::move(source));
     }

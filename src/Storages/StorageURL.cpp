@@ -1257,7 +1257,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     pipes.reserve(num_streams);
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_streams);
-    auto filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, context, nullptr);
+    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, context, nullptr);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -1274,7 +1274,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
             getHTTPTimeouts(context),
             storage->compression_method,
             parser_shared_resources,
-            filter_info,
+            format_filter_info,
             storage->headers,
             read_uri_params,
             is_url_with_globs,
