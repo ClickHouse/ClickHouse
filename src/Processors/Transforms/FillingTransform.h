@@ -20,7 +20,7 @@ class FillingTransform : public ISimpleTransform
 {
 public:
     FillingTransform(
-        const Block & header_,
+        SharedHeader header_,
         const SortDescription & sort_description_,
         const SortDescription & fill_description_,
         InterpolateDescriptionPtr interpolate_description_,
@@ -105,8 +105,8 @@ private:
 class FillingNoopTransform : public ISimpleTransform
 {
 public:
-    FillingNoopTransform(const Block & header, const SortDescription & sort_description_)
-        : ISimpleTransform(header, FillingTransform::transformHeader(header, sort_description_), true)
+    FillingNoopTransform(SharedHeader header, const SortDescription & sort_description_)
+        : ISimpleTransform(header, std::make_shared<const Block>(FillingTransform::transformHeader(*header, sort_description_)), true)
     {
     }
 

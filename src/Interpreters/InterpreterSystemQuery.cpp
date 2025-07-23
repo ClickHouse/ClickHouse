@@ -1,76 +1,80 @@
-#include <Interpreters/InterpreterFactory.h>
-#include <Interpreters/InterpreterSystemQuery.h>
-#include <Common/DNSResolver.h>
-#include <Common/ActionLock.h>
-#include <Common/typeid_cast.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
-#include <Common/SymbolIndex.h>
-#include <Common/ThreadPool.h>
-#include <Common/escapeForFileName.h>
-#include <Common/ShellCommand.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/FailPoint.h>
-#include <Common/PageCache.h>
-#include <Common/HostResolvePool.h>
+#include <algorithm>
+#include <csignal>
+#include <filesystem>
+#include <unistd.h>
+#include <Access/AccessControl.h>
+#include <Access/Common/AllowedClientHosts.h>
+#include <Access/ContextAccess.h>
+#include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <DataTypes/DataTypeString.h>
+#include <Databases/DatabaseReplicated.h>
+#include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Formats/FormatSchemaInfo.h>
+#include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
+#include <IO/SharedThreadPools.h>
+#include <Interpreters/ActionLocksManager.h>
+#include <Interpreters/AsynchronousInsertLog.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
+#include <Interpreters/AsynchronousMetricLog.h>
+#include <Interpreters/BackupLog.h>
 #include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/ExternalDictionariesLoader.h>
-#include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
-#include <Interpreters/ActionLocksManager.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/InterpreterSystemQuery.h>
+#include <Interpreters/JIT/CompiledExpressionCache.h>
+#include <Interpreters/MetricLog.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/SessionLog.h>
-#include <Interpreters/TraceLog.h>
 #include <Interpreters/TextLog.h>
-#include <Interpreters/MetricLog.h>
-#include <Interpreters/AsynchronousMetricLog.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Interpreters/ZooKeeperLog.h>
-#include <Interpreters/FilesystemCacheLog.h>
-#include <Interpreters/TransactionsInfoLog.h>
-#include <Interpreters/ProcessorsProfileLog.h>
-#include <Interpreters/AsynchronousInsertLog.h>
-#include <Interpreters/BackupLog.h>
-#include <Interpreters/JIT/CompiledExpressionCache.h>
+#include <Interpreters/TraceLog.h>
 #include <Interpreters/TransactionLog.h>
-#include <Interpreters/AsynchronousInsertQueue.h>
-#include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
-#include <Access/AccessControl.h>
-#include <Access/ContextAccess.h>
-#include <Access/Common/AllowedClientHosts.h>
-#include <Databases/DatabaseReplicated.h>
-#include <DataTypes/DataTypeString.h>
-#include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Storages/StorageDistributed.h>
-#include <Storages/StorageReplicatedMergeTree.h>
+#include <Interpreters/TransactionsInfoLog.h>
+#include <Interpreters/ZooKeeperLog.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSystemQuery.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Storages/Freeze.h>
+#include <Storages/MaterializedView/RefreshTask.h>
+#include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <Storages/ObjectStorage/HDFS/Configuration.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageFile.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageURL.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/S3/Configuration.h>
-#include <Storages/ObjectStorage/HDFS/Configuration.h>
-#include <Storages/ObjectStorage/Azure/Configuration.h>
-#include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
-#include <Parsers/ASTSystemQuery.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTSetQuery.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Common/ThreadFuzzer.h>
 #include <base/coverage.h>
-#include <csignal>
-#include <algorithm>
-#include <unistd.h>
+#include <Common/ActionLock.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/DNSResolver.h>
+#include <Common/FailPoint.h>
+#include <Common/HostResolvePool.h>
+#include <Common/PageCache.h>
+#include <Common/ShellCommand.h>
+#include <Common/SymbolIndex.h>
+#include <Common/ThreadFuzzer.h>
+#include <Common/ThreadPool.h>
+#include <Common/escapeForFileName.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 
 #if USE_PROTOBUF
 #include <Formats/ProtobufSchemas.h>
@@ -125,6 +129,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_DEEP_RECURSION;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace ActionLocks
@@ -532,7 +537,7 @@ BlockIO InterpreterSystemQuery::execute()
             }
 
             size_t num_rows = res_columns[0]->size();
-            auto source = std::make_shared<SourceFromSingleChunk>(sample_block, Chunk(std::move(res_columns), num_rows));
+            auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(sample_block)), Chunk(std::move(res_columns), num_rows));
             result.pipeline = QueryPipeline(std::move(source));
             break;
         }
@@ -578,13 +583,30 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_FORMAT_SCHEMA_CACHE);
             std::unordered_set<String> caches_to_drop;
             if (query.schema_cache_format.empty())
-                caches_to_drop = {"Protobuf"};
+                caches_to_drop = {"Protobuf", "Files"};
             else
                 caches_to_drop = {query.schema_cache_format};
 #if USE_PROTOBUF
             if (caches_to_drop.contains("Protobuf"))
                 ProtobufSchemas::instance().clear();
 #endif
+            if (caches_to_drop.contains("Files"))
+            {
+                fs::path format_schema_cached_dir = fs::path(system_context->getFormatSchemaPath()) / FormatSchemaInfo::CACHE_DIR_NAME;
+                if (fs::exists(format_schema_cached_dir))
+                {
+                    size_t count = 0;
+                    for (const auto & entry : fs::directory_iterator(format_schema_cached_dir))
+                    {
+                        if (entry.is_regular_file())
+                        {
+                            fs::remove(entry.path());
+                            count++;
+                        }
+                    }
+                    LOG_INFO(log, "Cleared format schema cache files {}", count);
+                }
+            }
             break;
         }
         case Type::RELOAD_DICTIONARY:
@@ -642,9 +664,13 @@ BlockIO InterpreterSystemQuery::execute()
             system_context->getEmbeddedDictionaries().reload();
             break;
         case Type::RELOAD_CONFIG:
+        {
+            if (system_context->getApplicationType() == Context::ApplicationType::LOCAL)
+                throw Exception::createDeprecated("SYSTEM RELOAD CONFIG query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_CONFIG);
             system_context->reloadConfig();
             break;
+        }
         case Type::RELOAD_USERS:
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_USERS);
             system_context->getAccessControl().reload(AccessControl::ReloadMode::ALL);
@@ -774,6 +800,9 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::RESTORE_REPLICA:
             restoreReplica();
             break;
+        case Type::RESTORE_DATABASE_REPLICA:
+            restoreDatabaseReplica(query);
+            break;
         case Type::WAIT_LOADING_PARTS:
             waitLoadingParts();
             break;
@@ -787,13 +816,21 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         }
         case Type::STOP_LISTEN:
+        {
+            if (system_context->getApplicationType() == Context::ApplicationType::LOCAL)
+                throw Exception::createDeprecated("SYSTEM STOP LISTEN query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
             getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
             getContext()->stopServers(query.server_type);
             break;
+        }
         case Type::START_LISTEN:
+        {
+            if (system_context->getApplicationType() == Context::ApplicationType::LOCAL)
+                throw Exception::createDeprecated("SYSTEM START LISTEN query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
             getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
             getContext()->startServers(query.server_type);
             break;
+        }
         case Type::FLUSH_ASYNC_INSERT_QUEUE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE);
@@ -919,6 +956,24 @@ void InterpreterSystemQuery::restoreReplica()
         false);
 }
 
+void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)
+{
+    const String database_name = query.getDatabase();
+    getContext()->checkAccess(AccessType::SYSTEM_RESTORE_DATABASE_REPLICA, database_name);
+
+    const auto db_ptr = DatabaseCatalog::instance().getDatabase(database_name);
+
+    auto* replicated_db = dynamic_cast<DatabaseReplicated*>(db_ptr.get());
+    if (!replicated_db)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated", database_name);
+    }
+
+    replicated_db->restoreDatabaseMetadataInKeeper(getContext());
+
+    LOG_TRACE(log, "Replicated database {} was restored.", database_name);
+}
+
 StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool throw_on_error)
 {
     LOG_TRACE(log, "Restarting replica {}", replica);
@@ -974,13 +1029,28 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
     auto data_path = database->getTableDataPath(create);
 
-    auto new_table = StorageFactory::instance().get(create,
-        data_path,
-        system_context,
-        system_context->getGlobalContext(),
-        columns,
-        constraints,
-        LoadingStrictnessLevel::ATTACH);
+    StoragePtr new_table;
+    while (true)
+    {
+        try
+        {
+            new_table = StorageFactory::instance().get(create,
+                data_path,
+                system_context,
+                system_context->getGlobalContext(),
+                columns,
+                constraints,
+                LoadingStrictnessLevel::ATTACH);
+
+            break;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                getLogger("InterpreterSystemQuery"),
+                fmt::format("Failed to restart replica {}, will retry", replica.getNameForLogs()));
+        }
+    }
 
     database->attachTable(system_context, replica.table_name, new_table, data_path);
     if (new_table->getStorageID().uuid != replica_table_id.uuid)
@@ -1004,9 +1074,19 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 
     auto access = getContext()->getAccess();
     bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_RESTART_REPLICA);
+    bool show_tables_is_granted_globally = access->isGranted(AccessType::SHOW_TABLES);
 
     for (auto & elem : catalog.getDatabases())
     {
+        if (!elem.second->canContainMergeTreeTables())
+            continue;
+
+        if (!access_is_granted_globally && !show_tables_is_granted_globally && !access->isGranted(AccessType::SHOW_TABLES, elem.first))
+        {
+            LOG_INFO(log, "Access {} denied, skipping {}", "SHOW TABLES", elem.first);
+            continue;
+        }
+
         for (auto it = elem.second->getTablesIterator(getContext()); it->isValid(); it->next())
         {
             if (dynamic_cast<const StorageReplicatedMergeTree *>(it->table().get()))
@@ -1492,7 +1572,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
-        case Type::DROP_DISTRIBUTED_CACHE_CONNECTIONS:
         case Type::DROP_DISTRIBUTED_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
         case Type::DROP_PAGE_CACHE:
@@ -1675,6 +1754,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RESTORE_REPLICA:
         {
             required_access.emplace_back(AccessType::SYSTEM_RESTORE_REPLICA, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::RESTORE_DATABASE_REPLICA:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RESTORE_DATABASE_REPLICA, query.getDatabase());
             break;
         }
         case Type::SYNC_REPLICA:

@@ -40,3 +40,23 @@ SELECT
 FROM numbers(1);
 
 SELECT CASE number WHEN 1 THEN number + 2 ELSE number * 2 END FROM numbers(3);
+
+SELECT   caseWithExpression(
+    materialize(
+        materialize(NULL)
+    ),
+    materialize(NULL),
+    NULL,
+    NULL
+);
+
+SELECT caseWithExpression(
+    materialize(
+        assumeNotNull(
+            materialize(NULL)
+        )
+    ),
+    materialize(NULL),
+    NULL,
+    NULL
+); -- { serverError ILLEGAL_COLUMN }

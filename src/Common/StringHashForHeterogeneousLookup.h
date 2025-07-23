@@ -21,6 +21,11 @@ struct StringHashForHeterogeneousLookup
         return hash_type()(str);
     }
 
+    auto operator()(const StringRef str) const
+    {
+        return hash_type()(str.toView());
+    }
+
     auto operator()(const char * data) const
     {
         return hash_type()(data);

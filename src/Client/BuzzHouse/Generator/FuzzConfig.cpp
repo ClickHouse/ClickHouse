@@ -23,7 +23,8 @@ static std::optional<ServerCredentials> loadServerCredentials(
 {
     uint32_t port = default_port;
     uint32_t mysql_port = default_mysql_port;
-    String hostname = "localhost";
+    String client_hostname = "localhost";
+    String server_hostname = "localhost";
     String container;
     String unix_socket;
     String user = "test";
@@ -33,7 +34,8 @@ static std::optional<ServerCredentials> loadServerCredentials(
     std::filesystem::path query_log_file = std::filesystem::temp_directory_path() / (sname + ".sql");
 
     static const SettingEntries configEntries
-        = {{"hostname", [&](const JSONObjectType & value) { hostname = String(value.getString()); }},
+        = {{"client_hostname", [&](const JSONObjectType & value) { client_hostname = String(value.getString()); }},
+           {"server_hostname", [&](const JSONObjectType & value) { server_hostname = String(value.getString()); }},
            {"container", [&](const JSONObjectType & value) { container = String(value.getString()); }},
            {"port", [&](const JSONObjectType & value) { port = static_cast<uint32_t>(value.getUInt64()); }},
            {"mysql_port", [&](const JSONObjectType & value) { mysql_port = static_cast<uint32_t>(value.getUInt64()); }},
@@ -55,8 +57,18 @@ static std::optional<ServerCredentials> loadServerCredentials(
         configEntries.at(nkey)(value);
     }
 
-    return std::optional<ServerCredentials>(
-        ServerCredentials(hostname, container, port, mysql_port, unix_socket, user, password, database, user_files_dir, query_log_file));
+    return std::optional<ServerCredentials>(ServerCredentials(
+        client_hostname,
+        server_hostname,
+        container,
+        port,
+        mysql_port,
+        unix_socket,
+        user,
+        password,
+        database,
+        user_files_dir,
+        query_log_file));
 }
 
 static PerformanceMetric
@@ -85,6 +97,59 @@ loadPerformanceMetric(const JSONParserImpl::Element & jobj, const uint32_t defau
     return PerformanceMetric(enabled, threshold, minimum);
 }
 
+static std::function<void(const JSONObjectType &)>
+parseDisabledOptions(uint64_t & res, const String & text, const std::unordered_map<std::string_view, uint64_t> & entries)
+{
+    return [&](const JSONObjectType & value)
+    {
+        using std::operator""sv;
+        constexpr auto delim{","sv};
+        String input = String(value.getString());
+        std::transform(input.begin(), input.end(), input.begin(), ::tolower);
+
+        for (const auto word : std::views::split(input, delim))
+        {
+            const auto & entry = std::string_view(word);
+
+            if (entries.find(entry) == entries.end())
+            {
+                throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown type option for {}: {}", text, String(entry));
+            }
+            res &= (~entries.at(entry));
+        }
+    };
+}
+
+static std::function<void(const JSONObjectType &)> parseErrorCodes(std::unordered_set<uint32_t> & res)
+{
+    return [&](const JSONObjectType & value)
+    {
+        using std::operator""sv;
+        constexpr auto delim{","sv};
+
+        for (const auto word : std::views::split(String(value.getString()), delim))
+        {
+            uint32_t result;
+            const auto & sv = std::string_view(word);
+            auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), result);
+
+            if (ec == std::errc::invalid_argument)
+            {
+                throw std::invalid_argument("Not a valid number for an error code");
+            }
+            else if (ec == std::errc::result_out_of_range)
+            {
+                throw std::out_of_range("Number out of range for uint32_t");
+            }
+            else if (ptr != sv.data() + sv.size())
+            {
+                throw std::invalid_argument("Invalid characters in input");
+            }
+            res.insert(result);
+        }
+    };
+}
+
 FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
     : cb(c)
     , log(getLogger("BuzzHouse"))
@@ -103,6 +168,66 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
     {
         throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Parsed BuzzHouse JSON configuration file is not an object");
     }
+
+    static const std::unordered_map<std::string_view, uint64_t> type_entries
+        = {{"bool", allow_bool},          {"uint", allow_unsigned_int},
+           {"int8", allow_int8},          {"int64", allow_int64},
+           {"int128", allow_int128},      {"float", allow_floating_points},
+           {"date", allow_dates},         {"date32", allow_date32},
+           {"time", allow_time},          {"time64", allow_time64},
+           {"datetime", allow_datetimes}, {"datetime64", allow_datetime64},
+           {"string", allow_strings},     {"decimal", allow_decimals},
+           {"uuid", allow_uuid},          {"enum", allow_enum},
+           {"dynamic", allow_dynamic},    {"json", allow_JSON},
+           {"nullable", allow_nullable},  {"lcard", allow_low_cardinality},
+           {"array", allow_array},        {"map", allow_map},
+           {"tuple", allow_tuple},        {"variant", allow_variant},
+           {"nested", allow_nested},      {"ipv4", allow_ipv4},
+           {"ipv6", allow_ipv6},          {"geo", allow_geo}};
+
+    static const std::unordered_map<std::string_view, uint64_t> engine_entries
+        = {{"replacingmergetree", allow_replacing_mergetree},
+           {"coalescingmergetree", allow_coalescing_mergetree},
+           {"summingmergetree", allow_summing_mergetree},
+           {"aggregatingmergetree", allow_aggregating_mergetree},
+           {"collapsingmergetree", allow_collapsing_mergetree},
+           {"versionedcollapsingmergetree", allow_versioned_collapsing_mergetree},
+           {"file", allow_file},
+           {"null", allow_null},
+           {"set", allow_setengine},
+           {"join", allow_join},
+           {"memory", allow_memory},
+           {"stripelog", allow_stripelog},
+           {"log", allow_log},
+           {"tinylog", allow_tinylog},
+           {"embeddedrocksdb", allow_embedded_rocksdb},
+           {"buffer", allow_buffer},
+           {"mysql", allow_mysql},
+           {"postgresql", allow_postgresql},
+           {"sqlite", allow_sqlite},
+           {"mongodb", allow_mongodb},
+           {"redis", allow_redis},
+           {"s3", allow_S3},
+           {"s3queue", allow_S3queue},
+           {"hudi", allow_hudi},
+           {"deltalakes3", allow_deltalakeS3},
+           {"deltalakeazure", allow_deltalakeAzure},
+           {"deltalakelocal", allow_deltalakelocal},
+           {"icebergs3", allow_icebergS3},
+           {"icebergazure", allow_icebergAzure},
+           {"iceberglocal", allow_icebergLocal},
+           {"merge", allow_merge},
+           {"distributed", allow_distributed},
+           {"dictionary", allow_dictionary},
+           {"generaterandom", allow_generaterandom},
+           {"azureblobstorage", allow_AzureBlobStorage},
+           {"azurequeue", allow_AzureQueue},
+           {"url", allow_URL},
+           {"keepermap", allow_keepermap},
+           {"externaldistributed", allow_external_distributed},
+           {"materializedpostgresql", allow_materialized_postgresql},
+           {"replicated", allow_replicated},
+           {"shared", allow_shared}};
 
     static const SettingEntries configEntries = {
         {"client_file_path",
@@ -130,6 +255,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"max_insert_rows", [&](const JSONObjectType & value) { max_insert_rows = std::max(UINT64_C(1), value.getUInt64()); }},
         {"min_nested_rows", [&](const JSONObjectType & value) { min_nested_rows = value.getUInt64(); }},
         {"max_nested_rows", [&](const JSONObjectType & value) { max_nested_rows = value.getUInt64(); }},
+        {"min_string_length", [&](const JSONObjectType & value) { min_string_length = static_cast<uint32_t>(value.getUInt64()); }},
+        {"max_string_length", [&](const JSONObjectType & value) { max_string_length = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_depth", [&](const JSONObjectType & value) { max_depth = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
         {"max_width", [&](const JSONObjectType & value) { max_width = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
         {"max_columns", [&](const JSONObjectType & value) { max_columns = std::max(UINT64_C(1), value.getUInt64()); }},
@@ -158,6 +285,9 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"time_to_sleep_between_reconnects",
          [&](const JSONObjectType & value)
          { time_to_sleep_between_reconnects = std::max(UINT32_C(1000), static_cast<uint32_t>(value.getUInt64())); }},
+        {"enable_fault_injection_settings", [&](const JSONObjectType & value) { enable_fault_injection_settings = value.getBool(); }},
+        {"enable_force_settings", [&](const JSONObjectType & value) { enable_force_settings = value.getBool(); }},
+        {"disable_new_analyzer", [&](const JSONObjectType & value) { disable_new_analyzer = value.getBool(); }},
         {"clickhouse", [&](const JSONObjectType & value) { clickhouse_server = loadServerCredentials(value, "clickhouse", 9004, 9005); }},
         {"mysql", [&](const JSONObjectType & value) { mysql_server = loadServerCredentials(value, "mysql", 3306, 3306); }},
         {"postgresql", [&](const JSONObjectType & value) { postgresql_server = loadServerCredentials(value, "postgresql", 5432); }},
@@ -167,83 +297,10 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"minio", [&](const JSONObjectType & value) { minio_server = loadServerCredentials(value, "minio", 9000); }},
         {"http", [&](const JSONObjectType & value) { http_server = loadServerCredentials(value, "http", 80); }},
         {"azurite", [&](const JSONObjectType & value) { azurite_server = loadServerCredentials(value, "azurite", 0); }},
-        {"disabled_types",
-         [&](const JSONObjectType & value)
-         {
-             using std::operator""sv;
-             constexpr auto delim{","sv};
-             String input = String(value.getString());
-             std::transform(input.begin(), input.end(), input.begin(), ::tolower);
-
-             static const std::unordered_map<std::string_view, uint32_t> type_entries
-                 = {{"bool", allow_bool},
-                    {"uint", allow_unsigned_int},
-                    {"int8", allow_int8},
-                    {"int64", allow_int64},
-                    {"int128", allow_int128},
-                    {"float", allow_floating_points},
-                    {"date", allow_dates},
-                    {"date32", allow_date32},
-                    {"time", allow_time},
-                    {"time64", allow_time64},
-                    {"datetime", allow_datetimes},
-                    {"datetime64", allow_datetime64},
-                    {"string", allow_strings},
-                    {"decimal", allow_decimals},
-                    {"uuid", allow_uuid},
-                    {"enum", allow_enum},
-                    {"uuid", allow_uuid},
-                    {"dynamic", allow_dynamic},
-                    {"json", allow_JSON},
-                    {"nullable", allow_nullable},
-                    {"lcard", allow_low_cardinality},
-                    {"array", allow_array},
-                    {"map", allow_map},
-                    {"tuple", allow_tuple},
-                    {"variant", allow_variant},
-                    {"nested", allow_nested},
-                    {"ipv4", allow_ipv4},
-                    {"ipv6", allow_ipv6},
-                    {"geo", allow_geo}};
-
-             for (const auto word : std::views::split(input, delim))
-             {
-                 const auto & entry = std::string_view(word);
-
-                 if (type_entries.find(entry) == type_entries.end())
-                 {
-                     throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown type option for disabled_types: {}", String(entry));
-                 }
-                 type_mask &= (~type_entries.at(entry));
-             }
-         }},
-        {"disallowed_error_codes",
-         [&](const JSONObjectType & value)
-         {
-             using std::operator""sv;
-             constexpr auto delim{","sv};
-
-             for (const auto word : std::views::split(String(value.getString()), delim))
-             {
-                 uint32_t result;
-                 const auto & sv = std::string_view(word);
-                 auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), result);
-
-                 if (ec == std::errc::invalid_argument)
-                 {
-                     throw std::invalid_argument("Not a valid number for an error code");
-                 }
-                 else if (ec == std::errc::result_out_of_range)
-                 {
-                     throw std::out_of_range("Number out of range for uint32_t");
-                 }
-                 else if (ptr != sv.data() + sv.size())
-                 {
-                     throw std::invalid_argument("Invalid characters in input");
-                 }
-                 disallowed_error_codes.insert(result);
-             }
-         }}};
+        {"disabled_types", parseDisabledOptions(type_mask, "disabled_types", type_entries)},
+        {"disabled_engines", parseDisabledOptions(engine_mask, "disabled_engines", engine_entries)},
+        {"disallowed_error_codes", parseErrorCodes(disallowed_error_codes)},
+        {"oracle_ignore_error_codes", parseErrorCodes(oracle_ignore_error_codes)}};
 
     for (const auto [key, value] : object.getObject())
     {
@@ -270,6 +327,14 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
             "min_nested_rows value ({}) is higher than max_nested_rows value ({})",
             min_nested_rows,
             max_nested_rows);
+    }
+    if (min_string_length > max_string_length)
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::BUZZHOUSE,
+            "min_string_length value ({}) is higher than max_string_length value ({})",
+            min_string_length,
+            max_string_length);
     }
     for (const auto & entry : std::views::values(metrics))
     {
@@ -415,7 +480,46 @@ bool FuzzConfig::tableHasPartitions(const bool detached, const String & database
     return false;
 }
 
-String FuzzConfig::tableGetRandomPartitionOrPart(const bool detached, const bool partition, const String & database, const String & table)
+bool FuzzConfig::hasMutations()
+{
+    String buf;
+
+    if (processServerQuery(
+            false,
+            fmt::format(
+                R"(SELECT count() FROM "system"."mutations" INTO OUTFILE '{}' TRUNCATE FORMAT CSV;)", fuzz_server_out.generic_string())))
+    {
+        std::ifstream infile(fuzz_client_out);
+        if (std::getline(infile, buf))
+        {
+            return !buf.empty() && buf[0] != '0';
+        }
+    }
+    return false;
+}
+
+String FuzzConfig::getRandomMutation(const uint64_t rand_val)
+{
+    String res;
+
+    /// The system.mutations table doesn't support sampling, so pick up a random part with a window function
+    if (processServerQuery(
+            false,
+            fmt::format(
+                "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"mutation_id\" AS y FROM \"system\".\"mutations\") as z "
+                "WHERE z.x = (SELECT {} % max2(count(), 1) FROM \"system\".\"mutations\") INTO OUTFILE '{}' TRUNCATE "
+                "FORMAT RawBlob;",
+                rand_val,
+                fuzz_server_out.generic_string())))
+    {
+        std::ifstream infile(fuzz_client_out, std::ios::in);
+        std::getline(infile, res);
+    }
+    return res;
+}
+
+String FuzzConfig::tableGetRandomPartitionOrPart(
+    const uint64_t rand_val, const bool detached, const bool partition, const String & database, const String & table)
 {
     String res;
     const String & detached_tbl = detached ? "detached_parts" : "parts";
@@ -426,7 +530,7 @@ String FuzzConfig::tableGetRandomPartitionOrPart(const bool detached, const bool
             true,
             fmt::format(
                 "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"{}\" AS y FROM \"system\".\"{}\" WHERE {}\"table\" = '{}' AND "
-                "\"partition_id\" != 'all') AS z WHERE z.x = (SELECT rand() % (max2(count(), 1)::Int) FROM \"system\".\"{}\" WHERE "
+                "\"partition_id\" != 'all') AS z WHERE z.x = (SELECT {} % max2(count(), 1) FROM \"system\".\"{}\" WHERE "
                 "{}\"table\" "
                 "= "
                 "'{}') INTO OUTFILE '{}' TRUNCATE FORMAT RawBlob;",
@@ -434,6 +538,7 @@ String FuzzConfig::tableGetRandomPartitionOrPart(const bool detached, const bool
                 detached_tbl,
                 db_clause,
                 table,
+                rand_val,
                 detached_tbl,
                 db_clause,
                 table,
