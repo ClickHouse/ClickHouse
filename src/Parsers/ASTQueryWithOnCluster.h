@@ -1,9 +1,7 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IParser.h>
-#include <base/defines.h>
 
 namespace DB
 {
