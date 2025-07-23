@@ -196,6 +196,55 @@ class ClickHouseProc:
             "10000"
         )
 
+    def clickbench_config_tweaks(self):
+        content = """
+profiles:
+    default:
+        allow_introspection_functions: 1
+"""
+        file_path = f"{self.config_path}/users.d/allow_introspection_functions.yaml"
+        with open(file_path, "w") as file:
+            file.write(content)
+        return True
+
+    def fuzzer_config_tweaks(self):
+        # TODO figure out which ones are needed
+        commands = [
+            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml {self.config_path}/users.d",
+            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/allow-nullable-key.xml {self.config_path}/config.d",
+        ]
+
+        c1 = """
+<clickhouse>
+    <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
+</clickhouse>
+"""
+        c2 = """
+<clickhouse>
+    <core_dump>
+        <!-- 100GiB -->
+        <size_limit>107374182400</size_limit>
+    </core_dump>
+    <!-- NOTE: no need to configure core_path,
+    since clickhouse is not started as daemon (via clickhouse start)
+    -->
+    <core_path>$PWD</core_path>
+</clickhouse>
+"""
+        file_path = (
+            f"{self.config_path}/config.d/max_server_memory_usage_to_ram_ratio.xml"
+        )
+        with open(file_path, "w") as file:
+            file.write(c1)
+
+        file_path = f"{self.config_path}/config.d/core.xml"
+        with open(file_path, "w") as file:
+            file.write(c2)
+        res = True
+        for command in commands:
+            res = res and Shell.check(command, verbose=True)
+        return res
+
     def create_log_export_config(self):
         print("Create log export config")
         config_file = Path(self.ch_config_dir) / "config.d" / "system_logs_export.yaml"

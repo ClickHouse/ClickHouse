@@ -16,11 +16,7 @@ def main():
         print("Install ClickHouse")
 
         def install():
-            return (
-                ch.install()
-                and ch.clickbench_config_tweaks()
-                and ch.create_log_export_config()
-            )
+            return ch.clickbench_config_tweaks() and ch.create_log_export_config()
 
         results.append(
             Result.from_commands_run(name="Install ClickHouse", command=install)
@@ -98,7 +94,7 @@ def main():
     )
 
     Result.create_from(
-        results=results, stopwatch=stop_watch, files=[ch.log_file]
+        results=results, stopwatch=stop_watch, files=[ch.prepare_logs()]
     ).complete_job()
 
 
