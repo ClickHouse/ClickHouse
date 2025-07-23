@@ -31,6 +31,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
 
 bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -117,7 +121,11 @@ bool ParserCopyQuery::parseOptions(Pos & pos, std::shared_ptr<ASTCopyQuery> node
     ParserKeyword s_format(Keyword::FORMAT);
 
     if (!s_with.ignore(pos, expected))
-        return false;
+    {
+        while (!pos->isEnd())
+            ++pos;
+        return true;
+    }
 
     if (s_format.ignore(pos, expected))
     {
@@ -130,8 +138,12 @@ bool ParserCopyQuery::parseOptions(Pos & pos, std::shared_ptr<ASTCopyQuery> node
         std::transform(format_name.begin(), format_name.end(), format_name.begin(), [](char c){ return std::tolower(c); });
         if (format->as<ASTIdentifier>()->full_name == "csv")
             node->format = ASTCopyQuery::Formats::CSV;
+        else if (format->as<ASTIdentifier>()->full_name == "tsv")
+            node->format = ASTCopyQuery::Formats::CSV;
         else if (format->as<ASTIdentifier>()->full_name == "binary")
             node->format = ASTCopyQuery::Formats::Binary;
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format from postgresql copy command {}", format->as<ASTIdentifier>()->full_name);
     }
 
     while (!pos->isEnd())

@@ -1,13 +1,12 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTCopyQuery.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 
 namespace DB
 {
 
-void ASTCopyQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTCopyQuery::formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const
 {
-    ostr << (settings.hilite ? hilite_alias : "");
     ostr << table_name;
 }
 

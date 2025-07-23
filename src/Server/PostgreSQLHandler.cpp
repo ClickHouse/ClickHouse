@@ -12,23 +12,23 @@
 #include <Server/TCPServer.h>
 #include <base/scope_guard.h>
 #include <pcg_random.hpp>
-#include "Common/Exception.h"
-#include "Common/tests/gtest_global_context.h"
+#include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <Common/config_version.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
-#include "Core/PostgreSQLProtocol.h"
-#include "Parsers/ASTCopyQuery.h"
-#include "Parsers/ASTInsertQuery.h"
-#include "Parsers/ParserCopyQuery.h"
-#include "Parsers/ParserInsertQuery.h"
+#include <Core/PostgreSQLProtocol.h>
+#include <Parsers/ASTCopyQuery.h>
+#include <Parsers/ParserCopyQuery.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ParserQuery.h>
 #include <fmt/format.h>
+#include <Formats/FormatFactory.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/Formats/IInputFormat.h>
 
 #if USE_SSL
 #    include <Server/CertificateReloader.h>
@@ -47,6 +47,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool implicit_select;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
 }
 
 namespace ErrorCodes
@@ -426,10 +427,31 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
     if (copy_query_parsed && copy_query_parsed->as<ASTCopyQuery>()->type == ASTCopyQuery::QueryType::COPY_FROM)
     {
         auto * copy_query = copy_query_parsed->as<ASTCopyQuery>();
+        auto query_context = session->makeQueryContext();
+        query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
+        CurrentThread::QueryScope query_scope{query_context};
+
+        auto [ast, io] = executeQuery(fmt::format("INSERT INTO `{}` FROM INFILE 'psql_copy'", copy_query->table_name), query_context, {}, QueryProcessingStage::Enum::Complete);
+        chassert(io.pipeline.pushing());
+        auto executor = std::make_unique<PushingPipelineExecutor>(io.pipeline);
+
+        auto max_insert_block_size = query_context->getSettingsRef()[Setting::max_insert_block_size];
+        String format;
+        switch (copy_query->format)
+        {
+        case ASTCopyQuery::Formats::TSV:
+            format = "TSV";
+            break;
+        case ASTCopyQuery::Formats::CSV:
+            format = "CSV";
+            break;
+        case ASTCopyQuery::Formats::Binary:
+            format = "RowBinary";
+            break;
+        }
 
         message_transport->send(PostgreSQLProtocol::Messaging::CopyInResponse(), true);
-
-        String all_data;
+        executor->start();
         while (true)
         {
             message_transport->flush();
@@ -439,40 +461,29 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
                 std::unique_ptr<PostgreSQLProtocol::Messaging::CopyInData> data_query =
                     message_transport->receive<PostgreSQLProtocol::Messaging::CopyInData>();
 
-                all_data += data_query->query + "\n";
+                ReadBufferFromString buf(data_query->query);
+                auto format_ptr = FormatFactory::instance().getInput(format, buf, io.pipeline.getHeader(), query_context, max_insert_block_size);
+                while (true)
+                {
+                    auto chunk = format_ptr->generate();
+                    if (chunk.empty())
+                        break;
+
+                    executor->push(std::move(chunk));
+                }
             }
             else if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::COPY_COMPLETION)
             {
                 message_transport->receive<PostgreSQLProtocol::Messaging::CopyDone>();
+                executor->finish();
                 break;
             }
             else
             {
+                executor->cancel();
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Received incorrect message type - expected {} or {}, got {}", PostgreSQLProtocol::Messaging::FrontMessageType::COPY_DATA, PostgreSQLProtocol::Messaging::FrontMessageType::COPY_COMPLETION, message_type);
             }
         }
-
-        all_data.pop_back();
-
-        String insert_query;
-        switch (copy_query->format)
-        {
-        case ASTCopyQuery::Formats::TSV:
-            insert_query = fmt::format("INSERT INTO {} FORMAT TSV\n{}", copy_query->table_name, all_data);
-            break;
-        case ASTCopyQuery::Formats::CSV:
-            insert_query = fmt::format("INSERT INTO {} FORMAT CSV\n{}", copy_query->table_name, all_data);
-            break;
-        case ASTCopyQuery::Formats::Binary:
-            insert_query = fmt::format("INSERT INTO {} FORMAT RowBinary\n{}", copy_query->table_name, all_data);
-            break;
-        }
-        auto query_context = session->makeQueryContext();
-        query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
-
-        CurrentThread::QueryScope query_scope{query_context};
-        ReadBufferFromString read_buf(insert_query);
-        executeQuery(read_buf, *out, false, query_context, {});
 
         auto command = PostgreSQLProtocol::Messaging::CommandComplete::Command::COPY;
         message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, 0), true);
