@@ -57,6 +57,8 @@ const std::unordered_set<std::string_view> optional_configuration_keys = {
     "account_key",
     "connection_string",
     "storage_account_url",
+    "client_id",
+    "tenant_id",
 };
 
 void StorageAzureConfiguration::check(ContextPtr context) const
