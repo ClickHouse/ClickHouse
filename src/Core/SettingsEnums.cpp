@@ -327,4 +327,26 @@ IMPLEMENT_SETTING_ENUM(
     {{"lat_lon", GeoToH3ArgumentOrder::LAT_LON},
      {"lon_lat", GeoToH3ArgumentOrder::LON_LAT}})
 
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeObjectSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"v1", MergeTreeObjectSerializationVersion::V1},
+     {"v2", MergeTreeObjectSerializationVersion::V2},
+     {"v3", MergeTreeObjectSerializationVersion::V3}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeObjectSharedDataSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"map", MergeTreeObjectSharedDataSerializationVersion::MAP},
+     {"map_with_buckets", MergeTreeObjectSharedDataSerializationVersion::MAP_WITH_BUCKETS},
+     {"advanced", MergeTreeObjectSharedDataSerializationVersion::ADVANCED}})
+
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeDynamicSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"v1", MergeTreeDynamicSerializationVersion::V1},
+     {"v2", MergeTreeDynamicSerializationVersion::V2},
+     {"v3", MergeTreeDynamicSerializationVersion::V3}})
+
 }
