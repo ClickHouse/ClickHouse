@@ -48,6 +48,8 @@ public:
     static constexpr auto BROKEN_TABLES_SUFFIX = "_broken_tables";
     static constexpr auto BROKEN_REPLICATED_TABLES_SUFFIX = "_broken_replicated_tables";
 
+    using ReplicatedStatus = ReplicatedDatabaseStatus;
+
     DatabaseReplicated(const String & name_, const String & metadata_path_, UUID uuid,
                        const String & zookeeper_path_, const String & shard_name_, const String & replica_name_,
                        DatabaseReplicatedSettings db_settings_,
@@ -91,7 +93,7 @@ public:
 
     const String & getZooKeeperPath() const { return zookeeper_path; }
 
-    void getStatus(ReplicatedDatabaseStatus& response, bool with_zk_fields) const;
+    void getStatus(ReplicatedStatus& response, bool with_zk_fields) const;
 
     /// Returns cluster consisting of database replicas
     ClusterPtr tryGetCluster() const;

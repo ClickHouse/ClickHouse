@@ -185,10 +185,9 @@ String DatabaseReplicated::getFullReplicaName(const String & shard, const String
     return shard + '|' + replica;
 }
 
-void DatabaseReplicated::getStatus(ReplicatedDatabaseStatus& response, const bool with_zk_fields) const
+void DatabaseReplicated::getStatus(ReplicatedStatus & response, const bool with_zk_fields) const
 {
     auto zookeeper = getZooKeeper();
-    // const auto storage_settings_ptr = getSettings();
 
     response.is_readonly = is_readonly;
     response.is_session_expired = !zookeeper || zookeeper->expired();
@@ -202,21 +201,30 @@ void DatabaseReplicated::getStatus(ReplicatedDatabaseStatus& response, const boo
     response.total_replicas = 0;
 
     if (!with_zk_fields || response.is_session_expired)
-    {
         return;
-    }
+
     try
     {
         std::vector<std::string> paths;
 
         paths.push_back(zookeeper_path + "/max_log_ptr");
+        paths.push_back(fs::path(replica_path) / "log_ptr");
 
         auto get_result = zookeeper->tryGet(paths);
+        chassert(get_result.size() == paths.size());
+
         const auto & max_log_pointer_str = get_result[0].data;
         if (get_result[0].error == Coordination::Error::ZNONODE)
             throw zkutil::KeeperException(get_result[0].error);
 
         response.max_log_ptr = max_log_pointer_str.empty() ? 0 : parse<UInt32>(max_log_pointer_str);
+
+        const auto & log_ptr_str = get_result[1].data;
+        if (get_result[1].error == Coordination::Error::ZNONODE)
+            throw zkutil::KeeperException(get_result[1].error);
+
+        response.log_ptr = log_ptr_str.empty() ? 0 : parse<UInt32>(log_ptr_str);
+
         paths.clear();
 
         paths.push_back(fs::path(zookeeper_path) / "replicas");
@@ -226,21 +234,11 @@ void DatabaseReplicated::getStatus(ReplicatedDatabaseStatus& response, const boo
 
         response.total_replicas = UInt32(all_replicas.size());
         paths.clear();
-
-        paths.push_back(fs::path(replica_path) / "log_ptr");
-        auto get_result_log_ptr = zookeeper->tryGet(paths);
-        const auto & log_ptr_str = get_result_log_ptr[0].data;
-        if (get_result_log_ptr[0].error == Coordination::Error::ZNONODE)
-            throw zkutil::KeeperException(get_result_log_ptr[0].error);
-
-        response.log_ptr = log_ptr_str.empty() ? 0 : parse<UInt32>(log_ptr_str);
-        paths.clear();
     }
     catch (const Coordination::Exception &)
     {
         response.zookeeper_exception = getCurrentExceptionMessage(false);
     }
-
 }
 
 String DatabaseReplicated::getFullReplicaName() const

@@ -7428,7 +7428,7 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
 }
 
 
-void StorageReplicatedMergeTree::getStatus(ReplicatedTableStatus & res, bool with_zk_fields)
+void StorageReplicatedMergeTree::getStatus(ReplicatedStatus & res, bool with_zk_fields)
 {
     auto zookeeper = tryGetZooKeeper();
     const auto storage_settings_ptr = getSettings();

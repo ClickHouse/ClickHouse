@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -7,13 +9,19 @@ namespace DB
 {
 
 class Context;
-class StorageSystemDatabaseReplicasImpl;
+template <typename T>
+class StatusRequestsPools;
+class DatabaseReplicated;
 
 /** Implements `database replicas` system table, which provides information about the status of the replicated databases.
   */
 class StorageSystemDatabaseReplicas final : public IStorage
 {
 public:
+    using TPools = StatusRequestsPools<DatabaseReplicated>;
+
+    static constexpr size_t DEFAULT_THREAD_COUNT = 8;
+ 
     explicit StorageSystemDatabaseReplicas(const StorageID & table_id_);
 
     std::string getName() const override { return "SystemDatabaseReplicas"; }
@@ -31,7 +39,7 @@ public:
     bool isSystemStorage() const override { return true; }
 
 private:
-    std::shared_ptr<StorageSystemDatabaseReplicasImpl> impl;
+    std::shared_ptr<TPools> pools;
 };
 
 }

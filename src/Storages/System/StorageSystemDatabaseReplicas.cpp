@@ -1,7 +1,12 @@
+#include "StorageSystemDatabaseReplicas.h"
+
 #include <future>
 #include <memory>
+
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
@@ -9,27 +14,25 @@
 #include <Databases/ReplicatedDatabaseStatus.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Storages/SelectQueryInfo.h>
-#include <Storages/System/StorageSystemDatabaseReplicas.h>
-#include <Storages/VirtualColumnUtils.h>
-#include <Common/logger_useful.h>
 #include <Parsers/Kusto/KustoFunctions/KQLDataTypeFunctions.h>
-#include <Interpreters/ProcessList.h>
-#include <Columns/ColumnsNumber.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/System/StatusRequestsPool.h>
+#include <Storages/VirtualColumnUtils.h>
 
 
 namespace CurrentMetrics
 {
-    extern const Metric SystemDatabaseReplicasThreads;
-    extern const Metric SystemDatabaseReplicasThreadsActive;
-    extern const Metric SystemDatabaseReplicasThreadsScheduled;
+extern const Metric SystemDatabaseReplicasThreads;
+extern const Metric SystemDatabaseReplicasThreadsActive;
+extern const Metric SystemDatabaseReplicasThreadsScheduled;
 }
 
 namespace DB
@@ -37,160 +40,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ABORTED;
-    extern const int QUERY_WAS_CANCELLED;
+extern const int ABORTED;
 }
 
-namespace
-{
-
-class StatusRequestsPool
-{
-public:
-    struct RequestInfo
-    {
-        UInt64 request_id = 0;
-        std::shared_future<ReplicatedDatabaseStatus> future;
-    };
-
-private:
-    ThreadPool thread_pool;
-
-    std::mutex mutex;
-    std::unordered_map<DatabasePtr, RequestInfo> current_requests TSA_GUARDED_BY(mutex);
-    std::deque<std::tuple<UInt64, DatabasePtr, std::shared_ptr<std::promise<ReplicatedDatabaseStatus>>, bool>> requests_to_schedule TSA_GUARDED_BY(mutex);
-    UInt64 request_id TSA_GUARDED_BY(mutex) = 0;
-
-    LoggerPtr log;
-
-public:
-    explicit StatusRequestsPool(size_t max_threads)
-        : thread_pool(CurrentMetrics::SystemDatabaseReplicasThreads, CurrentMetrics::SystemDatabaseReplicasThreadsActive, CurrentMetrics::SystemDatabaseReplicasThreadsScheduled, max_threads)
-        , log(getLogger("StatusRequestsPool"))
-    {}
-
-    ~StatusRequestsPool()
-    {
-        thread_pool.wait();
-        for (auto & request : requests_to_schedule)
-            std::get<2>(request)->set_exception(std::make_exception_ptr(
-                DB::Exception(ErrorCodes::QUERY_WAS_CANCELLED, "StatusRequestsPool is destroyed")));
-    }
-
-    RequestInfo addRequest(DatabasePtr database, const bool with_zk_fields)
-    {
-        std::shared_ptr<std::promise<ReplicatedDatabaseStatus>> promise;
-        std::shared_future<ReplicatedDatabaseStatus> future;
-        UInt64 this_request_id = 0;
-
-        {
-            std::lock_guard lock(mutex);
-
-            auto existing_request = current_requests.find(database);
-            if (existing_request != current_requests.end())
-            {
-                LOG_DEBUG(log, "Attaching to existing request for database {}", database->getDatabaseName());
-                return existing_request->second;
-            }
-
-            this_request_id = request_id;
-            ++request_id;
-
-            promise = std::make_shared<std::promise<ReplicatedDatabaseStatus>>();
-            future = promise->get_future().share();
-
-            current_requests[database] = { .request_id = this_request_id, .future = future };
-
-            LOG_DEBUG(log, "Making new request for database {}", database->getDatabaseName());
-
-            requests_to_schedule.emplace_back(this_request_id, database, promise, with_zk_fields);
-        }
-
-        return {this_request_id, future};
-    }
-
-    void scheduleRequests(UInt64 max_request_id, QueryStatusPtr query_status)
-    {
-        while (true)
-        {
-            if (query_status)
-                query_status->checkTimeLimit();
-
-            std::tuple<UInt64, DatabasePtr, std::shared_ptr<std::promise<ReplicatedDatabaseStatus>>, bool> req;
-            {
-                std::lock_guard lock(mutex);
-                if (requests_to_schedule.empty())
-                    break;
-
-                req = requests_to_schedule.front();
-
-                if (std::get<0>(req) > max_request_id)
-                    break;
-
-                requests_to_schedule.pop_front();
-            }
-
-            auto get_status_task = [this, req, thread_group = CurrentThread::getGroup()]() mutable
-            {
-                ThreadGroupSwitcher switcher(thread_group, "DBReplicas");
-
-                auto & [_, database, promise, with_zk_fields] = req;
-                try
-                {
-                    ReplicatedDatabaseStatus status;
-
-                    DatabaseReplicated * replicated_database = dynamic_cast<DatabaseReplicated *>(database.get());
-                    replicated_database->getStatus(status, with_zk_fields);
-
-                    promise->set_value(std::move(status));
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(log, "Error getting status for database " + database->getDatabaseName());
-                    promise->set_exception(std::current_exception());
-                }
-
-                completeRequest(database);
-            };
-
-            auto & [_, database, promise, with_zk_fields] = req;
-
-            try
-            {
-                thread_pool.scheduleOrThrowOnError(std::move(get_status_task));
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Error scheduling get status task for database " + database->getDatabaseName());
-                promise->set_exception(std::current_exception());
-                completeRequest(database);
-            }
-        }
-    }
-
-private:
-    void completeRequest(DatabasePtr database)
-    {
-        std::lock_guard lock(mutex);
-        current_requests.erase(database);
-    }
-};
-
-} // anonymous namespace
-
-
-class StorageSystemDatabaseReplicasImpl
-{
-public:
-    explicit StorageSystemDatabaseReplicasImpl(size_t max_threads)
-        : requests_without_zk_fields(max_threads)
-        , requests_with_zk_fields(max_threads)
-    {}
-
-    StatusRequestsPool requests_without_zk_fields;
-    StatusRequestsPool requests_with_zk_fields;
-};
-
+using TFuture = typename StorageSystemDatabaseReplicas::TPools::StatusPool::TFuture;
+using TStatus = typename StorageSystemDatabaseReplicas::TPools::StatusPool::TStatus;
 
 namespace
 {
@@ -203,8 +57,7 @@ public:
         size_t max_block_size_,
         ColumnPtr col_database_,
         ContextPtr context_,
-        std::vector<std::shared_future<ReplicatedDatabaseStatus>>&& futures_
-        )
+        std::vector<TFuture> && futures_)
         : ISource(header_)
         , max_databases(col_database_->size())
         , max_block_size(max_block_size_)
@@ -224,7 +77,7 @@ private:
     const size_t max_block_size;
     ColumnPtr col_database;
     ContextPtr context;
-    std::vector<std::shared_future<ReplicatedDatabaseStatus>> futures;
+    std::vector<TFuture> futures;
     size_t index = 0;
 };
 
@@ -258,7 +111,7 @@ Chunk SystemDatabaseReplicasSource::generate()
             }
         }
 
-        const ReplicatedDatabaseStatus * status;
+        const TStatus * status;
         try
         {
             status = &futures[index].get();
@@ -267,7 +120,10 @@ Chunk SystemDatabaseReplicasSource::generate()
         {
             if (e.code() == ErrorCodes::ABORTED)
             {
-                tryLogCurrentException(getLogger("table logger"), "Received the ABORTED error while trying to get the status of a database, this is likely because it has been shut down");
+                tryLogCurrentException(
+                    getLogger("table logger"),
+                    "Received the ABORTED error while trying to get the status of a database, this is likely because it has been shut "
+                    "down");
                 continue;
             }
             throw;
@@ -306,18 +162,13 @@ public:
         Block sample_block,
         std::map<String, DatabasePtr> replicated_databases_,
         size_t max_block_size_,
-        std::shared_ptr<StorageSystemDatabaseReplicasImpl> impl_,
-        bool with_zk_fields_
-    )
+        std::shared_ptr<StorageSystemDatabaseReplicas::TPools> pools_,
+        bool with_zk_fields_)
         : SourceStepWithFilter(
-            std::make_shared<const Block>(std::move(sample_block)),
-            column_names_,
-            query_info_,
-            storage_snapshot_,
-            context_)
+              std::make_shared<const Block>(std::move(sample_block)), column_names_, query_info_, storage_snapshot_, context_)
         , replicated_databases(std::move(replicated_databases_))
         , max_block_size(max_block_size_)
-        , impl(impl_)
+        , pools(pools_)
         , with_zk_fields(with_zk_fields_)
     {
     }
@@ -331,7 +182,7 @@ private:
     std::map<String, DatabasePtr> replicated_databases;
     const size_t max_block_size;
     ExpressionActionsPtr virtual_columns_filter;
-    std::shared_ptr<StorageSystemDatabaseReplicasImpl> impl;
+    std::shared_ptr<StorageSystemDatabaseReplicas::TPools> pools;
     const bool with_zk_fields;
 };
 
@@ -341,9 +192,8 @@ void ReadFromSystemDatabaseReplicas::applyFilters(ActionDAGNodes added_filter_no
 
     if (filter_actions_dag)
     {
-        Block block_to_filter
-        {
-            { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
+        Block block_to_filter{
+            {ColumnString::create(), std::make_shared<DataTypeString>(), "database"},
         };
 
         auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
@@ -366,9 +216,8 @@ void ReadFromSystemDatabaseReplicas::initializePipeline(QueryPipelineBuilder & p
     ColumnPtr col_database = std::move(col_database_mut);
 
     {
-        Block filtered_block
-        {
-            { col_database, std::make_shared<DataTypeString>(), "database" },
+        Block filtered_block{
+            {col_database, std::make_shared<DataTypeString>(), "database"},
         };
 
         if (virtual_columns_filter)
@@ -384,12 +233,12 @@ void ReadFromSystemDatabaseReplicas::initializePipeline(QueryPipelineBuilder & p
         col_database = filtered_block.getByName("database").column;
     }
 
-    std::vector<std::shared_future<ReplicatedDatabaseStatus>> futures;
+    std::vector<TFuture> futures;
 
     const size_t tables_size = col_database->size();
     futures.reserve(tables_size);
 
-    StatusRequestsPool & get_status_requests = with_zk_fields ? impl->requests_with_zk_fields : impl->requests_without_zk_fields;
+    auto & get_status_requests = with_zk_fields ? pools->requests_with_zk_fields : pools->requests_without_zk_fields;
     QueryStatusPtr query_status = context ? context->getProcessListElement() : nullptr;
     UInt64 max_request_id = 0;
 
@@ -414,22 +263,20 @@ void ReadFromSystemDatabaseReplicas::initializePipeline(QueryPipelineBuilder & p
 
 StorageSystemDatabaseReplicas::StorageSystemDatabaseReplicas(const StorageID & table_id_)
     : IStorage(table_id_)
-    , impl(std::make_shared<StorageSystemDatabaseReplicasImpl>(8))
+    , pools(std::make_shared<TPools>(DEFAULT_THREAD_COUNT))
 {
-
-    ColumnsDescription description = {
-        { "database", std::make_shared<DataTypeString>(),   "Database name."},
-        { "is_readonly", std::make_shared<DataTypeUInt8>(),   "is_readonly"},
-        { "max_log_ptr", std::make_shared<DataTypeInt32>(),   "max_log_ptr"},
-        { "replica_name", std::make_shared<DataTypeString>(),   "replica_name"},
-        { "replica_path", std::make_shared<DataTypeString>(),   "replica_path"},
-        { "zookeeper_path", std::make_shared<DataTypeString>(),   "zookeeper_path"},
-        { "shard_name", std::make_shared<DataTypeString>(),   "shard_name"},
-        { "log_ptr", std::make_shared<DataTypeInt32>(),   "log_ptr"},
-        { "total_replicas", std::make_shared<DataTypeUInt32>(),   "total_replicas"},
-        { "zookeeper_exception", std::make_shared<DataTypeString>(),   "zookeeper_exception"},
-        { "is_session_expired", std::make_shared<DataTypeUInt8>(),   "is_session_expired"}
-    };
+    ColumnsDescription description
+        = {{"database", std::make_shared<DataTypeString>(), "Database name."},
+           {"is_readonly", std::make_shared<DataTypeUInt8>(), "is_readonly"},
+           {"max_log_ptr", std::make_shared<DataTypeInt32>(), "max_log_ptr"},
+           {"replica_name", std::make_shared<DataTypeString>(), "replica_name"},
+           {"replica_path", std::make_shared<DataTypeString>(), "replica_path"},
+           {"zookeeper_path", std::make_shared<DataTypeString>(), "zookeeper_path"},
+           {"shard_name", std::make_shared<DataTypeString>(), "shard_name"},
+           {"log_ptr", std::make_shared<DataTypeInt32>(), "log_ptr"},
+           {"total_replicas", std::make_shared<DataTypeUInt32>(), "total_replicas"},
+           {"zookeeper_exception", std::make_shared<DataTypeString>(), "zookeeper_exception"},
+           {"is_session_expired", std::make_shared<DataTypeUInt8>(), "is_session_expired"}};
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(description);
@@ -475,8 +322,15 @@ void StorageSystemDatabaseReplicas::read(
 
     auto header = storage_snapshot->metadata->getSampleBlock();
     auto reading = std::make_unique<ReadFromSystemDatabaseReplicas>(
-        column_names, query_info, storage_snapshot,
-        std::move(context), std::move(header), std::move(replicated_databases), max_block_size, impl, with_zk_fields);
+        column_names,
+        query_info,
+        storage_snapshot,
+        std::move(context),
+        std::move(header),
+        std::move(replicated_databases),
+        max_block_size,
+        pools,
+        with_zk_fields);
 
     query_plan.addStep(std::move(reading));
 }
