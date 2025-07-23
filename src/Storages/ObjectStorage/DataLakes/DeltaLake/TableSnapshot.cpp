@@ -425,9 +425,9 @@ void TableSnapshot::initSnapshot() const
 
 static void tracingCallback(struct ffi::Event event)
 {
-  LOG_TEST(getLogger("DeltaKernelTracing"),
-           "Level: {}, message: {}",
-           event.level, std::string_view(event.message.ptr, event.message.len));
+    LOG_TEST(getLogger("DeltaKernelTracing"),
+             "Level: {}, message: {}",
+             event.level, std::string_view(event.message.ptr, event.message.len));
 }
 
 void TableSnapshot::initSnapshotImpl() const

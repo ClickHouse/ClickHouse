@@ -1,4 +1,4 @@
-#include "EnginePredicate.h"
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
 
 #include <Common/logger_useful.h>
 
@@ -8,6 +8,11 @@
 
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
+
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace DeltaLake
 {
@@ -96,8 +101,6 @@ private:
         auto * iterator_data = static_cast<EngineIteratorData *>(data_);
         try
         {
-            LOG_TEST(iterator_data->log(), "Next");
-
             if (iterator_data->hasException())
             {
                 LOG_TEST(iterator_data->log(), "Exception during processing");
@@ -115,7 +118,9 @@ private:
 
             auto result = getNextImpl(*iterator_data, node);
             if (result && result != VISITOR_FAILED_OR_UNSUPPORTED)
+            {
                 return reinterpret_cast<const void *>(result);
+            }
         }
         catch (...)
         {
@@ -137,18 +142,6 @@ uintptr_t EnginePredicate::visitPredicate(void * data, ffi::KernelExpressionVisi
     LOG_TEST(iterator_data.log(), "Engine predicate result: {}", result);
     return result;
 }
-
-//template <typename T>
-//static bool convertToType(const DB::Field & field, T & result)
-//{
-//    if (!field.is
-//        return false;
-//    result = DB::Field::dispatch([](const auto & value) -> T
-//    {
-//        return value;
-//    }, field);
-//    return true;
-//}
 
 static uintptr_t visitLiteralValue(
     const DB::Field & value,
