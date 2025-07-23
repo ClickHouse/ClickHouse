@@ -1001,7 +1001,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
 
     Stopwatch watch;
 
-    while (!server.isCancelled() && tcp_server.isOpen())
+    while (!server.isCancelled())
     {
         while (!in->poll(timeout_us))
         {
@@ -1062,7 +1062,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
         }
     }
 
-    chassert(server.isCancelled() || !tcp_server.isOpen());
+    chassert(server.isCancelled());
     throw Exception(ErrorCodes::ABORTED, "Server shutdown is called");
 }
 
