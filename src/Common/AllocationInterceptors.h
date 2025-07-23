@@ -18,7 +18,7 @@
 #define __real_valloc(size) ::valloc(size)
 #define __real_memalign(alignment, size) ::memalign(alignment, size)
 #define __real_free ::free
-#if !defined(USE_MUSL)
+#if !defined(USE_MUSL) && defined(OS_LINUX)
 #define __real_pvalloc(size) ::pvalloc(size)
 #endif
 
@@ -32,7 +32,7 @@ extern "C" void * __real_aligned_alloc(size_t alignment, size_t size);
 extern "C" void * __real_valloc(size_t size);
 extern "C" void * __real_memalign(size_t alignment, size_t size);
 extern "C" void   __real_free(void * ptr);
-#if !defined(USE_MUSL)
+#if !defined(USE_MUSL) && defined(OS_LINUX)
 extern "C" void * __real_pvalloc(size_t size);
 #endif
 

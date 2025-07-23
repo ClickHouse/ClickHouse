@@ -285,7 +285,7 @@ extern "C" void __wrap_free(void * ptr) // NOLINT
     __real_free(ptr);
 }
 
-#if !defined(USE_MUSL)
+#if !defined(USE_MUSL) && defined(OS_LINUX)
 extern "C" void * __wrap_pvalloc(size_t size) // NOLINT
 {
     AllocationTrace trace;
