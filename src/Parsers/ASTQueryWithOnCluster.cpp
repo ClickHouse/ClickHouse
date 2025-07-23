@@ -45,20 +45,21 @@ void ASTQueryWithOnCluster::formatOnCluster(WriteBuffer & ostr, const IAST::Form
     }
 }
 
-bool ASTQueryWithOnCluster::isIgnoreOnCluster(const ASTPtr & query, const ContextPtr & context) const
+bool ASTQueryWithOnCluster::isIgnoreOnCluster(const ASTPtr & query_ptr, const ContextPtr & context) const
 {
-    // String database_name = query->getDatabase();
-    // if (database_name.empty())
-    //     database_name = context->getCurrentDatabase();
-    const auto database = DatabaseCatalog::instance().getDatabase(context->getCurrentDatabase());
+    const auto * query = dynamic_cast<const ASTQueryWithTableAndOutput *>(query_ptr.get());
+    if (!query || !query->table)
+        return false;
+
+    String database_name = query->getDatabase();
+    if (database_name.empty())
+        database_name = context->getCurrentDatabase();
+
+    const auto database = DatabaseCatalog::instance().getDatabase(database_name);
     chassert(database);
     const auto * replicated = dynamic_cast<const DatabaseReplicated *>(database.get());
-    
-    bool setting = context->getSettingsRef()[Setting::ignore_on_cluster_for_replicated_database_queries];
-    LOG_DEBUG(getLogger("testLogger"), "isIgnoreOnCluster ignore_on_cluster_for_replicated_database_queries={}", setting);
 
-    if (replicated 
-        && context->getSettingsRef()[Setting::ignore_on_cluster_for_replicated_database_queries])
+    if (replicated && context->getSettingsRef()[Setting::ignore_on_cluster_for_replicated_database_queries])
     {
         LOG_DEBUG(
             getLogger("IgnoreOnClusterClauseReplicatedDatabase"),
@@ -68,9 +69,6 @@ bool ASTQueryWithOnCluster::isIgnoreOnCluster(const ASTPtr & query, const Contex
             replicated->getDatabaseName());
         return true;
     }
-
     return false;
 }
-
-
 }
