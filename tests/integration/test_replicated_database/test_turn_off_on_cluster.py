@@ -68,6 +68,21 @@ def test_turn_off_on_cluster(
     assert TSV([1]) == node_ignore_on_cluster.query(query_count)
     assert TSV([1]) == basic_node.query(query_count)
 
+    query = "ALTER TABLE repl_db.test_table ON CLUSTER 'test_cluster' ADD COLUMN s String"
+    perform_query(query=query)
+    assert TSV([1]) == node_ignore_on_cluster.query(query_count)
+    assert TSV([1]) == basic_node.query(query_count)
+
+    query = "ALTER TABLE repl_db.test_table ON CLUSTER 'test_cluster' RENAME COLUMN s TO s1"
+    perform_query(query=query)
+    assert TSV([1]) == node_ignore_on_cluster.query(query_count)
+    assert TSV([1]) == basic_node.query(query_count)
+
+    query = "ALTER TABLE repl_db.test_table ON CLUSTER 'test_cluster' DROP COLUMN s1"
+    perform_query(query=query)
+    assert TSV([1]) == node_ignore_on_cluster.query(query_count)
+    assert TSV([1]) == basic_node.query(query_count)
+
     query = "DROP TABLE repl_db.test_table ON CLUSTER 'test_cluster'"
     perform_query(query=query)
     assert TSV([0]) == node_ignore_on_cluster.query(query_count)
