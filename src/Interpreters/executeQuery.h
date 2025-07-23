@@ -37,7 +37,7 @@ using QueryFinishCallback = std::function<void()>;
 
 /// Parse and execute a query.
 void executeQuery(
-    ReadBuffer & istr,                  /// Where to read query from (and data for INSERT, if present).
+    ReadBufferUniquePtr istr,                  /// Where to read query from (and data for INSERT, if present).
     WriteBuffer & ostr,                 /// Where to write query output to.
     bool allow_into_outfile,            /// If true and the query contains INTO OUTFILE section, redirect output to that file.
     ContextMutablePtr context,          /// DB, tables, data types, storage engines, functions, aggregate functions...

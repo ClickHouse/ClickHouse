@@ -1305,7 +1305,7 @@ static BlockIO executeQueryImpl(
         if (insert_query && insert_query->select)
         {
             /// Prepare Input storage before executing interpreter if we already got a buffer with data.
-            if (istr)
+            if (insert_query->tail)
             {
                 ASTPtr input_function;
                 insert_query->tryFindInputFunction(input_function);
@@ -1314,8 +1314,12 @@ static BlockIO executeQueryImpl(
                     StoragePtr storage = context->executeTableFunction(input_function, insert_query->select->as<ASTSelectQuery>());
                     auto & input_storage = dynamic_cast<StorageInput &>(*storage);
                     auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr();
-                    auto pipe = getSourceFromASTInsertQuery(
-                        out_ast, true, input_metadata_snapshot->getSampleBlock(), context, input_function);
+
+                    auto format = getInputFormatFromASTInsertQuery(out_ast, true, input_metadata_snapshot->getSampleBlock(), context, input_function);
+                    /// need to check it
+                    format->addBuffer(nullptr);
+                    auto pipe = getSourceFromInputFormat(out_ast, std::move(format), context, input_function);
+
                     input_storage.setPipe(std::move(pipe));
                 }
             }
@@ -1781,7 +1785,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
 }
 
 void executeQuery(
-    ReadBuffer & istr,
+    ReadBufferUniquePtr istr,
     WriteBuffer & ostr,
     bool allow_into_outfile,
     ContextMutablePtr context,
@@ -1797,7 +1801,7 @@ void executeQuery(
 
     try
     {
-        istr.nextIfAtEnd();
+        istr->nextIfAtEnd();
     }
     catch (...)
     {
@@ -1813,12 +1817,12 @@ void executeQuery(
             context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw],
             /*should_throw*/ true);
 
-    if (istr.buffer().end() - istr.position() > static_cast<ssize_t>(max_query_size))
+    if (istr->available() > max_query_size)
     {
         /// If remaining buffer space in 'istr' is enough to parse query up to 'max_query_size' bytes, then parse inplace.
-        begin = istr.position();
-        end = istr.buffer().end();
-        istr.position() += end - begin;
+        begin = istr->position();
+        end = istr->buffer().end();
+        istr->position() += end - begin;
     }
     else
     {
@@ -1826,7 +1830,7 @@ void executeQuery(
 
         /// If not - copy enough data into 'parse_buf'.
         WriteBufferFromVector<PODArray<char>> out(parse_buf);
-        LimitReadBuffer limit(istr, {.read_no_more = max_query_size + 1});
+        LimitReadBuffer limit(*istr, {.read_no_more = max_query_size + 1});
         copyData(limit, out);
         out.finalize();
 
@@ -1908,7 +1912,7 @@ void executeQuery(
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
     try
     {
-        streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, &istr, ast, implicit_tcl_executor);
+        streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, istr.get(), ast, implicit_tcl_executor);
     }
     catch (...)
     {
@@ -1963,7 +1967,10 @@ void executeQuery(
     {
         if (pipeline.pushing())
         {
-            auto pipe = getSourceFromASTInsertQuery(ast, true, pipeline.getHeader(), context, nullptr);
+            auto format = getInputFormatFromASTInsertQuery(ast, true, pipeline.getHeader(), context, nullptr);
+            format->addBuffer(std::move(istr));
+            auto pipe = getSourceFromInputFormat(ast, std::move(format), context, nullptr);
+
             pipeline.complete(std::move(pipe));
         }
         else if (pipeline.pulling())

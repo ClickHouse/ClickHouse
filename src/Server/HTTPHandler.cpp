@@ -9,6 +9,7 @@
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
+#include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
@@ -413,8 +414,10 @@ void HTTPHandler::processQuery(
     /// Request body can be compressed using algorithm specified in the Content-Encoding header.
     String http_request_compression_method_str = request.get("Content-Encoding", "");
     int zstd_window_log_max = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
+    /// TODO check
+    /// input stream are hold inside in_post instance
     auto in_post = wrapReadBufferWithCompressionMethod(
-        wrapReadBufferReference(request.getStream()),
+        wrapReadBufferPointer(request.getStream()),
         chooseCompressionMethod({}, http_request_compression_method_str),
         zstd_window_log_max);
 
@@ -424,7 +427,7 @@ void HTTPHandler::processQuery(
     bool is_in_post_compressed = false;
     if (params.getParsedLast<bool>("decompress", false))
     {
-        in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(*in_post, /* allow_different_codecs_ = */ false, /* external_data_ = */ true);
+        in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(std::move(in_post), /* allow_different_codecs_ = */ false, /* external_data_ = */ true);
         is_in_post_compressed = true;
     }
     else
@@ -482,7 +485,7 @@ void HTTPHandler::processQuery(
     }
 
     customizeContext(request, context, *in_post_maybe_compressed);
-    std::unique_ptr<ReadBuffer> in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
+    std::unique_ptr<ReadBuffer> in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(std::move(in_param), std::move(in_post_maybe_compressed));
 
     applyHTTPResponseHeaders(response, http_response_headers_override);
 
@@ -568,7 +571,7 @@ void HTTPHandler::processQuery(
     };
 
     executeQuery(
-        *in,
+        std::move(in),
         *used_output.out_maybe_delayed_and_compressed,
         /* allow_into_outfile = */ false,
         context,
@@ -800,7 +803,8 @@ std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm 
     /// Support for "external data for query processing".
     /// Used in case of POST request with form-data, but it isn't expected to be deleted after that scope.
     ExternalTablesHandler handler(context, params);
-    params.load(request, request.getStream(), handler);
+    auto input_stream = request.getStream();
+    params.load(request, *input_stream, handler);
 
     std::string full_query;
     /// Params are of both form params POST and uri (GET params)
@@ -907,7 +911,8 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
     {
         /// Support for "external data for query processing".
         ExternalTablesHandler handler(context, params);
-        params.load(request, request.getStream(), handler);
+        auto input_stream = request.getStream();
+        params.load(request, *input_stream, handler);
     }
 
     return predefined_query;

@@ -2,12 +2,18 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadBufferRefCountDecorator.h>
 #include <Server/HTTP/HTTPRequest.h>
 #include <Server/HTTP/HTTPContext.h>
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
-#include "config.h"
+#include <config.h>
 
 #include <Poco/Net/HTTPServerSession.h>
+
+#include <memory>
+#include <mutex>
 
 namespace DB
 {
@@ -26,10 +32,11 @@ public:
     ///        since we also need it in other places.
 
     /// Returns the input stream for reading the request body.
-    ReadBuffer & getStream()
+    ReadBufferPtr getStream()
     {
+        std::lock_guard lock(get_stream_mutex);
         poco_check_ptr(stream);
-        return *stream;
+        return stream;
     }
 
     bool checkPeerConnected() const;
@@ -49,10 +56,22 @@ public:
 
     bool canKeepAlive() const
     {
-        if (stream && stream_is_bounded)
-            return !stream->isCanceled() && stream->eof();
+        std::lock_guard lock(get_stream_mutex);
 
-        return false;
+        if (!stream)
+            return true;
+
+        if (!stream_is_bounded)
+            return false;
+
+        if (stream->getRefCount() > 1)
+        {
+            LOG_ERROR(getLogger("HTTPServerRequest"), "Request stream is shared by multiple threads, cannot keep alive connection");
+            return false;
+        }
+
+        /// only this instance possesses the stream it is safe to read from it
+        return !stream->isCanceled() && stream->eof();
     }
 
 private:
@@ -68,7 +87,8 @@ private:
     const size_t max_field_name_size;
     const size_t max_field_value_size;
 
-    std::unique_ptr<ReadBuffer> stream;
+    mutable std::mutex get_stream_mutex;
+    ReadBufferRefCountDecoratorPtr stream;
     Poco::Net::SocketImpl * socket;
     Poco::Net::SocketAddress client_address;
     Poco::Net::SocketAddress server_address;

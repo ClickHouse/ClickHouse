@@ -269,13 +269,14 @@ private:
 
 
 using ReadBufferPtr = std::shared_ptr<ReadBuffer>;
+using ReadBufferUniquePtr = std::unique_ptr<ReadBuffer>;
 
 /// Due to inconsistencies in ReadBuffer-family interfaces:
 ///  - some require to fully wrap underlying buffer and own it,
 ///  - some just wrap the reference without ownership,
 /// we need to be able to wrap reference-only buffers with movable transparent proxy-buffer.
 /// The uniqueness of such wraps is responsibility of the code author.
-std::unique_ptr<ReadBuffer> wrapReadBufferReference(ReadBuffer & ref);
-std::unique_ptr<ReadBuffer> wrapReadBufferPointer(ReadBufferPtr ptr);
+ReadBufferUniquePtr wrapReadBufferReference(ReadBuffer & ref);
+ReadBufferUniquePtr wrapReadBufferPointer(ReadBufferPtr ptr);
 
 }

@@ -487,7 +487,7 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
     String query_to_execute = query_prefix + task.query_str;
     String query_to_show_in_logs = query_prefix + task.query_for_logging;
 
-    ReadBufferFromString istr(query_to_execute);
+    ReadBufferUniquePtr istr = std::make_unique<ReadBufferFromString>(query_to_execute);
     std::optional<CurrentThread::QueryScope> query_scope;
 
     try
@@ -508,7 +508,7 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
             query_scope.emplace(query_context);
 
         NullWriteBuffer nullwb;
-        executeQuery(istr, nullwb, !task.is_initial_query, query_context, {}, QueryFlags{ .internal = internal, .distributed_backup_restore = task.entry.is_backup_restore });
+        executeQuery(std::move(istr), nullwb, !task.is_initial_query, query_context, {}, QueryFlags{ .internal = internal, .distributed_backup_restore = task.entry.is_backup_restore });
 
         if (auto txn = query_context->getZooKeeperMetadataTransaction())
         {

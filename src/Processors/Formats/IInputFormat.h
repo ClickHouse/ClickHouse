@@ -44,7 +44,7 @@ public:
     virtual void resetParser();
 
     virtual void setReadBuffer(ReadBuffer & in_);
-    virtual void resetReadBuffer() { in = nullptr; }
+    virtual void resetReadBuffer() { in = nullptr; resetOwnedBuffers(); }
 
     virtual const BlockMissingValues * getMissingValues() const { return nullptr; }
 
@@ -62,6 +62,7 @@ public:
     virtual void setSerializationHints(const SerializationInfoByName & /*hints*/) {}
 
     void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }
+    void resetOwnedBuffers() { owned_buffers.clear(); }
 
     void setErrorsLogger(const InputFormatErrorsLoggerPtr & errors_logger_) { errors_logger = errors_logger_; }
 

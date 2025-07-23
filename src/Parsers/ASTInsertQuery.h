@@ -2,6 +2,7 @@
 
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST.h>
+#include <IO/ReadBuffer.h>
 
 class SipHash;
 
