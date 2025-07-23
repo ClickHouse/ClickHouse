@@ -1,5 +1,6 @@
 -- Tags: distributed
 
+-- Force using skip indexes in planning to make test deterministic with max_rows_to_read.
 set use_skip_indexes_on_data_read = 0;
 
 create table table_1 (x UInt32, y String, INDEX a (length(y)) TYPE minmax GRANULARITY 1) engine = MergeTree order by x settings index_granularity = 2;

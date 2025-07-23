@@ -1,5 +1,6 @@
 DROP TABLE IF EXISTS t_ind_merge_1;
 
+-- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
 SET use_skip_indexes_on_data_read = 0;
 SET enable_analyzer = 1;
 
