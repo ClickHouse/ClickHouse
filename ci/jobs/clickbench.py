@@ -1,4 +1,4 @@
-from ci.jobs.scripts.clickhouse_proc import ClickHouseLight
+from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
@@ -10,7 +10,7 @@ def main():
     res = True
     results = []
     stop_watch = Utils.Stopwatch()
-    ch = ClickHouseLight()
+    ch = ClickHouseProc()
 
     if res:
         print("Install ClickHouse")
