@@ -223,7 +223,7 @@
     contrib-sqids-cpp = { url = "github:sqids/sqids-cpp/a471f53672e98d49223f598528a533b07b085c61"; flake = false; };
     contrib-idna = { url = "github:ada-url/idna/3c8be01d42b75649f1ac9b697d0ef757eebfe667"; flake = false; };
     contrib-google-cloud-cpp = { url = "github:ClickHouse/google-cloud-cpp/83f30caadb8613fb5c408d8c2fd545291596b53f"; flake = false; };
-    contrib-rust_vendor = { url = "github:ClickHouse/rust_vendor/07d4497f735733b5a893b72e60d82ee373082dbb"; flake = false; };
+    contrib-rust_vendor = { url = "github:ClickHouse/rust_vendor/038c10e41861c3146ab895f893f9ba5fffe7638a"; flake = false; };
     contrib-openssl = { url = "github:ClickHouse/openssl/2aa34c68d677b447fb85c55167d8d1ab98ba4def"; flake = false; };
     contrib-double-conversion = { url = "github:ClickHouse/double-conversion/4f7a25d8ced8c7cf6eee6fd09d6788eaa23c9afe"; flake = false; };
     contrib-mongo-cxx-driver = { url = "github:ClickHouse/mongo-cxx-driver/3166bdb49b717ce1bc30f46cc2b274ab1de7005b"; flake = false; };
@@ -231,6 +231,10 @@
     contrib-sz3 = { url = "github:ClickHouse/SZ3/df46e03190b0fa1b46eef016829030170f3553e0"; flake = false; };
     contrib-numactl = { url = "github:ClickHouse/numactl/ff32c618d63ca7ac48cce366c5a04bb3563683a0"; flake = false; };
     contrib-postgres = { url = "github:ClickHouse/postgres/9da0420d861df7542b92058342afd4723e95ef4c"; flake = false; };
+    contrib-wasmedge = { url = "github:vdimir/WasmEdge/0170c8c43ca775d7886a2d5da41443e2765ec1b3"; flake = false; };
+    contrib-spdlog = { url = "github:gabime/spdlog/27cb4c76708608465c413f6d0e6b8d99a4d84302"; flake = false; };
+    contrib-wasmtime-cpp = { url = "github:bytecodealliance/wasmtime-cpp/5bb00e82e2132c4c69dfffb71da3aead169fc1d3"; flake = false; };
+    contrib-wasmtime = { url = "github:bytecodealliance/wasmtime/a3381e48775912a3e1a68c05180932f3ce74c5b4"; flake = false; };
     contrib-delta-kernel-rs = { url = "github:ClickHouse/delta-kernel-rs/beb2eb808e8c7ae6992c99809331b7cc2ed85278"; flake = false; };
     contrib-SHA3IUF = { url = "github:brainhub/SHA3IUF/fc8504750a5c2174a1874094dd05e6a0d8797753"; flake = false; };
     contrib-chdig = { url = "github:azat/chdig/b176fa241d4b0cd58aecd17eece111e376567e6c"; flake = false; };
