@@ -29,6 +29,8 @@ class RunnerLabels:
     ARM_MEDIUM_MEM = ["self-hosted", "arm-medium-mem"]
     AMD_SMALL = ["self-hosted", "amd-small"]
     ARM_SMALL = ["self-hosted", "arm-small"]
+    AMD_SMALL_MEM = ["self-hosted", "amd-small-mem"]
+    ARM_SMALL_MEM = ["self-hosted", "arm-small-mem"]
     STYLE_CHECK_AMD = ["self-hosted", "style-checker"]
     STYLE_CHECK_ARM = ["self-hosted", "style-checker-aarch64"]
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race
+# Tags: race, no-parallel
 #  - no-parallel: FIXME start to timeout on bigger machines with more runner thread
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

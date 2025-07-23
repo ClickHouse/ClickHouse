@@ -702,7 +702,7 @@ jobs:
           fi
 
   stateless_tests_amd_asan_distributed_plan_sequential:
-    runs-on: [self-hosted, amd-small]
+    runs-on: [self-hosted, amd-small-mem]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgc2VxdWVudGlhbCk=') }}
     name: "Stateless tests (amd_asan, distributed plan, sequential)"
