@@ -684,7 +684,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     ReadFromMergeTree::IndexStats & index_stats,
     bool use_skip_indexes,
     bool find_exact_ranges,
-    bool is_final_query)
+    bool is_final_query,
+    bool is_parallel_reading_from_replicas)
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -744,6 +745,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     {
         num_threads = std::min<size_t>(num_streams, settings[Setting::max_threads_for_indexes]);
     }
+
+    const bool use_skip_indexes_on_data_read = settings[Setting::use_skip_indexes_on_data_read] && !is_parallel_reading_from_replicas;
 
     /// Let's find what range to read from each part.
     {
@@ -805,7 +808,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 size_t total_granules = ranges.ranges.getNumberOfMarks();
                 stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
 
-                if (!settings[Setting::use_skip_indexes_on_data_read])
+                if (!use_skip_indexes_on_data_read)
                 {
                     std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
                         index_and_condition.index,
@@ -839,7 +842,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 stat.total_parts.fetch_add(1, std::memory_order_relaxed);
 
                 size_t total_granules = ranges.ranges.getNumberOfMarks();
-                if (!settings[Setting::use_skip_indexes_on_data_read])
+                if (!use_skip_indexes_on_data_read)
                 {
                     ranges.ranges = filterMarksUsingMergedIndex(
                         indices_and_condition.indices,
@@ -1193,7 +1196,8 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         column_names_to_return,
         log,
         indexes,
-        /*find_exact_ranges*/false);
+        /*find_exact_ranges*/false,
+        /*is_parallel_reading_from_replicas*/false);
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(

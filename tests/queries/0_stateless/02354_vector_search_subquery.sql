@@ -2,6 +2,7 @@
 
 SET enable_vector_similarity_index = 1;
 SET enable_analyzer = 1; -- analyzer vs. non-analyzer produce slightly different EXPLAIN
+SET use_skip_indexes_on_data_read = 0;
 
 -- Reference vector for vector search is computed by a subquery (issue #69085)
 
