@@ -13,8 +13,8 @@
 1	A	A_item1
 1	A	A_item2
 1	B	B_item3
-2	A	A_item5
 2	A	A_item4
+2	A	A_item5
 2	B	B_item6
 3	C	C_item7
 1	A	100
@@ -79,7 +79,7 @@ QUERY id: 0
 2	B	600	2
 3	C	700	1
 1	B	300
-2	A	500
 2	A	400
+2	A	500
 2	B	600
 3	C	700
