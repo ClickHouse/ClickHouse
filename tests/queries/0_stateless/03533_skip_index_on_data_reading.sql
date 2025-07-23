@@ -1,10 +1,12 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: use_skip_indexes_on_data_read is not supported with parallel replicas.
+
 -- { echo ON }
 
 SET use_skip_indexes_on_data_read = 1;
 
 set use_query_condition_cache=0;
 set merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0;
-set parallel_replicas_local_plan=1;
 
 DROP TABLE IF EXISTS test;
 
