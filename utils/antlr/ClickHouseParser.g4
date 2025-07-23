@@ -256,7 +256,7 @@ optimizeStmt: OPTIMIZE TABLE tableIdentifier clusterClause? partitionClause? FIN
 renameStmt: RENAME renameEntityClause clusterClause?;
 
 renameEntityClause
-    : TABLE tableIdentifier TO tableIdentifier (COMMA tableIdentifier TO tableIdentifier)*
+    : TABLE? tableIdentifier TO tableIdentifier (COMMA tableIdentifier TO tableIdentifier)*
     | DATABASE databaseIdentifier TO databaseIdentifier (COMMA databaseIdentifier TO databaseIdentifier)*
     | DICTIONARY dictionaryIdentifier TO dictionaryIdentifier (COMMA dictionaryIdentifier TO dictionaryIdentifier)*
     ;
