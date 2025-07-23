@@ -2,7 +2,7 @@ services:
   kafka_zookeeper:
     image: zookeeper:3.4.9
     hostname: kafka_zookeeper
-    ports:
+    expose:
       - 2181
     environment:
       ZOO_MY_ID: 1
