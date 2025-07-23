@@ -45,8 +45,6 @@ public:
     ASTQueryWithOnCluster(const ASTQueryWithOnCluster &) = default;
     ASTQueryWithOnCluster & operator=(const ASTQueryWithOnCluster &) = default;
 
-    bool isIgnoreOnCluster(const ASTPtr & query_ptr, const ContextPtr & context) const;
-
 protected:
     template <typename T>
     static ASTPtr removeOnCluster(ASTPtr query_ptr, const std::string & new_database)
