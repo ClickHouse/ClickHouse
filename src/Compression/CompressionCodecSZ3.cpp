@@ -196,6 +196,10 @@ void CompressionCodecSZ3::setAndCheckVectorDimension(size_t dimension_)
 
 void CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 /*uncompressed_size*/) const
 {
+    static constexpr const size_t config_size = 39;
+    if (source_size < 1 + config_size)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Can not decompress data {} that is less than minimal size of compressed", source_size);
+
     UInt8 width = static_cast<UInt8>(*source);
     --source_size;
     ++source;
