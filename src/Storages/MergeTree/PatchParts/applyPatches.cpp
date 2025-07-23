@@ -18,13 +18,6 @@ namespace ProfileEvents
     extern const Event BuildPatchesMergeMicroseconds;
 }
 
-namespace CurrentMetrics
-{
-    extern const Metric IOThreads;
-    extern const Metric IOThreadsActive;
-    extern const Metric IOThreadsScheduled;
-}
-
 namespace DB
 {
 
