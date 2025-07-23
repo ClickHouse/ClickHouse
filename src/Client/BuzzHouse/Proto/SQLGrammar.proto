@@ -3187,6 +3187,11 @@ enum TableEngineOption {
     TReplicated = 2;
 }
 
+message KeyValuePair {
+    required string key = 1;
+    required string value = 2;
+}
+
 message TableEngineParam {
     oneof table_engine_param_oneof {
         ColumnPath cols = 1;
@@ -3203,6 +3208,7 @@ message TableEngineParam {
         string regexp = 12;
         ExprSchemaTable est = 13;
         Expr expr = 14;
+        KeyValuePair kvalue = 15;
     }
 }
 

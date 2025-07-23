@@ -3075,6 +3075,12 @@ CONV_FN(TableEngineParam, tep)
         case TableEngineParamType::kExpr:
             ExprToString(ret, tep.expr());
             break;
+        case TableEngineParamType::kKvalue:
+            ret += tep.kvalue().key();
+            ret += " = '";
+            ret += tep.kvalue().value();
+            ret += "'";
+            break;
         default:
             ret += "c0";
     }
