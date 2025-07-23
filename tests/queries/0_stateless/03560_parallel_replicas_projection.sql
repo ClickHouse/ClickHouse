@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS normal
 ENGINE = MergeTree
 ORDER BY tuple() settings index_granularity=1;
 
+ALTER TABLE normal ADD PROJECTION p_normal (SELECT key, value ORDER BY key);
 INSERT INTO normal select number as key, number as value from numbers(10000);
 INSERT INTO normal select number as key, number as value from numbers(10000, 100);
 
