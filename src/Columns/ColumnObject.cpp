@@ -294,7 +294,7 @@ DataTypePtr ColumnObject::getValueNameAndTypeImpl(WriteBufferFromOwnString & nam
         if (first)
             first = false;
         else
-            name_buf << ", ";            
+            name_buf << ", ";
         writeDoubleQuoted(path, name_buf);
         column->getValueNameAndTypeImpl(name_buf, n, options);
     }
