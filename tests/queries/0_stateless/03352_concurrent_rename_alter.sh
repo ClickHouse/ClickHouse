@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas, long
+# Tags: no-parallel-replicas, long, disabled
+
+# disabled until https://github.com/ClickHouse/ClickHouse/issues/84295 is done
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
