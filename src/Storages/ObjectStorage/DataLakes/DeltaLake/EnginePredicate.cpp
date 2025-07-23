@@ -1,5 +1,6 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
 
+#if USE_DELTA_KERNEL_RS
 #include <Common/logger_useful.h>
 
 #include <Functions/IFunction.h>
@@ -322,3 +323,5 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
 }
 
 }
+
+#endif

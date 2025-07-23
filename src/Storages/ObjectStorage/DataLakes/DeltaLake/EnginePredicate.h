@@ -1,4 +1,8 @@
 #pragma once
+
+#include "config.h"
+
+#if USE_DELTA_KERNEL_RS
 #include <Common/Exception.h>
 #include <delta_kernel_ffi.hpp>
 
@@ -50,3 +54,5 @@ private:
 std::shared_ptr<EnginePredicate> getEnginePredicate(
     const DB::ActionsDAG & filter, std::exception_ptr & exception);
 }
+
+#endif
