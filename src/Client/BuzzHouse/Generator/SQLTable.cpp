@@ -1250,7 +1250,8 @@ void StatementGenerator::generateEngineDetails(
 
         if (b.isIcebergS3Engine() || b.isIcebergAzureEngine())
         {
-            connections.createExternalDatabaseTable(rg, b.isIcebergS3Engine() ? IntegrationCall::MinIO : IntegrationCall::Azurite, b, entries, te);
+            connections.createExternalDatabaseTable(
+                rg, b.isIcebergS3Engine() ? IntegrationCall::MinIO : IntegrationCall::Azurite, b, entries, te);
         }
         else
         {
@@ -1259,12 +1260,12 @@ void StatementGenerator::generateEngineDetails(
         }
         /// Set path
         const String & key = b.isIcebergS3Engine() ? "filename" : (b.isIcebergAzureEngine() ? "blob_path" : "path");
-        KeyValuePair *kvp = te->add_params()->mutable_kvalue();
+        KeyValuePair * kvp = te->add_params()->mutable_kvalue();
         kvp->set_key(key);
         kvp->set_value(fpath.generic_string());
 
         /// Set format
-        KeyValuePair *kvp2 = te->add_params()->mutable_kvalue();
+        KeyValuePair * kvp2 = te->add_params()->mutable_kvalue();
         b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
         kvp2->set_key("format");
         kvp2->set_value(InOutFormat_Name(b.file_format).substr(6));
@@ -1272,7 +1273,7 @@ void StatementGenerator::generateEngineDetails(
         /// Optional compression
         if (rg.nextSmallNumber() < 4)
         {
-            KeyValuePair *kvp3 = te->add_params()->mutable_kvalue();
+            KeyValuePair * kvp3 = te->add_params()->mutable_kvalue();
 
             b.file_comp = rg.pickRandomly(ObjectCompress);
             kvp3->set_key("compression");

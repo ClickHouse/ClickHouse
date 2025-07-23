@@ -263,8 +263,8 @@ public:
     bool isNotTruncableEngine() const
     {
         return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
-            || isMongoDBEngine() || isAnyS3Engine() || isAnyAzureEngine() || isHudiEngine() || isAnyDeltaLakeEngine() || isAnyIcebergEngine()
-            || isMergeEngine() || isDistributedEngine() || isDictionaryEngine() || isGenerateRandomEngine()
+            || isMongoDBEngine() || isAnyS3Engine() || isAnyAzureEngine() || isHudiEngine() || isAnyDeltaLakeEngine()
+            || isAnyIcebergEngine() || isMergeEngine() || isDistributedEngine() || isDictionaryEngine() || isGenerateRandomEngine()
             || isMaterializedPostgreSQLEngine() || isExternalDistributedEngine();
     }
 
