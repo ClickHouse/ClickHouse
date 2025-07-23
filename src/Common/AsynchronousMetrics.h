@@ -192,6 +192,7 @@ private:
         ProcStatValuesOther operator-(const ProcStatValuesOther & other) const;
     };
 
+    ProcStatValuesCPU cgroup_values_all_cpus TSA_GUARDED_BY(data_mutex){};
     ProcStatValuesCPU proc_stat_values_all_cpus TSA_GUARDED_BY(data_mutex) {};
     ProcStatValuesOther proc_stat_values_other TSA_GUARDED_BY(data_mutex) {};
     std::vector<ProcStatValuesCPU> proc_stat_values_per_cpu TSA_GUARDED_BY(data_mutex);

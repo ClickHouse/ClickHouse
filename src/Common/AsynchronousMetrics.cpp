@@ -1204,13 +1204,13 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 const double multiplier = 1.0 / cgroup_version_specific_divisor
                     / (std::chrono::duration_cast<std::chrono::nanoseconds>(time_since_previous_update).count() / 1e9);
 
-                const ProcStatValuesCPU delta_values = current_values - proc_stat_values_all_cpus;
+                const ProcStatValuesCPU delta_values = current_values - cgroup_values_all_cpus;
                 applyCgroupCPUMetricsUpdate(new_values, delta_values, multiplier);
                 if (max_cpu_cgroups > 0)
                     applyCgroupNormalizedCPUMetricsUpdate(new_values, max_cpu_cgroups, delta_values, multiplier);
             }
 
-            proc_stat_values_all_cpus = current_values;
+            cgroup_values_all_cpus = current_values;
         }
         catch (...)
         {
