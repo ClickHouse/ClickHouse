@@ -60,10 +60,14 @@ A [lightweight `DELETE`](/sql-reference/statements/delete) query can be run as a
 
 **Advantages of lightweight updates:**
 - The latency of the update is comparable to the latency of the `INSERT ... SELECT ...` query
-- Only updated columns and values are written, not entire columns in data parts  - No need to wait for currently running merges/mutations to complete, therefore the latency of an update is predictable  - Parallel execution of lightweight updates is possible
+- Only updated columns and values are written, not entire columns in data parts
+- No need to wait for currently running merges/mutations to complete, therefore the latency of an update is predictable
+- Parallel execution of lightweight updates is possible
+
 **Potential performance impacts:**
 - Adds an overhead to `SELECT` queries that need to apply patches
-- [Skipping indexes](/engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-data_skipping-indexes) and [projections](/engines/table-engines/mergetree-family/mergetree.md/#projections) are not used for data parts that have patches to be applied   - Small updates which are too frequent may lead to a "too many parts" error. It is recommended to batch several updates into a single query, for example by putting ids for updates in a single `IN` clause in the `WHERE` clause
+- [Skipping indexes](/engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-data_skipping-indexes) and [projections](/engines/table-engines/mergetree-family/mergetree.md/#projections) are not used for data parts that have patches to be applied
+- Small updates which are too frequent may lead to a "too many parts" error. It is recommended to batch several updates into a single query, for example by putting ids for updates in a single `IN` clause in the `WHERE` clause
 - Lightweight updates are designed to update small amounts of rows (up to about 10% of the table). If you need to update a larger amount, it is recommended to use the [`ALTER TABLE ... UPDATE`](/sql-reference/statements/alter/update) mutation
 
 ## Concurrent operations {#concurrent-operations}
