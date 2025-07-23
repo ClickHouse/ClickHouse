@@ -45,7 +45,7 @@ public:
 #if USE_PROTOBUF
     class ErrorCollector : public google::protobuf::compiler::MultiFileErrorCollector
     {
-        void AddError(const std::string &, int line, int column, const std::string & message) override;
+        void RecordError(absl::string_view filename, int line, int column, absl::string_view message) override;
     };
 
     const google::protobuf::Descriptor * getProtobufSchema(uint32_t id);

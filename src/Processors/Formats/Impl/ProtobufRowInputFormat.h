@@ -66,7 +66,7 @@ private:
 class ProtobufConfluentRowInputFormat final : public IRowInputFormat
 {
 public:
-    ProtobufConfluentRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
+    ProtobufConfluentRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
     String getName() const override { return "ProtobufConfluentRowInputFormat"; }
 
 private:

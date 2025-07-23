@@ -14,6 +14,7 @@
 
 #include "Common/Exception.h"
 #include <Common/CacheBase.h>
+#include "Core/Block_fwd.h"
 
 #include <Processors/Formats/Impl/ConfluentRegistry.h>
 
@@ -196,7 +197,7 @@ static uint32_t readConfluentSchemaId(ReadBuffer & in, bool first_row)
 }
 
 ProtobufConfluentRowInputFormat::ProtobufConfluentRowInputFormat(
-    const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
+    SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_)
     , schema_registry(getConfluentSchemaRegistry(format_settings_))
     , format_settings(format_settings_)
@@ -308,7 +309,7 @@ void registerInputFormatProtobuf(FormatFactory & factory)
         const RowInputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<ProtobufConfluentRowInputFormat>(sample, buf, params, settings);
+        return std::make_shared<ProtobufConfluentRowInputFormat>(std::make_shared<const Block>(sample), buf, params, settings);
     });
 }
 

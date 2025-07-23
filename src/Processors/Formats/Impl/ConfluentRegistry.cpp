@@ -59,9 +59,9 @@ avro::ValidSchema ConfluentSchemaRegistry::getAvroSchema(uint32_t id)
 
 #if USE_PROTOBUF
 
-void ConfluentSchemaRegistry::ErrorCollector::AddError(const std::string &, int line, int column, const std::string & message)
+void ConfluentSchemaRegistry::ErrorCollector::RecordError(absl::string_view filename, int line, int column, absl::string_view message)
 {
-    throw Exception(ErrorCodes::INCORRECT_DATA, "Proto parse error at {}: {} {}", line, column, message);
+    throw Exception(ErrorCodes::INCORRECT_DATA, "Proto parse error at {} {}: {} {}", filename, line, column, message);
 }
 
 const google::protobuf::Descriptor * ConfluentSchemaRegistry::getProtobufSchema(uint32_t id)
