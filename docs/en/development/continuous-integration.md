@@ -127,7 +127,6 @@ Use these options and follow the [general build process](../development/build.md
   - `unit_tests_dbms`: GoogleTest binary with ClickHouse unit tests.
   - `performance.tar.zst`: Special package for performance tests.
 
-
 ## Special build check {#special-build-check}
 Performs static analysis and code style checks using `clang-tidy`. The report is similar to the [build check](#build-check). Fix the errors found in the build log.
 
@@ -174,7 +173,6 @@ If it fails, ask a maintainer for help.
 ## AST fuzzer {#ast-fuzzer}
 Runs randomly generated queries to catch program errors.
 If it fails, ask a maintainer for help.
-
 
 ## Performance tests {#performance-tests}
 Measure changes in query performance.
