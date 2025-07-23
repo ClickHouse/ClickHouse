@@ -84,7 +84,7 @@ bool compareWithThreshold(const ColumnRawPtrs & raw_block_columns, size_t min_bl
 }
 
 PartialSortingTransform::PartialSortingTransform(
-    const Block & header_, const SortDescription & description_, UInt64 limit_)
+    SharedHeader header_, const SortDescription & description_, UInt64 limit_)
     : ISimpleTransform(header_, header_, false)
     , description(description_)
     , limit(limit_)
@@ -93,7 +93,7 @@ PartialSortingTransform::PartialSortingTransform(
     assert(!description_.empty());
 
     for (const auto & column_sort_desc : description)
-        description_with_positions.emplace_back(column_sort_desc, header_.getPositionByName(column_sort_desc.column_name));
+        description_with_positions.emplace_back(column_sort_desc, header_->getPositionByName(column_sort_desc.column_name));
 }
 
 void PartialSortingTransform::transform(Chunk & chunk)

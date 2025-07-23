@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 
+#include <DataTypes/DataTypesNumber.h>
 #include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -109,14 +110,25 @@ namespace
 
             if (FunctionSecretArgumentsFinder::Result secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node_ptr).getResult(); secret_arguments.count)
             {
-                auto & argument_nodes = table_function_node_ptr->getArgumentsNode()->as<ListNode &>().getNodes();
+                auto & argument_nodes = table_function_node_ptr->getArguments().getNodes();
 
                 for (size_t n = secret_arguments.start; n < secret_arguments.start + secret_arguments.count; ++n)
                 {
+                    ConstantNode * constant_node = nullptr;
                     if (secret_arguments.are_named)
-                        argument_nodes[n]->as<FunctionNode&>().getArguments().getNodes()[1]->as<ConstantNode&>().setMaskId();
-                    else
-                        argument_nodes[n]->as<ConstantNode&>().setMaskId();
+                    {
+                        auto * function_node = argument_nodes[n]->as<FunctionNode>();
+                        if (function_node && function_node->getArguments().getNodes().size() >= 2)
+                            constant_node = function_node->getArguments().getNodes().at(1)->as<ConstantNode>();
+                    }
+
+                    if (!constant_node)
+                    {
+                        constant_node = argument_nodes[n]->as<ConstantNode>();
+                    }
+
+                    if (constant_node)
+                        constant_node->setMaskId();
                 }
             }
         }
@@ -717,7 +729,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             fillColumn(*res_columns[0], buf.str());
     }
 
-    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(sample_block.cloneWithColumns(std::move(res_columns))));
+    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(sample_block.cloneWithColumns(std::move(res_columns)))));
 }
 
 void registerInterpreterExplainQuery(InterpreterFactory & factory)

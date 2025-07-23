@@ -8,8 +8,8 @@
 namespace DB
 {
 
-SQLInsertRowOutputFormat::SQLInsertRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_), column_names(header_.getNames()), format_settings(format_settings_)
+SQLInsertRowOutputFormat::SQLInsertRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_), column_names(header_->getNames()), format_settings(format_settings_)
 {
 }
 
@@ -100,7 +100,7 @@ void registerOutputFormatSQLInsert(FormatFactory & factory)
         const Block & sample,
         const FormatSettings & settings)
     {
-        return std::make_shared<SQLInsertRowOutputFormat>(buf, sample, settings);
+        return std::make_shared<SQLInsertRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });
 
     factory.setContentType("SQLInsert", "text/plain; charset=UTF-8");

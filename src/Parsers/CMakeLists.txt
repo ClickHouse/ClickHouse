@@ -20,6 +20,13 @@ if (ENABLE_FUZZING)
     add_subdirectory(fuzzers)
 endif()
 
-if (ENABLE_TESTS)
-    add_subdirectory(HiliteComparator)
+if (ENABLE_LEXER_TEST)
+    set(LEXER_STANDALONE_BUILD ON CACHE BOOL "Enable standalone lexer build")
+endif ()
+
+# Lexer standalone library
+if (LEXER_STANDALONE_BUILD)
+    add_library(lexer-c Lexer.cpp)
+    target_include_directories(lexer-c PRIVATE ..)
+    target_compile_options(lexer-c PRIVATE -Os -fno-exceptions -fno-rtti -nostdlib -DLEXER_STANDALONE_BUILD)
 endif ()
