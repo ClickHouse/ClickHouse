@@ -196,9 +196,86 @@ class ClickHouseProc:
             "10000"
         )
 
+    def _install_light(self):
+        Utils.add_to_PATH(temp_dir)
+        commands = [
+            f"mkdir -p {self.ch_config_dir}/users.d",
+            f"cp ./programs/server/config.xml ./programs/server/users.xml {self.ch_config_dir}",
+            # make it ipv4 only
+            f'sed -i "s|<!-- <listen_host>0.0.0.0</listen_host> -->|<listen_host>0.0.0.0</listen_host>|" {self.ch_config_dir}/config.xml',
+            f"cp -r --dereference ./programs/server/config.d {self.ch_config_dir}",
+            f"chmod +x {temp_dir}/clickhouse",
+            f"ln -sf {temp_dir}/clickhouse {temp_dir}/clickhouse-server",
+            f"ln -sf {temp_dir}/clickhouse {temp_dir}/clickhouse-client",
+        ]
+        res = True
+        for command in commands:
+            res = res and Shell.check(command, verbose=True)
+        if not res:
+            print("Failed to install ClickHouse config")
+        return res
+
+    def install_clickbench_config(self):
+        res = self._install_light()
+        if not res:
+            return False
+
+        # tweak for clickbench
+        content = """
+profiles:
+    default:
+        allow_introspection_functions: 1
+"""
+        file_path = f"{self.ch_config_dir}/users.d/allow_introspection_functions.yaml"
+        with open(file_path, "w") as file:
+            file.write(content)
+        return True
+
+    def install_fuzzer_config(self):
+        res = self._install_light()
+        if not res:
+            return False
+        # TODO figure out which ones are needed
+        commands = [
+            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml {self.ch_config_dir}/users.d",
+            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/allow-nullable-key.xml {self.ch_config_dir}/config.d",
+        ]
+
+        c1 = """
+<clickhouse>
+    <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
+</clickhouse>
+"""
+        c2 = """
+<clickhouse>
+    <core_dump>
+        <!-- 100GiB -->
+        <size_limit>107374182400</size_limit>
+    </core_dump>
+    <!-- NOTE: no need to configure core_path,
+    since clickhouse is not started as daemon (via clickhouse start)
+    -->
+    <core_path>$PWD</core_path>
+</clickhouse>
+"""
+        file_path = (
+            f"{self.ch_config_dir}/config.d/max_server_memory_usage_to_ram_ratio.xml"
+        )
+        with open(file_path, "w") as file:
+            file.write(c1)
+
+        file_path = f"{self.ch_config_dir}/config.d/core.xml"
+        with open(file_path, "w") as file:
+            file.write(c2)
+        res = True
+        for command in commands:
+            res = res and Shell.check(command, verbose=True)
+        return res
+
     def create_log_export_config(self):
         print("Create log export config")
         config_file = Path(self.ch_config_dir) / "config.d" / "system_logs_export.yaml"
+        config_file.parent.mkdir(parents=True, exist_ok=True)
 
         self.log_export_host = Secret.Config(
             name="clickhouse_ci_logs_host",
@@ -248,17 +325,14 @@ class ClickHouseProc:
             pid_file = self.pid_file_replica_1
             command = self.replica_command_1
             run_path = self.run_path1
-            proc = self.proc_1
         elif replica_num == 2:
             pid_file = self.pid_file_replica_2
             command = self.replica_command_2
             run_path = self.run_path2
-            proc = self.proc_2
         elif replica_num == 0:
             pid_file = self.pid_file
             command = self.command
             run_path = self.run_path0
-            proc = self.proc
         else:
             assert False
 
