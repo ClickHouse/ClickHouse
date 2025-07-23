@@ -18,6 +18,8 @@ from helpers.s3_tools import prepare_s3_bucket
 from helpers.test_tools import exec_query_with_retry
 from helpers.config_cluster import minio_secret_key
 
+from minio.commonconfig import Tags
+
 MINIO_INTERNAL_PORT = 9001
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -2653,3 +2655,29 @@ def test_archive(started_cluster):
     assert expected_count == int(
         node.query(f"SELECT count() FROM {cluster_function_new} SETTINGS cluster_function_process_archive_on_multiple_nodes = 1")
     )
+
+
+def test_object_tags(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+    table_name = f"test_object_tags_{uuid.uuid4()}"
+
+    instance.query(
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name}.tsv', auto, 'x UInt64') select 1 SETTINGS s3_truncate_on_insert=1"
+    )
+
+    tags = Tags(for_object=True)
+    tags["Database"] = "ClickHouse"
+    tags["Team"] = "Core"
+    tags["Ping"] = "Pong"
+
+    started_cluster.minio_client.set_object_tags(bucket, f"{table_name}.tsv", tags)
+    read_tags = started_cluster.minio_client.get_object_tags(bucket, f"{table_name}.tsv")
+
+    assert read_tags == tags
+
+    res = instance.query(
+        f"select _tags, _file, _path, x from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name}.tsv', auto, 'x UInt64')"
+    )
+
+    assert res == f"{tags}\t{table_name}.tsv\troot/{table_name}.tsv\t1\n"
