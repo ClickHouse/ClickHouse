@@ -36,9 +36,9 @@ Columns:
 - `view_name` ([String](../../sql-reference/data-types/string.md)) — Name of the view.
 - `view_uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — UUID of the view.
 - `view_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Type of the view. Values:
-    - `'Default' = 1` — [Default views](/sql-reference/statements/create/view#normal-view). Should not appear in this log.
-    - `'Materialized' = 2` — [Materialized views](/sql-reference/statements/create/view#materialized-view).
-    - `'Live' = 3` — [Live views](../../sql-reference/statements/create/view.md#live-view).
+  - `'Default' = 1` — [Default views](/sql-reference/statements/create/view#normal-view). Should not appear in this log.
+  - `'Materialized' = 2` — [Materialized views](/sql-reference/statements/create/view#materialized-view).
+  - `'Live' = 3` — [Live views](../../sql-reference/statements/create/view.md#live-view).
 - `view_query` ([String](../../sql-reference/data-types/string.md)) — The query executed by the view.
 - `view_target` ([String](../../sql-reference/data-types/string.md)) — The name of the view target table.
 - `read_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of read rows.
@@ -48,10 +48,10 @@ Columns:
 - `peak_memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — The maximum difference between the amount of allocated and freed memory in context of this view.
 - `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — ProfileEvents that measure different metrics. The description of them could be found in the table [system.events](/operations/system-tables/events).
 - `status` ([Enum8](../../sql-reference/data-types/enum.md)) — Status of the view. Values:
-    - `'QueryStart' = 1` — Successful start the view execution. Should not appear.
-    - `'QueryFinish' = 2` — Successful end of the view execution.
-    - `'ExceptionBeforeStart' = 3` — Exception before the start of the view execution.
-    - `'ExceptionWhileProcessing' = 4` — Exception during the view execution.
+  - `'QueryStart' = 1` — Successful start the view execution. Should not appear.
+  - `'QueryFinish' = 2` — Successful end of the view execution.
+  - `'ExceptionBeforeStart' = 3` — Exception before the start of the view execution.
+  - `'ExceptionWhileProcessing' = 4` — Exception during the view execution.
 - `exception_code` ([Int32](../../sql-reference/data-types/int-uint.md)) — Code of an exception.
 - `exception` ([String](../../sql-reference/data-types/string.md)) — Exception message.
 - `stack_trace` ([String](../../sql-reference/data-types/string.md)) — [Stack trace](https://en.wikipedia.org/wiki/Stack_trace). An empty string, if the query was completed successfully.

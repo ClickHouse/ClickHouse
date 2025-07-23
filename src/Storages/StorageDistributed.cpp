@@ -912,9 +912,28 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
         if (table_expression_modifiers)
             table_function_node->setTableExpressionModifiers(*table_expression_modifiers);
 
-        QueryAnalysisPass query_analysis_pass;
-        QueryTreeNodePtr node = table_function_node;
-        query_analysis_pass.run(node, query_context);
+        /// Subquery in table function `view` may reference tables that don't exist on the initiator.
+        if (table_function_node->getTableFunctionName() == "view")
+        {
+            auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
+            auto column_names_and_types = distributed_storage_snapshot->getColumns(get_column_options);
+
+            StorageID fake_storage_id = StorageID::createEmpty();
+            if (auto * table_node = query_info.table_expression->as<TableNode>())
+                fake_storage_id = table_node->getStorage()->getStorageID();
+            else if (auto * original_table_function_node = query_info.table_expression->as<TableFunctionNode>())
+                fake_storage_id = original_table_function_node->getStorage()->getStorageID();
+
+            auto storage = std::make_shared<StorageDummy>(fake_storage_id, ColumnsDescription{column_names_and_types});
+
+            table_function_node->resolve({}, std::move(storage), query_context, /*unresolved_arguments_indexes_=*/{ 0 });
+        }
+        else
+        {
+            QueryAnalysisPass query_analysis_pass;
+            QueryTreeNodePtr node = table_function_node;
+            query_analysis_pass.run(node, query_context);
+        }
 
         replacement_table_expression = std::move(table_function_node);
     }
@@ -976,9 +995,7 @@ void StorageDistributed::read(
 
     if (settings[Setting::allow_experimental_analyzer])
     {
-        StorageID remote_storage_id = StorageID::createEmpty();
-        if (!remote_table_function_ptr)
-            remote_storage_id = StorageID{remote_database, remote_table};
+        StorageID remote_storage_id = StorageID{remote_database, remote_table};
 
         auto query_tree_distributed = buildQueryTreeDistributed(modified_query_info,
             query_info.initial_storage_snapshot ? query_info.initial_storage_snapshot : storage_snapshot,

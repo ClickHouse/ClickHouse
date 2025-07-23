@@ -63,10 +63,6 @@ struct KeeperRequestForSession
 };
 using KeeperRequestsForSessions = std::vector<KeeperRequestForSession>;
 
-StringRef parentNodePath(StringRef path);
-
-StringRef getBaseNodeName(StringRef path);
-
 inline static constexpr std::string_view tmp_keeper_file_prefix = "tmp_";
 
 void moveFileBetweenDisks(
