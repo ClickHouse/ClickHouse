@@ -396,6 +396,7 @@ StorageURLSource::StorageURLSource(
                 max_block_size,
                 format_settings,
                 parser_shared_resources,
+                format_filter_info,
                 /* is_remote_ fs */ true,
                 compression_method,
                 need_only_count);

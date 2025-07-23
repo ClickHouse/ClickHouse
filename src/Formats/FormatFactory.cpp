@@ -374,6 +374,7 @@ InputFormatPtr FormatFactory::getInput(
     UInt64 max_block_size,
     const std::optional<FormatSettings> & _format_settings,
     FormatParserSharedResourcesPtr parser_shared_resources,
+    FormatFilterInfoPtr filter_info,
     bool is_remote_fs,
     CompressionMethod compression,
     bool need_only_count) const
@@ -461,7 +462,7 @@ InputFormatPtr FormatFactory::getInput(
     else if (creators.random_access_input_creator)
     {
         format = creators.random_access_input_creator(
-            buf, sample, format_settings, context->getReadSettings(), is_remote_fs, parser_shared_resources, nullptr);
+            buf, sample, format_settings, context->getReadSettings(), is_remote_fs, parser_shared_resources, filter_info);
     }
     else
     {

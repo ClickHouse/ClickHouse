@@ -173,6 +173,7 @@ public:
         UInt64 max_block_size,
         const std::optional<FormatSettings> & format_settings = std::nullopt,
         FormatParserSharedResourcesPtr parser_shared_resources = nullptr,
+        FormatFilterInfoPtr filter_info = nullptr,
         // affects things like buffer sizes and parallel reading
         bool is_remote_fs = false,
         // allows to do: buf -> parallel read -> decompression,

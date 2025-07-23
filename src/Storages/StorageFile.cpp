@@ -1450,6 +1450,7 @@ Chunk StorageFileSource::generate()
                 max_block_size,
                 storage->format_settings,
                 parser_shared_resources,
+                filter_info,
                 /*is_remote_fs=*/false,
                 CompressionMethod::None,
                 need_only_count);

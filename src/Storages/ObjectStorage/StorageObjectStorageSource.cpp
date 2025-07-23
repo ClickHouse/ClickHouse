@@ -392,7 +392,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     const LoggerPtr & log,
     size_t max_block_size,
     FormatParserSharedResourcesPtr parser_shared_resources,
-    FormatFilterInfoPtr,
+    FormatFilterInfoPtr format_filter_info,
     bool need_only_count)
 {
     ObjectInfoPtr object_info;
@@ -497,7 +497,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             context_,
             max_block_size,
             format_settings,
-            !schema_was_changed ? parser_shared_resources : nullptr,
+            parser_shared_resources,
+            !schema_was_changed ? format_filter_info : nullptr,
             true /* is_remote_fs */,
             compression_method,
             need_only_count);
