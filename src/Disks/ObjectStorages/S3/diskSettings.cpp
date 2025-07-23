@@ -112,7 +112,7 @@ std::unique_ptr<S3::Client> getClient(
         auth_settings[S3AuthSetting::region],
         context->getRemoteHostFilter(),
         s3_max_redirects,
-        s3_retry_attempts,
+        S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = static_cast<unsigned>(s3_retry_attempts)},
         s3_slow_all_threads_after_network_error,
         enable_s3_requests_logging,
         for_disk_s3,

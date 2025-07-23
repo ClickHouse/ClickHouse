@@ -109,13 +109,12 @@ GlueCatalog::GlueCatalog(
         region,
         getContext()->getRemoteHostFilter(),
         s3_max_redirects,
-        s3_retry_attempts,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = static_cast<unsigned>(s3_retry_attempts)},
         s3_slow_all_threads_after_network_error,
         enable_s3_requests_logging,
         false,
         nullptr,
-        nullptr
-    );
+        nullptr);
 
     Aws::Glue::GlueClientConfiguration client_configuration;
     client_configuration.maxConnections = static_cast<unsigned>(global_settings[DB::Setting::s3_max_connections]);

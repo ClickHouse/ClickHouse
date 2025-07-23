@@ -113,23 +113,23 @@ namespace DB::S3
 {
 
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
-        std::function<ProxyConfiguration()> per_request_configuration_,
-        const String & force_region_,
-        const RemoteHostFilter & remote_host_filter_,
-        unsigned int s3_max_redirects_,
-        unsigned int s3_retry_attempts_,
-        bool s3_slow_all_threads_after_network_error_,
-        bool enable_s3_requests_logging_,
-        bool for_disk_s3_,
-        bool s3_use_adaptive_timeouts_,
-        const ThrottlerPtr & get_request_throttler_,
-        const ThrottlerPtr & put_request_throttler_,
-        std::function<void(const ProxyConfiguration &)> error_report_)
+    std::function<ProxyConfiguration()> per_request_configuration_,
+    const String & force_region_,
+    const RemoteHostFilter & remote_host_filter_,
+    unsigned int s3_max_redirects_,
+    RetryStrategy retry_strategy_,
+    bool s3_slow_all_threads_after_network_error_,
+    bool enable_s3_requests_logging_,
+    bool for_disk_s3_,
+    bool s3_use_adaptive_timeouts_,
+    const ThrottlerPtr & get_request_throttler_,
+    const ThrottlerPtr & put_request_throttler_,
+    std::function<void(const ProxyConfiguration &)> error_report_)
     : per_request_configuration(per_request_configuration_)
     , force_region(force_region_)
     , remote_host_filter(remote_host_filter_)
     , s3_max_redirects(s3_max_redirects_)
-    , s3_retry_attempts(s3_retry_attempts_)
+    , retry_strategy(retry_strategy_)
     , s3_slow_all_threads_after_network_error(s3_slow_all_threads_after_network_error_)
     , enable_s3_requests_logging(enable_s3_requests_logging_)
     , for_disk_s3(for_disk_s3_)
@@ -140,6 +140,10 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
 {
     /// This is used to identify configurations created by us.
     userAgent = std::string(VERSION_FULL) + VERSION_OFFICIAL;
+    if (retry_strategy.initial_delay_ms >= retry_strategy.max_delay_ms)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Initial retry delay must not exceed the maximum retry delay");
+    if (retry_strategy.jitter_factor < 0 || retry_strategy.jitter_factor > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Jitter factor for the retry strategy must be within the [0, 1]");
 }
 
 void PocoHTTPClientConfiguration::updateSchemeAndRegion()

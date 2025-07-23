@@ -67,12 +67,11 @@ namespace ErrorCodes
 namespace S3
 {
 
-Client::RetryStrategy::RetryStrategy(uint32_t maxRetries_, uint32_t scaleFactor_, uint32_t maxDelayMs_)
-    : maxRetries(maxRetries_)
-    , scaleFactor(scaleFactor_)
-    , maxDelayMs(maxDelayMs_)
+Client::RetryStrategy::RetryStrategy(const PocoHTTPClientConfiguration::RetryStrategy & config_)
+    : config(config_)
 {
-    chassert(maxDelayMs <= uint64_t(scaleFactor) * (1ul << 31l));
+    chassert(config.max_delay_ms <= (1.0 + config.jitter_factor) * config.initial_delay_ms * (1ul << 31l));
+    chassert(config.jitter_factor >= 0 && config.jitter_factor <= 1);
 }
 
 /// NOLINTNEXTLINE(google-runtime-int)
@@ -81,7 +80,7 @@ bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client:
     if (error.GetResponseCode() == Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
         return false;
 
-    if (attemptedRetries >= maxRetries)
+    if (attemptedRetries >= config.max_retries)
         return false;
 
     if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
@@ -105,19 +104,27 @@ bool Client::RetryStrategy::useGCSRewrite(const Aws::Client::AWSError<Aws::Clien
 /// NOLINTNEXTLINE(google-runtime-int)
 long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>&, long attemptedRetries) const
 {
-    if (attemptedRetries == 0)
-    {
-        return 0;
-    }
-
     uint64_t backoffLimitedPow = 1ul << std::min(attemptedRetries, 31l);
-    return std::min<uint64_t>(scaleFactor * backoffLimitedPow, maxDelayMs);
+
+    uint64_t res;
+    if (config.jitter_factor > 0)
+    {
+        auto dist = std::uniform_real_distribution<double>(1.0, 1.0 + config.jitter_factor);
+        double jitter = dist(thread_local_rng);
+        res = static_cast<std::uint64_t>(
+            std::min(jitter * config.initial_delay_ms * backoffLimitedPow, static_cast<double>(config.max_delay_ms)));
+    }
+    else
+        res = std::min<uint64_t>(config.initial_delay_ms * backoffLimitedPow, config.max_delay_ms);
+
+    LOG_TEST(getLogger("RetryStrategy"), "Next retry in {} ms", res);
+    return res;
 }
 
 /// NOLINTNEXTLINE(google-runtime-int)
 long Client::RetryStrategy::GetMaxAttempts() const
 {
-    return maxRetries + 1;
+    return config.max_retries + 1;
 }
 
 namespace
@@ -1041,7 +1048,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
             std::move(credentials),
             credentials_configuration);
 
-    client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(client_configuration.s3_retry_attempts);
+    client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(client_configuration.retry_strategy);
 
     /// Use virtual addressing if endpoint is not specified.
     if (client_configuration.endpointOverride.empty())
@@ -1061,7 +1068,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     const String & force_region,
     const RemoteHostFilter & remote_host_filter,
     unsigned int s3_max_redirects,
-    unsigned int s3_retry_attempts,
+    const PocoHTTPClientConfiguration::RetryStrategy & retry_strategy,
     bool s3_slow_all_threads_after_network_error,
     bool enable_s3_requests_logging,
     bool for_disk_s3,
@@ -1081,7 +1088,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         force_region,
         remote_host_filter,
         s3_max_redirects,
-        s3_retry_attempts,
+        retry_strategy,
         s3_slow_all_threads_after_network_error,
         enable_s3_requests_logging,
         for_disk_s3,
