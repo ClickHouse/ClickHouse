@@ -510,7 +510,7 @@ class Result(MetaClasses.Serializable):
                         with open(
                             log_file, "r", encoding="utf-8", errors="ignore"
                         ) as f:
-                            error_infos.append(f.read().strip())
+                            error_infos.append(f.read().strip().splitlines())
                     res = exit_code == 0
 
                 # If fail_fast is enabled, stop on first failure
@@ -519,7 +519,7 @@ class Result(MetaClasses.Serializable):
                     break
 
         # Create and return the result object with status and log file (if any)
-        MAX_LINES_IN_INFO = 100
+        MAX_LINES_IN_INFO = 500
         return Result.create_from(
             name=name,
             status=res,
