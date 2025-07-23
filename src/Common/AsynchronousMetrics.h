@@ -248,6 +248,14 @@ private:
     void openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out);
     void openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out);
 
+    void applyCgroupCPUMetricsUpdate(AsynchronousMetricValues & new_values, const ProcStatValuesCPU & delta_values, double multiplier);
+
+    void applyCgroupNormalizedCPUMetricsUpdate(
+        AsynchronousMetricValues & new_values,
+        double num_cpus_to_normalize,
+        const ProcStatValuesCPU & delta_values_all_cpus,
+        double multiplier);
+
     void applyCPUMetricsUpdate(
         AsynchronousMetricValues & new_values, const std::string & cpu_suffix, const ProcStatValuesCPU & delta_values, double multiplier);
 

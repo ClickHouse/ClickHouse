@@ -645,6 +645,26 @@ AsynchronousMetrics::NetworkInterfaceStatValues::operator-(const AsynchronousMet
 
 
 #if defined(OS_LINUX)
+
+void AsynchronousMetrics::applyCgroupCPUMetricsUpdate(
+    AsynchronousMetricValues & new_values, const ProcStatValuesCPU & delta_values, double multiplier)
+{
+    new_values["CGroupUserTime"]
+        = {delta_values.user * multiplier,
+           "The ratio of time the CPU core was running userspace code. This is a system-wide metric, it includes all the processes on the "
+           "host machine, not just clickhouse-server."
+           " This includes also the time when the CPU was under-utilized due to the reasons internal to the CPU (memory loads, pipeline "
+           "stalls, branch mispredictions, running another SMT core)."
+           " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
+           "them [0..num cores]."};
+    new_values["CGroupSystemTime"]
+        = {delta_values.system * multiplier,
+           "The ratio of time the CPU core was running OS kernel (system) code. This is a system-wide metric, it includes all the "
+           "processes on the host machine, not just clickhouse-server."
+           " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
+           "them [0..num cores]."};
+}
+
 void AsynchronousMetrics::applyCPUMetricsUpdate(
     AsynchronousMetricValues & new_values, const std::string & cpu_suffix, const ProcStatValuesCPU & delta_values, double multiplier)
 {
@@ -721,6 +741,25 @@ void AsynchronousMetrics::applyCPUMetricsUpdate(
            "them [0..num cores]."};
 }
 
+void AsynchronousMetrics::applyCgroupNormalizedCPUMetricsUpdate(
+    AsynchronousMetricValues & new_values, double num_cpus_to_normalize, const ProcStatValuesCPU & delta_values_all_cpus, double multiplier)
+{
+    chassert(num_cpus_to_normalize);
+
+    new_values["CGroupUserTimeNormalized"]
+        = {delta_values_all_cpus.user * multiplier / num_cpus_to_normalize,
+           "The value is similar to `OSUserTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
+           "of the number of cores."
+           " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
+           "non-uniform, and still get the average resource utilization metric."};
+    new_values["CGroupSystemTimeNormalized"]
+        = {delta_values_all_cpus.system * multiplier / num_cpus_to_normalize,
+           "The value is similar to `OSSystemTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
+           "of the number of cores."
+           " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
+           "non-uniform, and still get the average resource utilization metric."};
+}
+
 void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
     AsynchronousMetricValues & new_values, double num_cpus_to_normalize, const ProcStatValuesCPU & delta_values_all_cpus, double multiplier)
 {
@@ -787,6 +826,7 @@ void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
            "non-uniform, and still get the average resource utilization metric."};
 }
+
 void readPressureFile(
     AsynchronousMetricValues & new_values, const std::string & type, ReadBufferFromFilePRead & in,
     std::unordered_map<String, uint64_t> & prev_pressure_vals, bool first_run)
@@ -1120,8 +1160,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         new_values["CGroupMaxCPU"] = { max_cpu_cgroups, "The maximum number of CPU cores according to CGroups."};
     }
 
-    const bool cgroup_cpu_metrics_present = cgroupcpu_stat || cgroupcpuacct_stat;
-    if (cgroup_cpu_metrics_present)
+    if (cgroupcpu_stat || cgroupcpuacct_stat)
     {
         try
         {
@@ -1166,9 +1205,9 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                     / (std::chrono::duration_cast<std::chrono::nanoseconds>(time_since_previous_update).count() / 1e9);
 
                 const ProcStatValuesCPU delta_values = current_values - proc_stat_values_all_cpus;
-                applyCPUMetricsUpdate(new_values, /*cpu_suffix=*/"", delta_values, multiplier);
+                applyCgroupCPUMetricsUpdate(new_values, delta_values, multiplier);
                 if (max_cpu_cgroups > 0)
-                    applyNormalizedCPUMetricsUpdate(new_values, max_cpu_cgroups, delta_values, multiplier);
+                    applyCgroupNormalizedCPUMetricsUpdate(new_values, max_cpu_cgroups, delta_values, multiplier);
             }
 
             proc_stat_values_all_cpus = current_values;
@@ -1205,14 +1244,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
                 if (name.starts_with("cpu"))
                 {
-                    if (cgroup_cpu_metrics_present)
-                    {
-                        /// Skip the CPU metrics if we already have them from cgroup
-                        ProcStatValuesCPU current_values{};
-                        current_values.read(*proc_stat);
-                        continue;
-                    }
-
                     String cpu_num_str = name.substr(strlen("cpu"));
                     UInt64 cpu_num = 0;
                     if (!cpu_num_str.empty())
@@ -1299,7 +1330,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
                 Float64 num_cpus_to_normalize = max_cpu_cgroups > 0 ? max_cpu_cgroups : num_cpus;
 
-                if (num_cpus_to_normalize > 0 && !cgroup_cpu_metrics_present)
+                if (num_cpus_to_normalize > 0)
                     applyNormalizedCPUMetricsUpdate(new_values, num_cpus_to_normalize, delta_values_all_cpus, multiplier);
             }
 
