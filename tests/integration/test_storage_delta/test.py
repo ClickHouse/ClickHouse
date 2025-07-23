@@ -2289,3 +2289,135 @@ def test_delta_kernel_internal_pruning(started_cluster):
             f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
         )
     )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_3"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE 'test2' == b AND d != 1
+            """,
+            query_id=query_id,
+        )
+    )
+
+    assert result == 2
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_4"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE 'test2' == b AND d > 0
+            """,
+            query_id=query_id,
+        )
+    )
+
+    assert result == 1
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_5"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE b == 'test2' AND d < 1
+            """,
+            query_id=query_id,
+        )
+    )
+
+    assert result == 2
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_6"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE b == 'test2' AND 1 >= d
+            """,
+            query_id=query_id,
+        )
+    )
+
+    assert result == 1
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_7"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE b == 'test2' AND d <= 0
+            """,
+            query_id=query_id,
+        )
+    )
+
+    assert result == 2
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 2 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    query_id = f"query_with_filter_{TABLE_NAME}_8"
+    result = int(
+        instance.query(
+            f"""SELECT count() FROM {table_function} WHERE b == 'test2' AND not h
+            """,
+            query_id=query_id,
+        )
+    )
+
+    assert result == 2
+    #instance.query("SYSTEM FLUSH LOGS")
+    #assert 2 == int(
+    #    instance.query(
+    #        f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+    #    )
+    #)
+    #assert 2 == int(
+    #    instance.query(
+    #        f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+    #    )
+    #)

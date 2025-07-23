@@ -19,11 +19,13 @@ namespace DeltaLake
 
 namespace
 {
+    /// Whether a node is a constant (literal).
     bool isConstNode(const DB::ActionsDAG::Node * node)
     {
         return node->type == DB::ActionsDAG::ActionType::COLUMN;
     }
 
+    /// Whether a node represents a specific column identifier, e.g. column name.
     bool isColumnNode(const DB::ActionsDAG::Node * node)
     {
         return node->type == DB::ActionsDAG::ActionType::INPUT;
@@ -45,7 +47,8 @@ std::shared_ptr<EnginePredicate> getEnginePredicate(
     return std::make_unique<EnginePredicate>(filter, exception);
 }
 
-/// Contains state for EngineIterator.
+/// Contains state for EngineIterator
+/// (an iterator over DB::ActionsDAG const node ptr's).
 struct EngineIteratorData
 {
     EngineIteratorData(
@@ -87,13 +90,13 @@ private:
 class  EngineIterator : public ffi::EngineIterator
 {
 public:
+    static constexpr uint64_t VISITOR_FAILED_OR_UNSUPPORTED = ~0;
+
     explicit EngineIterator(EngineIteratorData & data_)
     {
         data = &data_;
         get_next = &getNext;
     }
-
-    static constexpr uint64_t VISITOR_FAILED_OR_UNSUPPORTED = ~0;
 
 private:
     static const void * getNext(void * data_)
@@ -139,7 +142,8 @@ uintptr_t EnginePredicate::visitPredicate(void * data, ffi::KernelExpressionVisi
     EngineIteratorData iterator_data(state, predicate->filter.getOutputs(), *predicate);
     EngineIterator engine_iterator(iterator_data);
     auto result = ffi::visit_predicate_and(state, &engine_iterator);
-    LOG_TEST(iterator_data.log(), "Engine predicate result: {}", result);
+
+    LOG_TEST(iterator_data.log(), "visitPredicate finished");
     return result;
 }
 
@@ -164,42 +168,38 @@ static uintptr_t visitLiteralValue(
         case DB::TypeIndex::Int8:
         {
             auto result = value.safeGet<Int8>();
-            return ffi::visit_expression_literal_byte(state, result);
+            return ffi::visit_expression_literal_byte(state, result); /// Accepts int8
         }
         case DB::TypeIndex::UInt8:
         {
             auto result = value.safeGet<Int16>();
-            return ffi::visit_expression_literal_short(state, result);
+            return ffi::visit_expression_literal_short(state, result); /// Accepts int16
         }
         case DB::TypeIndex::Int16:
         {
             auto result = value.safeGet<Int16>();
-            return ffi::visit_expression_literal_short(state, result);
+            return ffi::visit_expression_literal_short(state, result); /// Accepts int16
         }
         case DB::TypeIndex::UInt16:
         {
             auto result = value.safeGet<Int32>();
-            return ffi::visit_expression_literal_int(state, result);
+            return ffi::visit_expression_literal_int(state, result); /// Accepts int32
         }
         case DB::TypeIndex::Int32:
         {
             auto result = value.safeGet<Int32>();
-            return ffi::visit_expression_literal_int(state, result);
+            return ffi::visit_expression_literal_int(state, result); /// Accepts int32
         }
         case DB::TypeIndex::UInt32:
         {
             auto result = value.safeGet<Int64>();
-            return ffi::visit_expression_literal_long(state, result);
+            return ffi::visit_expression_literal_long(state, result); /// Accepts int64
         }
         case DB::TypeIndex::Int64:
         {
             auto result = value.safeGet<Int64>();
-            return ffi::visit_expression_literal_long(state, result);
+            return ffi::visit_expression_literal_long(state, result); /// Accepts int64
         }
-        //case DB::TypeIndex::UInt64:
-        //{
-        //    return ffi::visit_expression_literal_long(state, value.safeGet<UInt64>());
-        //}
         default:
         {
             return EngineIterator::VISITOR_FAILED_OR_UNSUPPORTED;
@@ -227,14 +227,39 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
 
                 return ffi::visit_predicate_and(iterator_data.state, &current_engine_iterator);
             }
-            else if (func_name == DB::NameEquals::name)
+            else if (func_name == DB::NameNot::name)
+            {
+                if (node->children.size() != 1)
+                {
+                    throw DB::Exception(
+                        DB::ErrorCodes::LOGICAL_ERROR,
+                        "Expected function `{}` to have 1 child node, got {}",
+                        func_name, node->children.size());
+                }
+
+                if (isColumnNode(node->children[0]))
+                {
+                    const auto column_name = KernelUtils::toDeltaString(node->children[0]->result_name);
+                    uintptr_t column = KernelUtils::unwrapResult(
+                        ffi::visit_expression_column(iterator_data.state,
+                                                     column_name,
+                                                     &KernelUtils::allocateError), "visit_expression_column");
+                    return ffi::visit_predicate_not(iterator_data.state, column);
+                }
+            }
+            else if (func_name == DB::NameEquals::name
+                     || func_name == DB::NameNotEquals::name
+                     || func_name == DB::NameGreater::name
+                     || func_name == DB::NameGreaterOrEquals::name
+                     || func_name == DB::NameLess::name
+                     || func_name == DB::NameLessOrEquals::name)
             {
                 if (node->children.size() != 2)
                 {
                     throw DB::Exception(
                         DB::ErrorCodes::LOGICAL_ERROR,
-                        "Expected function `equals` to have 2 child nodes, got {}",
-                        node->children.size());
+                        "Expected function `{}` to have 2 child nodes, got {}",
+                        func_name, node->children.size());
                 }
 
                 const DB::ActionsDAG::Node * column_node = nullptr;
@@ -271,7 +296,18 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                         return VISITOR_FAILED_OR_UNSUPPORTED;
                     }
 
-                    return ffi::visit_predicate_eq(iterator_data.state, column, constant);
+                    if (func_name == DB::NameEquals::name)
+                        return ffi::visit_predicate_eq(iterator_data.state, column, constant);
+                    if (func_name == DB::NameNotEquals::name)
+                        return ffi::visit_predicate_ne(iterator_data.state, column, constant);
+                    if (func_name == DB::NameGreater::name)
+                        return ffi::visit_predicate_gt(iterator_data.state, column, constant);
+                    if (func_name == DB::NameGreaterOrEquals::name)
+                        return ffi::visit_predicate_ge(iterator_data.state, column, constant);
+                    if (func_name == DB::NameLess::name)
+                        return ffi::visit_predicate_lt(iterator_data.state, column, constant);
+                    if (func_name == DB::NameLessOrEquals::name)
+                        return ffi::visit_predicate_le(iterator_data.state, column, constant);
                 }
             }
 
