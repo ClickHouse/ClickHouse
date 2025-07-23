@@ -8,8 +8,6 @@ slug: /interfaces/formats/ProtobufConfluent
 title: 'ProtobufConfluent'
 ---
 
-import DataTypesMatching from './_snippets/data-types-matching.md'
-
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✗      |       |

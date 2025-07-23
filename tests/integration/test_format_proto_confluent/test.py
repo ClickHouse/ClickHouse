@@ -4,6 +4,7 @@ import time
 from urllib import parse
 import os
 import sys
+import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -47,6 +48,9 @@ def run_query(instance, query, data=None, settings=None):
 
     return result
 
+def get_uuid_str():
+    return str(uuid.uuid4()).replace("-", "_")
+
 
 def test_select(started_cluster):
     reg_url = f"http://localhost:{started_cluster.schema_registry_port}"
@@ -72,11 +76,12 @@ def test_select(started_cluster):
     instance = started_cluster.instances["dummy"]
     schema_registry_url = f"http://{started_cluster.schema_registry_host}:{started_cluster.schema_registry_port}"
 
-    run_query(instance, "create table protobuf_data(value Int64, value2 String) engine = Memory()")
+    uuid_table = get_uuid_str()
+    run_query(instance, f"create table protobuf_data{uuid_table}(value Int64, value2 String) engine = Memory()")
     settings = {"format_protobuf_schema_registry_url": schema_registry_url}
 
-    run_query(instance, "insert into protobuf_data format ProtobufConfluent", data, settings)
-    stdout = run_query(instance, "select * from protobuf_data")
+    run_query(instance, f"insert into protobuf_data{uuid_table} format ProtobufConfluent", data, settings)
+    stdout = run_query(instance, f"select * from protobuf_data{uuid_table}")
     assert list(map(str.split, stdout.splitlines())) == [['42', 'abc'], ['43', 'abc'], ['44', 'abc']]
 
 
@@ -114,9 +119,10 @@ def test_select_auth(started_cluster):
         started_cluster.schema_registry_auth_port,
     )
 
-    run_query(instance, "create table protobuf_data_auth(value Int64, value2 String) engine = Memory()")
+    uuid_table = get_uuid_str()
+    run_query(instance, f"create table protobuf_data{uuid_table}(value Int64, value2 String) engine = Memory()")
     settings = {"format_protobuf_schema_registry_url": schema_registry_url}
 
-    run_query(instance, "insert into protobuf_data_auth format ProtobufConfluent", data, settings)
-    stdout = run_query(instance, "select * from protobuf_data_auth")
+    run_query(instance, f"insert into protobuf_data{uuid_table} format ProtobufConfluent", data, settings)
+    stdout = run_query(instance, f"select * from protobuf_data{uuid_table}")
     assert list(map(str.split, stdout.splitlines())) == [['42', 'abc'], ['43', 'abc'], ['44', 'abc']]
