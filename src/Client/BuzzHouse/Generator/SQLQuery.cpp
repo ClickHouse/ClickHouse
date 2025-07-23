@@ -23,12 +23,12 @@ void StatementGenerator::prepareNextExplain(RandomGenerator & rg, ExplainQuery *
     /// Backup everything
     for (const auto & [key, val] : this->levels)
     {
-        levels_backup[key] = std::move(val);
+        levels_backup[key] = val;
     }
     this->levels.clear();
     for (const auto & [key, val] : this->ctes)
     {
-        ctes_backup[key] = std::move(val);
+        ctes_backup[key] = val;
     }
     this->ctes.clear();
     ids_backup.reserve(this->ids.size());
@@ -61,12 +61,12 @@ void StatementGenerator::prepareNextExplain(RandomGenerator & rg, ExplainQuery *
     this->levels.clear();
     for (const auto & [key, val] : levels_backup)
     {
-        this->levels[key] = std::move(val);
+        this->levels[key] = val;
     }
     this->ctes.clear();
     for (const auto & [key, val] : ctes_backup)
     {
-        this->ctes[key] = std::move(val);
+        this->ctes[key] = val;
     }
     this->ids.clear();
     this->ids.reserve(ids_backup.size());
@@ -156,11 +156,11 @@ void StatementGenerator::generateDerivedTable(
     {
         for (const auto & [key, val] : this->levels)
         {
-            levels_backup[key] = std::move(val);
+            levels_backup[key] = val;
         }
         for (const auto & [key, val] : this->ctes)
         {
-            ctes_backup[key] = std::move(val);
+            ctes_backup[key] = val;
         }
         this->levels.clear();
         this->ctes.clear();
@@ -177,11 +177,11 @@ void StatementGenerator::generateDerivedTable(
         this->ctes.clear();
         for (const auto & [key, val] : levels_backup)
         {
-            this->levels[key] = std::move(val);
+            this->levels[key] = val;
         }
         for (const auto & [key, val] : ctes_backup)
         {
-            this->ctes[key] = std::move(val);
+            this->ctes[key] = val;
         }
     }
 
@@ -623,11 +623,11 @@ bool StatementGenerator::joinedTableOrFunction(
         gsf->set_fname(gname);
         for (const auto & [key, val] : this->levels)
         {
-            levels_backup[key] = std::move(val);
+            levels_backup[key] = val;
         }
         for (const auto & [key, val] : this->ctes)
         {
-            ctes_backup[key] = std::move(val);
+            ctes_backup[key] = val;
         }
         this->levels.clear();
         this->ctes.clear();
@@ -699,11 +699,11 @@ bool StatementGenerator::joinedTableOrFunction(
         this->ctes.clear();
         for (const auto & [key, val] : levels_backup)
         {
-            this->levels[key] = std::move(val);
+            this->levels[key] = val;
         }
         for (const auto & [key, val] : ctes_backup)
         {
-            this->ctes[key] = std::move(val);
+            this->ctes[key] = val;
         }
 
         rel.cols.emplace_back(SQLRelationCol(rel_name, {cname}));
@@ -866,11 +866,11 @@ bool StatementGenerator::joinedTableOrFunction(
 
         for (const auto & [key, val] : this->levels)
         {
-            levels_backup[key] = std::move(val);
+            levels_backup[key] = val;
         }
         for (const auto & [key, val] : this->ctes)
         {
-            ctes_backup[key] = std::move(val);
+            ctes_backup[key] = val;
         }
         this->levels.clear();
         this->ctes.clear();
@@ -894,11 +894,11 @@ bool StatementGenerator::joinedTableOrFunction(
         this->ctes.clear();
         for (const auto & [key, val] : levels_backup)
         {
-            this->levels[key] = std::move(val);
+            this->levels[key] = val;
         }
         for (const auto & [key, val] : ctes_backup)
         {
-            this->ctes[key] = std::move(val);
+            this->ctes[key] = val;
         }
 
         for (uint32_t i = 0; i < ncols; i++)

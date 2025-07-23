@@ -618,11 +618,11 @@ void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t
 
     for (const auto & [key, val] : this->levels)
     {
-        levels_backup[key] = std::move(val);
+        levels_backup[key] = val;
     }
     for (const auto & [key, val] : this->ctes)
     {
-        ctes_backup[key] = std::move(val);
+        ctes_backup[key] = val;
     }
     this->levels.clear();
     this->ctes.clear();
@@ -641,11 +641,11 @@ void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t
     this->ctes.clear();
     for (const auto & [key, val] : levels_backup)
     {
-        this->levels[key] = std::move(val);
+        this->levels[key] = val;
     }
     for (const auto & [key, val] : ctes_backup)
     {
-        this->ctes[key] = std::move(val);
+        this->ctes[key] = val;
     }
 }
 
@@ -892,11 +892,11 @@ void StatementGenerator::generateFrameBound(RandomGenerator & rg, Expr * expr)
 
         for (const auto & [key, val] : this->levels)
         {
-            levels_backup[key] = std::move(val);
+            levels_backup[key] = val;
         }
         for (const auto & [key, val] : this->ctes)
         {
-            ctes_backup[key] = std::move(val);
+            ctes_backup[key] = val;
         }
         this->levels.clear();
         this->ctes.clear();
@@ -907,11 +907,11 @@ void StatementGenerator::generateFrameBound(RandomGenerator & rg, Expr * expr)
         this->ctes.clear();
         for (const auto & [key, val] : levels_backup)
         {
-            this->levels[key] = std::move(val);
+            this->levels[key] = val;
         }
         for (const auto & [key, val] : ctes_backup)
         {
-            this->ctes[key] = std::move(val);
+            this->ctes[key] = val;
         }
     }
 }
