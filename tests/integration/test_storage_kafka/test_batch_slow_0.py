@@ -254,7 +254,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
             ],
             "expected": {
                 "raw_message": "00000000000000000342414402414D0000003F01",
-                "error": "Cannot read all data. Bytes read: 9. Bytes expected: 65.: (at row 1)\n",
+                "error": "Cannot read all data. Bytes read: 9. Bytes expected: 65: (at row 1)\n",
             },
             "printable": False,
         },
