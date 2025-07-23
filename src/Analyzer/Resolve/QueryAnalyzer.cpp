@@ -1117,11 +1117,31 @@ void QueryAnalyzer::expandLimitByAll(QueryNode & query_tree_node_typed)
     if (!query_tree_node_typed.isLimitByAll())
         return;
 
-    auto & limit_by_nodes = query_tree_node_typed.getLimitBy().getNodes();
-    auto & projection_list = query_tree_node_typed.getProjection();
+    if (!query_tree_node_typed.hasLimitByLimit())
+    {
+        throw Exception(ErrorCodes::SYNTAX_ERROR,
+            "LIMIT BY ALL requires a limit expression. Use LIMIT n BY ALL");
+    }
 
-    for (auto & node : projection_list.getNodes())
-        recursivelyCollectMaxOrdinaryExpressions(node, limit_by_nodes);
+    auto & limit_by_nodes = query_tree_node_typed.getLimitBy().getNodes();
+    auto & projection_nodes = query_tree_node_typed.getProjection().getNodes();
+
+    limit_by_nodes.clear();
+    limit_by_nodes.reserve(projection_nodes.size());
+
+    for (auto & projection_node : projection_nodes)
+    {
+        if (hasAggregateFunctionNodes(projection_node))
+            continue;
+
+        limit_by_nodes.push_back(projection_node->clone());
+    }
+
+    if (limit_by_nodes.empty())
+    {
+        throw Exception(ErrorCodes::SYNTAX_ERROR,
+            "LIMIT BY ALL requires at least one non-aggregate expression in SELECT");
+    }
 
     query_tree_node_typed.setIsLimitByAll(false);
 }

@@ -849,20 +849,6 @@ void expandOrderByAll(ASTSelectQuery * select_query, [[maybe_unused]] const Tabl
     select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, order_expression_list);
 }
 
-void expandLimitByAll(ASTSelectQuery * select_query)
-{
-    if (!select_query->isLimitByAll())
-        return;
-
-    auto limit_by_expression_list = std::make_shared<ASTExpressionList>();
-
-    for (const auto & expr : select_query->select()->children)
-        recursivelyCollectMaxOrdinaryExpressions(expr, *limit_by_expression_list);
-
-    select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY, limit_by_expression_list);
-    select_query->setIsLimitByAll(false);
-}
-
 ASTs getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
 {
     /// There can not be aggregate functions inside the WHERE and PREWHERE.
@@ -1406,9 +1392,10 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (settings[Setting::enable_order_by_all] && select_query->order_by_all)
         expandOrderByAll(select_query, tables_with_columns);
 
-    // expand LIMIT BY ALL
     if (select_query->limit_by_all)
-        expandLimitByAll(select_query);
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT BY ALL is not supported with the old planner");
+    }
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
