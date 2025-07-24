@@ -96,15 +96,17 @@ public:
         }
     }
 
-    static size_t size(const Range & range) { return range.second - range.first; }
-    static size_t size(const Indexes & indexes) { return indexes.size(); }
-
     size_t size() const
     {
         if (std::holds_alternative<Range>(data))
-            return size(std::get<Range>(data));
+        {
+            const auto range = std::get<Range>(data);
+            return range.second - range.first;
+        }
         else
-            return size(*std::get<IndexesPtr>(data));
+        {
+            return std::get<IndexesPtr>(data)->size();
+        }
     }
 
     /// First selector contains first `num_rows` rows, second selector contains the rest
@@ -222,9 +224,8 @@ struct ScatteredBlock : private boost::noncopyable
     Block && getSourceBlock() && { return std::move(block); }
 
     const auto & getSelector() const { return selector; }
-    std::pair<Block, Selector> detachData() && { return {std::move(block), std::move(selector)}; }
 
-    bool empty() const { return block.empty(); }
+    explicit operator bool() const { return !!block; }
 
     /// Accounts only selected rows
     size_t rows() const { return selector.size(); }
@@ -266,24 +267,18 @@ struct ScatteredBlock : private boost::noncopyable
     /// Filters selector by mask discarding rows for which filter is false
     void filter(const IColumnFilter & filter)
     {
-        chassert(rows() == filter.size());
+        chassert(block && block.rows() == filter.size());
         IndexesPtr new_selector = Indexes::create();
         new_selector->reserve(selector.size());
-        auto & new_selector_data = new_selector->getData();
-        size_t i = 0;
-        for (auto it = selector.begin(); it != selector.end(); ++it, ++i)
-        {
-            chassert(i < filter.size());
-            if (filter[i])
-                new_selector_data.push_back(*it);
-        }
+        std::copy_if(
+            selector.begin(), selector.end(), std::back_inserter(new_selector->getData()), [&](size_t idx) { return filter[idx]; });
         selector = Selector(std::move(new_selector));
     }
 
     /// Applies `selector` to the `block` in-place
     void filterBySelector()
     {
-        if (block.empty() || !wasScattered())
+        if (!block || !wasScattered())
             return;
 
         if (selector.isContinuousRange())
@@ -315,7 +310,7 @@ struct ScatteredBlock : private boost::noncopyable
             return ScatteredBlock{Block{}};
         }
 
-        chassert(!block.empty());
+        chassert(block);
 
         auto && [first_num_rows, remaining_selector] = selector.split(num_rows);
 

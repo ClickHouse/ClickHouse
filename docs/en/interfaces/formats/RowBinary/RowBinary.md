@@ -48,8 +48,8 @@ For [NULL](/sql-reference/syntax#null) support, an additional byte containing `1
 
 For a comparison of the `RowBinary` format and the `RawBlob` format see: [Raw Formats Comparison](../RawBLOB.md/#raw-formats-comparison)
 
-## Example usage {#example-usage}
+## Example Usage {#example-usage}
 
-## Format settings {#format-settings}
+## Format Settings {#format-settings}
 
 <RowBinaryFormatSettings/>

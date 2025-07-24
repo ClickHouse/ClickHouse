@@ -17,7 +17,7 @@ title: 'BSONEachRow'
 The `BSONEachRow` format parses data as a sequence of Binary JSON (BSON) documents without any separator between them.
 Each row is formatted as a single document and each column is formatted as a single BSON document field with the column name as a key.
 
-## Data types matching {#data-types-matching}
+## Data Types Matching {#data-types-matching}
 
 For output it uses the following correspondence between ClickHouse types and BSON types:
 
@@ -79,9 +79,9 @@ In this case, the format will validate that the size of the binary data equals t
 This format does not work properly on Big-Endian platforms.
 :::
 
-## Example usage {#example-usage}
+## Example Usage {#example-usage}
 
-### Inserting data {#inserting-data}
+### Inserting Data {#inserting-data}
 
 Using a BSON file with the following data, named as `football.bson`:
 
@@ -113,7 +113,7 @@ Insert the data:
 INSERT INTO football FROM INFILE 'football.bson' FORMAT BSONEachRow;
 ```
 
-### Reading data {#reading-data}
+### Reading Data {#reading-data}
 
 Read data using the `BSONEachRow` format:
 
@@ -127,7 +127,7 @@ FORMAT BSONEachRow
 BSON is a binary format that does not display in a human-readable form on the terminal. Use the `INTO OUTFILE` to output BSON files.
 :::
 
-## Format settings {#format-settings}
+## Format Settings {#format-settings}
 
 | Setting                                                                                                                                                                                               | Description                                                                                  | Default  |
 |-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------|----------|

@@ -40,7 +40,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     ParserKeyword s_modify_order_by(Keyword::MODIFY_ORDER_BY);
     ParserKeyword s_modify_sample_by(Keyword::MODIFY_SAMPLE_BY);
-    ParserKeyword s_materialize(Keyword::MATERIALIZE);
     ParserKeyword s_modify_ttl(Keyword::MODIFY_TTL);
     ParserKeyword s_materialize_ttl(Keyword::MATERIALIZE_TTL);
     ParserKeyword s_modify_setting(Keyword::MODIFY_SETTING);
@@ -738,14 +737,12 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
 
                 command->snapshot_name = ast_snapshot_name->as<ASTLiteral &>().value.safeGet<String>();
+                if (!s_from.ignore(pos, expected))
+                    return false;
+                if (!ParserIdentifierWithOptionalParameters{}.parse(pos, command_snapshot_desc, expected))
+                    return false;
+                command_snapshot_desc->as<ASTFunction &>().kind = ASTFunction::Kind::BACKUP_NAME;
                 command->type = ASTAlterCommand::UNLOCK_SNAPSHOT;
-                /// unlock snapshot <uuid> from s3(...), but `from (s3...)` is optional
-                if (s_from.ignore(pos, expected))
-                {
-                    if (!ParserIdentifierWithOptionalParameters{}.parse(pos, command_snapshot_desc, expected))
-                        return false;
-                    command_snapshot_desc->as<ASTFunction &>().kind = ASTFunction::Kind::BACKUP_NAME;
-                }
             }
             else if (bool is_modify = s_modify_column.ignore(pos, expected); is_modify || s_alter_column.ignore(pos, expected))
             {
@@ -889,13 +886,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_modify_ttl.ignore(pos, expected))
             {
-                /// MODIFY TTL MATERIALIZE|REMOVE|MODIFY is illegal
-                /// because MATERIALIZE|REMOVE|MODIFY TTL is used instead.
-                if (s_materialize.checkWithoutMoving(pos, expected) ||
-                    s_remove.checkWithoutMoving(pos, expected) ||
-                    s_modify.checkWithoutMoving(pos, expected))
-                    return false;
-
                 if (!parser_ttl_list.parse(pos, command_ttl, expected))
                     return false;
                 command->type = ASTAlterCommand::MODIFY_TTL;

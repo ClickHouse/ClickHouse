@@ -38,7 +38,7 @@ ASTPtr ASTDeleteQuery::clone() const
 
 void ASTDeleteQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << "DELETE FROM ";
+    ostr << (settings.hilite ? hilite_keyword : "") << "DELETE FROM " << (settings.hilite ? hilite_none : "");
 
     if (database)
     {
@@ -53,11 +53,11 @@ void ASTDeleteQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
     if (partition)
     {
-        ostr << " IN PARTITION ";
+        ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
         partition->format(ostr, settings, state, frame);
     }
 
-    ostr << " WHERE ";
+    ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
     predicate->format(ostr, settings, state, frame);
 }
 

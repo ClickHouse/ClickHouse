@@ -58,7 +58,7 @@ REGISTER_FUNCTION(Divide)
     FunctionDocumentation::Argument argument1 = {"x", "Dividend"};
     FunctionDocumentation::Argument argument2 = {"y", "Divisor"};
     FunctionDocumentation::Arguments arguments = {argument1, argument2};
-    FunctionDocumentation::ReturnedValue returned_value = {"The quotient of x and y"};
+    FunctionDocumentation::ReturnedValue returned_value = "The quotient of x and y";
     FunctionDocumentation::Example example1 = {"Dividing two numbers", "SELECT divide(25,5) AS quotient, toTypeName(quotient)", "5 Float64"};
     FunctionDocumentation::Example example2 = {"Dividing by zero", "SELECT divide(25,0)", "inf"};
     FunctionDocumentation::Examples examples = {example1, example2};
@@ -81,7 +81,7 @@ Same as `divide` but returns NULL when dividing by zero.
     FunctionDocumentation::Argument argument1 = {"x", "Dividend"};
     FunctionDocumentation::Argument argument2 = {"y", "Divisor"};
     FunctionDocumentation::Arguments arguments = {argument1, argument2};
-    FunctionDocumentation::ReturnedValue returned_value = {"The quotient of x and y, or NULL."};
+    FunctionDocumentation::ReturnedValue returned_value = "The quotient of x and y, or NULL.";
     FunctionDocumentation::Example example1 = {"Dividing by zero", "SELECT divideOrNull(25, 0)", "\\N"};
     FunctionDocumentation::Examples examples = {example1};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 5};

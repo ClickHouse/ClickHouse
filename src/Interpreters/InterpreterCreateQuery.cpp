@@ -113,6 +113,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool allow_experimental_full_text_index;
+    extern const SettingsBool allow_experimental_inverted_index;
     extern const SettingsBool allow_experimental_statistics;
     extern const SettingsBool allow_experimental_vector_similarity_index;
     extern const SettingsBool allow_materialized_view_with_bad_select;
@@ -349,7 +350,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         create.if_not_exists = false;
 
         WriteBufferFromOwnString statement_buf;
-        IAST::FormatSettings format_settings(/*one_line=*/false);
+        IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite=*/false);
         create.format(statement_buf, format_settings);
         writeChar('\n', statement_buf);
         String statement = statement_buf.str();
@@ -730,11 +731,9 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     if (mode <= LoadingStrictnessLevel::SECONDARY_CREATE && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested])
         res.flattenNested();
 
+
     if (res.getAllPhysical().empty())
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without physical columns");
-
-    if (mode <= LoadingStrictnessLevel::CREATE && !is_restore_from_backup && res.getInsertable().empty())
-        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without insertable columns");
 
     return res;
 }
@@ -795,9 +794,18 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
                 const auto & settings = getContext()->getSettingsRef();
                 if (index_desc.type == TEXT_INDEX_NAME && !settings[Setting::allow_experimental_full_text_index])
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The experimental text index feature is disabled. Enable the setting 'allow_experimental_full_text_index' to use it");
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The experimental full-text index feature is disabled. Enable the setting 'allow_experimental_full_text_index' to use it");
+                /// ---
+                /// Temporary checks during a transition period. Remove this block one year after text indexes became GA.
+                if (index_desc.type == FULL_TEXT_INDEX_NAME && !settings[Setting::allow_experimental_full_text_index])
+                    throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'full_text' index type is deprecated. Please use the 'text' index type instead");
+                if (index_desc.type == INVERTED_INDEX_NAME && !settings[Setting::allow_experimental_inverted_index])
+                    throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'inverted' index type is deprecated. Please use the 'text' index type instead");
+                if (index_desc.type == GIN_INDEX_NAME && !settings[Setting::allow_experimental_full_text_index])
+                    throw Exception(ErrorCodes::ILLEGAL_INDEX, "The 'gin' index type is deprecated. Please use the 'text' index type instead");
+                /// ---
                 if (index_desc.type == "vector_similarity" && !settings[Setting::allow_experimental_vector_similarity_index])
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The vector similarity index feature is disabled. Enable the setting 'enable_vector_similarity_index' to use it");
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The experimental vector similarity index feature is disabled. Enable the setting 'allow_experimental_vector_similarity_index' to use it");
 
                 properties.indices.push_back(index_desc);
             }
@@ -947,7 +955,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             }
         }
 
-        SharedHeader as_select_sample;
+        Block as_select_sample;
 
         if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
@@ -958,7 +966,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), getContext());
         }
 
-        properties.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
+        properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
         properties.columns_inferred_from_select_query = true;
     }
     else if (create.as_table_function)
@@ -1095,7 +1103,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                 "Can't create refreshable materialized view because exchanging files is not supported by the OS ({})", message);
     }
 
-    SharedHeader input_block;
+    Block input_block;
 
     if (check_columns)
     {
@@ -1131,7 +1139,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
 
         ColumnsWithTypeAndName input_columns;
         ColumnsWithTypeAndName output_columns;
-        for (const auto & input_column : *input_block)
+        for (const auto & input_column : input_block)
         {
             auto it = output_types.find(input_column.name);
             if (it != output_types.end())
@@ -1312,7 +1320,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         /// Null table engine.
         else if (getContext()->getSettingsRef()[Setting::restore_replace_external_engines_to_null])
         {
-            if (StorageFactory::instance().getStorageFeatures(create.storage->engine->name).source_access_type)
+            if (StorageFactory::instance().getStorageFeatures(create.storage->engine->name).source_access_type != AccessType::NONE)
             {
                 setNullTableEngine(*create.storage);
             }

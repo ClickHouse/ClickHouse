@@ -32,7 +32,6 @@ int mainEntryClickHouseCompressor(int argc, char ** argv);
 int mainEntryClickHouseDisks(int argc, char ** argv);
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
 int mainEntryClickHouseFormat(int argc, char ** argv);
-int mainEntryClickHouseFstDumpTree(int argc, char ** argv);
 int mainEntryClickHouseGitImport(int argc, char ** argv);
 int mainEntryClickHouseLocal(int argc, char ** argv);
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
@@ -64,15 +63,6 @@ int mainEntryClickHouseKeeperBench(int argc, char ** argv);
 #endif
 #if USE_NURAFT
 int mainEntryClickHouseKeeperDataDumper(int argc, char ** argv);
-int mainEntryClickHouseKeeperUtils(int argc, char ** argv);
-#endif
-
-#if USE_CHDIG
-extern "C" int chdig_main(int argc, char ** argv);
-int mainEntryClickHouseChdig(int argc, char ** argv)
-{
-    return chdig_main(argc, argv);
-}
 #endif
 
 // install
@@ -95,10 +85,6 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 {
     {"local", mainEntryClickHouseLocal},
     {"client", mainEntryClickHouseClient},
-#if USE_CHDIG
-    {"chdig", mainEntryClickHouseChdig},
-    {"dig", mainEntryClickHouseChdig},
-#endif
     {"benchmark", mainEntryClickHouseBenchmark},
     {"server", mainEntryClickHouseServer},
     {"extract-from-config", mainEntryClickHouseExtractFromConfig},
@@ -114,7 +100,6 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"checksum-for-compressed-block", mainEntryClickHouseChecksumForCompressedBlock},
     {"zookeeper-dump-tree", mainEntryClickHouseZooKeeperDumpTree},
     {"zookeeper-remove-by-list", mainEntryClickHouseZooKeeperRemoveByList},
-    {"fst-dump-tree", mainEntryClickHouseFstDumpTree},
 
     // keeper
 #if ENABLE_CLICKHOUSE_KEEPER
@@ -131,7 +116,6 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 #endif
 #if USE_NURAFT
     {"keeper-data-dumper", mainEntryClickHouseKeeperDataDumper},
-    {"keeper-utils", mainEntryClickHouseKeeperUtils},
 #endif
     // install
     {"install", mainEntryClickHouseInstall},
@@ -154,9 +138,6 @@ std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
 {
     {"chl", "local"},
     {"chc", "client"},
-#if USE_CHDIG
-    {"chdig", "chdig"},
-#endif
 };
 
 }
