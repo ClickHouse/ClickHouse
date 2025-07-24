@@ -22,7 +22,6 @@ The table below gives the supported Npy data types and their corresponding type 
 
 ## Data types matching {#data_types-matching}
 
-
 | Npy data type (`INSERT`) | ClickHouse data type                                            | Npy data type (`SELECT`) |
 |--------------------------|-----------------------------------------------------------------|-------------------------|
 | `i1`                     | [Int8](/sql-reference/data-types/int-uint.md)           | `i1`                    |
