@@ -19,6 +19,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <Columns/IColumn.h>
+#include <bitset>
 
 namespace DB
 {
