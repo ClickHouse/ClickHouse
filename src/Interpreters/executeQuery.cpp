@@ -18,6 +18,7 @@
 #include <IO/LimitReadBuffer.h>
 #include <IO/copyData.h>
 
+#include <Interpreters/RenameMultipleColumnsVisitor.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Formats/Impl/NullFormat.h>
@@ -1298,8 +1299,31 @@ static BlockIO executeQueryImpl(
                 insert_query->table_id = context->resolveStorageID(StorageID{insert_query->getDatabase(), table});
 
             if (insert_query->table_id)
+            {
                 if (auto table = DatabaseCatalog::instance().tryGetTable(insert_query->table_id, context))
+                {
                     async_insert_enabled |= table->areAsynchronousInsertsEnabled();
+
+                    auto metadata_snapshot = table->getInMemoryMetadataPtr();
+                    std::unordered_map<String, String> column_rename_map;
+                    for (const auto & column : metadata_snapshot->getColumns())
+                    {
+                        if (column.default_desc.kind == ColumnDefaultKind::Alias)
+                        {
+                            const ASTPtr & alias_expression = column.default_desc.expression;
+                            if (const ASTIdentifier * actual_column = typeid_cast<const ASTIdentifier *>(alias_expression.get()))
+                                column_rename_map[column.name] = actual_column->full_name;
+                        }
+                    }
+
+                    if (!column_rename_map.empty() && insert_query->columns)
+                    {
+                        RenameMultipleColumnsData rename_data{column_rename_map};
+                        RenameMultipleColumnsVisitor rename_columns_visitor{rename_data};
+                        rename_columns_visitor.visit(insert_query->columns);
+                    }
+                }      
+            }
         }
 
         if (insert_query && insert_query->select)

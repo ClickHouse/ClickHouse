@@ -12,7 +12,6 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/QueryLog.h>
-#include <Interpreters/RenameMultipleColumnsVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/processColumnTransformers.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -827,27 +826,6 @@ BlockIO InterpreterInsertQuery::execute()
     auto table_lock = table->lockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
 
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
-
-    // Rename columns if they are simple aliases (with no expressions).
-    std::unordered_map<String, String> column_rename_map;
-    for (const auto & column : metadata_snapshot->getColumns())
-    {
-        if (column.default_desc.kind == ColumnDefaultKind::Alias)
-        {
-            const ASTPtr & alias_expression = column.default_desc.expression;
-            if (const ASTIdentifier * actual_column = typeid_cast<const ASTIdentifier *>(alias_expression.get()))
-                column_rename_map[column.name] = actual_column->full_name;
-        }
-    }
-
-    RenameMultipleColumnsData rename_data{column_rename_map};
-    RenameMultipleColumnsVisitor rename_columns_visitor{rename_data};
-
-    if (query.columns)
-    {
-        rename_columns_visitor.visit(query.columns);
-    }
-
 
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized);
 
