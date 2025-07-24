@@ -731,10 +731,9 @@ std::optional<String> optimizeUseAggregateProjections(
         ///  ReadFromMergeTree  ---is replaced by--->       ReadFromPreparedSource (_minmax_count_projection)
         /// -------------------------------------------------------------------------------------------------
         /// When parallel replicas is enabled, only the initiator should read the min-max projection to avoid data duplication.
-        auto header = std::make_shared<const Block>(std::move(candidates.minmax_projection->block));
-        Pipe pipe = is_parallel_reading_on_remote_replicas
-            ? std::move(Pipe(std::make_shared<NullSource>(header)))
-            : std::move(Pipe(std::make_shared<SourceFromSingleChunk>(header)));
+        Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(candidates.minmax_projection->block))));
+        if (is_parallel_reading_on_remote_replicas)
+            pipe = Pipe(std::make_shared<NullSource>(pipe.getSharedHeader()));
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         has_parent_parts = false;
     }
@@ -767,10 +766,9 @@ std::optional<String> optimizeUseAggregateProjections(
         ///                                                 ReadFromPreparedSource (_exact_count_projection)
         /// ------------------------------------------------------------------------------------------------
         /// When parallel replicas is enabled, only the initiator should read the exact count projection to avoid data duplication.
-        auto header = std::make_shared<const Block>(std::move(block_with_count));
-        Pipe pipe = is_parallel_reading_on_remote_replicas
-            ? std::move(Pipe(std::make_shared<NullSource>(header)))
-            : std::move(Pipe(std::make_shared<SourceFromSingleChunk>(header)));
+        Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(block_with_count))));
+        if (is_parallel_reading_on_remote_replicas)
+            pipe = Pipe(std::make_shared<NullSource>(pipe.getSharedHeader()));
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
 
         selected_projection_name = EXACT_COUNT_PROJECTION_NAME;
