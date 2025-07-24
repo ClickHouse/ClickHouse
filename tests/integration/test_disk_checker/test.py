@@ -58,7 +58,7 @@ def test_disk_readonly_status(started_cluster):
             func=lambda: get_metric_value(node, "ReadonlyDisks"),
             condition=lambda value: value == 1,
             max_attempts=10,
-            delay=1,
+            delay=5,
         )
 
         # restore the disk to writable state
@@ -69,7 +69,7 @@ def test_disk_readonly_status(started_cluster):
             func=lambda: get_metric_value(node, "ReadonlyDisks"),
             condition=lambda value: value == 0,
             max_attempts=10,
-            delay=1,
+            delay=5,
         )
     finally:
         try:
