@@ -85,7 +85,6 @@ message MessageType {
 }
 ```
 
-
 If a message contains [oneof](https://protobuf.dev/programming-guides/proto3/#oneof) and `input_format_protobuf_oneof_presence` is set, ClickHouse fills column that indicates which field of oneof was found.
 
 ```capnp
@@ -120,7 +119,6 @@ Allowed types are Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64, Enum
 Enum (as well as Enum8 or Enum16) must contain all oneof' possible tags plus 0 to indicate absence, string representations does not matter.
 
 The setting [`input_format_protobuf_oneof_presence`](/operations/settings/settings-formats.md#input_format_protobuf_oneof_presence) is disabled by default
-
 
 ClickHouse inputs and outputs protobuf messages in the `length-delimited` format.
 This means that before every message its length should be written as a [variable width integer (varint)](https://developers.google.com/protocol-buffers/docs/encoding#varints).
