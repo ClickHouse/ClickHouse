@@ -27,9 +27,8 @@ Upon hitting a limit and disconnecting, the client receives a
 Assuming `tcp_close_connection_after_queries_num` is set to N, then the connection allows
 N successful queries. Then on query N + 1, the client disconnects.
 
-Every query processed counts towards the query limit. So often when connecting a command-line client,
-there is an initial query that is sent and processed before any command is sent through the command-line itself;
-that initial query counts towards the limit.
+Every query processed counts towards the query limit. So when connecting a command-line client,
+there may be an automatic initial ping query which counts towards the limit.
 
 When a TCP connection is idle (i.e., has not processed queries for some duration of time,
 specified by the session setting `poll_interval`), the number of queries counted so far resets to 0.
