@@ -1189,20 +1189,17 @@ void StatementGenerator::generateEngineDetails(
     else if (te->has_engine() && b.isURLEngine())
     {
         connections.createExternalDatabaseTable(rg, IntegrationCall::HTTP, b, entries, te);
+        /// Set format
+        b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
+        te->add_params()->set_in_out(b.file_format.value());
+        /// Optional compression
         if (rg.nextBool())
         {
-            /// Set format
-            b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
-            te->add_params()->set_in_out(b.file_format.value());
-            /// Optional compression
-            if (rg.nextBool())
-            {
-                static const DB::Strings & URLCompress
-                    = {"none", "auto", "gzip", "gz", "deflate", "brotli", "br", "lzma", "xz", "zstd", "zst", "lz4", "bz2", "snappy"};
+            static const DB::Strings & URLCompress
+                = {"none", "auto", "gzip", "gz", "deflate", "brotli", "br", "lzma", "xz", "zstd", "zst", "lz4", "bz2", "snappy"};
 
-                b.file_comp = rg.pickRandomly(URLCompress);
-                te->add_params()->set_svalue(b.file_comp);
-            }
+            b.file_comp = rg.pickRandomly(URLCompress);
+            te->add_params()->set_svalue(b.file_comp);
         }
     }
     else if (te->has_engine() && b.isKeeperMapEngine())
@@ -1233,19 +1230,16 @@ void StatementGenerator::generateEngineDetails(
         //const std::filesystem::path & fpath = fc.server_file_path / ("/datalake/t" + std::to_string(b.tname));
         //te->add_params()->set_svalue(fpath.generic_string());
 
+        /// Set format
+        b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
+        te->add_params()->set_in_out(b.file_format.value());
+        /// Optional compression
         if (rg.nextBool())
         {
-            /// Set format
-            b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
-            te->add_params()->set_in_out(b.file_format.value());
-            /// Optional compression
-            if (rg.nextBool())
-            {
-                static const DB::Strings & ObjectCompress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
+            static const DB::Strings & ObjectCompress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
 
-                b.file_comp = rg.pickRandomly(ObjectCompress);
-                te->add_params()->set_svalue(b.file_comp);
-            }
+            b.file_comp = rg.pickRandomly(ObjectCompress);
+            te->add_params()->set_svalue(b.file_comp);
         }
     }
     if (te->has_engine() && (b.isJoinEngine() || b.isSetEngine()) && allow_shared_tbl && rg.nextSmallNumber() < 5)
