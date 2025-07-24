@@ -171,3 +171,20 @@ SELECT
     speed_kmh AS speed
 FROM electric_vehicle_state FINAL
 ORDER BY vin;
+
+DROP TABLE IF EXISTS test_table;
+
+CREATE TABLE test_table
+(
+    key UInt32,
+    value Nullable(UInt32),
+    value_arr Variant(Array(UInt32), Nothing)
+)
+ENGINE = CoalescingMergeTree()
+ORDER BY key;
+
+
+INSERT INTO test_table VALUES(1,6, NULL);   
+INSERT INTO test_table VALUES(1,NULL, [1]); 
+
+select * from test_table final;
