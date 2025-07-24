@@ -23,6 +23,22 @@ class Job:
         with_git_submodules: bool = False
 
     @dataclass
+    class Parameter:
+        parameter: Optional[Any] = None
+        runs_on: Optional[List[str]] = None
+        provides: Optional[List[str]] = None
+        requires: Optional[List[str]] = None
+        timeout: Optional[int] = None
+
+        def __iter__(self):
+            yield self.parameter
+            yield self.runs_on
+            yield self.provides
+            yield self.requires
+            yield self.timeout
+
+
+    @dataclass
     class Config:
         # Job Name
         name: str
@@ -63,41 +79,9 @@ class Job:
         # List of commands to call upon job completion
         post_hooks: List[str] = field(default_factory=list)
 
-        def parametrize(
-            self,
-            parameter: Optional[List[Any]] = None,
-            runs_on: Optional[List[List[str]]] = None,
-            provides: Optional[List[List[str]]] = None,
-            requires: Optional[List[List[str]]] = None,
-            timeout: Optional[List[int]] = None,
-        ):
-            assert (
-                parameter or runs_on
-            ), "Either :parameter or :runs_on must be non empty list for parametrisation"
-            if runs_on:
-                assert isinstance(runs_on, list) and isinstance(runs_on[0], list)
-            if not parameter:
-                parameter = [None] * len(runs_on)
-            if not runs_on:
-                runs_on = [None] * len(parameter)
-            if not timeout:
-                timeout = [None] * len(parameter)
-            if not provides:
-                provides = [None] * len(parameter)
-            if not requires:
-                requires = [None] * len(parameter)
-            assert (
-                len(parameter)
-                == len(runs_on)
-                == len(timeout)
-                == len(provides)
-                == len(requires)
-            ), f"Parametrization lists for job [{self.name}] must be of the same size [{len(parameter)}, {len(runs_on)}, {len(timeout)}, {len(provides)}, {len(requires)}]"
-
+        def parametrize(self, parameters: List["Job.Parameter"]):
             res = []
-            for parameter_, runs_on_, timeout_, provides_, requires_ in zip(
-                parameter, runs_on, timeout, provides, requires
-            ):
+            for parameter_, runs_on_, provides_, requires_, timeout_ in parameters:
                 obj = copy.deepcopy(self)
                 assert (
                     not obj.provides
