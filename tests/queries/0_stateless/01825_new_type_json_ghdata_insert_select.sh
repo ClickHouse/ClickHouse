@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-object-storage, long, no-asan, no-tsan, no-msan
-# ^ no-object-storage: it is memory-hungry, no-{a,t,m}san: too long
+# Tags: no-fasttest, no-object-storage, long, no-asan
+# ^ no-object-storage: it is memory-hungry, no-asan: too long
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -19,7 +19,7 @@ cat $CUR_DIR/data_json/ghdata_sample.json | ${CLICKHOUSE_CLIENT} -q "INSERT INTO
 
 ${CLICKHOUSE_CLIENT} --max_memory_usage 10G -q "INSERT INTO ghdata_2_from_string SELECT data FROM ghdata_2_string"
 
-${CLICKHOUSE_CLIENT} --max_execution_time 300 -q "SELECT \
+${CLICKHOUSE_CLIENT} -q "SELECT \
     (SELECT mapSort(groupUniqArrayMap(JSONAllPathsWithTypes(data))), sum(cityHash64(toString(data))) FROM ghdata_2_from_string) = \
     (SELECT mapSort(groupUniqArrayMap(JSONAllPathsWithTypes(data))), sum(cityHash64(toString(data))) FROM ghdata_2)"
 

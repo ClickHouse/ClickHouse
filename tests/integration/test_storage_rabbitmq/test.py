@@ -23,7 +23,6 @@ instance = cluster.add_instance(
         "configs/rabbitmq.xml",
         "configs/macros.xml",
         "configs/named_collection.xml",
-        "configs/dead_letter_queue.xml",
     ],
     user_configs=["configs/users.xml"],
     with_rabbitmq=True,
@@ -34,6 +33,19 @@ instance2 = cluster.add_instance(
     "instance2",
     user_configs=["configs/users.xml"],
     with_rabbitmq=True,
+)
+
+instance3 = cluster.add_instance(
+    "instance3",
+    user_configs=["configs/users.xml"],
+    main_configs=[
+        "configs/rabbitmq.xml",
+        "configs/macros.xml",
+        "configs/named_collection.xml",
+        "configs/mergetree.xml",
+    ],
+    with_rabbitmq=True,
+    stay_alive=True,
 )
 
 # Helpers
@@ -66,8 +78,10 @@ def rabbitmq_cluster():
 def rabbitmq_setup_teardown():
     logging.debug("RabbitMQ is available - running test")
     instance.query("CREATE DATABASE test")
+    instance3.query("CREATE DATABASE test")
     yield  # run test
     instance.query("DROP DATABASE test SYNC")
+    instance3.query("DROP DATABASE test SYNC")
     cluster.reset_rabbitmq()
 
 
@@ -2060,7 +2074,7 @@ def test_rabbitmq_no_connection_at_startup_2(rabbitmq_cluster):
     )
     instance.query("DETACH TABLE test.cs")
 
-    with rabbitmq_cluster.pause_rabbitmq():
+    with rabbitmq_cluster.pause_container("rabbitmq1"):
         instance.query("ATTACH TABLE test.cs")
 
     messages_num = 1000
@@ -3380,10 +3394,7 @@ def test_rabbitmq_handle_error_mode_stream(rabbitmq_cluster):
 def test_attach_broken_table(rabbitmq_cluster):
     table_name = f"rabbit_queue_{uuid.uuid4().hex}"
     instance.query(
-        f"""
-        DROP TABLE IF EXISTS {table_name};
-        ATTACH TABLE {table_name} UUID '{uuid.uuid4()}' (`payload` String) ENGINE = RabbitMQ SETTINGS rabbitmq_host_port = 'nonexisting:5671', rabbitmq_format = 'JSONEachRow', rabbitmq_username = 'test', rabbitmq_password = 'test'
-        """
+        f"ATTACH TABLE {table_name} UUID '{uuid.uuid4()}' (`payload` String) ENGINE = RabbitMQ SETTINGS rabbitmq_host_port = 'nonexisting:5671', rabbitmq_format = 'JSONEachRow', rabbitmq_username = 'test', rabbitmq_password = 'test'"
     )
 
     error = instance.query_and_get_error(f"SELECT * FROM {table_name}")
@@ -3409,7 +3420,7 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
     queue_name = result.method.queue
     channel.queue_bind(exchange="deadl", routing_key="", queue=queue_name)
 
-    instance.query(
+    instance3.query(
         f"""
         CREATE TABLE test.{table_name} (key UInt64, value UInt64)
             ENGINE = RabbitMQ
@@ -3417,7 +3428,7 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_exchange_name = '{exchange}',
                      rabbitmq_format = 'JSONEachRow',
-                     rabbitmq_queue_settings_list='x-dead-letter-exchange=deadl';
+                    rabbitmq_queue_settings_list='x-dead-letter-exchange=deadl';
 
         DROP TABLE IF EXISTS test.view;
         CREATE TABLE test.view (key UInt64, value UInt64)
@@ -3426,7 +3437,7 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
 
         DROP TABLE IF EXISTS test.consumer;
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT intDiv(key, if(key < 25, 0, 1)) as key, value FROM test.{table_name};
+            SELECT * FROM test.{table_name};
         """
     )
 
@@ -3435,57 +3446,51 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
         message = json.dumps({"key": i, "value": i}) + "\n"
         channel.basic_publish(exchange=exchange, routing_key="", body=message)
 
-    instance.wait_for_log_line(
-        "Failed to push to views. Error: Code: 153. DB::Exception: Division by zero"
+    instance3.wait_for_log_line(
+        "Failed to push to views. Error: Code: 252. DB::Exception: Too many parts"
     )
 
-    count = [0]
-
-    def on_consume(channel, method, properties, body):
-        data = json.loads(body)
-        message = json.dumps({"key": data["key"] + 100, "value": data["value"]}) + "\n"
-        channel.basic_publish(exchange=exchange, routing_key="", body=message)
-        count[0] += 1
-        if count[0] == num_rows:
-            channel.stop_consuming()
-
-    channel.basic_consume(queue_name, on_consume)
-    channel.start_consuming()
-
-    check_expected_result_polling(num_rows, "SELECT count() FROM test.view")
-
-    instance.query(
-        f"""
-        DROP TABLE test.consumer;
-        DROP TABLE test.view;
-        DROP TABLE test.{table_name};
-    """
-    )
-    connection.close()
-
-
-def view_test(expected_num_messages, *_):
-    result = instance.query(f"SELECT COUNT(1) FROM test.errors")
-
-    assert int(result) == expected_num_messages
-
-
-def dead_letter_queue_test(expected_num_messages, exchange_name):
-    result = instance.query(f"SELECT * FROM system.dead_letter_queue FORMAT Vertical")
-
-    logging.debug(f"system.dead_letter_queue content is {result}")
-
-    rows = int(
-        instance.query(
-            f"SELECT count() FROM system.dead_letter_queue WHERE rabbitmq_exchange_name = '{exchange_name}'"
+    try:
+        instance3.replace_in_config(
+            "/etc/clickhouse-server/config.d/mergetree.xml",
+            "parts_to_throw_insert>0",
+            "parts_to_throw_insert>10",
         )
-    )
-    assert rows == expected_num_messages
+        instance3.restart_clickhouse()
+
+        count = [0]
+
+        def on_consume(channel, method, properties, body):
+            channel.basic_publish(exchange=exchange, routing_key="", body=body)
+            count[0] += 1
+            if count[0] == num_rows:
+                channel.stop_consuming()
+
+        channel.basic_consume(queue_name, on_consume)
+        channel.start_consuming()
+
+        check_expected_result_polling(num_rows, "SELECT count() FROM test.view")
+
+        instance3.query(
+            f"""
+            DROP TABLE test.consumer;
+            DROP TABLE test.view;
+            DROP TABLE test.{table_name};
+        """
+        )
+        connection.close()
+    finally:
+        # Restore the original configuration so that other tests (this one included if executed
+        # again) behave as expected by the initial configuration
+        instance3.replace_in_config(
+            "/etc/clickhouse-server/config.d/mergetree.xml",
+            "parts_to_throw_insert>10",
+            "parts_to_throw_insert>0",
+        )
+        instance3.restart_clickhouse()
 
 
-def rabbitmq_reject_broken_messages(
-    rabbitmq_cluster, handle_error_mode, additional_dml, check_method, broken_messages_rejected
-):
+def test_rabbitmq_reject_broken_messages(rabbitmq_cluster):
     credentials = pika.PlainCredentials("root", "clickhouse")
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
@@ -3493,11 +3498,9 @@ def rabbitmq_reject_broken_messages(
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
-    deadletter_exchange = f"deadletter_exchange_handle_error_mode_{handle_error_mode}"
-    deadletter_queue = f"deadletter_queue_handle_error_mode_{handle_error_mode}"
+    deadletter_exchange = "deadletter_exchange_handle_error_mode_stream"
+    deadletter_queue = "deadletter_queue_handle_error_mode_stream"
     channel.exchange_declare(exchange=deadletter_exchange)
-
-    exchange = f"select_{handle_error_mode}_{int(time.time())}"
 
     result = channel.queue_declare(queue=deadletter_queue)
     channel.queue_bind(
@@ -3515,11 +3518,11 @@ def rabbitmq_reject_broken_messages(
         CREATE TABLE test.rabbit (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:5672',
-                     rabbitmq_exchange_name = '{exchange}',
+                     rabbitmq_exchange_name = 'select',
                      rabbitmq_commit_on_select = 1,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n',
-                     rabbitmq_handle_error_mode = '{handle_error_mode}',
+                     rabbitmq_handle_error_mode = 'stream',
                      rabbitmq_queue_settings_list='x-dead-letter-exchange={deadletter_exchange}';
 
 
@@ -3527,82 +3530,51 @@ def rabbitmq_reject_broken_messages(
              ENGINE = MergeTree()
              ORDER BY tuple();
 
+        CREATE MATERIALIZED VIEW test.errors_view TO test.errors AS
+                SELECT _error as error, _raw_message as broken_message FROM test.rabbit where not isNull(_error);
+
         CREATE TABLE test.data (key UInt64, value UInt64)
              ENGINE = MergeTree()
              ORDER BY key;
 
         CREATE MATERIALIZED VIEW test.view TO test.data AS
                 SELECT key, value FROM test.rabbit;
-
-        {additional_dml};
-
         """
     )
 
     messages = []
     num_rows = 50
-    num_good_messages = 0
-
     for i in range(num_rows):
-        if (i+1) % 2 == 0:   # let's finish on good message to not miss the latest one
+        if i % 2 == 0:
             messages.append(json.dumps({"key": i, "value": i}))
-            num_good_messages += 1
         else:
             messages.append("Broken message " + str(i))
 
     for message in messages:
-        channel.basic_publish(exchange=exchange, routing_key="", body=message)
+        channel.basic_publish(exchange="select", routing_key="", body=message)
 
     time.sleep(1)
 
-    expected_num_rows = num_good_messages if broken_messages_rejected else num_rows
-
-    check_expected_result_polling(expected_num_rows, "SELECT count() FROM test.data")
+    check_expected_result_polling(num_rows, "SELECT count() FROM test.data")
 
     dead_letters = []
-    num_bad_messages = num_rows - num_good_messages
 
     def on_dead_letter(channel, method, properties, body):
         dead_letters.append(body)
-        if len(dead_letters) == num_bad_messages:
+        if len(dead_letters) == num_rows / 2:
             channel.stop_consuming()
 
     channel.basic_consume(deadletter_queue, on_dead_letter)
     channel.start_consuming()
 
-    assert len(dead_letters) == num_bad_messages
+    assert len(dead_letters) == num_rows / 2
 
-    i = 0
+    i = 1
     for letter in dead_letters:
         assert f"Broken message {i}" in str(letter)
         i += 2
 
-    result = instance.query(f"SELECT * FROM test.errors FORMAT Vertical")
-    logging.debug(f"test.errors contains {result}")
-
-    check_method(len(dead_letters), exchange)
-
     connection.close()
-
-
-def test_rabbitmq_reject_broken_messages_stream(rabbitmq_cluster):
-    rabbitmq_reject_broken_messages(
-        rabbitmq_cluster,
-        "stream",
-        "CREATE MATERIALIZED VIEW test.errors_view TO test.errors AS SELECT _error as error, _raw_message as broken_message FROM test.rabbit where not isNull(_error)",
-        view_test,
-        broken_messages_rejected = False,
-    )
-
-
-def test_rabbitmq_reject_broken_messages_dead_letter_queue(rabbitmq_cluster):
-    rabbitmq_reject_broken_messages(
-        rabbitmq_cluster,
-        "dead_letter_queue",
-        "",
-        dead_letter_queue_test,
-        broken_messages_rejected = True,
-    )
 
 
 def test_rabbitmq_json_type(rabbitmq_cluster):

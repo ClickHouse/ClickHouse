@@ -1,4 +1,4 @@
-#include <Storages/StorageMySQL.h>
+#include "StorageMySQL.h"
 
 #if USE_MYSQL
 
@@ -9,7 +9,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -156,7 +155,7 @@ public:
         const std::string & remote_table_name_,
         const mysqlxx::PoolWithFailover::Entry & entry_,
         const size_t & mysql_max_rows_to_insert)
-        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage{storage_}
         , metadata_snapshot{metadata_snapshot_}
         , remote_database_name{remote_database_name_}
@@ -388,7 +387,7 @@ void registerStorageMySQL(StorageFactory & factory)
     {
         .supports_settings = true,
         .supports_schema_inference = true,
-        .source_access_type = AccessTypeObjects::Source::MYSQL,
+        .source_access_type = AccessType::MYSQL,
         .has_builtin_setting_fn = MySQLSettings::hasBuiltin,
     });
 }

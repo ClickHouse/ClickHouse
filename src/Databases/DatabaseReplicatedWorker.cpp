@@ -363,7 +363,6 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
 
     auto zookeeper = getAndSetZooKeeper();
     UInt32 our_log_ptr = getLogPointer();
-
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
 
     if (our_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] < max_log_ptr)
@@ -535,7 +534,13 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         return {};
     }
 
-    String node_data = zookeeper->get(entry_path);
+    String node_data;
+    if (!zookeeper->tryGet(entry_path, node_data))
+    {
+        LOG_ERROR(log, "Cannot get log entry {}", entry_path);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "should be unreachable");
+    }
+
     task->entry.parse(node_data);
 
     if (task->entry.query.empty())

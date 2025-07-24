@@ -59,7 +59,6 @@ clickhouse-benchmark [keys] < queries_file;
 - `--password=PSWD` — ClickHouse user password. Default value: empty string.
 - `--stacktrace` — Stack traces output. When the key is set, `clickhouse-bencmark` outputs stack traces of exceptions.
 - `--stage=WORD` — Query processing stage at server. ClickHouse stops query processing and returns an answer to `clickhouse-benchmark` at the specified stage. Possible values: `complete`, `fetch_columns`, `with_mergeable_state`. Default value: `complete`.
-- `--reconnect=N` - Control reconnection behaviour. Possible values 0 (never reconnect), 1 (reconnect for every query), or N (reconnect after every N queries). Default value: 0.
 - `--help` — Shows the help message.
 
 If you want to apply some [settings](/operations/settings/overview) for queries, pass them as a key `--<session setting name>= SETTING_VALUE`. For example, `--max_memory_usage=1048576`.
@@ -97,13 +96,13 @@ In the report you can find:
 
 - Status string containing (in order):
 
-  - Endpoint of ClickHouse server.
-  - Number of processed queries.
-  - QPS: How many queries the server performed per second during a period specified in the `--delay` argument.
-  - RPS: How many rows the server reads per second during a period specified in the `--delay` argument.
-  - MiB/s: How many mebibytes the server reads per second during a period specified in the `--delay` argument.
-  - result RPS: How many rows placed by the server to the result of a query per second during a period specified in the `--delay` argument.
-  - result MiB/s. How many mebibytes placed by the server to the result of a query per second during a period specified in the `--delay` argument.
+    - Endpoint of ClickHouse server.
+    - Number of processed queries.
+    - QPS: How many queries the server performed per second during a period specified in the `--delay` argument.
+    - RPS: How many rows the server reads per second during a period specified in the `--delay` argument.
+    - MiB/s: How many mebibytes the server reads per second during a period specified in the `--delay` argument.
+    - result RPS: How many rows placed by the server to the result of a query per second during a period specified in the `--delay` argument.
+    - result MiB/s. How many mebibytes placed by the server to the result of a query per second during a period specified in the `--delay` argument.
 
 - Percentiles of queries execution time.
 

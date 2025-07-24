@@ -1,4 +1,4 @@
-#include <Dictionaries/MySQLDictionarySource.h>
+#include "MySQLDictionarySource.h"
 
 
 #if USE_MYSQL
@@ -6,9 +6,9 @@
 #endif
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Dictionaries/DictionarySourceFactory.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/registerDictionaries.h>
+#include "DictionarySourceFactory.h"
+#include "DictionaryStructure.h"
+#include "registerDictionaries.h"
 #include <Core/Settings.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/RemoteHostFilter.h>
@@ -25,7 +25,7 @@
 #include <Common/LocalDateTime.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/logger_useful.h>
-#include <Dictionaries/readInvalidateQuery.h>
+#include "readInvalidateQuery.h"
 
 
 namespace DB
@@ -67,8 +67,7 @@ static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allow
 
 void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const String & /*name*/,
-                                   [[maybe_unused]] const DictionaryStructure & dict_struct,
+    auto create_table_source = [=]([[maybe_unused]] const DictionaryStructure & dict_struct,
                                    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
                                    [[maybe_unused]] const std::string & config_prefix,
                                    [[maybe_unused]] Block & sample_block,

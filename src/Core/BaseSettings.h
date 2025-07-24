@@ -81,11 +81,10 @@ private:
   * #include <Core/BaseSettings.h>
   * #include <Core/BaseSettingsFwdMacrosImpl.h>
   *
-  * #define APPLY_FOR_MYSETTINGS(DECLARE, DECLARE_WITH_ALIAS) \
+  * #define APPLY_FOR_MYSETTINGS(DECLARE, ALIAS) \
   *     DECLARE(UInt64, a, 100, "Description of a", 0) \
   *     DECLARE(Float, f, 3.11, "Description of f", IMPORTANT) // IMPORTANT - means the setting can't be ignored by older versions) \
   *     DECLARE(String, s, "default", "Description of s", 0)
-  *     DECLARE_WITH_ALIAS(String, experimental, "default", "Description of s", 0, stable)
   *
   * DECLARE_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS)
   * IMPLEMENT_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS)
@@ -98,7 +97,7 @@ private:
   *
   * namespace MySetting
   * {
-  * APPLY_FOR_MYSETTINGS(INITIALIZE_SETTING_EXTERN, SETTING_SKIP_TRAIT)
+  * APPLY_FOR_MYSETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
   * }
   * #undef INITIALIZE_SETTING_EXTERN
   *
@@ -479,7 +478,7 @@ void BaseSettings<TTraits>::write(WriteBuffer & out, SettingsWriteFormat format)
         if ((format >= SettingsWriteFormat::STRINGS_WITH_FLAGS) || is_custom)
         {
             using Flags = BaseSettingsHelpers::Flags;
-            Flags flags{};
+            Flags flags{0};
             if (is_custom)
                 flags = static_cast<Flags>(flags | Flags::CUSTOM);
             else if (is_important)
@@ -511,7 +510,7 @@ void BaseSettings<TTraits>::writeChangedBinary(WriteBuffer & out) const
     {
         BaseSettingsHelpers::writeString(field.getName(), out);
         using Flags = BaseSettingsHelpers::Flags;
-        Flags flags{};
+        Flags flags{0};
         BaseSettingsHelpers::writeFlags(flags, out);
         accessor.writeBinary(*this, field.index, out);
     }
@@ -551,7 +550,7 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
         size_t index = accessor.find(name);
 
         using Flags = BaseSettingsHelpers::Flags;
-        UInt64 flags{};
+        UInt64 flags{0};
         if (format >= SettingsWriteFormat::STRINGS_WITH_FLAGS)
             flags = BaseSettingsHelpers::readFlags(in);
         bool is_important = (flags & Flags::IMPORTANT);
@@ -898,7 +897,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
     { \
         struct Data \
         { \
-            LIST_OF_SETTINGS_MACRO(DECLARE_SETTINGS_TRAITS_, DECLARE_SETTINGS_TRAITS_) \
+            LIST_OF_SETTINGS_MACRO(DECLARE_SETTINGS_TRAITS_, SKIP_ALIAS) \
         }; \
         \
         class Accessor \
@@ -950,9 +949,9 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
         }; \
         static constexpr bool allow_custom_settings = ALLOW_CUSTOM_SETTINGS; \
         \
-        static inline const AliasMap aliases_to_settings = { \
-            LIST_OF_SETTINGS_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_) \
-        }; \
+        static inline const AliasMap aliases_to_settings = \
+            DefineAliases() LIST_OF_SETTINGS_MACRO(ALIAS_TO, ALIAS_FROM); \
+        \
         using SettingsToAliasesMap = std::unordered_map<std::string_view, std::vector<std::string_view>>; \
         static inline const SettingsToAliasesMap & settingsToAliases() \
         { \
@@ -976,14 +975,36 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
 
 
 /// NOLINTNEXTLINE
-#define SETTING_SKIP_TRAIT(...)
+#define SKIP_ALIAS(ALIAS_NAME)
+/// NOLINTNEXTLINE
+#define ALIAS_TO(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) .setName(#NAME)
+/// NOLINTNEXTLINE
+#define ALIAS_FROM(ALIAS) .addAlias(#ALIAS)
+
+struct DefineAliases
+{
+    std::string_view name;
+    AliasMap map;
+
+    DefineAliases & setName(std::string_view value)
+    {
+        name = value;
+        return *this;
+    }
+
+    DefineAliases & addAlias(std::string_view value)
+    {
+        map.emplace(value, name);
+        return *this;
+    }
+
+    /// NOLINTNEXTLINE(google-explicit-constructor)
+    operator AliasMap() { return std::move(map); }
+};
 
 /// NOLINTNEXTLINE
-#define DECLARE_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+#define DECLARE_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
     SettingField##TYPE NAME {DEFAULT};
-/// NOLINTNEXTLINE
-#define DECLARE_SETTINGS_WITH_ALIAS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ALIAS) \
-    { #ALIAS, #NAME },
 
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO) \
@@ -994,7 +1015,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             Accessor res; \
             constexpr int IMPORTANT = 0x01; \
             UNUSED(IMPORTANT); \
-            LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_TRAITS_, IMPLEMENT_SETTINGS_TRAITS_) \
+            LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_TRAITS_, SKIP_ALIAS) \
             for (size_t i = 0; i < res.field_infos.size(); i++) \
             { \
                 const auto & info = res.field_infos[i]; \
@@ -1018,7 +1039,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
     template class BaseSettings<SETTINGS_TRAITS_NAME>;
 
 /// NOLINTNEXTLINE
-#define IMPLEMENT_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+#define IMPLEMENT_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
     res.field_infos.emplace_back( \
         FieldInfo{#NAME, #TYPE, DESCRIPTION, \
             static_cast<UInt64>(FLAGS), \
