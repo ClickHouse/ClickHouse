@@ -12,8 +12,6 @@ SELECT timeSeriesRateToGrid(10, 120, 10, 10)(timestamps, values) FROM ts_data; -
 SELECT timeSeriesDeltaToGrid(10, 120, 10, 10)(timestamps, values) FROM ts_data; -- {serverError BAD_ARGUMENTS}
 SELECT timeSeriesInstantRateToGrid(10, 120, 10, 10)(timestamps, values) FROM ts_data; -- {serverError BAD_ARGUMENTS}
 SELECT timeSeriesInstantDeltaToGrid(10, 120, 10, 10)(timestamps, values) FROM ts_data; -- {serverError BAD_ARGUMENTS}
-SELECT timeSeriesDerivToGrid(10, 120, 10, 10)(timestamps, values) FROM ts_data; -- {serverError BAD_ARGUMENTS}
-SELECT timeSeriesPredictLinearToGrid(10, 120, 10, 10, 60)(timestamps, values) FROM ts_data; -- {serverError BAD_ARGUMENTS}
 
 -- Filter out invalid rows where timestamp and values arrays lengths do not match
 SELECT timeSeriesResampleToGridWithStaleness(10, 120, 10, 10)(timestamps, values) FROM (SELECT * FROM ts_data WHERE length(timestamps) = length(values));

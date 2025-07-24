@@ -49,4 +49,5 @@ SELECT
     arrayZip(grid, timeSeriesInstantRateToGrid(start, end, step, 18)(timestamp, value)) as irate_18s -- previous timestamp is outside the window
 FROM ts_raw_data FORMAT Vertical;
 
+
 DROP TABLE ts_raw_data;
