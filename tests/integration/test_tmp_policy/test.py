@@ -26,6 +26,8 @@ def start_cluster():
 def test_disk_selection(start_cluster):
     query = "SELECT count(ignore(*)) FROM (SELECT * FROM system.numbers LIMIT 1e7) GROUP BY number"
     settings = {
+        "max_bytes_ratio_before_external_group_by": 0,
+        "max_bytes_ratio_before_external_sort": 0,
         "max_bytes_before_external_group_by": 1 << 20,
         "max_bytes_before_external_sort": 1 << 20,
     }

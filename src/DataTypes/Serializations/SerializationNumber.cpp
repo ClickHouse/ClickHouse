@@ -213,8 +213,9 @@ void SerializationNumber<T>::serializeBinaryBulk(const IColumn & column, WriteBu
 }
 
 template <typename T>
-void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
+void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double /*avg_value_size_hint*/) const
 {
+    istr.ignore(sizeof(typename ColumnVector<T>::ValueType) * rows_offset);
     typename ColumnVector<T>::Container & x = typeid_cast<ColumnVector<T> &>(column).getData();
     const size_t initial_size = x.size();
     x.resize(initial_size + limit);

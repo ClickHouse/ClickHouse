@@ -9,7 +9,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/FunctionNameNormalizer.h>
@@ -20,18 +20,20 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Interpreters/Context.h>
 #include <Storages/StorageView.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/queryToString.h>
+#include <Parsers/ASTSQLSecurity.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -51,6 +53,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
+    extern const SettingsBool enable_deflate_qpl_codec;
     extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsBool flatten_nested;
 }
@@ -231,6 +234,15 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = COMMENT_TABLE;
+        const auto & ast_comment = command_ast->comment->as<ASTLiteral &>();
+        command.comment = ast_comment.value.safeGet<String>();
+        return command;
+    }
+    if (command_ast->type == ASTAlterCommand::MODIFY_DATABASE_COMMENT)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = MODIFY_DATABASE_COMMENT;
         const auto & ast_comment = command_ast->comment->as<ASTLiteral &>();
         command.comment = ast_comment.value.safeGet<String>();
         return command;
@@ -496,7 +508,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             column.comment = *comment;
 
         if (codec)
-            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false, true, true);
+            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false, true, true, true);
 
         column.ttl = ttl;
 
@@ -529,9 +541,52 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         {
             metadata.columns.add(column, after_column, first);
         }
+
+        /// Try to add "implicit" minmax index for new column
+        if (metadata.settings_changes
+            && ((isNumber(column.type) && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_numeric_columns"))
+                || (isString(column.type) && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_string_columns"))))
+        {
+            bool minmax_index_exists = false;
+            for (const auto & index: metadata.secondary_indices)
+            {
+                if (index.column_names.front() == column.name && index.type == "minmax")
+                {
+                    minmax_index_exists = true;
+                    break;
+                }
+            }
+
+            if (!minmax_index_exists)
+            {
+                auto index_type = makeASTFunction("minmax");
+                auto index_ast = std::make_shared<ASTIndexDeclaration>(std::make_shared<ASTIdentifier>(column.name), index_type, IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name);
+                index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
+                auto new_index = IndexDescription::getIndexFromAST(index_ast, metadata.columns, context);
+                metadata.secondary_indices.push_back(new_index);
+            }
+        }
     }
     else if (type == DROP_COLUMN)
     {
+        const auto * column = metadata.columns.tryGet(column_name);
+        if (column && metadata.settings_changes
+            && ((isNumber(column->type) && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_numeric_columns"))
+                || (isString(column->type) && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_string_columns"))))
+        {
+            for (auto index_it = metadata.secondary_indices.begin();
+                     index_it != metadata.secondary_indices.end();)
+            {
+                if (index_it->name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name)
+                {
+                    index_it = metadata.secondary_indices.erase(index_it);
+                    break;
+                }
+                else
+                    ++index_it;
+            }
+        }
+
         /// Otherwise just clear data on disk
         if (!clear && !partition)
             metadata.columns.remove(column_name);
@@ -565,7 +620,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             else
             {
                 if (codec)
-                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false, true, true);
+                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false, true, true, true);
 
                 if (comment)
                     column.comment = *comment;
@@ -648,6 +703,14 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             if (if_not_exists)
                 return;
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add index {}: index with this name already exists", index_name);
+        }
+
+        if (index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX)
+            && metadata.settings_changes
+            && (metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_numeric_columns")
+                || metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_string_columns")))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add index {} because it uses a reserved index name", index_name);
         }
 
         auto insert_it = metadata.secondary_indices.end();
@@ -816,7 +879,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     else if (type == MODIFY_QUERY)
     {
         metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, metadata.refresh != nullptr, context);
-        Block as_select_sample;
+        SharedHeader as_select_sample;
 
         if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
@@ -830,7 +893,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 false);
         }
 
-        metadata.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
+        metadata.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
     }
     else if (type == MODIFY_REFRESH)
     {
@@ -869,9 +932,14 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             auto it = std::find_if(settings_from_storage.begin(), settings_from_storage.end(), finder);
 
             if (it != settings_from_storage.end())
+            {
                 settings_from_storage.erase(it);
-
-            /// Intentionally ignore if there is no such setting name
+            }
+            else
+            {
+                /// Intentionally ignore if there is no such setting name
+                LOG_TEST(getLogger("AlterCommands"), "No such setting name {}, will ignore", setting_name);
+            }
         }
     }
     else if (type == RENAME_COLUMN)
@@ -910,7 +978,20 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             rename_visitor.visit(metadata.partition_key.definition_ast);
 
         for (auto & index : metadata.secondary_indices)
-            rename_visitor.visit(index.definition_ast);
+        {
+            if (index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name
+                && metadata.settings_changes
+                && (metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_numeric_columns")
+                    ||  metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_string_columns")))
+            {
+                auto index_type = makeASTFunction("minmax");
+                index.definition_ast = std::make_shared<ASTIndexDeclaration>(std::make_shared<ASTIdentifier>(rename_to), index_type,
+                                                                             IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + rename_to);
+                index.definition_ast->as<ASTIndexDeclaration>()->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
+            }
+            else
+                rename_visitor.visit(index.definition_ast);
+        }
     }
     else if (type == MODIFY_SQL_SECURITY)
         metadata.setSQLSecurity(sql_security->as<ASTSQLSecurity &>());
@@ -1048,7 +1129,7 @@ bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
         if (!metadata.table_ttl.definition_ast)
             return true;
         /// If TTL had not been changed, do not require mutations
-        return queryToString(metadata.table_ttl.definition_ast) != queryToString(ttl);
+        return metadata.table_ttl.definition_ast->formatWithSecretsOneLine() != ttl->formatWithSecretsOneLine();
     }
 
     if (!ttl || type != MODIFY_COLUMN)
@@ -1057,7 +1138,7 @@ bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
     bool column_ttl_changed = true;
     for (const auto & [name, ttl_ast] : metadata.columns.getColumnTTLs())
     {
-        if (name == column_name && queryToString(*ttl) == queryToString(*ttl_ast))
+        if (name == column_name && ttl->formatWithSecretsOneLine() == ttl_ast->formatWithSecretsOneLine())
         {
             column_ttl_changed = false;
             break;
@@ -1072,10 +1153,14 @@ bool AlterCommand::isRemovingProperty() const
     return to_remove != RemoveProperty::NO_PROPERTY;
 }
 
-bool AlterCommand::isDropSomething() const
+bool AlterCommand::isDropOrRename() const
 {
-    return type == Type::DROP_COLUMN || type == Type::DROP_INDEX || type == Type::DROP_STATISTICS
-        || type == Type::DROP_CONSTRAINT || type == Type::DROP_PROJECTION;
+    return type == Type::DROP_COLUMN
+        || type == Type::DROP_INDEX
+        || type == Type::DROP_STATISTICS
+        || type == Type::DROP_CONSTRAINT
+        || type == Type::DROP_PROJECTION
+        || type == Type::RENAME_COLUMN;
 }
 
 std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const
@@ -1148,21 +1233,11 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     return result;
 }
 
-bool AlterCommands::hasFullTextIndex(const StorageInMemoryMetadata & metadata)
+bool AlterCommands::hasTextIndex(const StorageInMemoryMetadata & metadata)
 {
     for (const auto & index : metadata.secondary_indices)
     {
-        if (index.type == FULL_TEXT_INDEX_NAME)
-            return true;
-    }
-    return false;
-}
-
-bool AlterCommands::hasLegacyInvertedIndex(const StorageInMemoryMetadata & metadata)
-{
-    for (const auto & index : metadata.secondary_indices)
-    {
-        if (index.type == INVERTED_INDEX_NAME)
+        if (index.type == TEXT_INDEX_NAME)
             return true;
     }
     return false;
@@ -1290,7 +1365,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
     {
         if (!query)
             return "";
-        return queryToString(query);
+        return query->formatWithSecretsOneLine();
     };
 
     for (size_t i = 0; i < size(); ++i)
@@ -1391,6 +1466,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     command.data_type,
                     !settings[Setting::allow_suspicious_codecs],
                     settings[Setting::allow_experimental_codecs],
+                    settings[Setting::enable_deflate_qpl_codec],
                     settings[Setting::enable_zstd_qat_codec]);
             }
 
@@ -1421,6 +1497,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     command.data_type,
                     !context->getSettingsRef()[Setting::allow_suspicious_codecs],
                     context->getSettingsRef()[Setting::allow_experimental_codecs],
+                    context->getSettingsRef()[Setting::enable_deflate_qpl_codec],
                     context->getSettingsRef()[Setting::enable_zstd_qat_codec]);
             }
             auto column_default = all_columns.getDefault(column_name);

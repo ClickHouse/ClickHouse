@@ -1,9 +1,3 @@
-# Our code has strong cohesion and target associated with `Compression` also depends on `DataTypes`.
-# But we can exclude some files which have dependencies in case of
-# fuzzer related build (we are interested in fuzzing only particular part of our code).
-# So, some symbols will be declared, but not defined. Unfortunately, this trick doesn't work with UBSan.
-# If you want really small size of the resulted binary, just link with fuzz_compression and clickhouse_common_io
-
 clickhouse_add_executable (compressed_buffer_fuzzer compressed_buffer_fuzzer.cpp)
 target_link_libraries (compressed_buffer_fuzzer PRIVATE dbms)
 
@@ -21,3 +15,6 @@ target_link_libraries (encrypted_decompress_fuzzer PRIVATE dbms)
 
 clickhouse_add_executable (gcd_decompress_fuzzer gcd_decompress_fuzzer.cpp)
 target_link_libraries (gcd_decompress_fuzzer PRIVATE dbms)
+
+clickhouse_add_executable (sz3_decompress_fuzzer sz3_decompress_fuzzer.cpp)
+target_link_libraries (sz3_decompress_fuzzer PRIVATE dbms)

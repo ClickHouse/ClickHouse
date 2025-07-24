@@ -5,16 +5,17 @@ import csv
 import json
 import logging
 import os
+import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 
 import integration_tests_runner as runner
-from build_download_helper import download_all_deb_packages
+from build_download_helper import download_clickhouse_binary, download_clickhouse_master
 from ci_config import CI
 from ci_utils import Utils
 from docker_images_helper import DockerImage, get_docker_image
-from download_release_packages import download_last_release
 from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from integration_test_images import IMAGES
 from pr_info import PRInfo
@@ -54,21 +55,14 @@ def get_json_params_dict(
 
 def get_env_for_runner(
     check_name: str,
-    build_path: Path,
+    binary_path: Path,
     repo_path: Path,
     result_path: Path,
     work_path: Path,
 ) -> Dict[str, str]:
-    binary_path = build_path / "clickhouse"
-    odbc_bridge_path = build_path / "clickhouse-odbc-bridge"
-    library_bridge_path = build_path / "clickhouse-library-bridge"
-
     my_env = os.environ.copy()
-    my_env["CLICKHOUSE_TESTS_BUILD_PATH"] = build_path.as_posix()
     my_env["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = binary_path.as_posix()
     my_env["CLICKHOUSE_TESTS_CLIENT_BIN_PATH"] = binary_path.as_posix()
-    my_env["CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH"] = odbc_bridge_path.as_posix()
-    my_env["CLICKHOUSE_TESTS_LIBRARY_BRIDGE_BIN_PATH"] = library_bridge_path.as_posix()
     my_env["CLICKHOUSE_TESTS_REPO_PATH"] = repo_path.as_posix()
     my_env["CLICKHOUSE_TESTS_RESULT_PATH"] = result_path.as_posix()
     my_env["CLICKHOUSE_TESTS_BASE_CONFIG_DIR"] = f"{repo_path}/programs/server"
@@ -77,6 +71,9 @@ def get_env_for_runner(
 
     if "analyzer" in check_name.lower():
         my_env["CLICKHOUSE_USE_OLD_ANALYZER"] = "1"
+
+    if "distributed plan" in check_name.lower():
+        my_env["CLICKHOUSE_USE_DISTRIBUTED_PLAN"] = "1"
 
     return my_env
 
@@ -158,12 +155,16 @@ def main():
     ), "Check name must be provided in --check-name input option or in CHECK_NAME env"
     validate_bugfix_check = args.validate_bugfix
 
-    if "RUN_BY_HASH_NUM" in os.environ:
-        run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
-        run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
-    else:
-        run_by_hash_num = 0
-        run_by_hash_total = 0
+    run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
+    run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
+
+    match = re.search(r"\(.*?\)", check_name)
+    options = match.group(0)[1:-1].split(",") if match else []
+    for option in options:
+        if "/" in option:
+            run_by_hash_num = int(option.split("/")[0]) - 1
+            run_by_hash_total = int(option.split("/")[1])
+            break
 
     is_flaky_check = "flaky" in check_name
 
@@ -187,12 +188,18 @@ def main():
     build_path.mkdir(parents=True, exist_ok=True)
 
     if validate_bugfix_check:
-        download_last_release(build_path, debug=True)
+        download_clickhouse_master(build_path, full=True)
     else:
-        download_all_deb_packages(check_name, reports_path, build_path)
+        download_clickhouse_binary(check_name, reports_path, build_path)
+
+    binary_path = build_path / "clickhouse"
+
+    # Set executable bit and run it for self extraction
+    os.chmod(binary_path, 0o755)
+    subprocess.run(f"{binary_path} local 'SELECT version()'", shell=True, check=True)
 
     my_env = get_env_for_runner(
-        check_name, build_path, repo_path, result_path, work_path
+        check_name, binary_path, repo_path, result_path, work_path
     )
 
     json_path = work_path / "params.json"

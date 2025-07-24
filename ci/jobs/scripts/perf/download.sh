@@ -7,7 +7,7 @@ trap 'kill $(jobs -pr) ||:' EXIT
 #BUILD_NAME=${BUILD_NAME:-package_release}
 #export S3_URL BUILD_NAME
 
-cd /tmp/praktika
+cd ./tmp_ci
 
 mkdir db0 ||:
 mkdir left ||:

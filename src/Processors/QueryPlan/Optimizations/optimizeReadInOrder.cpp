@@ -5,6 +5,8 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
@@ -14,7 +16,6 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -23,6 +24,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/StorageMerge.h>
 #include <Common/typeid_cast.h>
@@ -423,10 +425,12 @@ SortingInputOrder buildInputOrderFromSortDescription(
         if (sort_column_description.collator)
             break;
 
-        /// Since sorting key columns are always sorted with NULLS LAST, reading in order
-        /// supported only for ASC NULLS LAST ("in order"), and DESC NULLS FIRST ("reverse")
-        const auto column_is_nullable = sorting_key.data_types[next_sort_key]->isNullable();
-        if (column_is_nullable && sort_column_description.nulls_direction != sort_column_description.direction)
+        /// Since sorting key columns are always sorted with
+        // ASC NULLS LAST ("in order") or DESC NULLS FIRST ("reverse")
+        /// supported only this direction, other cases are represented as nulls_direction==-1
+        /// Also actual for floating point values NaN.
+        const auto column_is_nullable = isNullableOrLowCardinalityNullable(sorting_key.data_types[next_sort_key])|| isFloat(*sorting_key.data_types[next_sort_key]);
+        if (column_is_nullable && sort_column_description.nulls_direction == -1)
             break;
 
         /// Direction for current sort key.
@@ -1272,7 +1276,7 @@ void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
 
 /// This optimization is obsolete and will be removed.
 /// optimizeReadInOrder covers it.
-size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/)
+size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & /*settings*/)
 {
     /// Find the following sequence of steps, add InputOrderInfo and apply prefix sort description to
     /// SortingStep:
@@ -1329,13 +1333,13 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     for (const auto & actions_dag : window_desc.partition_by_actions)
     {
         order_by_elements_actions.emplace_back(
-            std::make_shared<ExpressionActions>(actions_dag->clone(), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
+            std::make_shared<ExpressionActions>(actions_dag->clone(), ExpressionActionsSettings(context, CompileExpressions::yes)));
     }
 
     for (const auto & actions_dag : window_desc.order_by_actions)
     {
         order_by_elements_actions.emplace_back(
-            std::make_shared<ExpressionActions>(actions_dag->clone(), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
+            std::make_shared<ExpressionActions>(actions_dag->clone(), ExpressionActionsSettings(context, CompileExpressions::yes)));
     }
 
     auto order_optimizer = std::make_shared<ReadInOrderOptimizer>(

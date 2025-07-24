@@ -2,7 +2,6 @@
 
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/formatAST.h>
 #include <IO/WriteBufferFromOStream.h>
 
 
@@ -25,11 +24,7 @@ try
     ParserQueryWithOutput parser(input.data() + input.size());
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0, 0);
 
-    std::cout << "Success." << std::endl;
-    WriteBufferFromOStream out(std::cerr, 4096);
-    formatAST(*ast, out);
-    std::cout << std::endl;
-
+    std::cerr << ast->formatWithSecretsOneLine() << std::endl;
     return 0;
 }
 catch (...)

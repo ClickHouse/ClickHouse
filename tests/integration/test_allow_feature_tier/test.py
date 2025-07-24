@@ -170,6 +170,30 @@ def test_allow_feature_tier_in_mergetree_settings(start_cluster):
     instance.query("DROP TABLE IF EXISTS test_experimental")
 
 
+def test_allow_feature_tier_in_mergetree_settings_with_old_compatibility(start_cluster):
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP TABLE IF EXISTS test_experimental")
+
+    # Disable experimental settings
+    instance.replace_in_config(feature_tier_path, "0", "1")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "1" == get_current_tier_value(instance)
+
+    basic_merge_tree_query = """
+        create table b (a Int64) ENGINE=MergeTree() order by a;
+    """
+
+    output, error = instance.query_and_get_answer_with_error(basic_merge_tree_query)
+    assert output == ""
+    assert error is ""
+
+    # Go back
+    instance.replace_in_config(feature_tier_path, "1", "0")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP TABLE IF EXISTS b")
+
+
 def test_allow_feature_tier_in_user(start_cluster):
     instance.query("DROP USER IF EXISTS user_experimental")
     assert "0" == get_current_tier_value(instance)

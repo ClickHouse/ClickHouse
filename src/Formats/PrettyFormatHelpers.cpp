@@ -1,9 +1,10 @@
+#include <Columns/IColumn.h>
 #include <Formats/PrettyFormatHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Chunk.h>
 #include <Common/formatReadable.h>
-#include <base/find_symbols.h>
+#include <Common/UTF8Helpers.h>
 
 
 static constexpr const char * GRAY_COLOR = "\033[90m";
@@ -27,9 +28,12 @@ void writeReadableNumberTip(WriteBuffer & out, const IColumn & column, size_t ro
         return;
 
     auto value = column.getFloat64(row);
-    auto threshold = settings.pretty.output_format_pretty_single_large_number_tip_threshold;
+    auto abs_value = abs(value);
+    auto threshold = settings.pretty.single_large_number_tip_threshold;
 
-    if (threshold && isFinite(value) && abs(value) > threshold)
+    if (threshold && isFinite(value) && abs_value > threshold
+        /// Most (~99.5%) of 64-bit hash values are in this range, and it is not necessarily to highlight them:
+        && !(abs_value > 1e17 && abs_value < 1.844675e19))
     {
         if (color)
             writeCString(GRAY_COLOR, out);
@@ -122,6 +126,29 @@ String highlightTrailingSpaces(String source)
     }
 
     return source.substr(0, highlight_start_pos) + RED_COLOR + UNDERSCORE + source.substr(highlight_start_pos, std::string::npos) + RESET_COLOR;
+}
+
+
+std::pair<String, size_t> truncateName(String name, size_t cut_to, size_t hysteresis, bool ascii)
+{
+    size_t length = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(name.data()), name.size());
+
+    if (!cut_to || length <= cut_to + hysteresis || isValidIdentifier(name))
+        return {name, length};
+
+    /// We cut characters in the middle and insert filler there.
+    const char * filler = ascii ? "~" : "⋯";
+
+    size_t prefix_chars = cut_to / 2;
+    size_t suffix_chars = (cut_to - 1) / 2;
+    size_t suffix_chars_begin = length - suffix_chars;
+
+    size_t prefix_bytes = UTF8::computeBytesBeforeWidth(reinterpret_cast<const UInt8 *>(name.data()), name.size(), 0, prefix_chars);
+    size_t suffix_bytes_begin = UTF8::computeBytesBeforeWidth(reinterpret_cast<const UInt8 *>(name.data()), name.size(), 0, suffix_chars_begin);
+
+    name = name.substr(0, prefix_bytes) + filler + name.substr(suffix_bytes_begin, std::string::npos);
+
+    return {name, cut_to};
 }
 
 }

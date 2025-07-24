@@ -1,24 +1,28 @@
+#include <optional>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 
-#include "config.h"
 #if USE_PROMETHEUS_PROTOBUFS
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/logger_useful.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeMap.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/StorageID.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/StorageTimeSeries.h>
@@ -42,6 +46,10 @@ namespace ErrorCodes
     extern const int BAD_REQUEST_PARAMETER;
 }
 
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+}
 
 namespace
 {
@@ -169,7 +177,7 @@ namespace
         const Map & tags_to_columns = storage_settings[TimeSeriesSetting::tags_to_columns];
         for (const auto & tag_name_and_column_name : tags_to_columns)
         {
-            const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
+            const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
             const auto & tag_name = tuple.at(0).safeGet<String>();
             const auto & column_name = tuple.at(1).safeGet<String>();
             res[tag_name] = column_name;
@@ -205,7 +213,7 @@ namespace
             const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
             for (const auto & tag_name_and_column_name : tags_to_columns)
             {
-                const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
+                const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
                 const auto & column_name = tuple.at(1).safeGet<String>();
                 exp_list->children.push_back(
                     makeASTColumn(tags_table_id, column_name));
@@ -277,7 +285,7 @@ namespace
             const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
             for (const auto & tag_name_and_column_name : tags_to_columns)
             {
-                const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
+                const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
                 const auto & column_name = tuple.at(1).safeGet<String>();
                 exp_list->children.push_back(
                     makeASTColumn(tags_table_id, column_name));
@@ -339,7 +347,7 @@ namespace
         const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
         for (const auto & tag_name_and_column_name : tags_to_columns)
         {
-            const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
+            const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
             const auto & tag_name = tuple.at(0).safeGet<String>();
             const auto & column_with_type = get_next_column_with_type();
             validator.validateColumnForTagValue(column_with_type);
@@ -462,10 +470,21 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
         start_timestamp_ms, end_timestamp_ms, label_matcher, time_series_settings, data_table_id, tags_table_id);
 
     LOG_TRACE(log, "{}: Executing query {}",
-              time_series_storage_id.getNameForLogs(), select_query);
+              time_series_storage_id.getNameForLogs(), select_query->formatForLogging());
 
-    InterpreterSelectQuery interpreter(select_query, getContext(), SelectQueryOptions{});
-    BlockIO io = interpreter.execute();
+    auto context = getContext();
+    BlockIO io;
+    std::optional<InterpreterSelectQuery> interpreter_holder;
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        InterpreterSelectQueryAnalyzer interpreter(select_query, context, SelectQueryOptions{});
+        io = interpreter.execute();
+    }
+    else
+    {
+        interpreter_holder.emplace(select_query, context, SelectQueryOptions{});
+        io = interpreter_holder->execute();
+    }
     PullingPipelineExecutor executor(io.pipeline);
 
     Block block;
@@ -474,7 +493,7 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
         LOG_TRACE(log, "{}: Pulled block with {} columns and {} rows",
                   time_series_storage_id.getNameForLogs(), block.columns(), block.rows());
 
-        if (block)
+        if (!block.empty())
             convertBlockToProtobuf(std::move(block), out_time_series, time_series_storage_id, time_series_settings);
     }
 

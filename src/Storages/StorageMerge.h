@@ -81,11 +81,18 @@ public:
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override;
 
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
     using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
     DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
+
+    static ColumnsDescription getColumnsDescriptionFromSourceTables(
+        const ContextPtr & query_context,
+        const String & source_database_name_or_regexp,
+        bool database_is_regexp,
+        const String & source_table_regexp,
+        size_t max_tables_to_look);
 
 private:
     /// (Database, Table, Lock, TableName)
@@ -116,14 +123,24 @@ private:
     DatabaseNameOrRegexp database_name_or_regexp;
 
     template <typename F>
-    StoragePtr getFirstTable(F && predicate) const;
+    StoragePtr traverseTablesUntil(F && predicate) const;
 
     template <typename F>
     void forEachTable(F && func) const;
 
+    template <typename F>
+    static StoragePtr traverseTablesUntilImpl(const ContextPtr & query_context, const IStorage * ignore_self, const DatabaseNameOrRegexp & database_name_or_regexp, F && predicate);
+
+    /// Returns a unified column structure among multiple tables.
+    static ColumnsDescription getColumnsDescriptionFromSourceTablesImpl(
+        const ContextPtr & context,
+        const DatabaseNameOrRegexp & database_name_or_regexp,
+        size_t max_tables_to_look,
+        const IStorage * ignore_self);
+
     ColumnSizeByName getColumnSizes() const override;
 
-    ColumnsDescription getColumnsDescriptionFromSourceTables() const;
+    ColumnsDescription getColumnsDescriptionFromSourceTables(const ContextPtr & context) const;
 
     static VirtualColumnsDescription createVirtuals();
 
@@ -150,7 +167,7 @@ public:
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        Block common_header_,
+        SharedHeader common_header_,
         size_t max_block_size,
         size_t num_streams,
         StoragePtr storage,
@@ -173,7 +190,7 @@ public:
 private:
     const size_t required_max_block_size;
     const size_t requested_num_streams;
-    Block common_header;
+    SharedHeader common_header;
 
     StorageListWithLocks selected_tables;
     Names all_column_names;
@@ -201,6 +218,7 @@ private:
         const StorageSnapshotPtr & storage_snapshot,
         Names required_column_names,
         Names & column_names_as_aliases,
+        bool & is_smallest_column_requested,
         Aliases & aliases) const;
 
     /// An object of this helper class is created
@@ -258,7 +276,8 @@ private:
         QueryProcessingStage::Enum processed_stage,
         UInt64 max_block_size,
         const StorageWithLockAndName & storage_with_lock,
-        Names && real_column_names,
+        const Names & real_column_names_read_from_the_source_table,
+        bool & is_smallest_column_requested,
         const RowPolicyDataOpt & row_policy_data_opt,
         ContextMutablePtr modified_context,
         size_t streams_num) const;
@@ -280,7 +299,8 @@ private:
         const Aliases & aliases,
         const RowPolicyDataOpt & row_policy_data_opt,
         ContextPtr context,
-        ChildPlan & child);
+        ChildPlan & child,
+        bool is_smallest_column_requested);
 
     StorageMerge::StorageListWithLocks getSelectedTables(
         ContextPtr query_context,

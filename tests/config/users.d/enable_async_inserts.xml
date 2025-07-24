@@ -1,0 +1,8 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <async_insert>1</async_insert>
+            <apply_settings_from_server>1</apply_settings_from_server>
+        </default>
+    </profiles>
+</clickhouse>

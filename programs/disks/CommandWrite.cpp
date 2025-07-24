@@ -1,11 +1,12 @@
 #include <Interpreters/Context.h>
-#include "ICommand.h"
+#include <ICommand.h>
 
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
 #include <Common/TerminalSize.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -13,7 +14,7 @@ namespace DB
 class CommandWrite final : public ICommand
 {
 public:
-    CommandWrite()
+    CommandWrite() : ICommand("CommandWrite")
     {
         command_name = "write";
         description = "Write a file from `path-from` to `path-to`";
@@ -44,6 +45,7 @@ public:
             return std::make_unique<ReadBufferFromEmptyFile>();
         }();
 
+        LOG_INFO(log, "Writing file from '{}' to '{}' at disk '{}'", path_from.value_or("stdin"), path_to, disk.getDisk()->getName());
         auto out = disk.getDisk()->writeFile(path_to);
         copyData(*in, *out);
         out->finalize();

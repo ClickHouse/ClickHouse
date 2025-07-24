@@ -75,12 +75,19 @@ ColumnsWithTypeAndName FunctionNode::getArgumentColumns() const
             argument_column.type = argument->getResultType();
 
         if (constant && !isNotCreatable(argument_column.type))
-            argument_column.column = argument_column.type->createColumnConst(1, constant->getValue());
+            argument_column.column = constant->getColumn();
 
         argument_columns.push_back(std::move(argument_column));
     }
 
     return argument_columns;
+}
+
+AggregateFunctionPtr  FunctionNode::getAggregateFunction() const
+{
+    if (kind == FunctionKind::UNKNOWN || kind == FunctionKind::ORDINARY)
+        return {};
+    return std::static_pointer_cast<const IAggregateFunction>(function);
 }
 
 void FunctionNode::resolveAsFunction(FunctionBasePtr function_value)
@@ -204,11 +211,7 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions com
         return;
 
     if (auto result_type = getResultType())
-    {
-        auto result_type_name = result_type->getName();
-        hash_state.update(result_type_name.size());
-        hash_state.update(result_type_name);
-    }
+        result_type->updateHash(hash_state);
 }
 
 QueryTreeNodePtr FunctionNode::cloneImpl() const

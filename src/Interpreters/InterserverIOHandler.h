@@ -1,10 +1,12 @@
 #pragma once
 
 #include <Common/ActionBlocker.h>
+#include <Common/Exception.h>
 #include <Common/SharedMutex.h>
 #include <base/types.h>
 
 #include <map>
+#include <mutex>
 
 namespace zkutil
 {
@@ -23,6 +25,8 @@ namespace ErrorCodes
 
 class HTMLForm;
 class HTTPServerResponse;
+class ReadBuffer;
+class WriteBuffer;
 
 /** Query processor from other servers.
   */

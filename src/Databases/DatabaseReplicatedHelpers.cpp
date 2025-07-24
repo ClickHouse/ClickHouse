@@ -1,3 +1,4 @@
+#include <Common/assert_cast.h>
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Databases/DatabaseReplicated.h>
 

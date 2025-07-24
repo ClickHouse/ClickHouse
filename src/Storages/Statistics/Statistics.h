@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <Core/Field.h>
+#include <Core/Range.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <Storages/StatisticsDescription.h>
@@ -13,6 +12,8 @@ namespace DB
 
 constexpr auto STATS_FILE_PREFIX = "statistics_";
 constexpr auto STATS_FILE_SUFFIX = ".stats";
+
+class Field;
 
 struct StatisticsUtils
 {
@@ -44,6 +45,7 @@ public:
     /// Throws if the statistics object is not able to do a meaningful estimation.
     virtual Float64 estimateEqual(const Field & val) const; /// cardinality of val in the column
     virtual Float64 estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
+    virtual Float64 estimateRange(const Range & range) const;
 
 protected:
     SingleStatisticsDescription stat;
@@ -70,6 +72,7 @@ public:
     Float64 estimateLess(const Field & val) const;
     Float64 estimateGreater(const Field & val) const;
     Float64 estimateEqual(const Field & val) const;
+    Float64 estimateRange(const Range & range) const;
 
 private:
     friend class MergeTreeStatisticsFactory;

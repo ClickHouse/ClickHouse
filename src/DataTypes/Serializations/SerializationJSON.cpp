@@ -164,7 +164,7 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
                 writeChar('\n', ostr);
                 for (size_t i = 0; i != objects_to_close; ++i)
                 {
-                    writeChar(' ', (indent + prefix_size + objects_to_close - i) * 4, ostr);
+                    writeChar(settings.json.pretty_print_indent, (indent + prefix_size + objects_to_close - i) * settings.json.pretty_print_indent_multiplier, ostr);
                     if (i != objects_to_close - 1)
                         writeCString("}\n", ostr);
                     else
@@ -201,7 +201,7 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
 
                 if (pretty)
                 {
-                    writeChar(' ', (indent + i + 1) * 4, ostr);
+                    writeChar(settings.json.pretty_print_indent, (indent + i + 1) * settings.json.pretty_print_indent_multiplier, ostr);
                     writeJSONString(path_elements.elements[i], ostr, settings);
                     writeCString(" : {\n", ostr);
                 }
@@ -231,7 +231,7 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
 
         if (pretty)
         {
-            writeChar(' ', (indent + current_prefix.size() + 1) * 4, ostr);
+            writeChar(settings.json.pretty_print_indent, (indent + current_prefix.size() + 1) * settings.json.pretty_print_indent_multiplier, ostr);
             writeJSONString(path_elements.elements.back(), ostr, settings);
             writeCString(" : ", ostr);
         }
@@ -261,7 +261,7 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
             /// To serialize value stored in shared data we should first deserialize it from binary format.
             auto tmp_dynamic_column = ColumnDynamic::create();
             tmp_dynamic_column->reserve(1);
-            column_object.deserializeValueFromSharedData(shared_data_values, index_in_shared_data_values++, *tmp_dynamic_column);
+            ColumnObject::deserializeValueFromSharedData(shared_data_values, index_in_shared_data_values++, *tmp_dynamic_column);
 
             if (pretty)
                 dynamic_serialization->serializeTextJSONPretty(*tmp_dynamic_column, 0, ostr, settings, indent + current_prefix.size() + 1);
@@ -276,10 +276,10 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
         writeChar('\n', ostr);
         for (size_t i = 0; i != current_prefix.elements.size(); ++i)
         {
-            writeChar(' ', (indent + current_prefix.size() - i) * 4, ostr);
+            writeChar(settings.json.pretty_print_indent, (indent + current_prefix.size() - i) * settings.json.pretty_print_indent_multiplier, ostr);
             writeCString("}\n", ostr);
         }
-        writeChar(' ', indent * 4, ostr);
+        writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
         writeChar('}', ostr);
     }
     else

@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 
@@ -79,14 +80,16 @@ void StorageSystemViewRefreshes::fillData(
 
         res_columns[i++]->insert(std::chrono::duration_cast<std::chrono::seconds>(refresh.next_refresh_time.time_since_epoch()).count());
 
-        if (refresh.znode.last_attempt_succeeded || refresh.znode.last_attempt_time.time_since_epoch().count() == 0)
-            res_columns[i++]->insertDefault();
+        if (refresh.unexpected_error.has_value())
+            res_columns[i++]->insert(*refresh.unexpected_error);
+        else if (!refresh.znode.last_attempt_error.empty())
+            res_columns[i++]->insert(refresh.znode.last_attempt_error);
         else if (refresh.refresh_running)
             res_columns[i++]->insert(refresh.znode.previous_attempt_error);
-        else if (refresh.znode.last_attempt_error.empty())
-            res_columns[i++]->insert("Replica went away");
+        else if (refresh.znode.last_attempt_succeeded || refresh.znode.last_attempt_time.time_since_epoch().count() == 0)
+            res_columns[i++]->insertDefault();
         else
-            res_columns[i++]->insert(refresh.znode.last_attempt_error);
+            res_columns[i++]->insert("Replica went away");
 
         Int64 retries = refresh.znode.attempt_number;
         if (refresh.refresh_running && retries)

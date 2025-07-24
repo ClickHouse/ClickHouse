@@ -9,7 +9,6 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/queryToString.h>
 #include <Planner/PlannerJoinTree.h>
 #include <Planner/Utils.h>
 #include <Planner/findQueryForParallelReplicas.h>
@@ -17,6 +16,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageDummy.h>
@@ -118,7 +118,7 @@ std::vector<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTr
 
                 if (join_kind == JoinKind::Left || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All))
                     query_tree_node = join_node.getLeftTableExpression().get();
-                else if (join_kind == JoinKind::Right)
+                else if (join_kind == JoinKind::Right && join_strictness != JoinStrictness::RightAny)
                     query_tree_node = join_node.getRightTableExpression().get();
                 else
                     return {};
@@ -152,12 +152,12 @@ public:
         if (table_node || table_function_node)
         {
             const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
-            auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
             const auto & storage = storage_snapshot->storage;
 
             auto storage_dummy = std::make_shared<StorageDummy>(
                 storage.getStorageID(),
-                ColumnsDescription(storage_snapshot->getColumns(get_column_options)),
+                /// To preserve information about alias columns, column description must be extracted directly from storage metadata.
+                storage_snapshot->metadata->getColumns(),
                 storage_snapshot,
                 storage.supportsReplication());
 
@@ -270,9 +270,14 @@ const QueryNode * findQueryForParallelReplicas(
             else
             {
                 const auto * join = typeid_cast<JoinStep *>(step);
+                const auto * join_logical = typeid_cast<JoinStepLogical *>(step);
+                if (join_logical && join_logical->hasPreparedJoinStorage())
+                    /// JoinStepLogical with prepared storage is converted to FilledJoinStep, not regular JoinStep.
+                    join_logical = nullptr;
+
                 /// We've checked that JOIN is INNER/LEFT/RIGHT on query tree level before.
                 /// Don't distribute UNION node.
-                if (!join)
+                if (!join && !join_logical)
                     return res;
 
                 for (const auto & child : children)
@@ -485,14 +490,14 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
 
     QueryTreeNodePtr modified_query_tree = query_node.clone();
 
-    Block initial_header = InterpreterSelectQueryAnalyzer::getSampleBlock(
+    auto initial_header = InterpreterSelectQueryAnalyzer::getSampleBlock(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
 
     rewriteJoinToGlobalJoin(modified_query_tree, context);
-    modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree);
+    modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
     ASTPtr modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
 
-    Block header = InterpreterSelectQueryAnalyzer::getSampleBlock(
+    auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
 
     const TableNode * table_node = findTableForParallelReplicas(modified_query_tree.get(), context);
@@ -511,8 +516,8 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
         nullptr);
 
     auto converting = ActionsDAG::makeConvertingActions(
-        header.getColumnsWithTypeAndName(),
-        initial_header.getColumnsWithTypeAndName(),
+        header->getColumnsWithTypeAndName(),
+        initial_header->getColumnsWithTypeAndName(),
         ActionsDAG::MatchColumnsMode::Position);
 
     /// initial_header is a header expected by initial query.

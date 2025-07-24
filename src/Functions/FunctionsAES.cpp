@@ -1,5 +1,6 @@
 #include <Functions/FunctionsAES.h>
 #include <Interpreters/Context.h>
+#include <Common/OpenSSLHelpers.h>
 
 #if USE_SSL
 
@@ -16,12 +17,11 @@ namespace ErrorCodes
     extern const int OPENSSL_ERROR;
 }
 
-
 namespace OpenSSLDetails
 {
 void onError(std::string error_message)
 {
-    throw Exception(ErrorCodes::OPENSSL_ERROR, "{}. OpenSSL error code: {}", error_message, ERR_get_error());
+    throw Exception(ErrorCodes::OPENSSL_ERROR, "{} failed: {}", error_message, getOpenSSLErrors());
 }
 
 StringRef foldEncryptionKeyInMySQLCompatitableMode(size_t cipher_key_size, StringRef key, std::array<char, EVP_MAX_KEY_LENGTH> & folded_key)

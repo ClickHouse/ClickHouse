@@ -1,6 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -571,7 +572,33 @@ private:
 
 REGISTER_FUNCTION(Range)
 {
-    factory.registerFunction<FunctionRange>();
+    FunctionDocumentation::Description description = R"(
+Returns an array of numbers from `start` to `end - 1` by `step`.
+
+The supported types are:
+- `UInt8/16/32/64`
+- `Int8/16/32/64]`
+
+- All arguments `start`, `end`, `step` must be one of the above supported types. Elements of the returned array will be a super type of the arguments.
+- An exception is thrown if the function returns an array with a total length more than the number of elements specified by setting [`function_range_max_elements_in_block`](../../operations/settings/settings.md#function_range_max_elements_in_block).
+- Returns `NULL` if any argument has Nullable(nothing) type. An exception is thrown if any argument has `NULL` value (Nullable(T) type).
+    )";
+    FunctionDocumentation::Syntax syntax = "range([start, ] end [, step])";
+    FunctionDocumentation::Arguments arguments = {
+        {"start", "Optional. The first element of the array. Required if `step` is used. Default value: `0`."},
+        {"end", "Required. The number before which the array is constructed."},
+        {"step", "Optional. Determines the incremental step between each element in the array. Default value: `1`."},};
+    FunctionDocumentation::ReturnedValue returned_value = {"Array of numbers from `start` to `end - 1` by `step`.", {"Array(T)"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT range(5), range(1, 5), range(1, 5, 2), range(-1, 5, 2);", R"(
+┌─range(5)────┬─range(1, 5)─┬─range(1, 5, 2)─┬─range(-1, 5, 2)─┐
+│ [0,1,2,3,4] │ [1,2,3,4]   │ [1,3]          │ [-1,1,3]        │
+└─────────────┴─────────────┴────────────────┴─────────────────┘
+    )"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionRange>(documentation);
 }
 
 }

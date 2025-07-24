@@ -1,6 +1,5 @@
 # Intel® QuickAssist Technology Library (QATlib).
 
-message(STATUS "Intel QATlib ON")
 set(LIBQAT_ROOT_DIR "${ClickHouse_SOURCE_DIR}/contrib/qatlib")
 set(LIBQAT_DIR "${LIBQAT_ROOT_DIR}/quickassist/lookaside/access_layer/src")
 set(LIBOSAL_DIR "${LIBQAT_ROOT_DIR}/quickassist/utilities/osal/src")

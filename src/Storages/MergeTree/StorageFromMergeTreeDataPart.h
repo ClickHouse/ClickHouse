@@ -22,10 +22,10 @@ public:
         const MergeTreeData::DataPartPtr & part_,
         const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot_)
         : IStorage(getIDFromPart(part_))
-        , parts({part_})
+        , parts(RangesInDataParts({part_}))
         , mutations_snapshot(mutations_snapshot_)
         , storage(part_->storage)
-        , partition_id(part_->info.partition_id)
+        , partition_id(part_->info.getPartitionId())
     {
         setInMemoryMetadata(storage.getInMemoryMetadata());
         setVirtuals(*storage.getVirtualsPtr());
@@ -76,16 +76,16 @@ public:
 
     bool hasLightweightDeletedMask() const override
     {
-        return !parts.empty() && parts.front()->hasLightweightDelete();
+        return !parts.empty() && parts.front().data_part->hasLightweightDelete();
     }
 
     bool supportsLightweightDelete() const override
     {
-        return !parts.empty() && parts.front()->supportLightweightDeleteMutate();
+        return !parts.empty() && parts.front().data_part->supportLightweightDeleteMutate();
     }
 
 private:
-    const MergeTreeData::DataPartsVector parts;
+    const RangesInDataParts parts;
     const MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
     const MergeTreeData & storage;
     const String partition_id;

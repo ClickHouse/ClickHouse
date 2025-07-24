@@ -1,11 +1,14 @@
 #include <amqpcpp.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -33,14 +36,17 @@
 #include <Common/parseAddress.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
+#include <Common/RemoteHostFilter.h>
 
 #include <base/range.h>
+
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 output_format_avro_rows_in_file;
     extern const SettingsMilliseconds stream_flush_interval_ms;
     extern const SettingsBool stream_like_engine_allow_direct_select;
@@ -128,7 +134,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , queue_base(getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_queue_base]))
         , queue_settings_list(parseSettings(getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_queue_settings_list])))
         , max_rows_per_message((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_max_rows_per_message])
-        , log(getLogger("StorageRabbitMQ (" + table_id_.table_name + ")"))
+        , log(getLogger("StorageRabbitMQ (" + table_id_.getFullTableName() + ")"))
         , persistent((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_persistent].value)
         , use_user_setup((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_queue_consume].value)
         , hash_exchange(num_consumers > 1 || num_queues > 1)
@@ -185,8 +191,11 @@ StorageRabbitMQ::StorageRabbitMQ(
         SSL_library_init();
 
     if (!columns_.getMaterialized().empty() || !columns_.getAliases().empty() || !columns_.getDefaults().empty() || !columns_.getEphemeral().empty())
-        context_->addWarningMessage("RabbitMQ table engine doesn't support ALIAS, DEFAULT or MATERIALIZED columns. They will be ignored and filled with default values");
-
+    {
+        context_->addOrUpdateWarningMessage(
+            Context::WarningType::RABBITMQ_UNSUPPORTED_COLUMNS,
+            PreformattedMessage::create("RabbitMQ table engine doesn't support ALIAS, DEFAULT or MATERIALIZED columns. They will be ignored and filled with default values"));
+    }
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
@@ -330,6 +339,13 @@ ContextMutablePtr StorageRabbitMQ::addSettings(ContextPtr local_context) const
 
     /// check for non-rabbitmq-related settings
     modified_context->applySettingsChanges(rabbitmq_settings->getFormatSettings());
+
+    /// It does not make sense to use auto detection here, since the format
+    /// will be reset for each message, plus, auto detection takes CPU
+    /// time.
+    modified_context->setSetting("input_format_csv_detect_header", false);
+    modified_context->setSetting("input_format_tsv_detect_header", false);
+    modified_context->setSetting("input_format_custom_detect_header", false);
 
     return modified_context;
 }
@@ -822,7 +838,7 @@ void StorageRabbitMQ::read(
             ActionsDAG::MatchColumnsMode::Name);
 
         auto converting = std::make_shared<ExpressionActions>(std::move(converting_dag));
-        auto converting_transform = std::make_shared<ExpressionTransform>(rabbit_source->getPort().getHeader(), std::move(converting));
+        auto converting_transform = std::make_shared<ExpressionTransform>(rabbit_source->getPort().getSharedHeader(), std::move(converting));
 
         pipes.emplace_back(std::move(rabbit_source));
         pipes.back().addTransform(std::move(converting_transform));
@@ -841,7 +857,7 @@ void StorageRabbitMQ::read(
     }
     else
     {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), local_context, query_info);
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), shared_from_this(), local_context, query_info);
         query_plan.addStep(std::move(read_step));
         query_plan.addInterpreterContext(modified_context);
     }
@@ -857,7 +873,7 @@ SinkToStoragePtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr
     if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
         max_rows = local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].value;
     return std::make_shared<MessageQueueSink>(
-        metadata_snapshot->getSampleBlockNonMaterialized(),
+        std::make_shared<const Block>(metadata_snapshot->getSampleBlockNonMaterialized()),
         getFormatName(),
         max_rows,
         std::move(producer),
@@ -1040,7 +1056,6 @@ bool StorageRabbitMQ::hasDependencies(const StorageID & table_id)
     return true;
 }
 
-
 void StorageRabbitMQ::streamingToViewsFunc()
 {
     try
@@ -1199,7 +1214,7 @@ bool StorageRabbitMQ::tryStreamToViews()
         write_failed = true;
     }
 
-    LOG_TRACE(log, "Processed {} rows", rows);
+    LOG_TRACE(log, "Processed {} rows", rows.load());
 
     /* Note: sending ack() with loop running in another thread will lead to a lot of data races inside the library, but only in case
      * error occurs or connection is lost while ack is being sent
@@ -1329,7 +1344,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         creator_fn,
         StorageFactory::StorageFeatures{
             .supports_settings = true,
-            .source_access_type = AccessType::RABBITMQ,
+            .source_access_type = AccessTypeObjects::Source::RABBITMQ,
             .has_builtin_setting_fn = RabbitMQSettings::hasBuiltin,
         });
 }

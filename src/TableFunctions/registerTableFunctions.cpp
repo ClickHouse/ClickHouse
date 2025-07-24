@@ -1,9 +1,9 @@
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 namespace DB
 {
-void registerTableFunctions(bool use_legacy_mongodb_integration [[maybe_unused]])
+void registerTableFunctions()
 {
     auto & factory = TableFunctionFactory::instance();
 
@@ -23,13 +23,11 @@ void registerTableFunctions(bool use_legacy_mongodb_integration [[maybe_unused]]
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
 #if USE_MONGODB
-    if (use_legacy_mongodb_integration)
-        registerTableFunctionMongoDBPocoLegacy(factory);
-    else
-        registerTableFunctionMongoDB(factory);
+    registerTableFunctionMongoDB(factory);
 #endif
     registerTableFunctionRedis(factory);
     registerTableFunctionMergeTreeIndex(factory);
+    registerTableFunctionMergeTreeProjection(factory);
     registerTableFunctionFuzzQuery(factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerTableFunctionFuzzJSON(factory);

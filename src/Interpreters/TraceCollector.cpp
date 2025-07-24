@@ -11,6 +11,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
+#include <Common/SymbolIndex.h>
 
 
 namespace DB
@@ -40,6 +41,7 @@ void TraceCollector::initialize(std::shared_ptr<TraceLog> trace_log_)
         throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "TraceCollector is already initialized");
 
     trace_log_ptr = trace_log_;
+    symbolize = trace_log_ptr->symbolize;
     is_trace_log_initialized.store(true, std::memory_order_release);
 }
 
@@ -102,6 +104,10 @@ void TraceCollector::run()
     MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
     ReadBufferFromFileDescriptor in(TraceSender::pipe.fds_rw[0]);
 
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    const auto * object = SymbolIndex::instance().thisObject();
+#endif
+
     try
     {
         while (true)
@@ -120,14 +126,22 @@ void TraceCollector::run()
             UInt8 trace_size = 0;
             readIntBinary(trace_size, in);
 
-            Array trace;
+            std::vector<UInt64> trace;
             trace.reserve(trace_size);
 
             for (size_t i = 0; i < trace_size; ++i)
             {
                 uintptr_t addr = 0;
                 readPODBinary(addr, in);
-                trace.emplace_back(static_cast<UInt64>(addr));
+
+                /// Addresses in the main object will be normalized to the physical file offsets for convenience and security.
+                uintptr_t offset = 0;
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+                if (object && uintptr_t(object->address_begin) <= addr && addr < uintptr_t(object->address_end))
+                    offset = uintptr_t(object->address_begin);
+#endif
+
+                trace.emplace_back(static_cast<UInt64>(addr) - offset);
             }
 
             TraceType trace_type;
@@ -158,7 +172,7 @@ void TraceCollector::run()
                 UInt64 time = static_cast<UInt64>(ts.tv_sec * 1000000000LL + ts.tv_nsec);
                 UInt64 time_in_microseconds = static_cast<UInt64>((ts.tv_sec * 1000000LL) + (ts.tv_nsec / 1000));
 
-                TraceLogElement element{time_t(time / 1000000000), time_in_microseconds, time, trace_type, thread_id, query_id, trace, size, ptr, event, increment};
+                TraceLogElement element{symbolize, time_t(time / 1000000000), time_in_microseconds, time, trace_type, thread_id, query_id, std::move(trace), size, ptr, event, increment};
                 trace_log->add(std::move(element));
             }
         }

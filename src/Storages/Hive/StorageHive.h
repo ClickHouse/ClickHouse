@@ -7,7 +7,7 @@
 #include <Poco/URI.h>
 #include <ThriftHiveMetastore.h>
 
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage.h>
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Storages/Hive/HiveCommon.h>
@@ -56,7 +56,6 @@ public:
 
     bool supportsSubsetOfColumns() const;
 
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr context_) const override;
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 

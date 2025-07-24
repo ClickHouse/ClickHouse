@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -14,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_SETTING;
+    extern const int BAD_ARGUMENTS;
 }
 
 #define OBJECT_STORAGE_QUEUE_RELATED_SETTINGS(DECLARE, ALIAS) \
@@ -24,7 +26,8 @@ namespace ErrorCodes
     DECLARE(ObjectStorageQueueAction, after_processing, ObjectStorageQueueAction::KEEP, "Delete or keep file in after successful processing", 0) \
     DECLARE(String, keeper_path, "", "Zookeeper node path", 0) \
     DECLARE(UInt64, loading_retries, 10, "Retry loading up to specified number of times", 0) \
-    DECLARE(UInt64, processing_threads_num, 1, "Number of processing threads", 0) \
+    DECLARE(UInt64, processing_threads_num, 1, "Number of processing threads (default number of available CPUs or 16)", 0) \
+    DECLARE(Bool, parallel_inserts, false, "By default processing_threads_num will produce one INSERT, but this limits the parallel execution, so better scalability enable this setting (note this will create not one INSERT per file, but one per max_process*_before_commit)", 0) \
     DECLARE(UInt32, enable_logging_to_queue_log, 1, "Enable logging to system table system.(s3/azure_)queue_log", 0) \
     DECLARE(String, last_processed_path, "", "For Ordered mode. Files that have lexicographically smaller file name are considered already processed", 0) \
     DECLARE(UInt64, tracked_files_limit, 1000, "For unordered mode. Max set size for tracking processed files in ZooKeeper", 0) \
@@ -35,10 +38,14 @@ namespace ErrorCodes
     DECLARE(UInt32, cleanup_interval_min_ms, 60000, "For unordered mode. Polling backoff min for cleanup", 0) \
     DECLARE(UInt32, cleanup_interval_max_ms, 60000, "For unordered mode. Polling backoff max for cleanup", 0) \
     DECLARE(UInt64, buckets, 0, "Number of buckets for Ordered mode parallel processing", 0) \
-    DECLARE(UInt64, max_processed_files_before_commit, 100, "Number of files which can be processed before being committed to keeper", 0) \
-    DECLARE(UInt64, max_processed_rows_before_commit, 0, "Number of rows which can be processed before being committed to keeper", 0) \
-    DECLARE(UInt64, max_processed_bytes_before_commit, 0, "Number of bytes which can be processed before being committed to keeper", 0) \
-    DECLARE(UInt64, max_processing_time_sec_before_commit, 0, "Timeout in seconds after which to commit files committed to keeper", 0) \
+    DECLARE(UInt64, list_objects_batch_size, 1000, "Size of a list batch in object storage", 0) \
+    DECLARE(UInt64, min_insert_block_size_rows_for_materialized_views, 0, "Override for profile setting min_insert_block_size_rows_for_materialized_views", 0) \
+    DECLARE(UInt64, min_insert_block_size_bytes_for_materialized_views, 0, "Override for profile setting min_insert_block_size_bytes_for_materialized_views", 0) \
+    DECLARE(Bool, enable_hash_ring_filtering, 0, "Enable filtering files among replicas according to hash ring for Unordered mode", 0) \
+    DECLARE(UInt64, max_processed_files_before_commit, 100, "Number of files which can be processed before being committed to keeper (in case of parallel_inserts=true, works on a per-thread basis)", 0) \
+    DECLARE(UInt64, max_processed_rows_before_commit, 0, "Number of rows which can be processed before being committed to keeper (in case of parallel_inserts=true, works on a per-thread basis)", 0) \
+    DECLARE(UInt64, max_processed_bytes_before_commit, 0, "Number of bytes which can be processed before being committed to keeper (in case of parallel_inserts=true, works on a per-thread basis)", 0) \
+    DECLARE(UInt64, max_processing_time_sec_before_commit, 0, "Timeout in seconds after which to commit files committed to keeper (in case of parallel_inserts=true, works on a per-thread basis)", 0) \
 
 #define LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS(M, ALIAS) \
     OBJECT_STORAGE_QUEUE_RELATED_SETTINGS(M, ALIAS) \
@@ -51,12 +58,12 @@ struct ObjectStorageQueueSettingsImpl : public BaseSettings<ObjectStorageQueueSe
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
     ObjectStorageQueueSettings##TYPE NAME = &ObjectStorageQueueSettingsImpl ::NAME;
 
 namespace ObjectStorageQueueSetting
 {
-LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
+LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
@@ -95,18 +102,23 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
             settings_changes.begin(), settings_changes.end(),
             [&](const SettingChange & change){ return change.name == setting_name; });
     };
+    auto is_changeable = [&](const std::string & setting_name) -> bool
+    {
+        return StorageObjectStorageQueue::isSettingChangeable(setting_name, (*this)[ObjectStorageQueueSetting::mode]);
+    };
 
     for (const auto & change : impl->all())
     {
         size_t i = 0;
+        const auto & name = change.getName();
         res_columns[i++]->insert(database_name);
         res_columns[i++]->insert(table_name);
-        res_columns[i++]->insert(change.getName());
+        res_columns[i++]->insert(name);
         res_columns[i++]->insert(convertFieldToString(change.getValue()));
         res_columns[i++]->insert(change.getTypeName());
-        res_columns[i++]->insert(is_changed(change.getName()));
+        res_columns[i++]->insert(is_changed(name));
         res_columns[i++]->insert(change.getDescription());
-        res_columns[i++]->insert(false);
+        res_columns[i++]->insert(is_changeable(name));
     }
 }
 
@@ -120,7 +132,7 @@ void ObjectStorageQueueSettings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
-void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def)
+void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def, bool is_attach, const StorageID & storage_id)
 {
     if (storage_def.settings)
     {
@@ -128,6 +140,8 @@ void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def)
         {
             std::vector<std::string> ignore_settings;
             auto settings_changes = storage_def.settings->changes;
+
+            std::set<std::string> names;
 
             /// We support settings starting with s3_ for compatibility.
             for (auto & change : settings_changes)
@@ -140,8 +154,29 @@ void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def)
 
                 if (change.name == "current_shard_num")
                     ignore_settings.push_back(change.name);
-                if (change.name == "total_shards_num")
+                else if (change.name == "total_shards_num")
                     ignore_settings.push_back(change.name);
+                else
+                {
+                    bool inserted = names.insert(change.name).second;
+                    if (!inserted)
+                    {
+                        if (is_attach)
+                        {
+                            LOG_WARNING(
+                                getLogger("StorageObjectStorageQueue"),
+                                "Storage {} has a duplicated setting {}. "
+                                "Will use the first declared setting's value",
+                                storage_id.getNameForLogs(), change.name);
+                        }
+                        else
+                        {
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Setting {} is defined multiple times", change.name);
+                        }
+                    }
+                }
             }
 
             for (const auto & setting : ignore_settings)

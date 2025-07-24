@@ -8,14 +8,15 @@
 #include <Common/UTF8Helpers.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Processors/Port.h>
 
 
 namespace DB
 {
 
 VerticalRowOutputFormat::VerticalRowOutputFormat(
-    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_), format_settings(format_settings_)
+    WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
+    : IRowOutputFormat(std::move(header_), out_), format_settings(format_settings_)
 {
     color = format_settings.pretty.color == 1 || (format_settings.pretty.color == 2 && format_settings.is_writing_to_terminal);
 
@@ -26,22 +27,25 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
     Widths name_widths(columns);
     size_t max_name_width = 0;
 
+    names_and_paddings.resize(columns);
+    is_number.resize(columns);
+
     for (size_t i = 0; i < columns; ++i)
     {
         /// Note that number of code points is just a rough approximation of visible string width.
         const String & name = sample.getByPosition(i).name;
 
-        name_widths[i] = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(name.data()), name.size());
-        max_name_width = std::max(name_widths[i], max_name_width);
-    }
+        auto [name_cut, width] = truncateName(name,
+          format_settings.pretty.max_column_name_width_cut_to,
+          format_settings.pretty.max_column_name_width_min_chars_to_cut,
+          format_settings.pretty.charset != FormatSettings::Pretty::Charset::UTF8);
 
-    names_and_paddings.resize(columns);
-    is_number.resize(columns);
-    for (size_t i = 0; i < columns; ++i)
-    {
-        WriteBufferFromString buf(names_and_paddings[i]);
-        writeString(sample.getByPosition(i).name, buf);
-        writeCString(": ", buf);
+        name_widths[i] = width;
+        max_name_width = std::max(width, max_name_width);
+        if (color)
+            names_and_paddings[i] = "\033[1m" + name_cut + ":\033[0m ";
+        else
+            names_and_paddings[i] = name_cut + ": ";
     }
 
     for (size_t i = 0; i < columns; ++i)
@@ -193,7 +197,7 @@ void registerOutputFormatVertical(FormatFactory & factory)
         const Block & sample,
         const FormatSettings & settings)
     {
-        return std::make_shared<VerticalRowOutputFormat>(buf, sample, settings);
+        return std::make_shared<VerticalRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });
 
     factory.markOutputFormatSupportsParallelFormatting("Vertical");

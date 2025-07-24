@@ -1,10 +1,12 @@
 #pragma once
 
-#include <IO/WriteBuffer.h>
-#include <Core/NamesAndTypes.h>
+#include <base/types.h>
 
 namespace DB
 {
+
+class NamesAndTypesList;
+class WriteBuffer;
 
 struct StructureToCapnProtoSchema
 {

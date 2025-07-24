@@ -16,6 +16,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -68,13 +69,11 @@ public:
         return 2;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return std::make_shared<DataTypeUInt8>();
-    }
+        if (arguments[0]->hasDynamicSubcolumns())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
         return std::make_shared<DataTypeUInt8>();
     }
 
@@ -84,11 +83,26 @@ public:
         return !ignore_set;
     }
 
+    bool useDefaultImplementationForDynamic() const override
+    {
+        return false;
+    }
+
     bool useDefaultImplementationForNulls() const override { return null_is_skipped; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, [[maybe_unused]] size_t input_rows_count) const override
+    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        return executeImpl(arguments, true, input_rows_count);
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        return executeImpl(arguments, false, input_rows_count);
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, bool dry_run, size_t input_rows_count) const
     {
         if constexpr (ignore_set)
             return ColumnUInt8::create(input_rows_count, 0u);
@@ -121,7 +135,12 @@ public:
 
         auto future_set = column_set->getData();
         if (!future_set)
+        {
+            if (dry_run)
+                return ColumnUInt8::create(input_rows_count, 0u);
+
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No Set is passed as the second argument for function '{}'", getName());
+        }
 
         auto set = future_set->get();
         if (!set)

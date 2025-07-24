@@ -1,11 +1,7 @@
 #pragma once
 
-#include "config.h"
-#include "threadPoolCallbackRunner.h"
-#include "IO/WriteBufferFromS3.h"
-
-#include "logger_useful.h"
-
+#include <Common/threadPoolCallbackRunner.h>
+#include <Common/logger_useful.h>
 #include <list>
 
 namespace DB

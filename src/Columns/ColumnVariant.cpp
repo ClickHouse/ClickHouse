@@ -1,3 +1,5 @@
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnVariant.h>
 
 #include <Columns/ColumnCompressed.h>
@@ -402,6 +404,15 @@ void ColumnVariant::get(size_t n, Field & res) const
         res = Null();
     else
         variants[discr]->get(offsetAt(n), res);
+}
+
+std::pair<String, DataTypePtr> ColumnVariant::getValueNameAndType(size_t n) const
+{
+    Discriminator discr = localDiscriminatorAt(n);
+    if (discr == NULL_DISCRIMINATOR)
+        return {"NULL", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())};
+
+    return variants[discr]->getValueNameAndType(offsetAt(n));
 }
 
 bool ColumnVariant::isDefaultAt(size_t n) const
@@ -1304,12 +1315,12 @@ void ColumnVariant::reserve(size_t n)
     getOffsets().reserve_exact(n);
 }
 
-void ColumnVariant::prepareForSquashing(const Columns & source_columns)
+void ColumnVariant::prepareForSquashing(const Columns & source_columns, size_t factor)
 {
     size_t new_size = size();
     for (const auto & source_column : source_columns)
         new_size += source_column->size();
-    reserve(new_size);
+    reserve(new_size * factor);
 
     for (size_t i = 0; i != variants.size(); ++i)
     {
@@ -1317,7 +1328,7 @@ void ColumnVariant::prepareForSquashing(const Columns & source_columns)
         source_variant_columns.reserve(source_columns.size());
         for (const auto & source_column : source_columns)
             source_variant_columns.push_back(assert_cast<const ColumnVariant &>(*source_column).getVariantPtrByGlobalDiscriminator(i));
-        getVariantByGlobalDiscriminator(i).prepareForSquashing(source_variant_columns);
+        getVariantByGlobalDiscriminator(i).prepareForSquashing(source_variant_columns, factor);
     }
 }
 
@@ -1373,7 +1384,7 @@ void ColumnVariant::getExtremes(Field & min, Field & max) const
     max = Null();
 }
 
-void ColumnVariant::forEachSubcolumn(MutableColumnCallback callback)
+void ColumnVariant::forEachMutableSubcolumn(MutableColumnCallback callback)
 {
     callback(local_discriminators);
     callback(offsets);
@@ -1381,14 +1392,36 @@ void ColumnVariant::forEachSubcolumn(MutableColumnCallback callback)
         callback(variant);
 }
 
-void ColumnVariant::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+void ColumnVariant::forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+{
+    callback(*local_discriminators);
+    local_discriminators->forEachMutableSubcolumnRecursively(callback);
+    callback(*offsets);
+    offsets->forEachMutableSubcolumnRecursively(callback);
+
+    for (auto & variant : variants)
+    {
+        callback(*variant);
+        variant->forEachMutableSubcolumnRecursively(callback);
+    }
+}
+
+void ColumnVariant::forEachSubcolumn(ColumnCallback callback) const
+{
+    callback(local_discriminators);
+    callback(offsets);
+    for (const auto & variant : variants)
+        callback(variant);
+}
+
+void ColumnVariant::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
 {
     callback(*local_discriminators);
     local_discriminators->forEachSubcolumnRecursively(callback);
     callback(*offsets);
     offsets->forEachSubcolumnRecursively(callback);
 
-    for (auto & variant : variants)
+    for (const auto & variant : variants)
     {
         callback(*variant);
         variant->forEachSubcolumnRecursively(callback);
@@ -1665,20 +1698,22 @@ bool ColumnVariant::hasDynamicStructure() const
 
 void ColumnVariant::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
 {
+    /// List of source columns for each variant. In global order.
     std::vector<Columns> variants_source_columns;
-    variants_source_columns.resize(variants.size());
-    for (size_t i = 0; i != variants.size(); ++i)
+    size_t num_variants = variants.size();
+    variants_source_columns.resize(num_variants);
+    for (size_t i = 0; i != num_variants; ++i)
         variants_source_columns[i].reserve(source_columns.size());
 
     for (const auto & source_column : source_columns)
     {
-        const auto & source_variants = assert_cast<const ColumnVariant &>(*source_column).variants;
-        for (size_t i = 0; i != source_variants.size(); ++i)
-            variants_source_columns[i].push_back(source_variants[i]);
+        const auto & source_variant = assert_cast<const ColumnVariant &>(*source_column);
+        for (size_t i = 0; i != num_variants; ++i)
+            variants_source_columns[i].push_back(source_variant.getVariantPtrByGlobalDiscriminator(i));
     }
 
-    for (size_t i = 0; i != variants.size(); ++i)
-        variants[i]->takeDynamicStructureFromSourceColumns(variants_source_columns[i]);
+    for (size_t i = 0; i != num_variants; ++i)
+        getVariantByGlobalDiscriminator(i).takeDynamicStructureFromSourceColumns(variants_source_columns[i]);
 }
 
 }
