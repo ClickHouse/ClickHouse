@@ -5,6 +5,7 @@
 #include <IO/ReadBufferRefCountDecorator.h>
 #include <Server/HTTP/HTTPRequest.h>
 #include <Server/HTTP/HTTPContext.h>
+#include "Common/StackTrace.h"
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
@@ -36,7 +37,16 @@ public:
     {
         std::lock_guard lock(get_stream_mutex);
         poco_check_ptr(stream);
+        LOG_DEBUG(getLogger("HTTPServerRequest"), "Returning request input stream with ref count {}", stream->getRefCount());
         return stream;
+    }
+
+    size_t getStreamRefCount()
+    {
+        std::lock_guard lock(get_stream_mutex);
+        if (!stream)
+            return 0;
+        return stream->getRefCount();
     }
 
     bool checkPeerConnected() const;
@@ -64,9 +74,10 @@ public:
         if (!stream_is_bounded)
             return false;
 
-        if (stream->getRefCount() > 1)
+        auto ref_count = stream->getRefCount();
+        if (ref_count > 1)
         {
-            LOG_ERROR(getLogger("HTTPServerRequest"), "Request stream is shared by multiple threads, cannot keep alive connection");
+            LOG_ERROR(getLogger("HTTPServerRequest"), "Request stream is shared by multiple threads, cannot keep alive connection, use count {}, called at\n{}", ref_count, StackTrace().toString());
             return false;
         }
 

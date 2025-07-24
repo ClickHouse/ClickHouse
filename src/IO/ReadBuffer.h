@@ -5,10 +5,16 @@
 
 #include <Common/Priority.h>
 #include <IO/BufferBase.h>
+#include <Common/Exception.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 static constexpr auto DEFAULT_PREFETCH_PRIORITY = Priority{0};
 
@@ -51,39 +57,7 @@ public:
       * if an exception was thrown, is the ReadBuffer left in a usable state? this varies across implementations;
       * can the caller retry next() after an exception, or call other methods? not recommended
       */
-    bool next()
-    {
-        chassert(!hasPendingData());
-        chassert(position() <= working_buffer.end());
-        chassert(!isCanceled(), "ReadBuffer is canceled. Can't read from it.");
-
-        bytes += offset();
-        bool res = false;
-        try
-        {
-            res = nextImpl();
-        }
-        catch (...)
-        {
-            cancel();
-            throw;
-        }
-
-        if (!res)
-        {
-            working_buffer = Buffer(pos, pos);
-        }
-        else
-        {
-            pos = working_buffer.begin() + std::min(nextimpl_working_buffer_offset, working_buffer.size());
-            chassert(position() < working_buffer.end());
-        }
-        nextimpl_working_buffer_offset = 0;
-
-        chassert(position() <= working_buffer.end());
-
-        return res;
-    }
+    bool next();
 
     void cancel();
 
@@ -92,7 +66,6 @@ public:
         return canceled;
     }
 
-
     void nextIfAtEnd()
     {
         if (!hasPendingData())
@@ -100,7 +73,6 @@ public:
     }
 
     virtual ~ReadBuffer() = default;
-
 
     /** Unlike std::istream, it returns true if all data was read
       *  (and not in case there was an attempt to read after the end).

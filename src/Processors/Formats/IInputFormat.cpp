@@ -1,6 +1,8 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WithFileName.h>
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 #include <Common/Exception.h>
 
 namespace DB
@@ -15,7 +17,10 @@ Chunk IInputFormat::generate()
 {
     try
     {
-        return read();
+        Chunk res = read();
+         LOG_DEBUG(getLogger("IInputFormat"),
+        "Generating chunk from input format, possessing buffers: {}, id {} result {}", owned_buffers.size(), size_t(this), res.getNumRows());
+        return res;
     }
     catch (Exception & e)
     {
@@ -30,6 +35,7 @@ void IInputFormat::resetParser()
 {
     chassert(in);
     in->ignoreAll();
+
     // those are protected attributes from ISource (I didn't want to propagate resetParser up there)
     finished = false;
     got_exception = false;
@@ -48,4 +54,16 @@ Chunk IInputFormat::getChunkForCount(size_t rows)
     return cloneConstWithDefault(Chunk{header.getColumns(), 0}, rows);
 }
 
+void IInputFormat::resetOwnedBuffers()
+{
+    LOG_DEBUG(getLogger("IInputFormat"),
+        "Resetting owned buffers, possessing buffers: {}", owned_buffers.size());
+    owned_buffers.clear();
+}
+
+void IInputFormat::onFinish()
+{
+    LOG_DEBUG(getLogger("IInputFormat"), "onFinish");
+    resetReadBuffer();
+}
 }

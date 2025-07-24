@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <memory>
 #include <Server/HTTP/HTTPServerRequest.h>
 
@@ -15,6 +16,7 @@
 #include <Poco/Net/HTTPStream.h>
 #include <Poco/Net/NetException.h>
 
+#include "Common/Logger.h"
 #include <Common/logger_useful.h>
 
 #if USE_SSL
@@ -85,6 +87,7 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     }
 
     stream = ReadBufferRefCountDecorator::create(std::move(imp_stream));
+    LOG_DEBUG(getLogger("HTTPServerRequest"), "Created request input stream with ref count {} id {}", stream->getRefCount(), size_t(stream.get()));
 }
 
 bool HTTPServerRequest::checkPeerConnected() const

@@ -15,6 +15,7 @@
 #include <IO/CompressionMethod.h>
 #include <Core/Settings.h>
 #include <Parsers/ASTLiteral.h>
+#include "Common/logger_useful.h"
 
 
 namespace DB
@@ -64,9 +65,9 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
         : std::make_unique<EmptyReadBuffer>();
 
     /// Create a source from input buffer using format from query
-    auto source = context->getInputFormat(ast_insert_query->format, *input_buffer, header, context->getSettingsRef()[Setting::max_insert_block_size]);
-    source->addBuffer(std::move(input_buffer));
-    return source;
+    auto format = context->getInputFormat(ast_insert_query->format, *input_buffer, header, context->getSettingsRef()[Setting::max_insert_block_size]);
+    format->addBuffer(std::move(input_buffer));
+    return format;
 }
 
 Pipe getSourceFromInputFormat(
@@ -127,12 +128,20 @@ std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)
         auto ast_buffer = std::make_unique<ReadBufferFromMemory>(
             insert_query->data, insert_query->end - insert_query->data);
 
+        LOG_DEBUG(getLogger("getReadBufferFromASTInsertQuery"),
+        "creating ConcatReadBuffer with ast buffer id {} available {}", size_t(ast_buffer.get()), ast_buffer->available());
+
         buffers.emplace_back(std::move(ast_buffer));
     }
 
     /// tail does not possess the input buffer
     if (insert_query->tail)
-        buffers.emplace_back(wrapReadBufferReference(*insert_query->tail));
+    {
+        LOG_DEBUG(getLogger("getReadBufferFromASTInsertQuery"),
+        "creating ConcatReadBuffer with tail buffer id {} use_count {} available {}", size_t(insert_query->tail.get()), insert_query->tail.use_count(), insert_query->tail->available());
+
+        buffers.emplace_back(wrapReadBufferPointer(insert_query->tail));
+    }
 
     return std::make_unique<ConcatReadBuffer>(std::move(buffers));
 }

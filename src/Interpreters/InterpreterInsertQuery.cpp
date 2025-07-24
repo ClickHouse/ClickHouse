@@ -44,12 +44,14 @@
 #include <Common/checkStackSize.h>
 #include <Common/ProfileEvents.h>
 #include <Common/quoteString.h>
+#include "IO/ReadBuffer.h"
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Storages/IStorageCluster.h>
 #include <Interpreters/JoinedTables.h>
 
 #include <memory>
+#include <math.h>
 
 
 namespace DB
@@ -693,10 +695,21 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     if (query.hasInlinedData() && !async_insert)
     {
+        LOG_DEBUG(logger, "Inlined data in INSERT query, using InputFormat to read it");
         auto format = getInputFormatFromASTInsertQuery(query_ptr, true, *query_sample_block, getContext(), nullptr);
 
         for (auto & buffer : owned_buffers)
             format->addBuffer(std::move(buffer));
+
+        if (auto * insert = query_ptr->as<ASTInsertQuery>())
+        {
+            if (insert->tail)
+            {
+                auto use_count = insert->tail.use_count();
+                LOG_DEBUG(logger, "tail {} has use count {}", size_t(insert->tail.get()), use_count);
+                insert->tail.reset();
+            }
+        }
 
         if (settings[Setting::enable_parsing_to_custom_serialization])
             format->setSerializationHints(table->getSerializationHints());

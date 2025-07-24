@@ -3,6 +3,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/EnabledQuota.h>
 #include <Columns/IColumn.h>
+#include "Common/Logger.h"
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
@@ -35,6 +36,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+#include "Core/NamesAndAliases.h"
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 
@@ -423,6 +425,8 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
             buffers.emplace_back(std::make_unique<ReadBufferFromOwnString>(bytes));
             buffers.emplace_back(std::move(read_buf));
 
+            LOG_DEBUG(getLogger("AsynchronousInsertQueue"),
+                "too much data in query, {} bytes, {} buffers", bytes.size(), buffers.size());
             return PushResult
             {
                 .status = PushResult::TOO_MUCH_DATA,

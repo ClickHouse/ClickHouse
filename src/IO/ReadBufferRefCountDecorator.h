@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <IO/ReadBuffer.h>
+#include "Common/Macros.h"
 
 
 namespace DB
@@ -26,6 +27,8 @@ public:
         return std::make_shared<make_shared_enabler>(std::forward<Args>(args)...);
     }
 
+    ~ReadBufferRefCountDecorator() override;
+
     bool nextImpl() override;
     size_t getRefCount();
 
@@ -35,6 +38,7 @@ private:
 
     ReadBuffer & impl;
     std::unique_ptr<ReadBuffer> holder;
+    LoggerPtr logger;
 };
 
 }
