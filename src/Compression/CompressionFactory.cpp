@@ -215,6 +215,7 @@ void registerCodecGCD(CompressionCodecFactory & factory);
 #if USE_SZ3
 void registerCodecSZ3(CompressionCodecFactory & factory);
 #endif
+void registerCodecChimp(CompressionCodecFactory & factory);
 
 CompressionCodecFactory::CompressionCodecFactory()
 {
@@ -239,6 +240,7 @@ CompressionCodecFactory::CompressionCodecFactory()
 #if USE_SZ3
     registerCodecSZ3(*this);
 #endif
+    registerCodecChimp(*this);
 
     default_codec = get("LZ4", {});
 }
