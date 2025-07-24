@@ -136,7 +136,7 @@ def main():
     is_azure_storage = False
     is_database_replicated = False
     is_shared_catalog = False
-    is_encrypted_storage = True # randomize it
+    is_encrypted_storage = random.choice([True, False])
     runner_options = ""
     info = Info()
 
