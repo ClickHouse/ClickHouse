@@ -362,7 +362,7 @@ if __name__ == "__main__":
         action="store_true",
         dest="debug",
         default=False,
-        help="Mount ClickHouse source folder from --clickhouse-root into /ClickHouse (read-only)",
+        help="Mount ClickHouse source folder from --clickhouse-root into /debug (read-only)",
     )
 
     parser.add_argument(
@@ -475,7 +475,7 @@ if __name__ == "__main__":
     )
 
     # Mount debug root into container if debug flag is set
-    root_mount = f"--volume={CLICKHOUSE_ROOT}:/ClickHouse:ro" if args.debug else ""
+    debug_mount = f"--volume={CLICKHOUSE_ROOT}:/debug:ro" if args.debug else ""
 
     cmd_base = (
         f"docker run {net} {tty} --rm --name {CONTAINER_NAME} "
@@ -485,7 +485,7 @@ if __name__ == "__main__":
         f"--cap-add=SYS_PTRACE "
         f"--volume={args.binary}:/clickhouse "
         f"--volume={args.base_configs_dir}:/clickhouse-config "
-        f"{root_mount} "
+        f"{debug_mount} "
         f"--volume={args.cases_dir}:/ClickHouse/tests/integration "
         f"--volume={args.utils_dir}/backupview:/ClickHouse/utils/backupview "
         f"--volume={args.utils_dir}/grpc-client/pb2:/ClickHouse/utils/grpc-client/pb2 "
@@ -519,17 +519,10 @@ if __name__ == "__main__":
         print(
             f"""
     # =====> DEBUG MODE <=====
-    # ClickHouse root folder will be read=only mounted into /ClickHouse in all containers.
-    # Use the following command to list node containers.
-    runner-nodes() {{
-        docker exec {CONTAINER_NAME} docker ps | grep node
-    }}
-
-    # You can use the following command to log into the container and run clickhouse client or debugger.
-    # Tip: place a `breakpoint()` somewhere in your integration test python code before run.
-    runner-bash() {{
-        docker exec -it {CONTAINER_NAME} docker exec -it $1 bash
-    }}
+    # ClickHouse root folder will be read-only mounted into /debug in all containers.
+    # Tip: place a `breakpoint()` somewhere in your integration test python code before `runner`.
+    # Open another shell and include:
+        source {CLICKHOUSE_ROOT}/tests/integration/runner-env.sh
     # =====> DEBUG MODE <=====
 """
         )
