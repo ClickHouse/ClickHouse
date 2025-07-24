@@ -374,8 +374,15 @@ bool canPushDownFromOn(const JoinOperator & join_operator, std::optional<JoinTab
 
 using NameViewToNodeMapping = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
 
+
+struct JoinPlanningContext
+{
+    NameViewToNodeMapping actions_after_join_map;
+    bool is_storage_join;
+};
+
 void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & right_node,
-    const NameViewToNodeMapping & actions_after_join_map)
+    const JoinPlanningContext & planning_context)
 {
     const auto & left_type = left_node.getType();
     const auto & right_type = right_node.getType();
@@ -396,32 +403,38 @@ void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & ri
         throw;
     }
 
-    auto cast_transform = [&common_type, &actions_after_join_map](auto & dag, auto && nodes)
+    auto cast_transform = [&common_type, &planning_context](auto & dag, auto && nodes)
     {
         auto arg = nodes.at(0);
-        auto mapped_it = actions_after_join_map.find(arg->result_name);
-        if (mapped_it != actions_after_join_map.end() && mapped_it->second->result_type->equals(*common_type))
+        auto mapped_it = planning_context.actions_after_join_map.find(arg->result_name);
+        if (mapped_it != planning_context.actions_after_join_map.end() && mapped_it->second->result_type->equals(*common_type))
             return mapped_it->second;
         return &dag.addCast(*arg, common_type, {});
     };
     if (!left_type->equals(*common_type))
         left_node = JoinActionRef::transform({left_node}, cast_transform);
 
-    if (!right_type->equals(*removeNullableOrLowCardinalityNullable(common_type)))
-        right_node = JoinActionRef::transform({right_node}, cast_transform);
+    if (planning_context.is_storage_join)
+    {
+        if (!right_type->equals(*removeNullableOrLowCardinalityNullable(common_type)))
+            right_node = JoinActionRef::transform({right_node}, cast_transform);
+    }
+    else
+    {
+        if (!right_type->equals(*common_type))
+            right_node = JoinActionRef::transform({right_node}, cast_transform);
+    }
 }
 
 bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, TableJoin::JoinOnClause & table_join_clause,
-    std::unordered_set<JoinActionRef> & used_expressions, const NameViewToNodeMapping & actions_after_join_map)
+    std::unordered_set<JoinActionRef> & used_expressions, const JoinPlanningContext & planning_context)
 {
-    // std::cerr << "addJoinPredicatesToTableJoin" << std::endl;
     bool has_join_predicates = false;
     std::vector<JoinActionRef> new_predicates;
 
     for (auto & pred : predicates)
     {
         auto & predicate = new_predicates.emplace_back(std::move(pred));
-        // std::cerr << "Predicate: " << predicate.getColumnName() << std::endl;
         auto [predicate_op, lhs, rhs] = predicate.asBinaryPredicate();
         if (predicate_op != JoinConditionOperator::Equals && predicate_op != JoinConditionOperator::NullSafeEquals)
             continue;
@@ -431,7 +444,7 @@ bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, Table
         else if (!lhs.fromLeft() || !rhs.fromRight())
             continue;
 
-        predicateOperandsToCommonType(lhs, rhs, actions_after_join_map);
+        predicateOperandsToCommonType(lhs, rhs, planning_context);
         bool null_safe_comparison = JoinConditionOperator::NullSafeEquals == predicate_op;
         if (null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType()) && isNullableOrLowCardinalityNullable(rhs.getType()))
         {
@@ -508,7 +521,7 @@ bool tryAddDisjunctiveConditions(
     std::vector<JoinActionRef> & join_expressions,
     TableJoin::Clauses & table_join_clauses,
     std::unordered_set<JoinActionRef> & used_expressions,
-    const NameViewToNodeMapping & actions_after_join_map,
+    const JoinPlanningContext & planning_context,
     bool throw_on_error)
 {
     if (join_expressions.size() != 1)
@@ -528,7 +541,7 @@ bool tryAddDisjunctiveConditions(
             join_condition = expr.getArguments();
 
         auto & table_join_clause = table_join_clauses.emplace_back();
-        bool has_keys = addJoinPredicatesToTableJoin(join_condition, table_join_clause, used_expressions, actions_after_join_map);
+        bool has_keys = addJoinPredicatesToTableJoin(join_condition, table_join_clause, used_expressions, planning_context);
         if (!has_keys)
         {
             table_join_clauses.resize(initial_clauses_num);
@@ -776,11 +789,13 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
     std::unordered_set<JoinActionRef> used_expressions;
 
-    NameViewToNodeMapping actions_after_join_map;
+
+    JoinPlanningContext planning_context;
+    planning_context.is_storage_join = bool(prepared_join_storage);
     for (const auto * node : actions_after_join)
     {
         if (node->type == ActionsDAG::ActionType::ALIAS)
-            actions_after_join_map[node->result_name] = node->children.at(0);
+        planning_context.actions_after_join_map[node->result_name] = node->children.at(0);
     }
 
 
@@ -788,7 +803,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     auto & table_join_clauses = table_join->getClauses();
     if (!is_join_without_expression)
     {
-        bool has_keys = addJoinPredicatesToTableJoin(join_expression, table_join_clauses.emplace_back(), used_expressions, actions_after_join_map);
+        bool has_keys = addJoinPredicatesToTableJoin(join_expression, table_join_clauses.emplace_back(), used_expressions, planning_context);
 
         if (!has_keys && join_operator.strictness != JoinStrictness::Asof)
         {
@@ -798,7 +813,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
             table_join_clauses.pop_back();
             is_disjunctive_condition = tryAddDisjunctiveConditions(
-                join_expression, table_join_clauses, used_expressions, actions_after_join_map, !can_convert_to_cross);
+                join_expression, table_join_clauses, used_expressions, planning_context, !can_convert_to_cross);
 
             if (!is_disjunctive_condition)
             {
@@ -845,7 +860,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
                 throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF join does not support multiple inequality predicates in JOIN ON expression");
             found_asof_predicate_it = it;
 
-            predicateOperandsToCommonType(lhs, rhs, actions_after_join_map);
+            predicateOperandsToCommonType(lhs, rhs, planning_context);
 
             used_expressions.insert(lhs);
             used_expressions.insert(rhs);
