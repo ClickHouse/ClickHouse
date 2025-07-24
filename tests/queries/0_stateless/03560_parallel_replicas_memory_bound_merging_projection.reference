@@ -1,91 +1,91 @@
 -- { echoOn } --
-explain pipeline select b, sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS enable_analyzer=1, parallel_replicas_local_plan=1, optimize_use_projections=1, parallel_replicas_support_projection=0;
+explain pipeline select sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS enable_analyzer=1, parallel_replicas_local_plan=1, optimize_use_projections=1, parallel_replicas_support_projection=0;
 (Expression)
 ExpressionTransform
   (Limit)
   Limit
     (Sorting)
-    MergingSortedTransform 10 → 1
-      MergeSortingTransform × 10
-        LimitsCheckingTransform × 10
-          PartialSortingTransform × 10
+    MergingSortedTransform 4 → 1
+      MergeSortingTransform × 4
+        LimitsCheckingTransform × 4
+          PartialSortingTransform × 4
             (Expression)
-            ExpressionTransform × 10
+            ExpressionTransform × 4
               (MergingAggregated)
-              Resize 1 → 10
-                SortingAggregatedTransform 10 → 1
-                  MergingAggregatedBucketTransform × 10
-                    Resize 1 → 10
+              Resize 1 → 4
+                SortingAggregatedTransform 4 → 1
+                  MergingAggregatedBucketTransform × 4
+                    Resize 1 → 4
                       GroupingAggregatedTransform 3 → 1
                         (Union)
                           (Aggregating)
-                          Resize 6 → 1
-                            AggregatingTransform × 6
+                          Resize 4 → 1
+                            AggregatingTransform × 4
                               (Expression)
-                              ExpressionTransform × 6
+                              ExpressionTransform × 4
                                 (ReadFromMergeTree)
-                                MergeTreeSelect(pool: ReadPoolParallelReplicas, algorithm: Thread) × 6 0 → 1
+                                MergeTreeSelect(pool: ReadPoolParallelReplicas, algorithm: Thread) × 4 0 → 1
                           (ReadFromRemoteParallelReplicas)
-select b, sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS enable_analyzer=1, parallel_replicas_local_plan=1, optimize_use_projections=1, parallel_replicas_support_projection=0;
-500     500000
-501     501000
-502     502000
-503     503000
-504     504000
-explain pipeline select b, sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS enable_analyzer=1, parallel_replicas_local_plan=1, optimize_use_projections=1, parallel_replicas_support_projection=0, force_aggregation_in_order=1;
+select sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS enable_analyzer=1, parallel_replicas_local_plan=1, optimize_use_projections=1, parallel_replicas_support_projection=0;
+500000
+501000
+502000
+503000
+504000
+explain pipeline select sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS enable_analyzer=1, parallel_replicas_local_plan=1, optimize_use_projections=1, parallel_replicas_support_projection=0, force_aggregation_in_order=1;
 (Expression)
 ExpressionTransform
   (Limit)
   Limit
     (Sorting)
-    MergingSortedTransform 10 → 1
-      MergeSortingTransform × 10
-        LimitsCheckingTransform × 10
-          PartialSortingTransform × 10
+    MergingSortedTransform 4 → 1
+      MergeSortingTransform × 4
+        LimitsCheckingTransform × 4
+          PartialSortingTransform × 4
             (Expression)
-            ExpressionTransform × 10
+            ExpressionTransform × 4
               (MergingAggregated)
-              MergingAggregatedBucketTransform × 10
-                Resize 1 → 10
+              MergingAggregatedBucketTransform × 4
+                Resize 1 → 4
                   FinishAggregatingInOrderTransform 3 → 1
                     (Union)
                       (Aggregating)
-                      SortingAggregatedForMemoryBoundMergingTransform 10 → 1
-                        MergingAggregatedBucketTransform × 10
-                          Resize 1 → 10
-                            FinishAggregatingInOrderTransform 6 → 1
-                              AggregatingInOrderTransform × 6
-                                MergeSortingTransform × 6
-                                  LimitsCheckingTransform × 6
-                                    PartialSortingTransform × 6
+                      SortingAggregatedForMemoryBoundMergingTransform 4 → 1
+                        MergingAggregatedBucketTransform × 4
+                          Resize 1 → 4
+                            FinishAggregatingInOrderTransform 4 → 1
+                              AggregatingInOrderTransform × 4
+                                MergeSortingTransform × 4
+                                  LimitsCheckingTransform × 4
+                                    PartialSortingTransform × 4
                                       (Expression)
-                                      ExpressionTransform × 6
+                                      ExpressionTransform × 4
                                         (ReadFromMergeTree)
-                                        MergeTreeSelect(pool: ReadPoolParallelReplicas, algorithm: Thread) × 6 0 → 1
+                                        MergeTreeSelect(pool: ReadPoolParallelReplicas, algorithm: Thread) × 4 0 → 1
                       (ReadFromRemoteParallelReplicas)
-select b, sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS enable_analyzer=1, parallel_replicas_local_plan=1, optimize_use_projections=1, parallel_replicas_support_projection=0, force_aggregation_in_order=1;
-500     500000
-501     501000
-502     502000
-503     503000
-504     504000
-explain pipeline select b, sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS enable_analyzer=1, parallel_replicas_local_plan=1, optimize_use_projections=1, parallel_replicas_support_projection=1;
+select sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS enable_analyzer=1, parallel_replicas_local_plan=1, optimize_use_projections=1, parallel_replicas_support_projection=0, force_aggregation_in_order=1;
+500000
+501000
+502000
+503000
+504000
+explain pipeline select sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS enable_analyzer=1, parallel_replicas_local_plan=1, optimize_use_projections=1, parallel_replicas_support_projection=1;
 (Expression)
 ExpressionTransform
   (Limit)
   Limit
     (Sorting)
-    MergingSortedTransform 10 → 1
-      MergeSortingTransform × 10
-        LimitsCheckingTransform × 10
-          PartialSortingTransform × 10
+    MergingSortedTransform 4 → 1
+      MergeSortingTransform × 4
+        LimitsCheckingTransform × 4
+          PartialSortingTransform × 4
             (Expression)
-            ExpressionTransform × 10
+            ExpressionTransform × 4
               (MergingAggregated)
-              Resize 1 → 10
-                SortingAggregatedTransform 10 → 1
-                  MergingAggregatedBucketTransform × 10
-                    Resize 1 → 10
+              Resize 1 → 4
+                SortingAggregatedTransform 4 → 1
+                  MergingAggregatedBucketTransform × 4
+                    Resize 1 → 4
                       GroupingAggregatedTransform 3 → 1
                         (Union)
                           (Aggregating)
@@ -96,9 +96,9 @@ ExpressionTransform
                                 (ReadFromMergeTree)
                                 MergeTreeSelect(pool: ReadPoolParallelReplicasInOrder, algorithm: InOrder) 0 → 1
                           (ReadFromRemoteParallelReplicas)
-select b, sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS enable_analyzer=1, parallel_replicas_local_plan=1, optimize_use_projections=1, parallel_replicas_support_projection=1;
-500     500000
-501     501000
-502     502000
-503     503000
-504     504000
+select sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS enable_analyzer=1, parallel_replicas_local_plan=1, optimize_use_projections=1, parallel_replicas_support_projection=1;
+500000
+501000
+502000
+503000
+504000
