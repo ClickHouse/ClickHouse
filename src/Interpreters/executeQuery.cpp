@@ -16,6 +16,8 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
+#include <IO/EmptyReadBuffer.h>
+#include <IO/ReadBuffer.h>
 #include <IO/copyData.h>
 
 #include <QueryPipeline/BlockIO.h>
@@ -67,9 +69,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
-#include "IO/EmptyReadBuffer.h"
-#include "IO/ReadBuffer.h"
-#include "Parsers/ASTIdentifier_fwd.h"
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 

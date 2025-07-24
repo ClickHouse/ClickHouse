@@ -5,7 +5,7 @@
 #include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
-#include "base/scope_guard.h"
+#include <base/scope_guard.h>
 #include <Core/LogsLevel.h>
 
 #include <cstddef>
@@ -17,6 +17,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int CANNOT_READ_ALL_DATA;
 }
@@ -38,7 +39,7 @@ namespace
             position() = working_buffer.begin();
 
             LOG_DEBUG(logger,
-                "c-tor & id {} self id {} avalable size: {} offset {} size {} position {} begin {} end {}",
+                "c-tor & id {} self id {} available size: {} offset {} size {} position {} begin {} end {}",
                 size_t(&in), size_t(this), available(), offset(), buffer().size(), size_t(position()), size_t(working_buffer.begin()), size_t(working_buffer.end()));
         }
 
@@ -52,10 +53,10 @@ namespace
         bool nextImpl() override
         {
             // LOG_DEBUG(logger,
-            //     "nextImpl avalable size: {} offset {}, size {} position {} begin {} end {}",
+            //     "nextImpl available size: {} offset {}, size {} position {} begin {} end {}",
             //     available(), offset(), buffer().size(), size_t(position()), size_t(working_buffer.begin()), size_t(working_buffer.end()));
             // LOG_DEBUG(logger,
-            //     "nextImpl in::: avalable size: {} offset {}, size {} position {} begin {} end {}",
+            //     "nextImpl in::: available size: {} offset {}, size {} position {} begin {} end {}",
             //     in.available(), in.offset(), in.buffer().size(), size_t(in.position()), size_t(in.buffer().begin()), size_t(in.buffer().end()));
 
             // SCOPE_EXIT({
@@ -114,7 +115,7 @@ bool ReadBuffer::next()
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "ReadBuffer: !hasPendingData, but next() called: id {}, avalable {}, offset {} size {} position {}  bigin {} end {}",
+            "ReadBuffer: hasPendingData, but next() called: id {}, available {}, offset {} size {} position {}  bigin {} end {}",
             size_t(this),
             available(),
             offset(),

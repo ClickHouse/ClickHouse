@@ -2,10 +2,9 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <IO/ReadBuffer.h>
-#include <IO/ReadBufferRefCountDecorator.h>
 #include <Server/HTTP/HTTPRequest.h>
 #include <Server/HTTP/HTTPContext.h>
-#include "Common/StackTrace.h"
+#include <Common/StackTrace.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
@@ -37,7 +36,7 @@ public:
     {
         std::lock_guard lock(get_stream_mutex);
         poco_check_ptr(stream);
-        LOG_DEBUG(getLogger("HTTPServerRequest"), "Returning request input stream with ref count {}", stream->getRefCount());
+        LOG_DEBUG(getLogger("HTTPServerRequest"), "Returning request input stream with ref count {}", stream.use_count());
         return stream;
     }
 
@@ -46,7 +45,7 @@ public:
         std::lock_guard lock(get_stream_mutex);
         if (!stream)
             return 0;
-        return stream->getRefCount();
+        return stream.use_count();
     }
 
     bool checkPeerConnected() const;
@@ -74,11 +73,14 @@ public:
         if (!stream_is_bounded)
             return false;
 
-        auto ref_count = stream->getRefCount();
-        if (ref_count > 1)
+        if (stream.use_count() > 1)
         {
-            LOG_ERROR(getLogger("HTTPServerRequest"), "Request stream is shared by multiple threads, cannot keep alive connection, use count {}, called at\n{}", ref_count, StackTrace().toString());
+            LOG_ERROR(getLogger("HTTPServerRequest"), "Request stream is shared by multiple threads, cannot keep alive connection, use count {}, called at\n{}", stream.use_count(), StackTrace().toString());
             return false;
+        }
+        else
+        {
+            LOG_DEBUG(getLogger("HTTPServerRequest"), "Request stream is not shared, can keep alive connection, use count {}", stream.use_count());
         }
 
         /// only this instance possesses the stream it is safe to read from it
@@ -99,7 +101,7 @@ private:
     const size_t max_field_value_size;
 
     mutable std::mutex get_stream_mutex;
-    ReadBufferRefCountDecoratorPtr stream;
+    ReadBufferPtr stream;
     Poco::Net::SocketImpl * socket;
     Poco::Net::SocketAddress client_address;
     Poco::Net::SocketAddress server_address;

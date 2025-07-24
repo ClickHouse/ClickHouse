@@ -5,10 +5,9 @@
 
 #include <IO/ReadBuffer.h>
 #include <fmt/format.h>
-#include "Common/Macros.h"
-#include "Common/logger_useful.h"
-#include "IO/VarInt.h"
-#include "base/scope_guard.h"
+#include <Common/Macros.h>
+#include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 
 
 namespace DB
@@ -48,7 +47,7 @@ public:
 
     ~ConcatReadBuffer() override
     {
-        LOG_DEBUG(logger, "d-tor avalable size: {} offset {} position {} begin {} end {}", available(), offset(), size_t(position()), size_t(working_buffer.begin()), size_t(working_buffer.end()));
+        LOG_DEBUG(logger, "d-tor available size: {} offset {} position {} begin {} end {}", available(), offset(), size_t(position()), size_t(working_buffer.begin()), size_t(working_buffer.end()));
     }
 
     void appendBuffer(std::unique_ptr<ReadBuffer> buffer)

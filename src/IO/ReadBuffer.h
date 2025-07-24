@@ -11,11 +11,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 static constexpr auto DEFAULT_PREFETCH_PRIORITY = Priority{0};
 
 /** A simple abstract class for buffered data reading (char sequences) from somewhere.

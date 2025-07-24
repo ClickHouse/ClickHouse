@@ -1,8 +1,8 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WithFileName.h>
-#include "Common/Logger.h"
-#include "Common/logger_useful.h"
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -33,8 +33,8 @@ Chunk IInputFormat::generate()
 
 void IInputFormat::resetParser()
 {
-    chassert(in);
-    in->ignoreAll();
+    if (in)
+        in->ignoreAll();
 
     // those are protected attributes from ISource (I didn't want to propagate resetParser up there)
     finished = false;
