@@ -1,14 +1,25 @@
+Test OR short circuit with 1 (true) first operand
 1
-1
+Test AND short circuit with 0 (false) first operand
 0
+Test with string literals
 1
 true
 false
+Test with nested OR and AND
 1
+0
+true
+false
+Check the read_rows of the above queries to ensure that the short circuit is working
 1
 0
 1
 1
 1
 0
+1
+1
+1
+1
 1

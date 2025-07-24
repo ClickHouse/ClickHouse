@@ -119,6 +119,7 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsBool enable_function_early_short_circuit;
 }
 
 
@@ -2749,7 +2750,79 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
             backQuote(node.getFunctionName()),
             node.getNullsAction() == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
 }
+
+/** Attempts to compute a constant result for any function by evaluating its arguments at compile time.
+ * 
+ * This function implements general constant folding optimization. It recursively processes function 
+ * arguments to determine if the entire function can be evaluated to a constant value without 
+ * executing the query.
+ * The function works by:
+ * 1. Processing each function argument recursively
+ * 2. For constant arguments: use their values directly
+ * 3. For function arguments: recursively call this function to get constant results
+ * 4. For other arguments: use UInt8 as fallback type
+ * 5. Building the function with resolved arguments
+ * 6. Calling getConstantResultForNonConstArguments() to check if the function can be evaluated
+ * 
+ * Returns:
+ * - ConstantNodePtr: if the function can be evaluated to a constant at compile time
+ * - nullptr: if the function cannot be folded (requires runtime evaluation)
+ */
+ConstantNodePtr getConstantResultFromFunctionArgs(const QueryTreeNodePtr & node, IdentifierResolveScope & scope){
+    FunctionNodePtr function_node = std::static_pointer_cast<FunctionNode>(node);
+    auto function_name = function_node->getFunctionName();
+    ColumnsWithTypeAndName arg_columns;
+    auto & arg_nodes = function_node->getArguments().getNodes();
+    arg_columns.reserve(arg_nodes.size());
+
+    for (const auto & arg : arg_nodes){
+        ColumnWithTypeAndName col;
+        if (const auto * cn = arg->as<ConstantNode>())
+        {
+            col.column = cn->getColumn();
+            col.type = arg->getResultType();
+        }
+        else if (arg->as<FunctionNode>()){
+            auto res = getConstantResultFromFunctionArgs(arg, scope);
+            if (res)
+            {
+                col.column = res->getColumn();
+                col.type = res->getResultType();
+            }
+            else col.type = std::make_shared<DataTypeUInt8>();
+        }
+        else
+            col.type = std::make_shared<DataTypeUInt8>();
+        arg_columns.emplace_back(std::move(col));
+    }
+    FunctionOverloadResolverPtr resolver = FunctionFactory::instance().tryGet(function_name, scope.context);
+    if (resolver)
+    {
+        FunctionBasePtr base;
+        try
+        {
+            base = resolver->build(arg_columns);
+        }
+        catch (...) { base = nullptr; }
+
+        if (base)
+        {
+            ColumnPtr const_res = base->getConstantResultForNonConstArguments(arg_columns, base->getResultType());
+            if (const_res)
+            {
+                Field f((*const_res)[0]);
+                auto const_node = std::make_shared<ConstantNode>(f, base->getResultType());
+                if (!function_node->getAlias().empty())
+                    const_node->setAlias(function_node->getAlias());
+                return const_node;
+            }
+        }
+    }
+    return nullptr;
 }
+}
+
+
 
 /** Resolve function node in scope.
   * During function node resolve, function node can be replaced with another expression (if it match lambda or sql user defined function),
@@ -2781,84 +2854,19 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node_ptr->getFunctionName();
 
-    /* Early short-circuit for logical expressions.
-     * If   or()   already contains a constant TRUE,
-     * or   and()  already contains a constant FALSE,
-     * the result of the whole function is known.
-     * Replace the function with that constant right now,
-     * before we start resolving (and possibly executing)
-     * the remaining arguments – this prevents scalar
-     * sub-queries in those arguments from running.
-     */
-    if (function_name == "or" || function_name == "and")
+    /** Early short-circuit optimization: attempt to evaluate logical functions (AND/OR) at compile time
+      * This can avoid expensive subquery execution when the result is determined by the first argument
+      * Examples: 1 OR anything = 1, 0 AND anything = 0.
+      * Use enable_function_early_short_circuit setting as guardrail to disable this optimization if needed
+      */
+    if (scope.context->getSettingsRef()[Setting::enable_function_early_short_circuit])
     {
-        const auto & args = function_node_ptr->getArguments().getNodes();
-
-        auto isBoolConst = [](const QueryTreeNodePtr & n, bool & out, bool & has_bool_arg)->bool
-        {
-            const auto * lit = n->as<ConstantNode>();
-            if (!lit) return false;
-
-            // Check if this ConstantNode has a Bool result type (indicating it came from a boolean literal)
-            if (lit->getResultType()->getName() == "Bool")
-                has_bool_arg = true;
-
-            UInt64 u = 0;  Int64 i = 0;
-            if (lit->getValue().tryGet<UInt64>(u))
-            {
-                out = (u != 0);
-                return true;
-            }
-            if (lit->getValue().tryGet<Int64>(i))
-            {
-                out = (i != 0);
-                return true;
-            }
-            return false;
-        };
-
-        bool decisive = false;
-        bool found = false;
-        bool has_bool_arg = false;
-
-        for (const auto & a : args)
-        {
-            bool v = false;
-            bool arg_is_bool = false;
-            if (isBoolConst(a, v, arg_is_bool))
-            {
-                has_bool_arg = has_bool_arg || arg_is_bool;
-                if ((function_name == "or"  && v) ||
-                    (function_name == "and" && !v))
-                {
-                    decisive = v;
-                    found = true;
-                    if (has_bool_arg)
-                        break;
-                }
-            }
-        }
-
-        if (found)
-        {
-            DataTypePtr result_type;
-            Field result_field;
-            if (has_bool_arg)
-            {
-                result_type = DataTypeFactory::instance().get("Bool");
-                result_field = Field(decisive);
-            }
-            else
-            {
-                result_type = std::make_shared<DataTypeUInt8>();
-                result_field = Field(decisive ? 1u : 0u);
-            }
-            auto new_const = std::make_shared<ConstantNode>(result_field, result_type);
-            if (!function_node_ptr->getAlias().empty())
-                new_const->setAlias(function_node_ptr->getAlias());
-
-            node = new_const;
-            return ProjectionNames{ new_const->getValueStringRepresentation() };
+        auto const_res = getConstantResultFromFunctionArgs(node, scope);
+        if (const_res)
+        {   
+            auto value_string = const_res->getValueStringRepresentation();
+            node = std::move(const_res);
+            return { value_string };
         }
     }
 
@@ -3253,6 +3261,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     for (size_t function_argument_index = 0; function_argument_index < function_arguments_size; ++function_argument_index)
     {
         auto & function_argument = function_arguments[function_argument_index];
+
+        // LOG_DEBUG(getLogger("QueryAnalyzer"), "arg node type: {}", function_argument->getNodeTypeName());
 
         ColumnWithTypeAndName argument_column;
         argument_column.name = arguments_projection_names[function_argument_index];
@@ -3794,6 +3804,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// Sanity check: do not convert large columns to constants
                 column->byteSize() < 1_MiB)
             {
+                // LOG_DEBUG(getLogger("QueryAnalyzer"), "perform constant folding for function {} with result {}", function->getName(), column->getName());
                 /// Replace function node with result constant node
                 constant_node = std::make_shared<ConstantNode>(ConstantValue{ std::move(column), std::move(result_type) }, node);
             }
