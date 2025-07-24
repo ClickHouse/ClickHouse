@@ -1322,7 +1322,7 @@ static BlockIO executeQueryImpl(
                         RenameMultipleColumnsVisitor rename_columns_visitor{rename_data};
                         rename_columns_visitor.visit(insert_query->columns);
                     }
-                }      
+                }
             }
         }
 
