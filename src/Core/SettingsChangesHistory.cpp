@@ -75,6 +75,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             {"output_format_parquet_enum_as_byte_array", false, false, "Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM"},
             {"distributed_plan_force_shuffle_aggregation", 0, 0, "New experimental setting"},
+            {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},
             {"allow_experimental_insert_into_iceberg", false, false, "New setting."},
             /// RELEASE CLOSED
         });
