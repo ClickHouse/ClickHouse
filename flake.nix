@@ -142,7 +142,7 @@
     contrib-aws-c-event-stream = { url = "github:awslabs/aws-c-event-stream/08f24e384e5be20bcffa42b49213d24dad7881ae"; flake = false; };
     contrib-aws-c-common = { url = "github:awslabs/aws-c-common/80f21b3cac5ac51c6b8a62c7d2a5ef58a75195ee"; flake = false; };
     contrib-aws-checksums = { url = "github:awslabs/aws-checksums/321b805559c8e911be5bddba13fcbd222a3e2d3a"; flake = false; };
-    contrib-curl = { url = "github:curl/curl/4dacb79fcdd9364c1083e06f6a011d797a344f47"; flake = false; };
+    contrib-curl = { url = "github:curl/curl/cfbfb65047e85e6b08af65fe9cdbcf68e9ad496a"; flake = false; };
     contrib-icudata = { url = "github:ClickHouse/icudata/cfc05b4c3140ff2be84291b80de8c62b1e42d0da"; flake = false; };
     contrib-icu = { url = "github:ClickHouse/icu/4216173eeeb39c1d4caaa54a68860e800412d273"; flake = false; };
     contrib-flatbuffers = { url = "github:ClickHouse/flatbuffers/0100f6a5779831fa7a651e4b67ef389a8752bd9b"; flake = false; };
