@@ -177,7 +177,8 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
             res = std::make_shared<Function<FunctionTraits<array_arguments, DateTime64, Int64, ValueType, is_predict>>>
                 (argument_types, start_timestamp, end_timestamp, step, window, target_scale, predict_offset);
         }
-        else {
+        else
+        {
             res = std::make_shared<Function<FunctionTraits<array_arguments, DateTime64, Int64, ValueType, is_rate>>>
                 (argument_types, start_timestamp, end_timestamp, step, window, target_scale);
         }
