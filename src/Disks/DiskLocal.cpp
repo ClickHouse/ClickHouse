@@ -344,7 +344,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path,
 
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
     auto file_size2 = fileSizeSafe(fs::path(disk_path) / path);
-    if (file_size.value() != file_size2.value())
+    if (file_size && file_size2 && file_size.value() != file_size2.value())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "File size mismatch for file {}: expected {}, got {}",
@@ -358,13 +358,13 @@ std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path,
 
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
     auto file_size3 = fileSizeSafe(fs::path(disk_path) / path);
-    if (file_size3.value() != file_size.value())
+    if (file_size && file_size3 && file_size3.value() != file_size.value())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "File size mismatch for file {}: expected {}, got {}",
             backQuote(path),
-            file_size3.value_or(0),
-            file_size.value_or(0));
+            file_size.value_or(0),
+            file_size3.value_or(0));
 
     return r;
 }
