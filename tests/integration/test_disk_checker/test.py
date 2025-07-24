@@ -53,7 +53,7 @@ def test_disk_readonly_status(started_cluster):
         disk_path = "/var/lib/clickhouse/path1"
 
         # make disk readonly
-        node.exec_in_container(["chmod", "110", disk_path])
+        node.exec_in_container(["chmod", "555", disk_path])
 
         # assert for metric with retries
         wait_condition(
@@ -64,7 +64,7 @@ def test_disk_readonly_status(started_cluster):
         )
 
         # restore the disk to writable state
-        node.exec_in_container(["chmod", "750", disk_path])
+        node.exec_in_container(["chmod", "755", disk_path])
 
         # again assert for metric with retries
         wait_condition(
@@ -75,7 +75,7 @@ def test_disk_readonly_status(started_cluster):
         )
     finally:
         try:
-            node.exec_in_container(["chmod", "750", disk_path])
+            node.exec_in_container(["chmod", "755", disk_path])
         except:
             pass
 
