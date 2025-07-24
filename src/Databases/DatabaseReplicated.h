@@ -29,7 +29,6 @@ using ClusterPtr = std::shared_ptr<Cluster>;
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
-struct ReplicatedDatabaseStatus;
 
 struct ReplicaInfo
 {
@@ -48,7 +47,20 @@ public:
     static constexpr auto BROKEN_TABLES_SUFFIX = "_broken_tables";
     static constexpr auto BROKEN_REPLICATED_TABLES_SUFFIX = "_broken_replicated_tables";
 
-    using ReplicatedStatus = ReplicatedDatabaseStatus;
+    /** For the system table database replicas. */
+    struct ReplicatedStatus
+    {
+        bool is_readonly;
+        bool is_session_expired;
+        UInt32 max_log_ptr;
+        String replica_name;
+        String replica_path;
+        String zookeeper_path;
+        String shard_name;
+        UInt32 log_ptr;
+        UInt32 total_replicas;
+        String zookeeper_exception;
+    };
 
     DatabaseReplicated(const String & name_, const String & metadata_path_, UUID uuid,
                        const String & zookeeper_path_, const String & shard_name_, const String & replica_name_,

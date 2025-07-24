@@ -10,7 +10,6 @@
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/MergeTree/ReplicatedTableStatus.h>
 #include <Storages/System/StatusRequestsPool.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>

@@ -11,7 +11,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
-#include <Databases/ReplicatedDatabaseStatus.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>

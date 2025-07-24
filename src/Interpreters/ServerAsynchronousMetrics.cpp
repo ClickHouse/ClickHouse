@@ -286,7 +286,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
                 if (StorageReplicatedMergeTree * table_replicated_merge_tree = typeid_cast<StorageReplicatedMergeTree *>(table.get()))
                 {
-                    ReplicatedTableStatus status;
+                    StorageReplicatedMergeTree::ReplicatedStatus status;
                     table_replicated_merge_tree->getStatus(status, false);
 
                     calculateMaxAndSum(max_queue_size, sum_queue_size, status.queue.queue_size);

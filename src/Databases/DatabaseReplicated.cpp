@@ -10,7 +10,6 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseReplicatedWorker.h>
-#include <Databases/ReplicatedDatabaseStatus.h>
 #include <Databases/TablesDependencyGraph.h>
 #include <Databases/enableAllExperimentalSettings.h>
 #include <IO/ReadBufferFromFile.h>

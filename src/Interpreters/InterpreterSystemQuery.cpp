@@ -1165,7 +1165,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
             {
                 if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(iterator->table().get()))
                 {
-                    ReplicatedTableStatus status;
+                    StorageReplicatedMergeTree::ReplicatedStatus status;
                     storage_replicated->getStatus(status);
                     if (status.replica_path == remote_replica_path)
                         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED,
@@ -1206,7 +1206,7 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
     if (!storage_replicated)
         return false;
 
-    ReplicatedTableStatus status;
+    StorageReplicatedMergeTree::ReplicatedStatus status;
     storage_replicated->getStatus(status);
 
     /// Do not allow to drop local replicas and active remote replicas
