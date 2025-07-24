@@ -105,13 +105,13 @@ public:
         if (needle_size <= 32)
         {
             /// For short needles, we can use a simple loop and avoid function calls and the mask preparation
-            sz_cptr_t ned = needle;
-            while (ned != needle_end && *ned == *pos_cptr)
+            sz_cptr_t c = needle;
+            while (c != needle_end && *c == *pos_cptr)
             {
-                ned++;
+                c++;
                 pos_cptr++;
             }
-            return ned == needle_end;
+            return c == needle_end;
         }
         return equal(pos_cptr, needle, needle_size);
     }
