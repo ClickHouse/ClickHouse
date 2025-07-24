@@ -337,6 +337,7 @@ and is controlled by the same settings:
 - [input_format_json_read_bools_as_strings](/operations/settings/formats#input_format_json_read_bools_as_strings)
 - [input_format_json_read_bools_as_numbers](/operations/settings/formats#input_format_json_read_bools_as_numbers)
 - [input_format_json_read_arrays_as_strings](/operations/settings/formats#input_format_json_read_arrays_as_strings)
+- [input_format_json_infer_array_of_dynamic_from_array_of_different_types](/operations/settings/formats#input_format_json_infer_array_of_dynamic_from_array_of_different_types)
 
 Let's take a look at some examples:
 
