@@ -2760,9 +2760,8 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
 }
 
 /** Attempts to compute a constant result for any function by evaluating its arguments at compile time.
- * 
- * This function implements general constant folding optimization. It recursively processes function 
- * arguments to determine if the entire function can be evaluated to a constant value without 
+ * This function implements general constant folding optimization. It recursively processes function
+ * arguments to determine if the entire function can be evaluated to a constant value without
  * executing the query.
  * The function works by:
  * 1. Processing each function argument recursively
@@ -2771,7 +2770,6 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
  * 4. For other arguments: use UInt8 as fallback type
  * 5. Building the function with resolved arguments
  * 6. Calling getConstantResultForNonConstArguments() to check if the function can be evaluated
- * 
  * Returns:
  * - ConstantNodePtr: if the function can be evaluated to a constant at compile time
  * - nullptr: if the function cannot be folded (requires runtime evaluation)
