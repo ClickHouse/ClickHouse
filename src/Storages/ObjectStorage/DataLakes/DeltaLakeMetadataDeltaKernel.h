@@ -59,6 +59,8 @@ public:
         size_t list_batch_size,
         ContextPtr context) const override;
 
+    std::shared_ptr<DeltaLake::TableSnapshot> getTableSnapshot() const { return table_snapshot; }
+
 private:
     const LoggerPtr log;
     const std::shared_ptr<DeltaLake::TableSnapshot> table_snapshot;

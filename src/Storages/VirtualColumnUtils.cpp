@@ -142,9 +142,17 @@ static NamesAndTypesList getCommonVirtualsForFileLikeStorage()
             {"_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
 
+static NamesAndTypesList getDeltaLakeVirtualsForFileLikeStorage()
+{
+    return {{"_delta_lake_version", std::make_shared<DataTypeUInt64>()}};
+}
+
 NameSet getVirtualNamesForFileLikeStorage()
 {
-    return getCommonVirtualsForFileLikeStorage().getNameSet();
+    auto result = getCommonVirtualsForFileLikeStorage().getNameSet();
+    auto delta_lake_virtuals = getDeltaLakeVirtualsForFileLikeStorage().getNameSet();
+    result.insert(delta_lake_virtuals.begin(), delta_lake_virtuals.end());
+    return result;
 }
 
 static auto makeExtractor()
@@ -187,7 +195,8 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
     const ContextPtr & context,
     const std::string & path,
     std::optional<FormatSettings> format_settings_,
-    bool is_data_lake)
+    bool is_data_lake,
+    bool is_delta_lake)
 {
     VirtualColumnsDescription desc;
 
@@ -233,6 +242,12 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
             else
                 add_virtual({key, type}, true);
         }
+    }
+
+    if (is_delta_lake)
+    {
+        for (const auto & item : getDeltaLakeVirtualsForFileLikeStorage())
+            add_virtual(item, false);
     }
 
     return desc;
@@ -356,6 +371,13 @@ void addRequestedFileLikeStorageVirtualsToChunk(
         {
             if (virtual_values.etag)
                 chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), (*virtual_values.etag))->convertToFullColumnIfConst());
+            else
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
+        else if (virtual_column.name == "_delta_lake_version")
+        {
+            if (virtual_values.delta_lake_version)
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *virtual_values.delta_lake_version)->convertToFullColumnIfConst());
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }

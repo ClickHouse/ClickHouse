@@ -1,6 +1,9 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <memory>
 #include <optional>
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
+#endif
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
@@ -268,6 +271,18 @@ Chunk StorageObjectStorageSource::generate()
 
             chassert(object_info->metadata);
 
+            std::optional<UInt64> delta_lake_version;
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+            if (configuration->isDataLakeConfiguration())
+            {
+                if (auto * delta_metadata = dynamic_cast<const DeltaLakeMetadataDeltaKernel*>(configuration->getExternalMetadata()))
+                {
+                    if (auto table_snapshot = delta_metadata->getTableSnapshot())
+                        delta_lake_version = table_snapshot->getVersion();
+                }
+            }
+#endif
+
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
                 read_from_format_info.requested_virtual_columns,
@@ -275,7 +290,8 @@ Chunk StorageObjectStorageSource::generate()
                  .size = object_info->isArchive() ? object_info->fileSizeInArchive() : object_info->metadata->size_bytes,
                  .filename = &filename,
                  .last_modified = object_info->metadata->last_modified,
-                 .etag = &(object_info->metadata->etag)},
+                 .etag = &(object_info->metadata->etag),
+                 .delta_lake_version = delta_lake_version},
                 read_context);
 
 #if USE_PARQUET && USE_AWS_S3
