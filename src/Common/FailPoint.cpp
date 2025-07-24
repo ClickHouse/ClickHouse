@@ -13,7 +13,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
 };
 
 #if USE_LIBFIU
@@ -165,7 +165,7 @@ void FailPointInjection::enablePauseFailPoint(const String & fail_point_name, UI
 #undef PAUSEABLE_ONCE
 #undef PAUSEABLE
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find fail point {}", fail_point_name);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
 }
 
 void FailPointInjection::pauseFailPoint(const String & fail_point_name)
@@ -200,7 +200,7 @@ void FailPointInjection::enableFailPoint(const String & fail_point_name)
 #undef PAUSEABLE
 
 #endif
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find fail point {}", fail_point_name);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
 }
 
 void FailPointInjection::disableFailPoint(const String & fail_point_name)
@@ -221,7 +221,7 @@ void FailPointInjection::wait(const String & fail_point_name)
     std::unique_lock lock(mu);
     auto iter = fail_point_wait_channels.find(fail_point_name);
     if (iter == fail_point_wait_channels.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not find channel for fail point {}", fail_point_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find channel for fail point {}", fail_point_name);
 
     lock.unlock();
     auto ptr = iter->second;

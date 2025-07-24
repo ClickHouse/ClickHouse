@@ -625,11 +625,11 @@ jobs:
             python3 -m praktika run 'Compatibility check (aarch64)' --workflow "BackportPR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_amd_asan_distributed_plan_1_2:
+  stateless_tests_amd_asan_distributed_plan_parallel_1_2:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgMS8yKQ==') }}
-    name: "Stateless tests (amd_asan, distributed plan, 1/2)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgcGFyYWxsZWwsIDEvMik=') }}
+    name: "Stateless tests (amd_asan, distributed plan, parallel, 1/2)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -658,16 +658,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, 1/2)' --workflow "BackportPR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 1/2)' --workflow "BackportPR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, 1/2)' --workflow "BackportPR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 1/2)' --workflow "BackportPR" --ci |& tee ./ci/tmp/job.log
           fi
 
-  stateless_tests_amd_asan_distributed_plan_2_2:
+  stateless_tests_amd_asan_distributed_plan_parallel_2_2:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgMi8yKQ==') }}
-    name: "Stateless tests (amd_asan, distributed plan, 2/2)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgcGFyYWxsZWwsIDIvMik=') }}
+    name: "Stateless tests (amd_asan, distributed plan, parallel, 2/2)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -696,9 +696,47 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, 2/2)' --workflow "BackportPR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 2/2)' --workflow "BackportPR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, 2/2)' --workflow "BackportPR" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 2/2)' --workflow "BackportPR" --ci |& tee ./ci/tmp/job.log
+          fi
+
+  stateless_tests_amd_asan_distributed_plan_sequential:
+    runs-on: [self-hosted, func-tester]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgc2VxdWVudGlhbCk=') }}
+    name: "Stateless tests (amd_asan, distributed plan, sequential)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+          cat > ./ci/tmp/workflow_config_backportpr.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, sequential)' --workflow "BackportPR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, sequential)' --workflow "BackportPR" --ci |& tee ./ci/tmp/job.log
           fi
 
   stress_test_amd_tsan:
@@ -1197,7 +1235,7 @@ jobs:
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_arm_release, build_amd_darwin, build_arm_darwin, docker_server_image, docker_keeper_image, install_packages_release, install_packages_aarch64, compatibility_check_release, compatibility_check_aarch64, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, stress_test_amd_tsan, integration_tests_asan_old_analyzer_1_6, integration_tests_asan_old_analyzer_2_6, integration_tests_asan_old_analyzer_3_6, integration_tests_asan_old_analyzer_4_6, integration_tests_asan_old_analyzer_5_6, integration_tests_asan_old_analyzer_6_6, integration_tests_tsan_1_6, integration_tests_tsan_2_6, integration_tests_tsan_3_6, integration_tests_tsan_4_6, integration_tests_tsan_5_6, integration_tests_tsan_6_6]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_arm_release, build_amd_darwin, build_arm_darwin, docker_server_image, docker_keeper_image, install_packages_release, install_packages_aarch64, compatibility_check_release, compatibility_check_aarch64, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stateless_tests_amd_asan_distributed_plan_sequential, stress_test_amd_tsan, integration_tests_asan_old_analyzer_1_6, integration_tests_asan_old_analyzer_2_6, integration_tests_asan_old_analyzer_3_6, integration_tests_asan_old_analyzer_4_6, integration_tests_asan_old_analyzer_5_6, integration_tests_asan_old_analyzer_6_6, integration_tests_tsan_1_6, integration_tests_tsan_2_6, integration_tests_tsan_3_6, integration_tests_tsan_4_6, integration_tests_tsan_5_6, integration_tests_tsan_6_6]
     if: ${{ !cancelled() }}
     name: "Finish Workflow"
     outputs:

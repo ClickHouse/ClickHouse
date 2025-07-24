@@ -2152,7 +2152,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
 
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
-    if (!settings[Setting::query_plan_use_new_logical_join_step] || settings[Setting::allow_experimental_parallel_reading_from_replicas])
+    if (!settings[Setting::query_plan_use_new_logical_join_step])
         return buildQueryPlanForJoinNodeLegacy(
             join_table_expression, std::move(left_join_tree_query_plan), std::move(right_join_tree_query_plan), outer_scope_columns, planner_context, select_query_info);
 

@@ -272,9 +272,7 @@ struct ScatteredBlock : private boost::noncopyable
             return;
         }
         else if (matched_rows.size() == rows())
-        {
             return;
-        }
 
         IndexesPtr new_selector = Indexes::create(matched_rows.size());
         auto & data = new_selector->getData();
