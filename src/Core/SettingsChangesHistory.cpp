@@ -54,6 +54,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"azure_sdk_use_native_client", false, true, "New setting"},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
             {"vector_search_with_rescoring", true, true, "New setting."},
+            {"enable_add_distinct_to_in_subqueries", false, true, "New setting to reduce the size of temporary tables transferred for distributed IN subqueries."},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
