@@ -513,6 +513,8 @@ std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
 
 std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
 {
+    if (getQuota() == nullptr) /// Detected by fuzzer
+        return {};
     return getQuota()->getUsage();
 }
 
