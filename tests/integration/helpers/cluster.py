@@ -526,6 +526,7 @@ class ClickHouseCluster:
         self.with_postgres = False
         self.with_postgres_cluster = False
         self.with_postgresql_java_client = False
+        self.with_mysql_dotnet_client = False
         self.with_kafka = False
         self.with_kafka_sasl = False
         self.with_kerberized_kafka = False
@@ -1242,6 +1243,25 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_postgresql_java_client.yml"),
         )
 
+    def setup_mysql_dotnet_client_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        self.with_mysql_dotnet_client = True
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir, "docker_compose_mysql_dotnet_client.yml"
+                ),
+            ]
+        )
+        self.base_mysql_dotnet_client_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_mysql_dotnet_client.yml"),
+        )
+
     def setup_kafka_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_kafka = True
         env_variables["KAFKA_HOST"] = self.kafka_host
@@ -1643,6 +1663,7 @@ class ClickHouseCluster:
         with_postgres=False,
         with_postgres_cluster=False,
         with_postgresql_java_client=False,
+        with_mysql_dotnet_client=False,
         clickhouse_log_file=CLICKHOUSE_LOG_FILE,
         clickhouse_error_log_file=CLICKHOUSE_ERROR_LOG_FILE,
         with_mongo=False,
@@ -1801,6 +1822,7 @@ class ClickHouseCluster:
             with_postgres=with_postgres,
             with_postgres_cluster=with_postgres_cluster,
             with_postgresql_java_client=with_postgresql_java_client,
+            with_mysql_dotnet_client=with_mysql_dotnet_client,
             clickhouse_start_command=clickhouse_start_command,
             clickhouse_start_extra_args=extra_args,
             main_config_name=main_config_name,
@@ -1899,6 +1921,13 @@ class ClickHouseCluster:
         if with_postgresql_java_client and not self.with_postgresql_java_client:
             cmds.append(
                 self.setup_postgresql_java_client_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+        
+        if with_mysql_dotnet_client and not self.with_mysql_dotnet_client:
+            cmds.append(
+                self.setup_mysql_dotnet_client_cmd(
                     instance, env_variables, docker_compose_yml_dir
                 )
             )
@@ -3146,6 +3175,17 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.wait_postgresql_java_client()
 
+            if (
+                self.with_mysql_dotnet_client
+                and self.base_mysql_dotnet_client_cmd
+            ):
+                logging.debug("Setup MySQL C# Client")
+                subprocess_check_call(
+                    self.base_mysql_dotnet_client_cmd + common_opts
+                )
+                self.up_called = True
+                self.wait_mysql_dotnet_client()
+
             if self.with_kafka and self.base_kafka_cmd:
                 logging.debug("Setup Kafka")
                 os.mkdir(self.kafka_dir)
@@ -3706,6 +3746,7 @@ class ClickHouseInstance:
         with_postgres,
         with_postgres_cluster,
         with_postgresql_java_client,
+        with_mysql_java_client,
         clickhouse_start_command=CLICKHOUSE_START_COMMAND,
         clickhouse_start_extra_args="",
         main_config_name="config.xml",
@@ -3780,6 +3821,7 @@ class ClickHouseInstance:
         self.with_postgres = with_postgres
         self.with_postgres_cluster = with_postgres_cluster
         self.with_postgresql_java_client = with_postgresql_java_client
+        self.with_mysql_dotnet_client = with_mysql_dotnet_client
         self.with_kafka = with_kafka
         self.with_kafka_sasl = with_kafka_sasl
         self.with_kerberized_kafka = with_kerberized_kafka
