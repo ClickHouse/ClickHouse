@@ -3,6 +3,7 @@
 #include <optional>
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #endif
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
@@ -275,7 +276,7 @@ Chunk StorageObjectStorageSource::generate()
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
             if (configuration->isDataLakeConfiguration())
             {
-                if (auto * delta_metadata = dynamic_cast<const DeltaLakeMetadataDeltaKernel*>(configuration->getExternalMetadata()))
+                if (const auto * delta_metadata = dynamic_cast<const DeltaLakeMetadataDeltaKernel*>(configuration->getExternalMetadata()))
                 {
                     if (auto table_snapshot = delta_metadata->getTableSnapshot())
                         delta_lake_version = table_snapshot->getVersion();
