@@ -211,7 +211,7 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
             // return &dag.addCast(*e, result_type, {});
             const auto & casted = dag.addCast(*arg, result_type, {});
             changed_types[arg->result_name] = &dag.addAlias(casted, arg->result_name);
-            return &casted;
+            return arg;
         };
 
         for (const auto & inner_column : inner_columns)

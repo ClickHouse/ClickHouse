@@ -783,11 +783,14 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             auto left_rels = entry->left->relations;
             auto right_rels = entry->right->relations;
 
-            bool has_prepared_storage = bool(typeid_cast<const JoinStepLogicalLookup *>(right_child_node->step.get()));
+            bool has_prepared_storage_at_right = bool(typeid_cast<const JoinStepLogicalLookup *>(right_child_node->step.get()));
+            bool has_prepared_storage_at_left = bool(typeid_cast<const JoinStepLogicalLookup *>(left_child_node->step.get()));
 
-            bool flip_join = !has_prepared_storage && optimization_settings.join_swap_table.has_value()
+            bool swap_on_sizes = optimization_settings.join_swap_table.has_value()
                 ? optimization_settings.join_swap_table.value()
                 : entry->join_method == JoinMethod::Hash && entry->left->estimated_rows < entry->right->estimated_rows;
+
+            bool flip_join = has_prepared_storage_at_left || (!has_prepared_storage_at_right && swap_on_sizes);
 
             if (flip_join)
             {

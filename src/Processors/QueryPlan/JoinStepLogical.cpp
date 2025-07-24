@@ -398,7 +398,7 @@ void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & ri
     if (!left_type->equals(*common_type))
         left_node = JoinActionRef::transform({left_node}, cast_transform);
 
-    if (!right_type->equals(*common_type))
+    if (!right_type->equals(*removeNullableOrLowCardinalityNullable(common_type)))
         right_node = JoinActionRef::transform({right_node}, cast_transform);
 }
 
