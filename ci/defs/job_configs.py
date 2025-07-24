@@ -91,12 +91,12 @@ class JobConfigs:
         digest_config=build_digest_config,
     ).parametrize(
         [
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.AMD_TIDY,
                 provides=[],
                 runs_on=RunnerLabels.BUILDER_AMD,
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.ARM_TIDY,
                 provides=[],
                 runs_on=RunnerLabels.BUILDER_ARM,
@@ -118,12 +118,12 @@ class JobConfigs:
         ],
     ).parametrize(
         [
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.AMD_DEBUG,
                 provides=[ArtifactNames.CH_AMD_DEBUG, ArtifactNames.DEB_AMD_DEBUG],
                 runs_on=RunnerLabels.BUILDER_AMD,
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.AMD_RELEASE,
                 provides=[
                     ArtifactNames.CH_AMD_RELEASE,
@@ -133,7 +133,7 @@ class JobConfigs:
                 ],
                 runs_on=RunnerLabels.BUILDER_AMD,
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.AMD_ASAN,
                 provides=[
                     ArtifactNames.CH_AMD_ASAN,
@@ -142,7 +142,7 @@ class JobConfigs:
                 ],
                 runs_on=RunnerLabels.BUILDER_AMD,
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.AMD_TSAN,
                 provides=[
                     ArtifactNames.CH_AMD_TSAN,
@@ -151,7 +151,7 @@ class JobConfigs:
                 ],
                 runs_on=RunnerLabels.BUILDER_AMD,
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.AMD_MSAN,
                 provides=[
                     ArtifactNames.CH_AMD_MSAN,
@@ -160,7 +160,7 @@ class JobConfigs:
                 ],
                 runs_on=RunnerLabels.BUILDER_AMD,
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.AMD_UBSAN,
                 provides=[
                     ArtifactNames.CH_AMD_UBSAN,
@@ -169,12 +169,12 @@ class JobConfigs:
                 ],
                 runs_on=RunnerLabels.BUILDER_AMD,
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.AMD_BINARY,
                 provides=[ArtifactNames.CH_AMD_BINARY],
                 runs_on=RunnerLabels.BUILDER_AMD,
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.ARM_RELEASE,
                 provides=[
                     ArtifactNames.CH_ARM_RELEASE,
@@ -184,7 +184,7 @@ class JobConfigs:
                 ],
                 runs_on=RunnerLabels.BUILDER_ARM,
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.ARM_ASAN,
                 provides=[
                     ArtifactNames.CH_ARM_ASAN,
@@ -192,7 +192,7 @@ class JobConfigs:
                 ],
                 runs_on=RunnerLabels.BUILDER_ARM,
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.ARM_COVERAGE,
                 provides=[
                     ArtifactNames.DEB_COV,
@@ -200,7 +200,7 @@ class JobConfigs:
                 ],
                 runs_on=RunnerLabels.BUILDER_ARM,
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.ARM_BINARY,
                 provides=[ArtifactNames.CH_ARM_BINARY],
                 runs_on=RunnerLabels.BUILDER_ARM,
@@ -222,57 +222,57 @@ class JobConfigs:
         ],
     ).parametrize(
         [
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.AMD_DARWIN,
                 provides=[ArtifactNames.CH_AMD_DARWIN_BIN],
                 runs_on=RunnerLabels.BUILDER_AMD,
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.ARM_DARWIN,
                 provides=[ArtifactNames.CH_ARM_DARWIN_BIN],
                 runs_on=RunnerLabels.BUILDER_ARM,
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.ARM_V80COMPAT,
                 provides=[ArtifactNames.CH_ARM_V80COMPAT],
                 runs_on=RunnerLabels.BUILDER_ARM,
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.AMD_FREEBSD,
                 provides=[ArtifactNames.CH_AMD_FREEBSD],
                 runs_on=RunnerLabels.BUILDER_AMD,
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.PPC64LE,
                 provides=[ArtifactNames.CH_PPC64LE],
                 runs_on=RunnerLabels.BUILDER_ARM,
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.AMD_COMPAT,
                 provides=[ArtifactNames.CH_AMD_COMPAT],
                 runs_on=RunnerLabels.BUILDER_AMD,
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.AMD_MUSL,
                 provides=[ArtifactNames.CH_AMD_MUSL],
                 runs_on=RunnerLabels.BUILDER_AMD,
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.RISCV64,
                 provides=[ArtifactNames.CH_RISCV64],
                 runs_on=RunnerLabels.BUILDER_ARM,
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.S390X,
                 provides=[ArtifactNames.CH_S390X],
                 runs_on=RunnerLabels.BUILDER_AMD,
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.LOONGARCH64,
                 provides=[ArtifactNames.CH_LOONGARCH64],
                 runs_on=RunnerLabels.BUILDER_ARM,
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.FUZZERS,
                 provides=[],
                 runs_on=RunnerLabels.BUILDER_ARM,
@@ -290,12 +290,12 @@ class JobConfigs:
         timeout=900,
     ).parametrize(
         [
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="release",
                 runs_on=RunnerLabels.STYLE_CHECK_AMD,
                 requires=["Build (amd_release)"],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="aarch64",
                 runs_on=RunnerLabels.STYLE_CHECK_ARM,
                 requires=["Build (arm_release)"],
@@ -304,7 +304,7 @@ class JobConfigs:
     )
     stateless_tests_flaky_pr_jobs = common_ft_job_config.parametrize(
         [
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_asan, flaky check",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_ASAN],
@@ -330,130 +330,136 @@ class JobConfigs:
     )
     functional_tests_jobs = common_ft_job_config.parametrize(
         [
-            *Job.create_batches(
-                Job.Parameter(
-                    parameter=f"amd_asan, distributed plan, parallel",
+            *[
+                Job.ParamSet(
+                    parameter=f"amd_asan, distributed plan, parallel, {batch}/{total_batches}",
                     runs_on=RunnerLabels.FUNC_TESTER_AMD,
                     requires=[ArtifactNames.CH_AMD_ASAN],
-                ),
-                batch_count=2,
-            ),
-            Job.Parameter(
+                )
+                for total_batches in (2,)
+                for batch in range(1, total_batches + 1)
+            ],
+            Job.ParamSet(
                 parameter="amd_asan, distributed plan, sequential",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_ASAN],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_binary, old analyzer, s3 storage, DatabaseReplicated, parallel",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_BINARY],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_binary, old analyzer, s3 storage, DatabaseReplicated, sequential",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_BINARY],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_binary, ParallelReplicas, s3 storage, parallel",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_BINARY],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_binary, ParallelReplicas, s3 storage, sequential",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_BINARY],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_debug, AsyncInsert, s3 storage, parallel",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_DEBUG],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_debug, AsyncInsert, s3 storage, sequential",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_DEBUG],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_debug, parallel",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_DEBUG],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_debug, sequential",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_DEBUG],
             ),
-            *Job.create_batches(
-                Job.Parameter(
-                    parameter="amd_tsan, parallel",
+            *[
+                Job.ParamSet(
+                    parameter=f"amd_tsan, parallel, {batch}/{total_batches}",
                     runs_on=RunnerLabels.FUNC_TESTER_AMD,
                     requires=[ArtifactNames.CH_AMD_TSAN],
-                ),
-                batch_count=2,
-            ),
-            *Job.create_batches(
-                Job.Parameter(
-                    parameter="amd_tsan, sequential",
+                )
+                for total_batches in (2,)
+                for batch in range(1, total_batches + 1)
+            ],
+            *[
+                Job.ParamSet(
+                    parameter=f"amd_tsan, sequential, {batch}/{total_batches}",
                     runs_on=RunnerLabels.FUNC_TESTER_AMD,
                     requires=[ArtifactNames.CH_AMD_TSAN],
-                ),
-                batch_count=2,
-            ),
-            *Job.create_batches(
-                Job.Parameter(
-                    parameter="amd_msan, parallel",
+                )
+                for total_batches in (2,)
+                for batch in range(1, total_batches + 1)
+            ],
+            *[
+                Job.ParamSet(
+                    parameter=f"amd_msan, parallel, {batch}/{total_batches}",
                     runs_on=RunnerLabels.FUNC_TESTER_AMD,
                     requires=[ArtifactNames.CH_AMD_MSAN],
-                ),
-                batch_count=2,
-            ),
-            *Job.create_batches(
-                Job.Parameter(
-                    parameter="amd_msan, sequential",
+                )
+                for total_batches in (2,)
+                for batch in range(1, total_batches + 1)
+            ],
+            *[
+                Job.ParamSet(
+                    parameter=f"amd_msan, sequential, {batch}/{total_batches}",
                     runs_on=RunnerLabels.FUNC_TESTER_AMD,
                     requires=[ArtifactNames.CH_AMD_MSAN],
-                ),
-                batch_count=2,
-            ),
-            Job.Parameter(
+                )
+                for total_batches in (2,)
+                for batch in range(1, total_batches + 1)
+            ],
+            Job.ParamSet(
                 parameter="amd_ubsan, parallel",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_UBSAN],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_ubsan, sequential",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_UBSAN],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_debug, distributed plan, s3 storage, parallel",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_DEBUG],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_debug, distributed plan, s3 storage, sequential",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_DEBUG],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_tsan, s3 storage, parallel",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_TSAN],
             ),
-            *Job.create_batches(
-                Job.Parameter(
-                    parameter="amd_tsan, s3 storage, sequential",
+            *[
+                Job.ParamSet(
+                    parameter=f"amd_tsan, s3 storage, sequential, {batch}/{total_batches}",
                     runs_on=RunnerLabels.FUNC_TESTER_AMD,
                     requires=[ArtifactNames.CH_AMD_TSAN],
-                ),
-                batch_count=2,
-            ),
-            Job.Parameter(
+                )
+                for total_batches in (2,)
+                for batch in range(1, total_batches + 1)
+            ],
+            Job.ParamSet(
                 parameter="arm_binary, parallel",
                 runs_on=RunnerLabels.FUNC_TESTER_ARM,
                 requires=[ArtifactNames.CH_ARM_BINARY],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="arm_binary, sequential",
                 runs_on=RunnerLabels.FUNC_TESTER_ARM,
                 requires=[ArtifactNames.CH_ARM_BINARY],
@@ -463,24 +469,25 @@ class JobConfigs:
     functional_tests_jobs_coverage = common_ft_job_config.set_allow_merge_on_failure(
         True
     ).parametrize(
-        Job.create_batches(
-            Job.Parameter(
-                parameter="amd_coverage",
+        [
+            Job.ParamSet(
+                parameter=f"amd_coverage, {batch}/{total_batches}",
                 runs_on=RunnerLabels.FUNC_TESTER_ARM,
                 requires=[ArtifactNames.CH_COV_BIN],
-            ),
-            batch_count=6,
-        )
+            )
+            for total_batches in (6,)
+            for batch in range(1, total_batches + 1)
+        ]
     )
     functional_tests_jobs_azure_master_only = (
         common_ft_job_config.set_allow_merge_on_failure(True).parametrize(
             [
-                Job.Parameter(
+                Job.ParamSet(
                     parameter="arm_asan, azure, parallel",
                     runs_on=RunnerLabels.FUNC_TESTER_ARM,
                     requires=[ArtifactNames.CH_ARM_ASAN],
                 ),
-                Job.Parameter(
+                Job.ParamSet(
                     parameter="arm_asan, azure, sequential",
                     runs_on=RunnerLabels.FUNC_TESTER_ARM,
                     requires=[ArtifactNames.CH_ARM_ASAN],
@@ -504,22 +511,22 @@ class JobConfigs:
         ),
     ).parametrize(
         [
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="asan",
                 runs_on=RunnerLabels.BUILDER_AMD,
                 requires=[ArtifactNames.UNITTEST_AMD_ASAN],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="tsan",
                 runs_on=RunnerLabels.BUILDER_AMD,
                 requires=[ArtifactNames.UNITTEST_AMD_TSAN],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="msan",
                 runs_on=RunnerLabels.BUILDER_AMD,
                 requires=[ArtifactNames.UNITTEST_AMD_MSAN],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="ubsan",
                 runs_on=RunnerLabels.BUILDER_AMD,
                 requires=[ArtifactNames.UNITTEST_AMD_UBSAN],
@@ -545,27 +552,27 @@ class JobConfigs:
         allow_merge_on_failure=True,
     ).parametrize(
         [
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_debug",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=["Build (amd_debug)"],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_tsan",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=["Build (amd_tsan)"],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="arm_asan",
                 runs_on=RunnerLabels.FUNC_TESTER_ARM,
                 requires=["Build (arm_asan)"],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_ubsan",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=["Build (amd_ubsan)"],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_msan",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=["Build (amd_msan)"],
@@ -590,12 +597,12 @@ class JobConfigs:
         allow_merge_on_failure=True,
     ).parametrize(
         [
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="azure, tsan",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=["Build (amd_tsan)"],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="azure, msan",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=["Build (amd_msan)"],
@@ -617,22 +624,22 @@ class JobConfigs:
         allow_merge_on_failure=True,
     ).parametrize(
         [
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_asan",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=["Build (amd_asan)"],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_tsan",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=["Build (amd_tsan)"],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_msan",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=["Build (amd_msan)"],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_debug",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=["Build (amd_debug)"],
@@ -653,14 +660,13 @@ class JobConfigs:
             ],
         ),
     ).parametrize(
-        Job.create_batches(
-            Job.Parameter(
-                parameter=f"asan",
-                runs_on=RunnerLabels.FUNC_TESTER_AMD,
-                requires=["Build (amd_asan)"],
-            ),
-            batch_count=4,
+        Job.ParamSet(
+            parameter=f"asan, {batch}/{total_batches}",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=["Build (amd_asan)"],
         )
+        for total_batches in (4,)
+        for batch in range(1, total_batches + 1)
     )
     integration_test_jobs_required = Job.Config(
         name=JobNames.INTEGRATION,
@@ -675,30 +681,35 @@ class JobConfigs:
             ],
         ),
     ).parametrize(
-        Job.create_batches(
-            Job.Parameter(
-                parameter="asan, old analyzer",
-                runs_on=RunnerLabels.FUNC_TESTER_AMD,
-                requires=["Build (amd_asan)"],
-            ),
-            batch_count=6,
-        )
-        + Job.create_batches(
-            Job.Parameter(
-                parameter="release",
-                runs_on=RunnerLabels.FUNC_TESTER_AMD,
-                requires=["Build (amd_release)"],
-            ),
-            batch_count=4,
-        )
-        + Job.create_batches(
-            Job.Parameter(
-                parameter="aarch64, distributed plan",
-                runs_on=RunnerLabels.FUNC_TESTER_ARM,
-                requires=["Build (arm_release)"],
-            ),
-            batch_count=4,
-        )
+        [
+            *[
+                Job.ParamSet(
+                    parameter=f"asan, old analyzer, {batch}/{total_batches}",
+                    runs_on=RunnerLabels.FUNC_TESTER_AMD,
+                    requires=["Build (amd_asan)"],
+                )
+                for total_batches in (6,)
+                for batch in range(1, total_batches + 1)
+            ],
+            *[
+                Job.ParamSet(
+                    parameter=f"release, {batch}/{total_batches}",
+                    runs_on=RunnerLabels.FUNC_TESTER_AMD,
+                    requires=["Build (amd_release)"],
+                )
+                for total_batches in (4,)
+                for batch in range(1, total_batches + 1)
+            ],
+            *[
+                Job.ParamSet(
+                    parameter=f"aarch64, distributed plan, {batch}/{total_batches}",
+                    runs_on=RunnerLabels.FUNC_TESTER_ARM,
+                    requires=["Build (arm_release)"],
+                )
+                for total_batches in (4,)
+                for batch in range(1, total_batches + 1)
+            ],
+        ]
     )
     integration_test_jobs_non_required = Job.Config(
         name=JobNames.INTEGRATION,
@@ -714,14 +725,15 @@ class JobConfigs:
         ),
         allow_merge_on_failure=True,
     ).parametrize(
-        Job.create_batches(
-            Job.Parameter(
-                parameter="tsan",
+        [
+            Job.ParamSet(
+                parameter=f"tsan, {batch}/{total_batches}",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=["Build (amd_tsan)"],
-            ),
-            batch_count=6,
-        ),
+            )
+            for total_batches in (6,)
+            for batch in range(1, total_batches + 1)
+        ]
     )
     integration_test_asan_flaky_pr_job = Job.Config(
         name=JobNames.INTEGRATION + " (asan, flaky check)",
@@ -749,12 +761,12 @@ class JobConfigs:
         ),
     ).parametrize(
         [
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="release",
                 runs_on=RunnerLabels.STYLE_CHECK_AMD,
                 requires=["Build (amd_release)"],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="aarch64",
                 runs_on=RunnerLabels.STYLE_CHECK_ARM,
                 requires=["Build (arm_release)"],
@@ -777,27 +789,27 @@ class JobConfigs:
         allow_merge_on_failure=True,
     ).parametrize(
         [
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_debug",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_DEBUG],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="arm_asan",
                 runs_on=RunnerLabels.FUNC_TESTER_ARM,
                 requires=[ArtifactNames.CH_ARM_ASAN],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_tsan",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_TSAN],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_msan",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_MSAN],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_ubsan",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_UBSAN],
@@ -818,27 +830,27 @@ class JobConfigs:
         allow_merge_on_failure=True,
     ).parametrize(
         [
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_debug",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_DEBUG],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="arm_asan",
                 runs_on=RunnerLabels.FUNC_TESTER_ARM,
                 requires=[ArtifactNames.CH_ARM_ASAN],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_tsan",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_TSAN],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_msan",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_MSAN],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_ubsan",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_UBSAN],
@@ -862,22 +874,26 @@ class JobConfigs:
         timeout=2 * 3600,
         result_name_for_cidb="Tests",
     ).parametrize(
-        Job.create_batches(
-            Job.Parameter(
-                parameter="amd_release, master_head",
-                runs_on=RunnerLabels.FUNC_TESTER_AMD,
-                requires=[ArtifactNames.CH_AMD_RELEASE],
-            ),
-            batch_count=3,
-        )
-        + Job.create_batches(
-            Job.Parameter(
-                parameter="arm_release, master_head",
-                runs_on=RunnerLabels.FUNC_TESTER_ARM,
-                requires=[ArtifactNames.CH_ARM_RELEASE],
-            ),
-            batch_count=3,
-        )
+        [
+            *[
+                Job.ParamSet(
+                    parameter=f"amd_release, master_head, {batch}/{total_batches}",
+                    runs_on=RunnerLabels.FUNC_TESTER_AMD,
+                    requires=[ArtifactNames.CH_AMD_RELEASE],
+                )
+                for total_batches in (3,)
+                for batch in range(1, total_batches + 1)
+            ],
+            *[
+                Job.ParamSet(
+                    parameter=f"arm_release, master_head, {batch}/{total_batches}",
+                    runs_on=RunnerLabels.FUNC_TESTER_ARM,
+                    requires=[ArtifactNames.CH_ARM_RELEASE],
+                )
+                for total_batches in (3,)
+                for batch in range(1, total_batches + 1)
+            ],
+        ]
     )
     performance_comparison_with_release_base_jobs = Job.Config(
         name=JobNames.PERFORMANCE,
@@ -896,14 +912,13 @@ class JobConfigs:
         timeout=2 * 3600,
         result_name_for_cidb="Tests",
     ).parametrize(
-        Job.create_batches(
-            Job.Parameter(
-                parameter="arm_release, release_base",
-                runs_on=RunnerLabels.FUNC_TESTER_ARM,
-                requires=[ArtifactNames.CH_ARM_RELEASE],
-            ),
-            batch_count=3,
+        Job.ParamSet(
+            parameter=f"arm_release, release_base, {batch}/{total_batches}",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=[ArtifactNames.CH_ARM_RELEASE],
         )
+        for total_batches in (3,)
+        for batch in range(1, total_batches + 1)
     )
     clickbench_master_jobs = Job.Config(
         name=JobNames.CLICKBENCH,
@@ -919,12 +934,12 @@ class JobConfigs:
         run_in_docker="clickhouse/stateless-test+--shm-size=16g+--network=host",
     ).parametrize(
         [
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.AMD_RELEASE,
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_RELEASE],
             ),
-            Job.Parameter(
+            Job.ParamSet(
                 parameter=BuildTypes.ARM_RELEASE,
                 runs_on=RunnerLabels.FUNC_TESTER_ARM,
                 requires=[ArtifactNames.CH_ARM_RELEASE],
@@ -986,7 +1001,7 @@ class JobConfigs:
         timeout=3600,
     ).parametrize(
         [
-            Job.Parameter(
+            Job.ParamSet(
                 parameter="amd_debug",
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_DEBUG],

@@ -23,7 +23,7 @@ class Job:
         with_git_submodules: bool = False
 
     @dataclass
-    class Parameter:
+    class ParamSet:
         parameter: Optional[Any] = None
         runs_on: Optional[List[str]] = None
         provides: Optional[List[str]] = None
@@ -36,18 +36,6 @@ class Job:
             yield self.provides
             yield self.requires
             yield self.timeout
-
-    def create_batches(parameter: "Job.Parameter", batch_count: int):
-        return [
-            Job.Parameter(
-                parameter=f"{parameter.parameter}, {i+1}/{batch_count}",
-                runs_on=parameter.runs_on,
-                provides=parameter.provides,
-                requires=parameter.requires,
-                timeout=parameter.timeout,
-            )
-            for i in range(batch_count)
-        ]
 
     @dataclass
     class Config:
@@ -90,7 +78,7 @@ class Job:
         # List of commands to call upon job completion
         post_hooks: List[str] = field(default_factory=list)
 
-        def parametrize(self, parameters: List["Job.Parameter"]):
+        def parametrize(self, parameters: List["Job.ParamSet"]):
             print(parameters)
             res = []
             for parameter_, runs_on_, provides_, requires_, timeout_ in parameters:
