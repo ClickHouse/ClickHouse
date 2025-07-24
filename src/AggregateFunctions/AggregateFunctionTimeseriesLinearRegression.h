@@ -150,7 +150,14 @@ private:
         // The following least-square linear regression logic is copied from Prometheus:
         // https://github.com/prometheus/prometheus/blob/9a0bbb60bc3eb68d045aae7535d34f4d02b959f1/promql/functions.go#L1209
         const TimestampType intercept_time = is_predict ? current_timestamp : first_timestamp;
-        Float64 sum_x = 0, c_x = 0, sum_y = 0, c_y = 0, sum_xy = 0, c_xy = 0, sum_xx = 0, c_xx = 0;
+        Float64 sum_x = 0;
+        Float64 c_x = 0;
+        Float64 sum_y = 0;
+        Float64 c_y = 0;
+        Float64 sum_xy = 0;
+        Float64 c_xy = 0;
+        Float64 sum_xx = 0;
+        Float64 c_xx = 0;
 
         for (const auto& sample : samples_in_window)
         {
