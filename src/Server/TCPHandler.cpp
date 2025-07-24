@@ -2674,6 +2674,7 @@ void TCPHandler::updateProgress(QueryState & state, const Progress & value)
 
 void TCPHandler::sendProgress(QueryState & state)
 {
+    LOG_DEBUG(log, "Sending progress at\n{}", StackTrace().toString());
     writeVarUInt(Protocol::Server::Progress, *out);
     auto increment = state.progress.fetchValuesAndResetPiecewiseAtomically();
     UInt64 current_elapsed_ns = state.watch.elapsedNanoseconds();
