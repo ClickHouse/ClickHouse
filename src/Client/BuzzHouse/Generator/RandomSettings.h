@@ -101,6 +101,14 @@ const std::unordered_map<String, CHSetting> distributedTableSettings
        {"fsync_directories", CHSetting(trueOrFalse, {}, false)},
        {"skip_unavailable_shards", CHSetting(trueOrFalse, {}, false)}};
 
+const std::unordered_map<String, CHSetting> icebergSettings
+    = {{"allow_dynamic_metadata_for_data_lakes", CHSetting(trueOrFalse, {}, false)},
+       {"iceberg_use_version_hint", CHSetting(trueOrFalse, {}, false)}};
+
+const std::unordered_map<String, CHSetting> dataLakeSettings
+    = {{"allow_dynamic_metadata_for_data_lakes", CHSetting(trueOrFalse, {}, false)},
+       {"allow_experimental_delta_kernel_rs", CHSetting(trueOrFalse, {}, false)}};
+
 extern std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings;
 
 const std::unordered_map<String, CHSetting> mergeTreeColumnSettings
