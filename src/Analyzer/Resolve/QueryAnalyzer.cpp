@@ -2831,8 +2831,6 @@ ConstantNodePtr getConstantResultFromFunctionArgs(const QueryTreeNodePtr & node,
 }
 }
 
-
-
 /** Resolve function node in scope.
   * During function node resolve, function node can be replaced with another expression (if it match lambda or sql user defined function),
   * with constant (if it allow constant folding), or with expression list. It is caller responsibility to handle such cases appropriately.
