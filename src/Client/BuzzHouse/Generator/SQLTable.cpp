@@ -1247,11 +1247,6 @@ void StatementGenerator::generateEngineDetails(
                 te->add_params()->set_svalue(b.file_comp);
             }
         }
-        /// Optional PARTITION BY
-        if ((b.isAnyIcebergEngine() || b.isAnyDeltaLakeEngine() || b.isAzureEngine() || b.isS3Engine()) && rg.nextSmallNumber() < 5)
-        {
-            generateTableKey(rg, rel, b.teng, false, te->mutable_partition_by());
-        }
     }
     if (te->has_engine() && (b.isJoinEngine() || b.isSetEngine()) && allow_shared_tbl && rg.nextSmallNumber() < 5)
     {
@@ -1262,6 +1257,14 @@ void StatementGenerator::generateEngineDetails(
         && add_pkey && !entries.empty())
     {
         colRefOrExpression(rg, rel, b.teng, rg.pickRandomly(entries), te->mutable_primary_key()->add_exprs()->mutable_expr());
+    }
+    if (te->has_engine()
+        && (b.isRedisEngine() || b.isKeeperMapEngine() || b.isMaterializedPostgreSQLEngine() || b.isAnyIcebergEngine() || b.isAzureEngine()
+            || b.isS3Engine())
+        && rg.nextSmallNumber() < 5)
+    {
+        /// Optional PARTITION BY
+        generateTableKey(rg, rel, b.teng, false, te->mutable_partition_by());
     }
     if (te->has_engine())
     {
