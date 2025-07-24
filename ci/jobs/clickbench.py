@@ -19,7 +19,7 @@ def main():
             return (
                 ch.install()
                 and ch.clickbench_config_tweaks()
-                and ch.create_log_export_config()
+                # and ch.create_log_export_config()
             )
 
         results.append(

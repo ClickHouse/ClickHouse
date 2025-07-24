@@ -425,6 +425,11 @@ class JobConfigs:
     )
     functional_tests_jobs_azure_master_only = (
         common_ft_job_config.set_allow_merge_on_failure(True).parametrize(
+            runs_on=[
+                RunnerLabels.FUNC_TESTER_ARM,
+                RunnerLabels.FUNC_TESTER_ARM,
+                RunnerLabels.FUNC_TESTER_ARM,
+            ],
             parameter=[
                 "azure, arm_asan, 1/3",
                 "azure, arm_asan, 2/3",
