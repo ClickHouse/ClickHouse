@@ -1126,8 +1126,8 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
     if (getDataPartStorage().existsFile(METADATA_VERSION_FILE_NAME))
         result.emplace(METADATA_VERSION_FILE_NAME);
 
-    if (getDataPartStorage().existsFile(COLUMNS_SUBSTREAMS_FILE_NAME))
-        result.emplace(COLUMNS_SUBSTREAMS_FILE_NAME);
+    if (part_type == MergeTreeDataPartType::Compact && index_granularity_info.mark_type.with_substreams)
+        result.emplace("columns_substreams.txt");
 
     return result;
 }
@@ -1722,28 +1722,19 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     setColumns(loaded_columns, infos, *loaded_metadata_version);
 }
 
-void IMergeTreeDataPart::setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_)
-{
-    columns_substreams_.validateColumns(getColumns().getNames());
-    columns_substreams = columns_substreams_;
-}
-
 void IMergeTreeDataPart::loadColumnsSubstreams()
 {
-    if (auto in = readFileIfExists(COLUMNS_SUBSTREAMS_FILE_NAME))
-    {
-        columns_substreams.readText(*in);
-    }
-    /// In Compact part with marks for substreams we must have substreams file. For other cases it's not mandatory.
-    else if (part_type == MergeTreeDataPartType::Compact && index_granularity_info.mark_type.with_substreams)
-    {
-        throw Exception(
-            ErrorCodes::NO_FILE_IN_DATA_PART,
-            "No columns_substreams.txt in part {}, expected path {} on drive {}",
-            name,
-            fs::path(getDataPartStorage().getRelativePath()) / COLUMNS_SUBSTREAMS_FILE_NAME,
-            getDataPartStorage().getDiskName());
-    }
+    if (part_type != MergeTreeDataPartType::Compact || !index_granularity_info.mark_type.with_substreams)
+        return;
+
+    String path = fs::path(getDataPartStorage().getRelativePath()) / "columns_substreams.txt";
+
+    auto in = readFileIfExists("columns_substreams.txt");
+    if (!in)
+        throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns_substreams.txt in part {}, expected path {} on drive {}", name, path, getDataPartStorage().getDiskName());
+
+    columns_substreams.readText(*in);
+
 }
 
 bool IMergeTreeDataPart::supportLightweightDeleteMutate() const
@@ -2338,19 +2329,19 @@ void IMergeTreeDataPart::checkConsistencyWithProjections(bool require_part_metad
         proj_part->checkConsistency(require_part_metadata);
 }
 
-void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk() const
+void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk(std::optional<Block> columns_sample) const
 {
-    calculateColumnsSizesOnDisk();
+    calculateColumnsSizesOnDisk(columns_sample);
     calculateSecondaryIndicesSizesOnDisk();
     are_columns_and_secondary_indices_sizes_calculated = true;
 }
 
-void IMergeTreeDataPart::calculateColumnsSizesOnDisk() const
+void IMergeTreeDataPart::calculateColumnsSizesOnDisk(std::optional<Block> columns_sample) const
 {
     if (getColumns().empty() || checksums.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot calculate columns sizes when columns or checksums are not initialized");
 
-    calculateEachColumnSizes(columns_sizes, total_columns_size);
+    calculateEachColumnSizes(columns_sizes, total_columns_size, columns_sample);
 }
 
 void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const

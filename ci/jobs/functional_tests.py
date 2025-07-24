@@ -61,11 +61,14 @@ def get_changed_tests(info: Info):
 
 
 def run_tests(
+    no_parallel: bool,
+    no_sequiential: bool,
     batch_num: int,
     batch_total: int,
     test="",
     extra_args="",
 ):
+    assert not (no_parallel and no_sequiential)
     test_output_file = f"{temp_dir}/test_result.txt"
     nproc = int(Utils.cpu_count() / 2)
     if batch_num and batch_total:
@@ -81,6 +84,7 @@ def run_tests(
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
     command = f"clickhouse-test --testname --check-zookeeper-session --hung-check --trace \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs 1 \
+                {'--no-parallel' if no_parallel else ''}  {'--no-sequential' if no_sequiential else ''} \
                 --jobs {nproc} {extra_args} \
                 --queries ./tests/queries -- '{test}' | ts '%Y-%m-%d %H:%M:%S' \
                 | tee -a \"{test_output_file}\""
@@ -89,13 +93,13 @@ def run_tests(
     Shell.run(command, verbose=True)
 
 
-def run_specific_tests(tests, runs=1, extra_args=""):
+def run_specific_tests(tests, runs=1):
     test_output_file = f"{temp_dir}/test_result.txt"
     nproc = int(Utils.cpu_count() / 2)
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
     command = f"clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --trace \
         --capture-client-stacktrace --queries ./tests/queries --test-runs {runs} \
-        --jobs {nproc} {extra_args} --order=random -- {' '.join(tests)} | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{test_output_file}\""
+        --jobs {nproc} --order=random -- {' '.join(tests)} | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
     Shell.run(command, verbose=True)
@@ -120,14 +124,14 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "AsyncInsert": " --no-async-insert",
     "DatabaseReplicated": " --no-stateful --replicated-database --jobs 3",
     "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
-    "parallel": "--no-sequential",
-    "sequential": "--no-parallel",
 }
 
 
 def main():
     args = parse_args()
     test_options = [to.strip() for to in args.options.split(",")]
+    no_parallel = "non-parallel" in test_options
+    no_sequential = "parallel" in test_options
     batch_num, total_batches = 0, 0
     config_installs_args = ""
     is_flaky_check = False
@@ -144,14 +148,11 @@ def main():
         elif to in OPTIONS_TO_INSTALL_ARGUMENTS:
             print(f"NOTE: Enabled config option [{OPTIONS_TO_INSTALL_ARGUMENTS[to]}]")
             config_installs_args += f" {OPTIONS_TO_INSTALL_ARGUMENTS[to]}"
-        elif to.startswith("amd_") or to.startswith("arm_") or "flaky" in to:
-            pass
-        elif to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
-            print(
-                f"NOTE: Enabled test runner option [{OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}]"
-            )
         else:
-            assert False, f"Unknown option [{to}]"
+            if to.startswith("amd_") or to.startswith("arm_") or "flaky" in to:
+                pass
+            else:
+                assert False, f"Unknown option [{to}]"
 
         if to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
             runner_options += f" {OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}"
@@ -334,15 +335,15 @@ def main():
         print(step_name)
         if not is_flaky_check and not is_bugfix_validation:
             run_tests(
+                no_parallel=no_parallel,
+                no_sequiential=no_sequential,
                 batch_num=batch_num,
                 batch_total=total_batches,
                 test=args.test,
                 extra_args=runner_options,
             )
         else:
-            run_specific_tests(
-                tests=tests, runs=50 if is_flaky_check else 1, extra_args=runner_options
-            )
+            run_specific_tests(tests=tests, runs=50 if is_flaky_check else 1)
 
         if not info.is_local_run:
             CH.stop_log_exports()
@@ -406,26 +407,12 @@ def main():
         if test_result and CH.extra_tests_results:
             test_result.extend_sub_results(CH.extra_tests_results)
 
-    force_ok_exit = False
-    if "parallel" in test_options and test_result:
-        failures_cnt = len([r for r in test_result.results if not r.is_ok()])
-        if failures_cnt > 0 and failures_cnt < 4:
-            print(
-                f"NOTE: Failed {failures_cnt} tests - do not block pipeline, exit with 0"
-            )
-            force_ok_exit = True
-        elif failures_cnt > 0 and "ci-non-blocking" in info.pr_labels:
-            print(
-                f"NOTE: Failed {failures_cnt} tests, label 'ci-non-blocking' is set - do not block pipeline - exit with 0"
-            )
-            force_ok_exit = True
-
     Result.create_from(
         results=results,
         stopwatch=stop_watch,
         files=CH.logs + debug_files,
         info=job_info,
-    ).complete_job(force_ok_exit=force_ok_exit)
+    ).complete_job()
 
 
 if __name__ == "__main__":

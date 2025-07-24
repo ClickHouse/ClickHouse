@@ -299,8 +299,9 @@ set (CMAKE_C_STANDARD_REQUIRED ON)
 # See https://reviews.llvm.org/D112921
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
 
-# falign-functions=64 prevents from random performance regressions with the code change. Thus, providing more stable benchmarks.
-set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64")
+# falign-functions=32 prevents from random performance regressions with the code change. Thus, providing more stable
+# benchmarks.
+set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
 
 if (ARCH_AMD64)
     # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,

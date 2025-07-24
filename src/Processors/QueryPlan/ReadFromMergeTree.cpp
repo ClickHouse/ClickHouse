@@ -188,7 +188,6 @@ namespace Setting
     extern const SettingsBool merge_tree_use_prefixes_deserialization_thread_pool;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
-    extern const SettingsUInt64 filesystem_prefetches_limit;
 }
 
 namespace MergeTreeSetting
@@ -223,7 +222,6 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
         .query_condition_cache_store_conditions_as_plaintext = settings[Setting::query_condition_cache_store_conditions_as_plaintext],
         .use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache],
         .use_prefixes_deserialization_thread_pool = settings[Setting::merge_tree_use_prefixes_deserialization_thread_pool],
-        .filesystem_prefetches_limit = settings[Setting::filesystem_prefetches_limit],
     };
 }
 
@@ -1854,11 +1852,7 @@ static void buildIndexes(
         bool l_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(l.index.get());
         bool r_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(r.index.get());
         if (l_is_minmax == r_is_minmax)
-        {
-            const auto l_granularity = l.index->getGranularity();
-            const auto r_granularity = r.index->getGranularity();
-            return l_granularity > r_granularity;
-        }
+            return false;
 
 #if USE_USEARCH
         // A vector similarity index (if present) is the most selective, hence move it to front
@@ -2030,7 +2024,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             find_exact_ranges,
             query_info_.isFinal());
 
-        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(result.parts_with_ranges, query_info_, vector_search_parameters, context_, log);
+        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(result.parts_with_ranges, query_info_, context_, log);
 
         if (indexes->use_skip_indexes && !indexes->skip_indexes.useful_indices.empty() && query_info_.isFinal()
             && settings[Setting::use_skip_indexes_if_final_exact_mode])
@@ -2185,28 +2179,6 @@ void ReadFromMergeTree::updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_re
     /// then update columns to read in analysis result
     if (analyzed_result_ptr)
         analyzed_result_ptr->column_names_to_read = all_column_names;
-}
-
-void ReadFromMergeTree::replaceVectorColumnWithDistanceColumn(const String & vector_column)
-{
-    if (isVectorColumnReplaced())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector column unexpectedly already replaced.");
-    std::erase(all_column_names, vector_column);
-    all_column_names.emplace_back("_distance");
-    output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
-        storage_snapshot->getSampleBlockForColumns(all_column_names),
-        lazily_read_info,
-        prewhere_info));
-
-    /// if analysis has already been done (like in optimization for projections),
-    /// then update columns to read in analysis result
-    if (analyzed_result_ptr)
-        analyzed_result_ptr->column_names_to_read = all_column_names;
-}
-
-bool ReadFromMergeTree::isVectorColumnReplaced() const
-{
-    return std::ranges::find(all_column_names, "_distance") != all_column_names.end();
 }
 
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
@@ -2747,8 +2719,6 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
             if (!search_algorithm.empty())
                 format_settings.out << prefix << indent << indent << "Search Algorithm: " << search_algorithm << "\n";
         }
-
-        format_settings.out << prefix << indent << indent << "Ranges: " << result.selected_ranges << '\n';
     }
 }
 

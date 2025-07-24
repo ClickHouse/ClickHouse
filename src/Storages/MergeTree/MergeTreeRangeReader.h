@@ -393,9 +393,6 @@ private:
 
     void updatePerformanceCounters(size_t num_rows_read);
 
-    /// Special logic for vector search: fills a virtual column "_distance" and fills a filter on part offsets returned by vector index
-    void fillDistanceColumnAndFilterForVectorSearch(Columns & columns, ReadResult & result, ColumnPtr & part_offsets_auto_column);
-
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
     const PrewhereExprStep * prewhere_info;
@@ -404,8 +401,6 @@ private:
 
     Block read_sample_block;    /// Block with columns that are actually read from disk + non-const virtual columns that are filled at this step.
     Block result_sample_block;  /// Block with columns that are returned by this step.
-
-    FilterWithCachedCount part_offsets_filter_for_vector_search;
 
     ReadStepPerformanceCountersPtr performance_counters;
     bool main_reader = false; /// Whether it is the main reader or one of the readers for prewhere steps

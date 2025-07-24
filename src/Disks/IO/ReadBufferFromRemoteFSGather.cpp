@@ -124,13 +124,7 @@ bool ReadBufferFromRemoteFSGather::readImpl()
         nextimpl_working_buffer_offset = current_buf->offset();
 
         chassert(current_buf->available());
-        chassert(
-            blobs_to_read.size() != 1
-            || file_offset_of_buffer_end == current_buf->getFileOffsetOfBufferEnd(),
-            fmt::format(
-                "offset: {}, buf offset: {}, available: {}, nextimpl offset: {}",
-                file_offset_of_buffer_end, current_buf->getFileOffsetOfBufferEnd(),
-                current_buf->available(), nextimpl_working_buffer_offset));
+        chassert(blobs_to_read.size() != 1 || file_offset_of_buffer_end == current_buf->getFileOffsetOfBufferEnd());
     }
 
     return result;

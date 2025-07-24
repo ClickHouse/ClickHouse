@@ -220,6 +220,7 @@ protected:
     Block block_sample;
 
     /// List of substreams for each column in order of serialization.
+    /// Right now used only in Compact parts.
     ColumnsSubstreams columns_substreams;
 
 private:

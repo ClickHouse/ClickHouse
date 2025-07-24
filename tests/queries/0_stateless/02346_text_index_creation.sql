@@ -119,12 +119,62 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
+SELECT 'Test max_rows_per_postings_list argument.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'ngram', ngram_size = 4, max_rows_per_postings_list = 9999)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
+SELECT '-- max_rows_per_posting_list is set to unlimited rows.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', max_rows_per_postings_list = 0)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
+SELECT '-- max_rows_per_posting_list should be at least 8192.';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', max_rows_per_postings_list = 8191)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', max_rows_per_postings_list = 8192)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
 SELECT 'Parameters are shuffled.';
 
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(ngram_size = 4, tokenizer = 'ngram')
+    INDEX idx str TYPE text(max_rows_per_postings_list = 8192, tokenizer = 'default')
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(max_rows_per_postings_list = 8192, ngram_size = 4, tokenizer = 'ngram')
 )
 ENGINE = MergeTree
 ORDER BY tuple();
@@ -164,6 +214,22 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(max_rows_per_postings_list)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(max_rows_per_postings_list = '9999')
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
 SELECT 'Same argument appears >1 times.';
 
 CREATE TABLE tab
@@ -178,6 +244,14 @@ CREATE TABLE tab
 (
     str String,
     INDEX idx str TYPE text(tokenizer = 'ngram', ngram_size = 3, ngram_size = 4)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = 'default', max_rows_per_postings_list = 9999, max_rows_per_postings_list = 8888)
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
