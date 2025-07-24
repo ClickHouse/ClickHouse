@@ -601,7 +601,6 @@ LogsLevel
 Logstash
 LookML
 LoongArch
-Lossy
 LowCardinality
 LpDistance
 LpNorm
@@ -2293,7 +2292,6 @@ london
 lookahead
 lookups
 loongarch
-lossy
 lowCardinalityIndices
 lowCardinalityKeys
 lowcardinality
