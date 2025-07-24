@@ -2519,7 +2519,7 @@ void TCPHandler::receivePacketsExpectCancel(QueryState & state)
     /// During request execution the only packet that can come from the client is stopping the query.
     if (in->poll(0))
     {
-        if (in->eof())
+        if (in->isCanceled() || in->eof())
             throw NetException(ErrorCodes::ABORTED, "Client has dropped the connection, cancel the query.");
 
         UInt64 packet_type = 0;
