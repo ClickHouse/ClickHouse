@@ -361,7 +361,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path,
     if (file_size && file_size3 && file_size3.value() != file_size.value())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "File size mismatch for file {}: expected {}, got {}",
+            "File size mismatch for file after creating read buffer {}: expected {}, got {}",
             backQuote(path),
             file_size.value_or(0),
             file_size3.value_or(0));
