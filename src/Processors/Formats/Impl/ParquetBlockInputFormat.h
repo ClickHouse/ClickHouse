@@ -5,7 +5,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatParserGroup.h>
+#include <Storages/MergeTree/KeyCondition.h>
 
 #include <queue>
 
@@ -56,10 +56,11 @@ class ParquetBlockInputFormat : public IInputFormat
 public:
     ParquetBlockInputFormat(
         ReadBuffer & buf,
-        SharedHeader header,
-        const FormatSettings & format_settings_,
-        FormatParserGroupPtr parser_group_,
-        size_t min_bytes_for_seek_);
+        const Block & header,
+        const FormatSettings & format_settings,
+        size_t max_decoding_threads,
+        size_t max_io_threads,
+        size_t min_bytes_for_seek);
 
     ~ParquetBlockInputFormat() override;
 
@@ -88,6 +89,8 @@ private:
     void scheduleRowGroup(size_t row_group_batch_idx);
 
     void threadFunction(size_t row_group_batch_idx);
+
+    inline bool supportPrefetch() const;
 
     // Data layout in the file:
     //
@@ -294,7 +297,8 @@ private:
 
     const FormatSettings format_settings;
     const std::unordered_set<int> & skip_row_groups;
-    FormatParserGroupPtr parser_group;
+    size_t max_decoding_threads;
+    size_t max_io_threads;
     size_t min_bytes_for_seek;
     const size_t max_pending_chunks_per_row_group_batch = 2;
 
@@ -334,7 +338,6 @@ private:
     std::exception_ptr background_exception = nullptr;
     std::atomic<int> is_stopped{0};
     bool is_initialized = false;
-    std::optional<std::unordered_map<String, String>> parquet_names_to_clickhouse;
 };
 
 class ParquetSchemaReader : public ISchemaReader

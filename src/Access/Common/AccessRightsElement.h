@@ -93,11 +93,6 @@ struct AccessRightsElement
     /// If the database is empty, replaces it with `current_database`. Otherwise does nothing.
     void replaceEmptyDatabase(const String & current_database);
 
-    /// Checks if the current access type is deprecated and replaces it with the correct one.
-    void replaceDeprecated();
-
-    void makeBackwardCompatible();
-
     bool isGlobalWithParameter() const { return access_flags.isGlobalWithParameter(); }
 
     /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
@@ -105,7 +100,7 @@ struct AccessRightsElement
     String toStringWithoutOptions() const;
 
     void formatColumnNames(WriteBuffer & buffer) const;
-    void formatONClause(WriteBuffer & buffer) const;
+    void formatONClause(WriteBuffer & buffer, bool hilite = false) const;
 };
 
 
@@ -127,16 +122,13 @@ public:
     /// Resets flags which cannot be granted.
     void eraseNotGrantable();
 
-    /// For each element checks if the current access type is deprecated and replaces it with the correct one.
-    void replaceDeprecated();
-
     /// If the database is empty, replaces it with `current_database`. Otherwise does nothing.
     void replaceEmptyDatabase(const String & current_database);
 
     /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
     String toString() const;
     String toStringWithoutOptions() const;
-    void formatElementsWithoutOptions(WriteBuffer & buffer) const;
+    void formatElementsWithoutOptions(WriteBuffer & buffer, bool hilite) const;
 };
 
 }

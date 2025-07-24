@@ -17,12 +17,6 @@
 #    include <cstdlib>
 #endif
 
-#if defined(OS_LINUX)
-#    include <malloc.h>
-#elif defined(OS_DARWIN)
-#    include <malloc/malloc.h>
-#endif
-
 namespace ProfileEvents
 {
     extern const Event GWPAsanAllocateSuccess;
@@ -30,27 +24,12 @@ namespace ProfileEvents
     extern const Event GWPAsanFree;
 }
 
-/// Guard pages interface.
-///
-/// Uses MADV_GUARD_INSTALL/MADV_GUARD_REMOVE (since Linux 6.13+) which does
-/// not splits VMA (unlike mprotect()), or fallback to mprotect()
-///
-/// Uses MADV_GUARD_INSTALL if available, or mprotect() if not
-void memoryGuardInstall(void *addr, size_t len);
-/// Uses MADV_GUARD_REMOVE if available, or mprotect() if not
-void memoryGuardRemove(void *addr, size_t len);
-
 namespace Memory
 {
 
 inline ALWAYS_INLINE size_t alignToSizeT(std::align_val_t align) noexcept
 {
     return static_cast<size_t>(align);
-}
-
-inline ALWAYS_INLINE size_t alignUp(size_t size, size_t align) noexcept
-{
-    return (size + align - 1) / align * align;
 }
 
 template <std::same_as<std::align_val_t>... TAlign>
@@ -85,7 +64,7 @@ inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
 
     void * ptr = nullptr;
     if constexpr (sizeof...(TAlign) == 1)
-        ptr = aligned_alloc(alignToSizeT(align...), alignUp(size, alignToSizeT(align...)));
+        ptr = aligned_alloc(alignToSizeT(align...), size);
     else
         ptr = malloc(size);
 
@@ -184,6 +163,12 @@ inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size [[maybe_unuse
     free(ptr);
 }
 
+#endif
+
+#if defined(OS_LINUX)
+#    include <malloc.h>
+#elif defined(OS_DARWIN)
+#    include <malloc/malloc.h>
 #endif
 
 template <std::same_as<std::align_val_t>... TAlign>

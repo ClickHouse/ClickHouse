@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-async-insert
-# no-async-insert: Test expects new part for each insert
-
 set -e
 
 # Get all server logs

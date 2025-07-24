@@ -4,7 +4,7 @@
 #include <utility>
 #include <Storages/NATS/NATSConsumer.h>
 #include <IO/ReadBufferFromMemory.h>
-#include <Poco/Timer.h>
+#include "Poco/Timer.h"
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -32,13 +32,9 @@ NATSConsumer::NATSConsumer(
 {
 }
 
-bool NATSConsumer::isSubscribed() const
-{
-    return !subscriptions.empty();
-}
 void NATSConsumer::subscribe()
 {
-    if (isSubscribed())
+    if (!subscriptions.empty())
         return;
 
     std::vector<NATSSubscriptionPtr> created_subscriptions;
@@ -56,10 +52,9 @@ void NATSConsumer::subscribe()
         }
         else
         {
-            throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Failed to subscribe consumer {} to subject {}", static_cast<void*>(this), subject);
+            throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Failed to subscribe to subject {}", subject);
         }
     }
-    LOG_DEBUG(log, "Consumer {} subscribed to {} subjects", static_cast<void*>(this), created_subscriptions.size());
 
     subscriptions = std::move(created_subscriptions);
 }
@@ -67,8 +62,6 @@ void NATSConsumer::subscribe()
 void NATSConsumer::unsubscribe()
 {
     subscriptions.clear();
-
-    LOG_DEBUG(log, "Consumer {} unsubscribed", static_cast<void*>(this));
 }
 
 ReadBufferPtr NATSConsumer::consume()

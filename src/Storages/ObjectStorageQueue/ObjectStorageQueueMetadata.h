@@ -20,6 +20,7 @@ class StorageObjectStorageQueue;
 struct ObjectStorageQueueSettings;
 struct ObjectStorageQueueTableMetadata;
 struct StorageInMemoryMetadata;
+using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
 /**
  * A class for managing ObjectStorageQueue metadata in zookeeper, e.g.
@@ -175,7 +176,6 @@ private:
     LoggerPtr log;
 
     std::atomic_bool shutdown_called = false;
-    std::atomic_bool startup_called = false;
     BackgroundSchedulePoolTaskHolder task;
 
     class LocalFileStatuses;

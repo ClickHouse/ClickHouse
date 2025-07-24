@@ -3,9 +3,9 @@ import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Type
 
-from . import Job, Workflow
+from . import Workflow
 from .settings import Settings
 from .utils import MetaClasses, Shell, T
 
@@ -38,8 +38,6 @@ class _Environment(MetaClasses.Serializable):
     LOCAL_RUN: bool = False
     PR_LABELS: List[str] = dataclasses.field(default_factory=list)
     REPORT_INFO: List[str] = dataclasses.field(default_factory=list)
-    JOB_CONFIG: Optional[Job.Config] = None
-    TRACEBACKS: List[str] = dataclasses.field(default_factory=list)
     name = "environment"
 
     @classmethod
@@ -56,7 +54,7 @@ class _Environment(MetaClasses.Serializable):
         RUN_URL = f"https://github.com/{REPOSITORY}/actions/runs/{RUN_ID}"
         BASE_BRANCH = os.getenv("GITHUB_BASE_REF", "")
         USER_LOGIN = ""
-        FORK_NAME = REPOSITORY
+        FORK_NAME = ""
         PR_BODY = ""
         PR_TITLE = ""
         PR_LABELS = []
@@ -241,12 +239,13 @@ class _Environment(MetaClasses.Serializable):
 
     @classmethod
     def get_s3_prefix_static(cls, pr_number, branch, sha, latest=False):
-        assert pr_number > 0 or branch
+        assert pr_number or branch
         if pr_number:
             prefix = f"PRs/{pr_number}"
         else:
             prefix = f"REFs/{branch}"
         assert sha or latest
+        assert pr_number >= 0
         if latest:
             prefix += f"/latest"
         elif sha:
