@@ -954,6 +954,7 @@ class FailureReason(enum.Enum):
     NO_STATELESS = "no-stateless"
     NO_STATEFUL = "no-stateful"
     NO_OPENSSL_FIPS = "no-openssl-fips"
+    ENCRYPTED_STORAGE = "encrypted-storage"
 
     # UNKNOWN reasons
     NO_REFERENCE = "no reference file"
@@ -1624,6 +1625,9 @@ class TestCase:
             return FailureReason.NO_STATELESS
         if tags and ("no-openssl-fips" in tags) and args.openssl_fips:
             return FailureReason.NO_OPENSSL_FIPS
+
+        if tags and ("no-encrypted-storage" in tags) and args.encrypted_storage:
+            return FailureReason.ENCRYPTED_STORAGE
 
         if tags:
             for build_flag in args.build_flags:
@@ -3854,6 +3858,12 @@ def parse_args():
         action="store_true",
         help="Display $ characters after line with trailing whitespaces in diff output",
     )
+    parser.add_argument(
+        "--encrypted-storage",
+        action="store_true",
+        default=False,
+        help="Run tests over encrypted storage",
+    )
 
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument(
@@ -4196,6 +4206,10 @@ if __name__ == "__main__":
 
     if args.replace_replicated_with_shared:
         args.s3_storage = True
+
+    if args.encrypted_storage and not args.s3_storage and not args.azure_blob_storage:
+        print("Disabling encrypted storage. To run tests with encrypted storage, either s3_storage or azure_blob_storage should be enabled.")
+        args.encrypted_storage = False
 
     try:
         main(args)
