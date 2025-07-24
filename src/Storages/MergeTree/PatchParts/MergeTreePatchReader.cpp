@@ -218,7 +218,7 @@ std::vector<PatchToApplyPtr> MergeTreePatchReaderJoin::applyPatch(const Block & 
     patches.reserve(patch_join_result->entries.size());
 
     for (const auto & entry : patch_join_result->entries)
-        patches.push_back(applyPatchJoin(result_block, entry->block, *entry));
+        patches.push_back(applyPatchJoin(result_block, *entry));
 
     return patches;
 }

@@ -258,7 +258,7 @@ MaybePatchRangesStats getPatchRangesStats(const DataPartPtr & patch_part, const 
 
     auto it = std::ranges::find_if(secondary_indices, [&](const auto & index)
     {
-        return index.name ==  IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name;
+        return index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name;
     });
 
     if (it == secondary_indices.end())
