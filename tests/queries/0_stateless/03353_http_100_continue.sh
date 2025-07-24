@@ -101,22 +101,22 @@ checkForError TOO_MANY_SIMULTANEOUS_QUERIES
 kill $pid
 
 echo "=== Test: Deferred 100 Continue with AUTHENTICATION_FAILED ==="
-$CLICKHOUSE_CLIENT --query "DROP USER IF EXISTS expect_100_continue"
-result=$(echo -ne '10\n11\n12\n' | ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&query=INSERT%20INTO%20expect_100_continue%20FORMAT%20TabSeparated&user=expect_100_continue" -H "Expect: 100-continue" -H "X-ClickHouse-100-Continue: defer" --expect100-timeout 300 --max-time 60 -d @- 2>&1)
+$CLICKHOUSE_CLIENT --query "DROP USER IF EXISTS user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+result=$(echo -ne '10\n11\n12\n' | ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&query=INSERT%20INTO%20expect_100_continue%20FORMAT%20TabSeparated&user=user_${CLICKHOUSE_TEST_UNIQUE_NAME}" -H "Expect: 100-continue" -H "X-ClickHouse-100-Continue: defer" --expect100-timeout 300 --max-time 60 -d @- 2>&1)
 checkForMissing100ContinueResponse
 checkForMissingBodyUpload
 checkForError AUTHENTICATION_FAILED
 
 echo "=== Test: Deferred 100 Continue with QUOTA_EXCEEDED ==="
 $CLICKHOUSE_CLIENT -n --query "
-CREATE USER expect_100_continue;
-GRANT INSERT ON expect_100_continue TO expect_100_continue;
-DROP QUOTA IF EXISTS quota_expect_100_continue;
-CREATE QUOTA quota_expect_100_continue KEYED BY user_name FOR INTERVAL 1 month MAX query_inserts = 1 TO expect_100_continue;
+CREATE USER user_${CLICKHOUSE_TEST_UNIQUE_NAME};
+GRANT INSERT ON expect_100_continue TO user_${CLICKHOUSE_TEST_UNIQUE_NAME};
+DROP QUOTA IF EXISTS quota_${CLICKHOUSE_TEST_UNIQUE_NAME};
+CREATE QUOTA quota_${CLICKHOUSE_TEST_UNIQUE_NAME} KEYED BY user_name FOR INTERVAL 1 month MAX query_inserts = 1 TO user_${CLICKHOUSE_TEST_UNIQUE_NAME};
 "
 # use up quota
-$CLICKHOUSE_CLIENT --user expect_100_continue --query "INSERT INTO expect_100_continue VALUES (1)" >/dev/null
-result=$(echo -ne '10\n11\n12\n' | ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&query=INSERT%20INTO%20expect_100_continue%20FORMAT%20TabSeparated&user=expect_100_continue" -H "Expect: 100-continue" -H "X-ClickHouse-100-Continue: defer" --expect100-timeout 300 --max-time 60 -d @- 2>&1)
+$CLICKHOUSE_CLIENT --user "user_${CLICKHOUSE_TEST_UNIQUE_NAME}" --query "INSERT INTO expect_100_continue VALUES (1)" >/dev/null
+result=$(echo -ne '10\n11\n12\n' | ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&query=INSERT%20INTO%20expect_100_continue%20FORMAT%20TabSeparated&user=user_${CLICKHOUSE_TEST_UNIQUE_NAME}" -H "Expect: 100-continue" -H "X-ClickHouse-100-Continue: defer" --expect100-timeout 300 --max-time 60 -d @- 2>&1)
 checkForMissing100ContinueResponse
 checkForMissingBodyUpload
 checkForError QUOTA_EXCEEDED
