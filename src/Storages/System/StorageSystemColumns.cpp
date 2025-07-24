@@ -21,6 +21,8 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -65,6 +67,7 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
         { "datetime_precision",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Decimal precision of DateTime64 data type. For other data types, the NULL value is returned."},
         { "serialization_hint",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "A hint for column to choose serialization on inserts according to statistics."},
+        { "uuid",               std::make_shared<DataTypeString>(), "Column uuid."},
     }));
     setInMemoryMetadata(storage_metadata);
 }
@@ -74,7 +77,6 @@ namespace
 {
     using Storages = std::map<std::pair<std::string, std::string>, StoragePtr>;
 }
-
 
 class ColumnsSource : public ISource
 {
@@ -308,6 +310,11 @@ protected:
                     else
                         res_columns[res_index++]->insertDefault();
                 }
+
+                if (columns_mask[src_index++])
+                    // res_columns[res_index++]->insert(column.uuid);
+                    res_columns[res_index++]->insert(UUIDHelpers::uuidToStr(column.uuid));
+                    // res_columns[res_index++]->insert("aaa");
 
                 ++rows_count;
             }
