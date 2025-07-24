@@ -138,7 +138,7 @@ private:
 
         const TimestampType first_timestamp = samples_in_window.front().first;
         const TimestampType last_timestamp = samples_in_window.back().first;
-        
+
         const TimestampType time_difference = last_timestamp - first_timestamp;
         if (time_difference == 0)
         {
@@ -170,13 +170,13 @@ private:
         Float64 var_x = sum_xx - sum_x * sum_x / n;
 
         Float64 slope = cov_xy / var_x;
-        if (is_predict) 
+        if (is_predict)
         {
             Float64 intercept = sum_y / n - slope * sum_x / n;
             Float64 predicted_value = slope * Base::predict_offset + intercept;
             result = static_cast<ValueType>(predicted_value);
         }
-        else 
+        else
         {
             result = static_cast<ValueType>(slope);
         }
