@@ -111,15 +111,6 @@ StorageObjectStorage::StorageObjectStorage(
         && !configuration->isDataLakeConfiguration();
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
 
-    LOG_DEBUG(
-        &Poco::Logger::get("StorageObjectStorage"),
-        "Creating storage {} need_resolve_columns_or_format: {}, need_resolve_sample_path: {}, do_lazy_init: {}",
-        configuration->getEngineName(),
-        need_resolve_columns_or_format,
-        need_resolve_sample_path,
-        do_lazy_init);
-
-
     bool updated_configuration = false;
     try
     {
