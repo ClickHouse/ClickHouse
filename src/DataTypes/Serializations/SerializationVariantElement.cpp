@@ -120,7 +120,11 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     if (auto cached_discriminators = getFromSubstreamsCache(cache, settings.path))
     {
         variant_element_state = checkAndGetState<DeserializeBinaryBulkStateVariantElement>(state);
-        variant_element_state->discriminators = cached_discriminators;
+        /// If rows_offset is set, in cache we store discriminators from the current range without applied offset.
+        if (rows_offset)
+            variant_element_state->discriminators->assumeMutable()->insertRangeFrom(*cached_discriminators, 0, cached_discriminators->size());
+        else
+            variant_element_state->discriminators = cached_discriminators;
     }
     else if (auto * discriminators_stream = settings.getter(settings.path))
     {
@@ -156,10 +160,17 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
             variant_limit = variant_pair.second;
         }
 
+        /// If we have rows_offset, we must put discriminators without applied rows_offset in cache because we
+        /// need these discriminators to calculate offsets for variants after we get them from cache.
         if (rows_offset)
-            addToSubstreamsCache(cache, settings.path, IColumn::mutate(variant_element_state->discriminators));
+        {
+            size_t num_read_discriminators = variant_element_state->discriminators->size() - variant_element_state->discriminators_size;
+            addToSubstreamsCache(cache, settings.path, variant_element_state->discriminators->cut(variant_element_state->discriminators_size, num_read_discriminators));
+        }
         else
+        {
             addToSubstreamsCache(cache, settings.path, variant_element_state->discriminators);
+        }
     }
     else
     {
