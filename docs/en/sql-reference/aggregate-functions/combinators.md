@@ -6,7 +6,7 @@ slug: /sql-reference/aggregate-functions/combinators
 title: 'Aggregate Function Combinators'
 ---
 
-# Aggregate function combinators
+# Aggregate Function Combinators
 
 The name of an aggregate function can have a suffix appended to it. This changes the way the aggregate function works.
 

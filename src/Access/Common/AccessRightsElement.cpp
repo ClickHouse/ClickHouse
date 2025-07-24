@@ -1,6 +1,5 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
-#include <Access/Common/AccessType.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
@@ -15,7 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_GRANT;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -142,7 +140,7 @@ void AccessRightsElement::formatColumnNames(WriteBuffer & buffer) const
     buffer << ")";
 }
 
-void AccessRightsElement::formatONClause(WriteBuffer & buffer) const
+void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool hilite) const
 {
     auto is_enabled_user_name_access_type = true;
     if (const auto context = Context::getGlobalContextInstance())
@@ -151,7 +149,7 @@ void AccessRightsElement::formatONClause(WriteBuffer & buffer) const
         is_enabled_user_name_access_type = access_control.isEnabledUserNameAccessType();
     }
 
-    buffer << "ON ";
+    buffer << (hilite ? IAST::hilite_keyword : "") << "ON " << (hilite ? IAST::hilite_none : "");
     if (isGlobalWithParameter())
     {
         /// Special check for backward compatibility.
@@ -296,98 +294,6 @@ void AccessRightsElement::replaceEmptyDatabase(const String & current_database)
         database = current_database;
 }
 
-void AccessRightsElement::replaceDeprecated()
-{
-    if (!access_flags)
-        return;
-
-    if (access_flags.toAccessTypes().size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "replaceDeprecated() was called on an access element with multiple access flags: {}", access_flags.toString());
-
-    switch (const auto current_access_type = access_flags.toAccessTypes()[0])
-    {
-        case AccessType::FILE:
-        case AccessType::URL:
-        case AccessType::REMOTE:
-        case AccessType::MONGO:
-        case AccessType::REDIS:
-        case AccessType::MYSQL:
-        case AccessType::POSTGRES:
-        case AccessType::SQLITE:
-        case AccessType::ODBC:
-        case AccessType::JDBC:
-        case AccessType::HDFS:
-        case AccessType::S3:
-        case AccessType::HIVE:
-        case AccessType::AZURE:
-        case AccessType::KAFKA:
-        case AccessType::NATS:
-        case AccessType::RABBITMQ:
-            if (!anyDatabase())
-                /// This will leave statements like `REVOKE S3 ON system.*` untouched
-                /// These statements will be deleted afterwards with `eraseNotGrantable()`
-                break;
-            access_flags = AccessType::READ | AccessType::WRITE;
-            parameter = DB::toString(current_access_type);
-            break;
-        case AccessType::SOURCES:
-            access_flags = AccessType::READ | AccessType::WRITE;
-            break;
-        default:
-            break;
-    }
-}
-
-void AccessRightsElement::makeBackwardCompatible()
-{
-    static const std::unordered_map<std::string, AccessType> string_to_accessType = {
-        {"FILE", AccessType::FILE},
-        {"URL", AccessType::URL},
-        {"REMOTE", AccessType::REMOTE},
-        {"MONGO", AccessType::MONGO},
-        {"REDIS", AccessType::REDIS},
-        {"MYSQL", AccessType::MYSQL},
-        {"POSTGRES", AccessType::POSTGRES},
-        {"SQLITE", AccessType::SQLITE},
-        {"ODBC", AccessType::ODBC},
-        {"JDBC", AccessType::JDBC},
-        {"HDFS", AccessType::HDFS},
-        {"S3", AccessType::S3},
-        {"HIVE", AccessType::HIVE},
-        {"AZURE", AccessType::AZURE},
-        {"KAFKA", AccessType::KAFKA},
-        {"NATS", AccessType::NATS},
-        {"RABBITMQ", AccessType::RABBITMQ},
-    };
-
-    auto is_enabled_read_write_grants = false;
-    if (const auto context = Context::getGlobalContextInstance())
-    {
-        const auto & access_control = context->getAccessControl();
-        is_enabled_read_write_grants = access_control.isEnabledReadWriteGrants();
-    }
-
-    if (!is_enabled_read_write_grants)
-    {
-        if (access_flags == AccessType::READ || access_flags == AccessType::WRITE || access_flags == (AccessType::READ | AccessType::WRITE))
-        {
-            if (anyParameter())
-            {
-                access_flags = AccessType::SOURCES;
-            }
-            else
-            {
-                auto it = string_to_accessType.find(parameter);
-                if (it != string_to_accessType.end())
-                {
-                    access_flags = it->second;
-                    parameter.clear();
-                }
-            }
-        }
-    }
-}
-
 String AccessRightsElement::toString() const { return toStringImpl(*this, true); }
 String AccessRightsElement::toStringWithoutOptions() const { return toStringImpl(*this, false); }
 
@@ -423,12 +329,6 @@ void AccessRightsElements::eraseNotGrantable()
     });
 }
 
-void AccessRightsElements::replaceDeprecated()
-{
-    for (auto & element : *this)
-        element.replaceDeprecated();
-}
-
 void AccessRightsElements::replaceEmptyDatabase(const String & current_database)
 {
     for (auto & element : *this)
@@ -438,14 +338,12 @@ void AccessRightsElements::replaceEmptyDatabase(const String & current_database)
 String AccessRightsElements::toString() const { return toStringImpl(*this, true); }
 String AccessRightsElements::toStringWithoutOptions() const { return toStringImpl(*this, false); }
 
-void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) const
+void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer, bool hilite) const
 {
     bool no_output = true;
     for (size_t i = 0; i != size(); ++i)
     {
-        auto element = (*this)[i];
-        element.makeBackwardCompatible();
-
+        const auto & element = (*this)[i];
         auto keywords = element.access_flags.toKeywords();
         if (keywords.empty() || (!element.anyColumn() && element.columns.empty()))
             continue;
@@ -455,7 +353,7 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) co
             if (!std::exchange(no_output, false))
                 buffer << ", ";
 
-            buffer << keyword;
+            buffer << (hilite ? IAST::hilite_keyword : "") << keyword << (hilite ? IAST::hilite_none : "");
             if (!element.anyColumn())
                 element.formatColumnNames(buffer);
         }
@@ -473,12 +371,12 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) co
         if (!next_element_on_same_db_and_table)
         {
             buffer << " ";
-            element.formatONClause(buffer);
+            element.formatONClause(buffer, hilite);
         }
     }
 
     if (no_output)
-        buffer << "USAGE ON " << "*.*";
+        buffer << (hilite ? IAST::hilite_keyword : "") << "USAGE ON " << (hilite ? IAST::hilite_none : "") << "*.*";
 }
 
 }

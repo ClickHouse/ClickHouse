@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
 #include <Common/tests/gtest_global_context.h>
-#include <Core/Field.h>
 #include <Disks/IDisk.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskEncrypted.h>

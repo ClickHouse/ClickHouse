@@ -4,7 +4,6 @@ sidebar_label: 'Build on macOS for macOS'
 sidebar_position: 15
 slug: /development/build-osx
 title: 'Build on macOS for macOS'
-keywords: ['MacOS', 'Mac', 'build']
 ---
 
 # How to Build ClickHouse on macOS for macOS
@@ -17,7 +16,7 @@ ClickHouse can be compiled on macOS x86_64 (Intel) and arm64 (Apple Silicon) usi
 
 As compiler, only Clang from homebrew is supported.
 
-## Install prerequisites {#install-prerequisites}
+## Install Prerequisites {#install-prerequisites}
 
 First, see the generic [prerequisites documentation](developer-instruction.md).
 
@@ -47,11 +46,6 @@ cmake -S . -B build
 cmake --build build
 # The resulting binary will be created at: build/programs/clickhouse
 ```
-
-:::note
-If you are running into `ld: archive member '/' not a mach-o file in ...` errors during linking, you may need
-to use llvm-ar by setting flag `-DCMAKE_AR=/opt/homebrew/opt/llvm/bin/llvm-ar`.
-:::
 
 ## Caveats {#caveats}
 
