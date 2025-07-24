@@ -36,8 +36,6 @@
 #    include <Poco/Net/SecureStreamSocket.h>
 #endif
 
-#include <iostream>
-
 namespace DB
 {
 namespace Setting
@@ -176,7 +174,6 @@ static String killConnectionIdReplacementQuery(const String & query)
 /// Replace "SHOW COLLATIONS" into creating temporary system mysql table.
 static String showCollationsReplacementQuery(const String & /*query*/)
 {
-    std::cerr << "OK showCollationsReplacementQuery\n";
     return "SELECT * FROM emulated_collations";
 }
 
@@ -372,7 +369,6 @@ void MySQLHandler::run()
             if (!tcp_server.isOpen())
                 return;
 
-            std::cerr << "result query " << payload.position() << '\n';
             try
             {
                 switch (command)

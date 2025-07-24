@@ -954,7 +954,7 @@ def test_mysql_dotnet_client(started_cluster):
         reference = fp.read()
 
     res = started_cluster.exec_in_container(
-        started_cluster.postgresql_java_client_docker_id,
+        started_cluster.mysql_dotnet_client_docker_id,
         [
             "bash",
             "-c",
