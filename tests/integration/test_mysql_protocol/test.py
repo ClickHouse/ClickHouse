@@ -31,6 +31,7 @@ node = cluster.add_instance(
     user_configs=["configs/users.xml"],
     env_variables={"UBSAN_OPTIONS": "print_stacktrace=1"},
     with_mysql_client=True,
+    with_mysql_dotnet_client=True
 )
 
 server_port = 9001
@@ -899,3 +900,20 @@ def setup_java_client(started_cluster, binary: Literal["true", "false"]):
     ).format(
         host=started_cluster.get_instance_ip("node"), port=server_port, binary=binary
     )
+
+
+def test_mysql_dotnet_client(started_cluster):
+    node = cluster.instances["node"]
+
+    with open(os.path.join(SCRIPT_DIR, "dotnet.reference")) as fp:
+        reference = fp.read()
+
+    res = started_cluster.exec_in_container(
+        started_cluster.postgresql_java_client_docker_id,
+        [
+            "bash",
+            "-c",
+            f"dotnet run -- --host {node.hostname} --port {server_port} --username default --password 123",
+        ],
+    )
+    assert res == reference
