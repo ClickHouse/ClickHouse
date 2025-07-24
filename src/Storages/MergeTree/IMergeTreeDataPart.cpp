@@ -682,7 +682,7 @@ void IMergeTreeDataPart::removeIfNeeded()
         std::this_thread::sleep_for(sleep_time);
     });
 
-    assert(assertHasValidVersionMetadata());
+    chassert(assertHasValidVersionMetadata());
     std::string path;
 
     try
@@ -2035,7 +2035,7 @@ void IMergeTreeDataPart::initializeIndexGranularityInfo()
 
 void IMergeTreeDataPart::remove()
 {
-    assert(assertHasValidVersionMetadata());
+    chassert(assertHasValidVersionMetadata());
     part_is_probably_removed_from_disk = true;
 
     auto can_remove_callback = [this] ()
