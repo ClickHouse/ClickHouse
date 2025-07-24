@@ -203,6 +203,7 @@ profiles:
         allow_introspection_functions: 1
 """
         file_path = f"{self.ch_config_dir}/users.d/allow_introspection_functions.yaml"
+        Path(file_path).parent.mkdir(parents=True, exist_ok=True)
         with open(file_path, "w") as file:
             file.write(content)
         return True
