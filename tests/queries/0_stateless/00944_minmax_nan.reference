@@ -1,9 +1,9 @@
 NaN comparison
 0
-6
+7
 0
-6
-1
+7
+2
 5
 MinMax index should skip all granules for column = NaN comparison
 Description: minmax GRANULARITY 1

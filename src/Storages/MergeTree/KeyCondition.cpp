@@ -232,7 +232,7 @@ bool isNaN(const Field & field)
         return false;
 
     const double value = field.safeGet<Float64>();
-    return value != value;
+    return std::isnan(value);
 }
 }
 
@@ -3263,8 +3263,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 key_range = *new_range;
             }
 
-            const bool intersects = element.range.intersectsRange(key_range);
-            const bool contains = element.range.containsRange(key_range);
+            bool intersects = element.range.intersectsRange(key_range);
+            bool contains = element.range.containsRange(key_range);
 
             rpn_stack.emplace_back(intersects, !contains);
 
