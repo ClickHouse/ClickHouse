@@ -694,7 +694,7 @@ private:
     static void visitStructLiteral(
         void * data,
         uintptr_t sibling_list_id,
-        uintptr_t /*child_field_list_id*/,
+        uintptr_t child_field_list_id,
         uintptr_t child_value_list_id)
     {
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);

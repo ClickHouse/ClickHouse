@@ -201,6 +201,16 @@ static uintptr_t visitLiteralValue(
             auto result = value.safeGet<Int64>();
             return ffi::visit_expression_literal_long(state, result); /// Accepts int64
         }
+        case DB::TypeIndex::Date:
+        {
+            auto result = value.safeGet<Int32>();
+            return ffi::visit_expression_literal_date(state, result);
+        }
+        case DB::TypeIndex::Date32:
+        {
+            auto result = value.safeGet<Int32>();
+            return ffi::visit_expression_literal_date(state, result);
+        }
         default:
         {
             return EngineIterator::VISITOR_FAILED_OR_UNSUPPORTED;
@@ -263,6 +273,21 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                         func_name, node->children.size());
                 }
 
+                auto print_node_info = [&](const DB::ActionsDAG::Node * node_)
+                {
+                    LOG_TEST(getLogger("test"),
+                             "Left node type: {}, result name: {}, result type: {}, "
+                             "is constant: {}, column: {}, column type: {}",
+                             node_->type,
+                             node_->result_name,
+                             node_->result_type,
+                             node_->is_deterministic_constant,
+                             bool(node_->column),
+                             node_->column ? DB::toString(node_->column->getDataType()) : "None");
+                };
+                print_node_info(node->children[0]);
+                print_node_info(node->children[1]);
+
                 const DB::ActionsDAG::Node * column_node = nullptr;
                 const DB::ActionsDAG::Node * literal_node = nullptr;
                 if (isConstNode(node->children[0]) && isColumnNode(node->children[1]))
@@ -291,12 +316,13 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
 
                     uintptr_t constant = visitLiteralValue(
                         value, comparison_type_index, iterator_data.state);
-                    if (!constant)
+                    if (!constant || constant == VISITOR_FAILED_OR_UNSUPPORTED)
                     {
                         LOG_TEST(iterator_data.log(), "Unsupported literal type: {}", comparison_type_index);
                         return VISITOR_FAILED_OR_UNSUPPORTED;
                     }
 
+                    LOG_TEST(getLogger("KSSENII"), "KSSENII HERE");
                     if (func_name == DB::NameEquals::name)
                         return ffi::visit_predicate_eq(iterator_data.state, column, constant);
                     if (func_name == DB::NameNotEquals::name)

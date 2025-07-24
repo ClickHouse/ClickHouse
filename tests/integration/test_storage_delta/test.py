@@ -2403,13 +2403,35 @@ def test_delta_kernel_internal_pruning(started_cluster):
     query_id = f"query_with_filter_{TABLE_NAME}_8"
     result = int(
         instance.query(
-            f"""SELECT count() FROM {table_function} WHERE b == 'test2' AND not h
+            f"""SELECT count() FROM {table_function} WHERE c == toDate('2000-01-08')
             """,
             query_id=query_id,
         )
     )
 
-    assert result == 2
+    assert result == 1
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
+        )
+    )
+    assert 1 == int(
+        instance.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
+        )
+    )
+
+    #query_id = f"query_with_filter_{TABLE_NAME}_8"
+    #result = int(
+    #    instance.query(
+    #        f"""SELECT count() FROM {table_function} WHERE b == 'test2' AND not h
+    #        """,
+    #        query_id=query_id,
+    #    )
+    #)
+
+    #assert result == 2
     #instance.query("SYSTEM FLUSH LOGS")
     #assert 2 == int(
     #    instance.query(
