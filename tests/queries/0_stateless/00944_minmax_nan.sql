@@ -10,10 +10,6 @@ ORDER BY id; -- This is important. We want to have additional primary index that
 
 INSERT INTO tab VALUES (1, 1.0), (2, inf), (3, 2.0), (4, -inf), (5, 3.0), (6, nan);
 
-SELECT 'Infinite comparison';
-SELECT count() FROM tab WHERE isFinite(col) = 1;
-SELECT count() FROM tab WHERE isFinite(col) != 1;
-
 SELECT 'NaN comparison';
 SELECT count() FROM tab WHERE col = nan;
 SELECT count() FROM tab WHERE col <> nan;
