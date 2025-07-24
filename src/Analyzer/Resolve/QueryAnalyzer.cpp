@@ -3272,8 +3272,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         auto & function_argument = function_arguments[function_argument_index];
 
-        // LOG_DEBUG(getLogger("QueryAnalyzer"), "arg node type: {}", function_argument->getNodeTypeName());
-
         ColumnWithTypeAndName argument_column;
         argument_column.name = arguments_projection_names[function_argument_index];
 
@@ -3814,7 +3812,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// Sanity check: do not convert large columns to constants
                 column->byteSize() < 1_MiB)
             {
-                // LOG_DEBUG(getLogger("QueryAnalyzer"), "perform constant folding for function {} with result {}", function->getName(), column->getName());
                 /// Replace function node with result constant node
                 constant_node = std::make_shared<ConstantNode>(ConstantValue{ std::move(column), std::move(result_type) }, node);
             }
