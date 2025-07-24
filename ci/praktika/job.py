@@ -30,13 +30,6 @@ class Job:
         requires: Optional[List[str]] = None
         timeout: Optional[int] = None
 
-        def __iter__(self):
-            yield self.parameter
-            yield self.runs_on
-            yield self.provides
-            yield self.requires
-            yield self.timeout
-
     @dataclass
     class Config:
         # Job Name
@@ -79,30 +72,29 @@ class Job:
         post_hooks: List[str] = field(default_factory=list)
 
         def parametrize(self, parameters: List["Job.ParamSet"]):
-            print(parameters)
             res = []
-            for parameter_, runs_on_, provides_, requires_, timeout_ in parameters:
+            for param_set in parameters:
                 obj = copy.deepcopy(self)
                 assert (
                     not obj.provides
                 ), "Job.Config.provides must be empty for parametrized jobs"
-                if parameter_:
-                    obj.parameter = parameter_
-                    obj.command = obj.command.format(PARAMETER=parameter_)
-                if runs_on_:
-                    obj.runs_on = runs_on_
-                if timeout_:
-                    obj.timeout = timeout_
-                if provides_:
+                if param_set.parameter:
+                    obj.parameter = param_set.parameter
+                    obj.command = obj.command.format(PARAMETER=param_set.parameter)
+                if param_set.runs_on:
+                    obj.runs_on = param_set.runs_on
+                if param_set.timeout:
+                    obj.timeout = param_set.timeout
+                if param_set.provides:
                     assert (
                         not obj.provides
                     ), "Job.Config.provides must be empty for parametrized jobs"
-                    obj.provides = provides_
-                if requires_:
+                    obj.provides = param_set.provides
+                if param_set.requires:
                     assert (
                         not obj.requires
                     ), "Job.Config.requires and parametrize(requires=...) are both set"
-                    obj.requires = requires_
+                    obj.requires = param_set.requires
                 obj.name = obj.get_job_name_with_parameter()
                 res.append(obj)
             return res
