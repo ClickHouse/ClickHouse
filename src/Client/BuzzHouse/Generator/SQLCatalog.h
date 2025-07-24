@@ -163,7 +163,7 @@ public:
     TableEngineValues teng = TableEngineValues::Null, sub = TableEngineValues::Null;
     PeerTableDatabase peer_table = PeerTableDatabase::None;
     String file_comp;
-    InOutFormat file_format;
+    std::optional<InOutFormat> file_format;
 
     static void setDeterministic(RandomGenerator & rg, SQLBase & b) { b.is_deterministic = rg.nextSmallNumber() < 8; }
 

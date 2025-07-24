@@ -925,7 +925,6 @@ void StatementGenerator::generateEngineDetails(
     const bool has_views = collectionHas<SQLView>(hasTableOrView<SQLView>(b));
     const bool has_dictionaries = collectionHas<SQLDictionary>(hasTableOrView<SQLDictionary>(b));
     const bool allow_shared_tbl = supports_cloud_features && (fc.engine_mask & allow_shared) != 0;
-    static const DB::Strings & ObjectCompress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
 
     if (b.isMergeTreeFamily())
     {
@@ -1090,24 +1089,6 @@ void StatementGenerator::generateEngineDetails(
         }
         connections.createExternalDatabaseTable(rg, next, b, entries, te);
     }
-    else if (te->has_engine() && b.isAnyS3Engine())
-    {
-        connections.createExternalDatabaseTable(rg, IntegrationCall::MinIO, b, entries, te);
-        if (b.isAnyS3Engine())
-        {
-            b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
-            te->add_params()->set_in_out(b.file_format);
-            if (rg.nextSmallNumber() < 4)
-            {
-                b.file_comp = rg.pickRandomly(ObjectCompress);
-                te->add_params()->set_svalue(b.file_comp);
-            }
-            if (b.isS3Engine() && rg.nextSmallNumber() < 5)
-            {
-                generateTableKey(rg, rel, b.teng, false, te->mutable_partition_by());
-            }
-        }
-    }
     else if (te->has_engine() && b.isMergeEngine())
     {
         String mergeDesc;
@@ -1205,33 +1186,23 @@ void StatementGenerator::generateEngineDetails(
             te->add_params()->set_num(nested_rows_dist(rg.generator));
         }
     }
-    else if (te->has_engine() && b.isAnyAzureEngine())
-    {
-        connections.createExternalDatabaseTable(rg, IntegrationCall::Azurite, b, entries, te);
-        b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
-        te->add_params()->set_in_out(b.file_format);
-        if (rg.nextSmallNumber() < 4)
-        {
-            b.file_comp = rg.pickRandomly(ObjectCompress);
-            te->add_params()->set_svalue(b.file_comp);
-        }
-        if (b.isAzureEngine() && rg.nextSmallNumber() < 5)
-        {
-            generateTableKey(rg, rel, b.teng, false, te->mutable_partition_by());
-        }
-    }
     else if (te->has_engine() && b.isURLEngine())
     {
         connections.createExternalDatabaseTable(rg, IntegrationCall::HTTP, b, entries, te);
-        b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
-        te->add_params()->set_in_out(b.file_format);
-        if (rg.nextSmallNumber() < 4)
+        if (rg.nextBool())
         {
-            static const DB::Strings & URLCompress
-                = {"none", "auto", "gzip", "gz", "deflate", "brotli", "br", "lzma", "xz", "zstd", "zst", "lz4", "bz2", "snappy"};
+            /// Set format
+            b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
+            te->add_params()->set_in_out(b.file_format.value());
+            /// Optional compression
+            if (rg.nextBool())
+            {
+                static const DB::Strings & URLCompress
+                    = {"none", "auto", "gzip", "gz", "deflate", "brotli", "br", "lzma", "xz", "zstd", "zst", "lz4", "bz2", "snappy"};
 
-            b.file_comp = rg.pickRandomly(URLCompress);
-            te->add_params()->set_svalue(b.file_comp);
+                b.file_comp = rg.pickRandomly(URLCompress);
+                te->add_params()->set_svalue(b.file_comp);
+            }
         }
     }
     else if (te->has_engine() && b.isKeeperMapEngine())
@@ -1244,11 +1215,10 @@ void StatementGenerator::generateEngineDetails(
             te->add_params()->set_num(keys_limit_dist(rg.generator));
         }
     }
-    else if (te->has_engine() && (b.isAnyIcebergEngine() || b.isAnyDeltaLakeEngine()))
+    else if (te->has_engine() && (b.isAnyIcebergEngine() || b.isAnyDeltaLakeEngine() || b.isAnyS3Engine() || b.isAnyAzureEngine()))
     {
-        const bool isS3 = b.isIcebergS3Engine() || b.isDeltaLakeS3Engine();
-        const bool isAzure = b.isIcebergAzureEngine() || b.isDeltaLakeAzureEngine();
-        const std::filesystem::path & fpath = fc.server_file_path / ("/datalake/t" + std::to_string(b.tname));
+        const bool isS3 = b.isIcebergS3Engine() || b.isDeltaLakeS3Engine() || b.isAnyS3Engine();
+        const bool isAzure = b.isIcebergAzureEngine() || b.isDeltaLakeAzureEngine() || b.isAnyAzureEngine();
 
         if (isS3 || isAzure)
         {
@@ -1259,29 +1229,26 @@ void StatementGenerator::generateEngineDetails(
             const std::filesystem::path & fname = fc.server_file_path / ("/file" + std::to_string(b.tname));
             te->add_params()->set_svalue(fname.generic_string());
         }
-        /// Set path
-        const String & key = isS3 ? "filename" : (isAzure ? "blob_path" : "path");
-        KeyValuePair * kvp = te->add_params()->mutable_kvalue();
-        kvp->set_key(key);
-        kvp->set_value(fpath.generic_string());
+        /// Set path, but ignore it for now
+        //const std::filesystem::path & fpath = fc.server_file_path / ("/datalake/t" + std::to_string(b.tname));
+        //te->add_params()->set_svalue(fpath.generic_string());
 
-        /// Set format
-        KeyValuePair * kvp2 = te->add_params()->mutable_kvalue();
-        b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
-        kvp2->set_key("format");
-        kvp2->set_value(InOutFormat_Name(b.file_format).substr(6));
-
-        /// Optional compression
-        if (rg.nextSmallNumber() < 4)
+        if (rg.nextBool())
         {
-            KeyValuePair * kvp3 = te->add_params()->mutable_kvalue();
+            /// Set format
+            b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
+            te->add_params()->set_in_out(b.file_format.value());
+            /// Optional compression
+            if (rg.nextBool())
+            {
+                static const DB::Strings & ObjectCompress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
 
-            b.file_comp = rg.pickRandomly(ObjectCompress);
-            kvp3->set_key("compression");
-            kvp3->set_value(b.file_comp);
+                b.file_comp = rg.pickRandomly(ObjectCompress);
+                te->add_params()->set_svalue(b.file_comp);
+            }
         }
         /// Optional PARTITION BY
-        if (rg.nextSmallNumber() < 5)
+        if ((b.isAnyIcebergEngine() || b.isAnyDeltaLakeEngine() || b.isAzureEngine() || b.isS3Engine()) && rg.nextSmallNumber() < 5)
         {
             generateTableKey(rg, rel, b.teng, false, te->mutable_partition_by());
         }

@@ -2240,14 +2240,6 @@ CONV_FN(DataLakeFunc, dfunc)
         ret += dfunc.params(i);
         ret += "'";
     }
-    for (int i = 0; i < dfunc.kparams_size(); i++)
-    {
-        if (dfunc.params_size() > 0 || i != 0)
-        {
-            ret += ", ";
-        }
-        KeyValuePairToString(ret, dfunc.kparams(i));
-    }
     ret += ")";
 }
 

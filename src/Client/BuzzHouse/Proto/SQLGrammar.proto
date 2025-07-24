@@ -2644,7 +2644,6 @@ message DataLakeFunc {
     required FName fname = 1;
     optional Cluster cluster = 2;
     repeated string params = 3;
-    repeated KeyValuePair kparams = 4;
 }
 
 message ValuesStatement {

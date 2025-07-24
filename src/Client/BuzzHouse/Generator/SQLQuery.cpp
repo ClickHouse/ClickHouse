@@ -282,7 +282,10 @@ void StatementGenerator::setTableRemote(
                 + (t.isS3QueueEngine() ? "/" : "") + (rg.nextBool() ? "*" : ""));
             sfunc->set_user(sc.user);
             sfunc->set_password(sc.password);
-            sfunc->set_format(t.file_format);
+            if (t.file_format.has_value())
+            {
+                sfunc->set_format(t.file_format.value());
+            }
             structure = sfunc->mutable_structure();
             if (!t.file_comp.empty())
             {
@@ -304,7 +307,10 @@ void StatementGenerator::setTableRemote(
                 ufunc->set_fname(URLFunc_FName::URLFunc_FName_url);
             }
             ufunc->set_uurl("http://" + sc.server_hostname + ":" + std::to_string(sc.port) + "/file" + std::to_string(t.tname));
-            ufunc->set_inoutformat(t.file_format);
+            if (t.file_format.has_value())
+            {
+                ufunc->set_inoutformat(t.file_format.value());
+            }
             structure = ufunc->mutable_structure();
         }
         else
@@ -326,7 +332,10 @@ void StatementGenerator::setTableRemote(
             afunc->set_blobpath("file" + std::to_string(t.tname));
             afunc->set_user(sc.user);
             afunc->set_password(sc.password);
-            afunc->set_format(t.file_format);
+            if (t.file_format.has_value())
+            {
+                afunc->set_format(t.file_format.value());
+            }
             structure = afunc->mutable_structure();
             if (!t.file_comp.empty())
             {
