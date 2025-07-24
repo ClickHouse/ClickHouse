@@ -591,22 +591,22 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(bool force, 
                     total_bytes += distributed_header.bytes;
                 }
 
-                if (distributed_header.block_header)
+                if (!distributed_header.block_header.empty())
                     header = distributed_header.block_header;
 
-                if (!total_rows || !header)
+                if (!total_rows || header.empty())
                 {
                     LOG_DEBUG(log, "Processing batch {} with old format (no header/rows)", in.getFileName());
 
                     CompressedReadBuffer decompressing_in(in);
                     NativeReader block_in(decompressing_in, distributed_header.revision);
 
-                    while (Block block = block_in.read())
+                    for (Block block = block_in.read(); !block.empty(); block = block_in.read())
                     {
                         total_rows += block.rows();
                         total_bytes += block.bytes();
 
-                        if (!header)
+                        if (header.empty())
                             header = block.cloneEmpty();
                     }
                 }

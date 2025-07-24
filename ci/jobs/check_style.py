@@ -191,6 +191,15 @@ def check_repo_submodules():
     return out
 
 
+def check_nix_submodule_inputs():
+    res, out, err = Shell.get_res_stdout_stderr(
+        "./ci/jobs/scripts/check_style/check_nix_submodule_inputs.sh"
+    )
+    if err:
+        out += err
+    return out
+
+
 def check_other():
     res, out, err = Shell.get_res_stdout_stderr(
         "./ci/jobs/scripts/check_style/various_checks.sh"
@@ -356,6 +365,12 @@ if __name__ == "__main__":
             Result.from_commands_run(
                 name=testname,
                 command=check_repo_submodules,
+            )
+        )
+        results.append(
+            Result.from_commands_run(
+                name=f"nix_{testname}",
+                command=check_nix_submodule_inputs,
             )
         )
     testname = "various"

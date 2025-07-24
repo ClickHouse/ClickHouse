@@ -96,7 +96,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 
         configuration->checkHosts(context);
 
-        return std::make_unique<MongoDBDictionarySource>(dict_struct, std::move(configuration), std::move(sample_block));
+        return std::make_unique<MongoDBDictionarySource>(dict_struct, std::move(configuration), std::make_shared<const Block>(sample_block));
     };
     #else
     auto create_dictionary_source = [](const String & /*name*/,
@@ -123,7 +123,7 @@ static const UInt64 max_block_size = 8192;
 MongoDBDictionarySource::MongoDBDictionarySource(
     const DictionaryStructure & dict_struct_,
     std::shared_ptr<MongoDBConfiguration> configuration_,
-    Block sample_block_)
+    SharedHeader sample_block_)
     : dict_struct{dict_struct_}
     , configuration{configuration_}
     , sample_block{sample_block_}

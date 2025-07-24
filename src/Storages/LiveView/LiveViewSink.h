@@ -19,7 +19,7 @@ class LiveViewSink : public SinkToStorage
     }
 
 public:
-    explicit LiveViewSink(StorageLiveView & storage_) : SinkToStorage(updateHeader(storage_.getHeader())), storage(storage_) {}
+    explicit LiveViewSink(StorageLiveView & storage_) : SinkToStorage(std::make_shared<const Block>(updateHeader(storage_.getHeader()))), storage(storage_) {}
 
     String getName() const override { return "LiveViewSink"; }
 

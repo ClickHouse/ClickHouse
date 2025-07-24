@@ -1,23 +1,23 @@
 #include "config.h"
 
 #if USE_SZ3
-#  include "base/types.h"
-#  include "Common/Exception.h"
-#  include <Common/SipHash.h>
-#  include <Core/TypeId.h>
-#  include <Compression/CompressionFactory.h>
-#  include <Compression/CompressionInfo.h>
-#  include <Compression/ICompressionCodec.h>
-#  include <DataTypes/IDataType.h>
-#  include <IO/BufferWithOwnMemory.h>
-#  include <IO/WriteBuffer.h>
-#  include <IO/WriteHelpers.h>
-#  include <Interpreters/Context.h>
-#  include <Parsers/ASTLiteral.h>
-#  include <Parsers/IAST.h>
+#    include <Compression/CompressionFactory.h>
+#    include <Compression/CompressionInfo.h>
+#    include <Compression/ICompressionCodec.h>
+#    include <Core/TypeId.h>
+#    include <DataTypes/IDataType.h>
+#    include <IO/BufferWithOwnMemory.h>
+#    include <IO/WriteBuffer.h>
+#    include <IO/WriteHelpers.h>
+#    include <Interpreters/Context.h>
+#    include <Parsers/ASTLiteral.h>
+#    include <Parsers/IAST.h>
+#    include "Common/Exception.h"
+#    include <Common/SipHash.h>
+#    include "base/types.h"
 
-#  include <SZ3/api/sz.hpp>
-#  include <SZ3/utils/Config.hpp>
+#    include <SZ3/api/sz.hpp>
+#    include <SZ3/utils/Config.hpp>
 
 namespace DB
 {
@@ -61,10 +61,10 @@ private:
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
-    extern const int CORRUPTED_DATA;
-    extern const int ILLEGAL_CODEC_PARAMETER;
-    extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
+extern const int CORRUPTED_DATA;
+extern const int ILLEGAL_CODEC_PARAMETER;
+extern const int LOGICAL_ERROR;
 }
 
 String getSZ3AlgorithmString(SZ3::ALGO algorithm)
@@ -87,17 +87,17 @@ String getSZ3ErrorBoundModeString(SZ3::EB error_bound_mode)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid error bound mode");
 }
 
-CompressionCodecSZ3::CompressionCodecSZ3(
-    UInt8 float_size_, SZ3::ALGO algorithm_, SZ3::EB error_bound_mode_, double error_value_)
+CompressionCodecSZ3::CompressionCodecSZ3(UInt8 float_size_, SZ3::ALGO algorithm_, SZ3::EB error_bound_mode_, double error_value_)
     : float_width(float_size_)
     , algorithm(algorithm_)
     , error_bound_mode(error_bound_mode_)
     , error_value(error_value_)
 {
     setCodecDescription(
-        "SZ3", {std::make_shared<ASTLiteral>(getSZ3AlgorithmString(algorithm)),
-                std::make_shared<ASTLiteral>(getSZ3ErrorBoundModeString(error_bound_mode)),
-                std::make_shared<ASTLiteral>(error_value)});
+        "SZ3",
+        {std::make_shared<ASTLiteral>(getSZ3AlgorithmString(algorithm)),
+         std::make_shared<ASTLiteral>(getSZ3ErrorBoundModeString(error_bound_mode)),
+         std::make_shared<ASTLiteral>(error_value)});
 }
 
 uint8_t CompressionCodecSZ3::getMethodByte() const
@@ -153,7 +153,8 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
     size_t compressed_size;
     switch (float_width)
     {
-        case 4: {
+        case 4:
+        {
             try
             {
                 compressed.reset(SZ_compress(config, reinterpret_cast<const float *>(source), compressed_size));
@@ -164,7 +165,8 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
             }
             break;
         }
-        case 8: {
+        case 8:
+        {
             try
             {
                 compressed.reset(SZ_compress(config, reinterpret_cast<const double *>(source), compressed_size));
@@ -196,6 +198,11 @@ void CompressionCodecSZ3::setAndCheckVectorDimension(size_t dimension_)
 
 void CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 /*uncompressed_size*/) const
 {
+    /// Hardcoded, because it is not declared (we just calculated the minimal size of decompressed config) and it is less than sizeof(SZ3::Config).
+    static constexpr const size_t config_size = 39;
+    if (source_size < 1 + config_size)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Can not decompress data {} that is less than minimal size of compressed", source_size);
+
     UInt8 width = static_cast<UInt8>(*source);
     --source_size;
     ++source;
@@ -203,7 +210,8 @@ void CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_si
     SZ3::Config config;
     switch (width)
     {
-        case 4: {
+        case 4:
+        {
             try
             {
                 float * dest_typed = reinterpret_cast<float *>(dest);
@@ -215,7 +223,8 @@ void CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_si
             }
             break;
         }
-        case 8: {
+        case 8:
+        {
             try
             {
                 double * dest_typed = reinterpret_cast<double *>(dest);
@@ -236,9 +245,7 @@ UInt8 getFloatByteWidth(const IDataType & column_type)
 {
     if (!WhichDataType(column_type).isNativeFloat())
         throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Codec 'SZ3' is not applicable for {} because the data type is not Float*",
-                column_type.getName());
+            ErrorCodes::BAD_ARGUMENTS, "Codec 'SZ3' is not applicable for {} because the data type is not Float*", column_type.getName());
 
     return column_type.getSizeOfValueInMemory();
 }
@@ -268,8 +275,7 @@ void registerCodecSZ3(CompressionCodecFactory & factory)
             static constexpr auto default_error_bound_mode = SZ3::EB_REL;
             static constexpr auto default_error_bound = 1e-2;
 
-            return std::make_shared<CompressionCodecSZ3>(
-                float_width, default_algorithm, default_error_bound_mode, default_error_bound);
+            return std::make_shared<CompressionCodecSZ3>(float_width, default_algorithm, default_error_bound_mode, default_error_bound);
         }
         else if (arguments->children.size() == 3)
         {
@@ -300,6 +306,11 @@ void registerCodecSZ3(CompressionCodecFactory & factory)
         }
     };
     factory.registerCompressionCodecWithType("SZ3", method_code, codec_builder);
+}
+
+CompressionCodecPtr getCompressionCodecSZ3(UInt8 float_bytes_size)
+{
+    return std::make_shared<CompressionCodecSZ3>(float_bytes_size, SZ3::ALGO_INTERP_LORENZO, SZ3::EB_REL, 0.001);
 }
 
 }

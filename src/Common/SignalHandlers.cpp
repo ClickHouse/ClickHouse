@@ -90,7 +90,8 @@ void childSignalHandler(int sig, siginfo_t * info, void *)
     errno = saved_errno;
 }
 
-void signalHandler(int sig, siginfo_t * info, void * context)
+/// Handler for "fault" or diagnostic signals. Send data about fault to separate thread to write into log.
+static void signalHandler(int sig, siginfo_t * info, void * context)
 {
     if (asynchronous_stack_unwinding && sig == SIGSEGV)
         siglongjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1);
@@ -178,54 +179,27 @@ void signalHandler(int sig, siginfo_t * info, void * context)
 }
 
 #if defined(SANITIZER)
-template <typename T>
-struct ValueHolder
-{
-    explicit ValueHolder(T value_) : value(value_)
-    {}
-
-    T value;
-};
-
 extern "C" void __sanitizer_set_death_callback(void (*)());
 
-/// Sanitizers may not expect some function calls from death callback.
-/// Let's try to disable instrumentation to avoid possible issues.
-/// However, this callback may call other functions that are still instrumented.
-/// We can try [[clang::always_inline]] attribute for statements in future (available in clang-15)
-/// See https://github.com/google/sanitizers/issues/1543 and https://github.com/google/sanitizers/issues/1549.
+/// You should be very careful on which functions is called from the death callback, in some cases sanitizers will deadlock.
+/// So let's disable instrumentation to avoid possible issues, but note:
+/// - this will not disable instrumentation for other function calls
+///   (you can try [[clang::always_inline]] attribute if you need to bypass this)
+/// - disabling instrumentation may lead to other problems
+///
+/// See:
+/// - https://github.com/google/sanitizers/issues/1543
+/// - https://github.com/google/sanitizers/issues/1549
 static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
 {
     DENY_ALLOCATIONS_IN_SCOPE;
-    /// Also need to send data via pipe. Otherwise it may lead to deadlocks or failures in printing diagnostic info.
 
-    char buf[signal_pipe_buf_size];
-    auto & signal_pipe = HandledSignals::instance().signal_pipe;
-
-    /// Signal pipe can be already closed in BaseDaemon::~BaseDaemon, but
-    /// sanitizerDeathCallback() can be called on exit handlers.
-    if (signal_pipe.fds_rw[1] == -1)
-        return;
-
-    WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
-
-    const StackTrace stack_trace;
-
-    writeBinary(SignalListener::SanitizerTrap, out);
-    writePODBinary(stack_trace, out);
-    /// We create a dummy struct with a constructor so DISABLE_SANITIZER_INSTRUMENTATION is not applied to it
-    /// otherwise, Memory sanitizer can't know that values initiialized inside this function are actually initialized
-    /// because instrumentations are disabled leading to false positives later on
-    ValueHolder<UInt32> thread_id{static_cast<UInt32>(getThreadId())};
-    writeBinary(thread_id.value, out);
-    writePODBinary(current_thread, out);
-    out.finalize();
-
-    /// The time that is usually enough for separate thread to print info into log.
-    sleepForSeconds(20);
+    /// Sanitizer errors cannot be handled properly with our signal handlers, because it leads to deadlock.
+    /// So we need to reset the signal handlers (this does not lead to deadlock),
+    /// but closing the pipe leads to deadlock from death callback, so we will not close it.
+    HandledSignals::instance().reset(/* close_pipe= */ false);
 }
 #endif
-
 
 void HandledSignals::addSignalHandler(const std::vector<int> & signals, signal_function handler, bool register_signal)
 {
@@ -357,30 +331,15 @@ void SignalListener::run()
             UInt32 thread_num{};
             ThreadStatus * thread_ptr{};
 
-            if (sig != SanitizerTrap)
-            {
-                readPODBinary(info, in);
-                readPODBinary(context, in);
-            }
+            readPODBinary(info, in);
+            readPODBinary(context, in);
 
             readPODBinary(stack_trace, in);
-            if (sig != SanitizerTrap)
-                readVectorBinary(thread_frame_pointers, in);
+            readVectorBinary(thread_frame_pointers, in);
             readBinary(thread_num, in);
             readPODBinary(thread_ptr, in);
 
-            /// This allows to receive more signals if failure happens inside onFault function.
-            /// Example: segfault while symbolizing stack trace.
-            try
-            {
-                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr); })
-                    .detach();
-            }
-            catch (...)
-            {
-                /// Likely cannot allocate thread
-                onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr);
-            }
+            onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr);
         }
     }
 }
@@ -432,20 +391,13 @@ try
     /// Some of these are not really signals, but our own indications on failure reason.
     if (sig == StdTerminate)
         signal_description = "std::terminate";
-    else if (sig == SanitizerTrap)
-        signal_description = "sanitizer trap";
     else if (sig >= 0)
         signal_description = strsignal(sig); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
 
     LOG_FATAL(log, "Signal description: {}", signal_description);
 
     String error_message;
-
-    if (sig != SanitizerTrap)
-        error_message = signalToErrorMessage(sig, info, *context);
-    else
-        error_message = "Sanitizer trap.";
-
+    error_message = signalToErrorMessage(sig, info, *context);
     LOG_FATAL(log, fmt::runtime(error_message));
 
     String bare_stacktrace_str;
@@ -574,29 +526,22 @@ try
     Context::getGlobalContextInstance()->handleCrash();
 
     /// Send crash report to developers (if configured)
-    if (sig != SanitizerTrap)
+    if (daemon)
     {
-        if (daemon)
-        {
-            CrashWriter::onSignal(sig, std::string_view(error_message), stack_trace.getFramePointers(), stack_trace.getOffset(), stack_trace.getSize());
-        }
+        CrashWriter::onSignal(sig, std::string_view(error_message), stack_trace.getFramePointers(), stack_trace.getOffset(), stack_trace.getSize());
+    }
 
-        /// Advice the user to send it manually.
-        if (std::string_view(VERSION_OFFICIAL).contains("official build"))
+    /// Advice the user to send it manually.
+    if (std::string_view(VERSION_OFFICIAL).contains("official build"))
+    {
+        /// Approximate support period, upper bound.
+        if (time(nullptr) - makeDate(DateLUT::instance(), 2000 + VERSION_MAJOR, VERSION_MINOR, 1) < (365 + 30) * 86400)
         {
-            /// Approximate support period, upper bound.
-            if (time(nullptr) - makeDate(DateLUT::instance(), 2000 + VERSION_MAJOR, VERSION_MINOR, 1) < (365 + 30) * 86400)
-            {
-                LOG_FATAL(log, "Report this error to https://github.com/ClickHouse/ClickHouse/issues");
-            }
-            else
-            {
-                LOG_FATAL(log, "ClickHouse version {} is old and should be upgraded to the latest version.", VERSION_STRING);
-            }
+            LOG_FATAL(log, "Report this error to https://github.com/ClickHouse/ClickHouse/issues");
         }
         else
         {
-            LOG_FATAL(log, "This ClickHouse version is not official and should be upgraded to the official build.");
+            LOG_FATAL(log, "ClickHouse version {} is old and should be upgraded to the latest version.", VERSION_STRING);
         }
     }
 
@@ -634,7 +579,7 @@ HandledSignals::HandledSignals()
     signal_pipe.tryIncreaseSize(1 << 20);
 }
 
-void HandledSignals::reset()
+void HandledSignals::reset(bool close_pipe)
 {
     /// Reset signals to SIG_DFL to avoid trying to write to the signal_pipe that will be closed after.
     for (int sig : handled_signals)
@@ -652,7 +597,8 @@ void HandledSignals::reset()
         }
     }
 
-    signal_pipe.close();
+    if (close_pipe)
+        signal_pipe.close();
 }
 
 HandledSignals::~HandledSignals()

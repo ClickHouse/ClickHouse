@@ -484,7 +484,7 @@ private:
         if (should_reconnect)
             entry->disconnect();
 
-        RemoteQueryExecutor executor(*entry, query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
+        RemoteQueryExecutor executor(*entry, query, std::make_shared<const Block>(), global_context, nullptr, Scalars(), Tables(), query_processing_stage);
 
         if (!query_id.empty())
             executor.setQueryId(query_id);
@@ -497,7 +497,7 @@ private:
         executor.sendQuery(ClientInfo::QueryKind::INITIAL_QUERY);
 
         ProfileInfo info;
-        while (Block block = executor.readBlock())
+        for (Block block = executor.readBlock(); !block.empty(); block = executor.readBlock())
             info.update(block);
 
         executor.finish();
@@ -608,6 +608,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         /// So we copy the results to std::string.
         std::optional<std::string> env_user_str;
         std::optional<std::string> env_password_str;
+        std::optional<std::string> env_host_str;
         std::optional<std::string> env_quota_key_str;
 
         const char * env_user = getenv("CLICKHOUSE_USER"); // NOLINT(concurrency-mt-unsafe)
@@ -617,6 +618,10 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         const char * env_password = getenv("CLICKHOUSE_PASSWORD"); // NOLINT(concurrency-mt-unsafe)
         if (env_password != nullptr)
             env_password_str.emplace(std::string(env_password));
+
+        const char * env_host = getenv("CLICKHOUSE_HOST"); // NOLINT(concurrency-mt-unsafe)
+        if (env_host != nullptr)
+            env_host_str.emplace(std::string(env_host));
 
         const char * env_quota_key = getenv("CLICKHOUSE_QUOTA_KEY"); // NOLINT(concurrency-mt-unsafe)
         if (env_quota_key != nullptr)
@@ -683,7 +688,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ? options["port"].as<Ports>()
             : Ports({default_port});
 
-        Strings hosts = options.contains("host") ? options["host"].as<Strings>() : Strings({"localhost"});
+        Strings hosts = options.contains("host") ? options["host"].as<Strings>() : Strings({env_host_str.value_or("localhost")});
 
         String proto_send_chunked {"notchunked"};
         String proto_recv_chunked {"notchunked"};

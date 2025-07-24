@@ -30,7 +30,7 @@ public:
     virtual void writeRowBetweenDelimiter() {}  /// delimiter between rows
 
 protected:
-    IRowOutputFormat(const Block & header, WriteBuffer & out_);
+    IRowOutputFormat(SharedHeader header, WriteBuffer & out_);
     void consume(Chunk chunk) override;
     void consumeTotals(Chunk chunk) override;
     void consumeExtremes(Chunk chunk) override;
