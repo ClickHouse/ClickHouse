@@ -6,7 +6,6 @@ slug: /sql-reference/data-types/data-types-binary-encoding
 title: 'Data types binary encoding specification'
 ---
 
-
 # Data types binary encoding specification
 
 This specification describes the binary format that can be used for binary encoding and decoding of ClickHouse data types. This format is used in `Dynamic` column [binary serialization](dynamic.md#binary-output-format) and can be used in input/output formats [RowBinaryWithNamesAndTypes](../../interfaces/formats.md#rowbinarywithnamesandtypes) and [Native](../../interfaces/formats.md#native) under corresponding settings.

@@ -45,7 +45,6 @@ Upper and lower bounds can be specified to limit Memory engine table size, effec
 
 ## Usage {#usage}
 
-
 **Initialize settings**
 ```sql
 CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_rows_to_keep = 100, max_rows_to_keep = 1000;
@@ -108,4 +107,3 @@ SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' AND data
 │       65536 │      10000 │
 └─────────────┴────────────┘
 ```
-
