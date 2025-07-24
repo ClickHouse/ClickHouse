@@ -121,7 +121,7 @@ private:
     mutable Base bitset;
 };
 
-String toString(const BitSet & bs);
+String toString(const BitSet & bitset);
 
 inline bool isSubsetOf(const BitSet & lhs, const BitSet & rhs) { return (lhs & rhs) == lhs; }
 

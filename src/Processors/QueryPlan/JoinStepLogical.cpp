@@ -347,7 +347,16 @@ JoinActionRef toBoolIfNeeded(JoinActionRef condition)
     auto output_type = removeNullable(condition.getType());
     WhichDataType which_type(output_type);
     if (!which_type.isUInt8())
-        return JoinActionRef::transform({condition}, [](auto & dag, auto && nodes) { return &dag.addCast(*nodes.at(0), std::make_shared<DataTypeUInt8>(), {}); });
+    {
+        return JoinActionRef::transform({condition}, [](auto & dag, auto && nodes)
+        {
+            JoinActionRef::AddFunction function_and(JoinConditionOperator::And);
+            DataTypePtr uint8_ty = std::make_shared<DataTypeUInt8>();
+            const auto & rhs_node = dag.addColumn(ColumnWithTypeAndName(uint8_ty->createColumnConst(1, 1), uint8_ty, "true"));
+            nodes.push_back(&rhs_node);
+            return function_and(dag, nodes);
+        });
+    }
     return condition;
 }
 
