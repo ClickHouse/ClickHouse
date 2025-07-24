@@ -16,7 +16,8 @@ such as sending another query in the command-line client).
 
 Connection limits are enabled by setting the server settings
 `tcp_close_connection_after_queries_num` (for the query limit)
-or `tcp_close_connection_after_queries_seconds` (for the duration limit) to greater than 0. If both limits are enabled, the connection closes when either limit is hit first.
+or `tcp_close_connection_after_queries_seconds` (for the duration limit) to greater than 0.
+If both limits are enabled, the connection closes when either limit is hit first.
 
 Upon hitting a limit and disconnecting, the client receives a
 `TCP_CONNECTION_LIMIT_REACHED` exception, and **the query that causes the disconnect is never processed**.
@@ -26,7 +27,9 @@ Upon hitting a limit and disconnecting, the client receives a
 Assuming `tcp_close_connection_after_queries_num` is set to N, then the connection allows
 N successful queries. Then on query N + 1, the client disconnects.
 
-Every query processed counts towards the query limit. So often when connecting a command-line client, there is an initial query that is sent and processed before any command is sent through the command-line itself; that initial query counts towards the limit.
+Every query processed counts towards the query limit. So often when connecting a command-line client,
+there is an initial query that is sent and processed before any command is sent through the command-line itself;
+that initial query counts towards the limit.
 
 When a TCP connection is idle (i.e., has not processed queries for some duration of time,
 specified by the session setting `poll_interval`), the number of queries counted so far resets to 0.
