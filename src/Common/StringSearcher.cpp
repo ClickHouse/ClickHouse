@@ -102,6 +102,17 @@ public:
         sz_cptr_t pos_cptr = reinterpret_cast<sz_cptr_t>(pos);
         size_t needle_size = needle_end - needle;
 
+        if (needle_size <= 32)
+        {
+            /// For short needles, we can use a simple loop and avoid function calls and the mask preparation
+            sz_cptr_t ned = needle;
+            while (ned != needle_end && *ned == *pos_cptr)
+            {
+                ned++;
+                pos_cptr++;
+            }
+            return ned == needle_end;
+        }
         return equal(pos_cptr, needle, needle_size);
     }
 
