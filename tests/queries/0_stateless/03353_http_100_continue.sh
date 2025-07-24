@@ -91,14 +91,17 @@ checkFor100ContinueResponse
 checkFor200OkResponse
 
 echo "=== Test: Deferred 100 Continue with TOO_MANY_SIMULTANEOUS_QUERIES ==="
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d 'SELECT sleep(300) SETTINGS function_sleep_max_microseconds_per_block=300000000' &
-pid=$!
-sleep 5
+$CLICKHOUSE_CLIENT --query_id "sleep_${CLICKHOUSE_TEST_UNIQUE_NAME}" --query 'SELECT sleep(300) SETTINGS function_sleep_max_microseconds_per_block=300000000' >/dev/null 2>&1 &
+while true
+do
+    ${CLICKHOUSE_CLIENT} --query "SELECT count() > 0 FROM system.processes WHERE query_id = 'sleep_${CLICKHOUSE_TEST_UNIQUE_NAME}'" | grep -F '1' >/dev/null && break || sleep 1
+done
 result=$(echo -ne '10\n11\n12\n' | ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&query=INSERT%20INTO%20expect_100_continue%20FORMAT%20TabSeparated&max_concurrent_queries_for_all_users=1" -H "Expect: 100-continue" -H "X-ClickHouse-100-Continue: defer" --expect100-timeout 300 --max-time 60 -d @- 2>&1)
 checkForMissing100ContinueResponse
 checkForMissingBodyUpload
 checkForError TOO_MANY_SIMULTANEOUS_QUERIES
-kill $pid
+$CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = 'sleep_${CLICKHOUSE_TEST_UNIQUE_NAME}' SYNC" >/dev/null
+wait
 
 echo "=== Test: Deferred 100 Continue with AUTHENTICATION_FAILED ==="
 $CLICKHOUSE_CLIENT --query "DROP USER IF EXISTS user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
