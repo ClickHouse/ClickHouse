@@ -54,6 +54,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"azure_sdk_use_native_client", false, true, "New setting"},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
             {"vector_search_with_rescoring", true, true, "New setting."},
+            {"allow_experimental_insert_into_iceberg", false, false, "New setting."},
             {"write_full_path_insert_iceberg", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.7",
@@ -76,7 +77,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_parquet_enum_as_byte_array", false, false, "Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM"},
             {"distributed_plan_force_shuffle_aggregation", 0, 0, "New experimental setting"},
             {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},
-            {"allow_experimental_insert_into_iceberg", false, false, "New setting."},
             /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.6",
