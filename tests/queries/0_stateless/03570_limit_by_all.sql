@@ -1,6 +1,7 @@
 SET max_threads = 1;
 SET max_insert_threads = 1;
 SET max_block_size = 65536;
+SET allow_experimental_analyzer = 1;
 
 CREATE TABLE test_limit_by_all (
     id Int32,
