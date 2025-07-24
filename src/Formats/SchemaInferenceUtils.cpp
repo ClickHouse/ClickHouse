@@ -589,7 +589,7 @@ namespace
         /// Only unnamed Tuple types can be inferred from arrays.
         for (const auto & type : data_types)
         {
-            if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()); tuple_type && tuple_type->haveExplicitNames())
+            if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()); tuple_type && tuple_type->hasExplicitNames())
                 return;
         }
 
