@@ -7,6 +7,11 @@ SET(VERSION_MAJOR 25)
 SET(VERSION_MINOR 6)
 SET(VERSION_PATCH 5)
 SET(VERSION_GITHASH c3c91c0239e8feaee625a87d191b147006a75e25)
-SET(VERSION_DESCRIBE v25.6.5.1-stable)
-SET(VERSION_STRING 25.6.5.1)
+
+# This is the 'base' tweak of the version, build scripts will
+# increment this by number of commits since previous tag.
+SET(VERSION_TWEAK 28000)
+SET(VERSION_FLAVOUR altinityantalya)
+SET(VERSION_DESCRIBE v25.6.5.20000.altinityantalya)
+SET(VERSION_STRING v25.6.5.20000.altinityantalya)
 # end of autochange

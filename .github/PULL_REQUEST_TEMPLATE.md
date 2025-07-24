@@ -22,20 +22,19 @@ tests/ci/cancel_and_rerun_workflow_lambda/app.py
 ...
 
 ### Documentation entry for user-facing changes
+...
 
-- [ ] Documentation is written (mandatory for new features)
-
-<!---
-Directly edit documentation source files in the "docs" folder with the same pull-request as code changes
-
-or
-
-Add a user-readable short description of the changes that should be added to docs.clickhouse.com below.
-
-At a minimum, the following information should be added (but add more as needed).
-- Motivation: Why is this function, table engine, etc. useful to ClickHouse users?
-
-- Parameters: If the feature being added takes arguments, options or is influenced by settings, please list them below with a brief explanation.
-
-- Example use: A query or command.
--->
+#### Exclude tests:
+- [ ] <!---ci_exclude_fast--> Fast test
+- [ ] <!---ci_exclude_integration--> Integration Tests
+- [ ] <!---ci_exclude_stateless--> Stateless tests
+- [ ] <!---ci_exclude_stateful--> Stateful tests
+- [ ] <!---ci_exclude_performance--> Performance tests
+- [ ] <!---ci_exclude_asan--> All with ASAN
+- [ ] <!---ci_exclude_tsan--> All with TSAN
+- [ ] <!---ci_exclude_msan--> All with MSAN
+- [ ] <!---ci_exclude_ubsan--> All with UBSAN
+- [ ] <!---ci_exclude_coverage--> All with Coverage
+- [ ] <!---ci_exclude_aarch64--> All with Aarch64
+- [ ] <!---ci_exclude_regression--> All Regression
+- [ ] <!---no_ci_cache--> Disable CI Cache

@@ -382,27 +382,26 @@ class CI:
         JobNames.INTEGRATION_TEST_ASAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN],
             release_only=True,
-            num_batches=4,
+            num_batches=8,
             timeout=10800,
         ),
         JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN],
-            num_batches=6,
+            num_batches=8,
         ),
         JobNames.INTEGRATION_TEST_TSAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN],
-            num_batches=6,
-            timeout=9000,  # the job timed out with default value (7200)
+            num_batches=8,
         ),
         JobNames.INTEGRATION_TEST_AARCH64_DISTRIBUTED_PLAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
-            num_batches=6,
+            num_batches=8,
             runner_type=Runners.FUNC_TESTER_AARCH64,
         ),
         JobNames.INTEGRATION_TEST: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
-            num_batches=4,
-            release_only=True,
+            num_batches=8,
+            # release_only=True,
         ),
         JobNames.INTEGRATION_TEST_FLAKY: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN],
@@ -527,10 +526,6 @@ class CI:
             required_builds=[BuildNames.PACKAGE_RELEASE, BuildNames.PACKAGE_AARCH64]
         ),
         JobNames.DOCS_CHECK: JobConfig(
-            digest=DigestConfig(
-                include_paths=["**/*.md", "./docs", "tests/ci/docs_check.py"],
-                docker=["clickhouse/docs-builder"],
-            ),
             run_command="docs_check.py",
             runner_type=Runners.FUNC_TESTER,
         ),
@@ -544,7 +539,7 @@ class CI:
                     "./tests/clickhouse-test",
                 ],
                 exclude_files=[".md"],
-                docker=["clickhouse/fasttest"],
+                docker=["altinityinfra/fasttest"],
             ),
             run_command="fast_test_check.py",
             timeout=2400,
@@ -560,6 +555,14 @@ class CI:
             run_command="bugfix_validate_check.py",
             timeout=2400,
             runner_type=Runners.STYLE_CHECKER,
+        ),
+        JobNames.SIGN_RELEASE: JobConfig(
+            required_builds=[BuildNames.PACKAGE_RELEASE],
+            runner_type=Runners.STYLE_CHECKER,
+        ),
+        JobNames.SIGN_AARCH64: JobConfig(
+            required_builds=[BuildNames.PACKAGE_AARCH64],
+            runner_type=Runners.STYLE_CHECKER_AARCH64,
         ),
     }
 

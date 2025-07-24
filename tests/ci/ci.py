@@ -60,7 +60,11 @@ from report import (
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from version_helper import get_version_from_repo
+from version_helper import (
+    get_version_from_repo,
+    get_version_from_string,
+    update_cmake_version,
+)
 
 # pylint: disable=too-many-lines,too-many-branches
 
@@ -291,11 +295,13 @@ def _pre_action(s3, job_name, batch, indata, pr_info):
 
     # for release/master branches reports must be from the same branch
     report_prefix = ""
-    if pr_info.is_master or pr_info.is_release:
+    if pr_info.is_master or pr_info.is_release or pr_info.is_push_event:
         # do not set report prefix for scheduled or dispatched wf (in case it started from feature branch while
         #   testing), otherwise reports won't be found
         if not (pr_info.is_scheduled or pr_info.is_dispatched):
             report_prefix = Utils.normalize_string(pr_info.head_ref)
+    elif pr_info.is_pr:
+        report_prefix = str(pr_info.number)
     print(
         f"Use report prefix [{report_prefix}], pr_num [{pr_info.number}], head_ref [{pr_info.head_ref}]"
     )
@@ -387,7 +393,7 @@ def _pre_action(s3, job_name, batch, indata, pr_info):
             _get_ext_check_name(job_name),
         )
         ClickHouseHelper().insert_events_into(
-            db="default", table="checks", events=prepared_events
+            db="gh-data", table="checks", events=prepared_events
         )
     print(f"Pre action done. Report files [{reports_files}] have been downloaded")
 
@@ -874,7 +880,7 @@ def _add_build_to_version_history(
 
     print(f"::notice ::Log Adding record to versions history: {data}")
 
-    ch_helper.insert_event_into(db="default", table="version_history", event=data)
+    ch_helper.insert_event_into(db="gh-data", table="version_history", event=data)
 
 
 def _run_test(job_name: str, run_command: str) -> int:
@@ -1104,6 +1110,31 @@ def main() -> int:
         print(
             f"Check if rerun for name: [{check_name}], extended name [{check_name_with_group}]"
         )
+        # NOTE (vnemkov) Job might have not checked out git tags, so it can't properly compute version number.
+        # BUT if there is pre-computed version from `RunConfig` then we can reuse it.
+        pre_configured_version = indata.get('version', None)
+        git = Git(True)
+        if pre_configured_version is not None and git.commits_since_latest == 0:
+            print(f"Updating version in repo files from '{get_version_from_repo()}' to '{pre_configured_version}'")
+
+            pre_configured_version = get_version_from_string(pre_configured_version, git)
+            # need to set description, otherwise subsequent call (perhaps from other script) to get_version_from_repo() fails
+            pre_configured_version.with_description(pre_configured_version.flavour)
+
+            update_cmake_version(pre_configured_version)
+
+        # NOTE (vnemkov) Job might have not checked out git tags, so it can't properly compute version number.
+        # BUT if there is pre-computed version from `RunConfig` then we can reuse it.
+        pre_configured_version = indata.get('version', None)
+        git = Git(True)
+        if pre_configured_version is not None and git.commits_since_latest == 0:
+            print(f"Updating version in repo files from '{get_version_from_repo()}' to '{pre_configured_version}'")
+
+            pre_configured_version = get_version_from_string(pre_configured_version, git)
+            # need to set description, otherwise subsequent call (perhaps from other script) to get_version_from_repo() fails
+            pre_configured_version.with_description(pre_configured_version.flavour)
+
+            update_cmake_version(pre_configured_version)
 
         if job_report.job_skipped and not args.force:
             print(
@@ -1189,7 +1220,7 @@ def main() -> int:
                 job_report.check_name or _get_ext_check_name(args.job_name),
             )
             ch_helper.insert_events_into(
-                db="default", table="checks", events=prepared_events
+                db="gh-data", table="checks", events=prepared_events
             )
 
         elif job_report.job_skipped:
@@ -1255,7 +1286,7 @@ def main() -> int:
                 _get_ext_check_name(args.job_name),
             )
             ClickHouseHelper().insert_events_into(
-                db="default", table="checks", events=prepared_events
+                db="gh-data", table="checks", events=prepared_events
             )
     ### POST action: end
 

@@ -688,16 +688,17 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         return exit_code == 0
 
     def terminate(self):
-        if self.minio_proc:
-            # remove the webhook so it doesn't spam with errors once we stop ClickHouse
-            Shell.check(
-                "/mc admin config reset clickminio logger_webhook:ch_server_webhook",
-                verbose=True,
-            )
-            Shell.check(
-                "/mc admin config reset clickminio audit_webhook:ch_audit_webhook",
-                verbose=True,
-            )
+        # NOTE (strtgbb): Log tables are disabled, we don't use them
+        # if self.minio_proc:
+        #     # remove the webhook so it doesn't spam with errors once we stop ClickHouse
+        #     Shell.check(
+        #         "/mc admin config reset clickminio logger_webhook:ch_server_webhook",
+        #         verbose=True,
+        #     )
+        #     Shell.check(
+        #         "/mc admin config reset clickminio audit_webhook:ch_audit_webhook",
+        #         verbose=True,
+        #     )
 
         self._flush_system_logs()
         print("Terminate ClickHouse processes")

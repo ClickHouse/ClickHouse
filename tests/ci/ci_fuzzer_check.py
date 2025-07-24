@@ -15,7 +15,7 @@ from report import FAIL, FAILURE, OK, SUCCESS, JobReport, TestResult
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
-IMAGE_NAME = "clickhouse/fuzzer"
+IMAGE_NAME = "altinityinfra/fuzzer"
 
 
 def get_run_command(
@@ -34,6 +34,7 @@ def get_run_command(
         f"-e SHA_TO_TEST={pr_info.sha}",
         f"-e BINARY_URL_TO_DOWNLOAD='{build_url}'",
         f"-e FUZZER_TO_RUN='{fuzzer_name}'",
+        f"-e BASE_BRANCH='{pr_info.base_ref}'",
     ]
 
     env_str = " ".join(envs)

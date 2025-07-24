@@ -1,7 +1,7 @@
-# docker build -t clickhouse/performance-comparison .
+# docker build -t altinityinfra/performance-comparison .
 
 ARG FROM_TAG=latest
-FROM clickhouse/test-base:$FROM_TAG
+FROM altinityinfra/test-base:$FROM_TAG
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
@@ -48,7 +48,7 @@ RUN mkdir /fg && cd /fg \
 
 COPY run.sh /
 
-COPY --from=clickhouse/cctools:425d6927d1efbd790bdb /opt/gdb /opt/gdb
+COPY --from=altinityinfra/cctools:c14b85f24d3f131919bf /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
 
 # aws cli to acquire secrets and params from ssm
@@ -58,4 +58,4 @@ RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "aws
 
 CMD ["bash", "/run.sh"]
 
-# docker run --network=host --volume <workspace>:/workspace --volume=<output>:/output -e PR_TO_TEST=<> -e SHA_TO_TEST=<> clickhouse/performance-comparison
+# docker run --network=host --volume <workspace>:/workspace --volume=<output>:/output -e PR_TO_TEST=<> -e SHA_TO_TEST=<> altinityinfra/performance-comparison

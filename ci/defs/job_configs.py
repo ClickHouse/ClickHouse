@@ -13,7 +13,7 @@ build_digest_config = Job.CacheDigestConfig(
         "./programs",
         "./rust",
         "./ci/jobs/build_clickhouse.py",
-        "./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+        # "./ci/jobs/scripts/job_hooks/build_profile_hook.py",
     ],
     with_git_submodules=True,
 )
@@ -24,7 +24,7 @@ common_ft_job_config = Job.Config(
     command='python3 ./ci/jobs/functional_tests.py --options "{PARAMETER}"',
     # some tests can be flaky due to very slow disks - use tmpfs for temporary ClickHouse files
     # --cap-add=SYS_PTRACE and --privileged for gdb in docker
-    run_in_docker="clickhouse/stateless-test+--cap-add=SYS_PTRACE+--privileged+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/etc/clickhouse-server1:/etc/clickhouse-server1+--volume=./ci/tmp/etc/clickhouse-server2:/etc/clickhouse-server2+--volume=./ci/tmp/var/log:/var/log",
+    run_in_docker="altinityinfra/stateless-test+--cap-add=SYS_PTRACE+--privileged+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/etc/clickhouse-server1:/etc/clickhouse-server1+--volume=./ci/tmp/etc/clickhouse-server2:/etc/clickhouse-server2+--volume=./ci/tmp/var/log:/var/log+--env=AZURE_STORAGE_KEY=$AZURE_STORAGE_KEY+--env=AZURE_ACCOUNT_NAME=$AZURE_ACCOUNT_NAME+--env=AZURE_CONTAINER_NAME=$AZURE_CONTAINER_NAME+--env=AZURE_STORAGE_ACCOUNT_URL=$AZURE_STORAGE_ACCOUNT_URL",
     digest_config=Job.CacheDigestConfig(
         include_paths=[
             "./ci/jobs/functional_tests.py",
@@ -67,7 +67,7 @@ class JobConfigs:
         name=JobNames.STYLE_CHECK,
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
         command="python3 ./ci/jobs/check_style.py",
-        run_in_docker="clickhouse/style-test",
+        run_in_docker="altinityinfra/style-test",
         enable_commit_status=True,
     )
     fast_test = Job.Config(
@@ -75,7 +75,7 @@ class JobConfigs:
         runs_on=RunnerLabels.BUILDER_AMD,
         command="python3 ./ci/jobs/fast_test.py",
         # --network=host required for ec2 metadata http endpoint to work
-        run_in_docker="clickhouse/fasttest+--network=host+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log",
+        run_in_docker='altinityinfra/fasttest+--network=host+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log+--env=AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"+--env=AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"',
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/fast_test.py",
@@ -99,7 +99,7 @@ class JobConfigs:
         runs_on=["...from params..."],
         requires=[],
         command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
-        run_in_docker="clickhouse/binary-builder+--network=host",
+        run_in_docker='altinityinfra/binary-builder+--network=host+--env=AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"+--env=AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"',
         timeout=3600 * 4,
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -130,7 +130,7 @@ class JobConfigs:
         requires=["Build (amd_tidy)"],
         command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
         # --network=host required for ec2 metadata http endpoint to work
-        run_in_docker="clickhouse/binary-builder+--network=host",
+        run_in_docker='altinityinfra/binary-builder+--network=host+--env=AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"+--env=AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"',
         timeout=3600 * 4,
         allow_merge_on_failure=True,
         digest_config=build_digest_config,
@@ -148,12 +148,12 @@ class JobConfigs:
         requires=[],
         command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
         # --network=host required for ec2 metadata http endpoint to work
-        run_in_docker="clickhouse/binary-builder+--network=host",
+        run_in_docker='altinityinfra/binary-builder+--network=host+--env=AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"+--env=AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"',
         timeout=3600 * 2,
         digest_config=build_digest_config,
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
-            "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+            # "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
         ],
     ).parametrize(
         parameter=[
@@ -165,7 +165,7 @@ class JobConfigs:
             BuildTypes.AMD_UBSAN,
             BuildTypes.AMD_BINARY,
             BuildTypes.ARM_RELEASE,
-            BuildTypes.ARM_ASAN,
+            # BuildTypes.ARM_ASAN,
             BuildTypes.ARM_COVERAGE,
             BuildTypes.ARM_BINARY,
         ],
@@ -209,10 +209,10 @@ class JobConfigs:
                 ArtifactNames.RPM_ARM_RELEASE,
                 ArtifactNames.TGZ_ARM_RELEASE,
             ],
-            [
-                ArtifactNames.CH_ARM_ASAN,
-                ArtifactNames.DEB_ARM_ASAN,
-            ],
+            # [
+            #     ArtifactNames.CH_ARM_ASAN,
+            #     ArtifactNames.DEB_ARM_ASAN,
+            # ],
             [ArtifactNames.DEB_COV, ArtifactNames.CH_COV_BIN],
             [ArtifactNames.CH_ARM_BIN],
         ],
@@ -225,7 +225,7 @@ class JobConfigs:
             RunnerLabels.BUILDER_AMD,
             RunnerLabels.BUILDER_AMD,
             RunnerLabels.BUILDER_ARM,
-            RunnerLabels.BUILDER_ARM,
+            # RunnerLabels.BUILDER_ARM,
             RunnerLabels.BUILDER_ARM,
             RunnerLabels.BUILDER_ARM,
         ],
@@ -236,12 +236,12 @@ class JobConfigs:
         requires=[],
         command='python3 ./ci/jobs/build_clickhouse.py --build-type "{PARAMETER}"',
         # --network=host required for ec2 metadata http endpoint to work
-        run_in_docker="clickhouse/binary-builder+--network=host",
+        run_in_docker='altinityinfra/binary-builder+--network=host+--env=AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"+--env=AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"',
         timeout=3600 * 2,
         digest_config=build_digest_config,
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
-            "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+            # "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
         ],
     ).parametrize(
         parameter=[
@@ -323,7 +323,7 @@ class JobConfigs:
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="python3 ./ci/jobs/functional_tests.py --options BugfixValidation",
         # some tests can be flaky due to very slow disks - use tmpfs for temporary ClickHouse files
-        run_in_docker="clickhouse/stateless-test+--network=host+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse",
+        run_in_docker="altinityinfra/stateless-test+--network=host+--security-opt seccomp=unconfined+--tmpfs /tmp/clickhouse",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/functional_tests.py",
@@ -447,7 +447,7 @@ class JobConfigs:
         name=JobNames.UNITTEST,
         runs_on=["..params.."],
         command=f"python3 ./ci/jobs/unit_tests_job.py",
-        run_in_docker="clickhouse/fasttest",
+        run_in_docker="altinityinfra/fasttest",
         digest_config=Job.CacheDigestConfig(
             include_paths=["./ci/jobs/unit_tests_job.py"],
         ),
@@ -491,21 +491,21 @@ class JobConfigs:
         parameter=[
             "amd_debug",
             "amd_tsan",
-            "arm_asan",
+            # "arm_asan",
             "amd_ubsan",
             "amd_msan",
         ],
         runs_on=[
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_ARM,
+            # RunnerLabels.FUNC_TESTER_ARM,
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
             ["Build (amd_debug)"],
             ["Build (amd_tsan)"],
-            ["Build (arm_asan)"],
+            # ["Build (arm_asan)"],
             ["Build (amd_ubsan)"],
             ["Build (amd_msan)"],
         ],
@@ -554,19 +554,19 @@ class JobConfigs:
         allow_merge_on_failure=True,
     ).parametrize(
         parameter=[
-            "arm_asan",
+            # "arm_asan",
             "amd_tsan",
             "amd_msan",
             "amd_debug",
         ],
         runs_on=[
-            RunnerLabels.FUNC_TESTER_ARM,
+            # RunnerLabels.FUNC_TESTER_ARM,
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
-            ["Build (arm_asan)"],
+            # ["Build (arm_asan)"],
             ["Build (amd_tsan)"],
             ["Build (amd_msan)"],
             ["Build (amd_debug)"],
@@ -697,21 +697,21 @@ class JobConfigs:
     ).parametrize(
         parameter=[
             "amd_debug",
-            "arm_asan",
+            # "arm_asan",
             "amd_tsan",
             "amd_msan",
             "amd_ubsan",
         ],
         runs_on=[
             RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_ARM,
+            # RunnerLabels.FUNC_TESTER_ARM,
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
             ["Build (amd_debug)"],
-            ["Build (arm_asan)"],
+            # ["Build (arm_asan)"],
             ["Build (amd_tsan)"],
             ["Build (amd_msan)"],
             ["Build (amd_ubsan)"],
@@ -728,21 +728,21 @@ class JobConfigs:
     ).parametrize(
         parameter=[
             "amd_debug",
-            "arm_asan",
+            # "arm_asan",
             "amd_tsan",
             "amd_msan",
             "amd_ubsan",
         ],
         runs_on=[
             RunnerLabels.FUNC_TESTER_AMD,
-            RunnerLabels.FUNC_TESTER_ARM,
+            # RunnerLabels.FUNC_TESTER_ARM,
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
             RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
             ["Build (amd_debug)"],
-            ["Build (arm_asan)"],
+            # ["Build (arm_asan)"],
             ["Build (amd_tsan)"],
             ["Build (amd_msan)"],
             ["Build (amd_ubsan)"],
@@ -753,7 +753,7 @@ class JobConfigs:
         runs_on=["#from param"],
         command='python3 ./ci/jobs/performance_tests.py --test-options "{PARAMETER}"',
         # TODO: switch to stateless-test image
-        run_in_docker="clickhouse/performance-comparison",
+        run_in_docker="altinityinfra/performance-comparison",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./tests/performance/",
@@ -781,7 +781,7 @@ class JobConfigs:
         runs_on=["#from param"],
         command='python3 ./ci/jobs/performance_tests.py --test-options "{PARAMETER}"',
         # TODO: switch to stateless-test image
-        run_in_docker="clickhouse/performance-comparison",
+        run_in_docker="altinityinfra/performance-comparison",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./tests/performance/",
@@ -824,7 +824,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             ],
         ),
-        run_in_docker="clickhouse/stateless-test+--shm-size=16g+--network=host",
+        run_in_docker="altinityinfra/stateless-test+--shm-size=16g+--network=host",
     ).parametrize(
         parameter=[
             BuildTypes.AMD_RELEASE,
@@ -850,7 +850,7 @@ class JobConfigs:
                 "./ci/jobs/docs_job.py",
             ],
         ),
-        run_in_docker="clickhouse/docs-builder",
+        run_in_docker="altinityinfra/docs-builder",
         requires=[JobNames.STYLE_CHECK, ArtifactNames.CH_ARM_BIN],
     )
     docker_sever = Job.Config(
@@ -890,7 +890,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=["./ci/jobs/sqlancer_job.sh"],
         ),
-        run_in_docker="clickhouse/sqlancer-test",
+        run_in_docker="altinityinfra/sqlancer-test",
         timeout=3600,
     ).parametrize(
         parameter=[
@@ -911,7 +911,7 @@ class JobConfigs:
             ],
         ),
         requires=[ArtifactNames.CH_ARM_RELEASE],
-        run_in_docker="clickhouse/stateless-test",
+        run_in_docker="altinityinfra/stateless-test",
         timeout=10800,
     )
     jepsen_keeper = Job.Config(

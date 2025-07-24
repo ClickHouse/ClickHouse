@@ -1,0 +1,150 @@
+name: Republish Multiarch Docker Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      docker_image:
+        description: 'Multiarch Docker image with tag'
+        required: true
+      release_environment:
+        description: 'Select release type: "staging" or "production"'
+        type: choice
+        default: 'staging'
+        options:
+          - staging
+          - production
+      upload_artifacts:
+        description: 'Upload artifacts directly in this workflow'
+        type: boolean
+        default: true
+      s3_upload_path:
+        description: 'Upload artifacts to s3 path'
+        type: string
+        required: false
+  workflow_call:
+    inputs:
+      docker_image:
+        type: string
+        required: true
+      release_environment:
+        type: string
+        required: false
+        default: 'staging'
+      upload_artifacts:
+        type: boolean
+        required: false
+        default: false
+      s3_upload_path:
+        type: string
+        required: false
+    outputs:
+      image_archives_path:
+        description: 'Path to the image archives directory'
+        value: ${{ jobs.republish.outputs.image_archives_path }}
+
+env:
+  IMAGE: ${{ github.event.inputs.docker_image || inputs.docker_image }}
+
+jobs:
+  republish:
+    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker-aarch64]
+    outputs:
+      image_archives_path: ${{ steps.set_path.outputs.image_archives_path }}
+    steps:
+      - name: Docker Hub Login
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: Set clickhouse-server version as new tag
+        run: |
+          # Determine "clickhouse-server" or "clickhouse-keeper"
+          echo "Input IMAGE: $IMAGE"
+          COMPONENT=$(echo "$IMAGE" | sed -E 's|.*/(clickhouse-[^:]+):.*|\1|')
+          echo "Component determined: $COMPONENT"
+          echo "COMPONENT=$COMPONENT" >> $GITHUB_ENV
+
+          # Pull the image
+          echo "Pulling the image"
+          docker pull $IMAGE
+
+          # Get version and clean it up
+          echo "Getting version from image..."
+          VERSION_OUTPUT=$(docker run --rm $IMAGE $COMPONENT --version)
+          echo "Raw version output: $VERSION_OUTPUT"
+
+          # Extract just the version number
+          NEW_TAG=$(echo "$VERSION_OUTPUT" | sed -E 's/.*version ([0-9.]+[^ ]*).*/\1/')
+          echo "Cleaned version: $NEW_TAG"
+
+          # Append "-prerelease" if necessary
+          if [ "${{ github.event.inputs.release_environment || inputs.release_environment }}" = "staging" ]; then
+            NEW_TAG="${NEW_TAG}-prerelease"
+          fi
+
+          if [[ "$IMAGE" == *-alpine* ]]; then
+            NEW_TAG="${NEW_TAG}-alpine"
+          fi
+          echo "New tag: $NEW_TAG"
+
+          # Export the new tag
+          echo "NEW_TAG=$NEW_TAG" >> $GITHUB_ENV
+
+      - name: Process multiarch manifest
+        run: |
+          echo "Re-tag multiarch image $IMAGE to altinity/$COMPONENT:$NEW_TAG"
+          docker buildx imagetools create --tag "altinity/$COMPONENT:$NEW_TAG" "$IMAGE"
+
+          # Create directory for image archives
+          mkdir -p image_archives
+
+          # Pull and save platform-specific images
+          for PLATFORM in "linux/amd64" "linux/arm64"; do
+            echo "Pulling and saving image for $PLATFORM..."
+            # Pull the specific platform image
+            docker pull --platform $PLATFORM "altinity/$COMPONENT:$NEW_TAG"
+
+            # Save the image to a tar file
+            ARCH=$(echo $PLATFORM | cut -d'/' -f2)
+            docker save "altinity/$COMPONENT:$NEW_TAG" -o "image_archives/${COMPONENT}-${NEW_TAG}-${ARCH}.tar"
+          done
+
+          # Save manifest inspection
+          docker buildx imagetools inspect "altinity/$COMPONENT:$NEW_TAG" > image_archives/manifest.txt
+
+          # Compress the archives
+          cd image_archives
+          for file in *.tar; do
+            gzip "$file"
+          done
+          cd ..
+
+      - name: Set image archives path
+        id: set_path
+        run: |
+          echo "image_archives_path=${{ github.workspace }}/image_archives" >> $GITHUB_OUTPUT
+
+      - name: Upload image archives
+        if: ${{ github.event.inputs.upload_artifacts || inputs.upload_artifacts }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-images-backup
+          path: image_archives/
+          retention-days: 90
+
+      - name: Install aws cli
+        if: ${{ inputs.s3_upload_path != '' }}
+        uses: unfor19/install-aws-cli-action@v1
+        with:
+          version: 2
+          arch: arm64
+
+      - name: Upload to S3
+        if: ${{ inputs.s3_upload_path != '' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          aws s3 sync image_archives/ "${{ inputs.s3_upload_path }}"
+

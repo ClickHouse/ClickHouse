@@ -15,6 +15,8 @@ SET(VERSION_MAJOR {major})
 SET(VERSION_MINOR {minor})
 SET(VERSION_PATCH {patch})
 SET(VERSION_GITHASH {githash})
+SET(VERSION_TWEAK {tweak})
+SET(VERSION_FLAVOUR {flavour})
 SET(VERSION_DESCRIBE {describe})
 SET(VERSION_STRING {string})
 """
@@ -31,9 +33,12 @@ SET(VERSION_STRING {string})
 
             name, value = line[4:-1].split(maxsplit=1)
             name = name.removeprefix("VERSION_").lower()
-            if name in ("major", "minor", "patch"):
+            if name in ("major", "minor", "patch", "tweak"):
                 value = int(value)
             versions[name] = value
+
+        if versions.get("flavour"):
+            versions["string"] = f"{versions['string']}.{versions['flavour']}"
 
         result = {
             "major": versions["major"],
@@ -43,6 +48,8 @@ SET(VERSION_STRING {string})
             "githash": versions["githash"],
             "describe": versions["describe"],
             "string": versions["string"],
+            "tweak": versions["tweak"],
+            "flavour": versions.get("flavour", ""),
         }
         return result
 

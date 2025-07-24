@@ -1,0 +1,31 @@
+name: Docker setup
+description: Setup docker
+inputs:
+  test_name:
+    description: name of the test, used in determining ipv6 configs.
+    default: None
+    type: string
+runs:
+  using: "composite"
+  steps:
+    - name: Docker IPv6 configuration
+      shell: bash
+      env:
+        ipv6_subnet: ${{ contains(inputs.test_name, 'Integration') && '2001:db8:1::/64' || '2001:3984:3989::/64' }}
+      run: |
+        # make sure docker uses proper IPv6 config
+        sudo touch /etc/docker/daemon.json
+        sudo chown ubuntu:ubuntu /etc/docker/daemon.json
+        sudo cat <<EOT > /etc/docker/daemon.json
+        {
+          "ipv6": true,
+          "fixed-cidr-v6": "${{ env.ipv6_subnet }}"
+        }
+        EOT
+        sudo chown root:root /etc/docker/daemon.json
+        sudo systemctl restart docker
+        sudo systemctl status docker
+    - name: Docker info
+      shell: bash
+      run: |
+        docker info

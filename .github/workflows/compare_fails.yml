@@ -1,0 +1,110 @@
+name: Compare CI Failures
+
+on:
+  workflow_dispatch:
+    inputs:
+      current_ref:
+        description: 'Current reference (commit hash or git tag) (default: current commit on selected branch)'
+        required: false
+        type: string
+      previous_ref:
+        description: 'Previous reference to compare with (commit hash, git tag or workflow url) (default: previous stable tag for current reference)'
+        required: false
+        type: string
+      upstream_ref:
+        description: 'Upstream reference to compare with (commit hash, git tag or MAJOR.MINOR version) (default: previous lts tag for current reference)'
+        required: false
+        type: string
+      include_broken:
+        description: 'Include BROKEN tests in comparison'
+        required: false
+        type: boolean
+        default: false
+  push:
+    tags:
+      - 'v*.altinity*'
+
+env:
+  CHECKS_DATABASE_HOST: ${{ secrets.CHECKS_DATABASE_HOST }}
+  CHECKS_DATABASE_USER: ${{ secrets.CLICKHOUSE_TEST_STAT_LOGIN }}
+  CHECKS_DATABASE_PASSWORD: ${{ secrets.CLICKHOUSE_TEST_STAT_PASSWORD }}
+
+jobs:
+  Compare:
+    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker-aarch64]
+    steps:
+      - name: Check commit status
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ inputs.current_ref }}" ]]; then
+            # For workflow_dispatch with custom ref, skip the check
+            exit 0
+          fi
+                    
+          # Query GitHub API for commit status
+          STATUSES=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/commits/${{ github.sha }}/status")
+          
+          # Check if there are any statuses
+          if [ "$(echo $STATUSES | jq '.total_count')" -eq 0 ]; then
+            echo "No commit statuses found for ${{ github.sha }}. Assuming tests have not run yet. Aborting workflow."
+            exit 1
+          fi
+          
+          echo "Found commit statuses, proceeding with comparison."
+
+      - name: Check out repository code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.current_ref || github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install clickhouse-driver requests pandas tabulate
+
+      - name: Set default refs
+        id: default_refs
+        run: |
+          VERSION=$(git describe --tags --abbrev=0 | sed 's/v\([0-9]\+\.[0-9]\+\).*/\1/')
+          echo "Detected version: $VERSION"
+          
+          CURRENT_TAG=$(git tag --contains ${{ inputs.current_ref || github.sha }} | sort -r | grep -m 1 'altinity' || echo '')
+          echo "CURRENT_TAG: '$CURRENT_TAG' ${{ inputs.current_ref || github.sha }}"
+          PREVIOUS_TAG_COMMIT=$(git log -1 --until=yesterday --tags=v${VERSION}*.altinity* | grep -Po "(?<=commit ).*")
+          PREVIOUS_TAG=$(git tag --contains $PREVIOUS_TAG_COMMIT | sort -r | grep -m 1 'altinity')
+          echo "PREVIOUS_TAG: '$PREVIOUS_TAG' $PREVIOUS_TAG_COMMIT"
+          UPSTREAM_TAG_COMMIT=$(git log -1 --tags=v${VERSION}*-lts | grep -Po "(?<=commit ).*")
+          UPSTREAM_TAG=$(git tag --contains $UPSTREAM_TAG_COMMIT | sort -r | grep -m 1 'lts')
+          echo "UPSTREAM_TAG: '$UPSTREAM_TAG' $UPSTREAM_TAG_COMMIT"
+
+          echo "PREVIOUS_TAG=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
+          echo "PREVIOUS_TAG_COMMIT=$PREVIOUS_TAG_COMMIT" >> $GITHUB_OUTPUT
+          echo "UPSTREAM_TAG=$UPSTREAM_TAG" >> $GITHUB_OUTPUT
+          echo "UPSTREAM_TAG_COMMIT=$UPSTREAM_TAG_COMMIT" >> $GITHUB_OUTPUT
+          echo "CURRENT_TAG=$CURRENT_TAG" >> $GITHUB_OUTPUT
+      - name: Comparison report
+        if: ${{ !cancelled() }}
+        run: |
+          git clone https://github.com/Altinity/actions.git
+          cd actions
+          git checkout 4623f919ee2738bea69aad405879562476736932
+          python3 scripts/compare_ci_fails.py \
+            --current-ref ${{ steps.default_refs.outputs.CURRENT_TAG || inputs.current_ref || github.sha }} \
+            --previous-ref ${{ steps.default_refs.outputs.PREVIOUS_TAG || inputs.previous_ref || steps.default_refs.outputs.PREVIOUS_TAG_COMMIT }} \
+            --upstream-ref ${{ steps.default_refs.outputs.UPSTREAM_TAG || inputs.upstream_ref || steps.default_refs.outputs.UPSTREAM_TAG_COMMIT }} \
+            ${{ inputs.include_broken && '--broken' || '' }}
+          cat comparison_results.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload comparison results
+        uses: actions/upload-artifact@v4
+        with:
+          name: comparison-results
+          path: |
+            actions/comparison_results.md

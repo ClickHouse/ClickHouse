@@ -21,6 +21,7 @@ from version_helper import (
     get_abs_path,
     get_version_from_repo,
     get_version_from_tag,
+    get_version_from_string,
 )
 
 # This array gives the preferred category order, and is also used to
@@ -48,13 +49,14 @@ runner = git_runner
 
 class Description:
     def __init__(
-        self, number: int, user: NamedUser, html_url: str, entry: str, category: str
+        self, number: int, user: NamedUser, html_url: str, entry: str, category: str, backport_pr: int = None
     ):
         self.number = number
         self.html_url = html_url
         self.user = gh.get_user_cached(user._rawData["login"])  # type: ignore
         self.entry = entry
         self.category = category
+        self.backport_pr = backport_pr
 
     @property
     def formatted_entry(self) -> str:
@@ -72,20 +74,21 @@ class Description:
             r"\1[#\3](\2)",
             entry,
         )
-        # It's possible that we face a secondary rate limit.
-        # In this case we should sleep until we get it
-        while True:
-            try:
-                user_name = self.user.name if self.user.name else self.user.login
-                break
-            except UnknownObjectException:
-                user_name = self.user.login
-                break
-            except RateLimitExceededException:
-                gh.sleep_on_rate_limit()
+        # # It's possible that we face a secondary rate limit.
+        # # In this case we should sleep until we get it
+        # while True:
+        #     try:
+        #         user_name = self.user.name if self.user.name else self.user.login
+        #         break
+        #     except UnknownObjectException:
+        #         user_name = self.user.login
+        #         break
+        #     except RateLimitExceededException:
+        #         gh.sleep_on_rate_limit()
+
+        backport_clause = '' if self.backport_pr is None else f' via {self.backport_pr}'
         return (
-            f"* {entry} [#{self.number}]({self.html_url}) "
-            f"([{user_name}]({self.user.html_url}))."
+            f"* {entry} (#{self.number} by @{self.user.login}{backport_clause})"
         )
 
     # Sort PR descriptions by numbers
@@ -155,7 +158,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--repo",
-        default="ClickHouse/ClickHouse",
+        default="Altinity/ClickHouse",
         help="a repository to query for pull-requests from GitHub",
     )
     parser.add_argument(
@@ -196,13 +199,14 @@ def parse_args() -> argparse.Namespace:
 # Returns None if the PR should not be mentioned in changelog.
 def generate_description(item: PullRequest, repo: Repository) -> Optional[Description]:
     backport_number = item.number
-    if item.head.ref.startswith("backport/"):
+    # NOTE(vnemkov): intentionally without trailing slash, so it will match upstream's 'backport/' and our 'backports/' branch names.
+    if item.head.ref.startswith("backport"):
         branch_parts = item.head.ref.split("/")
         if len(branch_parts) == 3:
             try:
                 item = gh.get_pull_cached(repo, int(branch_parts[-1]))
             except Exception as e:
-                logging.warning("unable to get backported PR, exception: %s", e)
+                logging.warning(f"unable to get backported PR for %s, exception %s", item, e)
         else:
             logging.warning(
                 "The branch %s doesn't match backport template, using PR %s as is",
@@ -292,8 +296,9 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
     ):
         category = "Bug Fix (user-visible misbehavior in an official stable release)"
 
+    backport_pr = None
     if backport_number != item.number:
-        entry = f"Backported in #{backport_number}: {entry}"
+        backport_pr = backport_number
 
     if not entry:
         # Shouldn't happen, because description check in CI should catch such PRs.
@@ -309,7 +314,7 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
             category = c
             break
 
-    return Description(item.number, item.user, item.html_url, entry, category)
+    return Description(item.number, item.user, item.html_url, entry, category, backport_pr=backport_pr)
 
 
 def write_changelog(
@@ -395,6 +400,19 @@ def get_year(prs: PullRequests) -> int:
 
 
 def get_branch_and_patch_by_tag(tag: str) -> Tuple[Optional[str], Optional[int]]:
+    try:
+        try:
+            patch = get_version_from_string(tag.removeprefix('v')).patch
+            branch = runner.run(f"git branch --contains {tag} | head -n1", stderr=DEVNULL).strip()
+        except:
+            # most likely the `tag` is not a tag, but a commit
+            patch = 999999999999
+            branch = runner.run(f"git branch --contains {tag} | head -n1", stderr=DEVNULL).strip().removeprefix('*').strip()
+
+        return branch, patch
+    except:
+        logging.exception(f"Failed to get branch from a tag {tag} using git commands", exc_info=True)
+
     tag = tag.removeprefix("v")
     versions = tag.split(".")
     if len(versions) < 4:

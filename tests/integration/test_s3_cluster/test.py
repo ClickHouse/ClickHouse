@@ -73,7 +73,7 @@ def started_cluster():
             "s0_0_0",
             main_configs=["configs/cluster.xml", "configs/named_collections.xml"],
             user_configs=["configs/users.xml"],
-            macros={"replica": "node1", "shard": "shard1"},
+            macros={"replica": "replica1", "shard": "shard1"},
             with_minio=True,
             with_zookeeper=True,
         )
@@ -413,6 +413,20 @@ def test_cluster_with_header(started_cluster):
         )
         == "SomeValue\n"
     )
+    assert (
+        node.query(
+            """SELECT * from s3('http://resolver:8080/bucket/key.csv', headers(MyCustomHeader = 'SomeValue'))
+            SETTINGS object_storage_cluster = 'cluster_simple'"""
+        )
+        == "SomeValue\n"
+    )
+    assert (
+        node.query(
+            """SELECT * from s3('http://resolver:8080/bucket/key.csv', headers(MyCustomHeader = 'SomeValue'), 'CSV')
+            SETTINGS object_storage_cluster = 'cluster_simple'"""
+        )
+        == "SomeValue\n"
+    )
 
 
 def test_cluster_with_named_collection(started_cluster):
@@ -428,6 +442,20 @@ def test_cluster_with_named_collection(started_cluster):
 
     s3_cluster = node.query(
         """SELECT * from s3Cluster(cluster_simple, test_s3, structure='auto') ORDER BY (c1, c2, c3)"""
+    )
+
+    assert TSV(pure_s3) == TSV(s3_cluster)
+
+    s3_cluster = node.query(
+        """SELECT * from s3(test_s3) ORDER BY (c1, c2, c3)
+        SETTINGS object_storage_cluster = 'cluster_simple'"""
+    )
+
+    assert TSV(pure_s3) == TSV(s3_cluster)
+
+    s3_cluster = node.query(
+        """SELECT * from s3(test_s3, structure='auto') ORDER BY (c1, c2, c3)
+        SETTINGS object_storage_cluster = 'cluster_simple'"""
     )
 
     assert TSV(pure_s3) == TSV(s3_cluster)

@@ -83,12 +83,16 @@ def get_pr_for_commit(sha, ref):
                 return pr
             our_prs.append(pr)
         logging.warning(
-            "Cannot find PR with required ref %s, sha %s - returning first one",
+            "Cannot find PR with required ref %s, sha %s",
             ref,
             sha,
         )
-        first_pr = our_prs[0]
-        return first_pr
+        # NOTE(vnemkov): IMO returning possibly unrelated PR is bad and breaks CI/CD down the road
+        # if len(our_prs) != 0:
+        #     first_pr = our_prs[0]
+        #     return first_pr
+        # else:
+        return None
     except Exception as ex:
         logging.error(
             "Cannot fetch PR info from commit ref %s, sha %s, exception: %s",
@@ -139,8 +143,10 @@ class PRInfo:
         ref = github_event.get("ref", "refs/heads/master")
         if ref and ref.startswith("refs/heads/"):
             ref = ref[11:]
+        # e.g. "refs/pull/509/merge" or "refs/tags/v24.3.12.76.altinitystable"
+        self.ref = ref  # type: str
         # Default values
-        self.base_ref = ""  # type: str
+        self.base_ref = github_event.get("base_ref","")  # type: str
         self.base_name = ""  # type: str
         self.head_ref = ""  # type: str
         self.head_name = ""  # type: str
@@ -244,7 +250,7 @@ class PRInfo:
             pull_request = get_pr_for_commit(self.sha, github_event["ref"])
 
             if pull_request is None or pull_request["state"] == "closed":
-                # it's merged PR to master
+                # it's merged PR to master, or there is no PR (build against specific commit or tag)
                 self.number = 0
                 if pull_request:
                     self.merged_pr = pull_request["number"]
@@ -253,9 +259,13 @@ class PRInfo:
                 self.base_name = self.repo_full_name
                 self.head_ref = ref
                 self.head_name = self.repo_full_name
-                self.diff_urls.append(
-                    self.compare_url(github_event["before"], self.sha)
-                )
+                before_sha = github_event["before"]
+                # in case of just a tag on exsiting commit, "before_sha" is 0000000000000000000000000000000000000000
+                # Hence it is a special case and basically nothing changed, there is no need to compose a diff url
+                if not all(x == '0' for x in before_sha):
+                    self.diff_urls.append(
+                        self.compare_url(before_sha, self.sha)
+                    )
             else:
                 self.number = pull_request["number"]
                 self.labels = {label["name"] for label in pull_request["labels"]}

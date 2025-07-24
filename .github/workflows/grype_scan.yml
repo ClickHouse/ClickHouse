@@ -1,0 +1,152 @@
+name: Grype Scan
+run-name: Grype Scan ${{ inputs.docker_image }}
+
+on:
+    workflow_dispatch:
+        # Inputs for manual run
+        inputs:
+            docker_image:
+                description: 'Docker image. If no tag, it will be determined by version_helper.py'
+                required: true
+    workflow_call:
+        # Inputs for workflow call
+        inputs:
+            docker_image:
+                description: 'Docker image. If no tag, it will be determined by version_helper.py'
+                required: true
+                type: string
+            version:
+                description: 'Version tag. If no version, it will be determined by version_helper.py'
+                required: false
+                type: string
+                default: ""
+            tag-suffix:
+                description: 'Tag suffix. To be appended the version from version_helper.py'
+                required: false
+                type: string
+                default: ""
+env:
+  PYTHONUNBUFFERED: 1
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  GRYPE_VERSION: "v0.92.2-arm64v8"
+
+jobs:
+    grype_scan:
+        name: Grype Scan
+        runs-on: [self-hosted, altinity-on-demand, altinity-style-checker-aarch64]
+        steps:
+        - name: Checkout repository
+          uses: actions/checkout@v4
+
+        - name: Set up Docker
+          uses: docker/setup-buildx-action@v3
+
+        - name: Set up Python
+          run: |
+            export TESTFLOWS_VERSION="2.4.19"
+            sudo apt-get update
+            sudo apt-get install -y python3-pip python3-venv
+            python3 -m venv venv
+            source venv/bin/activate
+            pip install --upgrade requests chardet urllib3 unidiff boto3 PyGithub
+            pip install testflows==$TESTFLOWS_VERSION awscli==1.33.28
+            echo PATH=$PATH >>$GITHUB_ENV
+
+        - name: Set image tag if not given
+          if: ${{ !contains(inputs.docker_image, ':') }}
+          id: set_version
+          env:
+            TAG_SUFFIX: ${{ inputs.tag-suffix }}
+            SPECIFIED_VERSION: ${{ inputs.version }}
+          run: |
+            python3 ./tests/ci/version_helper.py | grep = | tee /tmp/version_info
+            source /tmp/version_info
+            if [ -z "$SPECIFIED_VERSION" ]; then
+                VERSION=$CLICKHOUSE_VERSION_STRING
+            else
+                VERSION=$SPECIFIED_VERSION
+            fi
+            echo "docker_image=${{ inputs.docker_image }}:$PR_NUMBER-$VERSION$TAG_SUFFIX" >> $GITHUB_OUTPUT
+            echo "commit_sha=$CLICKHOUSE_VERSION_GITHASH" >> $GITHUB_OUTPUT
+
+        - name: Run Grype Scan
+          run: |
+            DOCKER_IMAGE=${{ steps.set_version.outputs.docker_image || inputs.docker_image }}
+            ./.github/grype/run_grype_scan.sh $DOCKER_IMAGE
+
+        - name: Parse grype results
+          run: |
+            python3 -u ./.github/grype/parse_vulnerabilities_grype.py -o nice --no-colors --log raw.log --test-to-end
+
+        - name: Transform and Upload Grype Results
+          if: always()
+          id: upload_results
+          env:
+            S3_BUCKET: "altinity-build-artifacts"
+            COMMIT_SHA: ${{ steps.set_version.outputs.commit_sha || github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+            PR_NUMBER: ${{ env.PR_NUMBER || github.event.pull_request.number || 0 }}
+            DOCKER_IMAGE: ${{ steps.set_version.outputs.docker_image || inputs.docker_image }}
+          run: |
+            echo "PR_NUMBER=$PR_NUMBER"
+            ./.github/grype/transform_and_upload_results_s3.sh
+
+        - name: Create step summary
+          if: always()
+          id: create_summary
+          run: |
+            jq -r '"**Image**: \(.source.target.userInput)"' result.json >> $GITHUB_STEP_SUMMARY
+            jq -r '.distro | "**Distro**: \(.name):\(.version)"' result.json >> $GITHUB_STEP_SUMMARY
+            if jq -e '.matches | length == 0' result.json > /dev/null; then
+              echo "No CVEs" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| Severity   | Count |" >> $GITHUB_STEP_SUMMARY
+              echo "|------------|-------|" >> $GITHUB_STEP_SUMMARY
+              jq -r '
+                .matches | 
+                map(.vulnerability.severity) | 
+                group_by(.) | 
+                map({severity: .[0], count: length}) | 
+                sort_by(.severity) | 
+                map("| \(.severity) | \(.count) |") | 
+                .[]
+              ' result.json >> $GITHUB_STEP_SUMMARY
+            fi
+
+            HIGH_COUNT=$(jq -r '.matches | map(.vulnerability.severity) | map(select(. == "High")) | length' result.json)
+            CRITICAL_COUNT=$(jq -r '.matches | map(.vulnerability.severity) | map(select(. == "Critical")) | length' result.json)
+            TOTAL_HIGH_CRITICAL=$((HIGH_COUNT + CRITICAL_COUNT))
+            echo "total_high_critical=$TOTAL_HIGH_CRITICAL" >> $GITHUB_OUTPUT
+
+            if [ $TOTAL_HIGH_CRITICAL -gt 0 ]; then
+                echo '## High and Critical vulnerabilities found' >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
+                cat raw.log | tfs --no-colors show tests | grep -Pi 'High|Critical' >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
+            fi
+
+        - name: Set commit status
+          if: always()
+          uses: actions/github-script@v7
+          with:
+            github-token: ${{ secrets.GITHUB_TOKEN }}
+            script: |
+              github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: '${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}',
+                state: '${{ steps.create_summary.outputs.total_high_critical > 0 && 'failure' || 'success' }}',
+                target_url: '${{ steps.upload_results.outputs.https_s3_path }}/results.html',
+                description: 'Grype Scan Completed with ${{ steps.create_summary.outputs.total_high_critical }} high/critical vulnerabilities',
+                context: 'Grype Scan ${{ steps.set_version.outputs.docker_image || inputs.docker_image }}'
+              })
+
+        - name: Upload artifacts
+          if: always()
+          uses: actions/upload-artifact@v4
+          with:
+            name: grype-results-${{ hashFiles('raw.log') }}
+            path: |
+              result.json
+              nice.log.txt

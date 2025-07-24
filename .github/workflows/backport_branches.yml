@@ -3,6 +3,7 @@
 name: BackportPR
 
 on:
+  workflow_dispatch:
   pull_request:
     branches: ['2[1-9].[1-9][0-9]', '2[1-9].[1-9]']
 
@@ -12,6 +13,20 @@ env:
   DISABLE_CI_MERGE_COMMIT: ${{ vars.DISABLE_CI_MERGE_COMMIT || '0' }}
   DISABLE_CI_CACHE: ${{ vars.DISABLE_CI_CACHE || '0' }}
   CHECKOUT_REF: ${{ vars.DISABLE_CI_MERGE_COMMIT == '1' && github.event.pull_request.head.sha || '' }}
+  DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+  CLICKHOUSE_TEST_STAT_URL: ${{ secrets.CLICKHOUSE_TEST_STAT_URL }}
+  CLICKHOUSE_TEST_STAT_LOGIN: ${{ secrets.CLICKHOUSE_TEST_STAT_LOGIN }}
+  CLICKHOUSE_TEST_STAT_PASSWORD: ${{ secrets.CLICKHOUSE_TEST_STAT_PASSWORD }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+  CHECKS_DATABASE_HOST: ${{ secrets.CHECKS_DATABASE_HOST }}
+  AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+  AZURE_ACCOUNT_NAME: ${{ secrets.AZURE_ACCOUNT_NAME }}
+  AZURE_CONTAINER_NAME: ${{ secrets.AZURE_CONTAINER_NAME }}
+  AZURE_STORAGE_ACCOUNT_URL: "https://${{ secrets.AZURE_ACCOUNT_NAME }}.blob.core.windows.net/"
+  ROBOT_TOKEN: ${{ secrets.ROBOT_TOKEN }}
+  GH_TOKEN: ${{ github.token }}
 
 # Allow updating GH commit statuses and PR comments to post an actual job reports link
 permissions: write-all
@@ -19,7 +34,7 @@ permissions: write-all
 jobs:
 
   config_workflow:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker-aarch64]
     needs: []
     name: "Config Workflow"
     outputs:
@@ -29,6 +44,17 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
+
+      - name: Note report location to summary
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || 0 }}
+          COMMIT_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          REPORT_LINK=https://s3.amazonaws.com/altinity-build-artifacts/$PR_NUMBER/$COMMIT_SHA/ci_run_report.html
+          echo "Workflow Run Report: [View Report]($REPORT_LINK)" >> $GITHUB_STEP_SUMMARY
 
       - name: Prepare env script
         run: |
@@ -56,7 +82,7 @@ jobs:
           fi
 
   dockers_build_amd:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker]
     needs: [config_workflow]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYW1kKQ==') }}
     name: "Dockers Build (amd)"
@@ -67,6 +93,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -94,7 +123,7 @@ jobs:
           fi
 
   dockers_build_arm:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker-aarch64]
     needs: [config_workflow]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYXJtKQ==') }}
     name: "Dockers Build (arm)"
@@ -105,6 +134,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -132,7 +164,7 @@ jobs:
           fi
 
   build_amd_debug:
-    runs-on: [self-hosted, builder]
+    runs-on: [self-hosted, altinity-on-demand, altinity-builder]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9kZWJ1Zyk=') }}
     name: "Build (amd_debug)"
@@ -143,6 +175,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -170,7 +205,7 @@ jobs:
           fi
 
   build_amd_release:
-    runs-on: [self-hosted, builder]
+    runs-on: [self-hosted, altinity-on-demand, altinity-builder]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9yZWxlYXNlKQ==') }}
     name: "Build (amd_release)"
@@ -181,6 +216,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -208,7 +246,7 @@ jobs:
           fi
 
   build_amd_asan:
-    runs-on: [self-hosted, builder]
+    runs-on: [self-hosted, altinity-on-demand, altinity-builder]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9hc2FuKQ==') }}
     name: "Build (amd_asan)"
@@ -219,6 +257,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -246,7 +287,7 @@ jobs:
           fi
 
   build_amd_tsan:
-    runs-on: [self-hosted, builder]
+    runs-on: [self-hosted, altinity-on-demand, altinity-builder]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF90c2FuKQ==') }}
     name: "Build (amd_tsan)"
@@ -257,6 +298,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -284,7 +328,7 @@ jobs:
           fi
 
   build_arm_release:
-    runs-on: [self-hosted, builder-aarch64]
+    runs-on: [self-hosted, altinity-on-demand, altinity-builder]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFybV9yZWxlYXNlKQ==') }}
     name: "Build (arm_release)"
@@ -295,6 +339,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -322,7 +369,7 @@ jobs:
           fi
 
   build_amd_darwin:
-    runs-on: [self-hosted, builder]
+    runs-on: [self-hosted, altinity-on-demand, altinity-builder]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9kYXJ3aW4p') }}
     name: "Build (amd_darwin)"
@@ -333,6 +380,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -360,7 +410,7 @@ jobs:
           fi
 
   build_arm_darwin:
-    runs-on: [self-hosted, builder-aarch64]
+    runs-on: [self-hosted, altinity-on-demand, altinity-builder]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFybV9kYXJ3aW4p') }}
     name: "Build (arm_darwin)"
@@ -371,6 +421,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -398,7 +451,7 @@ jobs:
           fi
 
   docker_server_image:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release, build_arm_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VyIHNlcnZlciBpbWFnZQ==') }}
     name: "Docker server image"
@@ -409,6 +462,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -436,7 +492,7 @@ jobs:
           fi
 
   docker_keeper_image:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release, build_arm_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VyIGtlZXBlciBpbWFnZQ==') }}
     name: "Docker keeper image"
@@ -447,6 +503,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -474,7 +533,7 @@ jobs:
           fi
 
   install_packages_release:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAocmVsZWFzZSk=') }}
     name: "Install packages (release)"
@@ -485,6 +544,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -512,7 +574,7 @@ jobs:
           fi
 
   install_packages_aarch64:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker-aarch64]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYWFyY2g2NCk=') }}
     name: "Install packages (aarch64)"
@@ -523,6 +585,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -550,7 +615,7 @@ jobs:
           fi
 
   compatibility_check_release:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'Q29tcGF0aWJpbGl0eSBjaGVjayAocmVsZWFzZSk=') }}
     name: "Compatibility check (release)"
@@ -561,6 +626,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -588,7 +656,7 @@ jobs:
           fi
 
   compatibility_check_aarch64:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker-aarch64]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_release]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'Q29tcGF0aWJpbGl0eSBjaGVjayAoYWFyY2g2NCk=') }}
     name: "Compatibility check (aarch64)"
@@ -599,6 +667,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -626,7 +697,7 @@ jobs:
           fi
 
   stateless_tests_amd_asan_distributed_plan_1_2:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgMS8yKQ==') }}
     name: "Stateless tests (amd_asan, distributed plan, 1/2)"
@@ -637,6 +708,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -664,7 +738,7 @@ jobs:
           fi
 
   stateless_tests_amd_asan_distributed_plan_2_2:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgMi8yKQ==') }}
     name: "Stateless tests (amd_asan, distributed plan, 2/2)"
@@ -675,6 +749,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -702,7 +779,7 @@ jobs:
           fi
 
   stress_test_amd_tsan:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RyZXNzIHRlc3QgKGFtZF90c2FuKQ==') }}
     name: "Stress test (amd_tsan)"
@@ -713,6 +790,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -740,7 +820,7 @@ jobs:
           fi
 
   integration_tests_asan_old_analyzer_1_6:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFzYW4sIG9sZCBhbmFseXplciwgMS82KQ==') }}
     name: "Integration tests (asan, old analyzer, 1/6)"
@@ -751,6 +831,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -778,7 +861,7 @@ jobs:
           fi
 
   integration_tests_asan_old_analyzer_2_6:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFzYW4sIG9sZCBhbmFseXplciwgMi82KQ==') }}
     name: "Integration tests (asan, old analyzer, 2/6)"
@@ -789,6 +872,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -816,7 +902,7 @@ jobs:
           fi
 
   integration_tests_asan_old_analyzer_3_6:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFzYW4sIG9sZCBhbmFseXplciwgMy82KQ==') }}
     name: "Integration tests (asan, old analyzer, 3/6)"
@@ -827,6 +913,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -854,7 +943,7 @@ jobs:
           fi
 
   integration_tests_asan_old_analyzer_4_6:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFzYW4sIG9sZCBhbmFseXplciwgNC82KQ==') }}
     name: "Integration tests (asan, old analyzer, 4/6)"
@@ -865,6 +954,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -892,7 +984,7 @@ jobs:
           fi
 
   integration_tests_asan_old_analyzer_5_6:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFzYW4sIG9sZCBhbmFseXplciwgNS82KQ==') }}
     name: "Integration tests (asan, old analyzer, 5/6)"
@@ -903,6 +995,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -930,7 +1025,7 @@ jobs:
           fi
 
   integration_tests_asan_old_analyzer_6_6:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFzYW4sIG9sZCBhbmFseXplciwgNi82KQ==') }}
     name: "Integration tests (asan, old analyzer, 6/6)"
@@ -941,6 +1036,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -968,7 +1066,7 @@ jobs:
           fi
 
   integration_tests_tsan_1_6:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHRzYW4sIDEvNik=') }}
     name: "Integration tests (tsan, 1/6)"
@@ -979,6 +1077,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -1006,7 +1107,7 @@ jobs:
           fi
 
   integration_tests_tsan_2_6:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHRzYW4sIDIvNik=') }}
     name: "Integration tests (tsan, 2/6)"
@@ -1017,6 +1118,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -1044,7 +1148,7 @@ jobs:
           fi
 
   integration_tests_tsan_3_6:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHRzYW4sIDMvNik=') }}
     name: "Integration tests (tsan, 3/6)"
@@ -1055,6 +1159,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -1082,7 +1189,7 @@ jobs:
           fi
 
   integration_tests_tsan_4_6:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHRzYW4sIDQvNik=') }}
     name: "Integration tests (tsan, 4/6)"
@@ -1093,6 +1200,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -1120,7 +1230,7 @@ jobs:
           fi
 
   integration_tests_tsan_5_6:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHRzYW4sIDUvNik=') }}
     name: "Integration tests (tsan, 5/6)"
@@ -1131,6 +1241,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -1158,7 +1271,7 @@ jobs:
           fi
 
   integration_tests_tsan_6_6:
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_tsan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKHRzYW4sIDYvNik=') }}
     name: "Integration tests (tsan, 6/6)"
@@ -1169,6 +1282,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -1196,7 +1312,7 @@ jobs:
           fi
 
   finish_workflow:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker-aarch64]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_debug, build_amd_release, build_amd_asan, build_amd_tsan, build_arm_release, build_amd_darwin, build_arm_darwin, docker_server_image, docker_keeper_image, install_packages_release, install_packages_aarch64, compatibility_check_release, compatibility_check_aarch64, stateless_tests_amd_asan_distributed_plan_1_2, stateless_tests_amd_asan_distributed_plan_2_2, stress_test_amd_tsan, integration_tests_asan_old_analyzer_1_6, integration_tests_asan_old_analyzer_2_6, integration_tests_asan_old_analyzer_3_6, integration_tests_asan_old_analyzer_4_6, integration_tests_asan_old_analyzer_5_6, integration_tests_asan_old_analyzer_6_6, integration_tests_tsan_1_6, integration_tests_tsan_2_6, integration_tests_tsan_3_6, integration_tests_tsan_4_6, integration_tests_tsan_5_6, integration_tests_tsan_6_6]
     if: ${{ !cancelled() }}
     name: "Finish Workflow"
@@ -1207,6 +1323,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup
+        uses: ./.github/actions/runner_setup
 
       - name: Prepare env script
         run: |
@@ -1232,3 +1351,126 @@ jobs:
           else
             python3 -m praktika run 'Finish Workflow' --workflow "BackportPR" --ci |& tee ./ci/tmp/job.log
           fi
+
+##########################################################################################
+##################################### ALTINITY JOBS ######################################
+##########################################################################################
+  GrypeScanServer:
+    needs: [config_workflow, docker_server_image]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VyIHNlcnZlciBpbWFnZQ==') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        suffix: ['', '-alpine']
+    uses: ./.github/workflows/grype_scan.yml
+    secrets: inherit
+    with:
+      docker_image: altinityinfra/clickhouse-server
+      # version: ${{ fromJson(needs.config_workflow.outputs.data).custom_data.version.string }}
+      tag-suffix: ${{ matrix.suffix }}
+  GrypeScanKeeper:
+      needs: [config_workflow, docker_keeper_image]
+      if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RG9ja2VyIGtlZXBlciBpbWFnZQ==') }}
+      uses: ./.github/workflows/grype_scan.yml
+      secrets: inherit
+      with:
+        docker_image: altinityinfra/clickhouse-keeper
+        # version: ${{ fromJson(needs.config_workflow.outputs.data).custom_data.version.string }}
+
+  RegressionTestsRelease:
+    needs: [config_workflow, build_amd_release]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9yZWxlYXNlKQ==') && !contains(fromJson(needs.config_workflow.outputs.data).pull_request.body, '[x] <!---ci_exclude_regression-->')}}
+    uses: ./.github/workflows/regression.yml
+    secrets: inherit
+    with:
+      runner_type: altinity-on-demand, altinity-regression-tester
+      commit: 36ae5e98d627bb18f821d4d72a552e127aeaedc8
+      arch: release
+      build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout_minutes: 300
+      workflow_config: ${{ needs.config_workflow.outputs.data }}
+  RegressionTestsAarch64:
+    needs: [config_workflow, build_arm_release]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFybV9yZWxlYXNlKQ==') && !contains(fromJson(needs.config_workflow.outputs.data).pull_request.body, '[x] <!---ci_exclude_regression-->') && !contains(fromJson(needs.config_workflow.outputs.data).pull_request.body, '[x] <!---ci_exclude_aarch64-->')}}
+    uses: ./.github/workflows/regression.yml
+    secrets: inherit
+    with:
+      runner_type: altinity-on-demand, altinity-regression-tester-aarch64
+      commit: 36ae5e98d627bb18f821d4d72a552e127aeaedc8
+      arch: aarch64
+      build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout_minutes: 300
+      workflow_config: ${{ needs.config_workflow.outputs.data }}
+
+  SignRelease:
+    needs: [config_workflow, build_amd_release]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_sign.yml
+    secrets: inherit
+    with:
+      test_name: Sign release
+      runner_type: altinity-style-checker
+      data: ${{ needs.config_workflow.outputs.data }}
+  SignAarch64:
+    needs: [config_workflow, build_arm_release]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_sign.yml
+    secrets: inherit
+    with:
+      test_name: Sign aarch64
+      runner_type: altinity-style-checker-aarch64
+      data: ${{ needs.config_workflow.outputs.data }}
+
+  FinishCIReport:
+    if: ${{ !cancelled() }}
+    needs:
+      - config_workflow
+      - dockers_build_amd
+      - dockers_build_arm
+      - build_amd_debug
+      - build_amd_release
+      - build_amd_asan
+      - build_amd_tsan
+      - build_arm_release
+      - build_amd_darwin
+      - build_arm_darwin
+      - docker_server_image
+      - docker_keeper_image
+      - install_packages_release
+      - install_packages_aarch64
+      - compatibility_check_release
+      - compatibility_check_aarch64
+      - stateless_tests_amd_asan_distributed_plan_1_2
+      - stateless_tests_amd_asan_distributed_plan_2_2
+      - stress_test_amd_tsan
+      - integration_tests_asan_old_analyzer_1_6
+      - integration_tests_asan_old_analyzer_2_6
+      - integration_tests_asan_old_analyzer_3_6
+      - integration_tests_asan_old_analyzer_4_6
+      - integration_tests_asan_old_analyzer_5_6
+      - integration_tests_asan_old_analyzer_6_6
+      - integration_tests_tsan_1_6
+      - integration_tests_tsan_2_6
+      - integration_tests_tsan_3_6
+      - integration_tests_tsan_4_6
+      - integration_tests_tsan_5_6
+      - integration_tests_tsan_6_6
+      - finish_workflow
+      - SignRelease
+      - SignAarch64
+      - RegressionTestsRelease
+      - RegressionTestsAarch64
+      - GrypeScanServer
+      - GrypeScanKeeper
+    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker-aarch64]
+    steps:
+      - name: Check out repository code
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
+        with:
+          clear-repository: true
+      - name: Finalize workflow report
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/create_workflow_report
+        with:
+          workflow_config: ${{ needs.config_workflow.outputs.data }}
+          final: true

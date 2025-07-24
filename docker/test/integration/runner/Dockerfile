@@ -1,6 +1,5 @@
-# docker build -t clickhouse/integration-tests-runner .
-ARG FROM_TAG=latest
-FROM clickhouse/test-util:$FROM_TAG
+# docker build -t altinityinfra/integration-tests-runner .
+FROM ubuntu:22.04
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
@@ -90,10 +89,10 @@ COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
 COPY misc/ /misc/
 
-COPY --from=clickhouse/cctools:425d6927d1efbd790bdb /opt/gdb /opt/gdb
+COPY --from=altinityinfra/cctools:c14b85f24d3f131919bf /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
 
-COPY --from=clickhouse/cctools:425d6927d1efbd790bdb \
+COPY --from=altinityinfra/cctools:c14b85f24d3f131919bf \
   /opt/openssl-fips/openssl.cnf \
   /opt/openssl-fips/fipsmodule.cnf \
   /opt/openssl-fips/fips.so \

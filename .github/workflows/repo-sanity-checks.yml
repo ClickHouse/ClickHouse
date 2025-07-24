@@ -1,0 +1,150 @@
+name: Repository Sanity Checks
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+  workflow_call:
+    
+jobs:
+  sanity-checks:
+    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker]
+    strategy:
+      fail-fast: false  # Continue with other combinations if one fails
+      matrix:
+        include:
+          # Production packages
+          - env: prod
+            type: deb
+            base: ubuntu:22.04
+            repo_url: https://builds.altinity.cloud/apt-repo
+          - env: prod
+            type: rpm
+            base: centos:8
+            repo_url: https://builds.altinity.cloud/yum-repo
+          # FIPS Production packages
+          - env: prod-fips
+            type: deb
+            base: ubuntu:22.04
+            repo_url: https://builds.altinity.cloud/fips-apt-repo
+          - env: prod-fips
+            type: rpm
+            base: centos:8
+            repo_url: https://builds.altinity.cloud/fips-yum-repo
+          # Staging packages
+          - env: staging
+            type: deb
+            base: ubuntu:22.04
+            repo_url: https://builds.staging.altinity.cloud/apt-repo
+          - env: staging
+            type: rpm
+            base: centos:8
+            repo_url: https://builds.staging.altinity.cloud/yum-repo
+          # FIPS Staging packages
+          - env: staging-fips
+            type: deb
+            base: ubuntu:22.04
+            repo_url: https://builds.staging.altinity.cloud/fips-apt-repo
+          - env: staging-fips
+            type: rpm
+            base: centos:8
+            repo_url: https://builds.staging.altinity.cloud/fips-yum-repo
+          # Hotfix packages
+          - env: hotfix
+            type: deb
+            base: ubuntu:22.04
+            repo_url: https://builds.altinity.cloud/hotfix-apt-repo
+          - env: hotfix
+            type: rpm
+            base: centos:8
+            repo_url: https://builds.altinity.cloud/hotfix-yum-repo
+          # Antalya experimental packages
+          - env: antalya
+            type: deb
+            base: ubuntu:22.04
+            repo_url: https://builds.altinity.cloud/antalya-apt-repo
+          - env: antalya
+            type: rpm
+            base: centos:8
+            repo_url: https://builds.altinity.cloud/antalya-yum-repo
+          # Hotfix staging packages
+          - env: hotfix-staging
+            type: deb
+            base: ubuntu:22.04
+            repo_url: https://builds.staging.altinity.cloud/hotfix-apt-repo
+          - env: hotfix-staging
+            type: rpm
+            base: centos:8
+            repo_url: https://builds.staging.altinity.cloud/hotfix-yum-repo
+          # Antalya experimental staging packages
+          - env: antalya-staging
+            type: deb
+            base: ubuntu:22.04
+            repo_url: https://builds.staging.altinity.cloud/antalya-apt-repo
+          - env: antalya-staging
+            type: rpm
+            base: centos:8
+            repo_url: https://builds.staging.altinity.cloud/antalya-yum-repo
+
+    steps:
+      - name: Run sanity check
+        run: |
+          cat << 'EOF' > sanity.sh
+          #!/bin/bash
+          set -e -x
+
+          # Package installation commands based on type
+          if [ "${{ matrix.type }}" = "deb" ]; then
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update && apt-get install -y apt-transport-https ca-certificates curl gnupg2 dialog sudo
+            mkdir -p /usr/share/keyrings
+            curl -s "${REPO_URL}/pubkey.gpg" | gpg --dearmor > /usr/share/keyrings/altinity-archive-keyring.gpg
+            echo "deb [signed-by=/usr/share/keyrings/altinity-archive-keyring.gpg] ${REPO_URL} stable main" > /etc/apt/sources.list.d/altinity.list
+            apt-get update
+            apt-get install -y clickhouse-server clickhouse-client
+          else
+            sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*
+            sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*
+            yum install -y curl gnupg2 sudo
+            if [[ "${{ matrix.env }}" == *"staging"* ]]; then
+              curl "${REPO_URL}/altinity-staging.repo" -o /etc/yum.repos.d/altinity-staging.repo
+            else
+              curl "${REPO_URL}/altinity.repo" -o /etc/yum.repos.d/altinity.repo
+            fi
+            yum install -y clickhouse-server clickhouse-client
+          fi
+          
+          # Ensure correct ownership
+          chown -R clickhouse /var/lib/clickhouse/
+          chown -R clickhouse /var/log/clickhouse-server/
+          
+          # Check server version
+          server_version=$(clickhouse-server --version)
+          echo "$server_version" | grep "altinity" || FAILED_SERVER=true
+          
+          # Start server and test
+          sudo -u clickhouse clickhouse-server --config-file /etc/clickhouse-server/config.xml --daemon
+          sleep 10
+          clickhouse-client -q 'SELECT 1'
+          
+          # Check client version
+          client_version=$(clickhouse-client --version)
+          echo "$client_version" | grep "altinity" || FAILED_CLIENT=true
+          
+          # Report results
+          if [ "$FAILED_SERVER" = true ]; then
+            echo "::error::Server check failed - Version: $server_version"
+            exit 1
+          elif [ "$FAILED_CLIENT" = true ]; then
+            echo "::error::Client check failed - Version: $client_version"
+            exit 1
+          else
+            echo "All checks passed successfully!"
+          fi
+          EOF
+          
+          chmod +x sanity.sh
+          docker run --rm \
+            -v $(pwd)/sanity.sh:/sanity.sh \
+            -e REPO_URL="${{ matrix.repo_url }}" \
+            ${{ matrix.base }} \
+            /sanity.sh

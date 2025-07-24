@@ -1,0 +1,305 @@
+{
+    "02700_s3_part_INT_MAX": {
+        "reason": "NEEDSFIX - Fails on asan"
+    },
+    "00157_cache_dictionary": {
+        "reason": "INVESTIGATE - fails with asan,debug,msan"
+    },
+    "02815_no_throw_in_simple_queries": {
+        "reason": "INVESTIGATE - Fails on asan,msan,tsan,debug,Aarch64"
+    },
+    "03206_no_exceptions_clickhouse_local": {
+        "reason": "INVESTIGATE - Fails on asan,msan,tsan,debug,Aarch64"
+    },
+    "03203_hive_style_partitioning": {
+        "reason": "INVESTIGATE - new fail in 24.12"
+    },
+    "00988_expansion_aliases_limit": {
+        "reason": "INVESTIGATE - fails in tsan"
+    },
+    "test_overcommit_tracker/test.py::test_user_overcommit": {
+        "reason": "INVESTIGATE - fails in tsan"
+    },
+    "01037_polygon_dicts_correctness_fast": {
+        "reason": "INVESTIGATE - fails in tsan"
+    },
+    "03094_grouparraysorted_memory": {
+        "reason": "INVESTIGATE - fails in tsan"
+    },
+    "test_attach_partition_using_copy/test.py::test_all_replicated": {
+        "reason": "NEEDSFIX - Web disk is not working"
+    },
+    "test_attach_partition_using_copy/test.py::test_both_mergetree": {
+        "reason": "NEEDSFIX - Web disk is not working"
+    },
+    "test_attach_partition_using_copy/test.py::test_not_work_on_different_disk": {
+        "reason": "NEEDSFIX - Web disk is not working"
+    },
+    "test_attach_partition_using_copy/test.py::test_only_destination_replicated": {
+        "reason": "NEEDSFIX - Web disk is not working"
+    },
+    "test_backup_restore_on_cluster/test_cancel_backup.py::test_shutdown_cancels_backup": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_backup_restore_on_cluster/test_different_versions.py::test_different_versions": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_grpc_protocol/test.py::test_ipv6_select_one": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN - FIXED in 24.8"
+    },
+    "test_settings_randomization/test.py::test_settings_randomization": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release"
+    },
+    "02766_prql": {
+        "reason": "KNOWN - PRQL is disabled in Antalya branch"
+    },
+    "02833_local_with_dialect": {
+        "reason": "KNOWN - PRQL is disabled in Antalya branch"
+    },
+    "03003_prql_panic": {
+        "reason": "KNOWN - PRQL is disabled in Antalya branch"
+    },
+    "test_git_import/test.py::test_git_import": {
+        "reason": "NEEDSFIX - 403 while getting data from GitHub"
+    },
+    "test_storage_delta/test.py::test_types[1]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_storage_delta/test.py::test_types[0]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_storage_delta/test.py::test_single_log_file[1]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_storage_delta/test.py::test_single_log_file[0]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_storage_delta/test.py::test_restart_broken[1]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_storage_delta/test.py::test_restart_broken[0]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_storage_delta/test.py::test_restart_broken_table_function[1]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_storage_delta/test.py::test_restart_broken_table_function[0]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_storage_delta/test.py::test_replicated_database_and_unavailable_s3[1]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_storage_delta/test.py::test_replicated_database_and_unavailable_s3[0]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_storage_delta/test.py::test_partition_columns[1]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_storage_delta/test.py::test_partition_columns[0]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_storage_delta/test.py::test_partition_columns_2[1]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_storage_delta/test.py::test_partition_by[1]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_storage_delta/test.py::test_partition_by[0]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_storage_delta/test.py::test_multiple_log_files[1]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_storage_delta/test.py::test_multiple_log_files[0]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_storage_delta/test.py::test_metadata[1]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_storage_delta/test.py::test_metadata[0]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_storage_delta/test.py::test_filesystem_cache[1-s3]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_storage_delta/test.py::test_filesystem_cache[0-s3]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_storage_delta/test.py::test_complex_types[1]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_storage_delta/test.py::test_complex_types[0]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_storage_delta/test.py::test_checkpoint[1]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_storage_delta/test.py::test_checkpoint[0]": {
+        "reason": "NEEDSFIX - rust problem"
+    },
+    "test_cow_policy/test.py::test_cow_policy[cow_policy_multi_disk]": {
+        "reason": "NEEDSFIX - Timeout"
+    },
+    "test_cow_policy/test.py::test_cow_policy[cow_policy_multi_volume]": {
+        "reason": "NEEDSFIX - Timeout"
+    },
+    "test_s3_assume_role/test.py::test_using_assumed_creds": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_asynchronous_metric_jemalloc_profile_active/test.py::test_asynchronous_metric_jemalloc_profile_active": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_backup_restore_new/test.py::test_incremental_backup_overflow": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_mask_sensitive_info/test.py::test_create_table": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_mask_sensitive_info/test.py::test_table_functions": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_odbc_interaction/test.py::test_postgres_odbc_hashed_dictionary_no_tty_pipe_overflow": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_storage_iceberg/test.py::test_types[s3-1]": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_storage_iceberg/test.py::test_types[azure-2]": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_storage_iceberg/test.py::test_types[local-1]": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_storage_iceberg/test.py::test_types[local-2]": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_storage_iceberg/test.py::test_types[s3-2]": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_storage_iceberg/test.py::test_types[azure-1]": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_library_bridge/test_exiled.py::test_bridge_dies_with_parent": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_merge_tree_check_part_with_cache/test.py::test_check_part_with_cache": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_odbc_interaction/test.py::test_concurrent_queries": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_odbc_interaction/test.py::test_many_connections": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_odbc_interaction/test.py::test_mysql_insert": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_odbc_interaction/test.py::test_mysql_odbc_select_nullable": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_odbc_interaction/test.py::test_mysql_simple_select_works": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_odbc_interaction/test.py::test_no_connection_pooling": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_odbc_interaction/test.py::test_odbc_cyrillic_with_varchar": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_odbc_interaction/test.py::test_odbc_long_column_names": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_odbc_interaction/test.py::test_odbc_long_text": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_odbc_interaction/test.py::test_odbc_postgres_conversions": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_odbc_interaction/test.py::test_odbc_postgres_date_data_type": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_odbc_interaction/test.py::test_postgres_insert": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_async_metrics_in_cgroup/test.py::test_normalized_user_cpu": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_async_metrics_in_cgroup/test.py::test_system_wide_metrics": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_async_metrics_in_cgroup/test.py::test_user_cpu_accounting": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_jemalloc_percpu_arena/test.py::test_jemalloc_percpu_arena": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "02354_vector_search_expansion_search": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_hedged_requests_parallel/test.py::test_combination1": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_hedged_requests_parallel/test.py::test_combination2": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_hedged_requests_parallel/test.py::test_query_with_no_data_to_sample": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_hedged_requests_parallel/test.py::test_send_data": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_hedged_requests_parallel/test.py::test_send_table_status_sleep": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_s3_cache_locality/test.py::test_cache_locality": {
+        "reason": "INVESTIGATE - Timeout on TSAN"
+    },
+    "test_reload_clusters_config/test.py::test_update_one_cluster": {
+        "reason": "INVESTIGATE - Fails on ASAN old analyzer"
+    },
+    "test_storage_iceberg/test.py::test_cluster_table_function[azure-2]": {
+        "reason": "INVESTIGATE - Issue with setting object_storage_cluster",
+        "message": "Setting object_storage_cluster is neither a builtin setting nor started with the prefix 'custom_' registered for user-defined settings."
+    },
+    "test_storage_azure_blob_storage/test_cluster.py::test_select_all": {
+        "reason": "INVESTIGATE - Issue with setting object_storage_cluster",
+        "message": "Setting object_storage_cluster is neither a builtin setting nor started with the prefix 'custom_' registered for user-defined settings."
+    },
+    "test_storage_iceberg/test.py::test_cluster_table_function[s3-2]": {
+        "reason": "INVESTIGATE - Issue with setting object_storage_cluster",
+        "message": "Setting object_storage_cluster is neither a builtin setting nor started with the prefix 'custom_' registered for user-defined settings."
+    },
+    "test_storage_iceberg/test.py::test_cluster_table_function[azure-1]": {
+        "reason": "INVESTIGATE - Issue with setting object_storage_cluster",
+        "message": "Setting object_storage_cluster is neither a builtin setting nor started with the prefix 'custom_' registered for user-defined settings."
+    },
+    "test_storage_azure_blob_storage/test_cluster.py::test_count": {
+        "reason": "INVESTIGATE - Issue with setting object_storage_cluster",
+        "message": "Setting object_storage_cluster is neither a builtin setting nor started with the prefix 'custom_' registered for user-defined settings."
+    },
+    "test_storage_iceberg/test.py::test_cluster_table_function[s3-1]": {
+        "reason": "INVESTIGATE - Issue with setting object_storage_cluster",
+        "message": "Setting object_storage_cluster is neither a builtin setting nor started with the prefix 'custom_' registered for user-defined settings."
+    },
+    "test_storage_iceberg/test.py::test_partition_pruning[True-s3]": {
+        "reason": "INVESTIGATE - AssertionError"
+    },
+    "test_storage_iceberg/test.py::test_partition_pruning[True-azure]": {
+        "reason": "INVESTIGATE - AssertionError"
+    },
+    "test_cluster_discovery/test.py::test_cluster_discovery_macros": {
+        "reason": "INVESTIGATE - Requested cluster '{autocluster}' not found.",
+        "message": "Requested cluster '{autocluster}' not found."
+    },
+    "test_s3_cluster/test.py::test_cluster_with_named_collection":{
+        "reason": "INVESTIGATE - Issue with setting object_storage_cluster",
+        "message": "Setting object_storage_cluster is neither a builtin setting nor started with the prefix 'custom_' registered for user-defined settings."
+    },
+    "test_s3_cluster/test.py::test_cluster_with_header":{
+        "reason": "INVESTIGATE - Issue with setting object_storage_cluster",
+        "message": "Setting object_storage_cluster is neither a builtin setting nor started with the prefix 'custom_' registered for user-defined settings."
+    },
+    "test_parquet_drop_metadata_cache/test.py::test_clear_cache_on_cluster": {
+        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    }
+}

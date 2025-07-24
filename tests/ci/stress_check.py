@@ -24,9 +24,17 @@ from tee_popen import TeePopen
 class SensitiveFormatter(logging.Formatter):
     @staticmethod
     def _filter(s):
-        return re.sub(
-            r"(.*)(AZURE_CONNECTION_STRING.*\')(.*)", r"\1AZURE_CONNECTION_STRING\3", s
+        s = re.sub(r"(.*)(AZURE_STORAGE_KEY\S*\')(.*)", r"\1AZURE_STORAGE_KEY\3", s)
+        s = re.sub(r"(.*)(AZURE_ACCOUNT_NAME\S*\')(.*)", r"\1AZURE_ACCOUNT_NAME\3", s)
+        s = re.sub(
+            r"(.*)(AZURE_CONTAINER_NAME\S*\')(.*)", r"\1AZURE_CONTAINER_NAME\3", s
         )
+        s = re.sub(
+            r"(.*)(AZURE_STORAGE_ACCOUNT_URL\S*\')(.*)",
+            r"\1AZURE_STORAGE_ACCOUNT_URL\3",
+            s,
+        )
+        return s
 
     def format(self, record):
         original = logging.Formatter.format(self, record)
@@ -35,11 +43,17 @@ class SensitiveFormatter(logging.Formatter):
 
 def get_additional_envs(check_name: str) -> List[str]:
     result = []
-    azure_connection_string = get_parameter_from_ssm("azure_connection_string")
-    result.append(f"AZURE_CONNECTION_STRING='{azure_connection_string}'")
-    # some cloud-specific features require feature flags enabled
-    # so we need this ENV to be able to disable the randomization
-    # of feature flags
+    # Get Azure credentials from environment variables
+    azure_account_name = os.environ.get("AZURE_ACCOUNT_NAME")
+
+    if azure_account_name:
+        result.append(f"AZURE_ACCOUNT_NAME='{azure_account_name}'")
+        result.append(f"AZURE_STORAGE_KEY='{os.environ['AZURE_STORAGE_KEY']}'")
+        result.append(f"AZURE_CONTAINER_NAME='{os.environ['AZURE_CONTAINER_NAME']}'")
+        result.append(
+            f"AZURE_STORAGE_ACCOUNT_URL='{os.environ['AZURE_STORAGE_ACCOUNT_URL']}'"
+        )
+
     result.append("RANDOMIZE_KEEPER_FEATURE_FLAGS=1")
     if "azure" in check_name:
         result.append("USE_AZURE_STORAGE_FOR_MERGE_TREE=1")
@@ -166,7 +180,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     else:
         download_all_deb_packages(check_name, reports_path, packages_path)
 
-    docker_image = pull_image(get_docker_image("clickhouse/stress-test"))
+    docker_image = pull_image(get_docker_image("altinityinfra/stress-test"))
 
     server_log_path = temp_path / "server_log"
     server_log_path.mkdir(parents=True, exist_ok=True)

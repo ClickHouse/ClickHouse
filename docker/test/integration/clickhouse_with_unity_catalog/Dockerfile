@@ -1,6 +1,6 @@
-# docker build -t clickhouse/integration-test-with-unity-catalog .
+# docker build -t altinityinfra/integration-test-with-unity-catalog .
 ARG FROM_TAG=latest
-FROM clickhouse/integration-test:$FROM_TAG
+FROM altinityinfra/integration-test:$FROM_TAG
 
 RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get -y install openjdk-17-jdk-headless && update-alternatives --config java && update-alternatives --config javac
 
@@ -8,7 +8,7 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get -y install open
 # Columns marked as nullable while they are not nullable and catalog shows them as non-nullable
 RUN git clone https://github.com/unitycatalog/unitycatalog.git && cd unitycatalog && \
             git checkout dece8ecab6e452b09abb8b86483d5f0d67b1e675 && \
-            build/sbt -mem 4096 package && \
+            build/sbt -mem 2048 package && \
             sed -i 's/\\"nullable\\":true/\\"nullable\\":false/g' etc/data/external/unity/default/tables/user_countries/_delta_log/00000000000000000000.json
 
 RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-3.5.4/spark-3.5.4-bin-hadoop3.tgz \

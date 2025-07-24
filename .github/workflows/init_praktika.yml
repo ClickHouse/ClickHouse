@@ -1,0 +1,27 @@
+name: InitPraktikaReport
+
+# This workflow is used to initialize/update the praktika report in S3.
+# It does not need to run often, when a new release is created should be plenty.
+
+on:
+  workflow_dispatch:
+
+env:
+  # Force the stdout and stderr streams to be unbuffered
+  PYTHONUNBUFFERED: 1
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+jobs:
+
+  init_praktika:
+    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker-aarch64]
+    name: "Init praktika"
+    steps:
+      - name: Init praktika report
+        run: |
+            export PYTHONPATH=./ci:.:
+            pip install htmlmin
+            python3 -m praktika html
+  

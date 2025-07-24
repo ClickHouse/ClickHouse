@@ -218,7 +218,11 @@ def main():
     logging.info(
         "ENV parameters for runner:\n%s",
         "\n".join(
-            [f"{k}={v}" for k, v in my_env.items() if k.startswith("CLICKHOUSE_")]
+            [
+                f"{k}={v}"
+                for k, v in my_env.items()
+                if k.startswith("CLICKHOUSE_") and "TEST_STAT" not in k
+            ]
         ),
     )
 

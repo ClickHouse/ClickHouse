@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true">
+
+<head>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    /* Base colors for Altinity */
+    :root {
+      --altinity-background: #000D45;
+      --altinity-accent: #189DCF;
+      --altinity-highlight: #FFC600;
+      --altinity-gray: #6c757d;
+      --altinity-light-gray: #f8f9fa;
+      --altinity-white: #ffffff;
+    }
+
+    /* Body and heading fonts */
+    body {
+      font-family: Arimo, "Proxima Nova", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-size: 1rem;
+      background-color: var(--altinity-background);
+      color: var(--altinity-light-gray);
+      padding: 2rem;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+      font-family: Figtree, "Proxima Nova", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      color: var(--altinity-white);
+    }
+
+    .logo {
+      width: auto;
+      height: 5em;
+    }
+
+    /* General table styling */
+    table {
+      min-width: min(900px, 98vw);
+      margin: 1rem 0;
+      border-collapse: collapse;
+      background-color: var(--altinity-white);
+      border: 1px solid var(--altinity-accent);
+      box-shadow: 0 0 8px rgba(0, 0, 0, 0.05);
+      color: var(--altinity-background);
+    }
+
+    /* Table header styling */
+    th {
+      background-color: var(--altinity-accent);
+      color: var(--altinity-white);
+      padding: 10px 16px;
+      text-align: left;
+      border: none;
+      border-bottom: 2px solid var(--altinity-background);
+      white-space: nowrap;
+    }
+
+    th.hth {
+      border-bottom: 1px solid var(--altinity-accent);
+      border-right: 2px solid var(--altinity-background);
+    }
+
+    /* Table header sorting styling */
+    th {
+      cursor: pointer;
+    }
+
+    th.no-sort {
+      pointer-events: none;
+    }
+
+    th::after,
+    th::before {
+      transition: color 0.2s ease-in-out;
+      font-size: 1.2em;
+      color: transparent;
+    }
+
+    th::after {
+      margin-left: 3px;
+      content: '\025B8';
+    }
+
+    th:hover::after {
+      color: inherit;
+    }
+
+    th.dir-d::after {
+      color: inherit;
+      content: '\025BE';
+    }
+
+    th.dir-u::after {
+      color: inherit;
+      content: '\025B4';
+    }
+
+    /* Table body row styling */
+    tr:hover {
+      background-color: var(--altinity-light-gray);
+    }
+
+    /* Table cell styling */
+    td {
+      padding: 8px 8px;
+      border: 1px solid var(--altinity-accent);
+    }
+
+    /* Link styling */
+    a {
+      color: var(--altinity-accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      color: var(--altinity-highlight);
+      text-decoration: underline;
+    }
+  </style>
+  <title>{{ title }}</title>
+  <link rel="icon" type="image/svg+xml"
+    href='data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+CjxzdmcKICAgaWQ9ImEiCiAgIHZpZXdCb3g9IjAgMCA5MS42NjAwMDYgMTA1Ljk5IgogICB2ZXJzaW9uPSIxLjEiCiAgIHNvZGlwb2RpOmRvY25hbWU9ImxvZ29faWNvbi5zdmciCiAgIHdpZHRoPSI5MS42NjAwMDQiCiAgIGhlaWdodD0iMTA1Ljk5IgogICBpbmtzY2FwZTp2ZXJzaW9uPSIxLjEuMiAoMGEwMGNmNTMzOSwgMjAyMi0wMi0wNCkiCiAgIHhtbG5zOmlua3NjYXBlPSJodHRwOi8vd3d3Lmlua3NjYXBlLm9yZy9uYW1lc3BhY2VzL2lua3NjYXBlIgogICB4bWxuczpzb2RpcG9kaT0iaHR0cDovL3NvZGlwb2RpLnNvdXJjZWZvcmdlLm5ldC9EVEQvc29kaXBvZGktMC5kdGQiCiAgIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIKICAgeG1sbnM6c3ZnPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgPHNvZGlwb2RpOm5hbWVkdmlldwogICAgIGlkPSJuYW1lZHZpZXc0NyIKICAgICBwYWdlY29sb3I9IiNmZmZmZmYiCiAgICAgYm9yZGVyY29sb3I9IiM2NjY2NjYiCiAgICAgYm9yZGVyb3BhY2l0eT0iMS4wIgogICAgIGlua3NjYXBlOnBhZ2VzaGFkb3c9IjIiCiAgICAgaW5rc2NhcGU6cGFnZW9wYWNpdHk9IjAuMCIKICAgICBpbmtzY2FwZTpwYWdlY2hlY2tlcmJvYXJkPSIwIgogICAgIHNob3dncmlkPSJmYWxzZSIKICAgICBpbmtzY2FwZTp6b29tPSI1Ljc5Nzg1NTIiCiAgICAgaW5rc2NhcGU6Y3g9IjkxLjA2ODE1OSIKICAgICBpbmtzY2FwZTpjeT0iNTQuOTM0MTA3IgogICAgIGlua3NjYXBlOndpbmRvdy13aWR0aD0iMTg1MCIKICAgICBpbmtzY2FwZTp3aW5kb3ctaGVpZ2h0PSIxMDE2IgogICAgIGlua3NjYXBlOndpbmRvdy14PSIxNzc0IgogICAgIGlua3NjYXBlOndpbmRvdy15PSIyNyIKICAgICBpbmtzY2FwZTp3aW5kb3ctbWF4aW1pemVkPSIxIgogICAgIGlua3NjYXBlOmN1cnJlbnQtbGF5ZXI9ImEiIC8+CiAgPGRlZnMKICAgICBpZD0iZGVmczQiPgogICAgPHN0eWxlCiAgICAgICBpZD0ic3R5bGUyIj4uYntmaWxsOiNmZmY7fS5je2ZpbGw6IzE5OWRjZjt9PC9zdHlsZT4KICA8L2RlZnM+CiAgPGcKICAgICBpZD0iZzIyIj4KICAgIDxwb2x5Z29uCiAgICAgICBjbGFzcz0iYyIKICAgICAgIHBvaW50cz0iNDUuODgsMCA0NS44OCwwLjA0IDIyLjk0LDEzLjMgMjIuOTMsMTMuMyAyMi45MywxMy4zIDAuMDksMjYuNDkgMC4wOSwyNi40OSAwLjA5LDI2LjQ5IDAsMjYuNTQgMC4wOSwyNi41OSAwLjA5LDUwLjk2IDY2Ljg2LDEyLjEyICIKICAgICAgIGlkPSJwb2x5Z29uNiIgLz4KICAgIDxwb2x5Z29uCiAgICAgICBjbGFzcz0iYyIKICAgICAgIHBvaW50cz0iMjIuOTQsNDIuMjkgNC4yMSw1My4xOSAyMi45NCw2NC4wOCAiCiAgICAgICBpZD0icG9seWdvbjgiIC8+CiAgICA8cG9seWdvbgogICAgICAgY2xhc3M9ImMiCiAgICAgICBwb2ludHM9IjAuMDksNTUuNTkgMC4wOSw3OS40MyAwLDc5LjQ4IDAuMDksNzkuNTQgMC4wOSwxMDUuOTkgMjIuOCw5Mi44OCAyMi44LDkyLjg4IDQzLjc1LDgwLjc5IDAuMjMsNTUuNTEgIgogICAgICAgaWQ9InBvbHlnb24xMCIgLz4KICAgIDxwb2x5Z29uCiAgICAgICBjbGFzcz0iYyIKICAgICAgIHBvaW50cz0iODkuNjEsMjUuMTcgNzAuOTIsMTQuMzggNDguMDMsMjcuNyA2NC4xOCwzNy4wMiA2NC4yMiwzNi45NiA2Ni43OSwzOC40NSAiCiAgICAgICBpZD0icG9seWdvbjEyIiAvPgogICAgPGcKICAgICAgIGlkPSJnMTgiPgogICAgICA8cG9seWdvbgogICAgICAgICBjbGFzcz0iYyIKICAgICAgICAgcG9pbnRzPSI5MS42Niw1Mi44MiA5MS42Myw1Mi44MyA3Ni4zMyw0NCA5MS42Niw1Mi45MiAiCiAgICAgICAgIGlkPSJwb2x5Z29uMTQiIC8+CiAgICAgIDxwb2x5Z29uCiAgICAgICAgIGNsYXNzPSJjIgogICAgICAgICBwb2ludHM9IjkxLjY2LDEwNS43NiA5MS42Niw1Ny41NSA2OC43MSw0NC4yIDY4LjcxLDkyLjUxICIKICAgICAgICAgaWQ9InBvbHlnb24xNiIgLz4KICAgIDwvZz4KICAgIDxwb2x5Z29uCiAgICAgICBjbGFzcz0iYyIKICAgICAgIHBvaW50cz0iOTEuNjYsNTIuODUgOTEuNjYsMjguNjEgNzAuNzcsNDAuNzYgNzYuMjgsNDMuOTcgIgogICAgICAgaWQ9InBvbHlnb24yMCIgLz4KICA8L2c+Cjwvc3ZnPgo=' 
+    />
+</head>
+
+<body>
+  <p><img class="logo"
+      src="data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz48c3ZnIGlkPSJhIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0NjEuNTUgMTA1Ljk5Ij48ZGVmcz48c3R5bGU+LmJ7ZmlsbDojZmZmO30uY3tmaWxsOiMxOTlkY2Y7fTwvc3R5bGU+PC9kZWZzPjxnPjxwb2x5Z29uIGNsYXNzPSJjIiBwb2ludHM9Ii4wOSA1MC45NiA2Ni44NiAxMi4xMiA0NS44OCAwIDQ1Ljg4IC4wNCAyMi45NCAxMy4zIDIyLjkzIDEzLjMgMjIuOTMgMTMuMyAuMDkgMjYuNDkgLjA5IDI2LjQ5IC4wOSAyNi40OSAwIDI2LjU0IC4wOSAyNi41OSAuMDkgNTAuOTYiLz48cG9seWdvbiBjbGFzcz0iYyIgcG9pbnRzPSI0LjIxIDUzLjE5IDIyLjk0IDY0LjA4IDIyLjk0IDQyLjI5IDQuMjEgNTMuMTkiLz48cG9seWdvbiBjbGFzcz0iYyIgcG9pbnRzPSI0My43NSA4MC43OSAuMjMgNTUuNTEgLjA5IDU1LjU5IC4wOSA3OS40MyAwIDc5LjQ4IC4wOSA3OS41NCAuMDkgMTA1Ljk5IDIyLjggOTIuODggMjIuOCA5Mi44OCA0My43NSA4MC43OSIvPjxwb2x5Z29uIGNsYXNzPSJjIiBwb2ludHM9IjY0LjIyIDM2Ljk2IDY2Ljc5IDM4LjQ1IDg5LjYxIDI1LjE3IDcwLjkyIDE0LjM4IDQ4LjAzIDI3LjcgNjQuMTggMzcuMDIgNjQuMjIgMzYuOTYiLz48Zz48cG9seWdvbiBjbGFzcz0iYyIgcG9pbnRzPSI3Ni4zMyA0NCA5MS42NiA1Mi45MiA5MS42NiA1Mi44MiA5MS42MyA1Mi44MyA3Ni4zMyA0NCIvPjxwb2x5Z29uIGNsYXNzPSJjIiBwb2ludHM9IjY4LjcxIDQ0LjIgNjguNzEgOTIuNTEgOTEuNjYgMTA1Ljc2IDkxLjY2IDU3LjU1IDY4LjcxIDQ0LjIiLz48L2c+PHBvbHlnb24gY2xhc3M9ImMiIHBvaW50cz0iNzAuNzcgNDAuNzYgNzYuMjggNDMuOTcgOTEuNjYgNTIuODUgOTEuNjYgMjguNjEgNzAuNzcgNDAuNzYiLz48L2c+PHBhdGggY2xhc3M9ImIiIGQ9Ik0xNDkuOTIsMjkuNjZoMTIuMzhsMTkuNzIsNDYuNjdoLTEzLjc3bC0zLjM4LTguMjdoLTE3Ljg3bC0zLjMxLDguMjdoLTEzLjVsMTkuNzItNDYuNjdabTExLjI1LDI4LjRsLTUuMTYtMTMuMTctNS4yMywxMy4xN2gxMC4zOVoiLz48cGF0aCBjbGFzcz0iYiIgZD0iTTE4Ni41MywyOS45OWgxMi44NHYzNS4wOGgyMi40NHYxMS4yNWgtMzUuMjhWMjkuOTlaIi8+PHBhdGggY2xhc3M9ImIiIGQ9Ik0yMzAsNDEuMjVoLTEzLjl2LTExLjI1aDQwLjY0djExLjI1aC0xMy45djM1LjA4aC0xMi44NFY0MS4yNVoiLz48cGF0aCBjbGFzcz0iYiIgZD0iTTI2Mi42MywyOS45OWgxMi45MXY0Ni4zM2gtMTIuOTFWMjkuOTlaIi8+PHBhdGggY2xhc3M9ImIiIGQ9Ik0yODQuMDEsMjkuOTloMTEuOThsMTkuMDYsMjQuNDlWMjkuOTloMTIuNzF2NDYuMzNoLTExLjI1bC0xOS43OS0yNS40MnYyNS40MmgtMTIuNzFWMjkuOTlaIi8+PHBhdGggY2xhc3M9ImIiIGQ9Ik0zMzYuMjQsMjkuOTloMTIuOTF2NDYuMzNoLTEyLjkxVjI5Ljk5WiIvPjxwYXRoIGNsYXNzPSJiIiBkPSJNMzY4Ljk0LDQxLjI1aC0xMy45di0xMS4yNWg0MC42NHYxMS4yNWgtMTMuOXYzNS4wOGgtMTIuODRWNDEuMjVaIi8+PHBhdGggY2xhc3M9ImIiIGQ9Ik00MTYuNjgsNTguOThsLTE3LjYxLTI4Ljk5aDE0LjYzbDkuNTMsMTYuODgsOS42LTE2Ljg4aDE0LjM2bC0xNy42MSwyOC43OXYxNy41NGgtMTIuOTF2LTE3LjM0WiIvPjxnPjxwYXRoIGNsYXNzPSJiIiBkPSJNNDU3Ljk5LDM0Ljg5Yy4yOS0uMDksLjU0LS4yNCwuNzMtLjQ0LC4yNS0uMjUsLjM3LS41OCwuMzctMSwwLS40Ny0uMTgtLjg1LS41My0xLjEyLS4zNC0uMjYtLjc5LS40LTEuMzMtLjRoLTIuMDZjLS4wNywwLS4xMiwuMDYtLjEyLC4xMnY0LjYxYzAsLjA3LC4wNiwuMTIsLjEyLC4xMmguNjhjLjA3LDAsLjEyLS4wNiwuMTItLjEydi0xLjYyaC45OWwxLjI5LDEuNjlzLjA2LC4wNSwuMSwuMDVoLjg0cy4wOS0uMDMsLjExLS4wN2MuMDItLjA0LC4wMi0uMDktLjAxLS4xM2wtMS4zMi0xLjcxWm0uMTUtMS40YzAsLjIzLS4wOCwuMzktLjI1LC41MS0uMTgsLjEzLS40MiwuMTktLjcyLC4xOWgtMS4xOXYtMS4zOWgxLjIzYy4zLDAsLjU0LC4wNiwuNywuMTksLjE1LC4xMiwuMjMsLjI4LC4yMywuNVoiLz48cGF0aCBjbGFzcz0iYiIgZD0iTTQ2MS4yLDMyLjY5Yy0uMjQtLjU2LS41Ny0xLjA1LS45OC0xLjQ3LS40MS0uNDItLjktLjc1LTEuNDYtLjk5LS41Ni0uMjQtMS4xNy0uMzYtMS44Mi0uMzZzLTEuMjYsLjEyLTEuODIsLjM3Yy0uNTYsLjI1LTEuMDYsLjU4LTEuNDgsMS0uNDIsLjQyLS43NSwuOTItLjk4LDEuNDctLjI0LC41Ni0uMzYsMS4xNi0uMzYsMS43OXMuMTIsMS4yMywuMzYsMS43OWMuMjQsLjU2LC41NiwxLjA1LC45OCwxLjQ3LC40MSwuNDIsLjksLjc1LDEuNDYsLjk5LC41NiwuMjQsMS4xNywuMzYsMS44MSwuMzZzMS4yNi0uMTIsMS44Mi0uMzdjLjU2LS4yNSwxLjA2LS41OCwxLjQ3LTEsLjQyLS40MiwuNzUtLjkyLC45OC0xLjQ3LC4yNC0uNTYsLjM2LTEuMTYsLjM2LTEuNzlzLS4xMi0xLjIzLS4zNi0xLjc5Wm0tLjMsMS43OWMwLC41NC0uMSwxLjA2LS4zLDEuNTUtLjIsLjQ5LS40OCwuOTEtLjg0LDEuMjctLjM1LC4zNi0uNzgsLjY1LTEuMjcsLjg2LS40OSwuMjEtMS4wMiwuMzItMS41NywuMzJzLTEuMDktLjExLTEuNTYtLjMxYy0uNDgtLjIxLS45LS41LTEuMjUtLjg2LS4zNS0uMzYtLjYzLS43OC0uODMtMS4yNy0uMi0uNDgtLjMtMS0uMy0xLjU0cy4xLTEuMDYsLjMtMS41NWMuMi0uNDgsLjQ4LS45MSwuODQtMS4yNywuMzYtLjM2LC43OC0uNjUsMS4yNi0uODYsLjQ4LS4yMSwxLjAxLS4zMiwxLjU4LS4zMnMxLjA5LC4xMSwxLjU3LC4zMWMuNDgsLjIxLC45LC41LDEuMjUsLjg2LC4zNSwuMzYsLjYzLC43OCwuODMsMS4yNywuMiwuNDgsLjMsMSwuMywxLjU0WiIvPjwvZz48L3N2Zz4="
+      alt="logo"></p>
+
+  <h1>{{ title }}</h1>
+  <table>
+    <tbody>
+      <tr>
+        <th class="hth no-sort">Pull Request</th>
+        <td>{{ pr_info_html }}</td>
+      </tr>
+      <tr>
+        <th class="hth no-sort">Workflow Run</th>
+        <td><a href="https://github.com/{{ github_repo }}/actions/runs/{{ workflow_id }}">{{ workflow_id }}</a></td>
+      </tr>
+      <tr>
+        <th class="hth no-sort">Commit</th>
+        <td><a href="https://github.com/{{ github_repo }}/commit/{{ commit_sha }}">{{ commit_sha }}</a></td>
+      </tr>
+      <tr>
+        <th class="hth no-sort">Build Report</th>
+        <td><a href="https://s3.amazonaws.com/{{ s3_bucket }}/{{ pr_number }}/{{ commit_sha }}/builds/report.html">Build Report</a></td>
+      </tr>
+      <tr>
+        <th class="hth no-sort">Date</th>
+        <td> {{ date }}</td>
+      </tr>
+    </tbody>
+  </table>
+  {% if is_preview %}
+  <p style="font-weight: bold;color: red;">This is a preview. The workflow is not yet finished.</p>
+  {% endif %}
+  <h2>Table of Contents</h2>
+  <ul>
+    {%- if pr_number != 0 %}<li><a href="#new-fails-pr">New Fails in PR</a> ({{ counts.pr_new_fails }})</li>{% endif %}
+    <li><a href="#ci-jobs-status">CI Jobs Status</a> ({{ counts.jobs_status }})</li>
+    <li><a href="#checks-errors">Checks Errors</a> ({{ counts.checks_errors }})</li>
+    <li><a href="#checks-fails">Checks New Fails</a> ({{ counts.checks_new_fails }})</li>
+    <li><a href="#regression-fails">Regression New Fails</a> ({{ counts.regression_new_fails }})</li>
+    <li><a href="#docker-images-cves">Docker Images CVEs</a> ({{ counts.cves }})</li>
+    <li><a href="#checks-known-fails">Checks Known Fails</a> ({{ counts.checks_known_fails }})</li>
+  </ul>
+
+  {%- if pr_number != 0 -%}
+  <h2 id="new-fails-pr">New Fails in PR</h2>
+  <p> Compared with base sha {{ base_sha }} </p>
+  {{ new_fails_html }}
+  {%- endif %}
+
+  <h2 id="ci-jobs-status">CI Jobs Status</h2>
+  {{ ci_jobs_status_html }}
+
+  <h2 id="checks-errors">Checks Errors</h2>
+  {{ checks_errors_html }}
+
+  <h2 id="checks-fails">Checks New Fails</h2>
+  {{ checks_fails_html }}
+
+  <h2 id="regression-fails">Regression New Fails</h2>
+  {{ regression_fails_html }}
+
+  <h2 id="docker-images-cves">Docker Images CVEs</h2>
+  {{ docker_images_cves_html }}
+
+  <h2 id="checks-known-fails">Checks Known Fails</h2>
+  <p>
+    Fail reason conventions:<br/>
+    KNOWN - Accepted fail and fix is not planned<br/>
+    INVESTIGATE - We don't know why it fails<br/>
+    NEEDSFIX - Investigation done and a fix is needed to make it pass<br/>
+  </p>
+  {{ checks_known_fails_html }}
+
+  <script>
+    document.addEventListener('click', function (e) {
+      try {
+        function findElementRecursive(element, tag) {
+          return element.nodeName === tag ? element :
+            findElementRecursive(element.parentNode, tag)
+        }
+        var descending_th_class = ' dir-d '
+        var ascending_th_class = ' dir-u '
+        var ascending_table_sort_class = 'asc'
+        var regex_dir = / dir-(u|d) /
+        var alt_sort = e.shiftKey || e.altKey
+        var element = findElementRecursive(e.target, 'TH')
+        var tr = findElementRecursive(element, 'TR')
+        var table = findElementRecursive(tr, 'TABLE')
+        function reClassify(element, dir) {
+          element.className = element.className.replace(regex_dir, '') + dir
+        }
+        function getValue(element) {
+          return (
+            (alt_sort && element.getAttribute('data-sort-alt')) ||
+            element.getAttribute('data-sort') || element.innerText
+          )
+        }
+        if (true) {
+          var column_index
+          var nodes = tr.cells
+          for (var i = 0; i < nodes.length; i++) {
+            if (nodes[i] === element) {
+              column_index = element.getAttribute('data-sort-col') || i
+            } else {
+              reClassify(nodes[i], '')
+            }
+          }
+          var dir = descending_th_class
+          if (
+            element.className.indexOf(descending_th_class) !== -1 ||
+            (table.className.indexOf(ascending_table_sort_class) !== -1 &&
+              element.className.indexOf(ascending_th_class) == -1)
+          ) {
+            dir = ascending_th_class
+          }
+          reClassify(element, dir)
+          var org_tbody = table.tBodies[0]
+          var rows = [].slice.call(org_tbody.rows, 0)
+          var reverse = dir === ascending_th_class
+          rows.sort(function (a, b) {
+            var x = getValue((reverse ? a : b).cells[column_index])
+            var y = getValue((reverse ? b : a).cells[column_index])
+            return isNaN(x - y) ? x.localeCompare(y) : x - y
+          })
+          var clone_tbody = org_tbody.cloneNode()
+          while (rows.length) {
+            clone_tbody.appendChild(rows.splice(0, 1)[0])
+          }
+          table.replaceChild(clone_tbody, org_tbody)
+        }
+      } catch (error) {
+      }
+    });
+  </script>
+  </body>
+</html>

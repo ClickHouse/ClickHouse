@@ -16,7 +16,7 @@ RUN arch=${TARGETARCH:-amd64} \
     esac
 
 
-FROM alpine
+FROM alpine:3.21
 
 ENV LANG=en_US.UTF-8 \
     LANGUAGE=en_US:en \

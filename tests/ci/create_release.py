@@ -532,7 +532,7 @@ class ReleaseInfo:
                     url = "dry-run"
                 print(f"ChangeLog PR url [{url}]")
                 self.changelog_pr = url
-            self.docker = f"docker run --rm clickhouse/clickhouse:{self.version} clickhouse --version"
+            self.docker = f"docker run --rm altinityinfra/clickhouse:{self.version} clickhouse --version"
         else:
             # new release branch - find version bump pr on a master branch
             branch = self.get_version_bump_branch()

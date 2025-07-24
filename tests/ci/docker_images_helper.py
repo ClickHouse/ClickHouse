@@ -7,8 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ci_utils import Shell, Utils
-from env_helper import DOCKER_TAG, ROOT_DIR
-from get_robot_token import get_parameter_from_ssm
+from env_helper import DOCKER_TAG, ROOT_DIR, DOCKER_PASSWORD
 
 IMAGES_FILE_PATH = Path("docker/images.json")
 
@@ -20,9 +19,9 @@ def docker_login(relogin: bool = True) -> None:
         "docker system info | grep --quiet -E 'Username|Registry'"
     ):
         Shell.check(  # pylint: disable=unexpected-keyword-arg
-            "docker login --username 'robotclickhouse' --password-stdin",
+            "docker login --username 'altinityinfra' --password-stdin",
             strict=True,
-            stdin_str=get_parameter_from_ssm("dockerhub_robot_password"),
+            stdin_str=DOCKER_PASSWORD,
             encoding="utf-8",
         )
 

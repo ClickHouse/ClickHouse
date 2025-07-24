@@ -187,7 +187,9 @@ def _build_dockers(workflow, job_name):
 
 def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     # debug info
-    GH.print_log_in_group("GITHUB envs", Shell.get_output("env | grep GITHUB"))
+    GH.print_log_in_group(
+        "GITHUB envs", Shell.get_output("env | grep -P '^GITHUB_(?!.*TOKEN)'")
+    )
 
     def _check_yaml_up_to_date():
         print("Check workflows are up to date")

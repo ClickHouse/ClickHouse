@@ -1,0 +1,98 @@
+- name: Log the configuration being used
+  debug:
+    msg:
+      - 'Repo DNS Name:  {{ repo_dns_name }}'
+      - 'Repo Title:     {{ repo_title }}'
+      - 'Repo Subtitle:  {{ repo_subtitle }}'
+      - 'Repo Name:      {{ repo_name }}'
+      - 'Origin Path:    {{ new_cloudfront_origin_path|default("None") }}'
+      - 'Push to Active: {{ push_to_active|default(false) }}'
+
+- name: Create directory index files
+  shell: "{{ ansible_playbook_python }} {{ (playbook_dir + '/../dirindex/dirindexgen.py') | realpath }} {{ repo_dns_name }} {{ new_cloudfront_origin_path }}"
+
+- name: Get static content source path
+  set_fact:
+    static_path: "{{ (playbook_dir + '/../static') | realpath }}"
+
+- name: Get list of static content files
+  find:
+    paths: "{{ static_path }}"
+    file_type: file
+    recurse: true
+  register: static_files
+
+- name: Generate target filenames for source filenames
+  set_fact:
+    target_filenames: >-
+      {{
+        target_filenames | default({}) |
+        combine(
+          {
+            item.path:
+              item.path | regex_replace('^' + (static_path | regex_escape) + '/(.*)$', '\1')
+          }
+        )
+      }}
+  loop: "{{ static_files.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Template HTML files to S3
+  amazon.aws.aws_s3:
+    bucket: "{{ repo_dns_name }}"
+    object: "{{ new_cloudfront_origin_path }}/{{ target_filenames[item.path] }}"
+    content: "{{ lookup('template', item.path) }}"
+    metadata: "Content-Type={{ lookup('pipe', 'file -b --mime-type ' + item.path) }}"
+    mode: put
+  when: 'item.path | basename | splitext | last == ".html"'
+  loop: "{{ static_files.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Copy other static files to S3
+  amazon.aws.aws_s3:
+    bucket: "{{ repo_dns_name }}"
+    object: "{{ new_cloudfront_origin_path }}/{{ target_filenames[item.path] }}"
+    src: "{{ item.path }}"
+    metadata: "Content-Type={{ lookup('pipe', 'file -b --mime-type ' + item.path) }}"
+    mode: put
+  when: 'item.path | basename | splitext | last != ".html"'
+  loop: "{{ static_files.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Update CloudFront distribution
+  community.aws.cloudfront_distribution:
+    region: "{{ aws_region }}"
+    state: present
+    caller_reference: "{{ cloudfront_info.cloudfront[repo_dns_name].Distribution.DistributionConfig.CallerReference }}"
+    origins:
+      - id: "{{ cloudfront_info.cloudfront[repo_dns_name].Distribution.DistributionConfig.Origins.Items[0].Id }}"
+        domain_name: "{{ cloudfront_info.cloudfront[repo_dns_name].Distribution.DistributionConfig.Origins.Items[0].DomainName }}"
+        origin_path: "{{ new_cloudfront_origin_path | default(omit) }}"
+        custom_origin_config:
+          origin_protocol_policy: "http-only"
+    aliases:
+      - "{{ cloudfront_info.cloudfront[repo_dns_name].Distribution.DistributionConfig.Aliases.Items[0] }}"
+    viewer_certificate:
+      acm_certificate_arn: "{{ cloudfront_info.cloudfront[repo_dns_name].Distribution.DistributionConfig.ViewerCertificate.ACMCertificateArn }}"
+      ssl_support_method: "{{ cloudfront_info.cloudfront[repo_dns_name].Distribution.DistributionConfig.ViewerCertificate.SSLSupportMethod }}"
+    logging:
+      bucket: "{{ cloudfront_info.cloudfront[repo_dns_name].Distribution.DistributionConfig.Logging.Bucket }}"
+      enabled: "{{ cloudfront_info.cloudfront[repo_dns_name].Distribution.DistributionConfig.Logging.Enabled }}"
+      include_cookies: "{{ cloudfront_info.cloudfront[repo_dns_name].Distribution.DistributionConfig.Logging.IncludeCookies }}"
+      prefix: "{{ cloudfront_info.cloudfront[repo_dns_name].Distribution.DistributionConfig.Logging.Prefix }}"
+  when: 'not (push_to_active|default(false))'
+  register: distribution
+
+- name: Invalidate CloudFront cache
+  community.aws.cloudfront_invalidation:
+    alias: "{{ repo_dns_name }}"
+    target_paths:
+      - "/*"
+  register: invalidation
+
+- name: Wait for CloudFront invalidation to be complete
+  shell: "aws cloudfront wait invalidation-completed --distribution-id {{ distribution.id }} --id {{ invalidation.invalidation.id }}"
+

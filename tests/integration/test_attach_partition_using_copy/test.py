@@ -61,7 +61,9 @@ def create_source_table(node, table_name, replicated):
         SETTINGS disk = disk(type = web, endpoint = 'https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/')
         """.format(
             table_name=table_name, engine=engine
-        )
+        ),
+        timeout=60,
+        retry_count=3,
     )
 
 

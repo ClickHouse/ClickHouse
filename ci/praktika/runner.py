@@ -500,6 +500,11 @@ class Runner:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
 
+            # Altinity workflow report
+            cmd = f"./.github/actions/create_workflow_report/workflow_report_hook.sh"
+            workflow_report_url = Shell.get_output(cmd).splitlines()[-1]
+            print(f"::notice ::Workflow report: {workflow_report_url}")
+
         if job.name == Settings.FINISH_WORKFLOW_JOB_NAME and ci_db:
             # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
             workflow_result = Result.from_fs(workflow.name)

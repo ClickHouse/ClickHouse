@@ -103,10 +103,11 @@ def build_and_push_one_image(
     from_tag: Optional[str] = None,
 ) -> Tuple[bool, Path]:
     logging.info(
-        "Building docker image %s with version %s from path %s",
+        "Building docker image %s with version %s from path %s, from_tag: %s",
         image.repo,
         version_string,
         image.path,
+        from_tag,
     )
     build_log = (
         Path(TEMP_PATH)

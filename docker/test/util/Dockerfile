@@ -1,4 +1,4 @@
-# docker build -t clickhouse/test-util .
+# docker build -t altinityinfra/test-util .
 FROM ubuntu:22.04
 
 # ARG for quick switch to a given ubuntu mirror
@@ -83,10 +83,10 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-COPY --from=clickhouse/cctools:425d6927d1efbd790bdb /opt/gdb /opt/gdb
+COPY --from=altinityinfra/cctools:c14b85f24d3f131919bf /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
 
-COPY --from=clickhouse/cctools:425d6927d1efbd790bdb \
+COPY --from=altinityinfra/cctools:c14b85f24d3f131919bf \
   /opt/openssl-fips/openssl.cnf \
   /opt/openssl-fips/fipsmodule.cnf \
   /opt/openssl-fips/fips.so \

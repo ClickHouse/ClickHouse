@@ -1,6 +1,6 @@
 services:
     zoo1:
-        image: ${image:-clickhouse/integration-test}
+        image: ${image:-altinityinfra/integration-test}
         restart: always
         user: ${user:-}
         volumes:
@@ -37,7 +37,7 @@ services:
             - inet6
             - rotate
     zoo2:
-        image: ${image:-clickhouse/integration-test}
+        image: ${image:-altinityinfra/integration-test}
         restart: always
         user: ${user:-}
         volumes:
@@ -74,7 +74,7 @@ services:
             - inet6
             - rotate
     zoo3:
-        image: ${image:-clickhouse/integration-test}
+        image: ${image:-altinityinfra/integration-test}
         restart: always
         user: ${user:-}
         volumes:

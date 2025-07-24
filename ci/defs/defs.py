@@ -1,26 +1,35 @@
 from praktika import Artifact, Docker, Job, Secret
 from praktika.utils import MetaClasses, Utils
+from settings import altinity_overrides
 
 # i.e. "ClickHouse/ci/tmp"
 TEMP_DIR = f"{Utils.cwd()}/ci/tmp"  # == _Settings.TEMP_DIR != env_helper.TEMP_PATH
 
-SYNC = "CH Inc sync"
+SYNC = "Altinity sync"
 
-S3_BUCKET_NAME = "clickhouse-builds"
-S3_REPORT_BUCKET_NAME = "clickhouse-test-reports"
-S3_BUCKET_HTTP_ENDPOINT = "clickhouse-builds.s3.amazonaws.com"
-S3_REPORT_BUCKET_HTTP_ENDPOINT = "s3.amazonaws.com/clickhouse-test-reports"
+S3_BUCKET_NAME = altinity_overrides.S3_BUCKET_NAME
+S3_REPORT_BUCKET_NAME = altinity_overrides.S3_REPORT_BUCKET_NAME
+S3_BUCKET_HTTP_ENDPOINT = altinity_overrides.S3_BUCKET_HTTP_ENDPOINT
+S3_REPORT_BUCKET_HTTP_ENDPOINT = altinity_overrides.S3_REPORT_BUCKET_HTTP_ENDPOINT
 
 
 class RunnerLabels:
     CI_SERVICES = "ci_services"
     CI_SERVICES_EBS = "ci_services_ebs"
-    BUILDER_AMD = ["self-hosted", "builder"]
-    BUILDER_ARM = ["self-hosted", "builder-aarch64"]
-    FUNC_TESTER_AMD = ["self-hosted", "func-tester"]
-    FUNC_TESTER_ARM = ["self-hosted", "func-tester-aarch64"]
-    STYLE_CHECK_AMD = ["self-hosted", "style-checker"]
-    STYLE_CHECK_ARM = ["self-hosted", "style-checker-aarch64"]
+    BUILDER_AMD = ["self-hosted", "altinity-on-demand", "altinity-builder"]
+    BUILDER_ARM = ["self-hosted", "altinity-on-demand", "altinity-builder"]
+    FUNC_TESTER_AMD = ["self-hosted", "altinity-on-demand", "altinity-func-tester"]
+    FUNC_TESTER_ARM = [
+        "self-hosted",
+        "altinity-on-demand",
+        "altinity-func-tester-aarch64",
+    ]
+    STYLE_CHECK_AMD = ["self-hosted", "altinity-on-demand", "altinity-style-checker"]
+    STYLE_CHECK_ARM = [
+        "self-hosted",
+        "altinity-on-demand",
+        "altinity-style-checker-aarch64",
+    ]
 
 
 class CIFiles:
@@ -28,236 +37,244 @@ class CIFiles:
     UNIT_TESTS_BIN = f"{TEMP_DIR}/build/src/unit_tests_dbms"
 
 
-BASE_BRANCH = "master"
+BASE_BRANCH = altinity_overrides.MAIN_BRANCH
 
 azure_secret = Secret.Config(
     name="azure_connection_string",
-    type=Secret.Type.AWS_SSM_VAR,
+    type=Secret.Type.GH_SECRET,
 )
 
 SECRETS = [
     Secret.Config(
-        name="dockerhub_robot_password",
-        type=Secret.Type.AWS_SSM_VAR,
+        name=altinity_overrides.DOCKERHUB_SECRET,
+        type=Secret.Type.GH_SECRET,
     ),
     Secret.Config(
-        name="clickhouse-test-stat-url",
-        type=Secret.Type.AWS_SSM_VAR,
+        name=altinity_overrides.SECRET_CI_DB_URL,
+        type=Secret.Type.GH_SECRET,
     ),
     Secret.Config(
-        name="clickhouse-test-stat-login",
-        type=Secret.Type.AWS_SSM_VAR,
+        name=altinity_overrides.SECRET_CI_DB_USER,
+        type=Secret.Type.GH_SECRET,
     ),
     Secret.Config(
-        name="clickhouse-test-stat-password",
-        type=Secret.Type.AWS_SSM_VAR,
+        name=altinity_overrides.SECRET_CI_DB_PASSWORD,
+        type=Secret.Type.GH_SECRET,
     ),
-    azure_secret,
+    # azure_secret,
+    # Secret.Config(
+    #     name="woolenwolf_gh_app.clickhouse-app-id",
+    #     type=Secret.Type.AWS_SSM_SECRET,
+    # ),
+    # Secret.Config(
+    #     name="woolenwolf_gh_app.clickhouse-app-key",
+    #     type=Secret.Type.AWS_SSM_SECRET,
+    # ),
     Secret.Config(
-        name="woolenwolf_gh_app.clickhouse-app-id",
-        type=Secret.Type.AWS_SSM_SECRET,
+        name="AWS_ACCESS_KEY_ID",
+        type=Secret.Type.GH_SECRET,
     ),
     Secret.Config(
-        name="woolenwolf_gh_app.clickhouse-app-key",
-        type=Secret.Type.AWS_SSM_SECRET,
+        name="AWS_SECRET_ACCESS_KEY",
+        type=Secret.Type.GH_SECRET,
     ),
 ]
 
 DOCKERS = [
     Docker.Config(
-        name="clickhouse/style-test",
+        name="altinityinfra/style-test",
         path="./ci/docker/style-test",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/fasttest",
+        name="altinityinfra/fasttest",
         path="./ci/docker/fasttest",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/binary-builder",
+        name="altinityinfra/binary-builder",
         path="./ci/docker/binary-builder",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/fasttest"],
+        depends_on=["altinityinfra/fasttest"],
     ),
     Docker.Config(
-        name="clickhouse/test-old-centos",
+        name="altinityinfra/test-old-centos",
         path="./ci/docker/compatibility/centos",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/test-old-ubuntu",
+        name="altinityinfra/test-old-ubuntu",
         path="./ci/docker/compatibility/ubuntu",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/stateless-test",
+        name="altinityinfra/stateless-test",
         path="./ci/docker/stateless-test",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/cctools",
+        name="altinityinfra/cctools",
         path="./ci/docker/cctools",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/fasttest"],
+        depends_on=["altinityinfra/fasttest"],
     ),
     Docker.Config(
-        name="clickhouse/test-util",
+        name="altinityinfra/test-util",
         path="./docker/test/util",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/test-base",
+        name="altinityinfra/test-base",
         path="./docker/test/base",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-util"],
+        depends_on=["altinityinfra/test-util"],
     ),
     Docker.Config(
-        name="clickhouse/stress-test",
+        name="altinityinfra/stress-test",
         path="./docker/test/stress",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/stateless-test"],
+        depends_on=["altinityinfra/stateless-test"],
     ),
     Docker.Config(
-        name="clickhouse/fuzzer",
+        name="altinityinfra/fuzzer",
         path="./docker/test/fuzzer",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
+        depends_on=["altinityinfra/test-base"],
     ),
     Docker.Config(
-        name="clickhouse/performance-comparison",
+        name="altinityinfra/performance-comparison",
         path="./docker/test/performance-comparison",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
+        depends_on=["altinityinfra/test-base"],
     ),
     Docker.Config(
-        name="clickhouse/keeper-jepsen-test",
+        name="altinityinfra/keeper-jepsen-test",
         path="./docker/test/keeper-jepsen",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
+        depends_on=["altinityinfra/test-base"],
     ),
     Docker.Config(
-        name="clickhouse/server-jepsen-test",
+        name="altinityinfra/server-jepsen-test",
         path="./docker/test/server-jepsen",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
+        depends_on=["altinityinfra/test-base"],
     ),
     Docker.Config(
-        name="clickhouse/integration-test",
+        name="altinityinfra/integration-test",
         path="./docker/test/integration/base",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
+        depends_on=["altinityinfra/test-base"],
     ),
     # Docker.Config(
-    #     name="clickhouse/integration-test",
+    #     name="altinityinfra/integration-test",
     #     path="./ci/docker/integration/integration-test",
     #     platforms=Docker.Platforms.arm_amd,
     #     depends_on=[],
     # ),
     Docker.Config(
-        name="clickhouse/integration-tests-runner",
+        name="altinityinfra/integration-tests-runner",
         path="./docker/test/integration/runner",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/integration-test-with-unity-catalog",
+        name="altinityinfra/integration-test-with-unity-catalog",
         path="docker/test/integration/clickhouse_with_unity_catalog",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/integration-helper",
+        name="altinityinfra/integration-helper",
         path="./docker/test/integration/helper_container",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/kerberos-kdc",
+        name="altinityinfra/kerberos-kdc",
         path="./docker/test/integration/kerberos_kdc",
         platforms=[Docker.Platforms.AMD],
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/mysql-golang-client",
+        name="altinityinfra/mysql-golang-client",
         path="./docker/test/integration/mysql_golang_client",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/mysql-java-client",
+        name="altinityinfra/mysql-java-client",
         path="./docker/test/integration/mysql_java_client",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/mysql-js-client",
+        name="altinityinfra/mysql-js-client",
         path="./docker/test/integration/mysql_js_client",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/dotnet-client",
+        name="altinityinfra/dotnet-client",
         path="./docker/test/integration/dotnet_client",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/mysql-php-client",
+        name="altinityinfra/mysql-php-client",
         path="./docker/test/integration/mysql_php_client",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/nginx-dav",
+        name="altinityinfra/nginx-dav",
         path="./docker/test/integration/nginx_dav",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/postgresql-java-client",
+        name="altinityinfra/postgresql-java-client",
         path="./docker/test/integration/postgresql_java_client",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/python-bottle",
+        name="altinityinfra/python-bottle",
         path="./docker/test/integration/resolver",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/s3-proxy",
+        name="altinityinfra/s3-proxy",
         path="./docker/test/integration/s3_proxy",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
+    # Docker.Config(
+    #     name="altinityinfra/docs-builder",
+    #     path="./ci/docker/docs-builder",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=[],
+    # ),
     Docker.Config(
-        name="clickhouse/docs-builder",
-        path="./ci/docker/docs-builder",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
-    Docker.Config(
-        name="clickhouse/install-deb-test",
+        name="altinityinfra/install-deb-test",
         path="docker/test/install/deb",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/install-rpm-test",
+        name="altinityinfra/install-rpm-test",
         path="docker/test/install/rpm",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/sqlancer-test",
+        name="altinityinfra/sqlancer-test",
         path="./ci/docker/sqlancer-test",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
@@ -584,7 +601,7 @@ class Jobs:
         name=JobNames.PERFORMANCE,
         runs_on=["#from param"],
         command="python3 ./ci/jobs/performance_tests.py --test-options {PARAMETER}",
-        run_in_docker="clickhouse/stateless-test",
+        run_in_docker="altinityinfra/stateless-test",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./tests/performance/",
@@ -646,7 +663,7 @@ class Jobs:
         digest_config=Job.CacheDigestConfig(
             include_paths=["./ci/jobs/clickbench.py", "./ci/jobs/scripts/clickbench/"],
         ),
-        run_in_docker="clickhouse/stateless-test",
+        run_in_docker="altinityinfra/stateless-test",
         timeout=900,
     ).parametrize(
         parameter=[
@@ -705,7 +722,7 @@ class Jobs:
     #     runs_on=RunnerLabels.FUNC_TESTER_ARM,
     #     command="python3 ./ci/jobs/fuzzers_job.py",
     #     requires=[ArtifactNames.CH_ARM_RELEASE],
-    #     run_in_docker="clickhouse/stateless-test",
+    #     run_in_docker="altinityinfra/stateless-test",
     # )
     # TODO: rewrite to praktika style job (commented above)
     ast_fuzzer_jobs = Job.Config(

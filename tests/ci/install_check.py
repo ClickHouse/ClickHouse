@@ -16,8 +16,8 @@ from report import FAIL, FAILURE, OK, SUCCESS, JobReport, TestResult, TestResult
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
-RPM_IMAGE = "clickhouse/install-rpm-test"
-DEB_IMAGE = "clickhouse/install-deb-test"
+RPM_IMAGE = "altinityinfra/install-rpm-test"
+DEB_IMAGE = "altinityinfra/install-deb-test"
 TEMP_PATH = Path(f"{REPO_COPY}/ci/tmp/")
 LOGS_PATH = TEMP_PATH / "tests_logs"
 
@@ -30,7 +30,10 @@ test_env='TEST_THE_DEFAULT_PARAMETER=15'
 echo "$test_env" >> /etc/default/clickhouse
 systemctl restart clickhouse-server
 clickhouse-client -q 'SELECT version()'
-grep "$test_env" /proc/$(cat /var/run/clickhouse-server/clickhouse-server.pid)/environ"""
+grep "$test_env" /proc/$(cat /var/run/clickhouse-server/clickhouse-server.pid)/environ
+echo "Check Stacktrace"
+output=$(clickhouse-local --stacktrace --query="SELECT throwIf(1,'throw')" 2>&1 >/dev/null || true)
+echo "$output" | grep 'FunctionThrowIf::executeImpl'"""
     initd_test = r"""#!/bin/bash
 set -e
 trap "bash -ex /packages/preserve_logs.sh" ERR

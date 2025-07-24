@@ -170,10 +170,12 @@ def main():
 
     if not info.is_local_run:
         # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
-        os.environ["AZURE_CONNECTION_STRING"] = Shell.get_output(
-            f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
-            verbose=True,
-        )
+        # os.environ["AZURE_CONNECTION_STRING"] = Shell.get_output(
+        #     f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
+        #     verbose=True,
+        # )
+        # NOTE(strtgbb): We pass azure credentials through the docker command, not SSM.
+        pass
     else:
         print("Disable azure for a local run")
         config_installs_args += " --no-azure"
@@ -221,12 +223,13 @@ def main():
 
     if res and JobStages.INSTALL_CLICKHOUSE in stages:
 
-        def configure_log_export():
-            if not info.is_local_run:
-                print("prepare log export config")
-                return CH.create_log_export_config()
-            else:
-                print("skip log export config for local run")
+        # NOTE (strtgbb): Disable log export throughout this file, it depends on aws ssm, which we don't have configured
+        # def configure_log_export():
+        #     if not info.is_local_run:
+        #         print("prepare log export config")
+        #         return CH.create_log_export_config()
+        #     else:
+        #         print("skip log export config for local run")
 
         commands = [
             f"chmod +x {ch_path}/clickhouse",
@@ -267,7 +270,7 @@ def main():
                 )
             os.environ["GLOBAL_TAGS"] = "no-random-settings"
 
-        commands.append(configure_log_export)
+        # commands.append(configure_log_export)
 
         results.append(
             Result.from_commands_run(name="Install ClickHouse", command=commands)
@@ -294,24 +297,27 @@ def main():
             # )
             res = res and CH.start()
             res = res and CH.wait_ready()
+            # NOTE (strtgbb): Disable gdb, it fails to attach, disable for now
+            # if res:
+            #     if "asan" not in info.job_name:
+            #         print("Attaching gdb")
+            #         res = res and CH.attach_gdb()
+            #     else:
+            #         print("Skipping gdb attachment for asan build")
+
             if res:
-                if "asan" not in info.job_name:
-                    print("Attaching gdb")
-                    res = res and CH.attach_gdb()
-                else:
-                    print("Skipping gdb attachment for asan build")
-            if res:
-                if not Info().is_local_run:
-                    if not CH.start_log_exports(stop_watch.start_time):
-                        info.add_workflow_report_message(
-                            "WARNING: Failed to start log export"
-                        )
-                        print("Failed to start log export")
-                if not CH.create_minio_log_tables():
-                    info.add_workflow_report_message(
-                        "WARNING: Failed to create minio log tables"
-                    )
-                    print("Failed to create minio log tables")
+                # NOTE (strtgbb): Disable log tables, we don't use them
+                # if not Info().is_local_run:
+                #     if not CH.start_log_exports(stop_watch.start_time):
+                #         info.add_workflow_report_message(
+                #             "WARNING: Failed to start log export"
+                #         )
+                #         print("Failed to start log export")
+                # if not CH.create_minio_log_tables():
+                #     info.add_workflow_report_message(
+                #         "WARNING: Failed to create minio log tables"
+                #     )
+                #     print("Failed to create minio log tables")
 
                 res = (
                     CH.prepare_stateful_data(
@@ -349,8 +355,8 @@ def main():
         else:
             run_specific_tests(tests=tests, runs=50 if is_flaky_check else 1)
 
-        if not info.is_local_run:
-            CH.stop_log_exports()
+        # if not info.is_local_run:
+        #     CH.stop_log_exports()
         results.append(FTResultsProcessor(wd=temp_dir).run())
         test_result = results[-1]
 
