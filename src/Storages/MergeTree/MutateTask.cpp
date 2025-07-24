@@ -1354,6 +1354,10 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
                 ProfileEventTimeIncrement<Microseconds> projection_watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
                 Block block_to_squash = ctx->projections_to_build[i]->calculate(cur_block, ctx->context);
 
+                /// Everything is deleted by lighweight delete
+                if (block_to_squash.rows() == 0)
+                    continue;
+
                 projection_squashes[i].setHeader(block_to_squash.cloneEmpty());
                 squashed_chunk = Squashing::squash(projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()}));
             }

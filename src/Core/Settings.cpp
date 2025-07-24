@@ -170,10 +170,13 @@ Squash blocks passed to the external table to a specified size in bytes, if bloc
     DECLARE(UInt64, max_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
 Maximum block size for JOIN result (if join algorithm supports it). 0 means unlimited.
 )", 0) \
+    DECLARE(UInt64, max_joined_block_size_bytes, 4 * 1024 * 1024, R"(
+Maximum block size in bytes for JOIN result (if join algorithm supports it). 0 means unlimited.
+)", 0) \
     DECLARE(UInt64, min_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
 Minimum block size in rows for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
 )", 0) \
-    DECLARE(UInt64, min_joined_block_size_bytes, 524288, R"(
+    DECLARE(UInt64, min_joined_block_size_bytes, 512 * 1024, R"(
 Minimum block size in bytes for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
 )", 0) \
     DECLARE(UInt64, max_insert_threads, 0, R"(
@@ -393,7 +396,7 @@ The maximum number of a concurrent loaded parts in multipart upload request. 0 m
     DECLARE(UInt64, s3_max_single_part_upload_size, S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, R"(
 The maximum size of object to upload using singlepart upload to S3.
 )", 0) \
-    DECLARE(UInt64, azure_max_single_part_upload_size, 100*1024*1024, R"(
+    DECLARE(UInt64, azure_max_single_part_upload_size, S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, R"(
 The maximum size of object to upload using singlepart upload to Azure blob storage.
 )", 0)                                                                             \
     DECLARE(UInt64, azure_max_single_part_copy_size, 256*1024*1024, R"(
