@@ -1,6 +1,6 @@
 #include <future>
 #include <memory>
-#include <mutex>
+
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>

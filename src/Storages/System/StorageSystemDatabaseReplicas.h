@@ -21,7 +21,7 @@ public:
     using TPools = StatusRequestsPools<DatabaseReplicated>;
 
     static constexpr size_t DEFAULT_THREAD_COUNT = 8;
- 
+
     explicit StorageSystemDatabaseReplicas(const StorageID & table_id_);
 
     std::string getName() const override { return "SystemDatabaseReplicas"; }
