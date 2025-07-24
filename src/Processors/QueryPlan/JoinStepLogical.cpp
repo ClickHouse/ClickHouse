@@ -300,8 +300,16 @@ const ActionsDAG::Node & findOrAddInput(const ActionsDAGPtr & actions_dag, const
 
 JoinActionRef predicateToCondition(const JoinPredicate & predicate, const ActionsDAGPtr & actions_dag)
 {
-    const auto & left_node = findOrAddInput(actions_dag, predicate.left_node.getColumn());
-    const auto & right_node = findOrAddInput(actions_dag, predicate.right_node.getColumn());
+    ColumnWithTypeAndName left_column = predicate.left_node.getColumn();
+    ColumnWithTypeAndName right_column = predicate.right_node.getColumn();
+
+    /// Constant columns from the JOIN condition will be materialized during the JOIN,
+    /// that's why we can't use them as constants for actions building.
+    left_column.column = nullptr;
+    right_column.column = nullptr;
+
+    const auto & left_node = findOrAddInput(actions_dag, left_column);
+    const auto & right_node = findOrAddInput(actions_dag, right_column);
 
     auto operator_function = FunctionFactory::instance().get(operatorToFunctionName(predicate.op), nullptr);
     const auto & result_node = actions_dag->addFunction(operator_function, {&left_node, &right_node}, {});
