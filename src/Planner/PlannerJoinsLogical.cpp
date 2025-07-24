@@ -176,6 +176,8 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
 
     auto & using_nodes = node->as<ListNode &>().getNodes();
     size_t num_nodes = using_nodes.size();
+    if (num_nodes == 0)
+        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "JOIN USING expression expected at least one column");
 
     auto & join_operator = builder_context.join_operator;
 
