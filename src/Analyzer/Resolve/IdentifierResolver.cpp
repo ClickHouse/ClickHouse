@@ -886,15 +886,21 @@ bool resolvedIdenfiersFromJoinAreEquals(
     return left_resolved_to_compare->isEqual(*right_resolved_to_compare, IQueryTreeNode::CompareOptions{.compare_aliases = false});
 }
 
-QueryTreeNodePtr createProjectionForUsing(QueryTreeNodes arguments, const DataTypePtr & result_type, JoinKind join_kind, IdentifierResolveScope & scope)
+QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, JoinKind join_kind, IdentifierResolveScope & scope)
 {
+    const auto & using_expression = using_column_node.getExpression();
+    if (!using_expression)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected list of expressions for USING, but got {}", using_expression->dumpTree());
+
+    auto arguments = using_expression->as<const ListNode &>().getNodes();
+
     if (arguments.size() < 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 2 arguments for USING projection, but got {}", arguments.size());
 
     for (size_t i = 0; i < arguments.size(); ++i)
     {
         auto resolved_side = (i + 1 == arguments.size()) ? JoinTableSide::Right : JoinTableSide::Left;
-        auto converted_argument = IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(arguments[i], result_type, join_kind, resolved_side, scope);
+        auto converted_argument = IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(arguments[i], using_column_node.getResultType(), join_kind, resolved_side, scope);
         if (converted_argument)
             arguments[i] = converted_argument;
     }
@@ -915,6 +921,7 @@ QueryTreeNodePtr createProjectionForUsing(QueryTreeNodes arguments, const DataTy
 
     auto merge_function = FunctionFactory::instance().get(function_name, scope.context);
     function_node->resolveAsFunction(merge_function->build(function_node->getArgumentColumns()));
+    function_node->setAlias(using_column_node.getColumnName());
 
     return function_node;
 }
@@ -1102,13 +1109,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
 
         if (using_column_node_it != join_using_column_name_to_column_node.end())
         {
-            auto & using_column_node = using_column_node_it->second->as<ColumnNode &>();
-            auto & using_expression_list = using_column_node.getExpression()->as<ListNode &>();
-
-            auto result_column_node = createProjectionForUsing(using_expression_list.getNodes(), using_column_node.getColumnType(), join_kind, scope);
-            result_column_node->setAlias(identifier_lookup.identifier.getFullName());
-
-            resolved_identifier = std::move(result_column_node);
+            const auto & using_column_node = using_column_node_it->second->as<const ColumnNode &>();
+            resolved_identifier = createProjectionForUsing(using_column_node, join_kind, scope);
         }
         else if (resolvedIdenfiersFromJoinAreEquals(left_resolved_identifier, right_resolved_identifier, scope))
         {

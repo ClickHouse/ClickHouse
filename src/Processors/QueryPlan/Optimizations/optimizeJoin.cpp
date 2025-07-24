@@ -540,7 +540,7 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
         node = node->children[0];
 
     auto * child_join_step = typeid_cast<JoinStepLogical *>(node->step.get());
-    if (child_join_step && graph.hasCompatibleSettings(*child_join_step))
+    if (child_join_step && !child_join_step->isOptimized() && graph.hasCompatibleSettings(*child_join_step))
     {
         QueryGraphBuilder child_graph(graph.context);
         buildQueryGraph(child_graph, *node, nodes);
@@ -949,7 +949,8 @@ void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     }
 
     if (!optimization_settings.optimize_join_order ||
-        join_step->getJoinOperator().strictness != JoinStrictness::All)
+        join_step->getJoinOperator().strictness != JoinStrictness::All ||
+        join_step->getJoinOperator().kind == JoinKind::Paste)
     {
         /// TODO: we still can try swap tables if query_plan_join_swap_table is enabled
         join_step->setOptimized();

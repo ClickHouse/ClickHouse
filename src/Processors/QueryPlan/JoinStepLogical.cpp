@@ -203,21 +203,25 @@ String formatJoinCondition(const std::vector<JoinActionRef> & predicates)
 
 std::string_view joinTypePretty(JoinKind join_kind, JoinStrictness strictness)
 {
-    // Inner Join: ⋈ (Unicode U+22C8)
-    // Left Outer Join: ⟕ (Unicode U+27D5)
-    // Right Outer Join: ⟖ (Unicode U+27D6)
-    // Full Outer Join: ⟗ (Unicode U+27D7)
-    // Semi Join: ⋉ (Unicode U+22C9)
-    // Right Semi Join: ⋊ (Unicode U+22CA)
-    // Anti Join: ⋉̸ (Unicode U+22C9 U+0338)
-    // Right Anti Join: ⋊̸ (Unicode U+22CA U+0338)
-    // Cross Join: × (Unicode U+00D7)
+    /*
+     * Inner Join: ⋈ (Unicode U+22C8)
+     * Left Outer Join: ⟕ (Unicode U+27D5)
+     * Right Outer Join: ⟖ (Unicode U+27D6)
+     * Full Outer Join: ⟗ (Unicode U+27D7)
+     * Semi Join: ⋉ (Unicode U+22C9)
+     * Right Semi Join: ⋊ (Unicode U+22CA)
+     * Anti Join: ⋉̸ (Unicode U+22C9 U+0338)
+     * Right Anti Join: ⋊̸ (Unicode U+22CA U+0338)
+     * Cross Join: × (Unicode U+00D7)
+     * Paste Join: ⟘ (Unicode U+27D8)
+     */
 
+    constexpr auto def_symb = "?";
     auto symbols = std::array{
-        //          Inner     Left            Right           Full      Cross     Comma
-        std::array{"\u22C8", "\u27D5",       "\u27D6",       "\u27D7", "\u00D7", ","     },  // All/Any
-        std::array{"\u22C8", "\u22C9",       "\u22CA",       "\u22C8", "\u22C8", "\u22C8"},  // Semi
-        std::array{"\u22C8", "\u22C9\u0338", "\u22CA\u0338", "\u22C8", "\u22C8", "\u22C8"},  // Anti
+        ///         Inner     Left            Right           Full      Cross    Comma      Paste
+        std::array{"\u22C8", "\u27D5",       "\u27D6",       "\u27D7", "\u00D7", ",",      "\u27D8"},  /// All/Any
+        std::array{"\u22C8", "\u22C9",       "\u22CA",       "\u22C8", def_symb, def_symb, def_symb},  /// Semi
+        std::array{def_symb, "\u22C9\u0338", "\u22CA\u0338", def_symb, def_symb, def_symb, def_symb},  /// Anti
     };
 
     size_t row = 0;
@@ -236,7 +240,7 @@ std::string_view joinTypePretty(JoinKind join_kind, JoinStrictness strictness)
         case JoinKind::Full: col = 3; break;
         case JoinKind::Cross: col = 4; break;
         case JoinKind::Comma: col = 5; break;
-        default: break;
+        case JoinKind::Paste: col = 6; break;
     }
     return symbols[row][col];
 }
