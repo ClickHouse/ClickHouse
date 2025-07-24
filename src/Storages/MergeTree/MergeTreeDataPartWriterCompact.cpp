@@ -73,8 +73,6 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 
 void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type, const ColumnPtr & column, const ASTPtr & effective_codec_desc)
 {
-    CompressedStreamPtr prev_stream;
-
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         assert(!substream_path.empty());
@@ -98,13 +96,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
         if (!stream)
             stream = std::make_shared<CompressedStream>(plain_hashing, compression_codec);
 
-        /// If previous stream is not null it means it was Array offsets stream.
-        /// Can't apply lossy compression for offsets.
-        if (prev_stream && prev_stream != stream && prev_stream->compressed_buf.getCodec()->isLossyCompression())
-            prev_stream->compressed_buf.setCodec(CompressionCodecFactory::instance().getDefaultCodec());
-
         compressed_streams.emplace(stream_name, stream);
-        prev_stream = stream;
     };
 
     ISerialization::EnumerateStreamsSettings enumerate_settings;
@@ -266,13 +258,6 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path);
 
                 auto & result_stream = compressed_streams[stream_name];
-
-                /// Some vector codecs (e.g., SZ3) used for compressing arrays like Array<Float>
-                /// require specifying the array dimensions before compression starts.
-                /// For 1D arrays, it's simply the length.
-                auto compression_codec = result_stream->compressed_buf.getCodec();
-                setVectorDimensionsIfNeeded(compression_codec, block.getColumnOrSubcolumnByName(name_and_type->name).column.get());
-
                 /// Write one compressed block per column in granule for more optimal reading.
                 if (prev_stream && prev_stream != result_stream)
                 {
