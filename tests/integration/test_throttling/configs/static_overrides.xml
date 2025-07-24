@@ -8,7 +8,7 @@
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
 
                 <!--
-                    We need to set request timeout for the test becuase throttling duration is limited by half of the timeout
+                    We need to set request timeout for the test because throttling duration is limited by half of the timeout
                     But for remote read tests we use 1MBps default bandwidth, and read in 1MB chunks, so such read may be throttled for 1 second.
                     We increase request timeout from 500ms to 60 seconds to avoid throttling duration capping.
                     In real situations 1MBps is too low, so this should not be a problem.
