@@ -218,6 +218,7 @@ def main():
                 status=(
                     Result.Status.SUCCESS if run in (0, 143) else Result.Status.FAILED
                 ),
+                info=Shell.get_output(f"tail -300 {shell_log_file}")
             )
         )
         res = results[-1].is_ok()
