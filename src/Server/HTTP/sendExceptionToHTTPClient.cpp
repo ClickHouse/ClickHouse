@@ -43,7 +43,7 @@ void drainRequestIfNeeded(HTTPServerRequest & request, HTTPServerResponse & resp
                 tryLogCurrentException("sendExceptionToHTTPClient", "Cannot read remaining request body during exception handling. Set keep alive to false on the response.");
                 response.setKeepAlive(false);
             }
-        }   
+        }
     }
 }
 
