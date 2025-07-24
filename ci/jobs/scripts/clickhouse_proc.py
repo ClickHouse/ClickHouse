@@ -202,7 +202,7 @@ profiles:
     default:
         allow_introspection_functions: 1
 """
-        file_path = f"{self.config_path}/users.d/allow_introspection_functions.yaml"
+        file_path = f"{self.ch_config_dir}/users.d/allow_introspection_functions.yaml"
         with open(file_path, "w") as file:
             file.write(content)
         return True
@@ -210,8 +210,8 @@ profiles:
     def fuzzer_config_tweaks(self):
         # TODO figure out which ones are needed
         commands = [
-            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml {self.config_path}/users.d",
-            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/allow-nullable-key.xml {self.config_path}/config.d",
+            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml {self.ch_config_dir}/users.d",
+            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/allow-nullable-key.xml {self.ch_config_dir}/config.d",
         ]
 
         c1 = """
@@ -232,12 +232,12 @@ profiles:
 </clickhouse>
 """
         file_path = (
-            f"{self.config_path}/config.d/max_server_memory_usage_to_ram_ratio.xml"
+            f"{self.ch_config_dir}/config.d/max_server_memory_usage_to_ram_ratio.xml"
         )
         with open(file_path, "w") as file:
             file.write(c1)
 
-        file_path = f"{self.config_path}/config.d/core.xml"
+        file_path = f"{self.ch_config_dir}/config.d/core.xml"
         with open(file_path, "w") as file:
             file.write(c2)
         res = True
