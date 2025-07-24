@@ -2776,21 +2776,24 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
  * - ConstantNodePtr: if the function can be evaluated to a constant at compile time
  * - nullptr: if the function cannot be folded (requires runtime evaluation)
  */
-ConstantNodePtr getConstantResultFromFunctionArgs(const QueryTreeNodePtr & node, IdentifierResolveScope & scope){
+ConstantNodePtr getConstantResultFromFunctionArgs(const QueryTreeNodePtr & node, IdentifierResolveScope & scope)
+{
     FunctionNodePtr function_node = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node->getFunctionName();
     ColumnsWithTypeAndName arg_columns;
     auto & arg_nodes = function_node->getArguments().getNodes();
     arg_columns.reserve(arg_nodes.size());
 
-    for (const auto & arg : arg_nodes){
+    for (const auto & arg : arg_nodes)
+    {
         ColumnWithTypeAndName col;
         if (const auto * cn = arg->as<ConstantNode>())
         {
             col.column = cn->getColumn();
             col.type = arg->getResultType();
         }
-        else if (arg->as<FunctionNode>()){
+        else if (arg->as<FunctionNode>())
+        {
             auto res = getConstantResultFromFunctionArgs(arg, scope);
             if (res)
             {
@@ -2871,7 +2874,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         auto const_res = getConstantResultFromFunctionArgs(node, scope);
         if (const_res)
-        {   
+        {
             auto value_string = const_res->getValueStringRepresentation();
             node = std::move(const_res);
             return { value_string };

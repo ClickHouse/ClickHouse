@@ -6772,7 +6772,7 @@ Possible values:
 )", 0) \
     DECLARE(Bool, enable_function_early_short_circuit, false, R"(
 Enable early short-circuit constant folding for logical function during analysis.
-When enabled the analyser replaces the whole expression with a decisive constant before the remaining arguments are analysed, so scalar sub-queries inside those arguments are not executed.    
+When enabled the analyser replaces the whole expression with a decisive constant before the remaining arguments are analysed, so scalar sub-queries inside those arguments are not executed.
 )", 0) \
     \
     /* ####################################################### */ \
