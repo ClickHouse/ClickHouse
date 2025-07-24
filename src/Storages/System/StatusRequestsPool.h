@@ -20,6 +20,9 @@
 
 namespace CurrentMetrics
 {
+extern const Metric SystemReplicasThreads;
+extern const Metric SystemReplicasThreadsActive;
+extern const Metric SystemReplicasThreadsScheduled;
 extern const Metric SystemDatabaseReplicasThreads;
 extern const Metric SystemDatabaseReplicasThreadsActive;
 extern const Metric SystemDatabaseReplicasThreadsScheduled;
@@ -88,11 +91,7 @@ private:
 
 public:
     explicit StatusRequestsPool(const size_t max_threads)
-        : thread_pool(
-              CurrentMetrics::SystemDatabaseReplicasThreads,
-              CurrentMetrics::SystemDatabaseReplicasThreadsActive,
-              CurrentMetrics::SystemDatabaseReplicasThreadsScheduled,
-              max_threads)
+        : thread_pool(create_pool(max_threads))
         , log(getLogger("StatusRequestsPool"))
     {
     }
@@ -229,6 +228,25 @@ private:
         else
             return base_holder->getStorageID().getNameForLogs();
     }
-};
 
+    static auto create_pool(const size_t max_threads)
+    {
+        if constexpr (std::is_same_v<TBaseHolder, IDatabase>)
+        {
+            return ThreadPool(
+                CurrentMetrics::SystemDatabaseReplicasThreads,
+                CurrentMetrics::SystemDatabaseReplicasThreadsActive,
+                CurrentMetrics::SystemDatabaseReplicasThreadsScheduled,
+                max_threads);
+        }
+        else
+        {
+            return ThreadPool(
+                CurrentMetrics::SystemReplicasThreads,
+                CurrentMetrics::SystemReplicasThreadsActive,
+                CurrentMetrics::SystemReplicasThreadsScheduled,
+                max_threads);
+        }
+    }
+};
 }

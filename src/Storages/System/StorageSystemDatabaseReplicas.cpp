@@ -28,13 +28,6 @@
 #include <Storages/VirtualColumnUtils.h>
 
 
-namespace CurrentMetrics
-{
-extern const Metric SystemDatabaseReplicasThreads;
-extern const Metric SystemDatabaseReplicasThreadsActive;
-extern const Metric SystemDatabaseReplicasThreadsScheduled;
-}
-
 namespace DB
 {
 

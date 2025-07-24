@@ -22,16 +22,8 @@
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/typeid_cast.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
 
-
-namespace CurrentMetrics
-{
-    extern const Metric SystemReplicasThreads;
-    extern const Metric SystemReplicasThreadsActive;
-    extern const Metric SystemReplicasThreadsScheduled;
-}
 
 namespace DB
 {
