@@ -596,7 +596,7 @@ class ResultInfo:
     GH_STATUS_ERROR = "Failed to set GH commit status"
 
     NOT_FINALIZED = (
-        "Job did not provide Result: job script bug, died CI runner or praktika bug"
+        "Job failed to produce Result due to a script error or CI runner issue"
     )
 
     S3_ERROR = "S3 call failure"

@@ -39,7 +39,6 @@ ClickHouse first tries to parse values with the fast stream parser.
 If it fails, ClickHouse tries to use the full parser for the data, treating it like an SQL [expression](#expressions).
 </details>
 
-
 The data can have any format. 
 When a query is received, the server calculates no more than [max_query_size](../operations/settings/settings.md#max_query_size) bytes of the request in RAM 
 (by default, 1 MB), and the rest is stream parsed.
@@ -109,7 +108,6 @@ See the table below for examples of valid and invalid identifiers:
 | Valid identifiers                              | Invalid identifiers                    |
 |------------------------------------------------|----------------------------------------|
 | `xyz`, `_internal`, `Id_with_underscores_123_` | `1x`, `tom@gmail.com`, `äußerst_schön` |
-
 
 If you want to use identifiers the same as keywords or you want to use other symbols in identifiers, quote it using double quotes or backticks, for example, `"id"`, `` `id` ``.
 

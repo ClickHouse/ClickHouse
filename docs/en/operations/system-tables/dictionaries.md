@@ -17,12 +17,12 @@ Columns:
 - `name` ([String](../../sql-reference/data-types/string.md)) — [Dictionary name](../../sql-reference/dictionaries/index.md).
 - `uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — Dictionary UUID.
 - `status` ([Enum8](../../sql-reference/data-types/enum.md)) — Dictionary status. Possible values:
-    - `NOT_LOADED` — Dictionary was not loaded because it was not used.
-    - `LOADED` — Dictionary loaded successfully.
-    - `FAILED` — Unable to load the dictionary as a result of an error.
-    - `LOADING` — Dictionary is loading now.
-    - `LOADED_AND_RELOADING` — Dictionary is loaded successfully, and is being reloaded right now (frequent reasons: [SYSTEM RELOAD DICTIONARY](/sql-reference/statements/system#reload-dictionaries) query, timeout, dictionary config has changed).
-    - `FAILED_AND_RELOADING` — Could not load the dictionary as a result of an error and is loading now.
+  - `NOT_LOADED` — Dictionary was not loaded because it was not used.
+  - `LOADED` — Dictionary loaded successfully.
+  - `FAILED` — Unable to load the dictionary as a result of an error.
+  - `LOADING` — Dictionary is loading now.
+  - `LOADED_AND_RELOADING` — Dictionary is loaded successfully, and is being reloaded right now (frequent reasons: [SYSTEM RELOAD DICTIONARY](/sql-reference/statements/system#reload-dictionaries) query, timeout, dictionary config has changed).
+  - `FAILED_AND_RELOADING` — Could not load the dictionary as a result of an error and is loading now.
 - `origin` ([String](../../sql-reference/data-types/string.md)) — Path to the configuration file that describes the dictionary.
 - `type` ([String](../../sql-reference/data-types/string.md)) — Type of dictionary allocation. [Storing Dictionaries in Memory](/sql-reference/dictionaries#storing-dictionaries-in-memory).
 - `key.names` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Array of [key names](/operations/system-tables/dictionaries) provided by the dictionary.
