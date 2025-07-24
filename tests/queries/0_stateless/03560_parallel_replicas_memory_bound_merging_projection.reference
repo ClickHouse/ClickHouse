@@ -1,5 +1,5 @@
 -- { echoOn } --
-explain pipeline select sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS enable_analyzer=1, parallel_replicas_local_plan=1, optimize_use_projections=1, parallel_replicas_support_projection=0;
+explain pipeline select sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS parallel_replicas_support_projection=0;
 (Expression)
 ExpressionTransform
   (Limit)
@@ -26,13 +26,13 @@ ExpressionTransform
                                 (ReadFromMergeTree)
                                 MergeTreeSelect(pool: ReadPoolParallelReplicas, algorithm: Thread) × 4 0 → 1
                           (ReadFromRemoteParallelReplicas)
-select sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS enable_analyzer=1, parallel_replicas_local_plan=1, optimize_use_projections=1, parallel_replicas_support_projection=0;
+select sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS parallel_replicas_support_projection=0;
 500000
 501000
 502000
 503000
 504000
-explain pipeline select sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS enable_analyzer=1, parallel_replicas_local_plan=1, optimize_use_projections=1, parallel_replicas_support_projection=0, force_aggregation_in_order=1;
+explain pipeline select sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS parallel_replicas_support_projection=0, force_aggregation_in_order=1;
 (Expression)
 ExpressionTransform
   (Limit)
@@ -63,13 +63,15 @@ ExpressionTransform
                                         (ReadFromMergeTree)
                                         MergeTreeSelect(pool: ReadPoolParallelReplicas, algorithm: Thread) × 4 0 → 1
                       (ReadFromRemoteParallelReplicas)
-select sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS enable_analyzer=1, parallel_replicas_local_plan=1, optimize_use_projections=1, parallel_replicas_support_projection=0, force_aggregation_in_order=1;
+select sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS parallel_replicas_support_projection=0, force_aggregation_in_order=1;
 500000
 501000
 502000
 503000
 504000
-explain pipeline select sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS enable_analyzer=1, parallel_replicas_local_plan=1, optimize_use_projections=1, parallel_replicas_support_projection=1;
+SELECT trimLeft(*) FROM (explain select sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS parallel_replicas_support_projection=1) WHERE explain LIKE '%ReadFromMergeTree%';
+ReadFromMergeTree (p_agg)
+explain pipeline select sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS parallel_replicas_support_projection=1;
 (Expression)
 ExpressionTransform
   (Limit)
@@ -96,7 +98,7 @@ ExpressionTransform
                                 (ReadFromMergeTree)
                                 MergeTreeSelect(pool: ReadPoolParallelReplicasInOrder, algorithm: InOrder) 0 → 1
                           (ReadFromRemoteParallelReplicas)
-select sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS enable_analyzer=1, parallel_replicas_local_plan=1, optimize_use_projections=1, parallel_replicas_support_projection=1;
+select sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS parallel_replicas_support_projection=1;
 500000
 501000
 502000
