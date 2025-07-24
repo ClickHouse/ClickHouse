@@ -88,11 +88,6 @@ $CLICKHOUSE_CLIENT --query "
 wait
 
 $CLICKHOUSE_CLIENT --query "
-    ALTER TABLE t_rename_alter ADD COLUMN just_for_sync_alters_and_mutations UInt64 SETTINGS alter_sync = 2;
-    ALTER TABLE t_rename_alter UPDATE just_for_sync_alters_and_mutations = 43 WHERE 1 SETTINGS mutations_sync = 2;
-"
-
-$CLICKHOUSE_CLIENT --query "
     SELECT count() > 0 FROM t_rename_alter WHERE NOT ignore(*);
     DROP TABLE IF EXISTS t_rename_alter SYNC;
 "

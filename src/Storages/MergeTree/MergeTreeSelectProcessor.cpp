@@ -198,7 +198,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                                 part_name,
                                 output->getHash(),
                                 reader_settings.query_condition_cache_store_conditions_as_plaintext
-                                    ? prewhere_info->prewhere_actions.getNames()[0]
+                                    ? output->result_name
                                     : "",
                                 task->getPrewhereUnmatchedMarks(),
                                 data_part->index_granularity->getMarksCount(),

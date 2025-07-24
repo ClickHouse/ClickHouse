@@ -63,8 +63,8 @@ In this example we:
 
 - Using introspection functions, we will get a report of:
 
-    - Names of symbols and corresponding source code functions.
-    - Source code locations of these functions.
+  - Names of symbols and corresponding source code functions.
+  - Source code locations of these functions.
 
 <!-- -->
 

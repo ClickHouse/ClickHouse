@@ -925,6 +925,7 @@ void StatementGenerator::generateEngineDetails(
     const bool has_views = collectionHas<SQLView>(hasTableOrView<SQLView>(b));
     const bool has_dictionaries = collectionHas<SQLDictionary>(hasTableOrView<SQLDictionary>(b));
     const bool allow_shared_tbl = supports_cloud_features && (fc.engine_mask & allow_shared) != 0;
+    static const DB::Strings & ObjectCompress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
 
     if (b.isMergeTreeFamily())
     {
@@ -1089,18 +1090,16 @@ void StatementGenerator::generateEngineDetails(
         }
         connections.createExternalDatabaseTable(rg, next, b, entries, te);
     }
-    else if (te->has_engine() && (b.isAnyS3Engine() || b.isHudiEngine() || b.isDeltaLakeS3Engine() || b.isIcebergS3Engine()))
+    else if (te->has_engine() && b.isAnyS3Engine())
     {
         connections.createExternalDatabaseTable(rg, IntegrationCall::MinIO, b, entries, te);
-        if (b.isAnyS3Engine() || b.isIcebergS3Engine())
+        if (b.isAnyS3Engine())
         {
             b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
             te->add_params()->set_in_out(b.file_format);
             if (rg.nextSmallNumber() < 4)
             {
-                static const DB::Strings & S3Compress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
-
-                b.file_comp = rg.pickRandomly(S3Compress);
+                b.file_comp = rg.pickRandomly(ObjectCompress);
                 te->add_params()->set_svalue(b.file_comp);
             }
             if (b.isS3Engine() && rg.nextSmallNumber() < 5)
@@ -1213,9 +1212,7 @@ void StatementGenerator::generateEngineDetails(
         te->add_params()->set_in_out(b.file_format);
         if (rg.nextSmallNumber() < 4)
         {
-            static const DB::Strings & AzureCompress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
-
-            b.file_comp = rg.pickRandomly(AzureCompress);
+            b.file_comp = rg.pickRandomly(ObjectCompress);
             te->add_params()->set_svalue(b.file_comp);
         }
         if (b.isAzureEngine() && rg.nextSmallNumber() < 5)
@@ -1245,6 +1242,48 @@ void StatementGenerator::generateEngineDetails(
             std::uniform_int_distribution<uint64_t> keys_limit_dist(0, 8192);
 
             te->add_params()->set_num(keys_limit_dist(rg.generator));
+        }
+    }
+    else if (te->has_engine() && (b.isAnyIcebergEngine() || b.isAnyDeltaLakeEngine()))
+    {
+        const bool isS3 = b.isIcebergS3Engine() || b.isDeltaLakeS3Engine();
+        const bool isAzure = b.isIcebergAzureEngine() || b.isDeltaLakeAzureEngine();
+        const std::filesystem::path & fpath = fc.server_file_path / ("/datalake/t" + std::to_string(b.tname));
+
+        if (isS3 || isAzure)
+        {
+            connections.createExternalDatabaseTable(rg, isS3 ? IntegrationCall::MinIO : IntegrationCall::Azurite, b, entries, te);
+        }
+        else
+        {
+            const std::filesystem::path & fname = fc.server_file_path / ("/file" + std::to_string(b.tname));
+            te->add_params()->set_svalue(fname.generic_string());
+        }
+        /// Set path
+        const String & key = isS3 ? "filename" : (isAzure ? "blob_path" : "path");
+        KeyValuePair * kvp = te->add_params()->mutable_kvalue();
+        kvp->set_key(key);
+        kvp->set_value(fpath.generic_string());
+
+        /// Set format
+        KeyValuePair * kvp2 = te->add_params()->mutable_kvalue();
+        b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
+        kvp2->set_key("format");
+        kvp2->set_value(InOutFormat_Name(b.file_format).substr(6));
+
+        /// Optional compression
+        if (rg.nextSmallNumber() < 4)
+        {
+            KeyValuePair * kvp3 = te->add_params()->mutable_kvalue();
+
+            b.file_comp = rg.pickRandomly(ObjectCompress);
+            kvp3->set_key("compression");
+            kvp3->set_value(b.file_comp);
+        }
+        /// Optional PARTITION BY
+        if (rg.nextSmallNumber() < 5)
+        {
+            generateTableKey(rg, rel, b.teng, false, te->mutable_partition_by());
         }
     }
     if (te->has_engine() && (b.isJoinEngine() || b.isSetEngine()) && allow_shared_tbl && rg.nextSmallNumber() < 5)
@@ -1284,11 +1323,21 @@ void StatementGenerator::generateEngineDetails(
         }
         if (b.isS3QueueEngine() || b.isAzureQueueEngine())
         {
+            /// The mode setting is mandatory
             svs = svs ? svs : te->mutable_setting_values();
             SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
             sv->set_property("mode");
             sv->set_value(fmt::format("'{}ordered'", rg.nextBool() ? "un" : ""));
+        }
+        if (b.isAnyIcebergEngine())
+        {
+            /// The iceberg_format_version setting is mandatory?
+            svs = svs ? svs : te->mutable_setting_values();
+            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+
+            sv->set_property("iceberg_format_version");
+            sv->set_value(rg.nextBool() ? "1" : "2");
         }
         if (b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TShared
             && (!fc.storage_policies.empty() || !fc.keeper_disks.empty())
@@ -1786,6 +1835,14 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     {
         this->ids.emplace_back(EmbeddedRocksDB);
     }
+    if ((fc.engine_mask & allow_icebergLocal) != 0)
+    {
+        this->ids.emplace_back(IcebergLocal);
+    }
+    if ((fc.engine_mask & allow_deltalakelocal) != 0)
+    {
+        this->ids.emplace_back(DeltaLakeLocal);
+    }
     if (fc.allow_memory_tables && (fc.engine_mask & allow_memory) != 0)
     {
         this->ids.emplace_back(Memory);
@@ -1859,6 +1916,14 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
             {
                 this->ids.emplace_back(S3Queue);
             }
+            if ((fc.engine_mask & allow_icebergS3) != 0)
+            {
+                this->ids.emplace_back(IcebergS3);
+            }
+            if ((fc.engine_mask & allow_deltalakeS3) != 0)
+            {
+                this->ids.emplace_back(DeltaLakeS3);
+            }
         }
         if (connections.hasAzuriteConnection())
         {
@@ -1869,6 +1934,14 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
             if ((fc.engine_mask & allow_AzureQueue) != 0)
             {
                 this->ids.emplace_back(AzureQueue);
+            }
+            if ((fc.engine_mask & allow_icebergAzure) != 0)
+            {
+                this->ids.emplace_back(IcebergAzure);
+            }
+            if ((fc.engine_mask & allow_deltalakeAzure) != 0)
+            {
+                this->ids.emplace_back(DeltaLakeAzure);
             }
         }
         if (connections.hasHTTPConnection() && (fc.engine_mask & allow_URL) != 0)
