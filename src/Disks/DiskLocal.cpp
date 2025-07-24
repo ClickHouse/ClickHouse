@@ -15,6 +15,7 @@
 
 #include <filesystem>
 #include <system_error>
+#include <thread>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -340,7 +341,32 @@ std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path,
 {
     if (!file_size.has_value())
         file_size = fileSizeSafe(fs::path(disk_path) / path);
-    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, read_hint, file_size);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    auto file_size2 = fileSizeSafe(fs::path(disk_path) / path);
+    if (file_size.value() != file_size2.value())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "File size mismatch for file {}: expected {}, got {}",
+            backQuote(path),
+            file_size.value_or(0),
+            file_size2.value_or(0));
+
+    LOG_DEBUG(&Poco::Logger::get("uwu"), "Having read file {} with size {}", path, file_size.value_or(0));
+
+    auto r = createReadBufferFromFileBase(fs::path(disk_path) / path, settings, read_hint, file_size);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    auto file_size3 = fileSizeSafe(fs::path(disk_path) / path);
+    if (file_size3.value() != file_size.value())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "File size mismatch for file {}: expected {}, got {}",
+            backQuote(path),
+            file_size3.value_or(0),
+            file_size.value_or(0));
+
+    return r;
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
