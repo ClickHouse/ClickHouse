@@ -75,7 +75,6 @@ The _data_ table must have columns:
 | `timestamp` | [x] | `DateTime64(3)` | `DateTime64(X)` | A time point |
 | `value` | [x] | `Float64` | `Float32` or `Float64` | A value associated with the `timestamp` |
 
-
 ### Tags table {#tags-table}
 
 The _tags_ table contains identifiers calculated for each combination of a metric name and tags.
