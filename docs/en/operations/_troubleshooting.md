@@ -19,7 +19,6 @@
 
 Please use the manual from the [setup](../getting-started/install.md#setup-the-debian-repository) page to update the repository configuration.
 
-
 ### You get different warnings with `apt-get update` {#you-get-different-warnings-with-apt-get-update}
 
 - The completed warning messages are as one of following:
@@ -190,8 +189,8 @@ Check:
 
     Check:
 
-    - The [tcp_port_secure](../operations/server-configuration-parameters/settings.md#tcp_port_secure) setting.
-    - Settings for [SSL certificates](../operations/server-configuration-parameters/settings.md#openssl).
+  - The [tcp_port_secure](../operations/server-configuration-parameters/settings.md#tcp_port_secure) setting.
+  - Settings for [SSL certificates](../operations/server-configuration-parameters/settings.md#openssl).
 
     Use proper parameters while connecting. For example, use the `port_secure` parameter with `clickhouse_client`.
 
