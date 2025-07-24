@@ -3,7 +3,7 @@ import fnmatch
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Any, List, Optional
+from typing import Any, Iterable, List, Optional
 
 from . import Artifact
 from .utils import Shell, Utils
@@ -71,9 +71,9 @@ class Job:
         # List of commands to call upon job completion
         post_hooks: List[str] = field(default_factory=list)
 
-        def parametrize(self, parameters: List["Job.ParamSet"]):
+        def parametrize(self, *param_sets: "Job.ParamSet"):
             res = []
-            for param_set in parameters:
+            for param_set in param_sets:
                 obj = copy.deepcopy(self)
                 assert (
                     not obj.provides
