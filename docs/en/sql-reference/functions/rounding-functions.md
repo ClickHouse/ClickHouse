@@ -116,9 +116,9 @@ round(x[, N])
 
 - `x` — A number to round. [Float*](../data-types/float.md), [Decimal*](../data-types/decimal.md), or [(U)Int*](../data-types/int-uint.md).
 - `N` — The number of decimal places to round to. Integer. Defaults to `0`.
-    - If `N > 0`, the function rounds to the right of the decimal point.
-    - If `N < 0`, the function rounds to the left of the decimal point.
-    - If `N = 0`, the function rounds to the next integer.
+  - If `N > 0`, the function rounds to the right of the decimal point.
+  - If `N < 0`, the function rounds to the left of the decimal point.
+  - If `N = 0`, the function rounds to the next integer.
 
 **Returned value:**
 

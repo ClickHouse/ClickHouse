@@ -52,8 +52,8 @@ SELECT * FROM generate_engine_table LIMIT 3
 ## Details of Implementation {#details-of-implementation}
 
 - Not supported:
-    - `ALTER`
-    - `SELECT ... SAMPLE`
-    - `INSERT`
-    - Indices
-    - Replication
+  - `ALTER`
+  - `SELECT ... SAMPLE`
+  - `INSERT`
+  - Indices
+  - Replication
