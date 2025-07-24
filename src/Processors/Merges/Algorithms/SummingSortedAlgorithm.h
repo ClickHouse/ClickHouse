@@ -25,10 +25,7 @@ public:
         const Names & partition_and_sorting_required_columns,
         size_t max_block_size_rows,
         size_t max_block_size_bytes,
-        const String & sum_function_name,
-        const String & sum_function_map_name,
-        bool remove_default_values,
-        bool aggregate_all_columns);
+        const String & sum_function_name);
 
     const char * getName() const override { return "SummingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;

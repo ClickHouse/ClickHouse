@@ -7,7 +7,6 @@ namespace BuzzHouse
 void StatementGenerator::prepareNextExplain(RandomGenerator & rg, ExplainQuery * eq)
 {
     std::unordered_map<uint32_t, QueryLevel> levels_backup;
-    std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
     std::vector<uint32_t> ids_backup;
     std::vector<ColumnPathChain> entries_backup;
     std::vector<ColumnPathChain> table_entries_backup;
@@ -21,16 +20,11 @@ void StatementGenerator::prepareNextExplain(RandomGenerator & rg, ExplainQuery *
     const bool prev_allow_engine_udf = this->allow_engine_udf;
 
     /// Backup everything
-    for (const auto & [key, val] : this->levels)
+    for (const auto & entry : this->levels)
     {
-        levels_backup[key] = val;
+        levels_backup[entry.first] = entry.second;
     }
     this->levels.clear();
-    for (const auto & [key, val] : this->ctes)
-    {
-        ctes_backup[key] = val;
-    }
-    this->ctes.clear();
     ids_backup.reserve(this->ids.size());
     for (const auto & entry : this->ids)
     {
@@ -59,14 +53,9 @@ void StatementGenerator::prepareNextExplain(RandomGenerator & rg, ExplainQuery *
     generateNextExplain(rg, false, eq);
 
     this->levels.clear();
-    for (const auto & [key, val] : levels_backup)
+    for (const auto & entry : levels_backup)
     {
-        this->levels[key] = val;
-    }
-    this->ctes.clear();
-    for (const auto & [key, val] : ctes_backup)
-    {
-        this->ctes[key] = val;
+        this->levels[entry.first] = entry.second;
     }
     this->ids.clear();
     this->ids.reserve(ids_backup.size());
@@ -147,42 +136,24 @@ void StatementGenerator::generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
 }
 
 void StatementGenerator::generateDerivedTable(
-    RandomGenerator & rg, SQLRelation & rel, const uint32_t allowed_clauses, const uint32_t ncols, const bool backup, Select * sel)
+    RandomGenerator & rg, SQLRelation & rel, const uint32_t allowed_clauses, const uint32_t ncols, Select * sel)
 {
     std::unordered_map<uint32_t, QueryLevel> levels_backup;
-    std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
 
-    if (backup)
+    for (const auto & entry : this->levels)
     {
-        for (const auto & [key, val] : this->levels)
-        {
-            levels_backup[key] = val;
-        }
-        for (const auto & [key, val] : this->ctes)
-        {
-            ctes_backup[key] = val;
-        }
-        this->levels.clear();
-        this->ctes.clear();
+        levels_backup[entry.first] = entry.second;
     }
+    this->levels.clear();
 
     this->current_level++;
     this->levels[this->current_level] = QueryLevel(this->current_level);
     generateSelect(rg, false, false, ncols, allowed_clauses, sel);
     this->current_level--;
 
-    if (backup)
+    for (const auto & entry : levels_backup)
     {
-        this->levels.clear();
-        this->ctes.clear();
-        for (const auto & [key, val] : levels_backup)
-        {
-            this->levels[key] = val;
-        }
-        for (const auto & [key, val] : ctes_backup)
-        {
-            this->ctes[key] = val;
-        }
+        this->levels[entry.first] = entry.second;
     }
 
     if (sel->has_select_core())
@@ -437,7 +408,7 @@ void StatementGenerator::addRandomRelation(
         String buf;
         bool first = true;
         uint32_t col_counter = 0;
-        const uint64_t type_mask_backup = this->next_type_mask;
+        const uint32_t type_mask_backup = this->next_type_mask;
         std::unordered_map<uint32_t, std::unique_ptr<SQLType>> centries;
 
         this->next_type_mask = fc.type_mask;
@@ -528,7 +499,7 @@ bool StatementGenerator::joinedTableOrFunction(
         }
         else
         {
-            generateDerivedTable(rg, rel, allowed_clauses, ncols, true, eq->mutable_inner_query()->mutable_select()->mutable_sel());
+            generateDerivedTable(rg, rel, allowed_clauses, ncols, eq->mutable_inner_query()->mutable_select()->mutable_sel());
         }
         this->levels[this->current_level].rels.emplace_back(rel);
     }
@@ -610,31 +581,25 @@ bool StatementGenerator::joinedTableOrFunction(
     {
         SQLRelation rel(rel_name);
         std::unordered_map<uint32_t, QueryLevel> levels_backup;
-        std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
         const uint32_t noption = rg.nextSmallNumber();
         Expr * limit = nullptr;
         TableFunction * tf = tof->mutable_tfunc();
         GenerateSeriesFunc * gsf = tf->mutable_gseries();
         std::uniform_int_distribution<uint32_t> gsf_range(1, static_cast<uint32_t>(GenerateSeriesFunc_GSName_GSName_MAX));
-        const GenerateSeriesFunc_GSName gname = static_cast<GenerateSeriesFunc_GSName>(gsf_range(rg.generator));
-        const String & cname = gname > GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_generateSeries ? "number" : "generate_series";
+        const GenerateSeriesFunc_GSName val = static_cast<GenerateSeriesFunc_GSName>(gsf_range(rg.generator));
+        const String & cname = val > GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_generateSeries ? "number" : "generate_series";
         std::uniform_int_distribution<uint32_t> numbers_range(1, UINT32_C(1000000));
 
-        gsf->set_fname(gname);
-        for (const auto & [key, val] : this->levels)
+        gsf->set_fname(val);
+        for (const auto & entry : this->levels)
         {
-            levels_backup[key] = val;
-        }
-        for (const auto & [key, val] : this->ctes)
-        {
-            ctes_backup[key] = val;
+            levels_backup[entry.first] = entry.second;
         }
         this->levels.clear();
-        this->ctes.clear();
 
         this->current_level++;
         this->levels[this->current_level] = QueryLevel(this->current_level);
-        if (gname > GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_generateSeries)
+        if (val > GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_generateSeries)
         {
             if (noption < 4)
             {
@@ -693,17 +658,13 @@ bool StatementGenerator::joinedTableOrFunction(
             }
         }
         limit->mutable_lit_val()->mutable_int_lit()->set_uint_lit(numbers_range(rg.generator));
+        this->levels.erase(this->current_level);
+        this->ctes.erase(this->current_level);
         this->current_level--;
 
-        this->levels.clear();
-        this->ctes.clear();
-        for (const auto & [key, val] : levels_backup)
+        for (const auto & entry : levels_backup)
         {
-            this->levels[key] = val;
-        }
-        for (const auto & [key, val] : ctes_backup)
-        {
-            this->ctes[key] = val;
+            this->levels[entry.first] = entry.second;
         }
 
         rel.cols.emplace_back(SQLRelationCol(rel_name, {cname}));
@@ -859,21 +820,15 @@ bool StatementGenerator::joinedTableOrFunction(
     {
         SQLRelation rel(rel_name);
         std::unordered_map<uint32_t, QueryLevel> levels_backup;
-        std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
         const uint32_t ncols = std::min<uint32_t>(this->fc.max_width - this->width, (rg.nextSmallNumber() % 3) + UINT32_C(1));
         const uint32_t nrows = (rg.nextSmallNumber() % 3) + UINT32_C(1);
         ValuesStatement * vs = tof->mutable_tfunc()->mutable_values();
 
-        for (const auto & [key, val] : this->levels)
+        for (const auto & entry : this->levels)
         {
-            levels_backup[key] = val;
-        }
-        for (const auto & [key, val] : this->ctes)
-        {
-            ctes_backup[key] = val;
+            levels_backup[entry.first] = entry.second;
         }
         this->levels.clear();
-        this->ctes.clear();
 
         this->current_level++;
         this->levels[this->current_level] = QueryLevel(this->current_level);
@@ -888,17 +843,13 @@ bool StatementGenerator::joinedTableOrFunction(
             }
             this->width -= ncols;
         }
+        this->levels.erase(this->current_level);
+        this->ctes.erase(this->current_level);
         this->current_level--;
 
-        this->levels.clear();
-        this->ctes.clear();
-        for (const auto & [key, val] : levels_backup)
+        for (const auto & entry : levels_backup)
         {
-            this->levels[key] = val;
-        }
-        for (const auto & [key, val] : ctes_backup)
-        {
-            this->ctes[key] = val;
+            this->levels[entry.first] = entry.second;
         }
 
         for (uint32_t i = 0; i < ncols; i++)
@@ -1873,7 +1824,7 @@ void StatementGenerator::addCTEs(RandomGenerator & rg, const uint32_t allowed_cl
             SQLRelation rel(name);
             const uint32_t ncols = std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % UINT32_C(5)) + 1);
 
-            generateDerivedTable(rg, rel, allowed_clauses, ncols, rg.nextSmallNumber() < 7, nqcte->mutable_query());
+            generateDerivedTable(rg, rel, allowed_clauses, ncols, nqcte->mutable_query());
             nqcte->mutable_table()->set_table(name);
             this->ctes[this->current_level][name] = std::move(rel);
         }

@@ -82,7 +82,7 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
             {
                 uint32_t col_counter = 0;
 
-                const uint64_t type_mask_backup = this->next_type_mask;
+                const uint32_t type_mask_backup = this->next_type_mask;
                 this->next_type_mask = fc.type_mask & ~(allow_nested);
                 auto tp = std::unique_ptr<SQLType>(randomNextType(rg, this->next_type_mask, col_counter, tpn->mutable_type()));
                 this->next_type_mask = type_mask_backup;
@@ -92,7 +92,7 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
         {
             uint32_t col_counter = 0;
 
-            const uint64_t type_mask_backup = this->next_type_mask;
+            const uint32_t type_mask_backup = this->next_type_mask;
             this->next_type_mask = fc.type_mask & ~(allow_nested);
             auto tp = std::unique_ptr<SQLType>(
                 randomNextType(rg, this->next_type_mask, col_counter, expr->mutable_dynamic_subtype()->mutable_type()));
@@ -614,18 +614,12 @@ void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t
 {
     SQLRelation rel("");
     std::unordered_map<uint32_t, QueryLevel> levels_backup;
-    std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
 
-    for (const auto & [key, val] : this->levels)
+    for (const auto & entry : this->levels)
     {
-        levels_backup[key] = val;
-    }
-    for (const auto & [key, val] : this->ctes)
-    {
-        ctes_backup[key] = val;
+        levels_backup[entry.first] = entry.second;
     }
     this->levels.clear();
-    this->ctes.clear();
 
     this->levels[this->current_level] = QueryLevel(this->current_level);
     for (uint32_t i = 0; i < nparams; i++)
@@ -638,14 +632,9 @@ void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t
     this->generateExpression(rg, lexpr->mutable_expr());
 
     this->levels.clear();
-    this->ctes.clear();
-    for (const auto & [key, val] : levels_backup)
+    for (const auto & entry : levels_backup)
     {
-        this->levels[key] = val;
-    }
-    for (const auto & [key, val] : ctes_backup)
-    {
-        this->ctes[key] = val;
+        this->levels[entry.first] = entry.second;
     }
 }
 
@@ -797,10 +786,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
             const CHFunction & func = rg.nextMediumNumber() < 5 ? materialize : CHFuncs[nopt];
             const uint32_t func_max_args = std::min(func.max_args, UINT32_C(5));
 
-            n_lambda = ((func.min_lambda_param == func.max_lambda_param && func.max_lambda_param == 1)
-                        || (func.max_lambda_param == 1 && rg.nextBool()))
-                ? 1
-                : 0;
+            n_lambda = std::max(func.min_lambda_param, func.max_lambda_param > 0 ? (rg.nextSmallNumber() % func.max_lambda_param) : 0);
             min_args = func.min_args;
             max_args = std::min(this->fc.max_width - this->width, func_max_args);
             sfn->set_catalog_func(static_cast<SQLFunc>(func.fnum));
@@ -808,7 +794,8 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
 
         if (n_lambda > 0)
         {
-            generateLambdaCall(rg, rg.nextBool() ? 1 : ((rg.nextSmallNumber() % 3) + 1), func_call->add_args()->mutable_lambda());
+            chassert(n_lambda == 1);
+            generateLambdaCall(rg, (rg.nextSmallNumber() % 3) + 1, func_call->add_args()->mutable_lambda());
             this->width++;
             generated_params++;
         }
@@ -843,17 +830,15 @@ void StatementGenerator::generateTableFuncCall(RandomGenerator & rg, SQLTableFun
     const CHFunction & func = CHTableFuncs[next_dist(rg.generator)];
     const uint32_t func_max_args = std::min(func.max_args, UINT32_C(5));
     uint32_t generated_params = 0;
-    const uint32_t n_lambda
-        = ((func.min_lambda_param == func.max_lambda_param && func.max_lambda_param == 1) || (func.max_lambda_param == 1 && rg.nextBool()))
-        ? 1
-        : 0;
-    const uint32_t min_args = func.min_args;
-    const uint32_t max_args = std::min(this->fc.max_width - this->width, func_max_args);
+    uint32_t n_lambda = std::max(func.min_lambda_param, func.max_lambda_param > 0 ? (rg.nextSmallNumber() % func.max_lambda_param) : 0);
+    uint32_t min_args = func.min_args;
+    uint32_t max_args = std::min(this->fc.max_width - this->width, func_max_args);
 
     tfunc_call->set_func(static_cast<SQLTableFunc>(func.fnum));
     if (n_lambda > 0)
     {
-        generateLambdaCall(rg, rg.nextBool() ? 1 : ((rg.nextSmallNumber() % 3) + 1), tfunc_call->add_args()->mutable_lambda());
+        chassert(n_lambda == 1);
+        generateLambdaCall(rg, (rg.nextSmallNumber() % 3) + 1, tfunc_call->add_args()->mutable_lambda());
         this->width++;
         generated_params++;
     }
@@ -888,30 +873,16 @@ void StatementGenerator::generateFrameBound(RandomGenerator & rg, Expr * expr)
     else
     {
         std::unordered_map<uint32_t, QueryLevel> levels_backup;
-        std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
 
-        for (const auto & [key, val] : this->levels)
+        for (const auto & entry : this->levels)
         {
-            levels_backup[key] = val;
-        }
-        for (const auto & [key, val] : this->ctes)
-        {
-            ctes_backup[key] = val;
+            levels_backup[entry.first] = entry.second;
         }
         this->levels.clear();
-        this->ctes.clear();
-
         this->generateExpression(rg, expr);
-
-        this->levels.clear();
-        this->ctes.clear();
-        for (const auto & [key, val] : levels_backup)
+        for (const auto & entry : levels_backup)
         {
-            this->levels[key] = val;
-        }
-        for (const auto & [key, val] : ctes_backup)
-        {
-            this->ctes[key] = val;
+            this->levels[entry.first] = entry.second;
         }
     }
 }
@@ -989,10 +960,8 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     const uint32_t table_star_expr = 10
         * static_cast<uint32_t>((this->allow_not_deterministic || this->levels[this->current_level].inside_aggregate)
                                 && std::find_if(level_rels.begin(), level_rels.end(), has_rel_name_lambda) != level_rels.end());
-    const uint32_t lambda_expr = 3 * static_cast<uint32_t>(this->fc.max_depth > this->depth && this->fc.max_width > this->width);
     const uint32_t prob_space = literal_value + col_ref_expr + predicate_expr + cast_expr + unary_expr + interval_expr + columns_expr
-        + cond_expr + case_expr + subquery_expr + binary_expr + array_tuple_expr + func_expr + window_func_expr + table_star_expr
-        + lambda_expr;
+        + cond_expr + case_expr + subquery_expr + binary_expr + array_tuple_expr + func_expr + window_func_expr + table_star_expr;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t noption = next_dist(rg.generator);
 
@@ -1017,10 +986,10 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     else if (cast_expr && noption < (literal_value + col_ref_expr + predicate_expr + cast_expr + 1))
     {
         uint32_t col_counter = 0;
-        const uint64_t type_mask_backup = this->next_type_mask;
+        const uint32_t type_mask_backup = this->next_type_mask;
         CastExpr * casexpr = expr->mutable_comp_expr()->mutable_cast_expr();
 
-        casexpr->set_simple(rg.nextMediumNumber() < 16);
+        casexpr->set_simple(rg.nextBool());
         this->depth++;
         this->next_type_mask = fc.type_mask & ~(allow_nested);
         auto tp
@@ -1289,18 +1258,6 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             }
         }
         expr->mutable_comp_expr()->mutable_table()->set_table(rg.pickRandomly(filtered_relations).get().name);
-    }
-    else if (
-        lambda_expr
-        && noption
-            < (literal_value + col_ref_expr + predicate_expr + cast_expr + unary_expr + interval_expr + columns_expr + cond_expr + case_expr
-               + subquery_expr + binary_expr + array_tuple_expr + func_expr + window_func_expr + table_star_expr + lambda_expr + 1))
-    {
-        const uint32_t nexprs = std::min(this->fc.max_width - this->width, rg.nextMediumNumber() % 4);
-
-        this->depth++;
-        generateLambdaCall(rg, nexprs, expr->mutable_comp_expr()->mutable_lambda());
-        this->depth--;
     }
     else
     {

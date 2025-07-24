@@ -48,11 +48,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
-namespace ProfileEvents
-{
-    extern const Event MutationAffectedRowsUpperBound;
-}
-
 namespace DB
 {
 namespace Setting
@@ -189,19 +184,12 @@ IsStorageTouched isStorageTouchedByMutations(
         if (command.type == MutationCommand::APPLY_DELETED_MASK)
         {
             if (storage_from_part->hasLightweightDeletedMask())
-            {
-                /// The precise number of rows is unknown.
-                ProfileEvents::increment(ProfileEvents::MutationAffectedRowsUpperBound, source_part->rows_count);
                 return some_rows;
-            }
         }
         else
         {
             if (!command.predicate) /// The command touches all rows.
-            {
-                ProfileEvents::increment(ProfileEvents::MutationAffectedRowsUpperBound, source_part->rows_count);
                 return all_rows;
-            }
 
             if (command.partition)
             {
@@ -255,7 +243,6 @@ IsStorageTouched isStorageTouchedByMutations(
     while (executor.pull(tmp_block));
 
     auto count = (*block.getByName("count()").column)[0].safeGet<UInt64>();
-    ProfileEvents::increment(ProfileEvents::MutationAffectedRowsUpperBound, count);
 
     IsStorageTouched result;
     result.any_rows_affected = (count != 0);

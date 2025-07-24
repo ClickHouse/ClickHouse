@@ -12,6 +12,7 @@
 #include <Storages/System/StorageSystemStackTrace.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -23,7 +24,6 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
-#include <Common/SymbolIndex.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -35,7 +35,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <base/getThreadId.h>
 #include <sys/syscall.h>
-
 
 namespace DB
 {
@@ -311,7 +310,6 @@ public:
 protected:
     Chunk generate() override
     {
-        const SymbolIndex & symbol_index = SymbolIndex::instance();
         MutableColumns res_columns = header->cloneEmptyColumns();
 
         ColumnPtr thread_ids;
@@ -393,18 +391,11 @@ protected:
                     {
                         size_t stack_trace_size = stack_trace.getSize();
                         size_t stack_trace_offset = stack_trace.getOffset();
-                        auto frame_pointers = stack_trace.getFramePointers();
 
                         Array arr;
                         arr.reserve(stack_trace_size - stack_trace_offset);
                         for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
-                        {
-                            const void * virtual_addr = frame_pointers[i];
-                            const auto * object = symbol_index.findObject(virtual_addr);
-                            uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
-                            uintptr_t physical_addr = uintptr_t(virtual_addr) - virtual_offset;
-                            arr.emplace_back(physical_addr);
-                        }
+                            arr.emplace_back(reinterpret_cast<intptr_t>(stack_trace.getFramePointers()[i]));
 
                         res_columns[res_index++]->insert(thread_name);
                         res_columns[res_index++]->insert(tid);

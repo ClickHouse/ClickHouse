@@ -51,16 +51,18 @@ except Exception as e:
 import docker
 from dict2xml import dict2xml
 from docker.models.containers import Container
+from .kazoo_client import KazooClientWithImplicitRetries
 from kazoo.exceptions import KazooException
 from minio import Minio
 
 from . import pytest_xdist_logging_to_separate_files
-from .client import Client, QueryRuntimeException
+from .client import QueryRuntimeException
+from .test_tools import assert_eq_with_retry, exec_query_with_retry
+
+from .client import Client
 from .config_cluster import *
-from .kazoo_client import KazooClientWithImplicitRetries
 from .random_settings import write_random_settings_config
 from .retry_decorator import retry
-from .test_tools import assert_eq_with_retry, exec_query_with_retry
 
 HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
@@ -297,12 +299,10 @@ def run_rabbitmqctl(rabbitmq_id, cookie, command, timeout=90):
         raise RuntimeError(error_message)
     except subprocess.TimeoutExpired as e:
         # Raised if the command times out
-        output = (
-            f". Output: {e.stdout.decode(errors='replace')}"
-            if e.stdout is not None
-            else ""
+        output = f". Output: {e.stdout.decode(errors='replace')}" if e.stdout is not None else ""
+        raise RuntimeError(
+            f"rabbitmqctl {command} timed out{output}"
         )
-        raise RuntimeError(f"rabbitmqctl {command} timed out{output}")
 
 
 def check_rabbitmq_is_available(rabbitmq_id, cookie):
@@ -424,7 +424,6 @@ class ClickHouseCluster:
         zookeeper_keyfile=None,
         zookeeper_certfile=None,
         with_spark=False,
-        custom_keeper_configs=[],
     ):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -454,12 +453,6 @@ class ClickHouseCluster:
             if keeper_config_dir
             else HELPERS_DIR
         )
-
-        self.custom_keeper_configs_paths = None
-        if len(custom_keeper_configs) > 0:
-            self.custom_keeper_configs_paths = [
-                p.abspath(p.join(self.base_dir, c)) for c in custom_keeper_configs
-            ]
 
         project_name = (
             pwd.getpwuid(os.getuid()).pw_name + p.basename(self.base_dir) + self.name
@@ -1471,17 +1464,14 @@ class ClickHouseCluster:
         return self.base_iceberg_hms_cmd
 
     def setup_iceberg_catalog_cmd(
-        self, instance, env_variables, docker_compose_yml_dir, extra_parameters=None
+        self, instance, env_variables, docker_compose_yml_dir
     ):
         self.with_iceberg_catalog = True
-        file_name = "docker_compose_iceberg_rest_catalog.yml"
-        if extra_parameters is not None and extra_parameters["docker_compose_file_name"] != "":
-            file_name = extra_parameters["docker_compose_file_name"]
         self.base_cmd.extend(
             [
                 "--file",
                 p.join(
-                    docker_compose_yml_dir, file_name
+                    docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml"
                 ),
             ]
         )
@@ -1489,7 +1479,7 @@ class ClickHouseCluster:
             "--env-file",
             instance.env_file,
             "--file",
-            p.join(docker_compose_yml_dir, file_name),
+            p.join(docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml"),
         )
         return self.base_iceberg_catalog_cmd
 
@@ -1699,7 +1689,6 @@ class ClickHouseCluster:
         use_docker_init_flag=False,
         clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
         with_dolor=False,
-        extra_parameters=None,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
 
@@ -1833,7 +1822,6 @@ class ClickHouseCluster:
             randomize_settings=randomize_settings,
             use_docker_init_flag=use_docker_init_flag,
             with_dolor=with_dolor,
-            extra_parameters=extra_parameters,
         )
 
         docker_compose_yml_dir = get_docker_compose_path()
@@ -1992,7 +1980,7 @@ class ClickHouseCluster:
         if with_iceberg_catalog and not self.with_iceberg_catalog:
             cmds.append(
                 self.setup_iceberg_catalog_cmd(
-                    instance, env_variables, docker_compose_yml_dir, extra_parameters
+                    instance, env_variables, docker_compose_yml_dir
                 )
             )
 
@@ -2999,62 +2987,47 @@ class ClickHouseCluster:
                         current_keeper_config_dir = os.path.join(
                             f"{self.keeper_instance_dir_prefix}{i}", "config"
                         )
-                        if self.custom_keeper_configs_paths is None:
-                            shutil.copy(
-                                os.path.join(
-                                    self.keeper_config_dir, f"keeper_config{i}.xml"
-                                ),
-                                current_keeper_config_dir,
-                            )
+                        shutil.copy(
+                            os.path.join(
+                                self.keeper_config_dir, f"keeper_config{i}.xml"
+                            ),
+                            current_keeper_config_dir,
+                        )
 
-                            extra_configs_dir = os.path.join(
-                                current_keeper_config_dir, f"keeper_config{i}.d"
-                            )
-                            os.mkdir(extra_configs_dir)
-                            feature_flags_config = os.path.join(
-                                extra_configs_dir, "feature_flags.yaml"
-                            )
+                        extra_configs_dir = os.path.join(
+                            current_keeper_config_dir, f"keeper_config{i}.d"
+                        )
+                        os.mkdir(extra_configs_dir)
+                        feature_flags_config = os.path.join(
+                            extra_configs_dir, "feature_flags.yaml"
+                        )
 
-                            indentation = 4 * " "
+                        indentation = 4 * " "
 
-                            def get_feature_flag_value(feature_flag):
-                                if not self.keeper_randomize_feature_flags:
-                                    return 1
+                        def get_feature_flag_value(feature_flag):
+                            if not self.keeper_randomize_feature_flags:
+                                return 1
 
-                                if feature_flag in self.keeper_required_feature_flags:
-                                    return 1
+                            if feature_flag in self.keeper_required_feature_flags:
+                                return 1
 
-                                return random.randint(0, 1)
+                            return random.randint(0, 1)
 
-                            with open(feature_flags_config, "w") as ff_config:
-                                ff_config.write("keeper_server:\n")
-                                ff_config.write(f"{indentation}feature_flags:\n")
-                                indentation *= 2
+                        with open(feature_flags_config, "w") as ff_config:
+                            ff_config.write("keeper_server:\n")
+                            ff_config.write(f"{indentation}feature_flags:\n")
+                            indentation *= 2
 
-                                for feature_flag in [
-                                    "filtered_list",
-                                    "multi_read",
-                                    "check_not_exists",
-                                    "create_if_not_exists",
-                                    "remove_recursive",
-                                ]:
-                                    ff_config.write(
-                                        f"{indentation}{feature_flag}: {get_feature_flag_value(feature_flag)}\n"
-                                    )
-                        else:
-                            basename = os.path.basename(
-                                self.custom_keeper_configs_paths[i - 1]
-                            )
-                            shutil.copy(
-                                self.custom_keeper_configs_paths[i - 1],
-                                current_keeper_config_dir,
-                            )
-                            os.rename(
-                                os.path.join(current_keeper_config_dir, basename),
-                                os.path.join(
-                                    current_keeper_config_dir, f"keeper_config{i}.xml"
-                                ),
-                            )
+                            for feature_flag in [
+                                "filtered_list",
+                                "multi_read",
+                                "check_not_exists",
+                                "create_if_not_exists",
+                                "remove_recursive",
+                            ]:
+                                ff_config.write(
+                                    f"{indentation}{feature_flag}: {get_feature_flag_value(feature_flag)}\n"
+                                )
 
                 run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
                 self.up_called = True
@@ -3739,7 +3712,6 @@ class ClickHouseInstance:
         randomize_settings=True,
         use_docker_init_flag=False,
         with_dolor=False,
-        extra_parameters=None,
     ):
         self.name = name
         self.base_cmd = cluster.base_cmd

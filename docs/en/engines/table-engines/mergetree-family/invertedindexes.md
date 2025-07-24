@@ -41,7 +41,7 @@ CREATE TABLE tab
 (
     `key` UInt64,
     `str` String,
-    INDEX inv_idx(str) TYPE text(tokenizer = 'default|ngram|split|no_op' [, ngram_size = N] [, separators = []]) [GRANULARITY 64]
+    INDEX inv_idx(str) TYPE text(tokenizer = 'default|ngram|split|no_op' [, ngram_size = N] [, separators = []] [, max_rows_per_postings_list = M]) [GRANULARITY 64]
 )
 ENGINE = MergeTree
 ORDER BY key
@@ -73,6 +73,13 @@ In case of the `split` tokenizer: if the tokens do not form a [prefix code](http
 To do so, pass the separators in order of descending length.
 For example, with separators = `['%21', '%']` string `%21abc` would be tokenized as `['abc']`, whereas separators = `['%', '%21']` would tokenize to `['21ac']` (which is likely not what you wanted).
 :::
+
+The maximum rows per postings list can be specified via the optional `max_rows_per_postings_list` parameter.
+The parameter can be used to control postings list sizes to avoid generating huge postings list files.
+
+- `max_rows_per_postings_list = 0`: No limitation of maximum rows per postings list.
+- `max_rows_per_postings_list = M`: with `M` should be at least 8192.
+- If not specified: Use a default maximum rows which is 64K.
 
 Being a type of skipping index, text indexes can be dropped or added to a column after table creation:
 
