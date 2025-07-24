@@ -273,7 +273,6 @@ However, if the server on the specified port and protocol was not stopped using 
 SYSTEM START LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP WITH PROXY | TCP SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
 ```
 
-
 ## Managing MergeTree Tables {#managing-mergetree-tables}
 
 ClickHouse can manage background processes in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
@@ -438,11 +437,11 @@ SYSTEM SYNC REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_
 
 After running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from the common replicated log into its own replication queue, and then the query waits till the replica processes all of the fetched commands. The following modifiers are supported:
 
- - With `IF EXISTS` (available since 25.6) the query won't throw an error if the table does not exists. This is useful when adding a new replica to a cluster, when it's already part of the cluster configuration but it is still in the process of creating and synchronizing the table.
- - If a `STRICT` modifier was specified then the query waits for the replication queue to become empty. The `STRICT` version may never succeed if new entries constantly appear in the replication queue.
- - If a `LIGHTWEIGHT` modifier was specified then the query waits only for `GET_PART`, `ATTACH_PART`, `DROP_RANGE`, `REPLACE_RANGE` and `DROP_PART` entries to be processed.
-   Additionally, the LIGHTWEIGHT modifier supports an optional FROM 'srcReplicas' clause, where 'srcReplicas' is a comma-separated list of source replica names. This extension allows for more targeted synchronization by focusing only on replication tasks originating from the specified source replicas.
- - If a `PULL` modifier was specified then the query pulls new replication queue entries from ZooKeeper, but does not wait for anything to be processed.
+- With `IF EXISTS` (available since 25.6) the query won't throw an error if the table does not exists. This is useful when adding a new replica to a cluster, when it's already part of the cluster configuration but it is still in the process of creating and synchronizing the table.
+- If a `STRICT` modifier was specified then the query waits for the replication queue to become empty. The `STRICT` version may never succeed if new entries constantly appear in the replication queue.
+- If a `LIGHTWEIGHT` modifier was specified then the query waits only for `GET_PART`, `ATTACH_PART`, `DROP_RANGE`, `REPLACE_RANGE` and `DROP_PART` entries to be processed.
+  Additionally, the LIGHTWEIGHT modifier supports an optional FROM 'srcReplicas' clause, where 'srcReplicas' is a comma-separated list of source replica names. This extension allows for more targeted synchronization by focusing only on replication tasks originating from the specified source replicas.
+- If a `PULL` modifier was specified then the query pulls new replication queue entries from ZooKeeper, but does not wait for anything to be processed.
 
 ### SYNC DATABASE REPLICA {#sync-database-replica}
 
@@ -470,9 +469,9 @@ Works only on readonly `ReplicatedMergeTree` tables.
 
 One may execute query after:
 
-  - ZooKeeper root `/` loss.
-  - Replicas path `/replicas` loss.
-  - Individual replica path `/replicas/replica_name/` loss.
+- ZooKeeper root `/` loss.
+- Replicas path `/replicas` loss.
+- Individual replica path `/replicas/replica_name/` loss.
 
 Replica attaches locally found parts and sends info about them to Zookeeper.
 Parts present on a replica before metadata loss are not re-fetched from other ones if not being outdated (so replica restoration does not mean re-downloading all data over the network).
@@ -603,7 +602,7 @@ Trigger an immediate out-of-schedule refresh of a given view.
 SYSTEM REFRESH VIEW [db.]name
 ```
 
-### REFRESH VIEW {#refresh-view-1}
+### WAIT VIEW {#wait-view}
 
 Wait for the currently running refresh to complete. If the refresh fails, throws an exception. If no refresh is running, completes immediately, throwing an exception if previous refresh failed.
 

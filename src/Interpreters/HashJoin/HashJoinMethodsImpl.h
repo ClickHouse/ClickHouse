@@ -123,6 +123,8 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
             join.required_right_keys,
             join.required_right_keys_sources,
             join.max_joined_block_rows,
+            join.max_joined_block_bytes,
+            join.data->allocated_size / std::max<size_t>(1, join.data->rows_to_join),
             join_features.need_filter,
             is_join_get
         });
