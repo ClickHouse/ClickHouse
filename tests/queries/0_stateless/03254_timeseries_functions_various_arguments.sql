@@ -37,22 +37,6 @@ SELECT timeSeriesInstantDeltaToGrid(10, 120, 10, 60)(timestamps, values) FROM ts
 SELECT timeSeriesInstantDeltaToGridIf(10, 120, 10, 60)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
 SELECT timeSeriesInstantDeltaToGridIf(10, 120, 10, 60)(timestamps, values, toNullable(length(timestamps) = length(values))) FROM ts_data;
 
-SELECT timeSeriesDerivToGrid(10, 120, 10, 60)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
-SELECT timeSeriesDerivToGridIf(10, 120, 10, 60)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
-SELECT timeSeriesDerivToGridIf(10, 120, 10, 60)(timestamps, values, toNullable(length(timestamps) = length(values))) FROM ts_data;
-
-SELECT timeSeriesPredictLinearToGrid(10, 120, 10, 60, 60)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
-SELECT timeSeriesPredictLinearToGridIf(10, 120, 10, 60, 60)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
-SELECT timeSeriesPredictLinearToGridIf(10, 120, 10, 60, 60)(timestamps, values, toNullable(length(timestamps) = length(values))) FROM ts_data;
-
-SELECT timeSeriesPredictLinearToGrid(10, 120, 10, 60, 60.5)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
-SELECT timeSeriesPredictLinearToGridIf(10, 120, 10, 60, 60.5)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
-SELECT timeSeriesPredictLinearToGridIf(10, 120, 10, 60, 60.5)(timestamps, values, toNullable(length(timestamps) = length(values))) FROM ts_data;
-
-SELECT timeSeriesPredictLinearToGrid(10, 120, 10, 60, -60)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
-SELECT timeSeriesPredictLinearToGridIf(10, 120, 10, 60, -60)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
-SELECT timeSeriesPredictLinearToGridIf(10, 120, 10, 60, -60)(timestamps, values, toNullable(length(timestamps) = length(values))) FROM ts_data;
-
 
 SELECT * FROM ts_data_nullable WHERE value IS NULL AND id < 5;
 
@@ -72,8 +56,6 @@ SELECT timeSeriesResampleToGridWithStaleness(100, 120, 15, 10)([89, 101, 109]::A
 SELECT timeSeriesRateToGrid(100, 140, 15, 40)([89, 101, 109]::Array(UInt32), [89, 101, 109]::Array(Float32));
 SELECT timeSeriesInstantRateToGrid(100, 140, 15, 40)([89, 101, 109]::Array(UInt32), [89, 101, 109]::Array(Float32));
 SELECT timeSeriesInstantDeltaToGrid(100, 150, 15, 20)([89, 101, 109]::Array(UInt32), [89, 101, 109]::Array(Float32));
-SELECT timeSeriesDerivToGrid(100, 120, 15, 20)([89, 101, 109]::Array(UInt32), [89, 101, 109]::Array(Float32));
-SELECT timeSeriesPredictLinearToGrid(100, 120, 15, 20, 60)([89, 101, 109]::Array(UInt32), [89, 101, 109]::Array(Float32));
 
 SELECT timeSeriesResampleToGridWithStaleness(100, 150, 10, 30)(toDateTime(105), [1., 2., 3.]); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 SELECT timeSeriesRateToGrid(100, 150, 10, 30)(toDateTime(105), [1., 2., 3.]); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
@@ -81,8 +63,6 @@ SELECT timeSeriesInstantDeltaToGrid(100, 150, 10, 30)(toDateTime(105), [1., 2., 
 SELECT timeSeriesResampleToGridWithStaleness(100, 150, 10, 30)(toDateTime(105), arrayJoin([1., 2., 3.]));
 SELECT timeSeriesInstantRateToGrid(100, 150, 10, 30)([1, 2, 3]::Array(UInt32), 1.); --{serverError ILLEGAL_TYPE_OF_ARGUMENT}
 SELECT timeSeriesDeltaToGrid(100, 150, 10, 30)([1, 2, 3]::Array(UInt32), 1.); --{serverError ILLEGAL_TYPE_OF_ARGUMENT}
-SELECT timeSeriesDerivToGrid(100, 150, 10, 30)([1, 2, 3]::Array(UInt32), 1.); --{serverError ILLEGAL_TYPE_OF_ARGUMENT}
-SELECT timeSeriesPredictLinearToGrid(100, 150, 10, 30, 60)([1, 2, 3]::Array(UInt32), 1.); --{serverError ILLEGAL_TYPE_OF_ARGUMENT}
 
 -- Try to use aggregation function state in combinators with start, end, step and window parameters that are different from original paramaters
 -- An error should be returned
