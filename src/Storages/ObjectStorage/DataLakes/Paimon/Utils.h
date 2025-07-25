@@ -45,8 +45,7 @@ public:
     {
         if (path.empty())
         {
-            // Path should not be null or empty;
-            throw Exception();
+            return path;
         }
 
         std::string escaped;
