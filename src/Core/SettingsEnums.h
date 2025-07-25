@@ -421,4 +421,13 @@ enum class GeoToH3ArgumentOrder : uint8_t
 
 DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
 
+enum class SearchDetachedPartsDrives : uint8_t
+{
+    NONE,
+    WRITEABLE,
+    LOCAL,
+    ANY
+};
+
+DECLARE_SETTING_ENUM(SearchDetachedPartsDrives)
 }

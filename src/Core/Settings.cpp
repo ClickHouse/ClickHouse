@@ -6705,6 +6705,16 @@ Possible values:
 - 0 - When the second argument is `DateTime64/Date32` the return type will be `DateTime64/Date32` regardless of the time unit in the first argument.
 - 1 - For `Date32` the result is always `Date`. For `DateTime64` the result is `DateTime` for time units `second` and higher.
 )", 0) \
+    DECLARE(SearchDetachedPartsDrives, search_detached_parts_drives, SearchDetachedPartsDrives::WRITEABLE, R"(
+ClickHouse looks for detached parts upon any ATTACH or CREATE table.
+This setting limits scope of drives to search by traits of the drives.
+
+Possible values:
+- any - scope is not limited.
+- writeable - scope is limited by drives, that are not readonly and not drive once
+- local - scope is limited by drives, that are not readonly and not drive once and have local metadata.
+- none - empty scope, do not search
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \

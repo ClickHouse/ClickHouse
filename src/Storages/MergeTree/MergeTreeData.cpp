@@ -199,6 +199,9 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsBool apply_patch_parts;
+    extern const SettingsSearchDetachedPartsDrives search_detached_parts_drives;
+    extern const SettingsBool function_date_trunc_return_type_behavior;
+
 }
 
 namespace MergeTreeSetting
@@ -2070,11 +2073,28 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
     return loaded_parts;
 }
 
+bool MergeTreeData::lookForDetachedParts(DiskPtr disk, std::string_view disk_name) const
+{
+    auto is_writeable = [&]() { return !disk->isReadOnly() && !disk->isWriteOnce(); };
+    auto is_local_metadata = [&]() { return !(disk->isRemote() && disk->isPlain()); };
+
+    auto query_context = CurrentThread::get().getQueryContext();
+    // SearchDetachedPartsDrives mode = query_context ? query_context->getSettingsRef()[Setting::search_detached_parts_drives] : getContext()->getSettingsRef()[Setting::search_detached_parts_drives];
+
+    assert(query_context);
+    SearchDetachedPartsDrives mode = query_context->getSettingsRef()[Setting::search_detached_parts_drives];
+
+    // SearchDetachedPartsDrives mode = getContext()->getSettingsRef()[Setting::search_detached_parts_drives];
+    LOG_DEBUG(log, "search_detached_parts_drives {} is_writeble {} for {}", mode, is_writeable(), disk_name);
+    return (
+        mode == SearchDetachedPartsDrives::ANY || (mode == SearchDetachedPartsDrives::WRITEABLE && is_writeable())
+        || (mode == SearchDetachedPartsDrives::LOCAL && is_writeable() && is_local_metadata()));
+}
 
 void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts)
 {
     Stopwatch watch;
-    LOG_DEBUG(log, "Loading data parts");
+    LOG_DEBUG(log, "loadDataParts Loading data parts");
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto settings = getSettings();
@@ -2083,14 +2103,18 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     if (!getStoragePolicy()->isDefaultPolicy() && !skip_sanity_checks && !(*settings)[MergeTreeSetting::disk].changed)
     {
+        LOG_DEBUG(log, "loadDataParts Check extra parts on different disks that belong to storage policy");
+
         /// Check extra parts on different disks, in order to not allow to miss data parts at undefined disks.
         std::unordered_set<String> defined_disk_names;
 
         for (const auto & disk_ptr : disks)
         {
             defined_disk_names.insert(disk_ptr->getName());
+            LOG_DEBUG(log, "loadDataParts Adding disk {}", disk_ptr->getName());
         }
 
+        LOG_DEBUG(log, "loadDataParts Check extra parts on all disks");
         /// In case of delegate disks it is not enough to traverse `disks`,
         /// because for example cache or encrypted disk which wrap s3 disk and s3 disk itself can be put into different storage policies.
         /// But disk->exists returns the same thing for both disks.
@@ -2117,13 +2141,15 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         std::unordered_set<String> skip_check_disks;
         for (const auto & [disk_name, disk] : getContext()->getDisksMap())
         {
-            if (disk->isBroken() || disk->isCustomDisk())
+            LOG_DEBUG(log, "loadDataParts Looking for disk {}", disk_name);
+            if (disk->isBroken() || disk->isCustomDisk() || !lookForDetachedParts(disk, disk_name))
             {
                 skip_check_disks.insert(disk_name);
                 continue;
             }
 
             bool is_disk_defined = defined_disk_names.contains(disk_name);
+            LOG_DEBUG(log, "loadDataParts for disk {} defined {}", disk_name, is_disk_defined);
 
             if (!is_disk_defined && disk->existsDirectory(relative_data_path))
             {
@@ -2387,6 +2413,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
         refresh_parts_task->scheduleAfter(refresh_parts_interval);
     }
+    LOG_DEBUG(log, "loadDataParts end");
+
 }
 
 void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
@@ -7080,18 +7108,25 @@ MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(
     return res;
 }
 
+
 DetachedPartsInfo MergeTreeData::getDetachedParts() const
 {
+    LOG_DEBUG(log, "Top of getDetachedParts");
     DetachedPartsInfo res;
 
     for (const auto & disk : getDisks())
     {
+        LOG_DEBUG(log, "getDetachedParts  disk");
         /// While it is possible to have detached parts on readonly/write-once disks
         /// (if they were produced on another machine, where it wasn't readonly)
         /// to avoid wasting resources for slow disks, avoid trying to enumerate them.
         if (disk->isReadOnly() || disk->isWriteOnce())
             continue;
 
+        if (!lookForDetachedParts(disk, "nameless"))
+            continue;
+
+        LOG_DEBUG(log, "getDetachedParts disk - going further");
         String detached_path = fs::path(relative_data_path) / DETACHED_DIR_NAME;
 
         /// Note: we don't care about TOCTOU issue here.

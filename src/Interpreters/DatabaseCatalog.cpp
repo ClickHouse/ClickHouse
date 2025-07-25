@@ -81,6 +81,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
+    extern const SettingsSearchDetachedPartsDrives search_detached_parts_drives;
 }
 
 class DatabaseNameHints : public IHints<>
@@ -1450,6 +1451,18 @@ void DatabaseCatalog::dropTableDataTask()
     rescheduleDropTableTask();
 }
 
+bool DatabaseCatalog::lookForDetachedParts(DiskPtr disk) const
+{
+    auto is_writeable = [&]() { return !disk->isReadOnly() && !disk->isWriteOnce(); };
+    auto is_local_metadata = [&]() { return !(disk->isRemote() && disk->isPlain()); };
+
+    SearchDetachedPartsDrives mode = getContext()->getSettingsRef()[Setting::search_detached_parts_drives];
+    return (
+        mode == SearchDetachedPartsDrives::ANY || (mode == SearchDetachedPartsDrives::WRITEABLE && is_writeable())
+        || (mode == SearchDetachedPartsDrives::LOCAL && is_writeable() && is_local_metadata()));
+}
+
+
 void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 {
     auto db_disk = table.db_disk;
@@ -1463,7 +1476,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
         String data_path = "store/" + getPathForUUID(table.table_id.uuid);
-        if (disk->isReadOnly() || !disk->existsDirectory(data_path))
+        if (disk->isReadOnly() || !lookForDetachedParts(disk) || !disk->existsDirectory(data_path))
             continue;
 
         LOG_INFO(log, "Removing data directory {} of dropped table {} from disk {}", data_path, table.table_id.getNameForLogs(), disk_name);
