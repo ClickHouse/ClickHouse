@@ -294,6 +294,8 @@ public:
     virtual bool supportsFileIterator() const { return false; }
     virtual bool supportsWrites() const { return true; }
 
+    virtual bool supportsPartialPathPrefix() const { return true; }
+
     virtual ObjectIterator iterate(
         const ActionsDAG * /* filter_dag */,
         std::function<void(FileProgress)> /* callback */,

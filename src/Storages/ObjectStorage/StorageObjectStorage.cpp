@@ -767,7 +767,7 @@ void StorageObjectStorage::Configuration::initialize(
         {
             configuration_to_initialize.format
                 = FormatFactory::instance()
-                      .tryGetFormatFromFileName(configuration_to_initialize.isArchive() ? configuration_to_initialize.getPathInArchive() : configuration_to_initialize.getPath())
+                      .tryGetFormatFromFileName(configuration_to_initialize.isArchive() ? configuration_to_initialize.getPathInArchive() : configuration_to_initialize.getPathForRead().path)
                       .value_or("auto");
         }
     }

@@ -167,7 +167,7 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
         object_storage,
         configuration,
         format_settings,
-        std::make_shared<Block>(partition_strategy->getFormatHeader()),
+        partition_strategy->getFormatHeader(),
         context
     );
 }
