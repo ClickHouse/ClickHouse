@@ -388,29 +388,31 @@ class CI:
         JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN],
             num_batches=6,
-            timeout=9000,  # the job timed out with default value (7200)
+            timeout=10800,
         ),
         JobNames.INTEGRATION_TEST_TSAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN],
             num_batches=6,
-            timeout=9000,  # the job timed out with default value (7200)
+            timeout=10800,
         ),
         JobNames.INTEGRATION_TEST_AARCH64_DISTRIBUTED_PLAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
             num_batches=6,
             runner_type=Runners.FUNC_TESTER_AARCH64,
+            timeout=10800,
         ),
         JobNames.INTEGRATION_TEST: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
             num_batches=4,
             release_only=True,
+            timeout=10800,
         ),
         JobNames.INTEGRATION_TEST_FLAKY: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN],
             pr_only=True,
             # TODO: approach with reference job names does not work because digest may not be calculated if job skipped in wf
             # reference_job_name=JobNames.INTEGRATION_TEST_TSAN,
-            timeout=4 * 3600,  # to be able to process many updated tests
+            timeout=10800,
         ),
         JobNames.COMPATIBILITY_TEST: CommonJobConfigs.COMPATIBILITY_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
