@@ -28,7 +28,6 @@
 #include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
-#include "Columns/IColumn.h"
 
 #include <stack>
 
