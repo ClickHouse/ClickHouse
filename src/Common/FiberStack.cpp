@@ -53,7 +53,7 @@ boost::context::stack_context FiberStack::allocate() const
     size_t num_bytes = num_pages * page_size;
 
     /// On Linux the function aligned alloc is intercepted, so we need to track
-    /// the memory separetely.
+    /// the memory separately.
     /// On Darwin or FreeBSD this class is not used.
     void * data = aligned_alloc(page_size, num_bytes);
 
