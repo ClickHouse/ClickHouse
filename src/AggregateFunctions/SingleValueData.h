@@ -312,6 +312,35 @@ public:
 
 static_assert(sizeof(SingleValueDataString) == SingleValueDataBase::MAX_STORAGE_SIZE, "Incorrect size of SingleValueDataString struct");
 
+/// A variant of SingleValueDataString that stores a reference to a string in a column
+struct SingleValueDataStringRef final : public SingleValueDataBase
+{
+    static constexpr bool is_compilable = false;
+    using Self = SingleValueDataStringRef;
+
+    ColumnPtr column_ref;
+    size_t row_number;
+
+    bool has() const override { return column_ref != nullptr; }
+    void insertResultInto(IColumn & to, const DataTypePtr & type) const override;
+    void write(WriteBuffer & buf, const ISerialization & /*serialization*/) const override;
+    void read(ReadBuffer & buf, const ISerialization & /*serialization*/, const DataTypePtr & /*type*/, Arena * arena) override;
+
+    bool isEqualTo(const IColumn & column, size_t row_num) const override;
+    bool isEqualTo(const SingleValueDataBase &) const override;
+    void set(const IColumn & column, size_t row_num, Arena * arena) override;
+    void set(const SingleValueDataBase &, Arena * arena) override;
+
+    bool setIfSmaller(const IColumn & column, size_t row_num, Arena * arena) override;
+    bool setIfSmaller(const SingleValueDataBase &, Arena * arena) override;
+
+    bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
+    bool setIfGreater(const SingleValueDataBase &, Arena * arena) override;
+
+    static bool allocatesMemoryInArena() { return false; }
+};
+
+static_assert(sizeof(SingleValueDataStringRef) <= SingleValueDataBase::MAX_STORAGE_SIZE, "Incorrect size of SingleValueDataStringRef struct");
 
 /// For any other value types.
 struct SingleValueDataGeneric final : public SingleValueDataBase
@@ -416,6 +445,7 @@ struct SingleValueDataBaseMemoryBlock
         SingleValueDataBase::MAX_STORAGE_SIZE,
         SingleValueDataNumeric<Decimal256>, /// We check all types in generateSingleValueFromType
         SingleValueDataString,
+        SingleValueDataStringRef,
         SingleValueDataGeneric,
         SingleValueDataGenericWithColumn>
         memory;
