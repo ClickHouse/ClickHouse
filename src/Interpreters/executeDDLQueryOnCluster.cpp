@@ -35,7 +35,6 @@ namespace Setting
     extern const SettingsDistributedDDLOutputMode distributed_ddl_output_mode;
     extern const SettingsInt64 distributed_ddl_task_timeout;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
-    extern const SettingsBool ignore_on_cluster_for_replicated_database_queries;
 }
 
 namespace ErrorCodes
@@ -228,14 +227,11 @@ bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context)
         return false;
 
     auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query_ptr.get());
-    const auto * replicated = dynamic_cast<const DatabaseReplicated *>(database.get());
-
-    if (replicated && context->getSettingsRef()[Setting::ignore_on_cluster_for_replicated_database_queries])
+    if (const auto * replicated = dynamic_cast<const DatabaseReplicated *>(database.get()); replicated)
     {
         LOG_DEBUG(
             getLogger("IgnoreOnClusterClauseReplicatedDatabase"),
-            "ON CLUSTER clause was ignored for query {} because database {} is Replicated and setting "
-            "`ignore_on_cluster_for_replicated_database_queries` is on.",
+            "ON CLUSTER clause was ignored for query {} in Replicated database {}.",
             query->getID(),
             replicated->getDatabaseName());
         query_on_cluster->cluster.clear();
