@@ -1,7 +1,26 @@
 
-#include <typeinfo>
+#include <memory>
+#include <sstream>
+#include <Poco/Dynamic/Var.h>
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Stringifier.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Parsers/ASTFunction.h>
+#include <Core/Settings.h>
+#include <Core/TypeId.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <IO/CompressionMethod.h>
+#include <Interpreters/Context_fwd.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Storages/ColumnsDescription.h>
+#include <base/types.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <config.h>
@@ -39,6 +58,7 @@ namespace DB::DataLakeStorageSetting
     extern const DataLakeStorageSettingsString iceberg_metadata_table_uuid;
     extern const DataLakeStorageSettingsBool iceberg_recent_metadata_file_by_last_updated_ms_field;
     extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
+    extern const DataLakeStorageSettingsInt64 iceberg_format_version;
 }
 
 namespace ProfileEvents
@@ -287,6 +307,281 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
         .version = std::stoi(version_str),
         .path = path,
         .compression_method = getCompressionMethodFromMetadataFile(path)};
+}
+
+Poco::Dynamic::Var getIcebergType(DataTypePtr type, Int32 & iter)
+{
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Int32:
+            return "int";
+        case TypeIndex::Int64:
+            return "long";
+        case TypeIndex::Float32:
+            return "float";
+        case TypeIndex::Float64:
+            return "double";
+        case TypeIndex::Date32:
+        case TypeIndex::DateTime:
+        case TypeIndex::DateTime64:
+            return "date";
+        case TypeIndex::Time:
+            return "time";
+        case TypeIndex::String:
+            return "string";
+        case TypeIndex::UUID:
+            return "uuid";
+        case TypeIndex::Tuple:
+        {
+            auto type_tuple = std::static_pointer_cast<const DataTypeTuple>(type);
+            Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
+            result->set(Iceberg::f_type, "struct");
+            Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
+            for (const auto & element : type_tuple->getElements())
+            {
+                Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
+                field->set(Iceberg::f_id, ++iter);
+                field->set(Iceberg::f_name, element->getName());
+                field->set(Iceberg::f_required, false);
+                auto child_type = getIcebergType(element->getNormalizedType(), iter);
+                field->set(Iceberg::f_type, child_type);
+                fields->add(field);
+            }
+            result->set(Iceberg::f_fields, fields);
+            return result;
+        }
+        case TypeIndex::Array:
+        {
+            auto type_array = std::static_pointer_cast<const DataTypeArray>(type);
+            Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
+
+            field->set(Iceberg::f_type, "list");
+            field->set(Iceberg::f_element_id, ++iter);
+            field->set(Iceberg::f_required, false);
+            auto child_type = getIcebergType(type_array->getNestedType(), iter);
+            field->set(Iceberg::f_element, child_type);
+            field->set(Iceberg::f_element_required, false);
+            return field;
+        }
+        case TypeIndex::Map:
+        {
+            auto type_map = std::static_pointer_cast<const DataTypeMap>(type);
+            Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
+
+            field->set(Iceberg::f_type, "map");
+            field->set(Iceberg::f_key_id, ++iter);
+            field->set(Iceberg::f_key, getIcebergType(type_map->getKeyType(), iter));
+
+            field->set(Iceberg::f_value, getIcebergType(type_map->getValueType(), iter));
+            field->set(Iceberg::f_value_id, ++iter);
+            field->set(Iceberg::f_value_requires, false);
+            return field;
+        }
+        case TypeIndex::Nullable:
+        {
+            auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
+            return getIcebergType(type_nullable->getNestedType(), iter);
+        }
+        default:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+    }
+}
+
+Poco::JSON::Object::Ptr getPartitionField(
+    ASTPtr partition_by_element,
+    const std::unordered_map<String, Int32> & column_name_to_source_id,
+    Int32 & partition_iter)
+{
+    const auto * partition_function = partition_by_element->as<ASTFunction>();
+    if (!partition_function)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown function in partition. Please use functions for iceberg partitioning, for example (identity(x), TRUNCATE(3, y))");
+
+    std::optional<String> field;
+    std::optional<Int64> param;
+    for (const auto & child : partition_function->children)
+    {
+        const auto * expression_list = child->as<ASTExpressionList>();
+        for (const auto & expression_list_child : expression_list->children)
+        {
+            const auto * identifier = expression_list_child->as<ASTIdentifier>();
+            if (identifier)
+            {
+                if (field.has_value())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Identity function does not support multiple arguments function");
+                field = identifier->name();
+            }
+            const auto * literal = expression_list_child->as<ASTLiteral>();
+            if (literal)
+            {
+                param = literal->value.safeGet<Int64>();
+            }
+        }
+    }
+    if (!field)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Identity function does not support multiple arguments function");
+
+    Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
+    result->set(Iceberg::f_name, field.value());
+    result->set(Iceberg::f_source_id, column_name_to_source_id.at(*field));
+    result->set(Iceberg::f_field_id, ++partition_iter);
+
+    if (partition_function->name == "identity")
+    {
+        result->set(Iceberg::f_transform, "identity");
+        return result;
+    }
+    else if (partition_function->name == "toYearNumSinceEpoch")
+    {
+        result->set(Iceberg::f_transform, "year");
+        return result;
+    }
+    else if (partition_function->name == "toMonthNumSinceEpoch")
+    {
+        result->set(Iceberg::f_transform, "month");
+        return result;
+    }
+    else if (partition_function->name == "toRelativeDayNum")
+    {
+        result->set(Iceberg::f_transform, "days");
+        return result;
+    }
+    else if (partition_function->name == "toRelativeHourNum")
+    {
+        result->set(Iceberg::f_transform, "hours");
+        return result;
+    }
+    else if (partition_function->name == "icebergTruncate")
+    {
+        result->set(Iceberg::f_transform, fmt::format("truncate[{}]", *param));
+        return result;
+    }
+    else if (partition_function->name == "icebergBucket")
+    {
+        result->set(Iceberg::f_transform, fmt::format("bucket[{}]", *param));
+        return result;
+    }
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported function for iceberg partitioning {}", partition_function->name);
+}
+
+std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
+    ASTPtr partition_by,
+    const std::unordered_map<String, Int32> & column_name_to_source_id)
+{
+    Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
+    result->set(Iceberg::f_spec_id, 0);
+
+    Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
+    Int32 partition_iter = 1000;
+    if (partition_by)
+    {
+        const auto * partition_function = partition_by->as<ASTFunction>();
+        if (!partition_function)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected function in partitioning");
+
+        if (partition_function->name == "tuple")
+        {
+            for (const auto & child : partition_function->children)
+            {
+                const auto * expression_list = child->as<ASTExpressionList>();
+                for (const auto & expression_list_child : expression_list->children)
+                {
+                    auto partition_field = getPartitionField(expression_list_child, column_name_to_source_id, partition_iter);
+                    fields->add(partition_field);
+                }
+            }
+        }
+        else
+        {
+            auto partition_field = getPartitionField(partition_by, column_name_to_source_id, partition_iter);
+            fields->add(partition_field);
+        }
+    }
+    else
+        partition_iter = 0;
+
+    result->set(Iceberg::f_fields, fields);
+    return {result, partition_iter};
+}
+
+String createEmptyMetadataFile(
+    String path_location,
+    const ColumnsDescription & columns,
+    ASTPtr partition_by,
+    UInt64 format_version)
+{
+    std::unordered_map<String, Int32> column_name_to_source_id;
+    static Poco::UUIDGenerator uuid_generator;
+
+    Poco::JSON::Object::Ptr new_metadata_file_content = new Poco::JSON::Object;
+    new_metadata_file_content->set(Iceberg::f_format_version, format_version);
+    new_metadata_file_content->set(Iceberg::f_table_uuid, uuid_generator.createRandom().toString());
+    new_metadata_file_content->set(Iceberg::f_location, path_location);
+    if (format_version > 1)
+        new_metadata_file_content->set(Iceberg::f_last_sequence_number, 0);
+
+    auto now = std::chrono::system_clock::now();
+    auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
+    new_metadata_file_content->set(Iceberg::f_last_updated_ms, ms.count());
+    new_metadata_file_content->set(Iceberg::f_last_column_id, columns.size());
+    new_metadata_file_content->set(Iceberg::f_current_schema_id, 0);
+
+    Poco::JSON::Object::Ptr schema_representation = new Poco::JSON::Object;
+    schema_representation->set(Iceberg::f_type, "struct");
+    schema_representation->set(Iceberg::f_schema_id, 0);
+
+    Poco::JSON::Array::Ptr schema_fields = new Poco::JSON::Array;
+    Int32 iter = 0;
+    for (const auto & column : columns)
+    {
+        Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
+        field->set(Iceberg::f_id, ++iter);
+        field->set(Iceberg::f_name, column.name);
+        field->set(Iceberg::f_required, false);
+        field->set(Iceberg::f_type, getIcebergType(column.type, iter));
+        column_name_to_source_id[column.name] = iter;
+        schema_fields->add(field);
+    }
+    schema_representation->set(Iceberg::f_fields, schema_fields);
+    Poco::JSON::Array::Ptr schema_array = new Poco::JSON::Array;
+    schema_array->add(schema_representation);
+    new_metadata_file_content->set(Iceberg::f_schemas, schema_array);
+
+    new_metadata_file_content->set(Iceberg::f_default_spec_id, 0);
+    Poco::JSON::Object::Ptr partition_spec = new Poco::JSON::Object;
+    partition_spec->set(Iceberg::f_spec_id, 0);
+    partition_spec->set(Iceberg::f_fields, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+    Poco::JSON::Array::Ptr partition_specs = new Poco::JSON::Array;
+    const auto & [part_spec, last_partition_id] = getPartitionSpec(partition_by, column_name_to_source_id);
+    partition_specs->add(part_spec);
+    new_metadata_file_content->set(Iceberg::f_partition_specs, partition_specs);
+    new_metadata_file_content->set(Iceberg::f_last_partition_id, last_partition_id);
+    new_metadata_file_content->set(Iceberg::f_current_snapshot_id, -1);
+
+    Poco::JSON::Object::Ptr refs = new Poco::JSON::Object;
+    Poco::JSON::Object::Ptr main_branch = new Poco::JSON::Object;
+    main_branch->set(Iceberg::f_metadata_snapshot_id, -1);
+    main_branch->set(Iceberg::f_type, "branch");
+    refs->set(Iceberg::f_main, main_branch);
+
+    new_metadata_file_content->set(Iceberg::f_refs, refs);
+    new_metadata_file_content->set(Iceberg::f_snapshots, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+    new_metadata_file_content->set(Iceberg::f_statistics, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+    new_metadata_file_content->set(Iceberg::f_snapshot_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+    new_metadata_file_content->set(Iceberg::f_metadata_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+
+    new_metadata_file_content->set(Iceberg::f_default_sort_order_id, 0);
+    Poco::JSON::Object::Ptr sort_order = new Poco::JSON::Object;
+    sort_order->set(Iceberg::f_order_id, 0);
+    sort_order->set(Iceberg::f_fields, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+
+    Poco::JSON::Array::Ptr sort_orders = new Poco::JSON::Array;
+    sort_orders->add(sort_order);
+    new_metadata_file_content->set(Iceberg::f_sort_orders, sort_orders);
+
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    Poco::JSON::Stringifier::stringify(new_metadata_file_content, oss, 4);
+    return removeEscapedSlashes(oss.str());
 }
 
 /**

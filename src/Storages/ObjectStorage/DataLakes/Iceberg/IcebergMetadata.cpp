@@ -1,5 +1,6 @@
 #include "config.h"
 #include <memory>
+#include <optional>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
 #include <Formats/FormatParserGroup.h>
@@ -22,6 +23,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <IO/CompressedReadBufferWrapper.h>
 
+#include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
@@ -48,6 +50,7 @@ namespace DataLakeStorageSetting
     extern const DataLakeStorageSettingsString iceberg_metadata_table_uuid;
     extern const DataLakeStorageSettingsBool iceberg_recent_metadata_file_by_last_updated_ms_field;
     extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
+    extern const DataLakeStorageSettingsInt64 iceberg_format_version;
 }
 
 namespace ErrorCodes
@@ -55,6 +58,7 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
+extern const int TABLE_ALREADY_EXISTS;
 }
 
 namespace Setting
@@ -448,6 +452,40 @@ std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String da
     return std::optional{schema_id};
 }
 
+void IcebergMetadata::createInitial(
+    const ObjectStoragePtr & object_storage,
+    const StorageObjectStorageConfigurationWeakPtr & configuration,
+    const ContextPtr & local_context,
+    const std::optional<ColumnsDescription> & columns,
+    ASTPtr partition_by,
+    bool if_not_exists)
+{
+    auto configuration_ptr = configuration.lock();
+
+    std::vector<String> metadata_files;
+    try
+    {
+        metadata_files = listFiles(*object_storage, *configuration_ptr, "metadata", ".metadata.json");
+    }
+    catch (const Exception & ex)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "NoSuchBucket: {}", ex.what());
+    }
+    if (!metadata_files.empty())
+    {
+        if (if_not_exists)
+            return;
+        else
+            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Iceberg table with path {} already exists", configuration_ptr->getPath());
+    }
+
+    auto metadata_content = createEmptyMetadataFile(configuration_ptr->getPath(), *columns, partition_by, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
+    auto filename = configuration_ptr->getPath() + "metadata/v1.metadata.json";
+    auto buffer_metadata = object_storage->writeObject(
+        StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, local_context->getWriteSettings());
+    buffer_metadata->write(metadata_content.data(), metadata_content.size());
+    buffer_metadata->finalize();
+}
 
 DataLakeMetadataPtr IcebergMetadata::create(
     const ObjectStoragePtr & object_storage,

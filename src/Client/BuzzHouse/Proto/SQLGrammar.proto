@@ -2621,6 +2621,32 @@ message GenerateRandomFunc {
     optional uint64 max_array_length = 4;
 }
 
+message KeyValuePair {
+    required string key = 1;
+    required string value = 2;
+}
+
+message DataLakeFunc {
+    enum FName {
+        deltalakeS3 = 1;
+        deltalakeAzure = 2;
+        deltalakeLocal = 3;
+        icebergS3 = 4;
+        icebergAzure = 5;
+        icebergLocal = 6;
+        deltalakeS3Cluster = 7;
+        deltalakeAzureCluster = 8;
+        deltalakeLocalCluster = 9;
+        icebergS3Cluster = 10;
+        icebergAzureCluster = 11;
+        icebergLocalCluster = 12;
+    }
+    required FName fname = 1;
+    optional Cluster cluster = 2;
+    repeated string params = 3;
+    repeated KeyValuePair kparams = 4;
+}
+
 message ValuesStatement {
     required ExprList expr_list = 1;
     repeated ExprList extra_expr_lists = 2;
@@ -2646,6 +2672,7 @@ message TableFunction {
         ExprSchemaTable dictionary = 16;
         AzureBlobStorageFunc azure = 17;
         URLFunc url = 18;
+        DataLakeFunc data = 19;
     }
 }
 
@@ -3203,6 +3230,7 @@ message TableEngineParam {
         string regexp = 12;
         ExprSchemaTable est = 13;
         Expr expr = 14;
+        KeyValuePair kvalue = 15;
     }
 }
 
