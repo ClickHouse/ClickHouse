@@ -303,6 +303,7 @@ public:
                     .size_in_file = initial_file_size + write_buffer.count() - current_position});
         }
 
+        chassert(!last_index_written || *last_index_written == record.header.index - 1);
         last_index_written = record.header.index;
 
         return true;
@@ -1391,6 +1392,9 @@ void LogEntryStorage::addLogLocations(std::vector<std::pair<uint64_t, LogLocatio
     if (latest_logs_cache.size_threshold == 0)
         return;
 
+    if (indices_with_log_locations.empty())
+        return;
+
     std::lock_guard lock(logs_location_mutex);
     unapplied_indices_with_log_locations.insert(
         unapplied_indices_with_log_locations.end(),
@@ -2240,6 +2244,9 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 {
     if (!initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Changelog must be initialized before writing records");
+
+    /// wait for all appends to finish before changing active changelog file
+    flush();
 
     {
         std::lock_guard lock(writer_mutex);
