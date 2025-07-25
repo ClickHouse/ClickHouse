@@ -63,6 +63,9 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
     gen.setAllowEngineUDF(true);
 
     ts->set_format(OutFormat::OUT_CSV);
+    /// If the file fails to be removed due to a legitimate way, the oracle will fail anyway
+    const auto err = std::filesystem::remove(qcfile);
+    UNUSED(err);
     sif->set_path(qcfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
@@ -100,6 +103,8 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
         sfc2->add_args()->set_allocated_expr(expr.release_expr());
     }
     ts->set_format(sq1.single_query().explain().inner_query().select().format());
+    const auto err = std::filesystem::remove(qcfile);
+    UNUSED(err);
     sif->set_path(qcfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
@@ -213,6 +218,8 @@ void QueryOracle::dumpTableContent(
         sv->set_value("0");
     }
     ts->set_format(rg.pickRandomly(StatementGenerator::outIn));
+    const auto err = std::filesystem::remove(qcfile);
+    UNUSED(err);
     sif->set_path(qcfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
@@ -220,7 +227,6 @@ void QueryOracle::dumpTableContent(
 void QueryOracle::generateExportQuery(
     RandomGenerator & rg, StatementGenerator & gen, const bool test_content, const SQLTable & t, SQLQuery & sq2)
 {
-    std::error_code ec;
     Insert * ins = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
     FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
     Expr * expr = ff->mutable_structure();
@@ -232,10 +238,8 @@ void QueryOracle::generateExportQuery(
 
     can_test_oracle_result &= test_content;
     /// Remove the file if exists
-    if (!std::filesystem::remove(cnfile, ec) && ec)
-    {
-        LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
-    }
+    const auto err = std::filesystem::remove(cnfile);
+    UNUSED(err);
     ff->set_path(snfile.generic_string());
     ff->set_fname(FileFunc_FName::FileFunc_FName_file);
 
@@ -554,7 +558,6 @@ void QueryOracle::generateSecondSetting(
 
 void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuery pq, StatementGenerator & gen, SQLQuery & sq2)
 {
-    std::error_code ec;
     bool explain = false;
     Select * sel = nullptr;
     SelectParen * sparen = nullptr;
@@ -582,10 +585,8 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
         OutFormat outf = rg.pickRandomly(StatementGenerator::outIn);
 
-        if (!std::filesystem::remove(qcfile, ec) && ec)
-        {
-            LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
-        }
+        const auto err = std::filesystem::remove(qcfile);
+        UNUSED(err);
         ff->set_path(qsfile.generic_string());
         if (peer_query == PeerQuery::ClickHouseOnly && outf == OutFormat::OUT_Parquet)
         {
@@ -877,13 +878,10 @@ void QueryOracle::replaceQueryWithTablePeers(
     if (peer_query == PeerQuery::ClickHouseOnly && !measure_performance)
     {
         /// Use a different file for the peer database
-        std::error_code ec;
         FileFunc & ff = const_cast<FileFunc &>(sq2.single_query().explain().inner_query().insert().tof().tfunc().file());
 
-        if (!std::filesystem::remove(qfile_peer, ec) && ec)
-        {
-            LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
-        }
+        const auto err = std::filesystem::remove(qfile_peer);
+        UNUSED(err);
         ff.set_path(qfile_peer.generic_string());
     }
     for (const auto & entry : found_tables)
@@ -941,6 +939,8 @@ void QueryOracle::processFirstOracleQueryResult(const int errcode, ExternalInteg
         }
     }
     first_errcode = errcode;
+    const auto err = std::filesystem::remove(qcfile);
+    UNUSED(err);
 }
 
 void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalIntegrations & ei, const String & oracle_name)
