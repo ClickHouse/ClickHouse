@@ -402,7 +402,7 @@ private:
         uint32_t allowed_clauses,
         uint32_t ncols,
         bool backup,
-        const std::optional<String> recursive,
+        std::optional<String> recursive,
         Select * sel);
     /* Returns the number of from elements generated */
     uint32_t generateFromStatement(RandomGenerator & rg, uint32_t allowed_clauses, FromStatement * ft);
@@ -414,7 +414,7 @@ private:
         bool force_global_agg,
         uint32_t ncols,
         uint32_t allowed_clauses,
-        const std::optional<String> recursive,
+        std::optional<String> recursive,
         Select * sel);
 
     void generateTopSelect(RandomGenerator & rg, bool force_global_agg, uint32_t allowed_clauses, TopSelect * ts);

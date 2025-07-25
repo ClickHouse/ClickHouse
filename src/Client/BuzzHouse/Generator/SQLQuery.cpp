@@ -152,7 +152,7 @@ void StatementGenerator::generateDerivedTable(
     const uint32_t allowed_clauses,
     const uint32_t ncols,
     const bool backup,
-    const std::optional<String> recursive,
+    std::optional<String> recursive,
     Select * sel)
 {
     std::unordered_map<uint32_t, QueryLevel> levels_backup;
@@ -1970,7 +1970,7 @@ void StatementGenerator::generateSelect(
     bool force_global_agg,
     const uint32_t ncols,
     uint32_t allowed_clauses,
-    const std::optional<String> recursive,
+    std::optional<String> recursive,
     Select * sel)
 {
     CTEs * qctes = nullptr;
