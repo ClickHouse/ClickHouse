@@ -445,7 +445,6 @@ struct SingleValueDataBaseMemoryBlock
         SingleValueDataBase::MAX_STORAGE_SIZE,
         SingleValueDataNumeric<Decimal256>, /// We check all types in generateSingleValueFromType
         SingleValueDataString,
-        SingleValueDataStringRef,
         SingleValueDataGeneric,
         SingleValueDataGenericWithColumn>
         memory;
