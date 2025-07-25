@@ -24,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
+extern const int LOGICAL_ERROR;
 }
 }
 namespace Paimon
@@ -162,7 +163,7 @@ String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema
                 return formatDateTime(partition.getTimestamp(i, type->getScale()), 3, type->getTimeZone());
             }
             default:
-                throw Exception();
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported type {} in partition", data_type.root_type);
         }
     };
     std::vector<std::pair<String, String>> partition_entries;

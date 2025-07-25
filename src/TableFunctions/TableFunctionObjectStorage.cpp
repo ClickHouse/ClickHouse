@@ -1,4 +1,3 @@
-#include "Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h"
 #include "config.h"
 
 #include <Core/Settings.h>
@@ -26,6 +25,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 
 
 namespace DB
