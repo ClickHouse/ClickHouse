@@ -1,47 +1,50 @@
+#include <bit>
 #include <cstdint>
 #include <type_traits>
 #include <alloca.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/BinaryRow.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/BinaryRow.h>
 #include <Poco/BinaryReader.h>
-#include "Interpreters/Context_fwd.h"
-#include "base/Decimal.h"
-#include "base/defines.h"
-#include "base/types.h"
 #include <Poco/ByteOrder.h>
 #include <Poco/Logger.h>
-#include "Common/Exception.h"
-#include <bit>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Context_fwd.h>
+#include <base/Decimal.h>
+#include <base/defines.h>
+#include <base/types.h>
 
 namespace Paimon
 {
 
 inline UInt64 flipBytes(UInt64 value)
 {
-#    if defined(POCO_HAVE_MSC_BYTESWAP)
+#if defined(POCO_HAVE_MSC_BYTESWAP)
     return _byteswap_uint64(value);
-#    elif defined(POCO_HAVE_GCC_BYTESWAP)
+#elif defined(POCO_HAVE_GCC_BYTESWAP)
     return __builtin_bswap64(value);
-#    else
+#else
     UInt32 hi = UInt32(value >> 32);
     UInt32 lo = UInt32(value & 0xFFFFFFFF);
     return UInt64(flipBytes(hi)) | (UInt64(flipBytes(lo)) << 32);
-#    endif
+#endif
 }
 
-BinaryRow::BinaryRow(const String & bytes_): reader(bytes_), need_flip(!isLittleEndian())
+BinaryRow::BinaryRow(const String & bytes_)
+    : reader(bytes_)
+    , need_flip(!isLittleEndian())
 {
-    auto to_hex_string = [](const std::string& input) 
+    auto to_hex_string = [](const std::string & input)
     {
         std::ostringstream oss;
         oss << std::hex << std::setfill('0');
-        
-        for (unsigned char c : input) {
+
+        for (unsigned char c : input)
+        {
             oss << std::setw(2) << static_cast<int>(c);
         }
-        
+
         return oss.str();
     };
 
@@ -50,7 +53,13 @@ BinaryRow::BinaryRow(const String & bytes_): reader(bytes_), need_flip(!isLittle
     /// arity stores as big endian
     if (!need_flip)
         arity = Poco::ByteOrder::flipBytes(arity);
-    LOG_DEBUG(&Poco::Logger::get("BinaryRow"), "arity: {} need_flip: {} bytes_size: {} bytes: {}", arity, need_flip, reader.length(), to_hex_string(reader));
+    LOG_DEBUG(
+        &Poco::Logger::get("BinaryRow"),
+        "arity: {} need_flip: {} bytes_size: {} bytes: {}",
+        arity,
+        need_flip,
+        reader.length(),
+        to_hex_string(reader));
 }
 
 bool BinaryRow::isLittleEndian()
@@ -60,7 +69,7 @@ bool BinaryRow::isLittleEndian()
 
 bool BinaryRow::isNullAt(Int32 pos)
 {
-    chassert(pos >=0 && pos < arity);
+    chassert(pos >= 0 && pos < arity);
     Int32 bits_index = HEADER_SIZE_IN_BITS + pos;
     seek(offset() + byteIndex(bits_index));
     Int8 res = 0;
@@ -68,21 +77,22 @@ bool BinaryRow::isNullAt(Int32 pos)
     return (res & (1 << (bits_index & BIT_BYTE_INDEX_MASK))) != 0;
 }
 
-template<typename T> T BinaryRow::getFixedSizeData(Int32 pos)
+template <typename T>
+T BinaryRow::getFixedSizeData(Int32 pos)
 {
-    chassert(pos >=0 && pos < arity);
+    chassert(pos >= 0 && pos < arity);
     seek(getFieldOffset(pos));
     T t;
     readIntBinary(t, reader);
     LOG_DEBUG(&Poco::Logger::get("BinaryRow"), "read value: {}, need_flip: {}", t, need_flip);
-    
+
     if (need_flip)
     {
         if constexpr (std::is_same_v<Int64, T> || std::is_same_v<UInt64, T>)
         {
             t = static_cast<T>(flipBytes(static_cast<UInt64>(t)));
         }
-        else 
+        else
         {
             t = Poco::ByteOrder::flipBytes(t);
         }
@@ -118,14 +128,14 @@ Int64 BinaryRow::getLong(Int32 pos)
 Float32 BinaryRow::getFloat(Int32 pos)
 {
     Int32 res = getFixedSizeData<Int32>(pos);
-    auto * float_res = reinterpret_cast<Float32*>(&res);
+    auto * float_res = reinterpret_cast<Float32 *>(&res);
     return *float_res;
 }
 
 Float64 BinaryRow::getDouble(Int32 pos)
 {
     Int64 res = getFixedSizeData<Int64>(pos);
-    auto * float_res = reinterpret_cast<Float64*>(&res);
+    auto * float_res = reinterpret_cast<Float64 *>(&res);
     return *float_res;
 }
 
@@ -139,19 +149,21 @@ String BinaryRow::copyBytes(Int32 offset, Int32 num_bytes)
 
 String BinaryRow::getString(Int32 pos)
 {
-    chassert(pos >=0 && pos < arity);
+    chassert(pos >= 0 && pos < arity);
     Int32 field_offset = getFieldOffset(pos);
     Int64 offset_and_len = static_cast<Int64>(getFixedSizeData<UInt64>(pos));
     Int64 mark = offset_and_len & HIGHEST_FIRST_BIT;
-    if (mark == 0) 
+    if (mark == 0)
     {
         Int32 sub_offset = static_cast<Int32>((offset_and_len >> 32));
         Int32 len = static_cast<Int32>(offset_and_len);
-        LOG_DEBUG(&Poco::Logger::get("BinaryRow"), "sub_offset: {}, len: {}, offset_and_len: {}",sub_offset, len,  offset_and_len);
+        LOG_DEBUG(&Poco::Logger::get("BinaryRow"), "sub_offset: {}, len: {}, offset_and_len: {}", sub_offset, len, offset_and_len);
         return copyBytes(offset() + sub_offset, len);
-    } else {
+    }
+    else
+    {
         Int32 len = static_cast<Int32>(static_cast<UInt64>((offset_and_len & HIGHEST_SECOND_TO_EIGHTH_BIT)) >> 56);
-        LOG_DEBUG(&Poco::Logger::get("BinaryRow"), "mark: {}, len: {}, offset_and_len: {}",mark, len,  offset_and_len);
+        LOG_DEBUG(&Poco::Logger::get("BinaryRow"), "mark: {}, len: {}, offset_and_len: {}", mark, len, offset_and_len);
         if (isLittleEndian())
         {
             return copyBytes(field_offset, len);
@@ -331,12 +343,12 @@ DateTime64 BinaryRow::getTimestamp(Int32 pos, Int32 scale)
     throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "scale {} is not supported, only support scale <= 3", scale);
 }
 
-Array BinaryRow::getArray(Int32 )
+Array BinaryRow::getArray(Int32)
 {
     throw Exception();
 }
 
-Map BinaryRow::getMap(Int32 )
+Map BinaryRow::getMap(Int32)
 {
     throw Exception();
 }

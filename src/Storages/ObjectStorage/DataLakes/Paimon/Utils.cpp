@@ -1,54 +1,52 @@
 #include <ctime>
+#include <ranges>
 #include <utility>
 #include <vector>
-#include <ranges>
-#include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/Types.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonTableSchema.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonTableSchema.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/Types.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <Poco/Logger.h>
-#include "Common/Exception.h"
-#include "Common/logger_useful.h"
-#include "Common/typeid_cast.h"
-#include "Core/Field.h"
-#include "DataTypes/DataTypeNullable.h"
-#include "DataTypes/DataTypesDecimal.h"
-#include "Interpreters/Context_fwd.h"
-#include "base/Decimal_fwd.h"
-#include "base/types.h"
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
+#include <Core/Field.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <Interpreters/Context_fwd.h>
+#include <base/Decimal_fwd.h>
+#include <base/types.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
+extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
 }
 }
 namespace Paimon
 {
 
-const std::bitset<128> PathEscape::CHAR_TO_ESCAPE = []() {
+const std::bitset<128> PathEscape::CHAR_TO_ESCAPE = []()
+{
     std::bitset<128> bitset;
-    
-    for (unsigned char c = 0; c < ' '; ++c) {
+
+    for (unsigned char c = 0; c < ' '; ++c)
+    {
         bitset.set(c);
     }
-    
-    const unsigned char clist[] = {
-        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-        0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
-        0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
-        0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 
-        '"', '#', '%', '\'', '*', '/', ':', '=', '?', '\\', 
-        0x7F, '{', '}', '[', ']', '^'
-    };
-    
-    for (unsigned char c : clist) {
+
+    const unsigned char clist[] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
+                                   0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, '"',
+                                   '#',  '%',  '\'', '*',  '/',  ':',  '=',  '?',  '\\', 0x7F, '{',  '}',  '[',  ']',  '^'};
+
+    for (unsigned char c : clist)
+    {
         bitset.set(c);
     }
-    
+
     return bitset;
 }();
 
@@ -70,7 +68,7 @@ static String formatFloat(const Float64 x)
     if (!result)
         throw Exception(ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER, "Cannot print float or double number");
 
-    return { buffer, buffer + builder.position() };
+    return {buffer, buffer + builder.position()};
 }
 
 static String formatFloat(const Float32 x)
@@ -83,7 +81,7 @@ static String formatFloat(const Float32 x)
     if (!result)
         throw Exception(ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER, "Cannot print float or double number");
 
-    return { buffer, buffer + builder.position() };
+    return {buffer, buffer + builder.position()};
 }
 
 template <typename T>
@@ -100,7 +98,7 @@ String formatDateTime(const DateTime64 & x, UInt32 scale, const DateLUTImpl & ti
     writeDateTimeText<'-', ':', 'T', '.', true>(x, scale, wb, time_zone);
     auto res = wb.str();
     if (res.ends_with(":00"))
-        res = res.substr(0, res.length()-3);
+        res = res.substr(0, res.length() - 3);
     return res;
 }
 
@@ -114,26 +112,33 @@ String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema
             return partition_default_name;
         }
 
-        switch (data_type.root_type) 
+        switch (data_type.root_type)
         {
             case RootDataType::CHAR:
             case RootDataType::VARCHAR:
                 return partition.getString(i);
-            case RootDataType::BOOLEAN:
-            {
+            case RootDataType::BOOLEAN: {
                 return partition.getBoolean(i) ? "true" : "false";
             }
-            case RootDataType::DECIMAL:
-            {
-                if (const auto * decimal_type = typeid_cast<const DataTypeDecimal32 *>(removeNullable(data_type.clickhouse_data_type).get()))
-                    return formatDecimal(partition.getDecimal<Int32>(i, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
-                if (const auto * decimal_type = typeid_cast<const DataTypeDecimal64 *>(removeNullable(data_type.clickhouse_data_type).get()))
-                    return formatDecimal(partition.getDecimal<Int64>(i, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
-                if (const auto * decimal_type = typeid_cast<const DataTypeDecimal128 *>(removeNullable(data_type.clickhouse_data_type).get()))
-                    return formatDecimal(partition.getDecimal<Int128>(i, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
-                if (const auto * decimal_type = typeid_cast<const DataTypeDecimal256 *>(removeNullable(data_type.clickhouse_data_type).get()))
-                    return formatDecimal(partition.getDecimal<Int256>(i, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
-                else throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type {}", data_type.clickhouse_data_type->getName());
+            case RootDataType::DECIMAL: {
+                if (const auto * decimal_type
+                    = typeid_cast<const DataTypeDecimal32 *>(removeNullable(data_type.clickhouse_data_type).get()))
+                    return formatDecimal(
+                        partition.getDecimal<Int32>(i, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
+                if (const auto * decimal_type
+                    = typeid_cast<const DataTypeDecimal64 *>(removeNullable(data_type.clickhouse_data_type).get()))
+                    return formatDecimal(
+                        partition.getDecimal<Int64>(i, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
+                if (const auto * decimal_type
+                    = typeid_cast<const DataTypeDecimal128 *>(removeNullable(data_type.clickhouse_data_type).get()))
+                    return formatDecimal(
+                        partition.getDecimal<Int128>(i, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
+                if (const auto * decimal_type
+                    = typeid_cast<const DataTypeDecimal256 *>(removeNullable(data_type.clickhouse_data_type).get()))
+                    return formatDecimal(
+                        partition.getDecimal<Int256>(i, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type {}", data_type.clickhouse_data_type->getName());
             }
             case RootDataType::TINYINT:
                 return formatQuoted(partition.getByte(i));
@@ -150,10 +155,10 @@ String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema
             case RootDataType::DOUBLE:
                 return formatFloat(partition.getDouble(i));
             case RootDataType::TIMESTAMP_WITHOUT_TIME_ZONE:
-            case RootDataType::TIMESTAMP_WITH_LOCAL_TIME_ZONE:
-            {
-                const auto * type = typeid_cast<const DataTypeDateTime64 * >(removeNullable(data_type.clickhouse_data_type).get());
-                LOG_DEBUG(&Poco::Logger::get("getPartitionString"), "getPrecision: {}, getScale: {}", type->getPrecision(), type->getScale());
+            case RootDataType::TIMESTAMP_WITH_LOCAL_TIME_ZONE: {
+                const auto * type = typeid_cast<const DataTypeDateTime64 *>(removeNullable(data_type.clickhouse_data_type).get());
+                LOG_DEBUG(
+                    &Poco::Logger::get("getPartitionString"), "getPrecision: {}, getScale: {}", type->getPrecision(), type->getScale());
                 return formatDateTime(partition.getTimestamp(i, type->getScale()), 3, type->getTimeZone());
             }
             default:
@@ -168,7 +173,11 @@ String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema
         auto it = table_schema.fields_by_name_indexes.find(table_schema.partition_keys[i]);
         if (it == table_schema.fields_by_name_indexes.end() || it->second >= table_schema.fields.size())
         {
-            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "{} is not found in table schema fields: [{}]", table_schema.partition_keys[i], fmt::join(table_schema.fields_by_name_indexes, ","));
+            throw DB::Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "{} is not found in table schema fields: [{}]",
+                table_schema.partition_keys[i],
+                fmt::join(table_schema.fields_by_name_indexes, ","));
         }
         auto field = table_schema.fields[it->second];
         auto field_value = get_partition_value(static_cast<Int32>(i), field.type);
