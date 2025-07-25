@@ -52,9 +52,14 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"azure_request_timeout_ms", 30000, 30000, "New setting"},
             {"azure_connect_timeout_ms", 1000, 1000, "New setting"},
             {"azure_sdk_use_native_client", false, true, "New setting"},
+            {"distributed_cache_connect_backoff_min_ms", 0, 0, "New setting"},
+            {"distributed_cache_connect_backoff_max_ms", 50, 50, "New setting"},
+            {"distributed_cache_read_request_max_tries", 20, 10, "Changed setting value"},
+            {"distributed_cache_connect_max_tries", 20, 5, "Changed setting value"},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
             {"parallel_replicas_support_projection", false, true, "New setting. Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive."},
             {"vector_search_with_rescoring", true, true, "New setting."},
+            {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
