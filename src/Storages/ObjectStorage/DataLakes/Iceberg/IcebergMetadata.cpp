@@ -476,11 +476,11 @@ void IcebergMetadata::createInitial(
         if (if_not_exists)
             return;
         else
-            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Iceberg table with path {} already exists", configuration_ptr->getPath());
+            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Iceberg table with path {} already exists", configuration_ptr->getPathForRead().path);
     }
 
-    auto metadata_content = createEmptyMetadataFile(configuration_ptr->getPath(), *columns, partition_by, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
-    auto filename = configuration_ptr->getPath() + "metadata/v1.metadata.json";
+    auto metadata_content = createEmptyMetadataFile(configuration_ptr->getPathForRead().path, *columns, partition_by, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
+    auto filename = configuration_ptr->getPathForRead().path + "metadata/v1.metadata.json";
     auto buffer_metadata = object_storage->writeObject(
         StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, local_context->getWriteSettings());
     buffer_metadata->write(metadata_content.data(), metadata_content.size());
