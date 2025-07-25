@@ -1,3 +1,4 @@
+import time
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import wait_condition
@@ -52,8 +53,18 @@ def test_disk_readonly_status(started_cluster):
         node = cluster.instances["test_disk_checker"]
         disk_path = "/var/lib/clickhouse/path1"
 
-        # make disk readonly
-        node.exec_in_container(["chmod", "555", disk_path])
+        # a hack to make disk readonly
+        node.exec_in_container(["mount", "--bind", disk_path, disk_path])
+        # need to retry making the dir readonly because periodic task creates temporary files there to check for write access
+        mount_read_only_succeded = False
+        for retry in range(10):
+            try:
+                node.exec_in_container(["mount", "-o", "remount,ro,bind", disk_path])
+                mount_read_only_succeded = True
+                break;
+            except Exception as err:
+                time.sleep(0.42);
+        assert mount_read_only_succeded;
 
         # assert for metric with retries
         wait_condition(
@@ -64,7 +75,7 @@ def test_disk_readonly_status(started_cluster):
         )
 
         # restore the disk to writable state
-        node.exec_in_container(["chmod", "755", disk_path])
+        node.exec_in_container(["mount", "-o", "remount,rw,bind", disk_path])
 
         # again assert for metric with retries
         wait_condition(
@@ -75,7 +86,7 @@ def test_disk_readonly_status(started_cluster):
         )
     finally:
         try:
-            node.exec_in_container(["chmod", "755", disk_path])
+            node.exec_in_container(["umount", disk_path])
         except:
             pass
 
