@@ -2457,19 +2457,14 @@ message JoinClause {
     repeated JoinClauseCore clauses = 2;
 }
 
-enum FileCompression {
-    COMPgz = 1;
-    COMPbr = 2;
-    COMPxz = 3;
-    COMPzst = 4;
-    COMPlz4 = 5;
-    COMPbz2 = 6;
-}
-
 message FileFunc {
     enum FName {
         file = 1;
-        fileCluster = 2;
+        deltalakeLocal = 2;
+        icebergLocal = 3;
+        fileCluster = 4;
+        deltalakeLocalCluster = 5;
+        icebergLocalCluster = 6;
     }
     required FName fname = 1;
     optional Cluster cluster = 2;
@@ -2477,9 +2472,10 @@ message FileFunc {
     oneof file_func_oneof {
         InFormat informat = 4;
         OutFormat outformat = 5;
+        InOutFormat inoutformat = 6;
     }
-    optional Expr structure = 6;
-    optional FileCompression fcomp = 7;
+    optional Expr structure = 7;
+    optional string fcomp = 8;
 }
 
 message FormatFunc {
@@ -2519,6 +2515,7 @@ message RemoteFunc {
     required TableOrFunction tof = 3;
     optional string user = 4;
     optional string password = 5;
+    optional string sharding_key = 6;
 }
 
 message MySQLFunc {
@@ -2545,9 +2542,13 @@ message SQLiteFunc {
 
 message S3Func {
     enum FName {
-        s3 = 1;
-        gcs = 2;
-        s3Cluster = 3;
+        gcs = 1;
+        s3 = 2;
+        deltalakeS3 = 3;
+        icebergS3 = 4;
+        s3Cluster = 5;
+        deltalakeS3Cluster = 6;
+        icebergS3Cluster = 7;
     }
     required FName fname = 1;
     optional Cluster cluster = 2;
@@ -2562,7 +2563,11 @@ message S3Func {
 message AzureBlobStorageFunc {
     enum FName {
         azureBlobStorage = 1;
-        azureBlobStorageCluster = 2;
+        deltalakeAzure = 2;
+        icebergAzure = 3;
+        deltalakeAzureCluster = 4;
+        azureBlobStorageCluster = 5;
+        icebergAzureCluster = 6;
     }
     required FName fname = 1;
     optional Cluster cluster = 2;
@@ -2626,26 +2631,6 @@ message KeyValuePair {
     required string value = 2;
 }
 
-message DataLakeFunc {
-    enum FName {
-        deltalakeS3 = 1;
-        deltalakeAzure = 2;
-        deltalakeLocal = 3;
-        icebergS3 = 4;
-        icebergAzure = 5;
-        icebergLocal = 6;
-        deltalakeS3Cluster = 7;
-        deltalakeAzureCluster = 8;
-        deltalakeLocalCluster = 9;
-        icebergS3Cluster = 10;
-        icebergAzureCluster = 11;
-        icebergLocalCluster = 12;
-    }
-    required FName fname = 1;
-    optional Cluster cluster = 2;
-    repeated string params = 3;
-}
-
 message ValuesStatement {
     required ExprList expr_list = 1;
     repeated ExprList extra_expr_lists = 2;
@@ -2671,7 +2656,6 @@ message TableFunction {
         ExprSchemaTable dictionary = 16;
         AzureBlobStorageFunc azure = 17;
         URLFunc url = 18;
-        DataLakeFunc data = 19;
     }
 }
 
@@ -3346,7 +3330,7 @@ message Drop {
 
 message InsertFromFile {
     required string path = 1;
-    optional FileCompression fcomp = 2;
+    optional string fcomp = 2;
     required InFormat format = 3;
 }
 
@@ -3433,7 +3417,7 @@ message SelectIntoFile {
     required string path = 1;
     optional bool tstdout = 2;
     optional SelectIntoFileStep step = 3;
-    optional FileCompression compression = 4;
+    optional string compression = 4;
     optional uint32 level = 5;
 }
 

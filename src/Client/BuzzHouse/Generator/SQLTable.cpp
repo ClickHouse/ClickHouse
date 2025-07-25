@@ -951,31 +951,15 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && b.isFileEngine())
     {
-        const uint32_t noption = rg.nextSmallNumber();
-        TableEngineParam * tep = te->add_params();
+        const std::filesystem::path & fname = fc.server_file_path / ("/datafile" + std::to_string(b.tname));
 
-        if (noption < 9)
-        {
-            tep->set_in_out(static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1));
-        }
-        else if (noption == 9)
-        {
-            tep->set_in(static_cast<InFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InFormat_MAX)) + 1));
-        }
-        else
-        {
-            tep->set_out(static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1));
-        }
+        b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
+        te->add_params()->set_in_out(b.file_format.value());
+        te->add_params()->set_svalue(fname.generic_string());
         if (rg.nextBool())
         {
-            te->add_params()->set_svalue("datafile" + std::to_string(b.tname));
-            if (rg.nextBool())
-            {
-                static const DB::Strings & fileCompress = {"auto", "none", "gzip", "deflate", "br", "xz", "zstd", "lz4", "bz2", "snappy"};
-
-                b.file_comp = rg.pickRandomly(fileCompress);
-                te->add_params()->set_svalue(b.file_comp);
-            }
+            b.file_comp = rg.pickRandomly(fileCompress);
+            te->add_params()->set_svalue(b.file_comp);
         }
     }
     else if (te->has_engine() && b.isJoinEngine())
@@ -1236,7 +1220,7 @@ void StatementGenerator::generateEngineDetails(
         }
         else
         {
-            const std::filesystem::path & fname = fc.server_file_path / ("/datalakefile" + std::to_string(b.tname));
+            const std::filesystem::path & fname = fc.server_file_path / ("/datalakefile" + std::to_string(b.tname) + "/");
             te->add_params()->set_svalue(fname.generic_string());
         }
         /// Set path, but ignore it for now

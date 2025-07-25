@@ -112,6 +112,7 @@ class StatementGenerator
 {
 public:
     static const std::unordered_map<OutFormat, InFormat> outIn;
+    static const DB::Strings fileCompress;
 
     FuzzConfig & fc;
     uint64_t next_type_mask = std::numeric_limits<uint64_t>::max();

@@ -52,6 +52,8 @@ const std::unordered_map<OutFormat, InFormat> StatementGenerator::outIn
        {OutFormat::OUT_TSKV, InFormat::IN_TSKV},
        {OutFormat::OUT_Values, InFormat::IN_Values}};
 
+const DB::Strings StatementGenerator::fileCompress = {"auto", "none", "gzip", "deflate", "br", "xz", "zstd", "lz4", "bz2", "snappy"};
+
 StatementGenerator::StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool scf, const bool rs)
     : fc(fuzzc)
     , next_type_mask(fc.type_mask)

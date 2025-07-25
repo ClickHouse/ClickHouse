@@ -276,7 +276,7 @@ void QueryOracle::generateExportQuery(
     ff->set_outformat(outf);
     if (rg.nextSmallNumber() < 4)
     {
-        ff->set_fcomp(static_cast<FileCompression>((rg.nextRandomUInt32() % static_cast<uint32_t>(FileCompression_MAX)) + 1));
+        ff->set_fcomp(rg.pickRandomly(gen.fileCompress));
     }
     if (rg.nextSmallNumber() < 10)
     {

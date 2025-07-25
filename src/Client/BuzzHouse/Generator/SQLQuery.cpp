@@ -257,30 +257,40 @@ void StatementGenerator::setTableRemote(
         sfunc->set_rdatabase(connections.getSQLitePath().generic_string());
         sfunc->set_rtable("t" + std::to_string(t.tname));
     }
-    else if (table_engine && (t.isAnyS3Engine() || t.isURLEngine() || t.isAnyAzureEngine()) && rg.nextSmallNumber() < 7)
+    else if (
+        table_engine
+        && (t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine() || t.isAnyS3Engine() || t.isAnyAzureEngine() || t.isFileEngine()
+            || t.isURLEngine())
+        && rg.nextSmallNumber() < 7)
     {
         String buf;
         bool first = true;
         Expr * structure = nullptr;
         const std::optional<String> & cluster = t.getCluster();
 
-        if (t.isAnyS3Engine())
+        if (t.isIcebergS3Engine() || t.isDeltaLakeS3Engine() || t.isAnyS3Engine())
         {
+            String glob;
             S3Func * sfunc = tfunc->mutable_s3();
             const ServerCredentials & sc = fc.minio_server.value();
+            S3Func_FName val = t.isAnyS3Engine()
+                ? S3Func_FName::S3Func_FName_s3
+                : (t.isIcebergS3Engine() ? S3Func_FName::S3Func_FName_icebergS3 : S3Func_FName::S3Func_FName_deltalakeS3);
 
             if (use_cluster && cluster.has_value())
             {
-                sfunc->set_fname(S3Func_FName::S3Func_FName_s3Cluster);
+                sfunc->set_fname(static_cast<S3Func_FName>(static_cast<uint32_t>(val) + 3));
                 sfunc->mutable_cluster()->set_cluster(cluster.value());
             }
             else
             {
-                sfunc->set_fname(rg.nextBool() ? S3Func_FName::S3Func_FName_s3 : S3Func_FName::S3Func_FName_gcs);
+                sfunc->set_fname((val == S3Func_FName::S3Func_FName_s3 && rg.nextBool()) ? S3Func_FName::S3Func_FName_gcs : val);
             }
+            glob += t.isS3Engine() ? "" : "/";
+            glob += (!t.isS3Engine() && rg.nextBool()) ? "*" : "";
+
             sfunc->set_resource(
-                "http://" + sc.server_hostname + ":" + std::to_string(sc.port) + sc.database + "/file" + std::to_string(t.tname)
-                + (t.isS3QueueEngine() ? "/" : "") + (rg.nextBool() ? "*" : ""));
+                "http://" + sc.server_hostname + ":" + std::to_string(sc.port) + sc.database + "/file" + std::to_string(t.tname) + glob);
             sfunc->set_user(sc.user);
             sfunc->set_password(sc.password);
             if (t.file_format.has_value())
@@ -291,6 +301,76 @@ void StatementGenerator::setTableRemote(
             if (!t.file_comp.empty())
             {
                 sfunc->set_fcomp(t.file_comp);
+            }
+        }
+        else if (t.isIcebergAzureEngine() || t.isDeltaLakeAzureEngine() || t.isAnyAzureEngine())
+        {
+            String glob;
+            AzureBlobStorageFunc * afunc = tfunc->mutable_azure();
+            const ServerCredentials & sc = fc.azurite_server.value();
+            AzureBlobStorageFunc_FName val = t.isAnyS3Engine()
+                ? AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_azureBlobStorage
+                : (t.isIcebergS3Engine() ? AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_icebergAzure
+                                         : AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_deltalakeAzure);
+
+            if (use_cluster && cluster.has_value())
+            {
+                afunc->set_fname(static_cast<AzureBlobStorageFunc_FName>(static_cast<uint32_t>(val) + 3));
+                afunc->mutable_cluster()->set_cluster(cluster.value());
+            }
+            else
+            {
+                afunc->set_fname(val);
+            }
+            glob += t.isAzureEngine() ? "" : "/";
+            glob += (!t.isAzureEngine() && rg.nextBool()) ? "*" : "";
+
+            afunc->set_connection_string(sc.server_hostname);
+            afunc->set_container(sc.container);
+            afunc->set_blobpath("file" + std::to_string(t.tname) + glob);
+            afunc->set_user(sc.user);
+            afunc->set_password(sc.password);
+            if (t.file_format.has_value())
+            {
+                afunc->set_format(t.file_format.value());
+            }
+            structure = afunc->mutable_structure();
+            if (!t.file_comp.empty())
+            {
+                afunc->set_fcomp(t.file_comp);
+            }
+        }
+        else if (t.isIcebergLocalEngine() || t.isDeltaLakeLocalEngine() || t.isFileEngine())
+        {
+            String glob;
+            FileFunc * ffunc = tfunc->mutable_file();
+            const std::filesystem::path & fname
+                = fc.server_file_path / ((t.isFileEngine() ? "/datafile" : "/datalakefile") + std::to_string(t.tname));
+            FileFunc_FName val = t.isAnyS3Engine()
+                ? FileFunc_FName::FileFunc_FName_file
+                : (t.isIcebergS3Engine() ? FileFunc_FName::FileFunc_FName_icebergLocal : FileFunc_FName::FileFunc_FName_deltalakeLocal);
+
+            if (use_cluster && cluster.has_value())
+            {
+                ffunc->set_fname(static_cast<FileFunc_FName>(static_cast<uint32_t>(val) + 3));
+                ffunc->mutable_cluster()->set_cluster(cluster.value());
+            }
+            else
+            {
+                ffunc->set_fname(val);
+            }
+            glob += t.isFileEngine() ? "" : "/";
+            glob += (!t.isFileEngine() && rg.nextBool()) ? "*" : "";
+
+            ffunc->set_path(fname.generic_string() + glob);
+            if (t.file_format.has_value())
+            {
+                ffunc->set_inoutformat(t.file_format.value());
+            }
+            structure = ffunc->mutable_structure();
+            if (!t.file_comp.empty())
+            {
+                ffunc->set_fcomp(t.file_comp);
             }
         }
         else if (t.isURLEngine())
@@ -316,32 +396,7 @@ void StatementGenerator::setTableRemote(
         }
         else
         {
-            AzureBlobStorageFunc * afunc = tfunc->mutable_azure();
-            const ServerCredentials & sc = fc.azurite_server.value();
-
-            if (use_cluster && cluster.has_value())
-            {
-                afunc->set_fname(AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_azureBlobStorageCluster);
-                afunc->mutable_cluster()->set_cluster(cluster.value());
-            }
-            else
-            {
-                afunc->set_fname(AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_azureBlobStorage);
-            }
-            afunc->set_connection_string(sc.server_hostname);
-            afunc->set_container(sc.container);
-            afunc->set_blobpath("file" + std::to_string(t.tname));
-            afunc->set_user(sc.user);
-            afunc->set_password(sc.password);
-            if (t.file_format.has_value())
-            {
-                afunc->set_format(t.file_format.value());
-            }
-            structure = afunc->mutable_structure();
-            if (!t.file_comp.empty())
-            {
-                afunc->set_fcomp(t.file_comp);
-            }
+            chassert(0);
         }
         flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
         std::shuffle(this->remote_entries.begin(), this->remote_entries.end(), rg.generator);
@@ -372,6 +427,11 @@ void StatementGenerator::setTableRemote(
             rfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
             rfunc->set_user(sc.user);
             rfunc->set_password(sc.password);
+            if (rg.nextSmallNumber() < 4)
+            {
+                /// Optional sharding key
+                rfunc->set_sharding_key(std::to_string(rg.randomInt<uint32_t>(0, 2)));
+            }
         }
         else
         {
@@ -573,6 +633,7 @@ bool StatementGenerator::joinedTableOrFunction(
     else if (remote_udf && nopt < (derived_table + cte + table + view + remote_udf + 1))
     {
         RemoteFunc * rfunc = tof->mutable_tfunc()->mutable_remote();
+        TableOrFunction * rtof = rfunc->mutable_tof();
         const uint32_t remote_table = 10 * static_cast<uint32_t>(has_table);
         const uint32_t remote_view = 5 * static_cast<uint32_t>(has_view);
         const uint32_t remote_dictionary = 5 * static_cast<uint32_t>(has_dictionary);
@@ -588,34 +649,38 @@ bool StatementGenerator::joinedTableOrFunction(
         {
             t = &rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda)).get();
 
-            t->setName(rfunc->mutable_tof()->mutable_est(), true);
+            t->setName(rtof->mutable_est(), true);
             addTableRelation(rg, true, rel_name, *t);
         }
         else if (remote_view && nopt2 < (remote_table + remote_view + 1))
         {
             v = &rg.pickRandomly(filterCollection<SQLView>(has_view_lambda)).get();
 
-            v->setName(rfunc->mutable_tof()->mutable_est(), true);
+            v->setName(rtof->mutable_est(), true);
             addViewRelation(rel_name, *v);
         }
         else if (remote_dictionary && nopt2 < (remote_table + remote_view + remote_dictionary + 1))
         {
             const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(has_dictionary_lambda)).get();
 
-            d.setName(rfunc->mutable_tof()->mutable_est(), true);
+            d.setName(rtof->mutable_est(), true);
             addDictionaryRelation(rel_name, d);
         }
         else if (recurse && nopt2 < (remote_table + remote_view + remote_dictionary + recurse + 1))
         {
             /// Here don't care about the returned result
             this->depth++;
-            const auto u = joinedTableOrFunction(rg, rel_name, allowed_clauses, true, rfunc->mutable_tof());
+            const auto u = joinedTableOrFunction(rg, rel_name, allowed_clauses, true, rtof);
             UNUSED(u);
             this->depth--;
         }
         else
         {
             chassert(0);
+        }
+        if (rtof->has_est() && rg.nextSmallNumber() < 4)
+        {
+            rfunc->set_sharding_key(std::to_string(rg.randomInt<uint32_t>(0, 2)));
         }
     }
     else if (generate_series_udf && nopt < (derived_table + cte + table + view + remote_udf + generate_series_udf + 1))
@@ -821,7 +886,7 @@ bool StatementGenerator::joinedTableOrFunction(
         {
             chassert(0);
         }
-        if (ctof->has_est() && rg.nextBool())
+        if (ctof->has_est() && rg.nextSmallNumber() < 4)
         {
             cdf->set_sharding_key(
                 this->remote_entries.empty() ? ("c" + std::to_string(rg.randomInt<uint32_t>(0, fc.max_columns - 1)))
@@ -2159,7 +2224,7 @@ void StatementGenerator::generateTopSelect(
         }
         if (rg.nextSmallNumber() < 4)
         {
-            sif->set_compression(static_cast<FileCompression>((rg.nextRandomUInt32() % static_cast<uint32_t>(FileCompression_MAX)) + 1));
+            sif->set_compression(rg.pickRandomly(fileCompress));
         }
         if (rg.nextSmallNumber() < 4)
         {

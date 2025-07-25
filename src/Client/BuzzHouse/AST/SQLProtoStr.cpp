@@ -1830,6 +1830,10 @@ CONV_FN(FileFunc, ff)
     {
         ret += OutFormat_Name(ff.outformat()).substr(4);
     }
+    else if (ff.has_inoutformat())
+    {
+        ret += InOutFormat_Name(ff.inoutformat()).substr(6);
+    }
     else
     {
         ret += "CSV";
@@ -1843,7 +1847,7 @@ CONV_FN(FileFunc, ff)
     if (ff.has_fcomp())
     {
         ret += ", '";
-        ret += FileCompression_Name(ff.fcomp()).substr(4);
+        ret += ff.fcomp();
         ret += "'";
     }
     ret += ")";
@@ -1949,6 +1953,12 @@ CONV_FN(RemoteFunc, rfunc)
         {
             ret += ", '";
             ret += rfunc.password();
+            ret += "'";
+        }
+        if (rfunc.has_sharding_key())
+        {
+            ret += ", '";
+            ret += rfunc.sharding_key();
             ret += "'";
         }
     }
@@ -2221,28 +2231,6 @@ CONV_FN(KeyValuePair, kvp)
     ret += "'";
 }
 
-CONV_FN(DataLakeFunc, dfunc)
-{
-    ret += DataLakeFunc_FName_Name(dfunc.fname());
-    ret += "(";
-    if (dfunc.has_cluster() && dfunc.fname() >= DataLakeFunc_FName_deltalakeS3Cluster)
-    {
-        ClusterToString(ret, false, dfunc.cluster());
-        ret += ", ";
-    }
-    for (int i = 0; i < dfunc.params_size(); i++)
-    {
-        if (i != 0)
-        {
-            ret += ", ";
-        }
-        ret += "'";
-        ret += dfunc.params(i);
-        ret += "'";
-    }
-    ret += ")";
-}
-
 static void ValuesStatementToString(String & ret, const bool tudf, const ValuesStatement & values)
 {
     ret += "VALUES ";
@@ -2321,9 +2309,6 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kUrl:
             URLFuncToString(ret, tf.url());
-            break;
-        case TableFunctionType::kData:
-            DataLakeFuncToString(ret, tf.data());
             break;
         default:
             ret += "numbers(10)";
@@ -3454,7 +3439,7 @@ CONV_FN(Insert, insert)
         if (insert_file.has_fcomp())
         {
             ret += " COMPRESSION '";
-            ret += FileCompression_Name(insert_file.fcomp()).substr(4);
+            ret += insert_file.fcomp();
             ret += "'";
         }
         if (insert.has_setting_values())
@@ -4504,7 +4489,7 @@ CONV_FN(SelectIntoFile, intofile)
     if (intofile.has_compression())
     {
         ret += " COMPRESSION '";
-        ret += FileCompression_Name(intofile.compression()).substr(4);
+        ret += intofile.compression();
         ret += "'";
         if (intofile.has_level())
         {
