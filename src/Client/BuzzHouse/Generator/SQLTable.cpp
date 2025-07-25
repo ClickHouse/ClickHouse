@@ -1223,7 +1223,7 @@ void StatementGenerator::generateEngineDetails(
         }
         else
         {
-            const std::filesystem::path & fname = fc.server_file_path / ("/file" + std::to_string(b.tname));
+            const std::filesystem::path & fname = fc.server_file_path / ("/datalakefile" + std::to_string(b.tname));
             te->add_params()->set_svalue(fname.generic_string());
         }
         /// Set path, but ignore it for now
@@ -1293,15 +1293,6 @@ void StatementGenerator::generateEngineDetails(
 
             sv->set_property("mode");
             sv->set_value(fmt::format("'{}ordered'", rg.nextBool() ? "un" : ""));
-        }
-        if (b.isAnyIcebergEngine())
-        {
-            /// The iceberg_format_version setting is mandatory?
-            svs = svs ? svs : te->mutable_setting_values();
-            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-
-            sv->set_property("iceberg_format_version");
-            sv->set_value(rg.nextBool() ? "1" : "2");
         }
         if (b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TShared
             && (!fc.storage_policies.empty() || !fc.keeper_disks.empty())
