@@ -303,7 +303,7 @@ public:
                     .size_in_file = initial_file_size + write_buffer.count() - current_position});
         }
 
-        chassert(!last_index_written || *last_index_written == record.header.index - 1);
+        chassert(!last_index_written || *last_index_written >= record.header.index || *last_index_written == record.header.index - 1);
         last_index_written = record.header.index;
 
         return true;
