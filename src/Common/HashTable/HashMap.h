@@ -256,8 +256,8 @@ public:
     template <typename Func>
     void forEachValue(Func && func)
     {
-        for (auto & v : *this)
-            func(v.getKey(), v.getMapped());
+        for (auto it = this->begin(true), end = this->end(); it != end; ++it)
+            func(it->getKey(), it->getMapped());
     }
 
     /// Call func(Mapped &) for each hash map element.

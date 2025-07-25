@@ -138,3 +138,22 @@ inline void ALWAYS_INLINE keyHolderDiscardKey(DB::SerializedKeyHolder & holder)
     holder.key = std::string_view();
 }
 
+void KeyPrefetch(const StringRef & key);
+{
+    constexpr size_t CACHE_LINE_SIZE = 64;
+    constexpr size_t MAX_PREFETCH = 256; // 最多预取 256 字节
+    size_t n = key.size < MAX_PREFETCH ? key.size : MAX_PREFETCH;
+    const char * ptr = key.data;
+    const char * end = ptr + n;
+    for (; ptr < end; ptr += CACHE_LINE_SIZE)
+    {
+        __builtin_prefetch(ptr);
+    }
+}
+
+template <typename CellType>
+concept CouldPrefetchKey = requires(CellType * cell)
+{
+    { KeyPrefetch(cell->getKey()) };
+}; 
+

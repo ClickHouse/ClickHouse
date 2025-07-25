@@ -21,6 +21,8 @@
 
 #include <Common/HashTable/HashTableAllocator.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
+#include <Common/HashTable/Prefetching.h>
+
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
     #include <iostream>
@@ -402,7 +404,6 @@ struct ZeroValueStorage<false, Cell>
     const Cell * zeroValue() const { return nullptr; }
 };
 
-
 // The HashTable
 template <typename Key, typename Cell, typename Hash, typename Grower, typename Allocator>
 class HashTable : private boost::noncopyable,
@@ -617,7 +618,6 @@ protected:
         }
     }
 
-
     template <typename Derived, bool is_const>
     class iterator_base /// NOLINT
     {
@@ -626,31 +626,91 @@ protected:
 
         Container * container;
         cell_type * ptr;
+        cell_type * next_ptr = nullptr;
+        cell_type * buf_end = nullptr;
+        DB::PrefetchingHelper prefetching;
+
 
         friend class HashTable;
 
+        struct RingBuffer
+        {
+            static constexpr size_t CAPACITY = 256;
+            cell_type * buf[CAPACITY];
+            size_t head;
+            size_t tail;
+            size_t count = 0;
+
+            RingBuffer() : head(0), tail(0), count(0) {}
+
+            size_t size() const { return count; }
+
+            size_t capacity() const { return CAPACITY; }
+        
+            inline void push(cell_type * cell)
+            {
+                if (count < CAPACITY)
+                {
+                    buf[tail] = cell;
+                    tail = (tail + 1) % CAPACITY;
+                    ++count;
+                }
+                else
+                {
+                    buf[head] = cell;
+                    head = (head + 1) % CAPACITY;
+                }
+            }
+
+            inline cell_type * front() const { return buf[head]; }
+
+            inline void pop()
+            {
+                head = (head + 1) % CAPACITY;
+                --count;
+            }
+        };
+
+        bool prefetch = false;
+        RingBuffer prefetch_buffer; /// Buffer for prefetching next elements.
+        size_t prefetch_ahead = 2;
+        size_t iter_count = 0;
+
     public:
         iterator_base() {} /// NOLINT
-        iterator_base(Container * container_, cell_type * ptr_) : container(container_), ptr(ptr_) {}
+        iterator_base(Container * container_, cell_type * ptr_, bool prefetch_ = false) : container(container_), ptr(ptr_), prefetch(prefetch_) {
+            buf_end = container->buf + container->grower.bufSize();
+        }
 
         bool operator== (const iterator_base & rhs) const { return ptr == rhs.ptr; }
         bool operator!= (const iterator_base & rhs) const { return ptr != rhs.ptr; }
 
         Derived & operator++()
         {
-            /// If iterator was pointed to ZeroValueStorage, move it to the beginning of the main buffer.
-            if (unlikely(ptr->isZero(*container)))
-                ptr = container->buf;
+            /// Use prefetching to speed up iteration.
+            if (CouldPrefetchKey<cell_type> && prefetch)
+            {
+                if (!next_ptr)
+                    next_ptr = ptr;
+                prepareNext();
+            }
             else
-                ++ptr;
+            {
+                /// If iterator was pointed to ZeroValueStorage, move it to the beginning of the main buffer.
+                if (unlikely(ptr->isZero(*container)))
+                    ptr = container->buf;
+                else
+                    ++ptr;
 
-            /// Skip empty cells in the main buffer.
-            auto * buf_end = container->buf + container->grower.bufSize();
-            while (ptr < buf_end && ptr->isZero(*container))
-                ++ptr;
+                /// Skip empty cells in the main buffer.
+                // auto * buf_end = container->buf + container->grower.bufSize();
+                while (ptr < buf_end && ptr->isZero(*container))
+                    ++ptr;
+            }
 
             return static_cast<Derived &>(*this);
         }
+
 
         auto & operator* () const { return *ptr; }
         auto * operator->() const { return ptr; }
@@ -679,6 +739,53 @@ protected:
           * do this.
           */
         operator Cell * () const { return nullptr; } /// NOLINT
+    private:
+        void prepareNext()
+        {
+            iter_count++;
+            if (prefetch_buffer.size() <  prefetch_ahead && next_ptr < buf_end) [[likely]]
+            {
+                if (iter_count == DB::PrefetchingHelper::iterationsToMeasure()) [[unlikely]]
+                    prefetch_ahead = std::min(prefetch_buffer.capacity(), prefetching.calcPrefetchLookAhead() + 1);
+                
+                auto n = prefetch_ahead - prefetch_buffer.size();
+                cell_type * last_ptr = nullptr;
+                for (size_t i = 0; i < n; ++i)
+                {
+                    if (unlikely(next_ptr->isZero(*container))) [[unlikely]]
+                        next_ptr = container->buf;
+                    else
+                        next_ptr += 1;
+                    while (next_ptr < buf_end && next_ptr->isZero(*container))
+                        ++next_ptr;
+    
+                    if (next_ptr < buf_end) [[likely]]
+                    {
+                        prefetch_buffer.push(next_ptr);
+                        last_ptr = next_ptr;
+                    }
+                    else 
+                        break;
+                }
+                if (last_ptr) [[likely]]
+                {
+                    if constexpr (CouldPrefetchKey<cell_type>)
+                    {
+                        KeyPrefetch(last_ptr->getKey());
+                    }
+                }
+            }
+
+            if (prefetch_buffer.size() > 0) [[likely]]
+            {
+                ptr = prefetch_buffer.front();
+                prefetch_buffer.pop();
+            }
+            else
+            {
+                ptr = buf_end;
+            }
+        }
     };
 
 
@@ -822,7 +929,6 @@ public:
         bool is_initialized = false;
     };
 
-
     class iterator : public iterator_base<iterator, false> /// NOLINT
     {
     public:
@@ -836,38 +942,38 @@ public:
     };
 
 
-    const_iterator begin() const
+    const_iterator begin(bool prefetch = false) const
     {
         if (!buf)
             return end();
 
         if (this->hasZero())
-            return iteratorToZero();
+            return iteratorToZero(prefetch);
 
         const Cell * ptr = buf;
         auto buf_end = buf + grower.bufSize();
         while (ptr < buf_end && ptr->isZero(*this))
             ++ptr;
 
-        return const_iterator(this, ptr);
+        return const_iterator(this, ptr, prefetch);
     }
 
-    const_iterator cbegin() const { return begin(); }
+    const_iterator cbegin(bool prefetch = false) const { return begin(prefetch); }
 
-    iterator begin()
+    iterator begin(bool prefetch = false)
     {
         if (!buf)
             return end();
 
         if (this->hasZero())
-            return iteratorToZero();
+            return iteratorToZero(prefetch);
 
         Cell * ptr = buf;
         auto * buf_end = buf + grower.bufSize();
         while (ptr < buf_end && ptr->isZero(*this))
             ++ptr;
 
-        return iterator(this, ptr);
+        return iterator(this, ptr, prefetch);
     }
 
     const_iterator end() const
@@ -888,10 +994,10 @@ public:
 
 
 protected:
-    const_iterator iteratorTo(const Cell * ptr) const { return const_iterator(this, ptr); }
-    iterator iteratorTo(Cell * ptr)                   { return iterator(this, ptr); }
-    const_iterator iteratorToZero() const             { return iteratorTo(this->zeroValue()); }
-    iterator iteratorToZero()                         { return iteratorTo(this->zeroValue()); }
+    const_iterator iteratorTo(const Cell * ptr, bool prefetch = false) const { return const_iterator(this, ptr, prefetch); }
+    iterator iteratorTo(Cell * ptr, bool prefetch = false)                   { return iterator(this, ptr, prefetch); }
+    const_iterator iteratorToZero(bool prefetch = false) const             { return iteratorTo(this->zeroValue(), prefetch); }
+    iterator iteratorToZero(bool prefetch = false)                         { return iteratorTo(this->zeroValue(), prefetch); }
 
 
     /// If the key is zero, insert it into a special place and return true.
