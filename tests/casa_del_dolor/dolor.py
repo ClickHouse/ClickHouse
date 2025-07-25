@@ -301,7 +301,8 @@ random.seed(seed)
 logger.info(f"Using seed: {seed}")
 
 # Start the cluster, by using one the server binaries
-server_path = os.path.join(tempfile.gettempdir(), "clickhouse")
+server_path = os.path.join(tempfile.gettempdir(), f"clickhouse{seed}")
+new_temp_server_path = os.path.join(tempfile.gettempdir(), f"clickhousetemp{seed}")
 try:
     os.unlink(server_path)
 except FileNotFoundError:
@@ -421,6 +422,10 @@ def dolor_cleanup():
     except FileNotFoundError:
         pass
     try:
+        os.unlink(new_temp_server_path)
+    except FileNotFoundError:
+        pass
+    try:
         os.unlink(generator.temp.name)
     except FileNotFoundError:
         pass
@@ -515,7 +520,6 @@ while all_running:
             else:
                 current_server = random.choice(args.server_binaries)
             logger.info(f"Using the server binary {current_server} after restart")
-            new_temp_server_path = os.path.join(tempfile.gettempdir(), "clickhousetemp")
             try:
                 os.unlink(new_temp_server_path)
             except FileNotFoundError:

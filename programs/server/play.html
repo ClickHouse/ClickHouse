@@ -707,6 +707,15 @@
             color: var(--misc-text-color);
         }
 
+        /* Prevents a different color when Chromium auto-fills inputs from the list. */
+        input:-webkit-autofill,
+        input:-webkit-autofill:hover,
+        input:-webkit-autofill:focus,
+        input:-webkit-autofill:active
+        {
+            transition: background-color 600000s 0s, color 600000s 0s;
+        }
+
         /* This is for charts (uPlot), Copyright (c) 2022 Leon Sorokin, MIT License, https://github.com/leeoniya/uPlot/ */
         .u-wrap {position: relative;user-select: none;}
         .u-over, .u-under, .u-axis {position: absolute;}
@@ -749,13 +758,13 @@
         </div>
     </div>
     <div id="main">
-        <div id="controls">
+        <form id="controls">
             <div id="inputs">
-                <input spellcheck="false" class="monospace shadow" id="url" type="text" value="http://localhost:8123/" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input spellcheck="false" class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input class="monospace shadow" id="password" type="password" placeholder="password" />
+                <input name="url" spellcheck="false" class="monospace shadow" id="url" type="url" value="" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input name="user" spellcheck="false" class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input name="password" class="monospace shadow" id="password" type="password" placeholder="password" />
             </div>
             <div id="query_div"><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea></div>
             <div id="run_div">
-                <button class="shadow" id="run">Run</button>
+                <button type="submit" class="shadow" id="run">Run</button>
                 <div id="hint">&nbsp;(Ctrl/Cmd+Enter)</div>
                 <div id="hourglass">⧗</div>
                 <div id="check-mark">✔</div>
@@ -763,7 +772,7 @@
                 <div id="stats"></div>
                 <div id="theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></div>
             </div>
-        </div>
+        </form>
         <div id="data_div">
             <table class="monospace shadow" id="data-table"></table>
             <pre class="monospace shadow" id="data-unparsed"></pre>
@@ -804,12 +813,16 @@ let url_elem = document.getElementById('url');
 let user_elem = document.getElementById('user');
 let password_elem = document.getElementById('password');
 
-const server_address = current_url.searchParams.get('url');
-if (server_address) {
-    url_elem.value = server_address;
-} else if (!opened_locally) {
-    /// Substitute the address of the server where the page is served.
-    url_elem.value = location.origin;
+if (url_elem.value == '') {
+    const server_address = current_url.searchParams.get('url');
+    if (server_address) {
+        url_elem.value = server_address;
+    } else if (!opened_locally) {
+        /// Substitute the address of the server where the page is served.
+        url_elem.value = location.origin;
+    } else {
+        url_elem.value = 'http://localhost:8123/';
+    }
 }
 
 /// Substitute username if it's specified in the query string
@@ -1364,19 +1377,27 @@ async function cancel()
     document.getElementById('run').innerText = 'Run';
 }
 
-document.getElementById('run').onclick = function(e)
+document.getElementById('controls').addEventListener('submit', e =>
 {
+    e.preventDefault();
     if (in_flight) {
         cancel();
     } else {
         post();
+
+        const cred = new PasswordCredential({
+            id: user_elem.value,
+            password: password_elem.value,
+            name: url_elem.value,
+        });
+        navigator.credentials.store(cred);
     }
-}
+});
 
 document.addEventListener('keydown', event => {
     /// Firefox has code 13 for Enter and Chromium has code 10.
     if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
-        post();
+        document.getElementById('controls').requestSubmit();
     }
 });
 
