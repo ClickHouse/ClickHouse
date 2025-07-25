@@ -9,7 +9,7 @@ namespace DB
 
 class Context;
 template <typename T>
-class WithStatusReuestsPools;
+class StatusRequestsPools;
 class StorageReplicatedMergeTree;
 
 /** Implements `replicas` system table, which provides information about the status of the replicated tables.
@@ -17,7 +17,7 @@ class StorageReplicatedMergeTree;
 class StorageSystemReplicas final : public IStorage
 {
 public:
-    using TPools = WithStatusReuestsPools<StorageReplicatedMergeTree>;
+    using TPools = StatusRequestsPools<StorageReplicatedMergeTree>;
 
     explicit StorageSystemReplicas(const StorageID & table_id_);
     ~StorageSystemReplicas() override;

@@ -43,10 +43,10 @@ template <IsHolder THolder>
 class StatusRequestsPool;
 
 template <class T>
-class WithStatusReuestsPools final
+class StatusRequestsPools final
 {
 public:
-    explicit WithStatusReuestsPools(const size_t max_threads)
+    explicit StatusRequestsPools(const size_t max_threads)
         : requests_without_zk_fields(max_threads)
         , requests_with_zk_fields(max_threads)
     {
