@@ -5,34 +5,34 @@
 
 #if USE_AVRO
 
-#    include <cstddef>
-#    include <memory>
-#    include <unordered_map>
-#    include <utility>
-#    include <vector>
-#    include <IO/ReadHelpers.h>
-#    include <Storages/ObjectStorage/DataLakes/Paimon/Constant.h>
-#    include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
-#    include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#    include <Common/Exception.h>
-#    include <Common/assert_cast.h>
-#    include <Core/NamesAndTypes.h>
-#    include <Disks/IStoragePolicy.h>
-#    include <IO/WriteHelpers.h>
-#    include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
-#    include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadata.h>
-#    include <Storages/ObjectStorage/IObjectIterator.h>
-#    include <base/defines.h>
+#include <cstddef>
+#include <memory>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+#include <IO/ReadHelpers.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/Constant.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Common/Exception.h>
+#include <Common/assert_cast.h>
+#include <Core/NamesAndTypes.h>
+#include <Disks/IStoragePolicy.h>
+#include <IO/WriteHelpers.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadata.h>
+#include <Storages/ObjectStorage/IObjectIterator.h>
+#include <base/defines.h>
 
-#    include <Columns/ColumnString.h>
-#    include <Columns/ColumnTuple.h>
-#    include <Columns/ColumnsNumber.h>
-#    include <Columns/IColumn.h>
-#    include <DataTypes/DataTypeTuple.h>
-#    include <Formats/FormatFactory.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
-#    include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
-#    include <fmt/format.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/IColumn.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <Formats/FormatFactory.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
+#include <fmt/format.h>
 
 
 namespace DB
