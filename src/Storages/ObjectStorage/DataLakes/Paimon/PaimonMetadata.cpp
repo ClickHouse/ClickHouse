@@ -75,7 +75,7 @@ bool PaimonMetadata::updateState()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot parse paimon table schema");
     }
     checkSupportCofiguration();
-    /// init snapshot, now only support lastest snapshot
+    /// init snapshot, now only support latest snapshot
     auto snapshot_meta_info = table_client_ptr->getLastTableSnapshotInfo();
     if (snapshot.has_value() && snapshot_meta_info.first != snapshot->version)
     {
@@ -103,7 +103,7 @@ void PaimonMetadata::checkSupportCofiguration()
     if (it != table_schema->options.end() 
     && (it->second != "latest" || it->second != "latest-full" || it->second != "default"))
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "mode {} is unsupport.", it->second);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "mode {} is unsupported.", it->second);
     }
 }
 
