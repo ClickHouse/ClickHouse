@@ -44,8 +44,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int FILE_DOESNT_EXIST;
-extern const int ILLEGAL_COLUMN;
-extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 }
 
@@ -141,7 +139,7 @@ std::pair<Int32, String> PaimonTableClient::getLastTableSchemaInfo()
 }
 
 /// schema
-Poco::JSON::Object::Ptr PaimonTableClient::getTableSchemaJson(const std::pair<Int32, String> & schema_meta_info)
+Poco::JSON::Object::Ptr PaimonTableClient::getTableSchemaJSON(const std::pair<Int32, String> & schema_meta_info)
 {
     auto configuration_ptr = configuration.lock();
     const auto [max_schema_version, max_schema_path] = schema_meta_info;
@@ -159,7 +157,7 @@ Poco::JSON::Object::Ptr PaimonTableClient::getTableSchemaJson(const std::pair<In
 
 PaimonTableSchema PaimonTableClient::getTableSchema()
 {
-    auto scheme_json = getTableSchemaJson(getLastTableSchemaInfo());
+    auto scheme_json = getTableSchemaJSON(getLastTableSchemaInfo());
     return PaimonTableSchema(scheme_json);
 }
 

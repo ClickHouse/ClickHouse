@@ -11,6 +11,8 @@
 #include <Common/logger_useful.h>
 #include <Core/Field.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <base/Decimal.h>
 
 namespace Paimon
@@ -64,15 +66,16 @@ public:
         {
             auto to_hex_string = [](const std::string & input)
             {
-                std::ostringstream oss;
-                oss << std::hex << std::setfill('0');
-
-                for (unsigned char c : input)
+                static const char hex_digits[] = "0123456789abcdef";
+                WriteBufferFromOwnString result;
+                
+                for (unsigned char c : input) 
                 {
-                    oss << std::setw(2) << static_cast<int>(c);
+                    writeChar(hex_digits[(c >> 4) & 0xF], result);
+                    writeChar(hex_digits[c & 0xF], result);
                 }
-
-                return oss.str();
+                
+                return result.str();
             };
             // int field_offset = getFieldOffset(pos);
             Int64 offset_and_size = getFixedSizeData<Int64>(pos);
@@ -130,18 +133,11 @@ public:
 
     DateTime64 getTimestamp(Int32 pos, Int32 scale);
 
-    Array getArray(Int32 pos);
-
-    Map getMap(Int32 pos);
-
 private:
     // String bytes;
     ReadBufferFromOwnString reader;
     bool need_flip;
     Int32 arity;
-    // std::istringstream bytes_stream;
-    // BinaryReaderPtr binary_reader;
-    // const static Int32 LENGTH_SIZE{4};
     const static Int32 ARITY_SIZE{4};
     const static Int32 HEADER_SIZE_IN_BITS{8};
     const static Int32 ADDRESS_BITS_PER_WORD{3};

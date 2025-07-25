@@ -1,7 +1,7 @@
 #include <filesystem>
 #include <Poco/Logger.h>
-#include "Common/logger_useful.h"
-#include "config.h"
+#include <Common/logger_useful.h>
+#include <config.h>
 
 #if USE_AVRO
 
@@ -41,9 +41,6 @@ namespace DB
 using namespace Paimon;
 namespace ErrorCodes
 {
-extern const int FILE_DOESNT_EXIST;
-extern const int ILLEGAL_COLUMN;
-extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 }
 
@@ -56,7 +53,7 @@ DataLakeMetadataPtr PaimonMetadata::create(
     LOG_DEBUG(
         &Poco::Logger::get("PaimonMetadata"), "path: {} full path: {}", configuration_ptr->getPath(), configuration_ptr->getFullPath());
     PaimonTableClientPtr table_client_ptr = std::make_shared<PaimonTableClient>(object_storage, configuration, local_context);
-    auto schema_json = table_client_ptr->getTableSchemaJson(table_client_ptr->getLastTableSchemaInfo());
+    auto schema_json = table_client_ptr->getTableSchemaJSON(table_client_ptr->getLastTableSchemaInfo());
     return std::make_unique<PaimonMetadata>(object_storage, configuration_ptr, local_context, schema_json, table_client_ptr);
 }
 
@@ -141,7 +138,7 @@ bool PaimonMetadata::update(const ContextPtr &)
     const auto schema_meta_info = table_client_ptr->getLastTableSchemaInfo();
     if (!table_schema.has_value() || schema_meta_info.first != table_schema->version)
     {
-        last_metadata_object = table_client_ptr->getTableSchemaJson(schema_meta_info);
+        last_metadata_object = table_client_ptr->getTableSchemaJSON(schema_meta_info);
     }
     return updateState();
 }

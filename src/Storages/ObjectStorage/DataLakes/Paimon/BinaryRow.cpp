@@ -2,7 +2,6 @@
 #include <cstdint>
 #include <type_traits>
 #include <alloca.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/BinaryRow.h>
 #include <Poco/BinaryReader.h>
@@ -14,6 +13,14 @@
 #include <base/Decimal.h>
 #include <base/defines.h>
 #include <base/types.h>
+
+namespace DB
+{
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+}
 
 namespace Paimon
 {
@@ -37,15 +44,16 @@ BinaryRow::BinaryRow(const String & bytes_)
 {
     auto to_hex_string = [](const std::string & input)
     {
-        std::ostringstream oss;
-        oss << std::hex << std::setfill('0');
-
-        for (unsigned char c : input)
+        static const char hex_digits[] = "0123456789abcdef";
+        WriteBufferFromOwnString result;
+        
+        for (unsigned char c : input) 
         {
-            oss << std::setw(2) << static_cast<int>(c);
+            writeChar(hex_digits[(c >> 4) & 0xF], result);
+            writeChar(hex_digits[c & 0xF], result);
         }
-
-        return oss.str();
+        
+        return result.str();
     };
 
     // seek(LENGTH_SIZE);
@@ -172,12 +180,6 @@ String BinaryRow::getString(Int32 pos)
         {
             return copyBytes(field_offset + 1, len);
         }
-        // if (LITTLE_ENDIAN) {
-        //     // return BinaryString.fromAddress(segments, fieldOffset, len);
-        // } else {
-        //     // fieldOffset + 1 to skip header.
-        //     return BinaryString.fromAddress(segments, fieldOffset + 1, len);
-        // }
     }
 }
 
@@ -185,152 +187,6 @@ String BinaryRow::getBinary(Int32 pos)
 {
     return getString(pos);
 }
-
-// Decimal32 BinaryRow::getDecimal32(Int32 pos, Int32 precision, Int32 )
-// {
-//     chassert(pos >=0 && pos < arity);
-//     chassert(precision >0 && precision <= 9);
-//     Int64 value = getFixedSizeData<Int64>(pos);
-//     return Decimal<Int32>(static_cast<Int32>(value));
-// }
-
-// Decimal64 BinaryRow::getDecimal64(Int32 pos, Int32 precision, Int32 )
-// {
-//     chassert(pos >=0 && pos < arity);
-//     chassert(precision >9 && precision <= 18);
-//     Int64 value = getFixedSizeData<Int64>(pos);
-//     return Decimal<Int64>(value);
-// }
-
-// String addLeadingZero(const String & data, size_t target_size)
-// {
-//     if (data.size() == target_size)
-//         return data;
-//     else if (data.size() > target_size)
-//         throw Exception();
-//     String result(target_size, 0);
-//     size_t start_pos = target_size - data.size();
-//     for (size_t i = 0; i < data.size(); ++i)
-//         result[start_pos + i] = data[i];
-//     return result;
-// }
-
-// UInt64 getUint64BigEndian(const char * bytes)
-// {
-//     return (static_cast<UInt64>(bytes[0]) << 56) |
-//             (static_cast<UInt64>(bytes[1]) << 48) |
-//             (static_cast<UInt64>(bytes[2]) << 40) |
-//             (static_cast<UInt64>(bytes[3]) << 32) |
-//             (static_cast<UInt64>(bytes[4]) << 24) |
-//             (static_cast<UInt64>(bytes[5]) << 16) |
-//             (static_cast<UInt64>(bytes[6]) << 8)  |
-//             (static_cast<UInt64>(bytes[7]));
-// }
-
-// Decimal128 BinaryRow::getDecimal128(Int32 pos, Int32 precision, Int32 )
-// {
-//     chassert(pos >=0 && pos < arity);
-//     chassert(precision >18 && precision <= 38);
-//     int field_offset = getFieldOffset(pos);
-//     Int64 offset_and_size = getFixedSizeData<Int64>(field_offset);
-//     Int32 size = static_cast<Int32>(offset_and_size);
-//     Int32 sub_offset = static_cast<Int32>(offset_and_size >> 32);
-//     String bytes_string = copyBytes(offset() + sub_offset, size);
-//     if (bytes_string.length() > 16)
-//         throw Exception();
-//     bytes_string = addLeadingZero(bytes_string, 16);
-//     UInt64 high = getUint64BigEndian(bytes_string.data());
-//     UInt64 low = getUint64BigEndian(bytes_string.data() + 8);
-//     Int128 value({low, high});
-//     return Decimal<Int128>(value);
-// }
-
-// Decimal256 BinaryRow::getDecimal256(Int32 pos, Int32 precision, Int32 )
-// {
-//     chassert(pos >=0 && pos < arity);
-//     chassert(precision >38 && precision <= 76);
-//     int field_offset = getFieldOffset(pos);
-//     Int64 offset_and_size = getFixedSizeData<Int64>(field_offset);
-//     Int32 size = static_cast<Int32>(offset_and_size);
-//     Int32 sub_offset = static_cast<Int32>(offset_and_size >> 32);
-//     String bytes_string = copyBytes(offset() + sub_offset, size);
-//     if (bytes_string.length() > 32)
-//             throw Exception();
-//         bytes_string = addLeadingZero(bytes_string, 32);
-//         UInt64 ele1 = getUint64BigEndian(bytes_string.data());
-//         UInt64 ele2 = getUint64BigEndian(bytes_string.data() + 8);
-//         UInt64 ele3 = getUint64BigEndian(bytes_string.data() + 16);
-//         UInt64 ele4 = getUint64BigEndian(bytes_string.data() + 24);
-//         Int256 value({ele4, ele3, ele2, ele1});
-//         return Decimal<Int256>(value);
-// }
-
-// template<typename T>
-// Decimal<T> BinaryRow::getDecimal(Int32 pos, Int32 precision, Int32 )
-// {
-//     chassert(pos >=0 && pos < arity);
-//     chassert(precision >0 && precision <= 76);
-//     if (precision <= 18)
-//     {
-//         Int64 value = getFixedSizeData<Int64>(pos);
-//         return Decimal<T>(static_cast<T>(value));
-//     }
-//     else
-//     {
-//         int field_offset = getFieldOffset(pos);
-//         Int64 offset_and_size = getFixedSizeData<Int64>(field_offset);
-//         Int32 size = static_cast<Int32>(offset_and_size);
-//         Int32 sub_offset = static_cast<Int32>(offset_and_size >> 32);
-//         String bytes_string = copyBytes(offset() + sub_offset, size);
-//         if (bytes_string.length() > 32)
-//                 throw Exception();
-//         auto add_leading_zero = [](const String & data, size_t target_size)
-//         {
-//             if (data.size() == target_size)
-//                 return data.data();
-//             else if (data.size() > target_size)
-//                 throw Exception();
-//             String result(target_size, 0);
-//             size_t start_pos = target_size - data.size();
-//             for (size_t i = 0; i < data.size(); ++i)
-//                 result[start_pos + i] = data[i];
-//             return result;
-//         };
-//         auto get_uint64_big_endian = [] (const char * bytes)
-//         {
-//             return (static_cast<UInt64>(bytes[0]) << 56) |
-//                     (static_cast<UInt64>(bytes[1]) << 48) |
-//                     (static_cast<UInt64>(bytes[2]) << 40) |
-//                     (static_cast<UInt64>(bytes[3]) << 32) |
-//                     (static_cast<UInt64>(bytes[4]) << 24) |
-//                     (static_cast<UInt64>(bytes[5]) << 16) |
-//                     (static_cast<UInt64>(bytes[6]) << 8)  |
-//                     (static_cast<UInt64>(bytes[7]));
-//         };
-//         if (precision <= 38)
-//         {
-//             if (bytes_string.length() > 16)
-//                 throw Exception();
-//             bytes_string = add_leading_zero(bytes_string, 16);
-//             UInt64 high = get_uint64_big_endian(bytes_string.data());
-//             UInt64 low = get_uint64_big_endian(bytes_string.data() + 8);
-//             Int128 value({low, high});
-//             return Decimal<T>(value);
-//         }
-//         else
-//         {
-//             if (bytes_string.length() > 32)
-//                 throw Exception();
-//             bytes_string = add_leading_zero(bytes_string, 32);
-//             UInt64 ele1 = get_uint64_big_endian(bytes_string.data());
-//             UInt64 ele2 = get_uint64_big_endian(bytes_string.data() + 8);
-//             UInt64 ele3 = get_uint64_big_endian(bytes_string.data() + 16);
-//             UInt64 ele4 = get_uint64_big_endian(bytes_string.data() + 24);
-//             Int256 value({ele4, ele3, ele2, ele1});
-//             return Decimal<T>(value);
-//         }
-//     }
-// }
 
 DateTime64 BinaryRow::getTimestamp(Int32 pos, Int32 scale)
 {
@@ -341,16 +197,6 @@ DateTime64 BinaryRow::getTimestamp(Int32 pos, Int32 scale)
     }
     /// TODO: support larger precision
     throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "scale {} is not supported, only support scale <= 3", scale);
-}
-
-Array BinaryRow::getArray(Int32)
-{
-    throw Exception();
-}
-
-Map BinaryRow::getMap(Int32)
-{
-    throw Exception();
 }
 
 }

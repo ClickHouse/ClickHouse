@@ -119,7 +119,7 @@ struct DataType
                 {
                     LOG_DEBUG(
                         &Poco::Logger::get("parse_precision"),
-                        "size: {} isdigit {} is , {} is blank {}",
+                        "size: {} isdigit {} is, {} is blank {}",
                         precision_str.size(),
                         std::isdigit(*p),
                         (*p != ','),

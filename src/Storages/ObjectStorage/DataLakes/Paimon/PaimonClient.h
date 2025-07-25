@@ -28,6 +28,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 using namespace Paimon;
 
 
@@ -131,7 +136,7 @@ struct PaimonManifestEntry
     static PaimonManifestEntry::Kind toKind(int8_t value)
     {
         if (value < static_cast<int8_t>(PaimonManifestEntry::Kind::ADD) || value > static_cast<int8_t>(PaimonManifestEntry::Kind::DELETE))
-            throw Exception();
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value for PaimonManifestEntry::Kind {}", value);
         return static_cast<PaimonManifestEntry::Kind>(value);
     }
 
@@ -139,7 +144,7 @@ struct PaimonManifestEntry
     {
         if (value < static_cast<int8_t>(PaimonManifestEntry::FileSource::APPEND)
             || value > static_cast<int8_t>(PaimonManifestEntry::FileSource::COMPACT))
-            throw Exception();
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value for PaimonManifestEntry::FileSource {}", value);
         return static_cast<PaimonManifestEntry::FileSource>(value);
     }
 
@@ -305,7 +310,7 @@ public:
     PaimonTableClient(
         ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, const DB::ContextPtr & context_);
 
-    Poco::JSON::Object::Ptr getTableSchemaJson(const std::pair<Int32, String> & schema_meta_info);
+    Poco::JSON::Object::Ptr getTableSchemaJSON(const std::pair<Int32, String> & schema_meta_info);
     std::pair<Int32, String> getLastTableSchemaInfo();
     PaimonTableSchema getTableSchema();
     std::pair<Int64, String> getLastTableSnapshotInfo();
