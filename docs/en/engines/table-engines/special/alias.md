@@ -1,8 +1,9 @@
 ---
+description: 'Create an alias of a table.'
+sidebar_label: 'Alias'
+sidebar_position: 120
 slug: /en/engines/table-engines/special/alias
-sidebar_position: 140
-sidebar_label:  Alias
-title: "Alias Table Engine"
+title: 'Alias Table Engine'
 ---
 
 # Alias Table Engine
