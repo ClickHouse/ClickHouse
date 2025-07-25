@@ -1778,8 +1778,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     ASTPtr ast;
     BlockIO res;
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
-    ReadBufferUniquePtr empty_input_buffer = std::make_unique<EmptyReadBuffer>();
-    res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, empty_input_buffer, ast, implicit_tcl_executor);
+    ReadBufferUniquePtr no_input_buffer;
+    res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, no_input_buffer, ast, implicit_tcl_executor);
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
         String format_name = ast_query_with_output->format_ast
@@ -1980,7 +1980,7 @@ void executeQuery(
         if (pipeline.pushing())
         {
             auto format = getInputFormatFromASTInsertQuery(ast, true, pipeline.getHeader(), context, nullptr);
-            LOG_DEBUG(getLogger("executeQuery"), "attach input buffer to format");
+            LOG_DEBUG(getLogger("executeQuery"), "attach input buffer to format as pushing");
             chassert(istr);
             format->addBuffer(std::move(istr));
             auto pipe = getSourceFromInputFormat(ast, std::move(format), context, nullptr);
