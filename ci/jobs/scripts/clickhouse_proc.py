@@ -809,15 +809,17 @@ quit
         assert self.pid, "ClickHouse not started"
         # FIXME Hung check may work incorrectly because of attached gdb
         # We cannot attach another gdb to get stacktraces if some queries hung
-        print(f"Attach gdb to PID {self.pid}")
+        command = f"gdb -batch -command {script_path} -p {self.pid}"
+        print(f"Attach gdb to PID {self.pid}, command: [{command}]")
         with open(self.GDB_LOG, "w") as log_file:
             self.gdb_proc = subprocess.Popen(
-                f"gdb -batch -command {script_path} -p {self.pid}",
+                command,
                 shell=True,
                 stdout=log_file,
                 stderr=log_file,
             )
         time.sleep(2)
+        time.sleep(1000)
         self.gdb_proc.poll()
         attached = False
         if self.gdb_proc.returncode is not None:

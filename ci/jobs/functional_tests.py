@@ -179,9 +179,7 @@ def main():
     if is_database_replicated or is_shared_catalog or is_parallel_replicas:
         pass
     else:
-        if "debug" in args.options:
-            nproc = int(Utils.cpu_count() * 1.0)
-        elif "binary" in args.options:
+        if "binary" in args.options:
             nproc = int(Utils.cpu_count() * 1.2)
         else:
             pass
@@ -313,7 +311,6 @@ def main():
             res = CH.start_minio(test_type="stateless") and CH.start_azurite()
             res = res and CH.start()
             res = res and CH.wait_ready()
-            # TODO: does not work for m7i - non flex, m8g
             # if res:
             #     if "asan" not in info.job_name:
             #         print("Attaching gdb")
