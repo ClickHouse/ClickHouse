@@ -626,7 +626,7 @@ jobs:
           fi
 
   stateless_tests_amd_asan_distributed_plan_parallel_1_2:
-    runs-on: [self-hosted, amd-medium-cpu]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgcGFyYWxsZWwsIDEvMik=') }}
     name: "Stateless tests (amd_asan, distributed plan, parallel, 1/2)"
@@ -664,7 +664,7 @@ jobs:
           fi
 
   stateless_tests_amd_asan_distributed_plan_parallel_2_2:
-    runs-on: [self-hosted, amd-medium-cpu]
+    runs-on: [self-hosted, amd-medium]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgcGFyYWxsZWwsIDIvMik=') }}
     name: "Stateless tests (amd_asan, distributed plan, parallel, 2/2)"
@@ -702,7 +702,7 @@ jobs:
           fi
 
   stateless_tests_amd_asan_distributed_plan_sequential:
-    runs-on: [self-hosted, amd-small-mem]
+    runs-on: [self-hosted, amd-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_asan]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgc2VxdWVudGlhbCk=') }}
     name: "Stateless tests (amd_asan, distributed plan, sequential)"
