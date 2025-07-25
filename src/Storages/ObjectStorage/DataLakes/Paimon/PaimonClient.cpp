@@ -36,7 +36,6 @@
 #include <boost/graph/properties.hpp>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
-#include <Types.hh>
 
 
 namespace DB

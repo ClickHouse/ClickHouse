@@ -33,7 +33,6 @@
 #    include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #    include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
 #    include <fmt/format.h>
-#    include <Types.hh>
 
 
 namespace DB
