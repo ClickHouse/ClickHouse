@@ -972,11 +972,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     from_stage = storage->getQueryProcessingStage(
                         query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
 
-                bool has_table_virtual_column = false;
+                Names extracted_column_names;
+                bool has_table_virtual_column
+                        = extractRequiredNonTableColumnsFromStorage(columns_names, storage, storage_snapshot, from_stage, extracted_column_names);
+                const auto & storage_column_names = has_table_virtual_column ? extracted_column_names : columns_names;
 
                 if (select_query_options.build_logical_plan)
                 {
-                    auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(columns_names));
+                    auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(storage_column_names));
 
                     if (table_node)
                     {
@@ -1019,10 +1022,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 }
                 else
                 {
-                    Names extracted_column_names;
-                    has_table_virtual_column
-                        = extractRequiredNonTableColumnsFromStorage(columns_names, storage, storage_snapshot, from_stage, extracted_column_names);
-
                     /// It is just a safety check needed until we have a proper sending plan to replicas.
                     /// If we have a non-trivial storage like View it might create its own Planner inside read(), run findTableForParallelReplicas()
                     /// and find some other table that might be used for reading with parallel replicas. It will lead to errors.
@@ -1035,7 +1034,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                         storage->read(
                             query_plan,
-                            has_table_virtual_column ? extracted_column_names : columns_names,
+                            storage_column_names,
                             storage_snapshot,
                             table_expression_query_info,
                             std::move(mutable_context),
@@ -1047,7 +1046,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     {
                         storage->read(
                             query_plan,
-                            has_table_virtual_column ? extracted_column_names : columns_names,
+                            storage_column_names,
                             storage_snapshot,
                             table_expression_query_info,
                             query_context,
@@ -1197,7 +1196,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             QueryPlan query_plan_no_parallel_replicas;
                             storage->read(
                                 query_plan_no_parallel_replicas,
-                                columns_names,
+                                storage_column_names,
                                 storage_snapshot,
                                 table_expression_query_info,
                                 query_context,

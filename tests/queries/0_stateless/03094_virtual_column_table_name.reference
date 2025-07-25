@@ -53,3 +53,5 @@ buffer1	8	80
 buffer1	9	90
 SELECT _table, key, value FROM mv1 ORDER BY key ASC;
 mv1	10	2
+SELECT _table, key, value FROM mv2 ORDER BY key ASC;
+mv2	10	2

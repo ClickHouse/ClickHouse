@@ -1,4 +1,5 @@
 SET allow_experimental_analyzer = 1;
+SET serialize_query_plan = 1;
 
 DROP TABLE IF EXISTS m1;
 DROP TABLE IF EXISTS m2;
@@ -12,6 +13,7 @@ DROP TABLE IF EXISTS d7;
 DROP TABLE IF EXISTS buffer1;
 DROP VIEW IF EXISTS view1;
 DROP VIEW IF EXISTS mv1;
+DROP VIEW IF EXISTS mv2;
 
 CREATE TABLE d1 (key Int, value Int) ENGINE=Memory();
 CREATE TABLE d2 (key Int, value Int) ENGINE=MergeTree() ORDER BY key;
@@ -41,6 +43,7 @@ INSERT INTO buffer1 VALUES (9, 90);
 CREATE TABLE d6 (key Int, value Int) ENGINE = MergeTree ORDER BY value;
 CREATE TABLE d7 (key Int, value Int) ENGINE = SummingMergeTree ORDER BY key;
 CREATE MATERIALIZED VIEW mv1 TO d7 AS SELECT key, count(value) AS value FROM d6 GROUP BY key;
+CREATE MATERIALIZED VIEW mv2 ENGINE = SummingMergeTree ORDER BY key AS SELECT key, count(value) AS value FROM d6 GROUP BY key;
 INSERT INTO d6 VALUES (10, 100), (10, 110);
 
 -- { echoOn }
@@ -73,3 +76,4 @@ SELECT _table, key FROM view1 ORDER BY key ASC;
 SELECT _table, key, value FROM buffer1 ORDER BY key ASC;
 
 SELECT _table, key, value FROM mv1 ORDER BY key ASC;
+SELECT _table, key, value FROM mv2 ORDER BY key ASC;

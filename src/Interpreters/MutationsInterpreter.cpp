@@ -49,6 +49,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageView.h>
 
 namespace ProfileEvents
 {
@@ -593,6 +594,9 @@ static bool extractRequiredNonTableColumnsFromStorage(
         return false;
 
     if (std::dynamic_pointer_cast<StorageDistributed>(storage))
+        return false;
+
+    if (std::dynamic_pointer_cast<StorageView>(storage))
         return false;
 
     bool has_table_virtual_column = false;
