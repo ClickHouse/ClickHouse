@@ -91,7 +91,7 @@ PaimonSnapshot::PaimonSnapshot(const Poco::JSON::Object::Ptr & json_object)
 }
 
 PaimonTableClient::PaimonTableClient(ObjectStoragePtr object_storage_,
-    ConfigurationObserverPtr configuration_,
+    StorageObjectStorageConfigurationWeakPtr configuration_,
     const DB::ContextPtr & context_):
     WithContext(context_),
     object_storage(object_storage_),
