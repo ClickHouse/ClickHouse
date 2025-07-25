@@ -324,6 +324,10 @@ notInIgnoreSet
 notLike
 notNullIn
 notNullInIgnoreSet
+now
+now64
+nowInBlock
+now64InBlock
 nullIf
 nullIn
 nullInIgnoreSet

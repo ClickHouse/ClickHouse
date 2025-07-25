@@ -2898,6 +2898,50 @@ Result:
 └─────────────────────┴─────────────────────┴──────────┘
 ```
 
+## now64InBlock {#now64InBlock}
+
+Returns the current date and time with nanosecond precision at the moment each block of data is processed. Unlike the now64 function, which returns a constant value for the entire query, now64InBlock produces a unique timestamp per block, making it useful for scenarios where time needs to reflect the actual moment of data processing during long-running queries.
+
+Return type: DateTime64([0-9]) (with nanosecond precision)
+
+**Syntax**
+
+```sql
+nowInBlock([scale], [timezone])
+```
+
+**Arguments**
+
+- `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ]. Typically, are used - 3(milliseconds), 6 (microseconds), 9 (nanoseconds).
+
+- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) for the returned value (optional). [String](../data-types/string.md).
+
+**Returned value**
+
+- Current date and time at the moment of processing of each block of data with precision in  10<sup>-precision</sup> seconds. [DateTime](../data-types/datetime.md).
+
+**Example**
+
+```sql
+SELECT
+    now(),
+    now64InBlock(9),
+    sleep(1)
+FROM numbers(3)
+SETTINGS max_block_size = 1
+FORMAT PrettyCompactMonoBlock
+```
+
+Result:
+
+```text
+┌───────────────now()─┬───────────────now64InBlock(9)─┬─sleep(1)─┐
+│ 2025-07-22 19:34:58 │ 2025-07-22 19:34:58.028408119 │        0 │
+│ 2025-07-22 19:34:58 │ 2025-07-22 19:34:59.029281118 │        0 │
+│ 2025-07-22 19:34:58 │ 2025-07-22 19:35:00.030175944 │        0 │
+└─────────────────────┴───────────────────────────────┴──────────┘
+```
+
 ## today {#today}
 
 Returns the current date at moment of query analysis. It is the same as 'toDate(now())' and has aliases: `curdate`, `current_date`.
