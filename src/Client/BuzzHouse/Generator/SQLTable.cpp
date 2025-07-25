@@ -964,6 +964,17 @@ void StatementGenerator::generateEngineDetails(
         {
             tep->set_out(static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1));
         }
+        if (rg.nextBool())
+        {
+            te->add_params()->set_svalue("datafile" + std::to_string(b.tname));
+            if (rg.nextBool())
+            {
+                static const DB::Strings & fileCompress = {"auto", "none", "gzip", "deflate", "br", "xz", "zstd", "lz4", "bz2", "snappy"};
+
+                b.file_comp = rg.pickRandomly(fileCompress);
+                te->add_params()->set_svalue(b.file_comp);
+            }
+        }
     }
     else if (te->has_engine() && b.isJoinEngine())
     {
