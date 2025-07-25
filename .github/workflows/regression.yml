@@ -609,6 +609,10 @@ jobs:
       fail-fast: false
       matrix:
         STORAGE: [minio, aws_s3, gcs, azure]
+        PART: [1, 2]
+        include:
+          - STORAGE: minio
+            PART: 3
     needs: [runner_labels_setup]
     runs-on: ${{ fromJson(needs.runner_labels_setup.outputs.runner_labels) }}
     timeout-minutes: ${{ inputs.timeout_minutes }}
@@ -656,7 +660,8 @@ jobs:
               --azure-account-name ${{ secrets.AZURE_ACCOUNT_NAME }}
               --azure-storage-key ${{ secrets.AZURE_STORAGE_KEY }}
               --azure-container ${{ secrets.AZURE_CONTAINER_NAME }}
-              --attr project="$GITHUB_REPOSITORY" project.id="$GITHUB_REPOSITORY_ID" package="${{ env.clickhouse_path }}" version="${{ env.version }}" user.name="$GITHUB_ACTOR" repository="https://github.com/Altinity/clickhouse-regression" commit.hash="$(git rev-parse HEAD)" job.name="$GITHUB_JOB (${{ matrix.STORAGE }})" job.retry=$GITHUB_RUN_ATTEMPT job.url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" arch="$(uname -i)"
+              --attr project="$GITHUB_REPOSITORY" project.id="$GITHUB_REPOSITORY_ID" package="${{ env.clickhouse_path }}" version="${{ env.version }}" user.name="$GITHUB_ACTOR" repository="https://github.com/Altinity/clickhouse-regression" commit.hash="$(git rev-parse HEAD)" job.name="$GITHUB_JOB (${{ matrix.STORAGE }}-${{ matrix.PART }})" job.retry=$GITHUB_RUN_ATTEMPT job.url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" arch="$(uname -i)"
+              --only ":/part ${{ matrix.PART }}/*"
               ${{ env.args }} || EXITCODE=$?;
               .github/add_link_to_logs.sh;
               exit $EXITCODE
@@ -666,7 +671,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JOB_OUTCOME: ${{ steps.run_suite.outcome }}
-          SUITE_NAME: "Regression ${{ inputs.arch }} S3 ${{ matrix.STORAGE }}"
+          SUITE_NAME: "Regression ${{ inputs.arch }} S3 ${{ matrix.STORAGE }}-${{ matrix.PART }}"
       - name: Create and upload logs
         if: always()
         run: .github/create_and_upload_logs.sh 1
@@ -677,7 +682,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ${{ env.SUITE }}-${{ matrix.STORAGE }}-${{ inputs.arch }}-artifacts
+          name: ${{ env.SUITE }}-${{ matrix.STORAGE }}-${{ matrix.PART }}-${{ inputs.arch }}-artifacts
           path: ${{ env.artifact_paths}}
 
   TieredStorage:
