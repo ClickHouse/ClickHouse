@@ -227,7 +227,7 @@ will automagically detect the types of variables and only the small diff of two 
 
 Here is how you run a debugger for the server under integration test:
 
-1. Put the **_statically linked binary_** of your debugger into the ClickHouse root folder of your repo. The [nnd](https://github.com/al13n321/nnd) debugger is ideal for this purpose (and for ClickHouse debugging in general).
+1. Put the **_statically linked binary_** of your debugger into the ClickHouse root folder of your repo. The [nnd](https://github.com/al13n321/nnd) debugger is ideal for this purpose (and for ClickHouse debugging in general), it's currently the only supported option.
 2. Go to the integration test `test.py` file and add a new line with a single `breakpoint()` command to debug specific point in your test (to make the server work forever and not die after the test).
 3. Run the integration test with `runner` script as usual but add `--debug` option. It will produce helper shell command in stdout and start testing:
 ```bash
