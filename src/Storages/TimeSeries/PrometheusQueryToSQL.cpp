@@ -96,7 +96,12 @@ namespace
     {
         auto data_type_idx = WhichDataType{*data_type}.idx;
         if (data_type_idx == TypeIndex::DateTime64)
-            return makeASTFunction("toDateTime64", std::make_shared<ASTLiteral>(toString(decimal)), std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
+        {
+            String str = toString(decimal);
+            if (str.find_first_of(".eE") == String::npos)
+                str += "."; /// toDateTime64() doesn't accept an integer as its first argument, so we convert it to float.
+            return makeASTFunction("toDateTime64", std::make_shared<ASTLiteral>(str), std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
+        }
         else if (data_type_idx == TypeIndex::Decimal64)
             return makeASTFunction("toDecimal64", std::make_shared<ASTLiteral>(toString(decimal)), std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
         else
