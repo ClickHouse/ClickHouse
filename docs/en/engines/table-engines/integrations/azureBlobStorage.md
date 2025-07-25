@@ -14,7 +14,7 @@ This engine provides an integration with [Azure Blob Storage](https://azure.micr
 
 ```sql
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)
-    ENGINE = AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+    ENGINE = AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, extra_credentials(client_id=, tenant_id=)])
     [PARTITION BY expr]
     [SETTINGS ...]
 ```
@@ -30,6 +30,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 - `account_key` - if storage_account_url is used, then account key can be specified here
 - `format` — The [format](/interfaces/formats.md) of the file.
 - `compression` — Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension. (same as setting to `auto`).
+- `extra_credentials` - Use `client_id` and `tenant_id` for authentication instead of `account_name` and `account_key`.                                                                                                                                                                                                                                                                                                                                                                                              |
 
 **Example**
 
