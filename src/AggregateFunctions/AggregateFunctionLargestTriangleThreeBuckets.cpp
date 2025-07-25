@@ -54,6 +54,7 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
         std::vector<size_t> index(this->x.size());
 
         iota(index.data(), index.size(), size_t(0));
+        //std::sort yields performance improvement over ::sort
         std::sort(index.begin(), index.end(), [&](size_t i1, size_t i2) { return this->x[i1] < this->x[i2]; });
 
         SampleX temp_x{};
