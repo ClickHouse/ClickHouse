@@ -17,7 +17,6 @@ This enables column-level upserts, meaning you can update only specific columns 
 
 `CoalescingMergeTree` is intended for use with Nullable types in non-key columns. If the columns are not Nullable, the behavior is the same as with [ReplacingMergeTree](/engines/table-engines/mergetree-family/replacingmergetree).
 
-
 ## Creating a table {#creating-a-table}
 
 ```sql
