@@ -49,7 +49,7 @@ extern const int LOGICAL_ERROR;
 
 DataLakeMetadataPtr PaimonMetadata::create(
     const ObjectStoragePtr & object_storage,
-    const ConfigurationObserverPtr & configuration,
+    const StorageObjectStorageConfigurationWeakPtr & configuration,
     const ContextPtr & local_context)
 {
     auto configuration_ptr = configuration.lock();
@@ -108,7 +108,7 @@ void PaimonMetadata::checkSupportCofiguration()
 }
 
 PaimonMetadata::PaimonMetadata(ObjectStoragePtr object_storage_,
-    ConfigurationObserverPtr configuration_,
+    StorageObjectStorageConfigurationWeakPtr configuration_,
     const DB::ContextPtr & context_,
     const Poco::JSON::Object::Ptr & schema_json_object_,
     PaimonTableClientPtr table_client_ptr_): 

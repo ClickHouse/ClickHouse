@@ -10,7 +10,7 @@
 #include "Disks/IStoragePolicy.h"
 #include "Interpreters/Context_fwd.h"
 #include "Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h"
-#include "Storages/ObjectStorage/StorageObjectStorage.h"
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -25,21 +25,28 @@ namespace DB
 class PaimonMetadata : public IDataLakeMetadata , private WithContext
 {
 public:
-    using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
 
     static constexpr auto name = "Paimon";
 
     PaimonMetadata(ObjectStoragePtr object_storage_,
-        ConfigurationObserverPtr configuration_,
+        StorageObjectStorageConfigurationWeakPtr configuration_,
         const DB::ContextPtr & context_,
         const Poco::JSON::Object::Ptr & schema_json_object_,
         PaimonTableClientPtr table_client_ptr_);
     
     static DataLakeMetadataPtr create(
         const ObjectStoragePtr & object_storage,
-        const ConfigurationObserverPtr & configuration,
+        const StorageObjectStorageConfigurationWeakPtr & configuration,
         const ContextPtr & local_context);
     
+    static void createInitial(
+        const ObjectStoragePtr & /*object_storage*/,
+        const StorageObjectStorageConfigurationWeakPtr & /*configuration*/,
+        const ContextPtr & /*local_context*/,
+        const std::optional<ColumnsDescription> & /*columns*/,
+        ASTPtr /*partition_by*/,
+        bool /*if_not_exists*/) {}
+
     NamesAndTypesList getTableSchema() const override;
 
     bool operator==(const IDataLakeMetadata & other) const override
@@ -71,7 +78,7 @@ private:
     std::vector<PaimonManifest> base_manifest;
     std::vector<PaimonManifest> delta_manifest;
     const ObjectStoragePtr object_storage;
-    const ConfigurationObserverPtr configuration;
+    const StorageObjectStorageConfigurationWeakPtr configuration;
     LoggerPtr log;
     PaimonTableClientPtr table_client_ptr;
     Poco::JSON::Object::Ptr last_metadata_object;

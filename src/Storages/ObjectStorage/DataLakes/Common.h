@@ -15,7 +15,7 @@ std::vector<String> listFiles(
 
 std::vector<String> listFiles(
     const IObjectStorage & object_storage,
-    const StorageObjectStorage::Configuration & configuration,
+    const StorageObjectStorageConfiguration & configuration,
     const String & prefix, 
     const std::function<bool (const RelativePathWithMetadata &)> & check_need);
 }
