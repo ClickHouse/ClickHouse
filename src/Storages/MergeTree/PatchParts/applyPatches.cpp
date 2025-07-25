@@ -1,4 +1,3 @@
-#include <shared_mutex>
 #include <Storages/MergeTree/PatchParts/applyPatches.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -7,10 +6,9 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
-#include "Common/logger_useful.h"
 #include <Common/Stopwatch.h>
 #include <Common/ProfileEvents.h>
-#include <Common/ThreadPool.h>
+#include <shared_mutex>
 
 namespace ProfileEvents
 {
@@ -101,7 +99,6 @@ private:
 
 void CombinedPatchBuilder::build()
 {
-    std::vector<size_t> block_to_patch_idx;
     std::vector<std::vector<size_t>> patch_to_block_idx(patches.size());
 
     for (size_t i = 0; i < patches.size(); ++i)
@@ -112,7 +109,6 @@ void CombinedPatchBuilder::build()
         for (size_t j = 0; j < num_sources; ++j)
         {
             patch_to_block_idx[i][j] = all_patch_blocks.size();
-            block_to_patch_idx.push_back(i);
             all_patch_blocks.push_back(patches[i]->patch_blocks[j]);
         }
     }

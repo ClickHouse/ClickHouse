@@ -1,3 +1,4 @@
+#include <shared_mutex>
 #include <utility>
 #include <Storages/MergeTree/PatchParts/PatchJoinCache.h>
 #include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
@@ -54,13 +55,30 @@ std::vector<std::shared_future<void>> PatchJoinCache::Entry::addRangesAsync(cons
     MarkRanges ranges_to_read;
 
     {
+        std::shared_lock lock(mutex);
+
+        for (const auto & range : ranges)
+        {
+            auto it = ranges_futures.find(range);
+
+            if (it != ranges_futures.end())
+                futures.push_back(it->second);
+            else
+                ranges_to_read.push_back(range);
+        }
+    }
+
+    if (!ranges_to_read.empty())
+    {
         std::lock_guard lock(mutex);
 
         for (const auto & range : ranges)
         {
-            if (ranges_futures.contains(range))
+            auto it = ranges_futures.find(range);
+
+            if (it != ranges_futures.end())
             {
-                futures.push_back(ranges_futures.at(range));
+                futures.push_back(it->second);
             }
             else
             {
@@ -69,6 +87,7 @@ std::vector<std::shared_future<void>> PatchJoinCache::Entry::addRangesAsync(cons
 
                 ranges_to_read.push_back(range);
                 ranges_futures.emplace(range, future);
+
                 futures.push_back(std::move(future));
                 promises.push_back(std::move(promise));
             }
