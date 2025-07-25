@@ -124,9 +124,10 @@ public:
 
     Field operator[](size_t n) const override { return DecimalField(data[n], scale); }
     void get(size_t n, Field & res) const override { res = (*this)[n]; }
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &) const override
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const override
     {
-        name_buf << FieldVisitorToString()(data[n], scale);
+        if (options.notFull(name_buf))
+            name_buf << FieldVisitorToString()(data[n], scale);
         return FieldToDataType()(data[n], scale);
     }
     bool getBool(size_t n) const override { return bool(data[n].value); }

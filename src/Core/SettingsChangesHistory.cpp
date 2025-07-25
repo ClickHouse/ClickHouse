@@ -52,8 +52,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"azure_sdk_use_native_client", false, true, "New setting"},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
             {"vector_search_with_rescoring", true, true, "New setting."},
-            {"optimize_const_array_and_tuple_to_scalar_size", -1, -1, "Enables conversion of a constant array or tuple to scalar"},
-            {"optimize_const_array_and_tuple_name_size", -1, -1, "Use hash instead of calculating name of a constant array or tuple"},
+            {"optimize_const_name_size", -1, 256, "Replace with scalar and use hash as a name for large constants (size is estimated by name length)"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {

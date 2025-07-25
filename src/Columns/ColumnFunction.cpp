@@ -97,21 +97,25 @@ DataTypePtr ColumnFunction::getValueNameAndTypeImpl(WriteBufferFromOwnString & n
 {
     size_t size = captured_columns.size();
 
-    if (size > 1)
-        name_buf << "(";
-    else
-        name_buf << "tuple(";
+    if (options.notFull(name_buf))
+    {
+        if (size > 1)
+            name_buf << "(";
+        else
+            name_buf << "tuple(";
+    }
     DataTypes element_types;
     element_types.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
     {
-        if (i > 0)
+        if (options.notFull(name_buf) && i > 0)
             name_buf << ", ";
         const auto & type = captured_columns[i].column->getValueNameAndTypeImpl(name_buf, n, options);
         element_types.push_back(type);
     }
-    name_buf << ")";
+    if (options.notFull(name_buf))
+        name_buf << ")";
 
     return std::make_shared<DataTypeTuple>(element_types);
 }

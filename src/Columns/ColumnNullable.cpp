@@ -122,7 +122,8 @@ DataTypePtr ColumnNullable::getValueNameAndTypeImpl(WriteBufferFromOwnString & n
 {
     if (isNullAt(n))
     {
-        name_buf << "NULL";
+        if (options.notFull(name_buf))
+            name_buf << "NULL";
         return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
     }
 

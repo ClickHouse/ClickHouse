@@ -814,12 +814,16 @@ void ColumnObjectDeprecated::get(size_t n, Field & res) const
 
 DataTypePtr ColumnObjectDeprecated::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
-    name_buf << '{';
+    if (options.notFull(name_buf))
+        name_buf << '{';
 
     bool first = true;
 
     for (const auto & entry : subcolumns)
     {
+        if (!options.notFull(name_buf))
+            break;
+
         if (first)
             first = false;
         else
@@ -829,8 +833,8 @@ DataTypePtr ColumnObjectDeprecated::getValueNameAndTypeImpl(WriteBufferFromOwnSt
         name_buf << ": ";
         entry->data.getValueNameAndTypeImpl(name_buf, n, options);
     }
-
-    name_buf << "}";
+    if (options.notFull(name_buf))
+        name_buf << "}";
 
     return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
 }

@@ -20,10 +20,7 @@
 #include <Common/HashTable/Hash.h>
 #include <IO/Operators.h>
 #include <cstring> // memcpy
-#include <city.h>
 
-using Hash = CityHash_v1_0_2::uint128;
-using HashState = SipHash;
 
 namespace DB
 {
@@ -158,33 +155,22 @@ DataTypePtr ColumnArray::getValueNameAndTypeImpl(WriteBufferFromOwnString & name
     size_t offset = offsetAt(n);
     size_t size = sizeAt(n);
 
-
-    if (options.optimize_const_array_and_tuple_name_size < 0 || size <= static_cast<size_t>(options.optimize_const_array_and_tuple_name_size))
-    {
+    if (options.notFull(name_buf))
         name_buf << "[";
-        DataTypes element_types;
-        element_types.reserve(size);
+    DataTypes element_types;
+    element_types.reserve(size);
 
-        for (size_t i = 0; i < size; ++i)
-        {
-            if (i > 0)
-                name_buf << ", ";
-            const auto & type = getData().getValueNameAndTypeImpl(name_buf, offset + i, options);
-            element_types.push_back(type);
-        }
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (options.notFull(name_buf) && i > 0)
+            name_buf << ", ";
+        const auto & type = getData().getValueNameAndTypeImpl(name_buf, offset + i, options);
+        element_types.push_back(type);
+    }
+    if (options.notFull(name_buf))
         name_buf << "]";
 
-        return std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types));
-    }
-
-    HashState h;
-    const auto & data_column = getData();
-    for (size_t i = 0; i < size; ++i)
-        data_column.updateHashWithValue(offset + i, h);
-
-    auto p = getSipHash128AsPair(h);
-    name_buf << fmt::format("{}_{}", p.high64, p.low64);
-    return getDataTypeByColumn(*this);
+    return std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types));
 }
 
 StringRef ColumnArray::getDataAt(size_t n) const

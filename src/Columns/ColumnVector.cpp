@@ -450,11 +450,12 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 }
 
 template <typename T>
-DataTypePtr ColumnVector<T>::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &) const
+DataTypePtr ColumnVector<T>::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const
 {
     chassert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
     const auto & val = castToNearestFieldType(data[n]);
-    name_buf << FieldVisitorToString()(val);
+    if (options.notFull(name_buf))
+        name_buf << FieldVisitorToString()(val);
     return FieldToDataType()(val);
 }
 

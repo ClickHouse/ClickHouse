@@ -28,6 +28,7 @@
 #include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
+#include "Columns/IColumn.h"
 
 #include <stack>
 
@@ -42,7 +43,7 @@ namespace Setting
     extern const SettingsUInt64 min_external_table_block_size_bytes;
     extern const SettingsBool parallel_replicas_prefer_local_join;
     extern const SettingsBool prefer_global_in_and_join;
-    extern const SettingsInt64 optimize_const_array_and_tuple_to_scalar_size;
+    extern const SettingsInt64 optimize_const_name_size;
 }
 
 namespace ErrorCodes
@@ -260,13 +261,13 @@ private:
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
 };
 
-class ReplaceConstArrayAndTupleWithScalarVisitor : public InDepthQueryTreeVisitorWithContext<ReplaceConstArrayAndTupleWithScalarVisitor>
+class ReplaceLongConstWithScalarVisitor : public InDepthQueryTreeVisitorWithContext<ReplaceLongConstWithScalarVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<ReplaceConstArrayAndTupleWithScalarVisitor>;
+    using Base = InDepthQueryTreeVisitorWithContext<ReplaceLongConstWithScalarVisitor>;
     using Base::Base;
 
-    explicit ReplaceConstArrayAndTupleWithScalarVisitor(const ContextPtr & context, Int64 max_size_)
+    explicit ReplaceLongConstWithScalarVisitor(const ContextPtr & context, Int64 max_size_)
         : Base(context)
         , max_size(max_size_)
     {}
@@ -306,18 +307,16 @@ public:
         if (!constant_node)
             return;
 
-
         const auto * col_const = typeid_cast<const ColumnConst *>(constant_node->getColumn().get());
-        const auto * col_array = typeid_cast<const ColumnArray *>(&col_const->getDataColumn());
-        const auto * col_tuple = typeid_cast<const ColumnTuple *>(&col_const->getDataColumn());
-        if (!col_array && !col_tuple)
-            return;
 
-        if (col_array && (max_size != 0 && col_array->getSize(0) <= static_cast<UInt64>(max_size)))
-            return;
-
-        if (col_tuple && (max_size != 0 && col_tuple->tupleSize() <= static_cast<UInt64>(max_size)))
-            return;
+        if (max_size > 0)
+        {
+            WriteBufferFromOwnString name_buf;
+            IColumn::Options options {.optimize_const_name_size = max_size};
+            col_const->getValueNameAndTypeImpl(name_buf, 0, options);
+            if (options.notFull(name_buf))
+                return;
+        }
 
         const auto & context = getContext();
 
@@ -556,10 +555,10 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     if (auto * query_node = query_tree_to_modify->as<QueryNode>())
         query_node->clearSettingsChanges();
 
-    auto max_array_size = planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_array_and_tuple_to_scalar_size];
-    if (max_array_size >= 0)
+    auto max_const_name_size = planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size];
+    if (max_const_name_size >= 0)
     {
-        ReplaceConstArrayAndTupleWithScalarVisitor scalar_visitor(planner_context->getQueryContext(), max_array_size);
+        ReplaceLongConstWithScalarVisitor scalar_visitor(planner_context->getQueryContext(), max_const_name_size);
         scalar_visitor.visit(query_tree_to_modify);
     }
 

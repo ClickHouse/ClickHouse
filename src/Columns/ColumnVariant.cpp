@@ -411,7 +411,8 @@ DataTypePtr ColumnVariant::getValueNameAndTypeImpl(WriteBufferFromOwnString & na
     Discriminator discr = localDiscriminatorAt(n);
     if (discr == NULL_DISCRIMINATOR)
     {
-        name_buf << "NULL";
+        if (options.notFull(name_buf))
+            name_buf << "NULL";
         return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
     }
 

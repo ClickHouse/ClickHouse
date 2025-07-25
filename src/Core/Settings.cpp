@@ -6742,6 +6742,15 @@ Possible values:
 - 0 - When the second argument is `DateTime64/Date32` the return type will be `DateTime64/Date32` regardless of the time unit in the first argument.
 - 1 - For `Date32` the result is always `Date`. For `DateTime64` the result is `DateTime` for time units `second` and higher.
 )", 0) \
+    DECLARE(Int64, optimize_const_name_size, 256, R"(
+Replace with scalar and use hash as a name for large constants (size is estimated by name length).
+
+Possible values:
+
+- positive integer - max length of the name,
+- 0 — always,
+- negative integer - never.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
@@ -6936,24 +6945,6 @@ Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distri
     DECLARE_WITH_ALIAS(Bool, allow_experimental_time_series_aggregate_functions, false, R"(
 Experimental timeSeries* aggregate functions for Prometheus-like timeseries resampling, rate, delta calculation.
 )", EXPERIMENTAL, allow_experimental_ts_to_grid_aggregate_function) \
-    DECLARE(Int64, optimize_const_array_and_tuple_to_scalar_size, 0, R"(
-This is an experimental setting. Enables conversion of a constant array or tuple to scalar.
-
-Possible values:
-
-- positive integer - number of elements in an array or tuple,
-- 0 — always,
-- negative integer - never.
-)", EXPERIMENTAL) \
-    DECLARE(Int64, optimize_const_array_and_tuple_name_size, 0, R"(
-This is an experimental setting. Use hash instead of calculating name of a constant array or tuple.
-
-Possible values:
-
-- positive integer - number of elements in an array or tuple,
-- 0 — always,
-- negative integer - never.
-)", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

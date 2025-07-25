@@ -94,18 +94,20 @@ DataTypePtr ColumnMap::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_b
     size_t offset = offsets[n - 1];
     size_t size = offsets[n] - offsets[n - 1];
 
-    name_buf << "[";
+    if (options.notFull(name_buf))
+        name_buf << "[";
     DataTypes element_types;
     element_types.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
     {
-        if (i > 0)
+        if (options.notFull(name_buf) && i > 0)
             name_buf << ", ";
         const auto & type = getNestedData().getValueNameAndTypeImpl(name_buf, offset + i, options);
         element_types.push_back(type);
     }
-    name_buf << "]";
+    if (options.notFull(name_buf))
+        name_buf << "]";
 
     return std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types));
 }

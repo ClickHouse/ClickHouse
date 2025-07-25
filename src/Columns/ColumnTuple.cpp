@@ -8,7 +8,6 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Arena.h>
-#include <Common/SipHash.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <Common/iota.h>
@@ -17,10 +16,6 @@
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <DataTypes/ObjectUtils.h>
 #include <base/sort.h>
-#include <city.h>
-
-using Hash = CityHash_v1_0_2::uint128;
-using HashState = SipHash;
 
 
 namespace DB
@@ -159,35 +154,28 @@ DataTypePtr ColumnTuple::getValueNameAndTypeImpl(WriteBufferFromOwnString & name
 {
     const size_t tuple_size = columns.size();
 
-    if (options.optimize_const_array_and_tuple_name_size < 0 || tuple_size <= static_cast<size_t>(options.optimize_const_array_and_tuple_name_size))
+    if (options.notFull(name_buf))
     {
         if (tuple_size > 1)
             name_buf << "(";
         else
             name_buf << "tuple(";
-
-        DataTypes element_types;
-        element_types.reserve(tuple_size);
-
-        for (size_t i = 0; i < tuple_size; ++i)
-        {
-            if (i > 0)
-                name_buf << ", ";
-            const auto & type = columns[i]->getValueNameAndTypeImpl(name_buf, n, options);
-            element_types.push_back(type);
-        }
-        name_buf << ")";
-
-        return std::make_shared<DataTypeTuple>(element_types);
     }
 
-    HashState h;
-    for (size_t i = 0; i < tuple_size; ++i)
-        columns[i]->updateHashWithValue(n, h);
+    DataTypes element_types;
+    element_types.reserve(tuple_size);
 
-    auto p = getSipHash128AsPair(h);
-    name_buf << fmt::format("{}_{}", p.high64, p.low64);
-    return getDataTypeByColumn(*this);
+    for (size_t i = 0; i < tuple_size; ++i)
+    {
+        if (options.notFull(name_buf) && i > 0)
+            name_buf << ", ";
+        const auto & type = columns[i]->getValueNameAndTypeImpl(name_buf, n, options);
+        element_types.push_back(type);
+    }
+    if (options.notFull(name_buf))
+        name_buf << ")";
+
+    return std::make_shared<DataTypeTuple>(element_types);
 }
 
 bool ColumnTuple::isDefaultAt(size_t n) const
