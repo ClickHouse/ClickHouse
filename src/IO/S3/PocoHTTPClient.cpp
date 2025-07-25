@@ -107,6 +107,7 @@ namespace DB::ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_MANY_REDIRECTS;
     extern const int DNS_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace DB::S3
