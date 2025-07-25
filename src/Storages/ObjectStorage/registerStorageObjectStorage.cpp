@@ -55,6 +55,8 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         format_settings = getFormatSettings(context);
     }
 
+    
+
     ASTPtr partition_by;
     if (args.storage_def->partition_by)
         partition_by = args.storage_def->partition_by->clone();

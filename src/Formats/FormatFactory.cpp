@@ -97,6 +97,14 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
 {
     FormatSettings format_settings;
 
+    LOG_DEBUG(
+        &Poco::Logger::get("FormatFactory"),
+        "Using format settings bloom filter push down: ({}, changed {}), filter push down: ({}, changed {})",
+        settings[Setting::input_format_parquet_bloom_filter_push_down].value,
+        settings[Setting::input_format_parquet_bloom_filter_push_down].changed,
+        settings[Setting::input_format_parquet_filter_push_down].value,
+        settings[Setting::input_format_parquet_filter_push_down].changed);
+
     format_settings.avro.allow_missing_fields = settings[Setting::input_format_avro_allow_missing_fields];
     format_settings.avro.output_codec = settings[Setting::output_format_avro_codec];
     format_settings.avro.output_sync_interval = settings[Setting::output_format_avro_sync_interval];

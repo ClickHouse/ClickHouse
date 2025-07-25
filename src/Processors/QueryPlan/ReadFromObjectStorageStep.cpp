@@ -78,6 +78,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     auto parser_group = std::make_shared<FormatParserGroup>(context->getSettingsRef(), num_streams, filter_actions_dag, context);
     parser_group->column_mapper = configuration->getColumnMapper();
 
+    LOG_DEBUG(&Poco::Logger::get("ReadFromObjectStorageStep"), "Creating read step for object storage with num_streams {}", num_streams);
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto source = std::make_shared<StorageObjectStorageSource>(

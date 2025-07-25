@@ -44,6 +44,8 @@ public:
     String getName() const override { return name; }
 
     Chunk generate() override;
+    Chunk generateImpl();
+
 
     void onFinish() override { parser_group->finishStream(); }
 

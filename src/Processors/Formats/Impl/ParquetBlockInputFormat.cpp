@@ -742,10 +742,16 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
     auto skip_row_group_based_on_filters = [&](int row_group)
     {
+        LOG_DEBUG(
+            &Poco::Logger::get("ParquetBlockInputFormat, skip_row_group_based_on_filters"),
+            "Checking if row group can be skipped based on filters: filter_push_down={}, bloom_filter_push_down={}",
+            format_settings.parquet.filter_push_down,
+            format_settings.parquet.bloom_filter_push_down);
         if (!format_settings.parquet.filter_push_down && !format_settings.parquet.bloom_filter_push_down)
         {
             return false;
         }
+
 
         KeyCondition::ColumnIndexToBloomFilter column_index_to_bloom_filter;
 

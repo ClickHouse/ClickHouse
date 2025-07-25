@@ -142,6 +142,11 @@ ManifestFilesPruner::ManifestFilesPruner(
                     ActionsDAG({name_and_type}), ExpressionActionsSettings(context));
 
                 ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
+                LOG_DEBUG(
+                    &Poco::Logger::get("Iceberg Partition Pruning"),
+                    "Adding min/max key condition for column {} with id {}",
+                    name_and_type.name,
+                    used_column_id);
                 min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type.name}, expression));
             }
         }
@@ -179,7 +184,15 @@ bool ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
         if (!name_and_type.has_value())
             continue;
 
-        auto hyperrectangle = entry.columns_infos.at(column_id).hyperrectangle;
+
+        // Bound info could be dropped for some columns earlier because some of bounds could be null or column is a subfield of map/array.
+        auto it = entry.columns_infos.find(column_id);
+        if (it == entry.columns_infos.end())
+        {
+            continue;
+        }
+
+        auto hyperrectangle = it->second.hyperrectangle;
         if (hyperrectangle.has_value() && !key_condition.mayBeTrueInRange(1, &hyperrectangle->left, &hyperrectangle->right, {name_and_type->type}))
         {
             ProfileEvents::increment(ProfileEvents::IcebergMinMaxIndexPrunedFiles);

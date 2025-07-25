@@ -233,9 +233,8 @@ void StorageObjectStorageSource::lazyInitialize()
     initialized = true;
 }
 
-Chunk StorageObjectStorageSource::generate()
+Chunk StorageObjectStorageSource::generateImpl()
 {
-
     lazyInitialize();
 
     while (true)
@@ -350,6 +349,27 @@ Chunk StorageObjectStorageSource::generate()
     }
 
     return {};
+}
+
+Chunk StorageObjectStorageSource::generate()
+{
+    auto chunk = generateImpl();
+    LOG_DEBUG(
+        &Poco::Logger::get("StorageObjectStorageSource"),
+        "Generated chunk with {} rows and {} columns",
+        chunk.getNumRows(),
+        chunk.getNumColumns());
+    for (const auto & column : chunk.getColumns())
+    {
+        LOG_DEBUG(
+            &Poco::Logger::get("StorageObjectStorageSource"),
+            "column name: {}, structure: {}, is const: {}, is only null: {}",
+            column->getName(),
+            column->dumpStructure(),
+            column->isConst(),
+            column->onlyNull());
+    }
+    return chunk;
 }
 
 void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
@@ -482,6 +502,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             initial_header = sample_header;
         }
 
+        LOG_DEBUG(
+            log,
+            "Creating reader for object {} with format settings bloom filter push down: {}, filter push down: {}",
+            object_info->getPath(),
+            format_settings->parquet.bloom_filter_push_down,
+            format_settings->parquet.filter_push_down);
+
         auto input_format = FormatFactory::instance().getInput(
             configuration->format,
             *read_buf,
@@ -543,6 +570,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     return ReaderHolder(
         object_info, std::move(read_buf), std::move(source), std::move(pipeline), std::move(current_reader));
 }
+
 
 std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource::createReaderAsync()
 {
