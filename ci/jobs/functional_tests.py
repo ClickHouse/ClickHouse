@@ -179,9 +179,7 @@ def main():
     if is_database_replicated or is_shared_catalog or is_parallel_replicas:
         pass
     else:
-        if "debug" in args.options:
-            nproc = int(Utils.cpu_count() * 1.0)
-        elif "binary" in args.options:
+        if "binary" in args.options:
             nproc = int(Utils.cpu_count() * 1.2)
         else:
             pass
