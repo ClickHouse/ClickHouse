@@ -1,4 +1,7 @@
 #pragma once
+#include <config.h>
+
+#if USE_AVRO
 
 #include <cstddef>
 #include <cstdint>
@@ -327,3 +330,5 @@ private:
 using PaimonTableClientPtr = std::shared_ptr<PaimonTableClient>;
 
 }
+
+#endif

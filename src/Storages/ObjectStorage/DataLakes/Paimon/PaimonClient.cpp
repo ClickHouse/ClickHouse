@@ -1,3 +1,7 @@
+#include <config.h>
+
+#if USE_AVRO
+
 #include <algorithm>
 #include <charconv>
 #include <cstddef>
@@ -295,3 +299,5 @@ PaimonTableClient::getDataManifest(String manifest_path, const PaimonTableSchema
 }
 
 }
+
+#endif
