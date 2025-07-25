@@ -138,7 +138,6 @@ FileNamesGenerator::Result FileNamesGenerator::generateMetadataName()
 
 String FileNamesGenerator::convertMetadataPathToStoragePath(const String & metadata_path) const
 {
-    std::cerr << "result to read " << storage_dir + metadata_path.substr(table_dir.size()) << '\n';
     return storage_dir + metadata_path.substr(table_dir.size());
 }
 
