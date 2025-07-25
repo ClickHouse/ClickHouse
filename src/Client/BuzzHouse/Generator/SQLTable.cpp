@@ -175,19 +175,21 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_row_exists"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_sample_factor"}));
         }
-        else if (t.isAnyS3Engine() || t.isAnyAzureEngine() || t.isFileEngine() || t.isURLEngine())
+        else if (
+            t.isAnyS3Engine() || t.isAnyAzureEngine() || t.isAnyDeltaLakeEngine() || t.isAnyIcebergEngine() || t.isFileEngine()
+            || t.isURLEngine())
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_path"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_file"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_size"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_time"}));
-            if (t.isS3Engine())
-            {
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_etag"}));
-            }
-            else if (t.isURLEngine())
+            if (t.isURLEngine())
             {
                 rel.cols.emplace_back(SQLRelationCol(rel_name, {"_headers"}));
+            }
+            else
+            {
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_etag"}));
             }
         }
         else if (t.isMergeEngine())
