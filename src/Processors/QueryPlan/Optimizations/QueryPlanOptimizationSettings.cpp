@@ -42,6 +42,7 @@ namespace Setting
     extern const SettingsBool query_plan_optimize_lazy_materialization;
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBoolAuto query_plan_join_swap_table;
+    extern const SettingsBool query_plan_optimize_join_order;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -104,6 +105,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     join_swap_table = from[Setting::query_plan_join_swap_table].is_auto
         ? std::nullopt
         : std::make_optional(from[Setting::query_plan_join_swap_table].base);
+    optimize_join_order = from[Setting::query_plan_optimize_join_order];
 
     optimize_prewhere = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_optimize_prewhere];
     read_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_read_in_order] && from[Setting::query_plan_read_in_order];
