@@ -59,6 +59,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
             {"vector_search_with_rescoring", true, true, "New setting."},
             {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},
+            {"write_full_path_insert_iceberg", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
@@ -81,7 +82,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_plan_force_shuffle_aggregation", 0, 0, "New experimental setting"},
             {"allow_experimental_insert_into_iceberg", false, false, "New setting."},
             /// RELEASE CLOSED
-            {"write_full_path_insert_iceberg", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.6",
         {
