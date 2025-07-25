@@ -21,12 +21,14 @@ public:
         bool send_over_whole_archive_);
 
     ObjectInfoPtr getNextTask(size_t number_of_current_replica);
+    bool hasNextTask(size_t number_of_current_replica);
 
 private:
     size_t getReplicaForFile(const String & file_path);
     ObjectInfoPtr getPreQueuedFile(size_t number_of_current_replica);
     ObjectInfoPtr getMatchingFileFromIterator(size_t number_of_current_replica);
     ObjectInfoPtr getAnyUnprocessedFile(size_t number_of_current_replica);
+    String getPathFromObjectInfo(ObjectInfoPtr object_info);
 
     const std::shared_ptr<IObjectIterator> iterator;
     const bool send_over_whole_archive;
