@@ -793,7 +793,7 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
             /// TODO: We only have one stats file for every part.
             estimator.incrementRowCount(part.data_part->rows_count);
             for (const auto & stat : stats)
-                estimator.addStatistics(part.data_part->info.getPartNameV1(), stat);
+                estimator.addStatistics(stat);
         }
         catch (...)
         {
@@ -810,7 +810,7 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
                 auto stats = part.data_part->loadStatistics();
                 estimator.incrementRowCount(part.data_part->rows_count);
                 for (const auto & stat : stats)
-                    estimator.addStatistics(part.data_part->info.getPartNameV1(), stat);
+                    estimator.addStatistics(stat);
             }
         }
         catch (...)
@@ -2392,6 +2392,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 }
 
 void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
+try
 {
     for (auto & disk : getStoragePolicy()->getDisks())
         disk->refresh(interval_milliseconds);
@@ -2482,6 +2483,10 @@ void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
     ProfileEvents::increment(ProfileEvents::LoadedDataPartsMicroseconds, watch.elapsedMicroseconds());
 
     refresh_parts_task->scheduleAfter(interval_milliseconds);
+}
+catch (...)
+{
+    tryLogCurrentException(log, "Failed to refresh parts");
 }
 
 
