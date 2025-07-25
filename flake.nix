@@ -126,7 +126,7 @@
     contrib-arrow = { url = "github:ClickHouse/arrow/210f686ab96733180bed04e36098911825d70345"; flake = false; };
     contrib-thrift = { url = "github:apache/thrift/2a93df80f27739ccabb5b885cb12a8dc7595ecdf"; flake = false; };
     contrib-libhdfs3 = { url = "github:ClickHouse/libhdfs3/d0ae7d2568151feef61d3ec7896803262f0e0f91"; flake = false; };
-    contrib-libxml2 = { url = "github:GNOME/libxml2/4c6b2c3096b1da0d0780fe0b4f147e837140468d"; flake = false; };
+    contrib-libxml2 = { url = "github:GNOME/libxml2/74f3154320df8950eceae4951975cc9dfc3a254d"; flake = false; };
     contrib-libgsasl = { url = "github:ClickHouse/libgsasl/2d16b4e0d9435bec4546875ef07d36383bb993a5"; flake = false; };
     contrib-snappy = { url = "github:ClickHouse/snappy/6ebb5b1ab8801ea3fde103c5c29f5ab86df5fe7a"; flake = false; };
     contrib-cppkafka = { url = "github:ClickHouse/cppkafka/114d5be53330390a16c7ee227ef5e3551a9b5f49"; flake = false; };
@@ -142,7 +142,7 @@
     contrib-aws-c-event-stream = { url = "github:awslabs/aws-c-event-stream/08f24e384e5be20bcffa42b49213d24dad7881ae"; flake = false; };
     contrib-aws-c-common = { url = "github:awslabs/aws-c-common/80f21b3cac5ac51c6b8a62c7d2a5ef58a75195ee"; flake = false; };
     contrib-aws-checksums = { url = "github:awslabs/aws-checksums/321b805559c8e911be5bddba13fcbd222a3e2d3a"; flake = false; };
-    contrib-curl = { url = "github:curl/curl/4dacb79fcdd9364c1083e06f6a011d797a344f47"; flake = false; };
+    contrib-curl = { url = "github:curl/curl/cfbfb65047e85e6b08af65fe9cdbcf68e9ad496a"; flake = false; };
     contrib-icudata = { url = "github:ClickHouse/icudata/cfc05b4c3140ff2be84291b80de8c62b1e42d0da"; flake = false; };
     contrib-icu = { url = "github:ClickHouse/icu/4216173eeeb39c1d4caaa54a68860e800412d273"; flake = false; };
     contrib-flatbuffers = { url = "github:ClickHouse/flatbuffers/0100f6a5779831fa7a651e4b67ef389a8752bd9b"; flake = false; };
@@ -228,7 +228,6 @@
     contrib-double-conversion = { url = "github:ClickHouse/double-conversion/4f7a25d8ced8c7cf6eee6fd09d6788eaa23c9afe"; flake = false; };
     contrib-mongo-cxx-driver = { url = "github:ClickHouse/mongo-cxx-driver/3166bdb49b717ce1bc30f46cc2b274ab1de7005b"; flake = false; };
     contrib-mongo-c-driver = { url = "github:ClickHouse/mongo-c-driver/4ee76b070b260de5da1e8c8144c028dfc37efbaf"; flake = false; };
-    contrib-sz3 = { url = "github:ClickHouse/SZ3/df46e03190b0fa1b46eef016829030170f3553e0"; flake = false; };
     contrib-numactl = { url = "github:ClickHouse/numactl/ff32c618d63ca7ac48cce366c5a04bb3563683a0"; flake = false; };
     contrib-postgres = { url = "github:ClickHouse/postgres/9da0420d861df7542b92058342afd4723e95ef4c"; flake = false; };
     contrib-delta-kernel-rs = { url = "github:ClickHouse/delta-kernel-rs/beb2eb808e8c7ae6992c99809331b7cc2ed85278"; flake = false; };
