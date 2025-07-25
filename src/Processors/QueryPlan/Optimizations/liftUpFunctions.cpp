@@ -17,7 +17,7 @@ namespace ErrorCodes
 namespace
 {
 
-const DB::Header & getChildOutputHeader(DB::QueryPlan::Node & node)
+const DB::SharedHeader & getChildOutputHeader(DB::QueryPlan::Node & node)
 {
     if (node.children.size() != 1)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Node \"{}\" is expected to have only one child.", node.step->getName());

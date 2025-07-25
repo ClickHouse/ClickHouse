@@ -4,12 +4,19 @@
 #include <IO/WriteBufferDecorator.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Port.h>
+#include <Common/FailPoint.h>
+#include <base/sleep.h>
 
 
 namespace DB
 {
 
-IOutputFormat::IOutputFormat(const Block & header_, WriteBuffer & out_)
+namespace FailPoints
+{
+    extern const char output_format_sleep_on_progress[];
+}
+
+IOutputFormat::IOutputFormat(SharedHeader header_, WriteBuffer & out_)
     : IProcessor({header_, header_, header_}, {}), out(out_)
 {
 }
@@ -194,6 +201,12 @@ void IOutputFormat::setExtremes(const Block & extremes)
 
 void IOutputFormat::onProgress(const Progress & progress)
 {
+    fiu_do_on(
+        FailPoints::output_format_sleep_on_progress,
+        {
+            sleepForMilliseconds(100);
+        });
+
     statistics.progress.incrementPiecewiseAtomically(progress);
     UInt64 elapsed_ns = statistics.watch.elapsedNanoseconds();
     statistics.progress.elapsed_ns = elapsed_ns;
@@ -205,7 +218,8 @@ void IOutputFormat::onProgress(const Progress & progress)
         if (elapsed_ns >= prev_progress_write_ns + 1000 * progress_write_frequency_us)
         {
             std::unique_lock lock(writing_mutex, std::try_to_lock);
-            if (lock)
+
+            if (lock && has_progress_update_to_write && !finalized)
             {
                 writeProgress(statistics.progress);
                 flushImpl();

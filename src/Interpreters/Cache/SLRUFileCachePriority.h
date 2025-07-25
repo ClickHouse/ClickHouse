@@ -34,6 +34,8 @@ public:
 
     std::string getStateInfoForLog(const CachePriorityGuard::Lock & lock) const override;
 
+    double getSLRUSizeRatio() const override { return size_ratio; }
+
     void check(const CachePriorityGuard::Lock &) const override;
 
     bool canFit( /// NOLINT

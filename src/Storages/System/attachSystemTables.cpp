@@ -1,4 +1,4 @@
-#include "Storages/System/StorageSystemKeywords.h"
+#include <Storages/System/StorageSystemKeywords.h>
 #include "config.h"
 
 #include <Databases/IDatabase.h>
@@ -14,6 +14,7 @@
 #include <Storages/System/StorageSystemClusters.h>
 #include <Storages/System/StorageSystemColumns.h>
 #include <Storages/System/StorageSystemCodecs.h>
+#include <Storages/System/StorageSystemCompletions.h>
 #include <Storages/System/StorageSystemDatabases.h>
 #include <Storages/System/StorageSystemDataSkippingIndices.h>
 #include <Storages/System/StorageSystemDataTypeFamilies.h>
@@ -32,6 +33,7 @@
 #include <Storages/System/StorageSystemReplicatedFetches.h>
 #include <Storages/System/StorageSystemMetrics.h>
 #include <Storages/System/StorageSystemHistogramMetrics.h>
+#include <Storages/System/StorageSystemDimensionalMetrics.h>
 #include <Storages/System/StorageSystemModels.h>
 #include <Storages/System/StorageSystemMutations.h>
 #include <Storages/System/StorageSystemNumbers.h>
@@ -204,6 +206,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemProcesses>(context, system_database, "processes", "Contains a list of currently executing processes (queries) with their progress.");
     attach<StorageSystemMetrics>(context, system_database, "metrics", "Contains metrics which can be calculated instantly, or have a current value. For example, the number of simultaneously processed queries or the current replica delay. This table is always up to date.");
     attach<StorageSystemHistogramMetrics>(context, system_database, "histogram_metrics", "Contains histogram metrics which can be calculated instantly and exported in the Prometheus format. For example, the keeper response time. This table is always up to date.");
+    attach<StorageSystemDimensionalMetrics>(context, system_database, "dimensional_metrics", "Contains dimensional metrics, which have multiple dimensions (labels) to provide more granular information. For example, counting failed merges by their error code. This table is always up to date.");
     attach<StorageSystemMerges>(context, system_database, "merges", "Contains a list of merges currently executing merges of MergeTree tables and their progress. Each merge operation is represented by a single row.");
     attach<StorageSystemMoves>(context, system_database, "moves", "Contains information about in-progress data part moves of MergeTree tables. Each data part movement is represented by a single row.");
     attach<StorageSystemMutations>(context, system_database, "mutations", "Contains a list of mutations and their progress. Each mutation command is represented by a single row.");
@@ -250,6 +253,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
 
     attach<StorageSystemLatencyBuckets>(context, system_database, "latency_buckets", "Contains buckets bounds used by latency log.");
     attach<StorageSystemCodecs>(context, system_database, "codecs", "Contains information about system codecs.");
+    attach<StorageSystemCompletions>(context, system_database, "completions", "Contains a list of completion tokens.");
 }
 
 void attachSystemTablesAsync(ContextPtr context, IDatabase & system_database, AsynchronousMetrics & async_metrics)
