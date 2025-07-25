@@ -3,16 +3,16 @@
 #include <type_traits>
 #include <alloca.h>
 #include <IO/ReadHelpers.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/BinaryRow.h>
+#include <base/Decimal.h>
+#include <base/defines.h>
+#include <base/types.h>
 #include <Poco/BinaryReader.h>
 #include <Poco/ByteOrder.h>
 #include <Poco/Logger.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
-#include <Interpreters/Context_fwd.h>
-#include <base/Decimal.h>
-#include <base/defines.h>
-#include <base/types.h>
 
 namespace DB
 {
@@ -46,13 +46,13 @@ BinaryRow::BinaryRow(const String & bytes_)
     {
         static const char hex_digits[] = "0123456789abcdef";
         WriteBufferFromOwnString result;
-        
-        for (unsigned char c : input) 
+
+        for (unsigned char c : input)
         {
             writeChar(hex_digits[(c >> 4) & 0xF], result);
             writeChar(hex_digits[c & 0xF], result);
         }
-        
+
         return result.str();
     };
 
