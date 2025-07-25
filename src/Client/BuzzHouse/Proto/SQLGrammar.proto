@@ -2805,8 +2805,9 @@ message SetQuery {
 }
 
 message CTEquery {
-    required Table table = 1;
-    required Select query = 2;
+    optional bool recursive = 1;
+    required Table table = 2;
+    required Select query = 3;
 }
 
 message CTEexpr {

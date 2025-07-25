@@ -147,7 +147,13 @@ void StatementGenerator::generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
 }
 
 void StatementGenerator::generateDerivedTable(
-    RandomGenerator & rg, SQLRelation & rel, const uint32_t allowed_clauses, const uint32_t ncols, const bool backup, Select * sel)
+    RandomGenerator & rg,
+    SQLRelation & rel,
+    const uint32_t allowed_clauses,
+    const uint32_t ncols,
+    const bool backup,
+    const std::optional<String> recursive,
+    Select * sel)
 {
     std::unordered_map<uint32_t, QueryLevel> levels_backup;
     std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
@@ -168,7 +174,7 @@ void StatementGenerator::generateDerivedTable(
 
     this->current_level++;
     this->levels[this->current_level] = QueryLevel(this->current_level);
-    generateSelect(rg, false, false, ncols, allowed_clauses, sel);
+    generateSelect(rg, false, false, ncols, allowed_clauses, recursive, sel);
     this->current_level--;
 
     if (backup)
@@ -537,7 +543,8 @@ bool StatementGenerator::joinedTableOrFunction(
         }
         else
         {
-            generateDerivedTable(rg, rel, allowed_clauses, ncols, true, eq->mutable_inner_query()->mutable_select()->mutable_sel());
+            generateDerivedTable(
+                rg, rel, allowed_clauses, ncols, true, std::nullopt, eq->mutable_inner_query()->mutable_select()->mutable_sel());
         }
         this->levels[this->current_level].rels.emplace_back(rel);
     }
@@ -1881,8 +1888,18 @@ void StatementGenerator::addCTEs(RandomGenerator & rg, const uint32_t allowed_cl
             const String name = fmt::format("cte{}d{}", this->levels[this->current_level].cte_counter++, this->current_level);
             SQLRelation rel(name);
             const uint32_t ncols = std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % UINT32_C(5)) + 1);
+            const bool recursive = fc.allow_infinite_tables && this->depth<this->fc.max_depth && this->fc.max_width> this->width + 1
+                && rg.nextSmallNumber() < 4;
 
-            generateDerivedTable(rg, rel, allowed_clauses, ncols, rg.nextSmallNumber() < 7, nqcte->mutable_query());
+            nqcte->set_recursive(recursive);
+            generateDerivedTable(
+                rg,
+                rel,
+                allowed_clauses,
+                ncols,
+                rg.nextSmallNumber() < 7,
+                recursive ? std::make_optional<String>(name) : std::nullopt,
+                nqcte->mutable_query());
             nqcte->mutable_table()->set_table(name);
             this->ctes[this->current_level][name] = std::move(rel);
         }
@@ -1923,8 +1940,38 @@ void StatementGenerator::addWindowDefs(RandomGenerator & rg, SelectStatementCore
     this->depth--;
 }
 
+static void matchQueryAliases(const uint32_t ncols, Select * osel, Select * nsel)
+{
+    /// Make sure aliases match
+    SelectStatementCore * ssc = nsel->mutable_select_core();
+    JoinedTableOrFunction * jtf = ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
+
+    for (uint32_t i = 0; i < ncols; i++)
+    {
+        const String ncname = "c" + std::to_string(i);
+
+        ssc->add_result_columns()
+            ->mutable_eca()
+            ->mutable_expr()
+            ->mutable_comp_expr()
+            ->mutable_expr_stc()
+            ->mutable_col()
+            ->mutable_path()
+            ->mutable_col()
+            ->set_column(ncname);
+        jtf->add_col_aliases()->set_column(ncname);
+    }
+    jtf->mutable_tof()->mutable_select()->mutable_inner_query()->mutable_select()->set_allocated_sel(osel);
+}
+
 void StatementGenerator::generateSelect(
-    RandomGenerator & rg, const bool top, bool force_global_agg, const uint32_t ncols, uint32_t allowed_clauses, Select * sel)
+    RandomGenerator & rg,
+    const bool top,
+    bool force_global_agg,
+    const uint32_t ncols,
+    uint32_t allowed_clauses,
+    const std::optional<String> recursive,
+    Select * sel)
 {
     CTEs * qctes = nullptr;
 
@@ -1934,40 +1981,59 @@ void StatementGenerator::generateSelect(
         this->addCTEs(rg, allowed_clauses, qctes);
     }
     if ((allowed_clauses & allow_set) && !force_global_agg && this->depth<this->fc.max_depth && this->fc.max_width> this->width + 1
-        && rg.nextSmallNumber() < 3)
+        && (recursive.has_value() || rg.nextSmallNumber() < 3))
     {
         SetQuery * setq = sel->mutable_set_query();
         ExplainQuery * eq1 = setq->mutable_sel1();
         ExplainQuery * eq2 = setq->mutable_sel2();
         std::uniform_int_distribution<uint32_t> set_range(1, static_cast<uint32_t>(SetQuery::SetOp_MAX));
 
-        setq->set_set_op(static_cast<SetQuery_SetOp>(set_range(rg.generator)));
+        setq->set_set_op(recursive ? SetQuery_SetOp::SetQuery_SetOp_UNION : static_cast<SetQuery_SetOp>(set_range(rg.generator)));
         setq->set_paren1(rg.nextSmallNumber() < 9);
         setq->set_paren2(rg.nextSmallNumber() < 9);
-        if (rg.nextSmallNumber() < 8)
+        if (rg.nextSmallNumber() < (recursive.has_value() ? 9 : 8))
         {
-            setq->set_s_or_d(rg.nextBool() ? AllOrDistinct::ALL : AllOrDistinct::DISTINCT);
+            setq->set_s_or_d(rg.nextSmallNumber() < (recursive.has_value() ? 9 : 6) ? AllOrDistinct::ALL : AllOrDistinct::DISTINCT);
         }
         this->depth++;
         this->current_level++;
-        if (ncols == 1 && rg.nextMediumNumber() < 6)
+        if (!recursive.has_value() && ncols == 1 && rg.nextMediumNumber() < 6)
         {
             prepareNextExplain(rg, eq1);
         }
         else
         {
+            TopSelect * tsel = eq1->mutable_inner_query()->mutable_select();
             this->levels[this->current_level] = QueryLevel(this->current_level);
-            generateSelect(rg, false, false, ncols, allowed_clauses, eq1->mutable_inner_query()->mutable_select()->mutable_sel());
+
+            generateSelect(rg, false, false, ncols, allowed_clauses, std::nullopt, tsel->mutable_sel());
+            if (recursive.has_value())
+            {
+                matchQueryAliases(ncols, tsel->release_sel(), tsel->mutable_sel());
+            }
         }
         this->width++;
-        if (ncols == 1 && rg.nextMediumNumber() < 6)
+        if (!recursive.has_value() && ncols == 1 && rg.nextMediumNumber() < 6)
         {
             prepareNextExplain(rg, eq2);
         }
         else
         {
+            TopSelect * tsel = eq2->mutable_inner_query()->mutable_select();
             this->levels[this->current_level] = QueryLevel(this->current_level);
-            generateSelect(rg, false, false, ncols, allowed_clauses, eq2->mutable_inner_query()->mutable_select()->mutable_sel());
+
+            /// Add recursive CTE reference when that's the case
+            if (recursive.has_value())
+            {
+                SQLRelation rel(recursive.value());
+
+                for (uint32_t i = 0; i < ncols; i++)
+                {
+                    rel.cols.emplace_back(SQLRelationCol(recursive.value(), {"c" + std::to_string(i)}));
+                }
+                this->ctes[this->current_level][recursive.value()] = std::move(rel);
+            }
+            generateSelect(rg, false, false, ncols, allowed_clauses, std::nullopt, tsel->mutable_sel());
         }
         this->current_level--;
         this->depth--;
@@ -2106,7 +2172,7 @@ void StatementGenerator::generateTopSelect(
     const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % UINT32_C(5)) + 1), UINT32_C(1));
 
     this->levels[this->current_level] = QueryLevel(this->current_level);
-    generateSelect(rg, true, force_global_agg, ncols, allowed_clauses, ts->mutable_sel());
+    generateSelect(rg, true, force_global_agg, ncols, allowed_clauses, std::nullopt, ts->mutable_sel());
     this->levels.clear();
     if (rg.nextSmallNumber() < 3)
     {

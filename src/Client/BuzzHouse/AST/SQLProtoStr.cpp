@@ -2655,6 +2655,10 @@ CONV_FN(SetQuery, setq)
 
 CONV_FN(CTEquery, cteq)
 {
+    if (cteq.recursive())
+    {
+        ret += "RECURSIVE ";
+    }
     TableToString(ret, cteq.table());
     ret += " AS (";
     SelectToString(ret, cteq.query());

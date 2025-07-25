@@ -462,6 +462,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         false,
         view_ncols,
         next.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
+        std::nullopt,
         sparen->mutable_select());
     this->levels.clear();
     this->allow_in_expression_alias = true;
@@ -739,6 +740,7 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
                 false,
                 (rg.nextLargeNumber() % 5) + 1,
                 std::numeric_limits<uint32_t>::max(),
+                std::nullopt,
                 eq->mutable_inner_query()->mutable_select()->mutable_sel());
         }
         this->levels.clear();
@@ -1010,7 +1012,8 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
             {
                 this->addCTEs(rg, std::numeric_limits<uint32_t>::max(), ins->mutable_ctes());
             }
-            generateSelect(rg, true, false, static_cast<uint32_t>(this->entries.size()), std::numeric_limits<uint32_t>::max(), sel);
+            generateSelect(
+                rg, true, false, static_cast<uint32_t>(this->entries.size()), std::numeric_limits<uint32_t>::max(), std::nullopt, sel);
             this->levels.clear();
         }
         else
@@ -1343,6 +1346,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                     false,
                     v.staged_ncols,
                     v.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
+                    std::nullopt,
                     sparen->mutable_select());
                 this->levels.clear();
                 this->allow_in_expression_alias = true;

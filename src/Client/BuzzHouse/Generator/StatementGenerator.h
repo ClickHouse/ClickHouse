@@ -396,12 +396,26 @@ private:
         RandomGenerator & rg, const String & rel_name, uint32_t allowed_clauses, bool under_remote, TableOrFunction * tof);
     void generateFromElement(RandomGenerator & rg, uint32_t allowed_clauses, TableOrSubquery * tos);
     void generateJoinConstraint(RandomGenerator & rg, bool allow_using, JoinConstraint * jc);
-    void generateDerivedTable(RandomGenerator & rg, SQLRelation & rel, uint32_t allowed_clauses, uint32_t ncols, bool backup, Select * sel);
+    void generateDerivedTable(
+        RandomGenerator & rg,
+        SQLRelation & rel,
+        uint32_t allowed_clauses,
+        uint32_t ncols,
+        bool backup,
+        const std::optional<String> recursive,
+        Select * sel);
     /* Returns the number of from elements generated */
     uint32_t generateFromStatement(RandomGenerator & rg, uint32_t allowed_clauses, FromStatement * ft);
     void addCTEs(RandomGenerator & rg, uint32_t allowed_clauses, CTEs * qctes);
     void addWindowDefs(RandomGenerator & rg, SelectStatementCore * ssc);
-    void generateSelect(RandomGenerator & rg, bool top, bool force_global_agg, uint32_t ncols, uint32_t allowed_clauses, Select * sel);
+    void generateSelect(
+        RandomGenerator & rg,
+        bool top,
+        bool force_global_agg,
+        uint32_t ncols,
+        uint32_t allowed_clauses,
+        const std::optional<String> recursive,
+        Select * sel);
 
     void generateTopSelect(RandomGenerator & rg, bool force_global_agg, uint32_t allowed_clauses, TopSelect * ts);
     void generateNextExplain(RandomGenerator & rg, bool in_parallel, ExplainQuery * eq);

@@ -1664,7 +1664,7 @@ void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, 
     {
         addTableRelation(rg, true, "", t);
     }
-    generateSelect(rg, true, false, ncols, allow_groupby | allow_orderby, pdef->mutable_select());
+    generateSelect(rg, true, false, ncols, allow_groupby | allow_orderby, std::nullopt, pdef->mutable_select());
     this->levels.clear();
     this->inside_projection = false;
     to_add.insert(pname);
@@ -2085,6 +2085,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
                 false,
                 static_cast<uint32_t>(next.numberOfInsertableColumns()),
                 std::numeric_limits<uint32_t>::max(),
+                std::nullopt,
                 cts->mutable_select());
             this->levels.clear();
         }
