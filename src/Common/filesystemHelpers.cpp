@@ -58,7 +58,7 @@ struct statvfs getStatVFS(String path)
             continue;
         }
 
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STATVFS, path, "Could not calculate available disk space (statvfs)");
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STATVFS, path, "Could not get disk stat (statvfs)");
     }
     return fs;
 }
