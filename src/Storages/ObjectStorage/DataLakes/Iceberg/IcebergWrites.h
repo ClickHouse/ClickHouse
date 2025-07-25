@@ -35,7 +35,12 @@ class FileNamesGenerator
 public:
     struct Result
     {
+        /// Path recorded in the Iceberg metadata files.
+        /// If `write_full_path_in_iceberg_metadata` is disabled, it will be a simple relative path (e.g., /a/b/c.avro).
+        /// Otherwise, it will include a prefix indicating the file system type (e.g., s3://a/b/c.avro).
         String path_in_metadata;
+
+        /// Actual path to the object in the storage (e.g., /a/b/c.avro).
         String path_in_storage;
     };
 

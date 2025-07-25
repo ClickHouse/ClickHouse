@@ -6918,7 +6918,7 @@ Allow experimental delta-kernel-rs implementation.
     DECLARE(Bool, allow_experimental_insert_into_iceberg, false, R"(
 Allow to execute `insert` queries into iceberg.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, write_full_path_insert_iceberg, false, R"(
+    DECLARE(Bool, write_full_path_in_iceberg_metadata, false, R"(
 Write full paths (including s3://) into iceberg metadata files.
 )", EXPERIMENTAL) \
     DECLARE(Bool, make_distributed_plan, false, R"(

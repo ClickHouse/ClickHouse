@@ -59,7 +59,7 @@ namespace Setting
 {
 extern const SettingsUInt64 output_format_compression_level;
 extern const SettingsUInt64 output_format_compression_zstd_window_log;
-extern const SettingsBool write_full_path_insert_iceberg;
+extern const SettingsBool write_full_path_in_iceberg_metadata;
 }
 
 namespace DataLakeStorageSetting
@@ -665,7 +665,7 @@ IcebergStorageSink::IcebergStorageSink(
     auto config_path = configuration_->getPath();
     if (config_path.empty() || config_path.back() != '/')
         config_path += "/";
-    if (!context_->getSettingsRef()[Setting::write_full_path_insert_iceberg])
+    if (!context_->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata])
     {
         filename_generator = FileNamesGenerator(config_path, config_path);
     }
