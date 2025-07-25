@@ -1,10 +1,17 @@
+#include <filesystem>
+#include <iostream>
+#include <Compression/CompressionCodecEncrypted.h>
+#include <Compression/ICompressionCodec.h>
+#include <Core/Defines.h>
+#include <Poco/Util/Application.h>
+#include <Poco/Util/XMLConfiguration.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/EventNotifier.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
-#include <Compression/ICompressionCodec.h>
-#include <Compression/CompressionCodecEncrypted.h>
-#include <Poco/Util/XMLConfiguration.h>
-#include <iostream>
+
+
+namespace fs = std::filesystem;
+
 
 /** This program encrypts or decrypts text values using a symmetric encryption codec like AES_128_GCM_SIV or AES_256_GCM_SIV.
   * Keys for codecs are loaded from <encryption_codecs> section of configuration file via value given in config/env/ZooKeeper.
@@ -39,6 +46,14 @@
 </clickhouse>
   */
 
+
+/// Instance of EncryptDecryptApplication is needed in order to initialize Poco::Net::SSLManager for certificates loading
+class EncryptDecryptApplication : public Poco::Util::Application
+{
+public:
+    EncryptDecryptApplication() { }
+};
+
 int main(int argc, char ** argv)
 {
     try
@@ -46,12 +61,13 @@ int main(int argc, char ** argv)
         if (argc != 5)
         {
             std::cerr << "Usage:" << std::endl
-                << "    " << argv[0] << " path action codec value" << std::endl
-                << "path: path to configuration file." << std::endl
-                << "action: -e for encryption and -d for decryption." << std::endl
-                << "codec: AES_128_GCM_SIV or AES_256_GCM_SIV." << std::endl << std::endl
-                << "Example:"  << std::endl
-                << "    ./encrypt_decrypt /etc/clickhouse-server/config.xml -e AES_128_GCM_SIV text_to_encrypt";
+                      << "    " << argv[0] << " path action codec value" << std::endl
+                      << "path: path to configuration file." << std::endl
+                      << "action: -e for encryption and -d for decryption." << std::endl
+                      << "codec: AES_128_GCM_SIV or AES_256_GCM_SIV." << std::endl
+                      << std::endl
+                      << "Example:" << std::endl
+                      << "    ./encrypt_decrypt /etc/clickhouse-server/config.xml -e AES_128_GCM_SIV text_to_encrypt";
             return 3;
         }
 
@@ -69,6 +85,16 @@ int main(int argc, char ** argv)
             DB::ConfigurationPtr bootstrap_configuration(new Poco::Util::XMLConfiguration(config_xml));
 
             zkutil::validateZooKeeperConfig(*bootstrap_configuration);
+
+            std::string path_str = bootstrap_configuration->getString("path", Coordination::DBMS_DEFAULT_PATH);
+            fs::path path(path_str);
+            fs::path preprocessed_configs_path("preprocessed_configs");
+            constexpr std::string config_name = "encrypt_decrypt.xml";
+            DB::ConfigProcessor::LoadedConfig loaded_config
+                = DB::ConfigProcessor::LoadedConfig{bootstrap_configuration, has_zk_includes, true, config_xml, config_name};
+            processor.savePreprocessedConfig(loaded_config, path_str, true);
+            EncryptDecryptApplication app;
+            app.loadConfiguration((path / preprocessed_configs_path / config_name).string());
 
             auto zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(
                 *bootstrap_configuration, bootstrap_configuration->has("zookeeper") ? "zookeeper" : "keeper");
