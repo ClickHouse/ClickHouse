@@ -973,6 +973,8 @@ void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalInte
             }
         }
     }
+    const auto err = std::filesystem::remove(peer_query == PeerQuery::ClickHouseOnly ? qfile_peer : qcfile);
+    UNUSED(err);
 }
 
 }
