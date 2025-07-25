@@ -63,26 +63,26 @@ Note, that you can define multiple LDAP servers inside the `ldap_servers` sectio
 - `host` — LDAP server hostname or IP, this parameter is mandatory and cannot be empty.
 - `port` — LDAP server port, default is `636` if `enable_tls` is set to `true`, `389` otherwise.
 - `bind_dn` — Template used to construct the DN to bind to.
-    - The resulting DN will be constructed by replacing all `{user_name}` substrings of the template with the actual user name during each authentication attempt.
+  - The resulting DN will be constructed by replacing all `{user_name}` substrings of the template with the actual user name during each authentication attempt.
 - `user_dn_detection` — Section with LDAP search parameters for detecting the actual user DN of the bound user.
-    - This is mainly used in search filters for further role mapping when the server is Active Directory. The resulting user DN will be used when replacing `{user_dn}` substrings wherever they are allowed. By default, user DN is set equal to bind DN, but once search is performed, it will be updated with to the actual detected user DN value.
-        - `base_dn` — Template used to construct the base DN for the LDAP search.
-            - The resulting DN will be constructed by replacing all `{user_name}` and `{bind_dn}` substrings of the template with the actual user name and bind DN during the LDAP search.
-        - `scope` — Scope of the LDAP search.
-            - Accepted values are: `base`, `one_level`, `children`, `subtree` (the default).
-        - `search_filter` — Template used to construct the search filter for the LDAP search.
-            - The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{base_dn}` substrings of the template with the actual user name, bind DN, and base DN during the LDAP search.
-            - Note, that the special characters must be escaped properly in XML.
+  - This is mainly used in search filters for further role mapping when the server is Active Directory. The resulting user DN will be used when replacing `{user_dn}` substrings wherever they are allowed. By default, user DN is set equal to bind DN, but once search is performed, it will be updated with to the actual detected user DN value.
+    - `base_dn` — Template used to construct the base DN for the LDAP search.
+      - The resulting DN will be constructed by replacing all `{user_name}` and `{bind_dn}` substrings of the template with the actual user name and bind DN during the LDAP search.
+    - `scope` — Scope of the LDAP search.
+      - Accepted values are: `base`, `one_level`, `children`, `subtree` (the default).
+    - `search_filter` — Template used to construct the search filter for the LDAP search.
+      - The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{base_dn}` substrings of the template with the actual user name, bind DN, and base DN during the LDAP search.
+      - Note, that the special characters must be escaped properly in XML.
 - `verification_cooldown` — A period of time, in seconds, after a successful bind attempt, during which the user will be assumed to be successfully authenticated for all consecutive requests without contacting the LDAP server.
-    - Specify `0` (the default) to disable caching and force contacting the LDAP server for each authentication request.
+  - Specify `0` (the default) to disable caching and force contacting the LDAP server for each authentication request.
 - `enable_tls` — A flag to trigger the use of the secure connection to the LDAP server.
-    - Specify `no` for plain text `ldap://` protocol (not recommended).
-    - Specify `yes` for LDAP over SSL/TLS `ldaps://` protocol (recommended, the default).
-    - Specify `starttls` for legacy StartTLS protocol (plain text `ldap://` protocol, upgraded to TLS).
+  - Specify `no` for plain text `ldap://` protocol (not recommended).
+  - Specify `yes` for LDAP over SSL/TLS `ldaps://` protocol (recommended, the default).
+  - Specify `starttls` for legacy StartTLS protocol (plain text `ldap://` protocol, upgraded to TLS).
 - `tls_minimum_protocol_version` — The minimum protocol version of SSL/TLS.
-    - Accepted values are: `ssl2`, `ssl3`, `tls1.0`, `tls1.1`, `tls1.2` (the default).
+  - Accepted values are: `ssl2`, `ssl3`, `tls1.0`, `tls1.1`, `tls1.2` (the default).
 - `tls_require_cert` — SSL/TLS peer certificate verification behavior.
-    - Accepted values are: `never`, `allow`, `try`, `demand` (the default).
+  - Accepted values are: `never`, `allow`, `try`, `demand` (the default).
 - `tls_cert_file` — Path to certificate file.
 - `tls_key_file` — Path to certificate key file.
 - `tls_ca_cert_file` — Path to CA certificate file.
@@ -173,16 +173,16 @@ Note that `my_ldap_server` referred in the `ldap` section inside the `user_direc
 
 - `server` — One of LDAP server names defined in the `ldap_servers` config section above. This parameter is mandatory and cannot be empty.
 - `roles` — Section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server.
-    - If no roles are specified here or assigned during role mapping (below), user will not be able to perform any actions after authentication.
+  - If no roles are specified here or assigned during role mapping (below), user will not be able to perform any actions after authentication.
 - `role_mapping` — Section with LDAP search parameters and mapping rules.
-    - When a user authenticates, while still bound to LDAP, an LDAP search is performed using `search_filter` and the name of the logged-in user. For each entry found during that search, the value of the specified attribute is extracted. For each attribute value that has the specified prefix, the prefix is removed, and the rest of the value becomes the name of a local role defined in ClickHouse, which is expected to be created beforehand by the [CREATE ROLE](/sql-reference/statements/create/role) statement.
-    - There can be multiple `role_mapping` sections defined inside the same `ldap` section. All of them will be applied.
-        - `base_dn` — Template used to construct the base DN for the LDAP search.
-            - The resulting DN will be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{user_dn}` substrings of the template with the actual user name, bind DN, and user DN during each LDAP search.
-        - `scope` — Scope of the LDAP search.
-            - Accepted values are: `base`, `one_level`, `children`, `subtree` (the default).
-        - `search_filter` — Template used to construct the search filter for the LDAP search.
-            - The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, `{user_dn}`, and `{base_dn}` substrings of the template with the actual user name, bind DN, user DN, and base DN during each LDAP search.
-            - Note, that the special characters must be escaped properly in XML.
-        - `attribute` — Attribute name whose values will be returned by the LDAP search. `cn`, by default.
-        - `prefix` — Prefix, that will be expected to be in front of each string in the original list of strings returned by the LDAP search. The prefix will be removed from the original strings and the resulting strings will be treated as local role names. Empty by default.
+  - When a user authenticates, while still bound to LDAP, an LDAP search is performed using `search_filter` and the name of the logged-in user. For each entry found during that search, the value of the specified attribute is extracted. For each attribute value that has the specified prefix, the prefix is removed, and the rest of the value becomes the name of a local role defined in ClickHouse, which is expected to be created beforehand by the [CREATE ROLE](/sql-reference/statements/create/role) statement.
+  - There can be multiple `role_mapping` sections defined inside the same `ldap` section. All of them will be applied.
+    - `base_dn` — Template used to construct the base DN for the LDAP search.
+      - The resulting DN will be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{user_dn}` substrings of the template with the actual user name, bind DN, and user DN during each LDAP search.
+    - `scope` — Scope of the LDAP search.
+      - Accepted values are: `base`, `one_level`, `children`, `subtree` (the default).
+    - `search_filter` — Template used to construct the search filter for the LDAP search.
+      - The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, `{user_dn}`, and `{base_dn}` substrings of the template with the actual user name, bind DN, user DN, and base DN during each LDAP search.
+      - Note, that the special characters must be escaped properly in XML.
+    - `attribute` — Attribute name whose values will be returned by the LDAP search. `cn`, by default.
+    - `prefix` — Prefix, that will be expected to be in front of each string in the original list of strings returned by the LDAP search. The prefix will be removed from the original strings and the resulting strings will be treated as local role names. Empty by default.

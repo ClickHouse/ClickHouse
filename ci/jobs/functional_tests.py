@@ -3,6 +3,7 @@ import os
 import re
 import time
 from pathlib import Path
+import random
 
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
@@ -133,8 +134,10 @@ def main():
     is_flaky_check = False
     is_bugfix_validation = False
     is_s3_storage = False
+    is_azure_storage = False
     is_database_replicated = False
     is_shared_catalog = False
+    is_encrypted_storage = random.choice([True, False])
     runner_options = ""
     info = Info()
 
@@ -163,6 +166,8 @@ def main():
 
         if "s3 storage" in to:
             is_s3_storage = True
+        if "azure" in to:
+            is_azure_storage = True
         if "DatabaseReplicated" in to:
             is_database_replicated = True
         if "SharedCatalog" in to:
@@ -177,6 +182,10 @@ def main():
     else:
         print("Disable azure for a local run")
         config_installs_args += " --no-azure"
+
+    if (is_azure_storage or is_s3_storage) and is_encrypted_storage:
+        config_installs_args += " --encrypted-storage"
+        runner_options += f" --encrypted-storage"
 
     ch_path = args.ch_path
 
@@ -340,7 +349,9 @@ def main():
                 extra_args=runner_options,
             )
         else:
-            run_specific_tests(tests=tests, runs=50 if is_flaky_check else 1, extra_args=runner_options)
+            run_specific_tests(
+                tests=tests, runs=50 if is_flaky_check else 1, extra_args=runner_options
+            )
 
         if not info.is_local_run:
             CH.stop_log_exports()
@@ -412,7 +423,7 @@ def main():
                 f"NOTE: Failed {failures_cnt} tests - do not block pipeline, exit with 0"
             )
             force_ok_exit = True
-        elif failures_cnt > 0 and "ci-non-blocking" in info.pr_number:
+        elif failures_cnt > 0 and "ci-non-blocking" in info.pr_labels:
             print(
                 f"NOTE: Failed {failures_cnt} tests, label 'ci-non-blocking' is set - do not block pipeline - exit with 0"
             )

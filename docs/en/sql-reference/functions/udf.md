@@ -292,7 +292,6 @@ Result:
     └────────────────────┘
 ```
 
-
 ### Error Handling {#error-handling}
 
 Some functions might throw an exception if the data is invalid. In this case, the query is canceled and an error text is returned to the client. For distributed processing, when an exception occurs on one of the servers, the other servers also attempt to abort the query.
