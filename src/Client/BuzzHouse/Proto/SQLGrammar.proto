@@ -2178,6 +2178,7 @@ message ComplicatedExpr {
         ExprList array = 19;
         ExprList tuple = 20;
         Table table = 21;
+        LambdaExpr lambda = 22;
     }
 }
 
@@ -2620,6 +2621,32 @@ message GenerateRandomFunc {
     optional uint64 max_array_length = 4;
 }
 
+message KeyValuePair {
+    required string key = 1;
+    required string value = 2;
+}
+
+message DataLakeFunc {
+    enum FName {
+        deltalakeS3 = 1;
+        deltalakeAzure = 2;
+        deltalakeLocal = 3;
+        icebergS3 = 4;
+        icebergAzure = 5;
+        icebergLocal = 6;
+        deltalakeS3Cluster = 7;
+        deltalakeAzureCluster = 8;
+        deltalakeLocalCluster = 9;
+        icebergS3Cluster = 10;
+        icebergAzureCluster = 11;
+        icebergLocalCluster = 12;
+    }
+    required FName fname = 1;
+    optional Cluster cluster = 2;
+    repeated string params = 3;
+    repeated KeyValuePair kparams = 4;
+}
+
 message ValuesStatement {
     required ExprList expr_list = 1;
     repeated ExprList extra_expr_lists = 2;
@@ -2645,6 +2672,7 @@ message TableFunction {
         ExprSchemaTable dictionary = 16;
         AzureBlobStorageFunc azure = 17;
         URLFunc url = 18;
+        DataLakeFunc data = 19;
     }
 }
 
@@ -3202,6 +3230,7 @@ message TableEngineParam {
         string regexp = 12;
         ExprSchemaTable est = 13;
         Expr expr = 14;
+        KeyValuePair kvalue = 15;
     }
 }
 
@@ -3846,11 +3875,11 @@ enum FailPoint {
     plain_rewritable_object_storage_azure_not_found_on_init = 53;
     storage_merge_tree_background_clear_old_parts_pause = 54;
     database_replicated_startup_pause = 55;
-    keeper_leader_sets_invalid_digest = 56;
-    parallel_replicas_wait_for_unused_replicas = 57;
-    plain_object_storage_copy_fail_on_file_move = 58;
-    plain_object_storage_copy_temp_source_file_fail_on_file_move = 59;
-    plain_object_storage_copy_temp_target_file_fail_on_file_move = 60;
+    parallel_replicas_wait_for_unused_replicas = 56;
+    plain_object_storage_copy_fail_on_file_move = 57;
+    plain_object_storage_copy_temp_source_file_fail_on_file_move = 58;
+    plain_object_storage_copy_temp_target_file_fail_on_file_move = 59;
+    //keeper_leader_sets_invalid_digest = 60; The server aborts legitimately, can't be used
 }
 
 message SystemCommand {

@@ -8,7 +8,6 @@ title: 'Time Window Functions'
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-
 # Time window functions
 
 <ExperimentalBadge/>
