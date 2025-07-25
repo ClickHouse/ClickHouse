@@ -3,17 +3,17 @@
 #include <cstddef>
 #include <memory>
 #include <string_view>
+#include <Core/Field.h>
 #include <IO/ReadBufferFromIStream.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <base/Decimal.h>
 #include <base/types.h>
 #include <fmt/ranges.h>
 #include <Poco/BinaryReader.h>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
-#include <Core/Field.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
-#include <base/Decimal.h>
 
 namespace Paimon
 {
@@ -68,13 +68,13 @@ public:
             {
                 static const char hex_digits[] = "0123456789abcdef";
                 WriteBufferFromOwnString result;
-                
-                for (unsigned char c : input) 
+
+                for (unsigned char c : input)
                 {
                     writeChar(hex_digits[(c >> 4) & 0xF], result);
                     writeChar(hex_digits[c & 0xF], result);
                 }
-                
+
                 return result.str();
             };
             // int field_offset = getFieldOffset(pos);
