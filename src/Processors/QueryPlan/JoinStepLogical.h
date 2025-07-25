@@ -183,7 +183,7 @@ protected:
 class JoinStepLogicalLookup final : public ISourceStep
 {
 public:
-    JoinStepLogicalLookup(QueryPlan child_plan_, PreparedJoinStorage prepared_join_storage_);
+    JoinStepLogicalLookup(QueryPlan child_plan_, PreparedJoinStorage prepared_join_storage_, bool use_nulls_);
 
     void initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override;
     String getName() const override { return "JoinStepLogicalLookup"; }
@@ -191,15 +191,14 @@ public:
     PreparedJoinStorage & getPreparedJoinStorage() { return prepared_join_storage; }
 
     bool useNulls() const { return use_nulls; }
-    void setUseNulls(bool use_nulls_ = true) { use_nulls = use_nulls_; }
 
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
 private:
     PreparedJoinStorage prepared_join_storage;
+    QueryPlan child_plan;
 
     bool use_nulls = false;
     bool optimized = false;
-    QueryPlan child_plan;
 };
 
 std::string_view joinTypePretty(JoinKind join_kind, JoinStrictness strictness);

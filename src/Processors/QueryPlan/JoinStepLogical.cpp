@@ -317,10 +317,11 @@ void JoinStepLogical::updateOutputHeader()
     output_header = std::make_shared<const Block>(std::move(header));
 }
 
-JoinStepLogicalLookup::JoinStepLogicalLookup(QueryPlan child_plan_, PreparedJoinStorage prepared_join_storage_)
+JoinStepLogicalLookup::JoinStepLogicalLookup(QueryPlan child_plan_, PreparedJoinStorage prepared_join_storage_, bool use_nulls_)
     : ISourceStep(child_plan_.getCurrentHeader())
     , prepared_join_storage(std::move(prepared_join_storage_))
     , child_plan(std::move(child_plan_))
+    , use_nulls(use_nulls_)
 {
 }
 
@@ -972,6 +973,15 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
     ActionsDAG left_dag = JoinExpressionActions::getSubDAG(used_expressions | std::views::filter([](const auto & node) { return node.fromLeft() || node.fromNone(); }));
     ActionsDAG right_dag = JoinExpressionActions::getSubDAG(used_expressions | std::views::filter([](const auto & node) { return node.fromRight(); }));
+
+    if (logical_lookup && prepared_join_storage.storage_key_value)
+    {
+        right_dag.mergeInplace(
+            JoinExpressionActions::getSubDAG(
+                actions_after_join
+                    | std::views::transform([&](const auto * action) { return JoinActionRef(action, expression_actions); })
+                    | std::views::filter([](const auto & action) { return action.fromRight(); })));
+    }
 
     // std::cerr << left_dag.dumpDAG() << std::endl;
     // std::cerr << right_dag.dumpDAG() << std::endl;
