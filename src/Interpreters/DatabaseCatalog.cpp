@@ -35,6 +35,7 @@
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/UniqueLock.h>
 #include <base/scope_guard.h>
 
 #include <base/isSharedPtrUnique.h>
@@ -1545,14 +1546,13 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
         return;
 
     LOG_DEBUG(log, "Waiting for table {} to be finally dropped", toString(uuid));
-    std::unique_lock lock{tables_marked_dropped_mutex};
-    wait_table_finally_dropped.wait(lock, [&]() TSA_REQUIRES(tables_marked_dropped_mutex) -> bool
+    UniqueLock lock{tables_marked_dropped_mutex};
+    wait_table_finally_dropped.wait(lock.getUnderlyingLock(), [&]() TSA_REQUIRES(tables_marked_dropped_mutex) -> bool
     {
         return !tables_marked_dropped_ids.contains(uuid) || is_shutting_down;
     });
 
-    /// TSA doesn't support unique_lock
-    const bool has_table = TSA_SUPPRESS_WARNING_FOR_READ(tables_marked_dropped_ids).contains(uuid);
+    const bool has_table = tables_marked_dropped_ids.contains(uuid);
     LOG_DEBUG(log, "Done waiting for the table {} to be dropped. The outcome: {}", toString(uuid), has_table ? "table still exists" : "table dropped successfully");
 
     if (has_table)
