@@ -59,6 +59,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
             {"vector_search_with_rescoring", true, true, "New setting."},
             {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},
+            {"write_full_path_in_iceberg_metadata", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
