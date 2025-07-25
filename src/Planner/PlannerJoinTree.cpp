@@ -974,7 +974,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 Names extracted_column_names;
                 bool has_table_virtual_column
-                        = extractRequiredNonTableColumnsFromStorage(columns_names, storage, storage_snapshot, from_stage, extracted_column_names);
+                        = extractRequiredNonTableColumnsFromStorage(columns_names, storage, storage_snapshot, till_stage, extracted_column_names);
                 const auto & storage_column_names = has_table_virtual_column ? extracted_column_names : columns_names;
 
                 if (select_query_options.build_logical_plan)
@@ -1208,7 +1208,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                 }
 
-                if (has_table_virtual_column && query_plan.isInitialized() && from_stage == QueryProcessingStage::FetchColumns)
+                if (has_table_virtual_column && query_plan.isInitialized() && till_stage == QueryProcessingStage::FetchColumns)
                 {
                     const auto & data_header = query_plan.getCurrentHeader();
                     if (!data_header->findByName(static_cast<std::string_view>("_table")))
