@@ -27,7 +27,7 @@ INSERT INTO t0 SELECT
     number
 FROM numbers_mt(1e5);
 
-set parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1;
+set parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;
 select trimLeft(*) from (EXPLAIN indexes = 1 SELECT c1, sum(c3) FROM t0 GROUP BY c1) where explain like '%ReadFromMergeTree%';
 select trimLeft(*) from (EXPLAIN indexes = 1 SELECT c1, sum(c3) FROM t0 WHERE c1 = 100 GROUP BY c1) where explain like '%Granules%';
 

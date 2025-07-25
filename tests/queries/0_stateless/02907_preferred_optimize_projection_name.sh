@@ -44,7 +44,7 @@ SELECT test_string
 FROM test_opt_proj
 WHERE (test_id > 50)
     AND (test_id < 150)
-GROUP BY test_string SETTINGS parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1;"
+GROUP BY test_string SETTINGS parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log;"
 
@@ -67,7 +67,7 @@ SELECT test_string
 FROM test_opt_proj
 WHERE (test_id > 50)
     AND (test_id < 150)
-GROUP BY test_string SETTINGS parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1;"
+GROUP BY test_string SETTINGS parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log;"
 
@@ -90,7 +90,7 @@ SELECT test_string
 FROM test_opt_proj
 WHERE (test_id > 50)
     AND (test_id < 150)
-GROUP BY test_string SETTINGS parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1;"
+GROUP BY test_string SETTINGS parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log;"
 

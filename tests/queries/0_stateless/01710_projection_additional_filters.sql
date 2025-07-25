@@ -1,6 +1,6 @@
 DROP TABLE IF EXISTS t;
 
-set parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1;
+set parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;
 
 CREATE TABLE t(a UInt32, b UInt32) ENGINE = MergeTree PARTITION BY a ORDER BY a;
 

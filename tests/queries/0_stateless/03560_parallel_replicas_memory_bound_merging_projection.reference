@@ -1,5 +1,9 @@
 -- { echoOn } --
-explain pipeline select a from pr_t group by a order by a limit 5 offset 500;
+set optimize_aggregation_in_order = 0;
+SELECT trimLeft(*) FROM (explain select sum(b) from pr_t group by a order by a limit 5 offset 500) WHERE explain LIKE '%ReadFromMergeTree%';
+ReadFromMergeTree (p_agg)
+set optimize_aggregation_in_order = 1;
+explain pipeline select sum(b) from pr_t group by a order by a limit 5 offset 500;
 (Expression)
 ExpressionTransform
   (Limit)
@@ -24,40 +28,7 @@ ExpressionTransform
                             (ReadFromMergeTree)
                             MergeTreeSelect(pool: ReadPoolParallelReplicasInOrder, algorithm: InOrder) 0 → 1
                       (ReadFromRemoteParallelReplicas)
-SELECT trimLeft(*) FROM (explain select sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS force_aggregation_in_order=1) WHERE explain LIKE '%ReadFromMergeTree%';
-ReadFromMergeTree (default.pr_t)
-explain pipeline select sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS force_aggregation_in_order=1;
-(Expression)
-ExpressionTransform
-  (Limit)
-  Limit
-    (Sorting)
-    MergingSortedTransform 4 → 1
-      MergeSortingTransform × 4
-        LimitsCheckingTransform × 4
-          PartialSortingTransform × 4
-            (Expression)
-            ExpressionTransform × 4
-              (MergingAggregated)
-              MergingAggregatedBucketTransform × 4
-                Resize 1 → 4
-                  FinishAggregatingInOrderTransform 3 → 1
-                    (Union)
-                      (Aggregating)
-                      SortingAggregatedForMemoryBoundMergingTransform 4 → 1
-                        MergingAggregatedBucketTransform × 4
-                          Resize 1 → 4
-                            FinishAggregatingInOrderTransform 4 → 1
-                              AggregatingInOrderTransform × 4
-                                MergeSortingTransform × 4
-                                  LimitsCheckingTransform × 4
-                                    PartialSortingTransform × 4
-                                      (Expression)
-                                      ExpressionTransform × 4
-                                        (ReadFromMergeTree)
-                                        MergeTreeSelect(pool: ReadPoolParallelReplicas, algorithm: Thread) × 4 0 → 1
-                      (ReadFromRemoteParallelReplicas)
-select sum(a) from pr_t group by b order by b limit 5 offset 500 SETTINGS force_aggregation_in_order=1;
+select sum(b) from pr_t group by a order by a limit 5 offset 500;
 500000
 501000
 502000
