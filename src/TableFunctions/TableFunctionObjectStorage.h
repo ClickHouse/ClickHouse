@@ -126,6 +126,37 @@ struct HudiDefinition
     static constexpr auto storage_type_name = "S3";
 };
 
+struct PaimonDefinition
+{
+    static constexpr auto name = "paimon";
+    static constexpr auto storage_type_name = "S3";
+};
+
+struct PaimonS3Definition
+{
+    static constexpr auto name = "paimonS3";
+    static constexpr auto storage_type_name = "S3";
+};
+
+
+struct PaimonAzureDefinition
+{
+    static constexpr auto name = "paimonAzure";
+    static constexpr auto storage_type_name = "Azure";
+};
+
+
+struct PaimonHDFSDefinition
+{
+    static constexpr auto name = "paimonHDFS";
+    static constexpr auto storage_type_name = "HDFS";
+};
+struct PaimonLocalDefinition
+{
+    static constexpr auto name = "paimonLocal";
+    static constexpr auto storage_type_name = "Local";
+};
+
 template <typename Definition, typename Configuration, bool is_data_lake = false>
 class TableFunctionObjectStorage : public ITableFunction
 {
@@ -230,6 +261,19 @@ using TableFunctionIcebergAzure = TableFunctionObjectStorage<IcebergAzureDefinit
 using TableFunctionIcebergHDFS = TableFunctionObjectStorage<IcebergHDFSDefinition, StorageHDFSIcebergConfiguration, true>;
 #    endif
 using TableFunctionIcebergLocal = TableFunctionObjectStorage<IcebergLocalDefinition, StorageLocalIcebergConfiguration, true>;
+#endif
+#if USE_AVRO
+#    if USE_AWS_S3
+using TableFunctionPaimon = TableFunctionObjectStorage<PaimonDefinition, StorageS3PaimonConfiguration, true>;
+using TableFunctionPaimonS3 = TableFunctionObjectStorage<PaimonS3Definition, StorageS3PaimonConfiguration, true>;
+#    endif
+#    if USE_AZURE_BLOB_STORAGE
+using TableFunctionPaimonAzure = TableFunctionObjectStorage<PaimonAzureDefinition, StorageAzurePaimonConfiguration, true>;
+#    endif
+#    if USE_HDFS
+using TableFunctionPaimonHDFS = TableFunctionObjectStorage<PaimonHDFSDefinition, StorageHDFSPaimonConfiguration, true>;
+#    endif
+using TableFunctionPaimonLocal = TableFunctionObjectStorage<PaimonLocalDefinition, StorageLocalPaimonConfiguration, true>;
 #endif
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 #if USE_AWS_S3
