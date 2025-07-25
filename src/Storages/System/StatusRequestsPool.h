@@ -43,10 +43,10 @@ template <IsHolder THolder>
 class StatusRequestsPool;
 
 template <class T>
-class StatusRequestsPools final
+class WithStatusReuestsPools final
 {
 public:
-    explicit StatusRequestsPools(const size_t max_threads)
+    explicit WithStatusReuestsPools(const size_t max_threads)
         : requests_without_zk_fields(max_threads)
         , requests_with_zk_fields(max_threads)
     {
@@ -67,11 +67,15 @@ public:
     using TPromiseStatus = std::promise<TStatus>;
     using TBaseHolder = typename std::conditional_t<std::derived_from<THolder, IDatabase>, IDatabase, IStorage>;
     using TBaseHolderPtr = std::shared_ptr<TBaseHolder>;
-    using TRequest = std::tuple<UInt64, TBaseHolderPtr, std::shared_ptr<TPromiseStatus>, bool>;
     using TFuture = std::shared_future<TStatus>;
 
-    static constexpr size_t POS_REQUEST_ID_IN_REQUEST = 0;
-    static constexpr size_t POS_PROMISE_IN_REQUEST = 2;
+    struct Request
+    {
+        UInt64 reqiest_id;
+        TBaseHolderPtr base_holder;
+        std::shared_ptr<TPromiseStatus> promise;
+        bool with_zk_fields;
+    };
 
     struct RequestInfo
     {
@@ -84,7 +88,7 @@ private:
 
     std::mutex mutex;
     std::unordered_map<TBaseHolderPtr, RequestInfo> current_requests TSA_GUARDED_BY(mutex);
-    std::deque<TRequest> requests_to_schedule TSA_GUARDED_BY(mutex);
+    std::deque<Request> requests_to_schedule TSA_GUARDED_BY(mutex);
     UInt64 request_id TSA_GUARDED_BY(mutex) = 0;
 
     LoggerPtr log;
@@ -100,7 +104,7 @@ public:
     {
         thread_pool.wait();
         for (auto & request : requests_to_schedule)
-            std::get<POS_PROMISE_IN_REQUEST>(request)->set_exception(
+            request.promise->set_exception(
                 std::make_exception_ptr(DB::Exception(ErrorCodes::QUERY_WAS_CANCELLED, "StatusRequestsPool is destroyed")));
     }
 
@@ -143,7 +147,7 @@ public:
             if (query_status)
                 query_status->checkTimeLimit();
 
-            TRequest req;
+            Request req;
             {
                 std::lock_guard lock(mutex);
                 if (requests_to_schedule.empty())
@@ -151,7 +155,7 @@ public:
 
                 req = requests_to_schedule.front();
 
-                if (std::get<POS_REQUEST_ID_IN_REQUEST>(req) > max_request_id)
+                if (req.reqiest_id > max_request_id)
                     break;
 
                 requests_to_schedule.pop_front();
@@ -161,28 +165,26 @@ public:
             {
                 ThreadGroupSwitcher switcher(thread_group, get_thread_name());
 
-                auto & [_, base_holder, promise, with_zk_fields] = req;
                 try
                 {
                     TStatus status;
 
-                    if (auto * holder = dynamic_cast<THolder *>(base_holder.get()))
+                    if (auto * holder = dynamic_cast<THolder *>(req.base_holder.get()))
                     {
-                        holder->getStatus(status, with_zk_fields);
+                        holder->getStatus(status, req.with_zk_fields);
                     }
 
-                    promise->set_value(std::move(status));
+                    req.promise->set_value(std::move(status));
                 }
                 catch (...)
                 {
-                    tryLogCurrentException(log, "Error getting status for " + get_holder_kind() + " " + get_holder_name(base_holder));
-                    promise->set_exception(std::current_exception());
+                    tryLogCurrentException(log, "Error getting status for " + get_holder_kind() + " " + get_holder_name(req.base_holder));
+                    req.promise->set_exception(std::current_exception());
                 }
 
-                completeRequest(base_holder);
+                completeRequest(req.base_holder);
             };
 
-            auto & [_, base_holder, promise, with_zk_fields] = req;
 
             try
             {
@@ -191,9 +193,9 @@ public:
             catch (...)
             {
                 tryLogCurrentException(
-                    log, "Error scheduling get status task for " + get_holder_kind() + " " + get_holder_name(base_holder));
-                promise->set_exception(std::current_exception());
-                completeRequest(base_holder);
+                    log, "Error scheduling get status task for " + get_holder_kind() + " " + get_holder_name(req.base_holder));
+                req.promise->set_exception(std::current_exception());
+                completeRequest(req.base_holder);
             }
         }
     }

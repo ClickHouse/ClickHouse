@@ -305,7 +305,7 @@ void StorageSystemDatabaseReplicas::read(
     bool with_zk_fields = false;
     for (const auto & column_name : column_names)
     {
-        if (column_name == "max_log_ptr")
+        if (column_name == "max_log_ptr" || column_name == "log_ptr" || column_name == "total_replicas")
         {
             with_zk_fields = true;
             break;

@@ -10,7 +10,7 @@ namespace DB
 
 class Context;
 template <typename T>
-class StatusRequestsPools;
+class WithStatusReuestsPools;
 class DatabaseReplicated;
 
 /** Implements `database replicas` system table, which provides information about the status of the replicated databases.
@@ -18,7 +18,7 @@ class DatabaseReplicated;
 class StorageSystemDatabaseReplicas final : public IStorage
 {
 public:
-    using TPools = StatusRequestsPools<DatabaseReplicated>;
+    using TPools = WithStatusReuestsPools<DatabaseReplicated>;
 
     static constexpr size_t DEFAULT_THREAD_COUNT = 8;
 
