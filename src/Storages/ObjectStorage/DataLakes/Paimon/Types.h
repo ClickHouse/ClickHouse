@@ -2,25 +2,25 @@
 
 #include <memory>
 #include <utility>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <base/types.h>
 #include <openssl/pkcs7err.h>
-#include <Poco/Logger.h>
-#include "Common/logger_useful.h"
-#include <Common/Exception.h>
-#include "Core/ColumnWithTypeAndName.h"
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
-#include "DataTypes/DataTypeArray.h"
-#include "DataTypes/DataTypeDate.h"
-#include <DataTypes/DataTypeDateTime64.h>
-#include "DataTypes/DataTypeDecimalBase.h"
-#include "DataTypes/DataTypeFixedString.h"
-#include "DataTypes/DataTypeMap.h"
-#include "DataTypes/DataTypeNullable.h"
-#include "DataTypes/DataTypeString.h"
-#include "DataTypes/DataTypeTime.h"
-#include "DataTypes/DataTypesDecimal.h"
-#include "DataTypes/DataTypesNumber.h"
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
+#include <Common/Exception.h>
+#include <Core/ColumnWithTypeAndName.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDecimalBase.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTime.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 
 namespace Paimon
 {
@@ -70,7 +70,7 @@ enum class RootDataType
     ROW,
 };
 
-struct DataType 
+struct DataType
 {
     RootDataType root_type;
     String raw_type;
@@ -106,38 +106,45 @@ struct DataType
             {
                 size_t start = type_.find('(');
                 size_t end = type_.find(')');
-                if (!has_precision(type_)) {
-                    throw Exception(); 
+                if (!has_precision(type_))
+                {
+                    throw Exception();
                 }
                 std::vector<size_t> precision_infos;
                 String precision_str = type_.substr(start + 1, end - start - 1);
-                const char* token_start = nullptr;
-                const char* p = precision_str.c_str();
-                const char* end_pos = precision_str.c_str() + precision_str.size();
-                for (; p != end_pos; ++p) {
-                    LOG_DEBUG(&Poco::Logger::get("parse_precision"), 
-                "size: {} isdigit {} is , {} is blank {}", precision_str.size(), std::isdigit(*p), (*p != ','), (*p != ' '));
-                    if (!std::isdigit(*p) && *p != ',' && *p != ' ') {
+                const char * token_start = nullptr;
+                const char * p = precision_str.c_str();
+                const char * end_pos = precision_str.c_str() + precision_str.size();
+                for (; p != end_pos; ++p)
+                {
+                    LOG_DEBUG(
+                        &Poco::Logger::get("parse_precision"),
+                        "size: {} isdigit {} is , {} is blank {}",
+                        precision_str.size(),
+                        std::isdigit(*p),
+                        (*p != ','),
+                        (*p != ' '));
+                    if (!std::isdigit(*p) && *p != ',' && *p != ' ')
+                    {
                         throw Exception();
                     }
                     if (!token_start && std::isdigit(*p))
                     {
                         token_start = p;
                     }
-                    if (*p == ' ' || *p == ',') 
+                    if (*p == ' ' || *p == ',')
                     {
                         if (token_start && p > token_start)
                         {
-                            precision_infos.emplace_back(std::stoul(String(token_start, p-token_start)));
-                            LOG_DEBUG(&Poco::Logger::get("parse_precision"), 
-                "precision_infos back {}", precision_infos.back());
+                            precision_infos.emplace_back(std::stoul(String(token_start, p - token_start)));
+                            LOG_DEBUG(&Poco::Logger::get("parse_precision"), "precision_infos back {}", precision_infos.back());
                             token_start = nullptr;
                         }
                     }
                 }
                 if (token_start && p > token_start)
                 {
-                    precision_infos.emplace_back(std::stoul(String(token_start, p-token_start)));
+                    precision_infos.emplace_back(std::stoul(String(token_start, p - token_start)));
                 }
                 return precision_infos;
             };
@@ -152,12 +159,12 @@ struct DataType
                 type.root_type = RootDataType::BOOLEAN;
                 type.clickhouse_data_type = std::make_shared<DataTypeInt8>();
             }
-            else if (real_type == "STRING" || real_type.starts_with("VARCHAR")) 
+            else if (real_type == "STRING" || real_type.starts_with("VARCHAR"))
             {
                 type.root_type = RootDataType::VARCHAR;
                 type.clickhouse_data_type = std::make_shared<DataTypeString>();
             }
-            else if (real_type == "BYTES" || real_type.starts_with("VARBINARY")) 
+            else if (real_type == "BYTES" || real_type.starts_with("VARBINARY"))
             {
                 type.root_type = RootDataType::VARBINARY;
                 type.clickhouse_data_type = std::make_shared<DataTypeString>();
@@ -206,7 +213,8 @@ struct DataType
             else if (real_type.starts_with("TIMESTAMP"))
             {
                 /// TODO: support precision
-                type.root_type = real_type.contains("LOCAL TIME ZONE") ? RootDataType::TIMESTAMP_WITH_LOCAL_TIME_ZONE : RootDataType::TIMESTAMP_WITHOUT_TIME_ZONE;
+                type.root_type = real_type.contains("LOCAL TIME ZONE") ? RootDataType::TIMESTAMP_WITH_LOCAL_TIME_ZONE
+                                                                       : RootDataType::TIMESTAMP_WITHOUT_TIME_ZONE;
                 size_t p = has_precision(type.raw_type) ? parse_precision(type.raw_type)[0] : 6;
                 String time_zone_string = type.root_type == RootDataType::TIMESTAMP_WITHOUT_TIME_ZONE ? "UTC" : "";
                 type.clickhouse_data_type = std::make_shared<DataTypeDateTime64>(p, time_zone_string);
@@ -217,7 +225,7 @@ struct DataType
                 type.clickhouse_data_type = std::make_shared<DataTypeFixedString>(n);
                 type.root_type = RootDataType::CHAR;
             }
-            else if (real_type.starts_with("BINARY")) 
+            else if (real_type.starts_with("BINARY"))
             {
                 type.root_type = RootDataType::BINARY;
                 size_t n = has_precision(real_type) ? parse_precision(real_type)[0] : 1;
@@ -235,7 +243,7 @@ struct DataType
                 auto scale = static_cast<Int32>(n[1]);
                 type.clickhouse_data_type = createDecimal<DataTypeDecimal>(precision, scale);
             }
-            else 
+            else
             {
                 throw Exception();
             }

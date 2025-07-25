@@ -1,14 +1,14 @@
 #pragma once
 
 #include <optional>
-#include <base/types.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Types.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
+#include <base/types.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
 
-namespace DB 
+namespace DB
 {
 
 struct DataField
@@ -27,7 +27,7 @@ struct DataField
     }
 };
 
-struct PaimonTableSchema 
+struct PaimonTableSchema
 {
     Int32 version{-1};
     Int64 id;
@@ -43,11 +43,7 @@ struct PaimonTableSchema
     std::unordered_map<String, size_t> fields_by_name_indexes;
     Poco::JSON::Object::Ptr raw_json_object;
 
-    bool operator==(const PaimonTableSchema & other) const
-    {
-        return version == other.version
-        && id == other.id;
-    }
+    bool operator==(const PaimonTableSchema & other) const { return version == other.version && id == other.id; }
 
     void update(const Poco::JSON::Object::Ptr & json_object);
 
