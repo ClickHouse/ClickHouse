@@ -1335,7 +1335,7 @@ void SingleValueDataStringRef::read(ReadBuffer & /*buf*/, const ISerialization &
 bool SingleValueDataStringRef::isEqualTo(const DB::IColumn & column, size_t row_num) const
 {
     return has()
-        && column_ref->equalAt(row_number, row_num, column);
+        && column_ref->compareAt(row_number, row_num, column, -1) == 0;
 }
 
 bool SingleValueDataStringRef::isEqualTo(const SingleValueDataBase & /*other*/) const
