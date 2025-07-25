@@ -130,7 +130,7 @@ static AzureBlobStorage::ConnectionParams getConnectionParams(
     {
         AzureBlobStorage::processURL(connection_url, container_name, connection_params.endpoint, connection_params.auth_method);
     }
-    connection_params.client_options = AzureBlobStorage::getClientOptions(*request_settings, /*for_disk=*/ false);
+    connection_params.client_options = AzureBlobStorage::getClientOptions(local_context, *request_settings, /*for_disk=*/ false);
 
     return connection_params;
 }
