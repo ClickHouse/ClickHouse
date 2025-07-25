@@ -52,7 +52,10 @@ boost::context::stack_context FiberStack::allocate() const
 
     size_t num_bytes = num_pages * page_size;
 
-    void * data = __real_aligned_alloc(page_size, num_bytes);
+    /// On Linux the function aligned alloc is intercepted, so we need to track
+    /// the memory separetely.
+    /// On Darwin or FreeBSD this class is not used.
+    void * data = aligned_alloc(page_size, num_bytes);
 
     if (!data)
         throw DB::ErrnoException(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate FiberStack");
@@ -67,13 +70,11 @@ boost::context::stack_context FiberStack::allocate() const
         }
         catch (...)
         {
-            __real_free(data);
+            /// Again, this function is intercepted. No need to untrack the memory.
+            free(data);
             throw;
         }
     }
-
-    auto trace = CurrentMemoryTracker::alloc(num_bytes);
-    trace.onAlloc(data, num_bytes);
 
     boost::context::stack_context sctx;
     sctx.size = num_bytes;
@@ -94,6 +95,8 @@ void FiberStack::deallocate(boost::context::stack_context & sctx) const
     if constexpr (guardPagesEnabled())
         memoryGuardRemove(data, page_size);
 
+    /// There is a special logic how to untrack the memory,
+    /// so we use the __real function that is not intercepted.
     __real_free(data);
 
     /// Do not count guard page in memory usage.
