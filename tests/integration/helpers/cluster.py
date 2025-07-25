@@ -2266,7 +2266,7 @@ class ClickHouseCluster:
             return True
         except Exception:
             return False
-        
+
     def get_files_list_in_container(self, container_id, path):
         result = self.exec_in_container(
             container_id,
@@ -2278,7 +2278,7 @@ class ClickHouseCluster:
         )
 
         files = result.strip().splitlines() if result else []
-        return files            
+        return files
 
     def move_file_in_container(self, container_id, old_path, new_path):
         self.exec_in_container(
@@ -3634,6 +3634,7 @@ services:
             - {db_dir}:/var/lib/clickhouse/
             - {logs_dir}:/var/log/clickhouse-server/
             - /etc/passwd:/etc/passwd:ro
+            - /debug:/debug:ro
             {binary_volume}
             {external_dirs_volumes}
             {odbc_ini_path}
@@ -4534,7 +4535,7 @@ class ClickHouseInstance:
         return self.cluster.file_exists_in_container(
             self.docker_id, path
         )
-    
+
     def get_files_list_in_container(self, path):
         return self.cluster.get_files_list_in_container(
             self.docker_id, path

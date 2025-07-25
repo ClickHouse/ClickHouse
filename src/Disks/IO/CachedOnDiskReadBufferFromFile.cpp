@@ -825,7 +825,9 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 {
     last_caller_id = FileSegment::getCallerId();
 
-    chassert(file_offset_of_buffer_end <= read_until_position);
+    chassert(
+        file_offset_of_buffer_end <= read_until_position,
+        fmt::format("file_offset_of_buffer_end {}, read_until_position {}", file_offset_of_buffer_end, read_until_position));
     if (file_offset_of_buffer_end == read_until_position)
         return false;
 
