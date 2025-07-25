@@ -252,7 +252,6 @@ public:
         ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) = 0;
 
     bool isNamespaceWithGlobs() const;
-    virtual std::string getPathWithoutGlobs() const;
 
     virtual bool isArchive() const { return false; }
     bool isPathInArchiveWithGlobs() const;
