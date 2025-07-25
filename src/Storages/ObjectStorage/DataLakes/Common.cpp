@@ -1,5 +1,5 @@
-#include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Common/logger_useful.h>
 
@@ -12,7 +12,7 @@ std::vector<String> listFiles(
     const IObjectStorage & object_storage,
     const StorageObjectStorageConfiguration & configuration,
     const String & prefix,
-    const std::function<bool (const RelativePathWithMetadata &)> & check_need)
+    const std::function<bool(const RelativePathWithMetadata &)> & check_need)
 {
     auto key = std::filesystem::path(configuration.getPathForRead().path) / prefix;
     RelativePathsWithMetadata files_with_metadata;
@@ -30,12 +30,14 @@ std::vector<String> listFiles(
 std::vector<String> listFiles(
     const IObjectStorage & object_storage,
     const StorageObjectStorageConfiguration & configuration,
-    const String & prefix, const String & suffix)
+    const String & prefix,
+    const String & suffix)
 {
-
-    return listFiles(object_storage, configuration, prefix, [&suffix](const RelativePathWithMetadata & files_with_metadata) {
-        return files_with_metadata.relative_path.ends_with(suffix);
-    });
+    return listFiles(
+        object_storage,
+        configuration,
+        prefix,
+        [&suffix](const RelativePathWithMetadata & files_with_metadata) { return files_with_metadata.relative_path.ends_with(suffix); });
 }
 
 }
