@@ -12,7 +12,7 @@ def started_cluster():
             "test_disk_checker",
             main_configs=["config.xml"],
             with_minio=False,
-            with_zookeeper=True,
+            with_zookeeper=False,
             with_remote_database_disk=False,
             stay_alive=True,
         )
