@@ -10,25 +10,25 @@ PaimonTableSchema::PaimonTableSchema(const Poco::JSON::Object::Ptr & json_object
 void PaimonTableSchema::update(const Poco::JSON::Object::Ptr & json_object)
 {
     Int32 tmp_version = -1;
-    Paimon::getValueFromJson(tmp_version, json_object, "version");
+    Paimon::getValueFromJSON(tmp_version, json_object, "version");
     /// same schema
     if (tmp_version >=0 && tmp_version == version)
     {
         return;
     }
 
-    Paimon::getValueFromJson(version, json_object, "version");
-    Paimon::getValueFromJson(id, json_object, "id");
-    Paimon::getValueFromJson(highest_field_id, json_object, "highestFieldId");
-    Paimon::getValueFromJson(time_mills, json_object, "timeMillis");
-    Paimon::getValueFromJson(comment, json_object, "comment");
+    Paimon::getValueFromJSON(version, json_object, "version");
+    Paimon::getValueFromJSON(id, json_object, "id");
+    Paimon::getValueFromJSON(highest_field_id, json_object, "highestFieldId");
+    Paimon::getValueFromJSON(time_mills, json_object, "timeMillis");
+    Paimon::getValueFromJSON(comment, json_object, "comment");
     
     /// get array
-    Paimon::getVecFromJson(partition_keys, json_object, "partitionKeys");
-    Paimon::getVecFromJson(primary_keys, json_object, "primaryKeys");
+    Paimon::getVecFromJSON(partition_keys, json_object, "partitionKeys");
+    Paimon::getVecFromJSON(primary_keys, json_object, "primaryKeys");
 
     /// get map
-    Paimon::getMapFromJson(options, json_object, "options");
+    Paimon::getMapFromJSON(options, json_object, "options");
 
     /// get fields
     const auto & json_array = json_object->getArray("fields");

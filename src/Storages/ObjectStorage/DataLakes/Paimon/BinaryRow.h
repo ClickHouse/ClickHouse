@@ -58,7 +58,7 @@ public:
             {
                 return Decimal<Int32>(static_cast<Int32>(value));
             }
-            return Decimal<Int64>(static_cast<Int64>(value));
+            return Decimal<Int64>(value);
         }
         else
         {
