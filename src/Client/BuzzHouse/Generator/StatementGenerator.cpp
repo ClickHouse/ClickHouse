@@ -394,7 +394,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             }
             generateEngineDetails(rg, createViewRelation("", next), next, true, te);
         }
-        if (next.isMergeTreeFamily() && !next.is_deterministic && rg.nextMediumNumber() < 16)
+        if (next.isMergeTreeFamily() && !next.is_deterministic && rg.nextMediumNumber() < 26)
         {
             generateNextTTL(rg, std::nullopt, te, te->mutable_ttl_expr());
         }

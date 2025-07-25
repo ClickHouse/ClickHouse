@@ -2136,25 +2136,10 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         connections.createPeerTable(rg, next.peer_table, next, ct, entries);
         entries.clear();
     }
-    else if (!next.is_deterministic && next.isMergeTreeFamily())
+    else if (!next.is_deterministic && next.isMergeTreeFamily() && rg.nextBool())
     {
-        bool has_date_cols = false;
-
         flatTableColumnPath(0, next.cols, [](const SQLColumn & c) { return c.tp->getTypeClass() != SQLTypeClass::NESTED; });
-        for (const auto & entry : entries)
-        {
-            SQLType * tp = entry.getBottomType();
-
-            if (tp->getTypeClass() == SQLTypeClass::DATE || tp->getTypeClass() == SQLTypeClass::DATETIME)
-            {
-                has_date_cols = true;
-                break;
-            }
-        }
-        if (has_date_cols || rg.nextSmallNumber() < 7)
-        {
-            generateNextTTL(rg, next, te, te->mutable_ttl_expr());
-        }
+        generateNextTTL(rg, next, te, te->mutable_ttl_expr());
         entries.clear();
     }
 
