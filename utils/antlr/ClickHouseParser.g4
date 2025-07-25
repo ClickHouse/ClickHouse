@@ -9,6 +9,8 @@ options {
 queryStmt
     : query (INTO OUTFILE stringLiteral)? (FORMAT identifierOrNull)? (SEMICOLON)?  # QueryStmtQuery
     | insertStmt                                                                   # QueryStmtInsert
+    | deleteStmt                                                                   # QueryStmtDelete
+    | updateStmt                                                                   # QueryStmtUpdate
     ;
 
 query
@@ -221,6 +223,22 @@ assignmentValues
     ;
 assignmentValue
     : literal
+    ;
+
+// DELETE statement
+
+deleteStmt
+    : DELETE FROM nestedIdentifier clusterClause? inPartitionClause? whereClause
+    ;
+
+inPartitionClause
+    : IN PARTITION columnExpr
+    ;
+
+// UPDATE statement
+
+updateStmt
+    : UPDATE nestedIdentifier SET assignmentExprList clusterClause? inPartitionClause? whereClause
     ;
 
 // KILL statement
