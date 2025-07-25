@@ -223,4 +223,9 @@ std::string TableMetadata::getMetadataLocation(const std::string & iceberg_metad
     return metadata_location;
 }
 
+void ICatalog::updateMetadata(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateMetadata is not implemented");
+}
+
 }

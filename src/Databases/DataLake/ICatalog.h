@@ -5,6 +5,7 @@
 #include <Databases/DataLake/StorageCredentials.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Databases/DataLake/DatabaseDataLakeStorageType.h>
+#include <Poco/JSON/Object.h>
 
 namespace DataLake
 {
@@ -150,6 +151,8 @@ public:
     /// Get storage type, where Iceberg tables' data is stored.
     /// E.g. one of S3, Azure, Local, HDFS.
     virtual std::optional<StorageType> getStorageType() const = 0;
+
+    virtual void updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path) const;
 
 protected:
     /// Name of the warehouse,

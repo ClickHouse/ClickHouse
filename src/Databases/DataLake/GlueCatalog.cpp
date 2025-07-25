@@ -8,6 +8,10 @@
 #include <aws/glue/model/GetTablesRequest.h>
 #include <aws/glue/model/GetTableRequest.h>
 #include <aws/glue/model/GetDatabasesRequest.h>
+#include <aws/glue/model/UpdateTableRequest.h>
+#include <aws/glue/model/TableInput.h>
+#include <aws/glue/model/StorageDescriptor.h>
+#include <aws/glue/model/Column.h>
 
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
@@ -477,6 +481,38 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
     return false;
 }
 
+void GlueCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path) const
+{
+    Aws::Glue::Model::UpdateTableRequest request;
+    request.SetDatabaseName(namespace_name);
+
+    Aws::Glue::Model::TableInput table_input;
+    table_input.SetName(table_name);
+
+    Aws::Glue::Model::StorageDescriptor sd;
+    fs::path original_path = new_metadata_path;
+
+    fs::path parent = original_path.parent_path();
+    fs::path grandparent = parent.parent_path();
+
+    sd.SetLocation(grandparent.c_str());
+
+    table_input.SetStorageDescriptor(sd);
+    table_input.SetTableType("ICEBERG");
+
+    Aws::Map<Aws::String, Aws::String> parameters;
+    parameters["metadata_location"] = new_metadata_path;
+    parameters["table_type"] = "ICEBERG";
+
+    table_input.SetParameters(parameters);
+
+    request.SetTableInput(table_input);
+
+    auto response = glue_client->UpdateTable(request);
+
+    if (!response.IsSuccess())
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not update metadata in glue catalog {}", response.GetError().GetMessage());
+}
 
 }
 

@@ -71,6 +71,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         args.comment,
         format_settings,
         args.mode,
+        nullptr,
         args.query.if_not_exists,
         /* is_datalake_query*/ false,
         /* distributed_processing */ false,

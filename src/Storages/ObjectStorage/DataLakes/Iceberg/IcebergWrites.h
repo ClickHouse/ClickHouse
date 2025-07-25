@@ -6,6 +6,7 @@
 #include <IO/WriteBuffer.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Databases/DataLake/ICatalog.h>
 
 #if USE_AVRO
 
@@ -33,12 +34,21 @@ String removeEscapedSlashes(const String & json_str);
 class FileNamesGenerator
 {
 public:
-    explicit FileNamesGenerator(const String & table_dir);
+    struct Result
+    {
+        String path_in_metadata;
+        String path_in_storage;
+    };
 
-    String generateDataFileName();
-    String generateManifestEntryName();
-    String generateManifestListName(Int64 snapshot_id, Int32 format_version);
-    String generateMetadataName();
+    FileNamesGenerator() = default;
+    explicit FileNamesGenerator(const String & table_dir, const String & storage_dir);
+
+    FileNamesGenerator & operator=(const FileNamesGenerator & other);
+
+    Result generateDataFileName();
+    Result generateManifestEntryName();
+    Result generateManifestListName(Int64 snapshot_id, Int32 format_version);
+    Result generateMetadataName();
 
     void setVersion(Int32 initial_version_) { initial_version = initial_version_; }
 
@@ -46,7 +56,10 @@ private:
     Poco::UUIDGenerator uuid_generator;
     String data_dir;
     String metadata_dir;
-    Int32 initial_version;
+    String storage_data_dir;
+    String storage_metadata_dir;
+
+    Int32 initial_version = 0;
 };
 
 void generateManifestFile(
@@ -74,7 +87,14 @@ class MetadataGenerator
 public:
     explicit MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_);
 
-    std::pair<Poco::JSON::Object::Ptr, String> generateNextMetadata(
+    struct NextMetadataResult
+    {
+        Poco::JSON::Object::Ptr snapshot;
+        String metadata_path;
+        String storage_metadata_path;
+    };
+
+    NextMetadataResult generateNextMetadata(
         FileNamesGenerator & generator,
         const String & metadata_filename,
         Int64 parent_snapshot_id,
@@ -127,7 +147,9 @@ public:
         StorageObjectStorageConfigurationPtr configuration_,
         const std::optional<FormatSettings> & format_settings_,
         SharedHeader sample_block_,
-        ContextPtr context_);
+        ContextPtr context_,
+        std::shared_ptr<DataLake::ICatalog> catalog_,
+        const StorageID & table_id_);
 
     ~IcebergStorageSink() override = default;
 
@@ -159,6 +181,9 @@ private:
     std::optional<ChunkPartitioner> partitioner;
     Poco::JSON::Object::Ptr partititon_spec;
     Int64 partition_spec_id;
+
+    std::shared_ptr<DataLake::ICatalog> catalog;
+    StorageID table_id;
 };
 
 }
