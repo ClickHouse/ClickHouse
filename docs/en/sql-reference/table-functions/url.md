@@ -63,7 +63,7 @@ Character `|` inside patterns is used to specify failover addresses. They are it
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 - `_headers` - HTTP response headers. Type: `Map(LowCardinality(String), LowCardinality(String))`.
 
-## Hive-style partitioning {#hive-style-partitioning}
+## use_hive_partitioning setting {#hive-style-partitioning}
 
 When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-style partitioning in the path (`/name=value/`) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
 
