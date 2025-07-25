@@ -1,6 +1,7 @@
 #include <Interpreters/WasmModuleManager.h>
 #include <Interpreters/WebAssembly/HostApi.h>
 #include <Interpreters/WebAssembly/WasmTimeRuntime.h>
+#include <Interpreters/WebAssembly/WasmEdgeRuntime.h>
 
 #include <Interpreters/Context.h>
 
@@ -23,6 +24,7 @@ namespace DB
 
 using WebAssembly::WasmModule;
 using WebAssembly::WasmTimeRuntime;
+using WebAssembly::WasmEdgeRuntime;
 
 namespace ErrorCodes
 {
@@ -31,6 +33,7 @@ extern const int FILE_ALREADY_EXISTS;
 extern const int CANNOT_DROP_FUNCTION;
 extern const int SUPPORT_IS_DISABLED;
 extern const int INCORRECT_DATA;
+extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
 constexpr auto FILE_EXTENSION = ".wasm";
@@ -103,11 +106,24 @@ ResultType checkValidWasmCode(std::string_view name, std::string_view wasm_code)
     return ResultType(true);
 }
 
-WasmModuleManager::WasmModuleManager(DiskPtr user_sciptrs_disk_, fs::path user_sciptrs_path_)
+
+static std::unique_ptr<WebAssembly::IWasmEngine> createEngine(std::string_view engine_name)
+{
+    if (engine_name == "wasmtime")
+        return std::make_unique<WasmTimeRuntime>();
+    if (engine_name == "wasmedge")
+        return std::make_unique<WasmEdgeRuntime>();
+    throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+        "Unknown WebAssembly engine '{}', available engines: 'wasmtime', 'wasmedge'",
+        engine_name);
+}
+
+WasmModuleManager::WasmModuleManager(DiskPtr user_sciptrs_disk_, std::filesystem::path user_sciptrs_path_, std::string_view engine_name)
     : user_scripts_disk(std::move(user_sciptrs_disk_))
     , user_scripts_path(std::move(user_sciptrs_path_))
-    , engine(std::make_unique<WasmTimeRuntime>())
+    , engine(createEngine(engine_name))
 {
+    user_scripts_disk->createDirectories(user_scripts_path);
     registerExistingModules();
 }
 
@@ -275,7 +291,7 @@ void WasmModuleManager::registerExistingModules()
         }
     }
 
-    LOG_DEBUG(log, "Loaded {} WASM modules", modules.size());
+    LOG_DEBUG(log, "Found {} WASM modules", modules.size());
 }
 
 std::string WasmModuleManager::getFilePath(std::string_view module_name) const

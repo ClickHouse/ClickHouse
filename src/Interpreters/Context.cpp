@@ -3355,12 +3355,15 @@ void Context::initWasmModuleManager()
     if (shared->wasm_module_manager)
         return;
 
-    if (shared->getConfigRefWithLock(lock).getInt("allow_experimental_webassemby_udf", 1) == 0)
+    const auto & config = shared->getConfigRefWithLock(lock);
+    if (!ConfigHelper::getBool(config, "allow_experimental_webassemby_udf"))
         return;
+
+    auto engine_name = config.getString("webassemby_udf_engine", "wasmtime");
 
     auto user_scripts_disk = std::make_shared<DiskLocal>("user_scripts", shared->user_scripts_path);
     user_scripts_disk->startup(/* skip_access_check */ true);
-    shared->wasm_module_manager = std::make_unique<WasmModuleManager>(std::move(user_scripts_disk), "");
+    shared->wasm_module_manager = std::make_unique<WasmModuleManager>(std::move(user_scripts_disk), /* user_sciptrs_path_ */ "wasm", engine_name);
 }
 
 bool Context::hasWasmModuleManager() const
