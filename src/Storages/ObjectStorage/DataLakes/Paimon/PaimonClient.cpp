@@ -52,25 +52,25 @@ extern const int LOGICAL_ERROR;
 
 PaimonSnapshot::PaimonSnapshot(const Poco::JSON::Object::Ptr & json_object)
 {
-    Paimon::getValueFromJson(id, json_object, "id");
-    Paimon::getValueFromJson(schema_id, json_object, "schemaId");
-    Paimon::getValueFromJson(base_manifest_list, json_object, "baseManifestList");
-    Paimon::getValueFromJson(delta_manifest_list, json_object, "deltaManifestList");
-    Paimon::getValueFromJson(index_manifest, json_object, "indexManifest");
-    Paimon::getValueFromJson(commit_user, json_object, "commitUser");
-    Paimon::getValueFromJson(commit_identifier, json_object, "commitIdentifier");
-    Paimon::getValueFromJson(commit_kind, json_object, "commitKind");
-    Paimon::getValueFromJson(time_millis, json_object, "timeMillis");
-    Paimon::getValueFromJson(version, json_object, "version");
-    Paimon::getValueFromJson(base_manifest_list_size, json_object, "baseManifestListSize");
-    Paimon::getValueFromJson(delta_manifest_list_size, json_object, "deltaManifestListSize");
-    Paimon::getValueFromJson(changelog_manifest_list, json_object, "changelogManifestList");
-    Paimon::getValueFromJson(changelog_manifest_list_size, json_object, "changelogManifestListSize");
-    Paimon::getValueFromJson(total_record_count, json_object, "totalRecordCount");
-    Paimon::getValueFromJson(delta_record_count, json_object, "deltaRecordCount");
-    Paimon::getValueFromJson(changelog_record_count, json_object, "changelogRecordCount");
-    Paimon::getValueFromJson(watermark, json_object, "watermark");
-    Paimon::getValueFromJson(statistics, json_object, "statistics");
+    Paimon::getValueFromJSON(id, json_object, "id");
+    Paimon::getValueFromJSON(schema_id, json_object, "schemaId");
+    Paimon::getValueFromJSON(base_manifest_list, json_object, "baseManifestList");
+    Paimon::getValueFromJSON(delta_manifest_list, json_object, "deltaManifestList");
+    Paimon::getValueFromJSON(index_manifest, json_object, "indexManifest");
+    Paimon::getValueFromJSON(commit_user, json_object, "commitUser");
+    Paimon::getValueFromJSON(commit_identifier, json_object, "commitIdentifier");
+    Paimon::getValueFromJSON(commit_kind, json_object, "commitKind");
+    Paimon::getValueFromJSON(time_millis, json_object, "timeMillis");
+    Paimon::getValueFromJSON(version, json_object, "version");
+    Paimon::getValueFromJSON(base_manifest_list_size, json_object, "baseManifestListSize");
+    Paimon::getValueFromJSON(delta_manifest_list_size, json_object, "deltaManifestListSize");
+    Paimon::getValueFromJSON(changelog_manifest_list, json_object, "changelogManifestList");
+    Paimon::getValueFromJSON(changelog_manifest_list_size, json_object, "changelogManifestListSize");
+    Paimon::getValueFromJSON(total_record_count, json_object, "totalRecordCount");
+    Paimon::getValueFromJSON(delta_record_count, json_object, "deltaRecordCount");
+    Paimon::getValueFromJSON(changelog_record_count, json_object, "changelogRecordCount");
+    Paimon::getValueFromJSON(watermark, json_object, "watermark");
+    Paimon::getValueFromJSON(statistics, json_object, "statistics");
 
     if (json_object->has("logOffsets"))
     {
@@ -104,7 +104,7 @@ std::pair<Int32, String> PaimonTableClient::getLastTableSchemaInfo()
 {
     auto configuration_ptr = configuration.lock();
     /// list all schema files
-    const auto schema_files = listFiles(*object_storage,  *configuration_ptr, PAIMON_SCHEMA_DIR, [](const RelativePathWithMetadata & path_with_metadata) { 
+    const auto schema_files = listFiles(*object_storage, *configuration_ptr, PAIMON_SCHEMA_DIR, [](const RelativePathWithMetadata & path_with_metadata) { 
         String relative_path = path_with_metadata.relative_path;
         String file_name(relative_path.begin() + relative_path.find_last_of('/') + 1, relative_path.end());
         return file_name.starts_with(PAIMON_SCHEMA_PREFIX); 
@@ -161,7 +161,7 @@ PaimonTableSchema PaimonTableClient::getTableSchema()
 std::pair<Int64, String> PaimonTableClient::getLastTableSnapshotInfo()
 {
     auto configuration_ptr = configuration.lock();
-    /// read lastest hint
+    /// read latest hint
     Int64 snapshot_version;
     ObjectInfo object_info(std::filesystem::path(configuration_ptr->getPath()) / PAIMON_SNAPSHOT_DIR / PAIMON_SNAPSHOT_LATEST_HINT);
     auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, getContext(), log);
@@ -174,9 +174,9 @@ std::pair<Int64, String> PaimonTableClient::getLastTableSnapshotInfo()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The Paimon snapshot hint file content is invalid.");
         }
     }
-    String lastest_snapshot_path = std::filesystem::path(configuration_ptr->getPath()) / (PAIMON_SNAPSHOT_DIR) / (PAIMON_SNAPSHOT_PRIFIX + std::to_string(snapshot_version));
+    String latest_snapshot_path = std::filesystem::path(configuration_ptr->getPath()) / (PAIMON_SNAPSHOT_DIR) / (PAIMON_SNAPSHOT_PRIFIX + std::to_string(snapshot_version));
 
-    /// check lastest hint is real lastest snapshot, if not, find lastest snapshot
+    /// check latest hint is real latest snapshot, if not, find latest snapshot
     Int64 next_snapshot_version = snapshot_version + 1;
     StoredObject store_object(std::filesystem::path(configuration_ptr->getPath()) / (PAIMON_SNAPSHOT_DIR) / (PAIMON_SNAPSHOT_PRIFIX + std::to_string(next_snapshot_version)));
     if (object_storage->exists(store_object))
@@ -210,18 +210,18 @@ std::pair<Int64, String> PaimonTableClient::getLastTableSnapshotInfo()
     }
     else 
     {
-        return {snapshot_version, lastest_snapshot_path};
+        return {snapshot_version, latest_snapshot_path};
     }
 }
 
 PaimonSnapshot PaimonTableClient::getSnapshot(const std::pair<Int64, String> & snapshot_meta_info)
 {
     auto configuration_ptr = configuration.lock();
-    /// read lastest hint
-    const auto [lastest_snapshot_version, lastest_snapshot_path] = snapshot_meta_info;
+    /// read latest hint
+    const auto [latest_snapshot_version, latest_snapshot_path] = snapshot_meta_info;
 
     /// read snapshot and parse
-    ObjectInfo snapshot_object(lastest_snapshot_path);
+    ObjectInfo snapshot_object(latest_snapshot_path);
     auto snapshot_buf = StorageObjectStorageSource::createReadBuffer(snapshot_object, object_storage, getContext(), log);
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *snapshot_buf);

@@ -81,7 +81,7 @@ inline constexpr bool is_optional_v = IsOptional<T>::value;
 
 
 template <typename T>
-void getValueFromJson(T & t, const Poco::JSON::Object::Ptr & json, const String & key)
+void getValueFromJSON(T & t, const Poco::JSON::Object::Ptr & json, const String & key)
 {
     if (json->has(key) && !json->isNull(key))
     {
@@ -99,7 +99,7 @@ void getValueFromJson(T & t, const Poco::JSON::Object::Ptr & json, const String 
 
 
 template <typename T> 
-void getVecFromJson(std::vector<T> & vec, const Poco::JSON::Object::Ptr & json, const String & key)
+void getVecFromJSON(std::vector<T> & vec, const Poco::JSON::Object::Ptr & json, const String & key)
 {
     const auto & json_array = json->getArray(key);
     if (!json_array)
@@ -114,7 +114,7 @@ void getVecFromJson(std::vector<T> & vec, const Poco::JSON::Object::Ptr & json, 
 }
 
 template <typename T>
-void getMapFromJson(std::unordered_map<String, T> & map, const Poco::JSON::Object::Ptr & json, const String & key)
+void getMapFromJSON(std::unordered_map<String, T> & map, const Poco::JSON::Object::Ptr & json, const String & key)
 {
     const auto & json_object = json->getObject(key);
     if (!json_object)
