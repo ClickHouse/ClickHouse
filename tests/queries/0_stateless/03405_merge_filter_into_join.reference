@@ -46,53 +46,49 @@ Positions: 6 0 1 2 3 4
                INPUT :: 4 -> __table3.name String : 4
                INPUT :: 5 -> __table3.age Int16 : 5
       Positions: 0 1 2 3 4 5
-        Expression (Post Join Actions)
-        Actions: INPUT :: 0 -> __table2.uid Int16 : 0
-                 INPUT :: 1 -> __table2.name String : 1
-                 INPUT :: 2 -> __table2.age Int16 : 2
-                 INPUT :: 3 -> __table3.uid Int16 : 3
-                 INPUT :: 4 -> __table3.name String : 4
-                 INPUT :: 5 -> __table3.age Int16 : 5
-        Positions: 0 1 2 3 4 5
-          Join
-          Type: INNER
-          Strictness: ALL
-          Algorithm: ConcurrentHashJoin
-          Clauses: [(__table2.age) = (__table3.age)]
-            Expression (Left Pre Join Actions)
-            Actions: INPUT :: 0 -> __table2.name String : 0
-                     INPUT :: 1 -> __table2.age Int16 : 1
-                     INPUT :: 2 -> __table2.uid Int16 : 2
-            Positions: 0 1 2
-              Expression (Change column names to column identifiers)
-              Actions: INPUT : 0 -> uid Int16 : 0
-                       INPUT : 1 -> name String : 1
-                       INPUT : 2 -> age Int16 : 2
-                       ALIAS uid :: 0 -> __table2.uid Int16 : 3
-                       ALIAS name :: 1 -> __table2.name String : 0
-                       ALIAS age :: 2 -> __table2.age Int16 : 1
-              Positions: 3 0 1
-                ReadFromMergeTree (default.users)
-                ReadType: Default
-                Parts: 3
-                Granules: 3
-            Expression (Right Pre Join Actions)
-            Actions: INPUT :: 0 -> __table3.name String : 0
-                     INPUT :: 1 -> __table3.uid Int16 : 1
-                     INPUT :: 2 -> __table3.age Int16 : 2
-            Positions: 0 1 2
-              Expression (Change column names to column identifiers)
-              Actions: INPUT : 0 -> uid Int16 : 0
-                       INPUT : 1 -> name String : 1
-                       INPUT : 2 -> age Int16 : 2
-                       ALIAS uid :: 0 -> __table3.uid Int16 : 3
-                       ALIAS name :: 1 -> __table3.name String : 0
-                       ALIAS age :: 2 -> __table3.age Int16 : 1
-              Positions: 3 0 1
-                ReadFromMergeTree (default.users)
-                ReadType: Default
-                Parts: 3
-                Granules: 3
+        Join
+        Type: INNER
+        Strictness: ALL
+        Algorithm: ConcurrentHashJoin
+        Clauses: [(__lhs_const, __table2.age) = (__rhs_const, __table3.age)]
+          Expression
+          Actions: INPUT :: 0 -> __table2.uid Int16 : 0
+                   INPUT :: 1 -> __table2.name String : 1
+                   INPUT :: 2 -> __table2.age Int16 : 2
+                   COLUMN Const(UInt8) -> __lhs_const UInt8 : 3
+                   INPUT :: 0 -> __table2.age Int16 : 4
+          Positions: 2 0 1 3
+            Expression (Change column names to column identifiers)
+            Actions: INPUT : 0 -> uid Int16 : 0
+                     INPUT : 1 -> name String : 1
+                     INPUT : 2 -> age Int16 : 2
+                     ALIAS uid :: 0 -> __table2.uid Int16 : 3
+                     ALIAS name :: 1 -> __table2.name String : 0
+                     ALIAS age :: 2 -> __table2.age Int16 : 1
+            Positions: 3 0 1
+              ReadFromMergeTree (default.users)
+              ReadType: Default
+              Parts: 3
+              Granules: 3
+          Expression
+          Actions: INPUT :: 0 -> __table3.uid Int16 : 0
+                   INPUT :: 1 -> __table3.name String : 1
+                   INPUT :: 2 -> __table3.age Int16 : 2
+                   COLUMN Const(UInt8) -> __rhs_const UInt8 : 3
+                   INPUT :: 0 -> __table3.age Int16 : 4
+          Positions: 2 0 1 3
+            Expression (Change column names to column identifiers)
+            Actions: INPUT : 0 -> uid Int16 : 0
+                     INPUT : 1 -> name String : 1
+                     INPUT : 2 -> age Int16 : 2
+                     ALIAS uid :: 0 -> __table3.uid Int16 : 3
+                     ALIAS name :: 1 -> __table3.name String : 0
+                     ALIAS age :: 2 -> __table3.age Int16 : 1
+            Positions: 3 0 1
+              ReadFromMergeTree (default.users)
+              ReadType: Default
+              Parts: 3
+              Granules: 3
 SELECT * FROM (SELECT * FROM users u1 INNER JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL;
 1231	John	33	1231	John	33
 6666	Ksenia	48	6666	Ksenia	48
