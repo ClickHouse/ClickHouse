@@ -135,7 +135,7 @@ BlockIO InterpreterDescribeQuery::execute()
 void InterpreterDescribeQuery::fillColumnsFromSubquery(const ASTTableExpression & table_expression)
 {
     SharedHeader sample_block;
-    auto select_query = table_expression.subquery->children.at(0);
+    auto select_query = table_expression.subquery;
     auto current_context = getContext();
 
     if (settings[Setting::allow_experimental_analyzer])

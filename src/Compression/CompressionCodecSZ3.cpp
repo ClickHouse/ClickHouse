@@ -153,7 +153,8 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
     size_t compressed_size;
     switch (float_width)
     {
-        case 4: {
+        case 4:
+        {
             try
             {
                 compressed.reset(SZ_compress(config, reinterpret_cast<const float *>(source), compressed_size));
@@ -164,7 +165,8 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
             }
             break;
         }
-        case 8: {
+        case 8:
+        {
             try
             {
                 compressed.reset(SZ_compress(config, reinterpret_cast<const double *>(source), compressed_size));
@@ -196,8 +198,10 @@ void CompressionCodecSZ3::setAndCheckVectorDimension(size_t dimension_)
 
 void CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 /*uncompressed_size*/) const
 {
-    if (source_size == 0)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Can not decompress empty data");
+    /// Hardcoded, because it is not declared (we just calculated the minimal size of decompressed config) and it is less than sizeof(SZ3::Config).
+    static constexpr const size_t config_size = 39;
+    if (source_size < 1 + config_size)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Can not decompress data {} that is less than minimal size of compressed", source_size);
 
     UInt8 width = static_cast<UInt8>(*source);
     --source_size;
@@ -206,7 +210,8 @@ void CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_si
     SZ3::Config config;
     switch (width)
     {
-        case 4: {
+        case 4:
+        {
             try
             {
                 float * dest_typed = reinterpret_cast<float *>(dest);
@@ -218,7 +223,8 @@ void CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_si
             }
             break;
         }
-        case 8: {
+        case 8:
+        {
             try
             {
                 double * dest_typed = reinterpret_cast<double *>(dest);
