@@ -9,20 +9,19 @@ namespace DB
 
 struct PatchToApply
 {
-    PaddedPODArray<UInt64> result_indices;
-    PaddedPODArray<UInt64> patch_indices;
-    Block patch_block;
+    PaddedPODArray<UInt64> result_row_indices;
+    PaddedPODArray<UInt64> patch_col_indices;
+    PaddedPODArray<UInt64> patch_row_indices;
+    std::vector<Block> patch_blocks;
 
-    bool empty() const
-    {
-        chassert(result_indices.size() == patch_indices.size());
-        return result_indices.empty();
-    }
+    bool empty() const { return patch_blocks.empty(); }
+    size_t getNumSources() const { return patch_blocks.size(); }
 
-    size_t rows() const
+    size_t getNumRows() const
     {
-        chassert(result_indices.size() == patch_indices.size());
-        return result_indices.size();
+        chassert(result_row_indices.size() == patch_col_indices.size());
+        chassert(result_row_indices.size() == patch_row_indices.size());
+        return result_row_indices.size();
     }
 };
 
@@ -45,7 +44,7 @@ struct PatchMergeReadResult : public PatchReadResult
 
 struct PatchJoinReadResult : public PatchReadResult
 {
-    PatchJoinCache::Entries entries;
+    PatchJoinCache::EntryPtr entry;
 };
 
 /// Applies patch. Returns indices in result and patch blocks for rows that should be updated.

@@ -240,7 +240,6 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
     }
 
     ranges_in_patch_parts.optimize();
-    patch_join_cache->init(ranges_in_patch_parts);
 }
 
 std::vector<size_t> MergeTreeReadPoolBase::getPerPartSumMarks() const
