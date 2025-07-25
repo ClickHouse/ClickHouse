@@ -150,7 +150,7 @@ public:
 
     virtual DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const = 0;
     std::pair<String, DataTypePtr> getValueNameAndType(size_t n, const Options & options) const;
-    
+
     /// If possible, returns pointer to memory chunk which contains n-th element (if it isn't possible, throws an exception)
     /// Is used to optimize some computations (in aggregation, for example).
     [[nodiscard]] virtual StringRef getDataAt(size_t n) const = 0;
