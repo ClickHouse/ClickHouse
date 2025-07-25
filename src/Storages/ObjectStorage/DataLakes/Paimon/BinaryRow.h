@@ -3,15 +3,15 @@
 #include <cstddef>
 #include <memory>
 #include <string_view>
+#include <IO/ReadBufferFromIStream.h>
 #include <base/types.h>
+#include <fmt/ranges.h>
 #include <Poco/BinaryReader.h>
 #include <Poco/Logger.h>
-#include "Common/logger_useful.h"
-#include "Core/Field.h"
-#include "IO/ReadBufferFromString.h"
-#include <IO/ReadBufferFromIStream.h>
-#include <fmt/ranges.h>
-#include "base/Decimal.h"
+#include <Common/logger_useful.h>
+#include <Core/Field.h>
+#include <IO/ReadBufferFromString.h>
+#include <base/Decimal.h>
 
 namespace Paimon
 {
@@ -46,15 +46,15 @@ public:
     // Decimal64 getDecimal64(Int32 pos, Int32 precision, Int32 scale);
     // Decimal128 getDecimal128(Int32 pos, Int32 precision, Int32 scale);
     // Decimal256 getDecimal256(Int32 pos, Int32 precision, Int32 scale);
-    template<typename T>
+    template <typename T>
     Decimal<T> getDecimal(Int32 pos, Int32 precision, Int32 /* scale */)
     {
-        chassert(pos >=0 && pos < arity);
-        chassert(precision >0 && precision <= 76);
+        chassert(pos >= 0 && pos < arity);
+        chassert(precision > 0 && precision <= 76);
         if (precision <= 18)
         {
             Int64 value = getFixedSizeData<Int64>(pos);
-            if (precision <= 9) 
+            if (precision <= 9)
             {
                 return Decimal<Int32>(static_cast<Int32>(value));
             }
@@ -62,15 +62,16 @@ public:
         }
         else
         {
-            auto to_hex_string = [](const std::string& input) 
+            auto to_hex_string = [](const std::string & input)
             {
                 std::ostringstream oss;
                 oss << std::hex << std::setfill('0');
-                
-                for (unsigned char c : input) {
+
+                for (unsigned char c : input)
+                {
                     oss << std::setw(2) << static_cast<int>(c);
                 }
-                
+
                 return oss.str();
             };
             // int field_offset = getFieldOffset(pos);
@@ -80,7 +81,7 @@ public:
             String bytes_string = copyBytes(offset() + sub_offset, size);
             LOG_DEBUG(&Poco::Logger::get("BinaryRow"), "bytes_string: {}", to_hex_string(bytes_string));
             if (bytes_string.length() > 32)
-                    throw Exception();
+                throw Exception();
             auto add_leading_zero = [](const String & data, size_t target_size)
             {
                 if (data.size() == target_size)
@@ -93,10 +94,10 @@ public:
                     result[start_pos + i] = data[i];
                 return result;
             };
-            auto get_uint64_big_endian = [] (std::string_view bytes)
+            auto get_uint64_big_endian = [](std::string_view bytes)
             {
                 uint64_t result = 0;
-                for (size_t i = 0; i < 8; ++i) 
+                for (size_t i = 0; i < 8; ++i)
                 {
                     result = (result << 8) | static_cast<UInt8>(bytes[i]);
                 }
@@ -150,17 +151,18 @@ private:
     String tmp_value;
 
     Int32 calculateBitSetWidthInBytes() const { return ((arity + 63 + HEADER_SIZE_IN_BITS) / 64) * 8; }
-    Int32 offset() const { return ARITY_SIZE;}
-    Int32 getFieldOffset(Int32 pos) const 
-    { 
+    Int32 offset() const { return ARITY_SIZE; }
+    Int32 getFieldOffset(Int32 pos) const
+    {
         Int32 res = offset() + calculateBitSetWidthInBytes() + pos * 8;
         LOG_DEBUG(&Poco::Logger::get("BinaryRow"), "pos: {}, offset: {}", pos, res);
-        return res; 
+        return res;
     }
     Int32 byteIndex(Int32 bit_index) const { return bit_index >> ADDRESS_BITS_PER_WORD; }
     void seek(Int32 offset) { reader.seek(offset, SEEK_SET); }
     static bool isLittleEndian();
-    template<typename T> T getFixedSizeData(Int32 pos);
+    template <typename T>
+    T getFixedSizeData(Int32 pos);
     String copyBytes(Int32 offset, Int32 num_bytes);
 };
 

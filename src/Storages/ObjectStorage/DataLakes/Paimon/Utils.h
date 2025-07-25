@@ -2,33 +2,37 @@
 
 #include <bitset>
 #include <type_traits>
-#include <base/types.h>
-#include "Common/Exception.h"
+#include <IO/WriteHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/BinaryRow.h>
+#include <base/types.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
-#include <IO/WriteHelpers.h>
+#include <Common/Exception.h>
 
 
 namespace DB
 {
-    struct PaimonTableSchema;
+struct PaimonTableSchema;
 }
 
-namespace Paimon 
+namespace Paimon
 {
 using namespace DB;
 
-class PathEscape {
+class PathEscape
+{
 public:
     PathEscape() = delete;
+
 private:
     static const std::bitset<128> CHAR_TO_ESCAPE;
 
-    static void escapeChar(unsigned char c, std::string& output) {
+    static void escapeChar(unsigned char c, std::string & output)
+    {
         output += '%';
-        if (c < 16) {
+        if (c < 16)
+        {
             output += '0';
         }
         const char hex_digits[] = "0123456789ABCDEF";
@@ -37,8 +41,10 @@ private:
     }
 
 public:
-    static std::string escapePathName(const std::string& path) {
-        if (path.empty()) {
+    static std::string escapePathName(const std::string & path)
+    {
+        if (path.empty())
+        {
             // Path should not be null or empty;
             throw Exception();
         }
@@ -46,19 +52,21 @@ public:
         std::string escaped;
         escaped.reserve(path.size() * 2);
 
-        for (unsigned char c : path) {
-            if (needsEscaping(c)) {
+        for (unsigned char c : path)
+        {
+            if (needsEscaping(c))
+            {
                 escapeChar(c, escaped);
-            } else {
+            }
+            else
+            {
                 escaped += c;
             }
         }
         return escaped;
     }
 
-    static bool needsEscaping(unsigned char c) {
-        return c < CHAR_TO_ESCAPE.size() && CHAR_TO_ESCAPE.test(c);
-    }
+    static bool needsEscaping(unsigned char c) { return c < CHAR_TO_ESCAPE.size() && CHAR_TO_ESCAPE.test(c); }
 };
 
 String getBucketPath(String partition, Int32 bucket, const PaimonTableSchema & table_schema, const String & partition_default_name);
@@ -66,18 +74,19 @@ String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema
 String concatPath(std::initializer_list<String> paths);
 
 template <typename T>
-struct IsOptional {
+struct IsOptional
+{
     static constexpr bool value = false;
 };
 
 template <typename T>
-struct IsOptional<std::optional<T>> {
+struct IsOptional<std::optional<T>>
+{
     static constexpr bool value = true;
 };
 
 template <typename T>
 inline constexpr bool is_optional_v = IsOptional<T>::value;
-
 
 
 template <typename T>
@@ -98,7 +107,7 @@ void getValueFromJSON(T & t, const Poco::JSON::Object::Ptr & json, const String 
 }
 
 
-template <typename T> 
+template <typename T>
 void getVecFromJSON(std::vector<T> & vec, const Poco::JSON::Object::Ptr & json, const String & key)
 {
     const auto & json_array = json->getArray(key);
@@ -122,11 +131,10 @@ void getMapFromJSON(std::unordered_map<String, T> & map, const Poco::JSON::Objec
         return;
     }
     map.reserve(json_object->size());
-    
+
     for (const auto & inner_key : json_object->getNames())
     {
         map.emplace(inner_key, json_object->getValue<T>(inner_key));
     }
 }
 }
-

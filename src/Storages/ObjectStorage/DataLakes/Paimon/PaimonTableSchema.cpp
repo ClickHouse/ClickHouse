@@ -3,7 +3,7 @@
 namespace DB
 {
 PaimonTableSchema::PaimonTableSchema(const Poco::JSON::Object::Ptr & json_object)
-:raw_json_object(json_object)
+    : raw_json_object(json_object)
 {
     update(json_object);
 }
@@ -12,7 +12,7 @@ void PaimonTableSchema::update(const Poco::JSON::Object::Ptr & json_object)
     Int32 tmp_version = -1;
     Paimon::getValueFromJSON(tmp_version, json_object, "version");
     /// same schema
-    if (tmp_version >=0 && tmp_version == version)
+    if (tmp_version >= 0 && tmp_version == version)
     {
         return;
     }
@@ -22,7 +22,7 @@ void PaimonTableSchema::update(const Poco::JSON::Object::Ptr & json_object)
     Paimon::getValueFromJSON(highest_field_id, json_object, "highestFieldId");
     Paimon::getValueFromJSON(time_mills, json_object, "timeMillis");
     Paimon::getValueFromJSON(comment, json_object, "comment");
-    
+
     /// get array
     Paimon::getVecFromJSON(partition_keys, json_object, "partitionKeys");
     Paimon::getVecFromJSON(primary_keys, json_object, "primaryKeys");
@@ -36,7 +36,7 @@ void PaimonTableSchema::update(const Poco::JSON::Object::Ptr & json_object)
     for (uint32_t i = 0; i < json_array->size(); ++i)
     {
         fields.emplace_back(json_array->getObject(i));
-        fields_by_name_indexes.emplace(fields.back().name, fields.size()-1);
+        fields_by_name_indexes.emplace(fields.back().name, fields.size() - 1);
     }
 }
 }
