@@ -146,6 +146,30 @@ void StatementGenerator::generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
     this->levels[this->current_level].rels.emplace_back(rel);
 }
 
+static void matchQueryAliases(const uint32_t ncols, Select * osel, Select * nsel)
+{
+    /// Make sure aliases match
+    SelectStatementCore * ssc = nsel->mutable_select_core();
+    JoinedTableOrFunction * jtf = ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
+
+    for (uint32_t i = 0; i < ncols; i++)
+    {
+        const String ncname = "c" + std::to_string(i);
+
+        ssc->add_result_columns()
+            ->mutable_eca()
+            ->mutable_expr()
+            ->mutable_comp_expr()
+            ->mutable_expr_stc()
+            ->mutable_col()
+            ->mutable_path()
+            ->mutable_col()
+            ->set_column(ncname);
+        jtf->add_col_aliases()->set_column(ncname);
+    }
+    jtf->mutable_tof()->mutable_select()->mutable_inner_query()->mutable_select()->set_allocated_sel(osel);
+}
+
 void StatementGenerator::generateDerivedTable(
     RandomGenerator & rg,
     SQLRelation & rel,
@@ -155,6 +179,7 @@ void StatementGenerator::generateDerivedTable(
     std::optional<String> recursive,
     Select * sel)
 {
+    Select * osel = sel->New();
     std::unordered_map<uint32_t, QueryLevel> levels_backup;
     std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
 
@@ -174,7 +199,7 @@ void StatementGenerator::generateDerivedTable(
 
     this->current_level++;
     this->levels[this->current_level] = QueryLevel(this->current_level);
-    generateSelect(rg, false, false, ncols, allowed_clauses, recursive, sel);
+    generateSelect(rg, false, false, ncols, allowed_clauses, recursive, osel);
     this->current_level--;
 
     if (backup)
@@ -191,41 +216,11 @@ void StatementGenerator::generateDerivedTable(
         }
     }
 
-    if (sel->has_select_core())
+    matchQueryAliases(ncols, osel, sel);
+    chassert(rel.cols.empty());
+    for (uint32_t i = 0; i < ncols; i++)
     {
-        const SelectStatementCore & scc = sel->select_core();
-
-        for (int i = 0; i < scc.result_columns_size(); i++)
-        {
-            rel.cols.emplace_back(SQLRelationCol(rel.name, {scc.result_columns(i).eca().col_alias().column()}));
-        }
-    }
-    else if (sel->has_set_query())
-    {
-        const ExplainQuery * aux = &sel->set_query().sel1();
-
-        while (!aux->is_explain() && aux->inner_query().select().sel().has_set_query())
-        {
-            aux = &aux->inner_query().select().sel().set_query().sel1();
-        }
-
-        if (aux->is_explain())
-        {
-            rel.cols.emplace_back(SQLRelationCol(rel.name, {"explain"}));
-        }
-        else if (aux->inner_query().select().sel().has_select_core())
-        {
-            const SelectStatementCore & scc = aux->inner_query().select().sel().select_core();
-
-            for (int i = 0; i < scc.result_columns_size(); i++)
-            {
-                rel.cols.emplace_back(SQLRelationCol(rel.name, {scc.result_columns(i).eca().col_alias().column()}));
-            }
-        }
-    }
-    if (rel.cols.empty())
-    {
-        rel.cols.emplace_back(SQLRelationCol(rel.name, {"a0"}));
+        rel.cols.emplace_back(SQLRelationCol(rel.name, {"c" + std::to_string(i)}));
     }
 }
 
@@ -556,6 +551,7 @@ bool StatementGenerator::joinedTableOrFunction(
         tof->mutable_est()->mutable_table()->set_table(next_cte.name);
         for (const auto & entry : next_cte.cols)
         {
+            chassert(!entry.path.empty() && !entry.path[0].empty());
             rel.cols.emplace_back(SQLRelationCol(rel_name, entry.path));
         }
         this->levels[this->current_level].rels.emplace_back(rel);
@@ -1938,30 +1934,6 @@ void StatementGenerator::addWindowDefs(RandomGenerator & rg, SelectStatementCore
     }
     this->width -= nclauses;
     this->depth--;
-}
-
-static void matchQueryAliases(const uint32_t ncols, Select * osel, Select * nsel)
-{
-    /// Make sure aliases match
-    SelectStatementCore * ssc = nsel->mutable_select_core();
-    JoinedTableOrFunction * jtf = ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
-
-    for (uint32_t i = 0; i < ncols; i++)
-    {
-        const String ncname = "c" + std::to_string(i);
-
-        ssc->add_result_columns()
-            ->mutable_eca()
-            ->mutable_expr()
-            ->mutable_comp_expr()
-            ->mutable_expr_stc()
-            ->mutable_col()
-            ->mutable_path()
-            ->mutable_col()
-            ->set_column(ncname);
-        jtf->add_col_aliases()->set_column(ncname);
-    }
-    jtf->mutable_tof()->mutable_select()->mutable_inner_query()->mutable_select()->set_allocated_sel(osel);
 }
 
 void StatementGenerator::generateSelect(
