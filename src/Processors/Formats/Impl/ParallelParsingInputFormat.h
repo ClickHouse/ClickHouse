@@ -176,6 +176,7 @@ private:
                         break;
 
                     case IProcessor::Status::Finished:
+                        input_format->onFinish();
                         return {};
 
                     case IProcessor::Status::PortFull:

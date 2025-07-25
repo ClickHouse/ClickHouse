@@ -106,6 +106,7 @@ size_t StreamingFormatExecutor::execute(size_t num_bytes)
                     break;
 
                 case IProcessor::Status::Finished:
+                    format->onFinish();
                     format->resetParser();
                     return new_rows;
 

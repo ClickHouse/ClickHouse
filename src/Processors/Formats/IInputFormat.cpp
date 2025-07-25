@@ -1,6 +1,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WithFileName.h>
+#include <Common/StackTrace.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
@@ -57,7 +58,7 @@ Chunk IInputFormat::getChunkForCount(size_t rows)
 void IInputFormat::resetOwnedBuffers()
 {
     LOG_DEBUG(getLogger("IInputFormat"),
-        "Resetting owned buffers, possessing buffers: {}", owned_buffers.size());
+          "Resetting owned buffers, possessing buffers: {} at\n{}", owned_buffers.size(), StackTrace().toString());
     owned_buffers.clear();
 }
 

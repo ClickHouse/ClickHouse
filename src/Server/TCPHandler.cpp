@@ -1129,7 +1129,8 @@ void TCPHandler::startInsertQuery(QueryState & state)
                     throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs());
                 sendTableColumns(state, storage_ptr->getInMemoryMetadataPtr()->getColumns());
             }
-            else {
+            else
+            {
                 LOG_DEBUG(log, "No insertion table specified, not sending table columns");
             }
         }

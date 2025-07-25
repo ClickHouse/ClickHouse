@@ -123,15 +123,15 @@ void ISource::work()
         if (isCancelled())
             finished = true;
 
-        if (finished)
-            onFinish();
+        // if (finished)
+        //     onFinish();
     }
     catch (...)
     {
         got_exception = true;
 
-        if (!std::exchange(finished, true))
-            onFinish();
+        // if (!std::exchange(finished, true))
+        //     onFinish();
 
         throw;
     }
@@ -152,4 +152,3 @@ std::optional<Chunk> ISource::tryGenerate()
 }
 
 }
-
