@@ -54,6 +54,6 @@ function run_query()
 }
 
 run_query "SELECT k1, k2, k3, sum(value) v FROM in_order_agg_01710 GROUP BY k1, k2, k3 ORDER BY k1, k2, k3 SETTINGS optimize_aggregation_in_order=0"
-run_query "SELECT k1, k2, k3, sum(value) v FROM in_order_agg_01710 GROUP BY k1, k2, k3 ORDER BY k1, k2, k3 SETTINGS optimize_aggregation_in_order=1"
+run_query "SELECT k1, k2, k3, sum(value) v FROM in_order_agg_01710 GROUP BY k1, k2, k3 ORDER BY k1, k2, k3 SETTINGS optimize_aggregation_in_order=1, enable_parallel_replicas=0"
 run_query "SELECT k1, k3, sum(value) v FROM in_order_agg_01710 GROUP BY k1, k3 ORDER BY k1, k3 SETTINGS optimize_aggregation_in_order=0"
-run_query "SELECT k1, k3, sum(value) v FROM in_order_agg_01710 GROUP BY k1, k3 ORDER BY k1, k3 SETTINGS optimize_aggregation_in_order=1"
+run_query "SELECT k1, k3, sum(value) v FROM in_order_agg_01710 GROUP BY k1, k3 ORDER BY k1, k3 SETTINGS optimize_aggregation_in_order=1, enable_parallel_replicas=0"

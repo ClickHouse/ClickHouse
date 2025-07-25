@@ -379,20 +379,8 @@ std::optional<String> optimizeUseNormalProjections(
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
     }
 
-    /// The result contains both the projection stream and the part stream.
-    /// -------------------------------------------------------------------------------------------
-    ///                                                 Union
-    ///  ReadFromMergeTree  ---is replaced by--->           ReadFromMergeTree (part)
-    ///                                                     ReadFromMergeTree (projection_normal)
-    /// -------------------------------------------------------------------------------------------
-    /// The coordinator does not support reading from two streams at the moment, so read projections are performed directly on the initial replica.
-    auto * reading_from_projection = typeid_cast<ReadFromMergeTree *>(projection_reading.get());
-    if (reading_from_projection && reading_from_projection->isParallelReadingEnabled() && is_parallel_replicas_initiator
-        && has_parent_parts)
-    {
-        reading_from_projection->clearParallelReadingExtension();
-        LOG_DEBUG(logger, "Parallel replicas initiator falls back to reading projection locally");
-    }
+    if (has_parent_parts && is_parallel_replicas_initiator)
+        fallbackToLocalProjectionReading(projection_reading);
 
     if (!query_info.is_internal && context->hasQueryContext())
     {

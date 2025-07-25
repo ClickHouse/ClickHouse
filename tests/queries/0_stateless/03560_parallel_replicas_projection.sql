@@ -47,18 +47,18 @@ CREATE TABLE agg
     `value` UInt32,
 )
 ENGINE = MergeTree
-ORDER BY tuple();
+ORDER BY tuple() settings index_granularity=1;
 
 SYSTEM STOP MERGES agg;
 
-INSERT INTO agg SELECT number AS key, number AS value FROM numbers(10000);
+INSERT INTO agg SELECT number AS key, number AS value FROM numbers(100);
 ALTER TABLE agg ADD PROJECTION p_agg (SELECT key, sum(value) GROUP BY key);
-INSERT INTO agg SELECT number AS key, number AS value FROM numbers(10000, 100);
+INSERT INTO agg SELECT number AS key, number AS value FROM numbers(100, 100);
 
 SELECT '---agg : contains both projections and parts ---';
-SELECT trimLeft(replaceRegexpAll(explain, 'ReadFromRemoteParallelReplicas.*', 'ReadFromRemoteParallelReplicas')) FROM (explain SELECT sum(value) AS v FROM agg) WHERE explain LIKE '%ReadFromPreparedSource%' OR explain LIKE '%ReadFromMergeTree%' OR explain LIKE '%ReadFromRemoteParallelReplicas%' SETTINGS enable_analyzer = 1;
-SELECT sum(value) AS v FROM agg;
-SELECT sum(value) AS v FROM agg where key > 9998 AND key < 10000 settings force_optimize_projection = 1, enable_analyzer = 1;
+SELECT trimLeft(replaceRegexpAll(explain, 'ReadFromRemoteParallelReplicas.*', 'ReadFromRemoteParallelReplicas')) FROM (explain SELECT sum(value) AS v FROM agg where key > 90 AND key < 110) WHERE explain LIKE '%ReadFromPreparedSource%' OR explain LIKE '%ReadFromMergeTree%' OR explain LIKE '%ReadFromRemoteParallelReplicas%' SETTINGS enable_analyzer = 1;
+SELECT sum(value) AS v FROM agg where key > 90 AND key < 110;
+SELECT sum(value) AS v FROM agg where key > 98 AND key < 100 settings force_optimize_projection = 1, enable_analyzer = 1;
 
 SELECT '---agg : contains only projections ---';
 DROP TABLE IF EXISTS agg;
@@ -68,15 +68,14 @@ CREATE TABLE agg
     `value` UInt32,
 )
 ENGINE = MergeTree
-ORDER BY tuple();
+ORDER BY tuple() settings index_granularity=1;
+
 ALTER TABLE agg ADD PROJECTION p_agg (SELECT key, sum(value) GROUP BY key);
+INSERT INTO agg SELECT number AS key, number AS value FROM numbers(100);
+INSERT INTO agg SELECT number AS key, number AS value FROM numbers(100, 100);
 
-INSERT INTO agg SELECT number AS key, number AS value FROM numbers(10000);
-INSERT INTO agg SELECT number AS key, number AS value FROM numbers(10000, 100);
-
-SELECT trimLeft(replaceRegexpAll(explain, 'ReadFromRemoteParallelReplicas.*', 'ReadFromRemoteParallelReplicas')) FROM (explain SELECT sum(value) AS v FROM agg) WHERE explain LIKE '%ReadFromPreparedSource%' OR explain LIKE '%ReadFromMergeTree%' OR explain LIKE '%ReadFromRemoteParallelReplicas%' SETTINGS enable_analyzer = 1;
-SELECT sum(value) AS v FROM agg;
-
+SELECT trimLeft(replaceRegexpAll(explain, 'ReadFromRemoteParallelReplicas.*', 'ReadFromRemoteParallelReplicas')) FROM (explain SELECT sum(value) AS v FROM agg where key > 90 AND key < 110) WHERE explain LIKE '%ReadFromPreparedSource%' OR explain LIKE '%ReadFromMergeTree%' OR explain LIKE '%ReadFromRemoteParallelReplicas%' SETTINGS enable_analyzer = 1;
+SELECT sum(value) AS v FROM agg where key > 90 AND key < 110;
 DROP TABLE agg;
 
 DROP TABLE IF EXISTS x;

@@ -11,12 +11,12 @@ ReadFromRemoteParallelReplicas
 ReadFromMergeTree (default.agg)
 ReadFromMergeTree (p_agg)
 ReadFromRemoteParallelReplicas
-50999950
-9999
+1900
+99
 ---agg : contains only projections ---
 ReadFromMergeTree (p_agg)
 ReadFromRemoteParallelReplicas
-50999950
+1900
 --- min-max projection ---
 ReadFromPreparedSource (_minmax_count_projection)
 ReadFromRemoteParallelReplicas

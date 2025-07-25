@@ -814,20 +814,8 @@ std::optional<String> optimizeUseAggregateProjections(
             projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         }
 
-        /// When parallel replicas is enabled, if the result contains both the projection stream and the part stream.
-        /// -------------------------------------------------------------------------------------------
-        ///                                                 AggregatingProjection
-        ///  ReadFromMergeTree  ---is replaced by--->           ReadFromMergeTree (part)
-        ///                                                     ReadFromMergeTree (projection_agg)
-        /// -------------------------------------------------------------------------------------------
-        /// The coordinator does not support reading from two streams at the moment, so read projections are performed directly on the initial replica.
-        auto * reading_from_projection = typeid_cast<ReadFromMergeTree *>(projection_reading.get());
-        if (reading_from_projection && reading_from_projection->isParallelReadingEnabled() && is_parallel_replicas_initiator
-            && has_parent_parts)
-        {
-            reading_from_projection->clearParallelReadingExtension();
-            LOG_DEBUG(logger, "Parallel replicas initiator falls back to reading projection locally");
-        }
+        if (has_parent_parts && is_parallel_replicas_initiator)
+            fallbackToLocalProjectionReading(projection_reading);
     }
 
     if (!query_info.is_internal && context->hasQueryContext())

@@ -1,32 +1,11 @@
-#include <Common/logger_useful.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
 
 namespace DB::QueryPlanOptimizations
 {
-static ReadFromMergeTree * findReadingStep(QueryPlan::Node * node)
-{
-    if (node == nullptr)
-        return nullptr;
-
-    IQueryPlanStep * step = node->step.get();
-    if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
-        return reading;
-
-    if (node->children.size() != 1)
-        return nullptr;
-
-    if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<AggregatingStep *>(step))
-        return findReadingStep(node->children.front());
-
-    return nullptr;
-}
 
 /// We are trying to find a part of plan like
 ///
@@ -80,19 +59,6 @@ void enableMemoryBoundMerging(QueryPlan::Node & node)
     {
         if (aggregating_step->memoryBoundMergingWillBeUsed())
         {
-            /// When parallel_replicas_local_plan is enabled and the local plan has been optimized by a projection,
-            /// `EnforceAggregationInOrder` on remote replicas will cause them to skip projection optimization.
-            /// This may result in the local replica and remote replicas executing with different CoordinationMode-s.
-            const auto * read_from_merge_tree_step = findReadingStep(union_node.children[0]);
-            const bool is_local_plan_optimized_by_projection = read_from_merge_tree_step != nullptr
-                && read_from_merge_tree_step->isParallelReadingEnabled() && !async_reading_steps.empty()
-                && read_from_merge_tree_step->getAnalyzedResult() && read_from_merge_tree_step->getAnalyzedResult()->readFromProjection();
-            if (is_local_plan_optimized_by_projection)
-            {
-                LOG_DEBUG(getLogger("MemoryBoundMerging"), "For parallel replicas with a projection-optimized local plan, skip `enforceAggregationInOrder` on remote replicas.");
-                return;
-            }
-
             sort_description = aggregating_step->getSortDescription();
             enforce_aggregation_in_order = true;
         }
