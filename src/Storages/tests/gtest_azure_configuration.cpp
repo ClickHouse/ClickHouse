@@ -1,7 +1,22 @@
+#include <azure/identity/managed_identity_credential.hpp>
 #include <gtest/gtest.h>
 #include <config.h>
 
 #if USE_AZURE_BLOB_STORAGE
+
+#define ASSERT_THROW_ERROR_CODE(statement, expected_exception, expected_code, expected_msg)     \
+    ASSERT_THROW(                                                                               \
+        try                                                                                     \
+        {                                                                                       \
+            (void)(statement);                                                                  \
+        }                                                                                       \
+        catch (const expected_exception & e)                                                    \
+        {                                                                                       \
+            EXPECT_EQ(expected_code, e.code());                                                 \
+            EXPECT_NE(e.message().find(expected_msg), std::string::npos);                      \
+            throw;                                                                              \
+        }                                                                                       \
+    , expected_exception)
 
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Interpreters/Context.h>
@@ -15,10 +30,13 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/DOM/DOMParser.h>
 
-using namespace DB;
-
-namespace
+namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 /// A class which allows to test private methods of NamedCollectionFactory.
 class NamedCollectionFactoryFriend : public NamedCollectionFactory
@@ -87,6 +105,49 @@ TEST(StorageAzureConfiguration, FromNamedCollectionWithExtraCredentials)
     ASSERT_TRUE(std::holds_alternative<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(conf.getConnectionParams().auth_method));
 }
 
+TEST(StorageAzureConfiguration, FromNamedCollectionWithAccount)
+{
+    std::string xml(R"CONFIG(<clickhouse>
+    <named_collections>
+        <FromNamedCollectionWithAccount>
+            <container>test_container</container>
+            <blob_path>test_blob.csv</blob_path>
+            <account_name>test_account</account_name>
+            <account_key>test_key</account_key>
+        </FromNamedCollectionWithAccount>
+    </named_collections>
+    </clickhouse>)CONFIG");
+
+    loadNamedCollectionConfig(xml);
+
+    StorageAzureConfigurationFriend conf;
+    auto collection = NamedCollectionFactoryFriend::instance().get("FromNamedCollectionWithAccount");
+    conf.fromNamedCollection(*collection, Context::getGlobalContextInstance());
+
+    ASSERT_TRUE(std::holds_alternative<std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>>(conf.getConnectionParams().auth_method));
+}
+
+TEST(StorageAzureConfiguration, FromNamedCollectionWithURL)
+{
+    std::string xml(R"CONFIG(<clickhouse>
+    <named_collections>
+        <FromNamedCollectionWithURL>
+            <container>test_container</container>
+            <blob_path>test_blob.csv</blob_path>
+            <connection_string>https://azurite1:10000/devstoreaccount1?foo=bar</connection_string>
+        </FromNamedCollectionWithURL>
+    </named_collections>
+    </clickhouse>)CONFIG");
+
+    loadNamedCollectionConfig(xml);
+
+    StorageAzureConfigurationFriend conf;
+    auto collection = NamedCollectionFactoryFriend::instance().get("FromNamedCollectionWithURL");
+    conf.fromNamedCollection(*collection, Context::getGlobalContextInstance());
+
+    ASSERT_TRUE(std::holds_alternative<std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>(conf.getConnectionParams().auth_method));
+}
+
 TEST(StorageAzureConfiguration, FromNamedCollectionWithExtraCredentialsAndAccount)
 {
     std::string xml(R"CONFIG(<clickhouse>
@@ -106,32 +167,30 @@ TEST(StorageAzureConfiguration, FromNamedCollectionWithExtraCredentialsAndAccoun
 
     StorageAzureConfigurationFriend conf;
     auto collection = NamedCollectionFactoryFriend::instance().get("FromNamedCollectionWithExtraCredentialsAndAccount");
-    conf.fromNamedCollection(*collection, Context::getGlobalContextInstance());
 
-    ASSERT_TRUE(std::holds_alternative<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(conf.getConnectionParams().auth_method));
+    ASSERT_THROW_ERROR_CODE(conf.fromNamedCollection(*collection, Context::getGlobalContextInstance()), Exception, ErrorCodes::BAD_ARGUMENTS, "Choose only one");
 }
 
-TEST(StorageAzureConfiguration, FromNamedCollectionWithPartialExtraCredentialsAndFallback)
+TEST(StorageAzureConfiguration, FromNamedCollectionWithPartialExtraCredentials)
 {
     std::string xml(R"CONFIG(<clickhouse>
     <named_collections>
-        <FromNamedCollectionWithPartialExtraCredentialsAndFallback>
+        <FromNamedCollectionWithPartialExtraCredentials>
             <container>test_container</container>
             <blob_path>test_blob.csv</blob_path>
             <account_name>test_account</account_name>
             <account_key>test_key</account_key>
             <client_id>test_client_id</client_id>
-        </FromNamedCollectionWithPartialExtraCredentialsAndFallback>
+        </FromNamedCollectionWithPartialExtraCredentials>
     </named_collections>
     </clickhouse>)CONFIG");
 
     loadNamedCollectionConfig(xml);
 
     StorageAzureConfigurationFriend conf;
-    auto collection = NamedCollectionFactoryFriend::instance().get("FromNamedCollectionWithPartialExtraCredentialsAndFallback");
-    conf.fromNamedCollection(*collection, Context::getGlobalContextInstance());
+    auto collection = NamedCollectionFactoryFriend::instance().get("FromNamedCollectionWithPartialExtraCredentials");
 
-    ASSERT_TRUE(std::holds_alternative<std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>>(conf.getConnectionParams().auth_method));
+    ASSERT_THROW_ERROR_CODE(conf.fromNamedCollection(*collection, Context::getGlobalContextInstance()), Exception, ErrorCodes::BAD_ARGUMENTS, "'tenant_id' is missing");
 }
 
 // Helper to get engine args from a query string
@@ -147,11 +206,32 @@ TEST(StorageAzureConfiguration, FromASTWithExtraCredentials)
     std::string query = "DESCRIBE TABLE azureBlobStorage('https://azurite1:10000/devstoreaccount1', 'test_container', 'test_blob.csv', extra_credentials(client_id='test_client_id', tenant_id='test_tenant_id'))";
 
     ASTs engine_args = getEngineArgs(query);
-
     StorageAzureConfigurationFriend conf;
     conf.fromAST(engine_args, Context::getGlobalContextInstance(), false);
 
     ASSERT_TRUE(std::holds_alternative<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(conf.getConnectionParams().auth_method));
+}
+
+TEST(StorageAzureConfiguration, FromASTWithAccount)
+{
+    std::string query = "DESCRIBE TABLE azureBlobStorage('https://azurite1:10000/devstoreaccount1', 'test_container', 'test_blob.csv', 'account_name', 'account_key')";
+
+    ASTs engine_args = getEngineArgs(query);
+    StorageAzureConfigurationFriend conf;
+    conf.fromAST(engine_args, Context::getGlobalContextInstance(), false);
+
+    ASSERT_TRUE(std::holds_alternative<std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>>(conf.getConnectionParams().auth_method));
+}
+
+TEST(StorageAzureConfiguration, FromASTWithURL)
+{
+    std::string query = "DESCRIBE TABLE azureBlobStorage('https://azurite1:10000/devstoreaccount1?foo=bar', 'test_container', 'test_blob.csv')";
+
+    ASTs engine_args = getEngineArgs(query);
+    StorageAzureConfigurationFriend conf;
+    conf.fromAST(engine_args, Context::getGlobalContextInstance(), false);
+
+    ASSERT_TRUE(std::holds_alternative<std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>(conf.getConnectionParams().auth_method));
 }
 
 TEST(StorageAzureConfiguration, FromASTWithExtraCredentialsAndAccount)
@@ -159,23 +239,19 @@ TEST(StorageAzureConfiguration, FromASTWithExtraCredentialsAndAccount)
     std::string query = "DESCRIBE TABLE azureBlobStorage('https://azurite1:10000/devstoreaccount1', 'test_container', 'test_blob.csv', 'account_name', 'account_key', extra_credentials(client_id='test_client_id', tenant_id='test_tenant_id'))";
 
     ASTs engine_args = getEngineArgs(query);
-
     StorageAzureConfigurationFriend conf;
-    conf.fromAST(engine_args, Context::getGlobalContextInstance(), false);
 
-    ASSERT_TRUE(std::holds_alternative<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(conf.getConnectionParams().auth_method));
+    ASSERT_THROW_ERROR_CODE(conf.fromAST(engine_args, Context::getGlobalContextInstance(), false), Exception, ErrorCodes::BAD_ARGUMENTS, "Choose only one");
 }
 
-TEST(StorageAzureConfiguration, FromASTWithPartialExtraCredentialsAndFallback)
+TEST(StorageAzureConfiguration, FromASTWithPartialExtraCredentials)
 {
     std::string query = "DESCRIBE TABLE azureBlobStorage('https://azurite1:10000/devstoreaccount1', 'test_container', 'test_blob.csv', 'account_name', 'account_key', extra_credentials(tenant_id='test_tenant_id'))";
 
     ASTs engine_args = getEngineArgs(query);
-
     StorageAzureConfigurationFriend conf;
-    conf.fromAST(engine_args, Context::getGlobalContextInstance(), false);
 
-    ASSERT_TRUE(std::holds_alternative<std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>>(conf.getConnectionParams().auth_method));
+    ASSERT_THROW_ERROR_CODE(conf.fromAST(engine_args, Context::getGlobalContextInstance(), false), Exception, ErrorCodes::BAD_ARGUMENTS, "'client_id' is missing");
 }
 
 #endif

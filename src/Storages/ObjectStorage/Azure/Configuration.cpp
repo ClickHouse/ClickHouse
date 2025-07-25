@@ -111,8 +111,11 @@ static AzureBlobStorage::ConnectionParams getConnectionParams(
     AzureBlobStorage::ConnectionParams connection_params;
     auto request_settings = AzureBlobStorage::getRequestSettings(local_context->getSettingsRef());
 
-    if (client_id && tenant_id)
+    if (client_id || tenant_id)
     {
+        if (!client_id || !tenant_id)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Both 'client_id' and 'tenant_id' need to be provided, but '{}' is missing", client_id ? "tenant_id" : "client_id");
+
         connection_params.endpoint.storage_account_url = connection_url;
         connection_params.endpoint.container_name = container_name;
         Azure::Identity::WorkloadIdentityCredentialOptions options;
@@ -120,18 +123,26 @@ static AzureBlobStorage::ConnectionParams getConnectionParams(
         options.TenantId = *tenant_id;
         connection_params.auth_method = std::make_shared<Azure::Identity::WorkloadIdentityCredential>(options);
     }
-    else if (account_name && account_key)
+
+    if (account_name || account_key)
     {
+        if (connection_params.auth_method.index() != 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Both 'extra_credentials' with 'client_id' and 'tenant_id' and account credentials provided. Choose only one");
+
+        if (!account_name || !account_key)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Both 'account_name' and 'account_key' need to be provided, but '{}' is missing", account_name ? "account_key" : "account_name");
+
         connection_params.endpoint.storage_account_url = connection_url;
         connection_params.endpoint.container_name = container_name;
         connection_params.auth_method = std::make_shared<Azure::Storage::StorageSharedKeyCredential>(*account_name, *account_key);
     }
-    else
+
+    if (connection_params.auth_method.index() == 0)
     {
         AzureBlobStorage::processURL(connection_url, container_name, connection_params.endpoint, connection_params.auth_method);
     }
-    connection_params.client_options = AzureBlobStorage::getClientOptions(local_context, *request_settings, /*for_disk=*/ false);
 
+    connection_params.client_options = AzureBlobStorage::getClientOptions(local_context, *request_settings, /*for_disk=*/ false);
     return connection_params;
 }
 
