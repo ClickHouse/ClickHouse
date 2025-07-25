@@ -205,6 +205,7 @@ def check_backup_and_restore(
     storage_policy,
     backup_destination,
     size=1000,
+    backup_settings=None,
     restore_settings=None,
     insert_settings=None,
     optimize_table=True,
