@@ -4,7 +4,6 @@
 #include <utility>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <base/types.h>
-#include <openssl/pkcs7err.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/Logger.h>
