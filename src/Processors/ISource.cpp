@@ -1,5 +1,6 @@
 #include <Processors/ISource.h>
 #include <QueryPipeline/StreamLocalLimits.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -118,20 +119,22 @@ void ISource::work()
             }
         }
         else
+        {
+            LOG_DEBUG(getLogger("ISource"), "No data to read from source, finishing");
             finished = true;
+        }
 
-        if (isCancelled())
-            finished = true;
-
-        // if (finished)
-        //     onFinish();
+        if (finished)
+            onFinish();
     }
     catch (...)
     {
         got_exception = true;
 
-        // if (!std::exchange(finished, true))
-        //     onFinish();
+        cancel();
+
+        if (!std::exchange(finished, true))
+            onFinish();
 
         throw;
     }

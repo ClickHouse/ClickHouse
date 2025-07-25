@@ -637,7 +637,8 @@ void TCPHandler::runImpl()
                 {
                     sendTableColumns(query_state.value(), metadata_snapshot->getColumns());
                 }
-                else {
+                else
+                {
                     LOG_DEBUG(log_, "Not sending table columns");
                 }
 

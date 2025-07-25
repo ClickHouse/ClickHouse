@@ -502,7 +502,6 @@ void HTTPHandler::processQuery(
     }
     else
     {
-        LOG_DEBUG(getLogger("HTTPServerRequest"), "moving in_post_maybe_compressed");
         in = std::make_unique<ConcatReadBuffer>(std::move(in_param), std::move(in_post_maybe_compressed));
         LOG_DEBUG(getLogger("HTTPServerRequest"), "moving in_post_maybe_compressed in in id ConcatReadBuffer:{}", size_t(in.get()));
     }

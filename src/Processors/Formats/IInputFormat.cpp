@@ -16,11 +16,14 @@ IInputFormat::IInputFormat(SharedHeader header, ReadBuffer * in_) : ISource(std:
 
 Chunk IInputFormat::generate()
 {
+    LOG_DEBUG(getLogger("IInputFormat"),
+          "Generating chunk from input format, possessing buffers: {}, id {}",
+          owned_buffers.size(), size_t(this));
     try
     {
         Chunk res = read();
-         LOG_DEBUG(getLogger("IInputFormat"),
-        "Generating chunk from input format, possessing buffers: {}, id {} result {}", owned_buffers.size(), size_t(this), res.getNumRows());
+        LOG_DEBUG(getLogger("IInputFormat"),
+        "id {} result {}", size_t(this), res.getNumRows());
         return res;
     }
     catch (Exception & e)
@@ -58,13 +61,13 @@ Chunk IInputFormat::getChunkForCount(size_t rows)
 void IInputFormat::resetOwnedBuffers()
 {
     LOG_DEBUG(getLogger("IInputFormat"),
-          "Resetting owned buffers, possessing buffers: {} at\n{}", owned_buffers.size(), StackTrace().toString());
+          "Resetting owned buffers, possessing buffers: {}", owned_buffers.size());
     owned_buffers.clear();
 }
 
 void IInputFormat::onFinish()
 {
-    LOG_DEBUG(getLogger("IInputFormat"), "onFinish");
+    LOG_DEBUG(getLogger("IInputFormat"), "onFinish inst {}", size_t(this));
     resetReadBuffer();
 }
 }

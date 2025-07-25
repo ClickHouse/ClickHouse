@@ -64,13 +64,17 @@ public:
     virtual void setSerializationHints(const SerializationInfoByName & /*hints*/) {}
 
     void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }
-    void resetOwnedBuffers();
 
     void setErrorsLogger(const InputFormatErrorsLoggerPtr & errors_logger_) { errors_logger = errors_logger_; }
 
     virtual size_t getApproxBytesReadForChunk() const { return 0; }
 
     void needOnlyCount() { need_only_count = true; }
+
+    size_t getOwnedBuffersSize() const
+    {
+        return owned_buffers.size();
+    }
 
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }
@@ -84,6 +88,8 @@ protected:
     bool need_only_count = false;
 
 private:
+    void resetOwnedBuffers();
+
     std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
 };
 
