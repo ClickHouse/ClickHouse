@@ -91,12 +91,18 @@ The format looks like this:
 ```xml
 <config>
     <connections_credentials>
-        <name>default</name>
-        <hostname>hostname</hostname>
-        <port>9440</port>
-        <secure>1</secure>
-        <user>default</user>
-        <password>password</password>
+        <connection>
+            <name>default</name>
+            <hostname>hostname</hostname>
+            <port>9440</port>
+            <secure>1</secure>
+            <user>default</user>
+            <password>password</password>
+            <!-- <history_file></history_file> -->
+            <!-- <history_max_entries></history_max_entries> -->
+            <!-- <accept-invalid-certificate>false</accept-invalid-certificate> -->
+            <!-- <prompt></prompt> -->
+        </connection>
     </connections_credentials>
 </config>
 ```
