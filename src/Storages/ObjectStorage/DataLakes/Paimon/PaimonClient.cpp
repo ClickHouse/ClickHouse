@@ -1,0 +1,281 @@
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonTableSchema.h>
+#include <algorithm>
+#include <charconv>
+#include <cstddef>
+#include <cstring>
+#include <filesystem>
+#include <memory>
+#include <string>
+#include <system_error>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+#include "Common/Exception.h"
+#include "Common/assert_cast.h"
+#include <DataTypes/DataTypeDateTime64.h>
+#include "DataTypes/DataTypesDecimal.h"
+#include "DataTypes/DataTypesNumber.h"
+#include "Disks/IStoragePolicy.h"
+#include "Disks/ObjectStorages/StoredObject.h"
+#include "Interpreters/Context_fwd.h"
+#include "Storages/ObjectStorage/DataLakes/Common.h"
+#include "base/types.h"
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#include <IO/ReadHelpers.h>
+
+#include <Formats/FormatFactory.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Types.hh>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/IColumn.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
+#include <boost/graph/properties.hpp>
+#include <fmt/format.h>
+#include <fmt/ranges.h>
+
+
+namespace DB
+{
+namespace ErrorCodes
+{
+extern const int FILE_DOESNT_EXIST;
+extern const int ILLEGAL_COLUMN;
+extern const int BAD_ARGUMENTS;
+extern const int LOGICAL_ERROR;
+}
+
+PaimonSnapshot::PaimonSnapshot(const Poco::JSON::Object::Ptr & json_object)
+{
+    Paimon::getValueFromJson(id, json_object, "id");
+    Paimon::getValueFromJson(schema_id, json_object, "schemaId");
+    Paimon::getValueFromJson(base_manifest_list, json_object, "baseManifestList");
+    Paimon::getValueFromJson(delta_manifest_list, json_object, "deltaManifestList");
+    Paimon::getValueFromJson(index_manifest, json_object, "indexManifest");
+    Paimon::getValueFromJson(commit_user, json_object, "commitUser");
+    Paimon::getValueFromJson(commit_identifier, json_object, "commitIdentifier");
+    Paimon::getValueFromJson(commit_kind, json_object, "commitKind");
+    Paimon::getValueFromJson(time_millis, json_object, "timeMillis");
+    Paimon::getValueFromJson(version, json_object, "version");
+    Paimon::getValueFromJson(base_manifest_list_size, json_object, "baseManifestListSize");
+    Paimon::getValueFromJson(delta_manifest_list_size, json_object, "deltaManifestListSize");
+    Paimon::getValueFromJson(changelog_manifest_list, json_object, "changelogManifestList");
+    Paimon::getValueFromJson(changelog_manifest_list_size, json_object, "changelogManifestListSize");
+    Paimon::getValueFromJson(total_record_count, json_object, "totalRecordCount");
+    Paimon::getValueFromJson(delta_record_count, json_object, "deltaRecordCount");
+    Paimon::getValueFromJson(changelog_record_count, json_object, "changelogRecordCount");
+    Paimon::getValueFromJson(watermark, json_object, "watermark");
+    Paimon::getValueFromJson(statistics, json_object, "statistics");
+
+    if (json_object->has("logOffsets"))
+    {
+        log_offsets = std::unordered_map<Int32, Int64>();
+        auto inner_map_json = json_object->getObject("logOffsets");
+        log_offsets->reserve(inner_map_json->size());
+        for (const auto & inner_key : inner_map_json->getNames())
+        {
+            Int32 key;
+            auto [_, ec] = std::from_chars(inner_key.data(), inner_key.data() + inner_key.size(), key);
+            if (ec != std::errc())
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "The Paimon logOffsets is invalid.");
+            }
+            log_offsets->emplace(key, inner_map_json->getValue<Int64>(inner_key));
+        }
+    }
+}
+
+PaimonTableClient::PaimonTableClient(ObjectStoragePtr object_storage_,
+    ConfigurationObserverPtr configuration_,
+    const DB::ContextPtr & context_):
+    WithContext(context_),
+    object_storage(object_storage_),
+    configuration(configuration_),
+    table_location(configuration.lock()->getPath()),
+    log(getLogger("PaimonTableClient"))
+{}
+
+std::pair<Int32, String> PaimonTableClient::getLastTableSchemaInfo()
+{
+    auto configuration_ptr = configuration.lock();
+    /// list all schema files
+    const auto schema_files = listFiles(*object_storage,  *configuration_ptr, PAIMON_SCHEMA_DIR, [](const RelativePathWithMetadata & path_with_metadata) { 
+        String relative_path = path_with_metadata.relative_path;
+        String file_name(relative_path.begin() + relative_path.find_last_of('/') + 1, relative_path.end());
+        return file_name.starts_with(PAIMON_SCHEMA_PREFIX); 
+    });
+    if (schema_files.empty())
+    {
+        throw Exception(
+            ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Paimon table with path {} doesn't exist", configuration_ptr->getPath());
+    }
+    /// find max schema version
+    std::vector<std::pair<UInt32, String>> schema_files_with_versions;
+    schema_files_with_versions.reserve(schema_files.size());
+    auto parse_version = [](const String & relative_file_path) {
+        String file_name(relative_file_path.begin() + relative_file_path.find_last_of('/') + 1, relative_file_path.end());
+        String version_string = file_name.substr(file_name.find(PAIMON_SCHEMA_PREFIX) + strlen(PAIMON_SCHEMA_PREFIX));
+        size_t current_version;
+        auto [_, ec] = std::from_chars(version_string.data(), version_string.data() + version_string.size(), current_version);
+        if (ec != std::errc())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The Paimon schema file name is invalid.");
+        }
+        return current_version;
+    };
+    for (const auto & path : schema_files)
+    {
+        schema_files_with_versions.emplace_back(std::make_pair(parse_version(path), path));
+    }
+    return *std::max_element(schema_files_with_versions.begin(), schema_files_with_versions.end());
+}
+
+/// schema
+Poco::JSON::Object::Ptr PaimonTableClient::getTableSchemaJson(const std::pair<Int32, String> & schema_meta_info)
+{
+    auto configuration_ptr = configuration.lock();
+    const auto [max_schema_version, max_schema_path] = schema_meta_info;
+    /// parse schema json
+    ObjectInfo object_info(max_schema_path);
+    auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, getContext(), log);
+    String json_str;
+    readJSONObjectPossiblyInvalid(json_str, *buf);
+    Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
+    Poco::Dynamic::Var json = parser.parse(json_str);
+    const auto & shcema_json = json.extract<Poco::JSON::Object::Ptr>();
+
+    return shcema_json;
+}
+
+PaimonTableSchema PaimonTableClient::getTableSchema()
+{
+    auto scheme_json = getTableSchemaJson(getLastTableSchemaInfo());
+    return PaimonTableSchema(scheme_json);
+}
+
+std::pair<Int64, String> PaimonTableClient::getLastTableSnapshotInfo()
+{
+    auto configuration_ptr = configuration.lock();
+    /// read lastest hint
+    Int64 snapshot_version;
+    ObjectInfo object_info(std::filesystem::path(configuration_ptr->getPath()) / PAIMON_SNAPSHOT_DIR / PAIMON_SNAPSHOT_LATEST_HINT);
+    auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, getContext(), log);
+    String hint_version_string;
+    readStringUntilEOF(hint_version_string, *buf);
+    {
+        auto [_, ec] = std::from_chars(hint_version_string.data(), hint_version_string.data() + hint_version_string.size(), snapshot_version);
+        if (ec != std::errc())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The Paimon snapshot hint file content is invalid.");
+        }
+    }
+    String lastest_snapshot_path = std::filesystem::path(configuration_ptr->getPath()) / (PAIMON_SNAPSHOT_DIR) / (PAIMON_SNAPSHOT_PRIFIX + std::to_string(snapshot_version));
+
+    /// check lastest hint is real lastest snapshot, if not, find lastest snapshot
+    Int64 next_snapshot_version = snapshot_version + 1;
+    StoredObject store_object(std::filesystem::path(configuration_ptr->getPath()) / (PAIMON_SNAPSHOT_DIR) / (PAIMON_SNAPSHOT_PRIFIX + std::to_string(next_snapshot_version)));
+    if (object_storage->exists(store_object))
+    {
+        auto snapshot_files = listFiles(*object_storage, *configuration_ptr, PAIMON_SNAPSHOT_DIR, [](const RelativePathWithMetadata & path_with_metadata) { 
+            String relative_path = path_with_metadata.relative_path;
+            String file_name(relative_path.begin() + relative_path.find_last_of('/') + 1, relative_path.end());
+            return file_name.starts_with(PAIMON_SNAPSHOT_PRIFIX); 
+        });
+        
+        std::vector<std::pair<Int64, String>> snapshot_files_with_versions;
+        snapshot_files_with_versions.reserve(snapshot_files.size());
+
+        auto parse_version = [](const String & relative_file_path) {
+            String file_name(relative_file_path.begin() + relative_file_path.find_last_of('/') + 1, relative_file_path.end());
+            String version_string = file_name.substr(file_name.find(PAIMON_SNAPSHOT_PRIFIX) + strlen(PAIMON_SNAPSHOT_PRIFIX));
+            Int64 current_version;
+            auto [_, ec] = std::from_chars(version_string.data(), version_string.data() + version_string.size(), current_version);
+            if (ec != std::errc())
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "The Paimon schema file name is invalid.");
+            }
+            return current_version;
+        };
+
+        for (const auto & path : snapshot_files)
+        {
+            snapshot_files_with_versions.emplace_back(std::make_pair(parse_version(path), path));
+        }
+        return *std::max_element(snapshot_files_with_versions.begin(), snapshot_files_with_versions.end());
+    }
+    else 
+    {
+        return {snapshot_version, lastest_snapshot_path};
+    }
+}
+
+PaimonSnapshot PaimonTableClient::getSnapshot(const std::pair<Int64, String> & snapshot_meta_info)
+{
+    auto configuration_ptr = configuration.lock();
+    /// read lastest hint
+    const auto [lastest_snapshot_version, lastest_snapshot_path] = snapshot_meta_info;
+
+    /// read snapshot and parse
+    ObjectInfo snapshot_object(lastest_snapshot_path);
+    auto snapshot_buf = StorageObjectStorageSource::createReadBuffer(snapshot_object, object_storage, getContext(), log);
+    String json_str;
+    readJSONObjectPossiblyInvalid(json_str, *snapshot_buf);
+    Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
+    Poco::Dynamic::Var json = parser.parse(json_str);
+    const auto & snapshot_json = json.extract<Poco::JSON::Object::Ptr>();
+    return PaimonSnapshot(snapshot_json);
+}
+
+std::vector<PaimonManifestFileMeta> PaimonTableClient::getManifestMeta(String manifest_list_path)
+{
+    /// read manifest list file
+    auto configuration_ptr = configuration.lock();
+    if (configuration_ptr == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
+
+    auto context = getContext();
+    StorageObjectStorage::ObjectInfo object_info(std::filesystem::path(configuration_ptr->getPath()) / (PAIMON_MANIFEST_DIR) / manifest_list_path);
+    auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
+    Iceberg::AvroForIcebergDeserializer manifest_list_deserializer(std::move(manifest_list_buf), manifest_list_path, getFormatSettings(getContext()));
+    
+    std::vector<PaimonManifestFileMeta> paimon_manifest_file_meta_vec;
+    paimon_manifest_file_meta_vec.reserve(manifest_list_deserializer.rows());
+
+    for (size_t i = 0; i < manifest_list_deserializer.rows(); ++i)
+    {
+        paimon_manifest_file_meta_vec.emplace_back(manifest_list_deserializer, "",i);
+    }
+    return paimon_manifest_file_meta_vec;
+}
+
+PaimonManifest PaimonTableClient::getDataManifest(String manifest_path, const PaimonTableSchema & table_schema, const String & partition_default_name)
+{
+    String manifest_file_name(manifest_path.begin() + manifest_path.find_last_of('/') + 1, manifest_path.end());
+    if (manifest_file_name.starts_with("index-manifest-"))
+        return {};
+
+    auto configuration_ptr = configuration.lock();
+    if (configuration_ptr == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
+
+    auto context = getContext();
+    StorageObjectStorage::ObjectInfo object_info(std::filesystem::path(configuration_ptr->getPath()) / (PAIMON_MANIFEST_DIR) / manifest_path);
+    auto manifest_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
+    Iceberg::AvroForIcebergDeserializer manifest_deserializer(std::move(manifest_buf), manifest_path, getFormatSettings(getContext()));
+
+    // std::vector<PaimonManifest> manifest_vec;
+    PaimonManifest paimon_manifest;
+    paimon_manifest.entries.reserve(manifest_deserializer.rows());
+    for (size_t i = 0; i < manifest_deserializer.rows(); ++i)
+    {
+        paimon_manifest.entries.emplace_back(manifest_deserializer, "", i, table_schema, partition_default_name);
+    }
+    return paimon_manifest;
+}
+
+}
