@@ -5,12 +5,9 @@
 #include <optional>
 #include <random>
 #include <string_view>
-#include <pcg_random.hpp>
 #include <unordered_set>
 #include <Columns/ColumnString.h>
-#include <IO/Operators.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Parsers/ASTLiteral.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -18,8 +15,6 @@
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Common/checkStackSize.h>
 #include <Common/escapeString.h>
-#include <Processors/ISource.h>
-#include <QueryPipeline/Pipe.h>
 
 namespace DB
 {
@@ -68,19 +63,20 @@ JSONValue::Type JSONValue::getType(const JSONValue & v)
         assert(!v.object);
         return JSONValue::Type::Fixed;
     }
-    if (v.array)
+    else if (v.array)
     {
         assert(!v.fixed);
         assert(!v.object);
         return JSONValue::Type::Array;
     }
-    if (v.object)
+    else if (v.object)
     {
         assert(!v.fixed);
         assert(!v.array);
         return JSONValue::Type::Object;
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to determine JSON node type.");
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to determine JSON node type.");
 }
 
 // A node represents either a JSON field (a key-value pair) or a JSON value.
@@ -154,6 +150,7 @@ void traverse(const ParserImpl::Element & e, std::shared_ptr<JSONNode> node)
 
 std::shared_ptr<JSONNode> parseJSON(const String & json)
 {
+    std::string_view view{json.begin(), json.end()};
     ParserImpl::Element document;
     ParserImpl p;
 
@@ -468,10 +465,10 @@ class FuzzJSONSource : public ISource
 {
 public:
     FuzzJSONSource(
-        UInt64 block_size_, SharedHeader block_header_, const StorageFuzzJSON::Configuration & config_, std::shared_ptr<JSONNode> json_root_)
+        UInt64 block_size_, Block block_header_, const StorageFuzzJSON::Configuration & config_, std::shared_ptr<JSONNode> json_root_)
         : ISource(block_header_)
         , block_size(block_size_)
-        , block_header(block_header_)
+        , block_header(std::move(block_header_))
         , config(config_)
         , rnd(config.random_seed)
         , json_root(json_root_)
@@ -483,8 +480,8 @@ protected:
     Chunk generate() override
     {
         Columns columns;
-        columns.reserve(block_header->columns());
-        for (const auto & col : *block_header)
+        columns.reserve(block_header.columns());
+        for (const auto & col : block_header)
         {
             chassert(col.type->getTypeId() == TypeIndex::String);
             columns.emplace_back(createColumn());
@@ -497,7 +494,7 @@ private:
     ColumnPtr createColumn();
 
     UInt64 block_size;
-    SharedHeader block_header;
+    Block block_header;
 
     StorageFuzzJSON::Configuration config;
     pcg64 rnd;
@@ -572,7 +569,7 @@ Pipe StorageFuzzJSON::read(
     }
 
     for (UInt64 i = 0; i < num_streams; ++i)
-        pipes.emplace_back(std::make_shared<FuzzJSONSource>(max_block_size, std::make_shared<const Block>(block_header), config, parseJSON(config.json_str)));
+        pipes.emplace_back(std::make_shared<FuzzJSONSource>(max_block_size, block_header, config, parseJSON(config.json_str)));
 
     return Pipe::unitePipes(std::move(pipes));
 }
@@ -685,10 +682,6 @@ StorageFuzzJSON::Configuration StorageFuzzJSON::getConfiguration(ASTs & engine_a
 
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
     {
-        /// Perform strict validation of ASTs in addition to name collection extraction.
-        for (auto * args_it = std::next(engine_args.begin()); args_it != engine_args.end(); ++args_it)
-            getKeyValueFromAST(*args_it, local_context);
-
         StorageFuzzJSON::processNamedCollectionResult(configuration, *named_collection);
     }
     else

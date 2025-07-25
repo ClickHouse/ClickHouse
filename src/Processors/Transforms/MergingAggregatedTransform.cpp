@@ -64,19 +64,24 @@ static ActionsDAG makeReorderingActions(const Block & in_header, const GroupingS
 MergingAggregatedTransform::~MergingAggregatedTransform() = default;
 
 MergingAggregatedTransform::MergingAggregatedTransform(
-    SharedHeader header_, Aggregator::Params params, bool final, GroupingSetsParamsList grouping_sets_params)
-    : IAccumulatingTransform(header_, std::make_shared<const Block>(appendGroupingIfNeeded(*header_, params.getHeader(*header_, final))))
+    Block header_,
+    Aggregator::Params params,
+    bool final,
+    GroupingSetsParamsList grouping_sets_params,
+    size_t max_threads_)
+    : IAccumulatingTransform(header_, appendGroupingIfNeeded(header_, params.getHeader(header_, final)))
+    , max_threads(max_threads_)
 {
     if (!grouping_sets_params.empty())
     {
-        if (!header_->has("__grouping_set"))
+        if (!header_.has("__grouping_set"))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Cannot find __grouping_set column in header of MergingAggregatedTransform with grouping sets."
-                "Header {}", header_->dumpStructure());
+                "Header {}", header_.dumpStructure());
 
-        auto in_header = *header_;
-        in_header.erase(header_->getPositionByName("__grouping_set"));
-        auto out_header = params.getHeader(*header_, final);
+        auto in_header = header_;
+        in_header.erase(header_.getPositionByName("__grouping_set"));
+        auto out_header = params.getHeader(header_, final);
 
         grouping_sets.reserve(grouping_sets_params.size());
         for (const auto & grouping_set_params : grouping_sets_params)
@@ -92,7 +97,7 @@ MergingAggregatedTransform::MergingAggregatedTransform(
                 params.max_block_size,
                 params.min_hit_rate_to_use_consecutive_keys_optimization);
 
-            auto transform_params = std::make_shared<AggregatingTransformParams>(std::make_shared<const Block>(reordering.updateHeader(in_header)), std::move(set_params), final);
+            auto transform_params = std::make_shared<AggregatingTransformParams>(reordering.updateHeader(in_header), std::move(set_params), final);
 
             auto creating = AggregatingStep::makeCreatingMissingKeysForGroupingSetDAG(
                 transform_params->getHeader(),
@@ -174,25 +179,25 @@ void MergingAggregatedTransform::addBlock(Block block)
     selector.resize_fill(num_rows, last_group);
 
     const size_t num_groups = max_group + 1;
-    Blocks split_blocks(num_groups);
+    Blocks splitted_blocks(num_groups);
 
     for (size_t group_id = 0; group_id < num_groups; ++group_id)
-        split_blocks[group_id] = block.cloneEmpty();
+        splitted_blocks[group_id] = block.cloneEmpty();
 
     size_t columns_in_block = block.columns();
     for (size_t col_idx_in_block = 0; col_idx_in_block < columns_in_block; ++col_idx_in_block)
     {
-        MutableColumns split_columns = block.getByPosition(col_idx_in_block).column->scatter(num_groups, selector);
+        MutableColumns splitted_columns = block.getByPosition(col_idx_in_block).column->scatter(num_groups, selector);
         for (size_t group_id = 0; group_id < num_groups; ++group_id)
-            split_blocks[group_id].getByPosition(col_idx_in_block).column = std::move(split_columns[group_id]);
+            splitted_blocks[group_id].getByPosition(col_idx_in_block).column = std::move(splitted_columns[group_id]);
     }
 
     for (size_t group = 0; group < num_groups; ++group)
     {
-        auto & split_block = split_blocks[group];
-        split_block.info = block.info;
-        grouping_sets[group].reordering_key_columns_actions->execute(split_block);
-        grouping_sets[group].bucket_to_blocks[block.info.bucket_num].emplace_back(std::move(split_block));
+        auto & splitted_block = splitted_blocks[group];
+        splitted_block.info = block.info;
+        grouping_sets[group].reordering_key_columns_actions->execute(splitted_block);
+        grouping_sets[group].bucket_to_blocks[block.info.bucket_num].emplace_back(std::move(splitted_block));
     }
 }
 
@@ -256,8 +261,8 @@ Chunk MergingAggregatedTransform::generate()
             AggregatedDataVariants data_variants;
 
             /// TODO: this operation can be made async. Add async for IAccumulatingTransform.
-            params->aggregator.mergeBlocks(std::move(bucket_to_blocks), data_variants, is_cancelled);
-            auto merged_blocks = params->aggregator.convertToBlocks(data_variants, params->final);
+            params->aggregator.mergeBlocks(std::move(bucket_to_blocks), data_variants, max_threads, is_cancelled);
+            auto merged_blocks = params->aggregator.convertToBlocks(data_variants, params->final, max_threads);
 
             if (grouping_set.creating_missing_keys_actions)
                 for (auto & block : merged_blocks)

@@ -6,9 +6,6 @@
 namespace DB
 {
 
-class ReadBuffer;
-class WriteBuffer;
-
 /** The Native format can contain a separately located index,
   *  which allows you to understand where what column is located,
   *  and skip unnecessary columns.

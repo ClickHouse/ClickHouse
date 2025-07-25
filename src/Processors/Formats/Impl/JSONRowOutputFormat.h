@@ -1,6 +1,8 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <IO/Progress.h>
+#include <IO/WriteBuffer.h>
 #include <IO/PeekableWriteBuffer.h>
 #include <Common/Stopwatch.h>
 #include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
@@ -18,11 +20,15 @@ class JSONRowOutputFormat : public RowOutputFormatWithExceptionHandlerAdaptor<Ro
 public:
     JSONRowOutputFormat(
         WriteBuffer & out_,
-        SharedHeader header,
+        const Block & header,
         const FormatSettings & settings_,
         bool yield_strings_);
 
     String getName() const override { return "JSONRowOutputFormat"; }
+
+    void onProgress(const Progress & value) override;
+
+    String getContentType() const override { return "application/json; charset=UTF-8"; }
 
     void setRowsBeforeLimit(size_t rows_before_limit_) override
     {

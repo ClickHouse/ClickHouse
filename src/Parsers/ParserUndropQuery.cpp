@@ -2,7 +2,7 @@
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserUndropQuery.h>
-#include <Parsers/ASTLiteral.h>
+#include "Parsers/ASTLiteral.h"
 
 
 namespace DB
@@ -74,7 +74,8 @@ bool ParserUndropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (s_undrop.ignore(pos, expected))
         return parseUndropQuery(pos, node, expected);
-    return false;
+    else
+        return false;
 }
 
 }

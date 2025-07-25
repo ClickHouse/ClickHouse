@@ -682,14 +682,7 @@ void* memcpy_fast_sse(void * __restrict destination, const void * __restrict sou
     // medium size copy
     if (size <= cachesize)
     {
-        __m128i c0;
-        __m128i c1;
-        __m128i c2;
-        __m128i c3;
-        __m128i c4;
-        __m128i c5;
-        __m128i c6;
-        __m128i c7;
+        __m128i c0, c1, c2, c3, c4, c5, c6, c7;
 
         for (; size >= 128; size -= 128)
         {
@@ -716,14 +709,7 @@ void* memcpy_fast_sse(void * __restrict destination, const void * __restrict sou
     }
     else
     {        // big memory copy
-        __m128i c0;
-        __m128i c1;
-        __m128i c2;
-        __m128i c3;
-        __m128i c4;
-        __m128i c5;
-        __m128i c6;
-        __m128i c7;
+        __m128i c0, c1, c2, c3, c4, c5, c6, c7;
 
         _mm_prefetch((const char*)(src), _MM_HINT_NTA);
 

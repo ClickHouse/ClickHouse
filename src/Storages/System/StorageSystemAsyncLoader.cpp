@@ -40,7 +40,8 @@ namespace
     {
         if (time_point == TimePoint{})
             return {};
-        return timeInMicroseconds(time_point);
+        else
+            return timeInMicroseconds(time_point);
     }
 }
 

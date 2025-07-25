@@ -1,10 +1,8 @@
 #pragma once
 
-#include <Core/Block_fwd.h>
-#include <Core/SortCursor.h>
-#include <Core/SortDescription.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/Algorithms/RowRef.h>
+#include <Core/SortDescription.h>
 
 namespace DB
 {
@@ -12,9 +10,7 @@ namespace DB
 class IMergingAlgorithmWithDelayedChunk : public IMergingAlgorithm
 {
 public:
-    IMergingAlgorithmWithDelayedChunk(SharedHeader header_, size_t num_inputs, SortDescription description_);
-
-    size_t prev_unequal_column = 0;
+    IMergingAlgorithmWithDelayedChunk(Block header_, size_t num_inputs, SortDescription description_);
 
 protected:
     SortingQueue<SortCursor> queue;
@@ -35,19 +31,10 @@ protected:
         /// initialized in either `initializeQueue` or `updateCursor`
         if (lhs.source_stream_index == rhs.source_stream_index && inputs_origin_merge_tree_part_level[lhs.source_stream_index] > 0)
             return true;
-
-        auto first_non_equal = lhs.firstNonEqualSortColumnsWith(prev_unequal_column, rhs);
-
-        if (first_non_equal < lhs.num_columns)
-        {
-            prev_unequal_column = first_non_equal;
-            return true;
-        }
-
-        return false;
+        return !lhs.hasEqualSortColumnsWith(rhs);
     }
 
-    SharedHeader header;
+    Block header;
 
 private:
     /// Inputs currently being merged.

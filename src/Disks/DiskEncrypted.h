@@ -7,7 +7,6 @@
 #include <Common/MultiVersion.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <Disks/DiskEncryptedTransaction.h>
-#include <Disks/MetadataStorageWithPathWrapper.h>
 
 
 namespace DB
@@ -32,22 +31,22 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override;
 
-    bool existsFile(const String & path) const override
+    bool exists(const String & path) const override
     {
         auto wrapped_path = wrappedPath(path);
-        return delegate->existsFile(wrapped_path);
+        return delegate->exists(wrapped_path);
     }
 
-    bool existsDirectory(const String & path) const override
+    bool isFile(const String & path) const override
     {
         auto wrapped_path = wrappedPath(path);
-        return delegate->existsDirectory(wrapped_path);
+        return delegate->isFile(wrapped_path);
     }
 
-    bool existsFileOrDirectory(const String & path) const override
+    bool isDirectory(const String & path) const override
     {
         auto wrapped_path = wrappedPath(path);
-        return delegate->existsFileOrDirectory(wrapped_path);
+        return delegate->isDirectory(wrapped_path);
     }
 
     size_t getFileSize(const String & path) const override;
@@ -200,28 +199,11 @@ public:
         return delegate->getBlobPath(wrapped_path);
     }
 
-    bool areBlobPathsRandom() const override
-    {
-        return delegate->areBlobPathsRandom();
-    }
-
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override
     {
         auto tx = createEncryptedTransaction();
         tx->writeFileUsingBlobWritingFunction(path, mode, std::move(write_blob_function));
         tx->commit();
-    }
-
-    StoredObjects getStorageObjects(const String & path) const override
-    {
-        auto wrapped_path = wrappedPath(path);
-        return delegate->getStorageObjects(wrapped_path);
-    }
-
-    std::optional<StoredObjects> getStorageObjectsIfExist(const String & path) const override
-    {
-        auto wrapped_path = wrappedPath(path);
-        return delegate->getStorageObjectsIfExist(wrapped_path);
     }
 
     std::unique_ptr<ReadBufferFromFileBase> readEncryptedFile(const String & path, const ReadSettings & settings) const override
@@ -299,6 +281,12 @@ public:
         return delegate->checkUniqueId(id);
     }
 
+    void onFreeze(const String & path) override
+    {
+        auto wrapped_path = wrappedPath(path);
+        delegate->onFreeze(wrapped_path);
+    }
+
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
     DataSourceDescription getDataSourceDescription() const override
@@ -324,10 +312,10 @@ public:
         {
             return std::make_shared<FakeDiskTransaction>(*this);
         }
-
-        /// Need to overwrite explicetly because this disk change
-        /// a lot of "delegate" methods.
-        return createEncryptedTransaction();
+        else
+        {
+            return createEncryptedTransaction();
+        }
     }
 
     std::optional<UInt64> getTotalSpace() const override
@@ -352,7 +340,7 @@ public:
 
     MetadataStoragePtr getMetadataStorage() override
     {
-        return std::make_shared<MetadataStorageWithPathWrapper>(delegate->getMetadataStorage(), disk_path);
+        return delegate->getMetadataStorage();
     }
 
     std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & paths) const override;
@@ -360,12 +348,6 @@ public:
     DiskPtr getDelegateDiskIfExists() const override
     {
         return delegate;
-    }
-
-    UInt32 getRefCount(const String & path) const override
-    {
-        auto wrapped_path = wrappedPath(path);
-        return delegate->getRefCount(wrapped_path);
     }
 
 #if USE_AWS_S3

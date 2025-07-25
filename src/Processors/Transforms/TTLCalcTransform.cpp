@@ -1,6 +1,4 @@
 #include <Processors/Transforms/TTLCalcTransform.h>
-
-#include <Processors/Port.h>
 #include <Processors/TTL/TTLUpdateInfoAlgorithm.h>
 
 namespace DB
@@ -24,7 +22,7 @@ static TTLExpressions getExpressions(const TTLDescription & ttl_descr, PreparedS
 
 TTLCalcTransform::TTLCalcTransform(
     const ContextPtr & context,
-    SharedHeader header_,
+    const Block & header_,
     const MergeTreeData & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeData::MutableDataPartPtr & data_part_,
@@ -81,7 +79,7 @@ void TTLCalcTransform::consume(Chunk chunk)
     for (const auto & algorithm : algorithms)
         algorithm->execute(block);
 
-    if (block.empty())
+    if (!block)
         return;
 
     Chunk res;
@@ -97,7 +95,7 @@ Chunk TTLCalcTransform::generate()
     for (const auto & algorithm : algorithms)
         algorithm->execute(block);
 
-    if (block.empty())
+    if (!block)
         return {};
 
     Chunk res;

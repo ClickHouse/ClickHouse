@@ -1,20 +1,13 @@
-#include <Storages/ObjectStorage/StorageObjectStorageSink.h>
+#include "StorageObjectStorageSink.h"
 #include <Formats/FormatFactory.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/isValidUTF8.h>
 #include <Core/Settings.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <base/defines.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 output_format_compression_level;
-    extern const SettingsUInt64 output_format_compression_zstd_window_log;
-}
-
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
@@ -22,30 +15,30 @@ namespace ErrorCodes
 }
 
 StorageObjectStorageSink::StorageObjectStorageSink(
-    const std::string & path_,
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration,
+    ConfigurationPtr configuration,
     const std::optional<FormatSettings> & format_settings_,
-    SharedHeader sample_block_,
-    ContextPtr context)
+    const Block & sample_block_,
+    ContextPtr context,
+    const std::string & blob_path)
     : SinkToStorage(sample_block_)
-    , path(path_)
     , sample_block(sample_block_)
 {
     const auto & settings = context->getSettingsRef();
+    const auto path = blob_path.empty() ? configuration->getPaths().back() : blob_path;
     const auto chosen_compression_method = chooseCompressionMethod(path, configuration->compression_method);
 
     auto buffer = object_storage->writeObject(
         StoredObject(path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
     write_buf = wrapWriteBufferWithCompressionMethod(
-        std::move(buffer),
-        chosen_compression_method,
-        static_cast<int>(settings[Setting::output_format_compression_level]),
-        static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]));
+                    std::move(buffer),
+                    chosen_compression_method,
+                    static_cast<int>(settings.output_format_compression_level),
+                    static_cast<int>(settings.output_format_compression_zstd_window_log));
 
     writer = FormatFactory::instance().getOutputFormatParallelIfPossible(
-        configuration->format, *write_buf, *sample_block, context, format_settings_);
+        configuration->format, *write_buf, sample_block, context, format_settings_);
 }
 
 void StorageObjectStorageSink::consume(Chunk & chunk)
@@ -57,9 +50,7 @@ void StorageObjectStorageSink::consume(Chunk & chunk)
 
 void StorageObjectStorageSink::onFinish()
 {
-    if (isCancelled())
-        return;
-
+    chassert(!isCancelled());
     finalizeBuffers();
     releaseBuffers();
 }
@@ -101,9 +92,9 @@ void StorageObjectStorageSink::cancelBuffers()
 
 PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     ObjectStoragePtr object_storage_,
-    StorageObjectStorageConfigurationPtr configuration_,
+    ConfigurationPtr configuration_,
     std::optional<FormatSettings> format_settings_,
-    SharedHeader sample_block_,
+    const Block & sample_block_,
     ContextPtr context_,
     const ASTPtr & partition_by)
     : PartitionedSink(partition_by, context_, sample_block_)
@@ -137,12 +128,12 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     }
 
     return std::make_shared<StorageObjectStorageSink>(
-        partition_key,
         object_storage,
         configuration,
         format_settings,
         sample_block,
-        context
+        context,
+        partition_key
     );
 }
 

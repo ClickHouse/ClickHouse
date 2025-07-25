@@ -1,6 +1,4 @@
-#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Merges/IMergingTransform.h>
-#include <Processors/Port.h>
 
 namespace DB
 {
@@ -13,8 +11,8 @@ namespace ErrorCodes
 
 IMergingTransformBase::IMergingTransformBase(
     size_t num_inputs,
-    SharedHeader & input_header,
-    SharedHeader & output_header,
+    const Block & input_header,
+    const Block & output_header,
     bool have_all_inputs_,
     UInt64 limit_hint_,
     bool always_read_till_end_)
@@ -25,12 +23,7 @@ IMergingTransformBase::IMergingTransformBase(
 {
 }
 
-OutputPort & IMergingTransformBase::getOutputPort()
-{
-    return outputs.front();
-}
-
-static InputPorts createPorts(const SharedHeaders & blocks)
+static InputPorts createPorts(const Blocks & blocks)
 {
     InputPorts ports;
     for (const auto & block : blocks)
@@ -39,8 +32,8 @@ static InputPorts createPorts(const SharedHeaders & blocks)
 }
 
 IMergingTransformBase::IMergingTransformBase(
-    SharedHeaders & input_headers,
-    SharedHeader & output_header,
+    const Blocks & input_headers,
+    const Block & output_header,
     bool have_all_inputs_,
     UInt64 limit_hint_,
     bool always_read_till_end_)
@@ -108,16 +101,11 @@ IProcessor::Status IMergingTransformBase::prepareInitializeInputs()
         /// setNotNeeded after reading first chunk, because in optimismtic case
         /// (e.g. with optimized 'ORDER BY primary_key LIMIT n' and small 'n')
         /// we won't have to read any chunks anymore;
-        /// If virtual row exists, let it pass through, so don't read more chunks.
-        auto chunk = input.pull(true);
-        bool virtual_row = isVirtualRow(chunk);
-        if (limit_hint == 0 && !virtual_row)
+        auto chunk = input.pull(limit_hint != 0);
+        if ((limit_hint && chunk.getNumRows() < limit_hint) || always_read_till_end)
             input.setNeeded();
 
-        if (!virtual_row && ((limit_hint && chunk.getNumRows() < limit_hint) || always_read_till_end))
-            input.setNeeded();
-
-        if (!virtual_row && !chunk.hasRows())
+        if (!chunk.hasRows())
         {
             if (!input.isFinished())
             {

@@ -6,6 +6,7 @@
 
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <Formats/FormatFactory.h>
 #include <IO/PeekableReadBuffer.h>
 #include <msgpack.hpp>
 #include <stack>
@@ -63,7 +64,7 @@ private:
 class MsgPackRowInputFormat : public IRowInputFormat
 {
 public:
-    MsgPackRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & settings);
+    MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & settings);
 
     String getName() const override { return "MagPackRowInputFormat"; }
     void resetParser() override;
@@ -71,7 +72,7 @@ public:
     void resetReadBuffer() override;
 
 private:
-    MsgPackRowInputFormat(SharedHeader header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & settings);
+    MsgPackRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & settings);
 
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 

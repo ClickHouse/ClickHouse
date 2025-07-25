@@ -4,8 +4,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 
-#include <shared_mutex>
-
 
 namespace DB
 {

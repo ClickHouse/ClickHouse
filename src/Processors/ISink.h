@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Core/Block_fwd.h>
-#include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 
 
@@ -22,7 +20,7 @@ protected:
     virtual void onFinish() {}
 
 public:
-    explicit ISink(SharedHeader header);
+    explicit ISink(Block header);
 
     Status prepare() override;
     void work() override;

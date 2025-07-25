@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/ISource.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
 
 namespace DB
 {
@@ -18,7 +19,7 @@ class WaitForAsyncInsertSource : public ISource, WithContext
 public:
     WaitForAsyncInsertSource(
         std::future<void> insert_future_, size_t timeout_ms_)
-        : ISource(std::make_shared<const Block>())
+        : ISource(Block())
         , insert_future(std::move(insert_future_))
         , timeout_ms(timeout_ms_)
     {

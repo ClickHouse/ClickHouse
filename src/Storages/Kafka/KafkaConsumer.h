@@ -1,13 +1,13 @@
 #pragma once
 
-#include <Core/Names.h>
-#include <IO/ReadBuffer.h>
-#include <Storages/Kafka/IKafkaExceptionInfoSink.h>
-#include <Storages/Kafka/StorageKafkaUtils.h>
 #include <boost/circular_buffer.hpp>
+
+#include <Core/Names.h>
+#include <base/types.h>
+#include <IO/ReadBuffer.h>
+
 #include <cppkafka/cppkafka.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/DateLUT.h>
 
 namespace CurrentMetrics
 {
@@ -22,13 +22,44 @@ namespace Poco
 namespace DB
 {
 
-using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
-using LoggerPtr = std::shared_ptr<Poco::Logger>;
+class StorageSystemKafkaConsumers;
 
-class KafkaConsumer : public IKafkaExceptionInfoSink
+using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
+
+class KafkaConsumer
 {
 public:
-    using Stat = StorageKafkaUtils::ConsumerStatistics;
+    struct ExceptionInfo
+    {
+        String text;
+        UInt64 timestamp_usec;
+    };
+    using ExceptionsBuffer = boost::circular_buffer<ExceptionInfo>;
+
+    struct Stat // system.kafka_consumers data
+    {
+        struct Assignment
+        {
+            String topic_str;
+            Int32 partition_id;
+            Int64 current_offset;
+        };
+        using Assignments = std::vector<Assignment>;
+
+        String consumer_id;
+        Assignments assignments;
+        UInt64 last_poll_time;
+        UInt64 num_messages_read;
+        UInt64 last_commit_timestamp_usec;
+        UInt64 last_rebalance_timestamp_usec;
+        UInt64 num_commits;
+        UInt64 num_rebalance_assignments;
+        UInt64 num_rebalance_revocations;
+        KafkaConsumer::ExceptionsBuffer exceptions_buffer;
+        bool in_use;
+        UInt64 last_used_usec;
+        std::string rdkafka_stat;
+    };
 
     KafkaConsumer(
         LoggerPtr log_,
@@ -39,7 +70,7 @@ public:
         const Names & _topics
     );
 
-    ~KafkaConsumer() override;
+    ~KafkaConsumer();
 
     void createConsumer(cppkafka::Configuration consumer_config);
     bool hasConsumer() const { return consumer.get() != nullptr; }
@@ -47,11 +78,7 @@ public:
 
     void commit(); // Commit all processed messages.
     void subscribe(); // Subscribe internal consumer to topics.
-
-    // used during exception processing to restart the consumption from last committed offset
-    // Notes: duplicates can appear if the some data were already flushed
-    // it causes rebalance (and is an expensive way of exception handling)
-    void markDirty();
+    void unsubscribe(); // Unsubscribe internal consumer in case of failure.
 
     auto pollTimeout() const { return poll_timeout; }
 
@@ -82,7 +109,8 @@ public:
     auto currentTimestamp() const { return current[-1].get_timestamp(); }
     const auto & currentHeaderList() const { return current[-1].get_header_list(); }
     const cppkafka::Buffer & currentPayload() const { return current[-1].get_payload(); }
-    void setExceptionInfo(const std::string & text, bool with_stacktrace) override;
+    void setExceptionInfo(const cppkafka::Error & err, bool with_stacktrace = true);
+    void setExceptionInfo(const std::string & text, bool with_stacktrace = true);
     void setRDKafkaStat(const std::string & stat_json_string)
     {
         std::lock_guard<std::mutex> lock(rdkafka_stat_mutex);
@@ -92,7 +120,7 @@ public:
     void notInUse()
     {
         in_use = false;
-        last_used_usec = timeInMicroseconds(std::chrono::system_clock::now());
+        last_used_usec = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     }
 
     // For system.kafka_consumers
@@ -105,7 +133,6 @@ public:
 
 private:
     using Messages = std::vector<cppkafka::Message>;
-    using ExceptionsBuffer = StorageKafkaUtils::ConsumerStatistics::ExceptionsBuffer;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaConsumers};
 
     enum StalledStatus
@@ -127,7 +154,6 @@ private:
     const size_t batch_size = 1;
     const size_t poll_timeout = 0;
     size_t offsets_stored = 0;
-    bool current_subscription_valid = false;
 
     StalledStatus stalled_status = NO_MESSAGES_RETURNED;
 
@@ -150,20 +176,22 @@ private:
     const size_t EXCEPTIONS_DEPTH = 10;
     ExceptionsBuffer exceptions_buffer;
 
-    std::atomic<UInt64> last_poll_timestamp = 0;
+    std::atomic<UInt64> last_exception_timestamp_usec = 0;
+    std::atomic<UInt64> last_poll_timestamp_usec = 0;
     std::atomic<UInt64> num_messages_read = 0;
-    std::atomic<UInt64> last_commit_timestamp = 0;
+    std::atomic<UInt64> last_commit_timestamp_usec = 0;
     std::atomic<UInt64> num_commits = 0;
-    std::atomic<UInt64> last_rebalance_timestamp = 0;
+    std::atomic<UInt64> last_rebalance_timestamp_usec = 0;
     std::atomic<UInt64> num_rebalance_assignments = 0;
     std::atomic<UInt64> num_rebalance_revocations = 0;
     std::atomic<bool> in_use = false;
     /// Last used time (for TTL)
     std::atomic<UInt64> last_used_usec = 0;
 
-    void doPoll();
+    void drain();
     void cleanUnprocessed();
     void resetIfStopped();
+    void filterMessageErrors();
     ReadBufferPtr getNextMessage();
 };
 

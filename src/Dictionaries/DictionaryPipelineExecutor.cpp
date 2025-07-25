@@ -4,7 +4,6 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
-#include <Common/Exception.h>
 
 namespace DB
 {
@@ -27,7 +26,7 @@ bool DictionaryPipelineExecutor::pull(Block & block)
         while (true)
         {
             bool has_data = async_executor->pull(block);
-            if (has_data && block.empty())
+            if (has_data && !block)
                 continue;
             return has_data;
         }

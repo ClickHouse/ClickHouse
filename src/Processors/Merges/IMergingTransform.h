@@ -1,13 +1,11 @@
 #pragma once
 
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
-
-#include <Core/Block_fwd.h>
 #include <Processors/IProcessor.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
-#include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <Common/formatReadable.h>
 
 namespace DB
 {
@@ -19,20 +17,20 @@ class IMergingTransformBase : public IProcessor
 public:
     IMergingTransformBase(
         size_t num_inputs,
-        SharedHeader & input_header,
-        SharedHeader & output_header,
+        const Block & input_header,
+        const Block & output_header,
         bool have_all_inputs_,
         UInt64 limit_hint_,
         bool always_read_till_end_);
 
     IMergingTransformBase(
-        SharedHeaders & input_headers,
-        SharedHeader & output_header,
+        const Blocks & input_headers,
+        const Block & output_header,
         bool have_all_inputs_,
         UInt64 limit_hint_,
         bool always_read_till_end_);
 
-    OutputPort & getOutputPort();
+    OutputPort & getOutputPort() { return outputs.front(); }
 
     /// Methods to add additional input port. It is possible to do only before the first call of `prepare`.
     void addInput();
@@ -87,8 +85,8 @@ public:
     template <typename ... Args>
     IMergingTransform(
         size_t num_inputs,
-        SharedHeader input_header,
-        SharedHeader output_header,
+        const Block & input_header,
+        const Block & output_header,
         bool have_all_inputs_,
         UInt64 limit_hint_,
         bool always_read_till_end_,
@@ -100,8 +98,8 @@ public:
 
     template <typename ... Args>
     IMergingTransform(
-        SharedHeaders input_headers,
-        SharedHeader output_header,
+        const Blocks & input_headers,
+        const Block & output_header,
         bool have_all_inputs_,
         UInt64 limit_hint_,
         bool always_read_till_end_,

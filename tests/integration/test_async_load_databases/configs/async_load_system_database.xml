@@ -1,3 +1,0 @@
-<clickhouse>
-    <async_load_system_database>true</async_load_system_database>
-</clickhouse>

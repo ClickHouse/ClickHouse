@@ -234,13 +234,8 @@ DROP USER u1_01292, u2_01292, u3_01292, u4_01292, u5_01292;
 
 DROP ROLE r1_01292, r2_01292;
 
-SELECT '-- multiple authentication methods';
-CREATE USER u1_01292 IDENTIFIED WITH plaintext_password by 'qwe123', kerberos REALM 'qwerty10', bcrypt_password by '123qwe', ldap SERVER 'abc';
-SELECT name, auth_type, auth_params FROM system.users WHERE name = 'u1_01292' ORDER BY name;
-DROP USER u1_01292;
-
 SELECT '-- no passwords or hashes in query_log';
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 SELECT query
 FROM system.query_log
 WHERE
@@ -249,15 +244,3 @@ WHERE
     query LIKE '%18138372FAD4B94533CD4881F03DC6C69296DD897234E0CEE83F727E2E6B1F63%' OR
     query LIKE '%8DCDD69CE7D121DE8013062AEAEB2A148910D50E%' OR
     query like '%$2a$12$rz5iy2LhuwBezsM88ZzWiemOVUeJ94xHTzwAlLMDhTzwUxOHaY64q%');
-
-SELECT '-- query parameters';
-SET param_u1_01292="u1_01292";
-SET param_u2_01292="u2_01292";
-CREATE USER '{u1_01292:Identifier}'; -- { clientError BAD_ARGUMENTS }
-CREATE USER {u1_01292:Identifier};
-CREATE USER '{u1_01292:Identifier}@192.168.%.%', '{u2_01292:Identifier}@192.168.%.%'; -- { clientError BAD_ARGUMENTS }
-CREATE USER {u1_01292:Identifier}@'192.168.%.%', {u2_01292:Identifier}@'192.168.%.%';
-SHOW CREATE USER u1_01292;
-SHOW CREATE USER u1_01292@'192.168.%.%';
-SHOW CREATE USER u2_01292@'192.168.%.%';
-DROP USER u1_01292, u1_01292@'192.168.%.%', u2_01292@'192.168.%.%';

@@ -13,16 +13,11 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/Context.h>
-#include <TableFunctions/registerTableFunctions.h>
+#include "registerTableFunctions.h"
 
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_analyzer;
-}
 
 namespace ErrorCodes
 {
@@ -115,11 +110,11 @@ StoragePtr TableFunctionViewIfPermitted::executeImpl(
 
 bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const ColumnsDescription & else_columns) const
 {
-    SharedHeader sample_block;
+    Block sample_block;
 
     try
     {
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        if (context->getSettingsRef().allow_experimental_analyzer)
         {
             sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
         }
@@ -137,7 +132,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
     }
 
     /// We check that columns match only if permitted (otherwise we could reveal the structure to an user who must not know it).
-    ColumnsDescription columns{sample_block->getNamesAndTypesList()};
+    ColumnsDescription columns{sample_block.getNamesAndTypesList()};
     if (columns != else_columns)
     {
         throw Exception(

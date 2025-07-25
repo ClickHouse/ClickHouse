@@ -1,4 +1,4 @@
-#include <Dictionaries/ExecutableDictionarySource.h>
+#include "ExecutableDictionarySource.h"
 
 #include <filesystem>
 
@@ -25,9 +25,9 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int DICTIONARY_ACCESS_DENIED;
     extern const int UNSUPPORTED_METHOD;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -174,8 +174,7 @@ QueryPipeline ExecutableDictionarySource::getStreamForBlock(const Block & block)
     String command = configuration.command;
     updateCommandIfNeeded(command, coordinator_configuration.execute_direct, context);
 
-    auto header = std::make_shared<const Block>(block);
-    auto source = std::make_shared<SourceFromSingleChunk>(header);
+    auto source = std::make_shared<SourceFromSingleChunk>(block);
     auto shell_input_pipe = Pipe(std::move(source));
 
     Pipes shell_input_pipes;
@@ -184,7 +183,7 @@ QueryPipeline ExecutableDictionarySource::getStreamForBlock(const Block & block)
     auto pipe = coordinator->createPipe(command, configuration.command_arguments, std::move(shell_input_pipes), sample_block, context);
 
     if (configuration.implicit_key)
-        pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(header, pipe.getSharedHeader()));
+        pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
 
     return QueryPipeline(std::move(pipe));
 }
@@ -216,8 +215,7 @@ std::string ExecutableDictionarySource::toString() const
 
 void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const String & /*name*/,
-                                 const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
@@ -226,7 +224,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
         if (dict_struct.has_expressions)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `executable` does not support attribute expressions");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `executable` does not support attribute expressions");
 
         /// Executable dictionaries may execute arbitrary commands.
         /// It's OK for dictionaries created by administrator from xml-file, but
@@ -267,7 +265,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
             .command_termination_timeout_seconds = config.getUInt64(settings_config_prefix + ".command_termination_timeout", 10),
             .command_read_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_read_timeout", 10000),
             .command_write_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_write_timeout", 10000),
-            .stderr_reaction = parseExternalCommandStderrReaction(config.getString(settings_config_prefix + ".stderr_reaction", "log_last")),
+            .stderr_reaction = parseExternalCommandStderrReaction(config.getString(settings_config_prefix + ".stderr_reaction", "none")),
             .check_exit_code = config.getBool(settings_config_prefix + ".check_exit_code", true),
             .is_executable_pool = false,
             .send_chunk_header = config.getBool(settings_config_prefix + ".send_chunk_header", false),

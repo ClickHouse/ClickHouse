@@ -1,17 +1,16 @@
 ---
-description: 'Documentation for the Boolean data type in ClickHouse'
-sidebar_label: 'Boolean'
-sidebar_position: 33
-slug: /sql-reference/data-types/boolean
-title: 'Bool'
+slug: /en/sql-reference/data-types/boolean
+sidebar_position: 22
+sidebar_label: Bool
 ---
 
 # Bool
 
 Type `bool` is internally stored as UInt8. Possible values are `true` (1), `false` (0).
 
+
 ```sql
-SELECT true AS col, toTypeName(col);
+select true as col, toTypeName(col);
 ┌─col──┬─toTypeName(true)─┐
 │ true │ Bool             │
 └──────┴──────────────────┘

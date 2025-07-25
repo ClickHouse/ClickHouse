@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <IO/ReadBuffer.h>
 #include <limits>
@@ -11,7 +12,7 @@ namespace DB
 class RowInputFormatWithDiagnosticInfo : public IRowInputFormat
 {
 public:
-    RowInputFormatWithDiagnosticInfo(SharedHeader header_, ReadBuffer & in_, const Params & params_);
+    RowInputFormatWithDiagnosticInfo(const Block & header_, ReadBuffer & in_, const Params & params_);
 
     std::pair<String, String> getDiagnosticAndRawDataImpl(bool is_errors_record);
     String getDiagnosticInfo() override;

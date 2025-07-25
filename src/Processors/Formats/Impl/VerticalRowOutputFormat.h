@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 
@@ -17,7 +18,7 @@ class Context;
 class VerticalRowOutputFormat final : public IRowOutputFormat
 {
 public:
-    VerticalRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_);
+    VerticalRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "VerticalRowOutputFormat"; }
 
@@ -55,9 +56,6 @@ private:
 
     using NamesAndPaddings = std::vector<String>;
     NamesAndPaddings names_and_paddings;
-
-    std::vector<UInt8> is_number;
-    bool color;
 };
 
 }

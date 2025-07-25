@@ -1,10 +1,8 @@
+import pytest
+from helpers.cluster import ClickHouseCluster
+import pyarrow.parquet as pq
 import os
 import time
-
-import pyarrow.parquet as pq
-import pytest
-
-from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 path_to_userfiles = "/var/lib/clickhouse/user_files/"
@@ -55,7 +53,7 @@ def delete_if_exists(file_path):
         (
             "SELECT number, number+1 FROM system.numbers LIMIT 100 "
             "INTO OUTFILE '{file_name}' FORMAT Parquet;",
-            True,
+            False,
         ),
     },
 )
@@ -92,7 +90,7 @@ def test_parquet_page_index_select_into_outfile(query, expected_result, start_cl
         (
             "INSERT INTO TABLE FUNCTION file('{file_name}') "
             "SELECT number, number+1 FROM system.numbers LIMIT 100 FORMAT Parquet",
-            True,
+            False,
         ),
     },
 )

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnArray.h>
-#include <Functions/GatherUtils/ArraySourceVisitor.h>
+#include "ArraySourceVisitor.h"
 
 namespace DB
 {
@@ -31,7 +31,7 @@ struct IArraySource
 };
 
 template <typename Derived>
-class ArraySourceImpl : public Visitable<Derived, IArraySource, ArraySourceVisitor> {};  /// NOLINT(bugprone-crtp-constructor-accessibility)
+class ArraySourceImpl : public Visitable<Derived, IArraySource, ArraySourceVisitor> {};
 
 }
 

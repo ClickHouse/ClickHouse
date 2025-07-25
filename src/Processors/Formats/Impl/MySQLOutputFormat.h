@@ -1,9 +1,11 @@
 #pragma once
 
-#include <Core/MySQL/PacketEndpoint.h>
-#include <Interpreters/Context_fwd.h>
-#include <Processors/Formats/IOutputFormat.h>
+#include <Core/Block.h>
 #include <Processors/Formats/IRowOutputFormat.h>
+
+#include <Core/MySQL/PacketEndpoint.h>
+#include <Processors/Formats/IOutputFormat.h>
+
 
 namespace DB
 {
@@ -18,13 +20,13 @@ struct FormatSettings;
 class MySQLOutputFormat final : public IOutputFormat, WithContext
 {
 public:
-    MySQLOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_);
+    MySQLOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_);
 
     String getName() const override { return "MySQLOutputFormat"; }
 
     void setContext(ContextPtr context_);
 
-    void flushImpl() override;
+    void flush() override;
 
 private:
     void consume(Chunk) override;

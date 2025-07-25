@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --query="
+$CLICKHOUSE_CLIENT -n --query="
     DROP DATABASE IF EXISTS 01684_database_for_cache_dictionary;
     CREATE DATABASE 01684_database_for_cache_dictionary;
 

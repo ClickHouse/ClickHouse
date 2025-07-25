@@ -3,8 +3,6 @@
 #include <Parsers/IAST.h>
 #include <base/types.h>
 
-class SipHash;
-
 namespace DB
 {
 
@@ -30,6 +28,8 @@ public:
 
     ASTPtr clone() const override;
 
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+
     bool hasSecretParts() const override;
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
@@ -38,9 +38,6 @@ public:
     {
         f(reinterpret_cast<void **>(&second));
     }
-
-protected:
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 
@@ -67,10 +64,9 @@ public:
 
     ASTPtr clone() const override;
 
-    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
-protected:
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 };
 
 }

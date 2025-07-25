@@ -15,8 +15,8 @@ ${CLICKHOUSE_CURL} \
     --get \
     --data-urlencode "query=select 1 format Null"
 
-${CLICKHOUSE_CLIENT} -q "
-system flush logs query_log;
+${CLICKHOUSE_CLIENT} -n -q "
+system flush logs;
 select interface, initial_query_id = query_id
     from system.query_log
     where current_database = currentDatabase() AND query_id = '$query_id' and type = 'QueryFinish'

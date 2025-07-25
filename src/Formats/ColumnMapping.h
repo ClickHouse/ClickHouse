@@ -1,14 +1,10 @@
 #pragma once
 
-#include <Columns/IColumn_fwd.h>
-#include <Core/Block_fwd.h>
-#include <Core/BlockNameMap.h>
+#include <Core/Block.h>
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
-
-struct FormatSettings;
-using Names = std::vector<std::string>;
 
 /// Used for input text formats with headers/structure to map columns from input
 /// and columns in header by names.
@@ -32,7 +28,7 @@ struct ColumnMapping
     void setupByHeader(const Block & header);
 
     void addColumns(
-        const Names & column_names, const BlockNameMap & column_indexes_by_names, const FormatSettings & settings);
+        const Names & column_names, const Block::NameMap & column_indexes_by_names, const FormatSettings & settings);
 
     void insertDefaultsForNotSeenColumns(MutableColumns & columns, std::vector<UInt8> & read_columns);
 };

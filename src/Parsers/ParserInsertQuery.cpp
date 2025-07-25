@@ -1,18 +1,17 @@
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
-#include <Parsers/ParserWithElement.h>
+#include <Parsers/ParserWatchQuery.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/InsertQuerySettingsPushDownVisitor.h>
 #include <Common/typeid_cast.h>
+#include "Parsers/IAST_fwd.h"
 
 
 namespace DB
@@ -59,19 +58,9 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr settings_ast;
     ASTPtr partition_by_expr;
     ASTPtr compression;
-    ASTPtr with_expression_list;
 
     /// Insertion data
     const char * data = nullptr;
-
-    if (s_with.ignore(pos, expected))
-    {
-        if (!ParserList(std::make_unique<ParserWithElement>(), std::make_unique<ParserToken>(TokenType::Comma))
-            .parse(pos, with_expression_list, expected))
-            return false;
-        if (with_expression_list->children.empty())
-            return false;
-    }
 
     /// Check for key words `INSERT INTO`. If it isn't found, the query can't be parsed as insert query.
     if (!s_insert_into.ignore(pos, expected))
@@ -173,30 +162,13 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         tryGetIdentifierNameInto(format, format_str);
     }
-    else if (s_select.ignore(pos, expected) || s_with.ignore(pos, expected))
+    else if (s_select.ignore(pos, expected) || s_with.ignore(pos,expected))
     {
         /// If SELECT is defined, return to position before select and parse
         /// rest of query as SELECT query.
         pos = before_values;
         ParserSelectWithUnionQuery select_p;
         select_p.parse(pos, select, expected);
-
-        if (with_expression_list && select)
-        {
-            const auto & children = select->as<ASTSelectWithUnionQuery>()->list_of_selects->children;
-            for (const auto & child : children)
-            {
-                auto * child_select = child->as<ASTSelectQuery>();
-                if (child_select)
-                {
-                    if (child_select->getExpression(ASTSelectQuery::Expression::WITH, false))
-                        throw Exception(ErrorCodes::SYNTAX_ERROR,
-                            "Only one WITH should be presented, either before INSERT or SELECT.");
-                    child_select->setExpression(ASTSelectQuery::Expression::WITH,
-                        std::move(with_expression_list));
-                }
-            }
-        }
 
         /// FORMAT section is expected if we have input() in SELECT part
         if (s_format.ignore(pos, expected) && !name_p.parse(pos, format, expected))
@@ -309,7 +281,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->select = select;
     query->settings_ast = settings_ast;
     query->data = data != end ? data : nullptr;
-    query->end = data ? end : nullptr;
+    query->end = end;
 
     if (columns)
         query->children.push_back(columns);

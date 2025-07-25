@@ -1,13 +1,10 @@
-#include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
-#include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
-#include <Storages/PartitionCommands.h>
-
-#include <IO/ReadHelpers.h>
+#include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Common/getRandomASCIIString.h>
 #include <IO/WriteHelpers.h>
-
-#include <memory>
-#include <shared_mutex>
+#include <IO/ReadHelpers.h>
+#include <ranges>
+#include <filesystem>
 
 
 namespace DB
@@ -23,19 +20,19 @@ const std::string & MetadataStorageFromDisk::getPath() const
     return disk->getPath();
 }
 
-bool MetadataStorageFromDisk::existsFile(const std::string & path) const
+bool MetadataStorageFromDisk::exists(const std::string & path) const
 {
-    return disk->existsFile(path);
+    return disk->exists(path);
 }
 
-bool MetadataStorageFromDisk::existsDirectory(const std::string & path) const
+bool MetadataStorageFromDisk::isFile(const std::string & path) const
 {
-    return disk->existsDirectory(path);
+    return disk->isFile(path);
 }
 
-bool MetadataStorageFromDisk::existsFileOrDirectory(const std::string & path) const
+bool MetadataStorageFromDisk::isDirectory(const std::string & path) const
 {
-    return disk->existsFileOrDirectory(path);
+    return disk->isDirectory(path);
 }
 
 Poco::Timestamp MetadataStorageFromDisk::getLastModified(const std::string & path) const
@@ -46,11 +43,6 @@ Poco::Timestamp MetadataStorageFromDisk::getLastModified(const std::string & pat
 time_t MetadataStorageFromDisk::getLastChanged(const std::string & path) const
 {
     return disk->getLastChanged(path);
-}
-
-bool MetadataStorageFromDisk::supportsPartitionCommand(const PartitionCommand & /*command*/) const
-{
-    return true;
 }
 
 uint64_t MetadataStorageFromDisk::getFileSize(const String & path) const
@@ -74,7 +66,7 @@ DirectoryIteratorPtr MetadataStorageFromDisk::iterateDirectory(const std::string
 
 std::string MetadataStorageFromDisk::readFileToString(const std::string & path) const
 {
-    auto buf = disk->readFile(path, ReadSettings{});
+    auto buf = disk->readFile(path);
     std::string result;
     readStringUntilEOF(result, *buf);
     return result;
@@ -176,7 +168,9 @@ void MetadataStorageFromDiskTransaction::writeInlineDataToFile(
      const std::string & path,
      const std::string & data)
 {
-    addOperation(std::make_unique<WriteInlineDataOperation>(path, data, *metadata_storage.getDisk(), metadata_storage));
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(metadata_storage.compatible_key_prefix, path);
+    metadata->setInlineData(data);
+    writeStringToFile(path, metadata->serializeToString());
 }
 
 void MetadataStorageFromDiskTransaction::setLastModified(const std::string & path, const Poco::Timestamp & timestamp)
@@ -244,7 +238,12 @@ void MetadataStorageFromDiskTransaction::createEmptyMetadataFile(const std::stri
 
 void MetadataStorageFromDiskTransaction::createMetadataFile(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes)
 {
-    addOperation(std::make_unique<RewriteFileOperation>(path, std::move(object_key), size_in_bytes, *metadata_storage.disk, metadata_storage));
+    auto metadata = std::make_unique<DiskObjectStorageMetadata>(metadata_storage.compatible_key_prefix, path);
+    metadata->addObject(std::move(object_key), size_in_bytes);
+
+    auto data = metadata->serializeToString();
+    if (!data.empty())
+        addOperation(std::make_unique<WriteFileOperation>(path, *metadata_storage.getDisk(), data));
 }
 
 void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes)

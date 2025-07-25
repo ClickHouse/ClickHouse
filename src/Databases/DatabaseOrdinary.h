@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Common/ThreadPool.h>
 
@@ -15,18 +14,10 @@ namespace DB
 class DatabaseOrdinary : public DatabaseOnDisk
 {
 public:
+    DatabaseOrdinary(const String & name_, const String & metadata_path_, ContextPtr context);
     DatabaseOrdinary(
-        const String & name_,
-        const String & metadata_path_,
-        ContextPtr context,
-        DatabaseMetadataDiskSettings database_metadata_disk_settings_ = {});
-    DatabaseOrdinary(
-        const String & name_,
-        const String & metadata_path_,
-        const String & data_path_,
-        const String & logger,
-        ContextPtr context_,
-        DatabaseMetadataDiskSettings database_metadata_disk_settings_ = {});
+        const String & name_, const String & metadata_path_, const String & data_path_,
+        const String & logger, ContextPtr context_);
 
     String getEngineName() const override { return "Ordinary"; }
 
@@ -82,10 +73,6 @@ public:
         return permanently_detached_tables;
     }
 
-    DiskPtr getDisk() const override { return metadata_disk_ptr; }
-
-    static void setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr context, bool replicated);
-
 protected:
     virtual void commitAlterTable(
         const StorageID & table_id,
@@ -103,13 +90,10 @@ protected:
     std::atomic<size_t> tables_started{0};
     AtomicStopwatch startup_watch;
 
-    DatabaseMetadataDiskSettings database_metadata_disk_settings;
-    DiskPtr metadata_disk_ptr;
-
 private:
     void convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name);
     void restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name);
-    String getConvertToReplicatedFlagPath(const String & name, bool tableStarted);
+    String getConvertToReplicatedFlagPath(const String & name, StoragePolicyPtr storage_policy, bool tableStarted);
 };
 
 }

@@ -3,9 +3,10 @@
 #include "config.h"
 
 #if USE_LIBPQXX
+#include <Core/Block.h>
 #include <Processors/ISource.h>
-#include <Processors/Port.h>
 #include <Core/ExternalResultDescription.h>
+#include <Core/Field.h>
 #include <Core/PostgreSQL/insertPostgreSQLValue.h>
 #include <Core/PostgreSQL/ConnectionHolder.h>
 #include <Core/PostgreSQL/Utils.h>
@@ -22,7 +23,7 @@ public:
     PostgreSQLSource(
         postgres::ConnectionHolderPtr connection_holder_,
         const String & query_str_,
-        SharedHeader sample_block,
+        const Block & sample_block,
         UInt64 max_block_size_);
 
     String getName() const override { return "PostgreSQL"; }
@@ -33,7 +34,7 @@ protected:
     PostgreSQLSource(
         std::shared_ptr<T> tx_,
         const std::string & query_str_,
-        SharedHeader sample_block,
+        const Block & sample_block,
         UInt64 max_block_size_,
         bool auto_commit_);
 
@@ -42,6 +43,8 @@ protected:
     Chunk generate() override;
 
     void onStart();
+
+    void onFinish();
 
 private:
     void init(const Block & sample_block);
@@ -75,7 +78,7 @@ public:
     PostgreSQLTransactionSource(
         std::shared_ptr<T> tx_,
         const std::string & query_str_,
-        SharedHeader sample_block_,
+        const Block & sample_block_,
         const UInt64 max_block_size_)
         : PostgreSQLSource<T>(tx_, query_str_, sample_block_, max_block_size_, false) {}
 };

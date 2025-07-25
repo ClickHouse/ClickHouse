@@ -1,9 +1,8 @@
 #pragma once
 
-#include <IO/WriteBufferFromString.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/IMessageProducer.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -27,13 +26,12 @@ class MessageQueueSink : public SinkToStorage
 {
 public:
     MessageQueueSink(
-        SharedHeader header,
+        const Block & header,
         const String & format_name_,
         size_t max_rows_per_message_,
         std::unique_ptr<IMessageProducer> producer_,
         const String & storage_name_,
         const ContextPtr & context_);
-    ~MessageQueueSink() override;
 
     String getName() const override { return storage_name + "Sink"; }
 
@@ -41,7 +39,8 @@ public:
 
     void onStart() override;
     void onFinish() override;
-    void onException(std::exception_ptr /* exception */) override;
+    void onCancel() noexcept override;
+    void onException(std::exception_ptr /* exception */) override { onFinish(); }
 
 protected:
     /// Do some specific initialization before consuming data.

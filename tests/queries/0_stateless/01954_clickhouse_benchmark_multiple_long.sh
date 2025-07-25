@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-BASE="$CUR_DIR/01954_clickhouse_benchmark_multiple_long"
+BASE="$CUR_DIR/$(basename "${BASH_SOURCE[0]}" .sh)"
 
 server_pids=()
 paths=()
@@ -123,7 +123,7 @@ function test_clickhouse_benchmark_multi_hosts()
         --query 'select 1'
         --concurrency 10
     )
-    ${CLICKHOUSE_BENCHMARK_BINARY} "${benchmark_opts[@]}" >& "$(mktemp "$BASE.clickhouse-benchmark.XXXXXX.log")"
+    clickhouse-benchmark "${benchmark_opts[@]}" >& "$(mktemp "$BASE.clickhouse-benchmark.XXXXXX.log")"
 
     local queries1 queries2
     queries1="$(execute_query "$port1" --query "select value from system.events where event = 'Query'")"
@@ -146,7 +146,7 @@ function test_clickhouse_benchmark_multi_hosts_roundrobin()
         --concurrency 10
         --roundrobin
     )
-    ${CLICKHOUSE_BENCHMARK_BINARY} "${benchmark_opts[@]}" >& "$(mktemp "$BASE.clickhouse-benchmark.XXXXXX.log")"
+    clickhouse-benchmark "${benchmark_opts[@]}" >& "$(mktemp "$BASE.clickhouse-benchmark.XXXXXX.log")"
 
     local queries1 queries2
     queries1="$(execute_query "$port1" --query "select value from system.events where event = 'Query'")"

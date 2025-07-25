@@ -1,8 +1,6 @@
 ---
-description: 'Returns the sample covariance matrix over N variables.'
+slug: /en/sql-reference/aggregate-functions/reference/covarsampmatrix
 sidebar_position: 125
-slug: /sql-reference/aggregate-functions/reference/covarsampmatrix
-title: 'covarSampMatrix'
 ---
 
 # covarSampMatrix
@@ -55,3 +53,5 @@ Result:
 4. │ [7.498,2.369,5.283,11.034]  │
    └─────────────────────────────┘
 ```
+
+

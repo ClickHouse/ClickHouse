@@ -2,7 +2,6 @@
 
 #if USE_HDFS
 #include <Common/logger_useful.h>
-#include <Common/RemoteHostFilter.h>
 #include <Core/Settings.h>
 #include <Parsers/IAST.h>
 #include <Formats/FormatFactory.h>
@@ -21,19 +20,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool hdfs_create_new_file_on_insert;
-    extern const SettingsBool hdfs_ignore_file_doesnt_exist;
-    extern const SettingsUInt64 hdfs_replication;
-    extern const SettingsBool hdfs_skip_empty_files;
-    extern const SettingsBool hdfs_throw_on_zero_files_match;
-    extern const SettingsBool hdfs_truncate_on_insert;
-    extern const SettingsUInt64 remote_read_min_bytes_for_seek;
-    extern const SettingsSchemaInferenceMode schema_inference_mode;
-    extern const SettingsBool schema_inference_use_cache_for_hdfs;
-}
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -41,11 +27,19 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+StorageHDFSConfiguration::StorageHDFSConfiguration(const StorageHDFSConfiguration & other)
+    : Configuration(other)
+{
+    url = other.url;
+    path = other.path;
+    paths = other.paths;
+}
+
 void StorageHDFSConfiguration::check(ContextPtr context) const
 {
     context->getRemoteHostFilter().checkURL(Poco::URI(url));
     checkHDFSURL(fs::path(url) / path.substr(1));
-    StorageObjectStorageConfiguration::check(context);
+    Configuration::check(context);
 }
 
 ObjectStoragePtr StorageHDFSConfiguration::createObjectStorage( /// NOLINT
@@ -54,7 +48,10 @@ ObjectStoragePtr StorageHDFSConfiguration::createObjectStorage( /// NOLINT
 {
     assertInitialized();
     const auto & settings = context->getSettingsRef();
-    auto hdfs_settings = std::make_unique<HDFSObjectStorageSettings>(settings[Setting::remote_read_min_bytes_for_seek], settings[Setting::hdfs_replication]);
+    auto hdfs_settings = std::make_unique<HDFSObjectStorageSettings>(
+        settings.remote_read_min_bytes_for_seek,
+        settings.hdfs_replication
+    );
     return std::make_shared<HDFSObjectStorage>(
         url, std::move(hdfs_settings), context->getConfigRef(), /* lazy_initialize */true);
 }
@@ -70,18 +67,18 @@ std::string StorageHDFSConfiguration::getPathWithoutGlobs() const
         return "/";
     return path.substr(0, end_of_path_without_globs);
 }
-StorageObjectStorageQuerySettings StorageHDFSConfiguration::getQuerySettings(const ContextPtr & context) const
+StorageObjectStorage::QuerySettings StorageHDFSConfiguration::getQuerySettings(const ContextPtr & context) const
 {
     const auto & settings = context->getSettingsRef();
-    return StorageObjectStorageQuerySettings{
-        .truncate_on_insert = settings[Setting::hdfs_truncate_on_insert],
-        .create_new_file_on_insert = settings[Setting::hdfs_create_new_file_on_insert],
-        .schema_inference_use_cache = settings[Setting::schema_inference_use_cache_for_hdfs],
-        .schema_inference_mode = settings[Setting::schema_inference_mode],
-        .skip_empty_files = settings[Setting::hdfs_skip_empty_files],
+    return StorageObjectStorage::QuerySettings{
+        .truncate_on_insert = settings.hdfs_truncate_on_insert,
+        .create_new_file_on_insert = settings.hdfs_create_new_file_on_insert,
+        .schema_inference_use_cache = settings.schema_inference_use_cache_for_hdfs,
+        .schema_inference_mode = settings.schema_inference_mode,
+        .skip_empty_files = settings.hdfs_skip_empty_files,
         .list_object_keys_size = 0, /// HDFS does not support listing in batches.
-        .throw_on_zero_files_match = settings[Setting::hdfs_throw_on_zero_files_match],
-        .ignore_non_existent_file = settings[Setting::hdfs_ignore_file_doesnt_exist],
+        .throw_on_zero_files_match = settings.hdfs_throw_on_zero_files_match,
+        .ignore_non_existent_file = settings.hdfs_ignore_file_doesnt_exist,
     };
 }
 

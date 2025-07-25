@@ -3,6 +3,7 @@
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 
+#include <Analyzer/QueryTreePassManager.h>
 #include <Planner/Planner.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -40,18 +41,13 @@ public:
         return context;
     }
 
-    SharedHeader getSampleBlock();
-    std::pair<SharedHeader, PlannerContextPtr> getSampleBlockAndPlannerContext();
+    Block getSampleBlock();
 
-    static SharedHeader getSampleBlock(const ASTPtr & query,
+    static Block getSampleBlock(const ASTPtr & query,
         const ContextPtr & context,
         const SelectQueryOptions & select_query_options = {});
 
-    static SharedHeader getSampleBlock(const QueryTreeNodePtr & query_tree,
-        const ContextPtr & context_,
-        const SelectQueryOptions & select_query_options = {});
-
-    static std::pair<SharedHeader, PlannerContextPtr> getSampleBlockAndPlannerContext(const QueryTreeNodePtr & query_tree,
+    static Block getSampleBlock(const QueryTreeNodePtr & query_tree,
         const ContextPtr & context_,
         const SelectQueryOptions & select_query_options = {});
 
@@ -86,7 +82,5 @@ private:
     QueryTreeNodePtr query_tree;
     Planner planner;
 };
-
-void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage);
 
 }

@@ -6,8 +6,7 @@ import logging
 import os
 
 import pytest  # pylint:disable=import-error; for style check
-
-from helpers.cluster import is_port_free, run_and_check
+from helpers.cluster import run_and_check, is_port_free
 from helpers.network import _NetworkManager
 
 # This is a workaround for a problem with logging in pytest [1].
@@ -23,8 +22,8 @@ def pdb_history(request):
     Fixture loads and saves pdb history to file, so it can be preserved between runs
     """
     if request.config.getoption("--pdb"):
-        import pdb  # pylint:disable=import-outside-toplevel
         import readline  # pylint:disable=import-outside-toplevel
+        import pdb  # pylint:disable=import-outside-toplevel
 
         def save_history():
             readline.write_history_file(".pdb_history")
@@ -48,6 +47,7 @@ def pdb_history(request):
 @pytest.fixture(autouse=True, scope="session")
 def tune_local_port_range():
     # Lots of services uses non privileged ports:
+    # - hdfs -- 50020/50070/...
     # - minio
     #
     # NOTE: 5K is not enough, and sometimes leads to EADDRNOTAVAIL error.
@@ -89,7 +89,7 @@ def cleanup_environment():
                     nothrow=True,
                 )
                 logging.debug("Unstopped containers killed")
-                r = run_and_check(["docker", "compose", "ps", "--services", "--all"])
+                r = run_and_check(["docker-compose", "ps", "--services", "--all"])
                 logging.debug("Docker ps before start:%s", r.stdout)
         else:
             logging.debug("No running containers")

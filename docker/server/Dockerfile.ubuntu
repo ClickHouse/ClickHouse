@@ -1,4 +1,4 @@
-FROM ubuntu:22.04
+FROM ubuntu:20.04
 
 # see https://github.com/moby/moby/issues/4032#issuecomment-192327844
 # It could be removed after we move on a version 23:04+
@@ -20,17 +20,15 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
     && useradd -r -g clickhouse --uid=101 --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse \
     && apt-get update \
     && apt-get install --yes --no-install-recommends \
-        busybox \
         ca-certificates \
         locales \
         tzdata \
         wget \
-    && busybox --install -s \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION="25.6.5.41"
+ARG VERSION="24.7.3.42"
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
 #docker-official-library:off

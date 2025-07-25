@@ -1,5 +1,4 @@
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -19,16 +18,12 @@ def started_cluster():
 
 
 def test_enabling_access_management():
-    instance.query("DROP USER IF EXISTS Alex")
-
     instance.query("CREATE USER Alex", user="default")
     assert (
-        instance.query("SHOW CREATE USER Alex", user="default")
-        == "CREATE USER Alex IDENTIFIED WITH no_password\n"
+        instance.query("SHOW CREATE USER Alex", user="default") == "CREATE USER Alex\n"
     )
     assert (
-        instance.query("SHOW CREATE USER Alex", user="readonly")
-        == "CREATE USER Alex IDENTIFIED WITH no_password\n"
+        instance.query("SHOW CREATE USER Alex", user="readonly") == "CREATE USER Alex\n"
     )
     assert "Not enough privileges" in instance.query_and_get_error(
         "SHOW CREATE USER Alex", user="xyz"
@@ -40,5 +35,3 @@ def test_enabling_access_management():
     assert "Not enough privileges" in instance.query_and_get_error(
         "CREATE USER Robin", user="xyz"
     )
-
-    instance.query("DROP USER IF EXISTS Alex")

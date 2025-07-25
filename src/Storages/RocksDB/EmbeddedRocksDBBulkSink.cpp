@@ -21,6 +21,7 @@
 #include <Common/SipHash.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/CurrentThread.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
@@ -29,15 +30,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 min_insert_block_size_rows;
-}
-
-namespace RocksDBSetting
-{
-    extern const RocksDBSettingsUInt64 bulk_insert_block_size;
-}
 
 namespace ErrorCodes
 {
@@ -84,7 +76,7 @@ static rocksdb::Status buildSSTFile(const String & path, const ColumnString & ke
 
 EmbeddedRocksDBBulkSink::EmbeddedRocksDBBulkSink(
     ContextPtr context_, StorageEmbeddedRocksDB & storage_, const StorageMetadataPtr & metadata_snapshot_)
-    : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock())), WithContext(context_), storage(storage_), metadata_snapshot(metadata_snapshot_)
+    : SinkToStorage(metadata_snapshot_->getSampleBlock()), WithContext(context_), storage(storage_), metadata_snapshot(metadata_snapshot_)
 {
     for (const auto & elem : getHeader())
     {
@@ -94,8 +86,7 @@ EmbeddedRocksDBBulkSink::EmbeddedRocksDBBulkSink(
     }
 
     serializations = getHeader().getSerializations();
-    min_block_size_rows
-        = std::max(storage.getSettings()[RocksDBSetting::bulk_insert_block_size], getContext()->getSettingsRef()[Setting::min_insert_block_size_rows]);
+    min_block_size_rows = std::max(storage.getSettings().bulk_insert_block_size, getContext()->getSettingsRef().min_insert_block_size_rows);
 
     /// If max_insert_threads > 1 we may have multiple EmbeddedRocksDBBulkSink and getContext()->getCurrentQueryId() is not guarantee to
     /// to have a distinct path. Also we cannot use query id as directory name here, because it could be defined by user and not suitable

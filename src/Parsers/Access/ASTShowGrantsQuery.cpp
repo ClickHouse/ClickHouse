@@ -1,5 +1,6 @@
 #include <Parsers/Access/ASTShowGrantsQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Common/quoteString.h>
 #include <IO/Operators.h>
 
 
@@ -22,10 +23,10 @@ ASTPtr ASTShowGrantsQuery::clone() const
 }
 
 
-void ASTShowGrantsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTShowGrantsQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    ostr << "SHOW GRANTS"
-                 ;
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW GRANTS"
+                  << (settings.hilite ? hilite_none : "");
 
     if (for_roles->current_user && !for_roles->all && for_roles->names.empty() && for_roles->except_names.empty()
         && !for_roles->except_current_user)
@@ -33,21 +34,9 @@ void ASTShowGrantsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSetting
     }
     else
     {
-        ostr << " FOR "
-                     ;
-        for_roles->format(ostr, settings);
-    }
-
-    if (with_implicit)
-    {
-        ostr << " WITH IMPLICIT"
-                     ;
-    }
-
-    if (final)
-    {
-        ostr << " FINAL"
-                     ;
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " FOR "
+                      << (settings.hilite ? hilite_none : "");
+        for_roles->format(settings);
     }
 }
 }

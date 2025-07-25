@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -23,7 +24,7 @@ class ReadBuffer;
 class TSKVRowInputFormat final : public IRowInputFormat
 {
 public:
-    TSKVRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_);
+    TSKVRowInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "TSKVRowInputFormat"; }
 
@@ -37,7 +38,6 @@ private:
 
     bool supportsCountRows() const override { return true; }
     size_t countRows(size_t max_block_size) override;
-    bool supportsCustomSerializations() const override { return true; }
 
     const FormatSettings format_settings;
 

@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <mutex>
 
-#include <Interpreters/SetWithState.h>
+#include <Interpreters/Set.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -13,8 +13,6 @@
 #include <base/types.h>
 
 #include <Poco/String.h>
-
-#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -58,7 +56,7 @@ ColumnsWithTypeAndName getColumnsByIndices(const Block & sample_block, const Chu
 }
 
 CreatingSetsOnTheFlyTransform::CreatingSetsOnTheFlyTransform(
-    SharedHeader header_, const Names & column_names_, size_t num_streams_, SetWithStatePtr set_)
+    const Block & header_, const Names & column_names_, size_t num_streams_, SetWithStatePtr set_)
     : ISimpleTransform(header_, header_, true)
     , column_names(column_names_)
     , key_column_indices(getColumnIndices(inputs.front().getHeader(), column_names))
@@ -132,7 +130,7 @@ void CreatingSetsOnTheFlyTransform::transform(Chunk & chunk)
     }
 }
 
-FilterBySetOnTheFlyTransform::FilterBySetOnTheFlyTransform(SharedHeader header_, const Names & column_names_, SetWithStatePtr set_)
+FilterBySetOnTheFlyTransform::FilterBySetOnTheFlyTransform(const Block & header_, const Names & column_names_, SetWithStatePtr set_)
     : ISimpleTransform(header_, header_, true)
     , column_names(column_names_)
     , key_column_indices(getColumnIndices(inputs.front().getHeader(), column_names))

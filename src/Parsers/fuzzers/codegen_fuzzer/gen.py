@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 
-import string
 import sys
+import string
+
 
 TOKEN_TEXT = 1
 TOKEN_VAR = 2

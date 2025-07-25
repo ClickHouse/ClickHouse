@@ -1,4 +1,3 @@
-#include <Columns/IColumn.h>
 #include <Interpreters/Context.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
@@ -11,7 +10,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/IStorage.h>
-
 
 namespace DB
 {
@@ -34,7 +32,7 @@ namespace DB
                 StoragePtr inner_storage_,
                 size_t max_block_size_,
                 size_t num_streams_)
-                : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(column_names_)))
+                : ISource(storage_snapshot_->getSampleBlockForColumns(column_names_))
                 , column_names(column_names_)
                 , query_info(query_info_)
                 , storage_snapshot(storage_snapshot_)
@@ -65,35 +63,24 @@ namespace DB
                             processed_stage,
                             max_block_size,
                             num_streams);
-                    if (plan.isInitialized())
-                    {
-                        auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
-                        QueryPlanResourceHolder resources;
-                        auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
-                        query_pipeline = QueryPipeline(std::move(pipe));
-                        executor = std::make_unique<PullingPipelineExecutor>(query_pipeline);
-                    }
+                    auto builder = plan.buildQueryPipeline(
+                            QueryPlanOptimizationSettings::fromContext(context),
+                            BuildQueryPipelineSettings::fromContext(context));
+                    QueryPlanResourceHolder resources;
+                    auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
+                    query_pipeline = QueryPipeline(std::move(pipe));
+                    executor = std::make_unique<PullingPipelineExecutor>(query_pipeline);
                     loop = true;
                 }
                 Chunk chunk;
-
-                if (query_info.trivial_limit > 0 && rows_read >= query_info.trivial_limit)
-                    return chunk;
-
-                if (executor && executor->pull(chunk))
+                if (executor->pull(chunk))
                 {
-                    rows_read += chunk.getNumRows();
-                    retries_count = 0;
-                    if (query_info.trivial_limit == 0 || rows_read <= query_info.trivial_limit)
-                        return chunk;
-
-                    size_t remaining_rows = query_info.trivial_limit + chunk.getNumRows() - rows_read;
-                    auto columns = chunk.detachColumns();
-                    for (auto & col : columns)
+                    if (chunk)
                     {
-                        col = col->cut(0, remaining_rows);
+                        retries_count = 0;
+                        return chunk;
                     }
-                    return {std::move(columns), remaining_rows};
+
                 }
                 else
                 {
@@ -120,7 +107,6 @@ namespace DB
         // add retries. If inner_storage failed to pull X times in a row we'd better to fail here not to hang
         size_t retries_count = 0;
         size_t max_retries_count = 3;
-        size_t rows_read = 0;
         bool loop = false;
         QueryPipeline query_pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;
@@ -143,7 +129,7 @@ namespace DB
             size_t max_block_size_,
             size_t num_streams_)
             : SourceStepWithFilter(
-            std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(column_names_)),
+            DataStream{.header = storage_snapshot_->getSampleBlockForColumns(column_names_)},
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -168,8 +154,8 @@ namespace DB
 
         if (pipe.empty())
         {
-            chassert(output_header != nullptr);
-            pipe = Pipe(std::make_shared<NullSource>(output_header));
+            assert(output_stream != std::nullopt);
+            pipe = Pipe(std::make_shared<NullSource>(output_stream->header));
         }
 
         pipeline.init(std::move(pipe));

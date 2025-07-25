@@ -22,7 +22,6 @@ class RabbitMQHandler;
 class RabbitMQConnection;
 using ChannelPtr = std::unique_ptr<AMQP::TcpChannel>;
 static constexpr auto SANITY_TIMEOUT = 1000 * 60 * 10; /// 10min.
-using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
 class RabbitMQConsumer
 {

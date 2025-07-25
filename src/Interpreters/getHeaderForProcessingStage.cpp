@@ -6,7 +6,6 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
 #include <Parsers/ASTFunction.h>
@@ -17,10 +16,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_analyzer;
-}
 
 namespace ErrorCodes
 {
@@ -92,7 +87,7 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
     return true;
 }
 
-SharedHeader getHeaderForProcessingStage(
+Block getHeaderForProcessingStage(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     const SelectQueryInfo & query_info,
@@ -105,7 +100,7 @@ SharedHeader getHeaderForProcessingStage(
         {
             Block header = storage_snapshot->getSampleBlockForColumns(column_names);
             header = SourceStepWithFilter::applyPrewhereActions(header, query_info.prewhere_info);
-            return std::make_shared<const Block>(std::move(header));
+            return header;
         }
         case QueryProcessingStage::WithMergeableState:
         case QueryProcessingStage::Complete:
@@ -144,9 +139,9 @@ SharedHeader getHeaderForProcessingStage(
                 }
             }
 
-            SharedHeader result;
+            Block result;
 
-            if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            if (context->getSettingsRef().allow_experimental_analyzer)
             {
                 auto storage = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(),
                                                                                         storage_snapshot->getAllColumnsDescription(),
@@ -157,14 +152,12 @@ SharedHeader getHeaderForProcessingStage(
             else
             {
                 auto pipe = Pipe(std::make_shared<SourceFromSingleChunk>(
-                        std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
+                        storage_snapshot->getSampleBlockForColumns(column_names)));
                 result = InterpreterSelectQuery(query, context, std::move(pipe), SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
             }
 
             return result;
         }
-        case QueryProcessingStage::QueryPlan:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get header for QueryPlan stage.");
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown processed stage.");
 }

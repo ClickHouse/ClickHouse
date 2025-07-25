@@ -16,11 +16,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool compile_sort_description;
-    extern const SettingsUInt64 min_count_to_compile_sort_description;
-}
 
 namespace ErrorCodes
 {
@@ -61,8 +56,8 @@ WindowDescription extractWindowDescriptionFromWindowNode(const QueryTreeNodePtr 
     const auto & query_context = planner_context.getQueryContext();
     const auto & query_context_settings = query_context->getSettingsRef();
 
-    bool compile_sort_description = query_context_settings[Setting::compile_sort_description];
-    size_t min_count_to_compile_sort_description = query_context_settings[Setting::min_count_to_compile_sort_description];
+    bool compile_sort_description = query_context_settings.compile_sort_description;
+    size_t min_count_to_compile_sort_description = query_context_settings.min_count_to_compile_sort_description;
 
     window_description.partition_by.compile_sort_description = compile_sort_description;
     window_description.partition_by.min_count_to_compile_sort_description = min_count_to_compile_sort_description;
@@ -139,7 +134,7 @@ extractWindowDescriptions(const QueryTreeNodes & window_function_nodes, const Pl
 
 void sortWindowDescriptions(std::vector<WindowDescription> & window_descriptions)
 {
-    auto window_description_comparator = [](const WindowDescription & lhs, const WindowDescription & rhs) -> bool
+    auto window_description_comparator = [](const WindowDescription & lhs, const WindowDescription & rhs)
     {
         const auto & left = lhs.full_sort_description;
         const auto & right = rhs.full_sort_description;
@@ -148,28 +143,16 @@ void sortWindowDescriptions(std::vector<WindowDescription> & window_descriptions
         {
             if (left[i].column_name < right[i].column_name)
                 return true;
-            if (left[i].column_name > right[i].column_name)
+            else if (left[i].column_name > right[i].column_name)
                 return false;
-            if (left[i].direction < right[i].direction)
+            else if (left[i].direction < right[i].direction)
                 return true;
-            if (left[i].direction > right[i].direction)
+            else if (left[i].direction > right[i].direction)
                 return false;
-            if (left[i].nulls_direction < right[i].nulls_direction)
+            else if (left[i].nulls_direction < right[i].nulls_direction)
                 return true;
-            if (left[i].nulls_direction > right[i].nulls_direction)
+            else if (left[i].nulls_direction > right[i].nulls_direction)
                 return false;
-
-            if (left[i].collator || right[i].collator)
-            {
-                if (!left[i].collator)
-                    return true;
-                if (!right[i].collator)
-                    return false;
-                if (left[i].collator->getLocale() < right[i].collator->getLocale())
-                    return true;
-                if (left[i].collator->getLocale() > right[i].collator->getLocale())
-                    return false;
-            }
 
             assert(left[i] == right[i]);
         }

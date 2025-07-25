@@ -1,3 +1,4 @@
+#include <format>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IParserBase.h>
@@ -9,8 +10,6 @@
 #include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
-
-#include <fmt/format.h>
 
 namespace DB
 {
@@ -32,7 +31,7 @@ bool ParserKQLExtend ::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         if (alias.empty())
         {
-            alias = fmt::format("Column{}", new_column_index);
+            alias = std::format("Column{}", new_column_index);
             ++new_column_index;
             new_extend_str += " AS";
         }
@@ -76,7 +75,7 @@ bool ParserKQLExtend ::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     apply_alias();
 
-    String expr = fmt::format("SELECT * {}, {} from prev", except_str, new_extend_str);
+    String expr = std::format("SELECT * {}, {} from prev", except_str, new_extend_str);
     Tokens tokens(expr.data(), expr.data() + expr.size(), 0, true);
     IParser::Pos new_pos(tokens, pos.max_depth, pos.max_backtracks);
 

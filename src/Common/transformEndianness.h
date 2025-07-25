@@ -6,7 +6,6 @@
 
 #include <city.h>
 
-#include <algorithm>
 #include <utility>
 
 namespace DB
@@ -39,7 +38,7 @@ inline void transformEndianness(T & x)
 }
 
 template <std::endian ToEndian, std::endian FromEndian = std::endian::native, typename T>
-requires is_floating_point<T>
+requires std::is_floating_point_v<T>
 inline void transformEndianness(T & value)
 {
     if constexpr (ToEndian != FromEndian)

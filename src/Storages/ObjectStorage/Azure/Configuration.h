@@ -6,20 +6,20 @@
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <filesystem>
-#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
 class BackupFactory;
 
-class StorageAzureConfiguration : public StorageObjectStorageConfiguration
+class StorageAzureConfiguration : public StorageObjectStorage::Configuration
 {
     friend class BackupReaderAzureBlobStorage;
     friend class BackupWriterAzureBlobStorage;
     friend void registerBackupEngineAzureBlobStorage(BackupFactory & factory);
 
 public:
-    static constexpr auto type = ObjectStorageType::Azure;
+    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
+
     static constexpr auto type_name = "azure";
     static constexpr auto engine_name = "Azure";
     /// All possible signatures for Azure engine with structure argument (for example for azureBlobStorage table function).
@@ -47,8 +47,8 @@ public:
         " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression\n";
 
     StorageAzureConfiguration() = default;
+    StorageAzureConfiguration(const StorageAzureConfiguration & other);
 
-    ObjectStorageType getType() const override { return type; }
     std::string getTypeName() const override { return type_name; }
     std::string getEngineName() const override { return engine_name; }
 
@@ -63,9 +63,10 @@ public:
 
     String getNamespace() const override { return connection_params.getContainer(); }
     String getDataSourceDescription() const override { return std::filesystem::path(connection_params.getConnectionURL()) / connection_params.getContainer(); }
-    StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
+    StorageObjectStorage::QuerySettings getQuerySettings(const ContextPtr &) const override;
 
     void check(ContextPtr context) const override;
+    ConfigurationPtr clone() override { return std::make_shared<StorageAzureConfiguration>(*this); }
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
 

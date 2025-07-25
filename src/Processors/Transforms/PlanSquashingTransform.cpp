@@ -1,6 +1,4 @@
 #include <Processors/Transforms/PlanSquashingTransform.h>
-
-#include <Processors/Port.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -12,7 +10,7 @@ namespace ErrorCodes
 }
 
 PlanSquashingTransform::PlanSquashingTransform(
-    SharedHeader header_, size_t min_block_size_rows, size_t min_block_size_bytes)
+    Block header_, size_t min_block_size_rows, size_t min_block_size_bytes)
     : IInflatingTransform(header_, header_)
     , squashing(header_, min_block_size_rows, min_block_size_bytes)
 {

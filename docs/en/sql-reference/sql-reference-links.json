@@ -2,11 +2,11 @@
 	{
 		"title": "Statements",
 		"description": "A list of available SQL statements in ClickHouse",
-		"url": "/docs/sql-reference/statements/"
+		"url": "/docs/en/sql-reference/statements/"
 	},
 	{
 	"title": "Database and Table Engines",
 	"description": "Engines determine where and how your data is stored",
-	"url": "/docs/engines/table-engines"
+	"url": "/docs/en/engines/table-engines"
 	}
 ]

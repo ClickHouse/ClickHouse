@@ -15,9 +15,9 @@ import os
 import pty
 import re
 import time
-from queue import Empty, Queue
+from queue import Queue, Empty
 from subprocess import Popen
-from threading import Event, Thread
+from threading import Thread, Event
 
 
 class TimeoutError(Exception):

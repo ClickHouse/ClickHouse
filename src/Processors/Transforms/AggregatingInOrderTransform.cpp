@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Core/SortCursor.h>
-#include <Columns/ColumnAggregateFunction.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Interpreters/sortBlock.h>
@@ -12,7 +11,7 @@ namespace DB
 {
 
 AggregatingInOrderTransform::AggregatingInOrderTransform(
-    SharedHeader header,
+    Block header,
     AggregatingTransformParamsPtr params_,
     const SortDescription & sort_description_for_merging,
     const SortDescription & group_by_description_,
@@ -25,7 +24,7 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
 }
 
 AggregatingInOrderTransform::AggregatingInOrderTransform(
-    SharedHeader header, AggregatingTransformParamsPtr params_,
+    Block header, AggregatingTransformParamsPtr params_,
     const SortDescription & sort_description_for_merging,
     const SortDescription & group_by_description_,
     size_t max_block_size_, size_t max_block_bytes_,
@@ -258,32 +257,36 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
         {
             return Status::Ready;
         }
-
-        output.push(std::move(to_push_chunk));
-        return Status::Ready;
+        else
+        {
+            output.push(std::move(to_push_chunk));
+            return Status::Ready;
+        }
     }
-
-    if (is_consume_finished)
+    else
     {
-        output.push(std::move(to_push_chunk));
-        output.finish();
-        LOG_DEBUG(log, "Aggregated. {} to {} rows (from {})", src_rows, res_rows, formatReadableSizeWithBinarySuffix(src_bytes));
-        return Status::Finished;
-    }
+        if (is_consume_finished)
+        {
+            output.push(std::move(to_push_chunk));
+            output.finish();
+            LOG_DEBUG(log, "Aggregated. {} to {} rows (from {})",
+                src_rows, res_rows, formatReadableSizeWithBinarySuffix(src_bytes));
+            return Status::Finished;
+        }
 
-    if (input.isFinished())
-    {
-        is_consume_finished = true;
-        return Status::Ready;
+        if (input.isFinished())
+        {
+            is_consume_finished = true;
+            return Status::Ready;
+        }
     }
-
     if (!input.hasData())
     {
         input.setNeeded();
         return Status::NeedData;
     }
 
-    chassert(!is_consume_finished);
+    assert(!is_consume_finished);
     current_chunk = input.pull(true /* set_not_needed */);
     convertToFullIfSparse(current_chunk);
     return Status::Ready;
@@ -340,8 +343,8 @@ void AggregatingInOrderTransform::generate()
     need_generate = false;
 }
 
-FinalizeAggregatedTransform::FinalizeAggregatedTransform(SharedHeader header, const AggregatingTransformParamsPtr & params_)
-    : ISimpleTransform({std::move(header)}, {std::make_shared<const Block>(params_->getHeader())}, true)
+FinalizeAggregatedTransform::FinalizeAggregatedTransform(Block header, AggregatingTransformParamsPtr params_)
+    : ISimpleTransform({std::move(header)}, {params_->getHeader()}, true)
     , params(params_)
     , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
 {

@@ -13,8 +13,7 @@ int readAndPrint(DB::ReadBuffer & in)
     {
         Int64 a;
         Float64 b;
-        String c;
-        String d;
+        String c, d;
 
         DB::readIntText(a, in);
         in.ignore();

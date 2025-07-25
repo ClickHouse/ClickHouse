@@ -18,7 +18,10 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sources/SourceFromChunks.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
+
+#include <Processors/Formats/Impl/PrettyCompactBlockOutputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 
 
@@ -37,14 +40,14 @@ QueryPipeline buildJoinPipeline(
     JoinStrictness strictness = JoinStrictness::All,
     ASOFJoinInequality asof_inequality = ASOFJoinInequality::None)
 {
-    SharedHeaders inputs;
-    inputs.emplace_back(left_source->getPort().getSharedHeader());
-    inputs.emplace_back(right_source->getPort().getSharedHeader());
+    Blocks inputs;
+    inputs.emplace_back(left_source->getPort().getHeader());
+    inputs.emplace_back(right_source->getPort().getHeader());
 
     Block out_header;
     for (const auto & input : inputs)
     {
-        for (ColumnWithTypeAndName column : *input)
+        for (ColumnWithTypeAndName column : input)
         {
             if (&input == &inputs.front())
                 column.name = "t1." + column.name;
@@ -57,15 +60,15 @@ QueryPipeline buildJoinPipeline(
     TableJoin::JoinOnClause on_clause;
     for (size_t i = 0; i < key_length; ++i)
     {
-        on_clause.key_names_left.emplace_back(inputs[0]->getByPosition(i).name);
-        on_clause.key_names_right.emplace_back(inputs[1]->getByPosition(i).name);
+        on_clause.key_names_left.emplace_back(inputs[0].getByPosition(i).name);
+        on_clause.key_names_right.emplace_back(inputs[1].getByPosition(i).name);
     }
 
     auto joining = std::make_shared<MergeJoinTransform>(
         kind,
         strictness,
         on_clause,
-        inputs, std::make_shared<const Block>(out_header), /* max_block_size = */ 0);
+        inputs, out_header, /* max_block_size = */ 0);
 
     if (asof_inequality != ASOFJoinInequality::None)
         joining->setAsofInequality(asof_inequality);
@@ -109,7 +112,7 @@ std::shared_ptr<ISource> oneColumnSource(const std::vector<std::vector<UInt64>> 
         }
         chunks.emplace_back(Chunk(Columns{std::move(key_column), std::move(idx_column)}, chunk_values.size()));
     }
-    return std::make_shared<SourceFromChunks>(std::make_shared<const Block>(header), std::move(chunks));
+    return std::make_shared<SourceFromChunks>(header, std::move(chunks));
 }
 
 class SourceChunksBuilder
@@ -159,7 +162,7 @@ public:
         chunks_copy.reserve(chunks.size());
         for (const auto & chunk : chunks)
             chunks_copy.emplace_back(chunk.clone());
-        return std::make_shared<SourceFromChunks>(std::make_shared<const Block>(header), std::move(chunks_copy));
+        return std::make_shared<SourceFromChunks>(header, std::move(chunks_copy));
     }
 
 private:
@@ -205,12 +208,6 @@ Block executePipeline(QueryPipeline && pipeline)
 template <typename T>
 void assertColumnVectorEq(const typename ColumnVector<T>::Container & expected, const Block & block, const std::string & name)
 {
-    if (expected.empty())
-    {
-        ASSERT_TRUE(block.columns() == 0);
-        return;
-    }
-
     const auto * actual = typeid_cast<const ColumnVector<T> *>(block.getByName(name).column.get());
     ASSERT_TRUE(actual) << "unexpected column type: " << block.getByName(name).column->dumpStructure() << "expected: " << typeid(ColumnVector<T>).name();
 
@@ -233,12 +230,6 @@ void assertColumnVectorEq(const typename ColumnVector<T>::Container & expected, 
 template <typename T>
 void assertColumnEq(const IColumn & expected, const Block & block, const std::string & name)
 {
-    if (expected.empty())
-    {
-        ASSERT_TRUE(block.columns() == 0);
-        return;
-    }
-
     const ColumnPtr & actual = block.getByName(name).column;
     ASSERT_TRUE(checkColumn<T>(*actual));
     ASSERT_TRUE(checkColumn<T>(expected));

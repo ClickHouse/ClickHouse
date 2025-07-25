@@ -2,12 +2,11 @@
 
 #include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
-#include <Common/intExp10.h>
 
 #include <Common/assert_cast.h>
 
@@ -16,11 +15,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_nonconst_timezone_arguments;
-}
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -125,7 +119,7 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<Now64OverloadResolver>(context); }
     explicit Now64OverloadResolver(ContextPtr context)
-        : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
+        : allow_nonconst_timezone_arguments(context->getSettingsRef().allow_nonconst_timezone_arguments)
     {}
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -176,32 +170,7 @@ private:
 
 REGISTER_FUNCTION(Now64)
 {
-    FunctionDocumentation::Description description = R"(
-Returns the current date and time with sub-second precision at the moment of query analysis. The function is a constant expression.
-    )";
-    FunctionDocumentation::Syntax syntax = R"(
-now64([scale], [timezone])
-    )";
-    FunctionDocumentation::Arguments arguments = {
-        {"scale", "Optional. Tick size (precision): 10^-precision seconds. Valid range: [0 : 9]. Typically, are used - 3 (default) (milliseconds), 6 (microseconds), 9 (nanoseconds).", {"UInt8"}},
-        {"timezone", "Optional. Timezone name for the returned value.", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns current date and time with sub-second precision.", {"DateTime64"}};
-    FunctionDocumentation::Examples examples = {
-        {"Query with default and custom precision", R"(
-SELECT now64(), now64(9, 'Asia/Istanbul')
-        )",
-        R"(
-┌─────────────────now64()─┬─────now64(9, 'Asia/Istanbul')─┐
-│ 2022-08-21 19:34:26.196 │ 2022-08-21 22:34:26.196542766 │
-└─────────────────────────┴───────────────────────────────┘
-        )"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<Now64OverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<Now64OverloadResolver>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

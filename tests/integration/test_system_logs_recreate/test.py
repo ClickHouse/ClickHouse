@@ -3,7 +3,6 @@
 # pylint: disable=redefined-outer-name
 
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -27,13 +26,11 @@ def test_system_logs_recreate():
     system_logs = [
         # enabled by default
         "query_log",
-        "query_metric_log",
         "query_thread_log",
         "part_log",
         "trace_log",
         "metric_log",
         "error_log",
-        "latency_log",
     ]
 
     try:
@@ -42,7 +39,7 @@ def test_system_logs_recreate():
             assert "ENGINE = MergeTree" in node.query(
                 f"SHOW CREATE TABLE system.{table}"
             )
-            assert "ENGINE = `Null`" not in node.query(
+            assert "ENGINE = Null" not in node.query(
                 f"SHOW CREATE TABLE system.{table}"
             )
             assert (
@@ -79,7 +76,7 @@ def test_system_logs_recreate():
             assert "ENGINE = MergeTree" not in node.query(
                 f"SHOW CREATE TABLE system.{table}"
             )
-            assert "ENGINE = `Null`" in node.query(f"SHOW CREATE TABLE system.{table}")
+            assert "ENGINE = Null" in node.query(f"SHOW CREATE TABLE system.{table}")
             assert (
                 len(
                     node.query(f"SHOW TABLES FROM system LIKE '{table}%'")
@@ -119,7 +116,7 @@ def test_system_logs_recreate():
                 create_table_sql,
             )
             assert "ENGINE = MergeTree" in create_table_sql
-            assert "ENGINE = `Null`" not in create_table_sql
+            assert "ENGINE = Null" not in create_table_sql
             assert "SETTINGS storage_policy = 'system_tables'" in create_table_sql
             assert (
                 len(
@@ -141,7 +138,7 @@ def test_system_logs_recreate():
             assert "ENGINE = MergeTree" in node.query(
                 f"SHOW CREATE TABLE system.{table}"
             )
-            assert "ENGINE = `Null`" not in node.query(
+            assert "ENGINE = Null" not in node.query(
                 f"SHOW CREATE TABLE system.{table}"
             )
             assert (

@@ -9,12 +9,11 @@
 namespace DB
 {
 
-class CustomSeparatedFormatReader;
-class CustomSeparatedRowInputFormat final : public RowInputFormatWithNamesAndTypes<CustomSeparatedFormatReader>
+class CustomSeparatedRowInputFormat final : public RowInputFormatWithNamesAndTypes
 {
 public:
     CustomSeparatedRowInputFormat(
-        SharedHeader header_,
+        const Block & header_,
         ReadBuffer & in_,
         const Params & params_,
         bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_settings_);
@@ -25,7 +24,7 @@ public:
 
 private:
     CustomSeparatedRowInputFormat(
-        SharedHeader header_,
+        const Block & header_,
         std::unique_ptr<PeekableReadBuffer> in_buf_,
         const Params & params_,
         bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_settings_);
@@ -78,6 +77,7 @@ public:
     std::vector<String> readRowForHeaderDetection() override { return readRowImpl<ReadFieldMode::AS_POSSIBLE_STRING>(); }
 
     bool checkForEndOfRow() override;
+    bool allowVariableNumberOfColumns() const override { return format_settings.custom.allow_variable_number_of_columns; }
 
     bool checkForSuffixImpl(bool check_eof);
     void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(*buf, true); }

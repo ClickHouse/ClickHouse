@@ -46,8 +46,6 @@ struct PairNoInit
         , second(std::forward<SecondValue>(second_))
     {
     }
-
-    auto operator<=>(const PairNoInit &) const = default;
 };
 
 template <typename First, typename Second>
@@ -127,6 +125,10 @@ struct HashMapCell
         DB::assertChar(',', rb);
         DB::readDoubleQuoted(value.second, rb);
     }
+
+    static bool constexpr need_to_notify_cell_during_move = false;
+
+    static void move(HashMapCell * /* old_location */, HashMapCell * /* new_location */) {}
 
     template <size_t I>
     auto & get() & {

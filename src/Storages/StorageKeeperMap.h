@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/IKeyValueEntity.h>
 
 #include <QueryPipeline/Pipe.h>
@@ -26,7 +26,6 @@ namespace ErrorCodes
 // KV store using (Zoo|CH)Keeper
 class StorageKeeperMap final : public IStorage, public IKeyValueEntity, WithContext
 {
-    friend class ReadFromKeeperMap;
 public:
     StorageKeeperMap(
         ContextPtr context_,
@@ -37,13 +36,12 @@ public:
         const std::string & root_path_,
         UInt64 keys_limit_);
 
-    void read(
-        QueryPlan & query_plan,
+    Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
-        ContextPtr context_,
-        QueryProcessingStage::Enum /*processed_stage*/,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
 
@@ -123,11 +121,6 @@ private:
 
     TableStatus getTableStatus(const ContextPtr & context) const;
 
-    bool isMetadataStringEqual(
-        const std::string & zk_metadata_string,
-        const std::string & local_metadata_string,
-        bool throw_on_error) const;
-
     void restoreDataImpl(
         const BackupPtr & backup,
         const String & data_path_in_backup,
@@ -147,8 +140,6 @@ private:
 
     std::string zk_dropped_path;
     std::string zk_dropped_lock_path;
-    /// used for safe concurrent access to ephemeral dropped lock node
-    std::string zk_dropped_lock_version_path;
 
     std::string zookeeper_name;
 

@@ -3,7 +3,6 @@
 #include <IO/WriteHelpers.h>
 #include <boost/range/adaptor/reversed.hpp>
 
-#include <fmt/ranges.h>
 
 namespace DB
 {
