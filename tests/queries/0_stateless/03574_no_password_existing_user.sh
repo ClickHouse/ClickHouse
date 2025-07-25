@@ -15,7 +15,7 @@ sed -i 's/<password><\/password>/<password_sha256_hex>c64c5e4e53ea1a9f1427d2713b
 
 # First start the server with allow_no_password=1 
 server_opts=(
-    "--config-file=$CURDIR/03574_no_password_existing_user_fail.config.xml.1"
+    "--config-file=$CURDIR/03574_no_password_existing_user.config.xml.1"
     "--"
     # to avoid multiple listen sockets (complexity for port discovering)
     "--listen_host=127.1"
@@ -71,7 +71,7 @@ wait $server_pid
 
 # start the server again with allow_no_password=0
 server_opts=(
-    "--config-file=$CURDIR/03574_no_password_existing_user_fail.config.xml.2"
+    "--config-file=$CURDIR/03574_no_password_existing_user.config.xml.2"
     "--"
     # to avoid multiple listen sockets (complexity for port discovering)
     "--listen_host=127.1"
