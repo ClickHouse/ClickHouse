@@ -234,9 +234,9 @@ struct PaimonManifest
 class PaimonTableClient : private WithContext
 {
 public:
-    using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
+    // using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
     PaimonTableClient(ObjectStoragePtr object_storage_,
-        ConfigurationObserverPtr configuration_,
+        StorageObjectStorageConfigurationWeakPtr configuration_,
         const DB::ContextPtr & context_);
     
     Poco::JSON::Object::Ptr getTableSchemaJson(const std::pair<Int32, String> & schema_meta_info);
@@ -249,7 +249,7 @@ public:
     // DataTypePtr convertFromPaimonDataType(const String & type);
 private:
     const ObjectStoragePtr object_storage;
-    const ConfigurationObserverPtr configuration;
+    const StorageObjectStorageConfigurationWeakPtr configuration;
     const String table_location;
     LoggerPtr log;
 };
