@@ -27,6 +27,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_compress_block_size;
     extern const MergeTreeSettingsUInt64 min_compress_block_size;
     extern const MergeTreeSettingsNonZeroUInt64 primary_key_compress_block_size;
+    extern const MergeTreeSettingsUInt64 text_index_sampling_threshold;
+    extern const MergeTreeSettingsFloat text_index_sampling_rate;
 }
 
 MergeTreeWriterSettings::MergeTreeWriterSettings(
@@ -57,6 +59,8 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , use_v1_object_and_dynamic_serialization(global_settings[Setting::merge_tree_use_v1_object_and_dynamic_serialization])
     , use_adaptive_write_buffer_for_dynamic_subcolumns((*storage_settings)[MergeTreeSetting::use_adaptive_write_buffer_for_dynamic_subcolumns])
     , adaptive_write_buffer_initial_size((*storage_settings)[MergeTreeSetting::adaptive_write_buffer_initial_size])
+    , text_index_sampling_threshold((*storage_settings)[MergeTreeSetting::text_index_sampling_threshold])
+    , text_index_sampling_rate((*storage_settings)[MergeTreeSetting::text_index_sampling_rate])
 {
 }
 
