@@ -359,6 +359,7 @@
     M(MutationCreatedEmptyParts, "Number of total parts which were replaced to empty parts instead of running mutation", ValueType::Number) \
     M(MutatedRows, "Rows read for mutations. This is the number of rows before mutation", ValueType::Number) \
     M(MutatedUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) that was read for mutations. This is the number before mutation.", ValueType::Bytes) \
+    M(MutationAffectedRowsUpperBound, "The upper bound of number of rows that were affected by mutation (e.g. number of rows that satisfy the predicate of UPDATE or DELETE mutation). The actual number may be slightly less", ValueType::Number) \
     M(MutationTotalMilliseconds, "Total time spent for mutations.", ValueType::Milliseconds) \
     M(MutationExecuteMilliseconds, "Total busy time spent for execution of mutations.", ValueType::Milliseconds) \
     M(MutationAllPartColumns, "Number of times when task to mutate all columns in part was created", ValueType::Number) \
@@ -746,6 +747,7 @@ The server successfully detected this situation and will download merged part fr
     M(MetadataFromKeeperCleanupTransactionCommitRetry, "Number of times metadata transaction commit for deleted objects cleanup was retried", ValueType::Number) \
     M(MetadataFromKeeperOperations, "Number of times a request was made to Keeper", ValueType::Number) \
     M(MetadataFromKeeperIndividualOperations, "Number of paths read or written by single or multi requests to Keeper", ValueType::Number) \
+    M(MetadataFromKeeperIndividualOperationsMicroseconds, "Time spend during single or multi requests to Keeper", ValueType::Microseconds) \
     M(MetadataFromKeeperReconnects, "Number of times a reconnect to Keeper was done", ValueType::Number) \
     M(MetadataFromKeeperBackgroundCleanupObjects, "Number of times a old deleted object clean up was performed by background task", ValueType::Number) \
     M(MetadataFromKeeperBackgroundCleanupTransactions, "Number of times old transaction idempotency token was cleaned up by background task", ValueType::Number) \

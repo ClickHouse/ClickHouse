@@ -325,8 +325,7 @@ private:
 
     // These are only used when max_decoding_threads > 1.
     size_t row_group_batches_started = 0;
-    bool use_thread_pool = false;
-    std::shared_ptr<ShutdownHelper> shutdown = std::make_shared<ShutdownHelper>();
+    std::unique_ptr<ThreadPool> pool;
     std::shared_ptr<ThreadPool> io_pool;
 
     BlockMissingValues previous_block_missing_values;

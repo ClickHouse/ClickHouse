@@ -253,6 +253,8 @@ if(ENABLE_GOOGLE_CLOUD_CPP)
     add_contrib (nlohmann-json-cmake nlohmann-json)
     add_contrib (crc32c-cmake crc32c)
     add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf, absl, nlohmann's json, crc32c
+else()
+    message(STATUS "Not using Google Cloud Cpp")
 endif()
 
 add_contrib (jwt-cpp-cmake jwt-cpp)
@@ -262,8 +264,6 @@ add_contrib (sha3iuf-cmake SHA3IUF)
 add_contrib (ai-sdk-cpp-cmake ai-sdk-cpp)
 
 add_contrib (bech32)
-
-add_contrib (sz3-cmake sz3)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

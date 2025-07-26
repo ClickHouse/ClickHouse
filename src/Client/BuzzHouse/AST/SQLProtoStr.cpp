@@ -1673,6 +1673,9 @@ CONV_FN(ComplicatedExpr, expr)
             TableToString(ret, expr.table());
             ret += ".*";
             break;
+        case ExprType::kLambda:
+            LambdaExprToString(ret, expr.lambda());
+            break;
         default:
             ret += "1";
     }
@@ -2210,6 +2213,44 @@ CONV_FN(GenerateRandomFunc, grfunc)
     ret += ")";
 }
 
+CONV_FN(KeyValuePair, kvp)
+{
+    ret += kvp.key();
+    ret += " = '";
+    ret += kvp.value();
+    ret += "'";
+}
+
+CONV_FN(DataLakeFunc, dfunc)
+{
+    ret += DataLakeFunc_FName_Name(dfunc.fname());
+    ret += "(";
+    if (dfunc.has_cluster() && dfunc.fname() >= DataLakeFunc_FName_deltalakeS3Cluster)
+    {
+        ClusterToString(ret, false, dfunc.cluster());
+        ret += ", ";
+    }
+    for (int i = 0; i < dfunc.params_size(); i++)
+    {
+        if (i != 0)
+        {
+            ret += ", ";
+        }
+        ret += "'";
+        ret += dfunc.params(i);
+        ret += "'";
+    }
+    for (int i = 0; i < dfunc.kparams_size(); i++)
+    {
+        if (dfunc.params_size() > 0 || i != 0)
+        {
+            ret += ", ";
+        }
+        KeyValuePairToString(ret, dfunc.kparams(i));
+    }
+    ret += ")";
+}
+
 static void ValuesStatementToString(String & ret, const bool tudf, const ValuesStatement & values)
 {
     ret += "VALUES ";
@@ -2288,6 +2329,9 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kUrl:
             URLFuncToString(ret, tf.url());
+            break;
+        case TableFunctionType::kData:
+            DataLakeFuncToString(ret, tf.data());
             break;
         default:
             ret += "numbers(10)";
@@ -3072,6 +3116,9 @@ CONV_FN(TableEngineParam, tep)
         case TableEngineParamType::kExpr:
             ExprToString(ret, tep.expr());
             break;
+        case TableEngineParamType::kKvalue:
+            KeyValuePairToString(ret, tep.kvalue());
+            break;
         default:
             ret += "c0";
     }
@@ -3131,13 +3178,14 @@ CONV_FN(TTLGroupBy, ttl_groupby)
 CONV_FN(TTLEntry, ttl_entry)
 {
     ExprToString(ret, ttl_entry.time_expr());
-    ret += " ";
     if (ttl_entry.has_update())
     {
+        ret += " ";
         TTLUpdateToString(ret, ttl_entry.update());
     }
     else if (ttl_entry.has_group_by())
     {
+        ret += " ";
         TTLGroupByToString(ret, ttl_entry.group_by());
     }
 }

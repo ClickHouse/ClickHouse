@@ -688,7 +688,6 @@ All merges are listed in the [`system.merges`](../../operations/system-tables/me
 | `size_compressed`   | The total size of the compressed data of the merged parts. |
 | `memory_usage`      | Memory consumption of the merge process.                   |
 
-
 ### Syntax {#syntax-25}
 
 ```sql title="Syntax"
@@ -716,4 +715,3 @@ SHOW MERGES LIKE 'your_t%' LIMIT 1;
 │ your_table │ default  │              0.14 │    0.36 │    73.01 │           0 │        5.40 MiB │    10.25 MiB │
 └────────────┴──────────┴───────────────────┴─────────┴──────────┴─────────────┴─────────────────┴──────────────┘
 ```
-
