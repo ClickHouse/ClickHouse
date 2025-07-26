@@ -71,8 +71,16 @@ namespace
                 }
                 case 2:
                 {
-                    res.database = full_name[0];
-                    res.table = full_name[1];
+                    if (access_flags.isGlobalWithParameter())
+                    {
+                        res.parameter = full_name[0];
+                        res.filter = full_name[1];
+                    }
+                    else
+                    {
+                        res.database = full_name[0];
+                        res.table = full_name[1];
+                    }
                     break;
                 }
                 case 3:
@@ -231,7 +239,7 @@ namespace
         {
             case GLOBAL_LEVEL: return AccessFlags::allFlagsGrantableOnGlobalLevel();
             case DATABASE_LEVEL: return AccessFlags::allFlagsGrantableOnDatabaseLevel() | AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
-            case TABLE_LEVEL: return AccessFlags::allFlagsGrantableOnTableLevel();
+            case TABLE_LEVEL: return AccessFlags::allFlagsGrantableOnTableLevel() | AccessFlags::allSourceFlags();
             case COLUMN_LEVEL: return AccessFlags::allFlagsGrantableOnColumnLevel();
         }
         chassert(false);
@@ -1267,6 +1275,8 @@ void AccessRights::grantImplHelper(const AccessRightsElement & element)
     {
         if (element.anyParameter())
             grantImpl<with_grant_option, wildcard>(element.access_flags);
+        else if (element.hasFilter())
+            grantImpl<with_grant_option, wildcard>(element.access_flags, element.parameter, element.filter);
         else
             grantImpl<with_grant_option, wildcard>(element.access_flags, element.parameter);
     }

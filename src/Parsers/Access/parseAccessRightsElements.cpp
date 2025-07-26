@@ -16,6 +16,26 @@ namespace DB
 
 namespace
 {
+    bool parseParameterRegExp(IParser::Pos & pos, Expected & expected, String & parameter_regexp)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserToken{TokenType::OpeningRoundBracket}.ignore(pos, expected))
+                return true;
+
+            ASTPtr ast;
+            if (!ParserIdentifier().parse(pos, ast, expected))
+                return false;
+
+            parameter_regexp = getIdentifierName(ast);
+
+            if (!ParserToken{TokenType::ClosingRoundBracket}.ignore(pos, expected))
+                return false;
+
+            return true;
+        });
+    }
+
     bool parseColumnNames(IParser::Pos & pos, Expected & expected, Strings & columns)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -120,6 +140,7 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
             String database_name;
             String table_name;
             String parameter;
+            String filter;
 
             size_t is_global_with_parameter = 0;
             for (const auto & elem : access_and_columns)
@@ -159,6 +180,14 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
 
                 if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
                     wildcard = true;
+
+                /// GRANT READ ON S3('s3://foo/*')
+                if (!parseParameterRegExp(pos, expected, filter))
+                    return false;
+
+                /// GRANT READ ON *(foo) is prohibited.
+                if ((wildcard || parameter.empty()) && !filter.empty())
+                    return false;
             }
             else if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, table_name, wildcard, default_database))
                 return false;
@@ -174,6 +203,8 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
                 element.database = database_name;
                 element.table = table_name;
                 element.parameter = parameter;
+                element.filter = filter;
+
                 element.wildcard = wildcard;
                 element.default_database = default_database;
                 res_elements.emplace_back(std::move(element));
