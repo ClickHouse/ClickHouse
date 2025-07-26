@@ -632,7 +632,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         sel = eq->mutable_inner_query()->mutable_select()->mutable_sel();
     }
     gen.resetAliasCounter();
-    gen.generateSelect(rg, true, global_aggregate, ncols, std::numeric_limits<uint32_t>::max(), sel);
+    gen.generateSelect(rg, true, global_aggregate, ncols, std::numeric_limits<uint32_t>::max(), std::nullopt, sel);
     gen.setAllowNotDetermistic(true);
     gen.enforceFinal(false);
     gen.generatingPeerQuery(PeerQuery::None);
