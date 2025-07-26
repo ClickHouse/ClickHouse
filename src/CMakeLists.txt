@@ -354,11 +354,6 @@ if (TARGET ch_contrib::llvm)
     target_link_libraries (clickhouse_compression PUBLIC ch_contrib::llvm)
 endif ()
 
-if (TARGET ch_contrib::gwp_asan)
-    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::gwp_asan)
-    target_link_libraries (clickhouse_new_delete PRIVATE ch_contrib::gwp_asan)
-endif()
-
 # Otherwise it will slow down stack traces printing too much.
 if ("${CMAKE_BUILD_TYPE_UC}" STREQUAL "DEBUG")
     set_source_files_properties(
