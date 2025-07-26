@@ -75,7 +75,8 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     ContextPtr context_,
     UInt64 max_block_size_,
     std::shared_ptr<IObjectIterator> file_iterator_,
-    FormatParserGroupPtr parser_group_,
+    FormatParserSharedResourcesPtr parser_shared_resources_,
+    FormatFilterInfoPtr format_filter_info_,
     bool need_only_count_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , name(std::move(name_))
@@ -85,13 +86,16 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , format_settings(format_settings_)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
-    , parser_group(std::move(parser_group_))
+    , parser_shared_resources(std::move(parser_shared_resources_))
+    , format_filter_info(std::move(format_filter_info_))
+    , format_filter_info_without_key_condition(format_filter_info ? format_filter_info->cloneWithoutFilterDag() : nullptr)
     , read_from_format_info(info)
-    , create_reader_pool(std::make_shared<ThreadPool>(
-        CurrentMetrics::StorageObjectStorageThreads,
-        CurrentMetrics::StorageObjectStorageThreadsActive,
-        CurrentMetrics::StorageObjectStorageThreadsScheduled,
-        1 /* max_threads */))
+    , create_reader_pool(
+          std::make_shared<ThreadPool>(
+              CurrentMetrics::StorageObjectStorageThreads,
+              CurrentMetrics::StorageObjectStorageThreadsActive,
+              CurrentMetrics::StorageObjectStorageThreadsScheduled,
+              1 /* max_threads */))
     , file_iterator(file_iterator_)
     , schema_cache(StorageObjectStorage::getSchemaCache(context_, configuration->getTypeName()))
     , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, "Reader"))
@@ -332,7 +336,7 @@ Chunk StorageObjectStorageSource::generate()
         }
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && !parser_group->filter_actions_dag)
+            && !format_filter_info->filter_actions_dag)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -372,7 +376,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         &schema_cache,
         log,
         max_block_size,
-        parser_group,
+        parser_shared_resources,
+        format_filter_info,
+        format_filter_info_without_key_condition,
         need_only_count);
 }
 
@@ -387,7 +393,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     SchemaCache * schema_cache,
     const LoggerPtr & log,
     size_t max_block_size,
-    FormatParserGroupPtr parser_group,
+    FormatParserSharedResourcesPtr parser_shared_resources,
+    FormatFilterInfoPtr format_filter_info,
+    FormatFilterInfoPtr format_filter_info_without_key_condition,
     bool need_only_count)
 {
     ObjectInfoPtr object_info;
@@ -472,6 +480,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         Block initial_header = read_from_format_info.format_header;
 
+        bool schema_was_changed = false;
+
         if (auto initial_schema = configuration->getInitialSchemaByPath(context_, object_info->getPath()))
         {
             Block sample_header;
@@ -479,6 +489,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             {
                 sample_header.insert({type->createColumn(), type, name});
             }
+            schema_was_changed = true;
             initial_header = sample_header;
         }
 
@@ -489,7 +500,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             context_,
             max_block_size,
             format_settings,
-            parser_group,
+            parser_shared_resources,
+            !schema_was_changed ? format_filter_info : format_filter_info_without_key_condition,
             true /* is_remote_fs */,
             compression_method,
             need_only_count);

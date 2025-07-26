@@ -3,7 +3,6 @@
 #include <optional>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
-#include <Formats/FormatParserGroup.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 #if USE_AVRO

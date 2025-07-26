@@ -14,8 +14,8 @@
 #include <Storages/StorageFactory.h>
 #include <Common/logger_useful.h>
 #include <Storages/ColumnsDescription.h>
-#include <Formats/FormatParserGroup.h>
-
+#include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <memory>
 #include <string>
 
