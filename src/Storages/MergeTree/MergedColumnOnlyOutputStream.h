@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/Statistics/Statistics.h>
+#include <Storages/MergeTree/ColumnsSubstreams.h>
 
 namespace DB
 {
@@ -27,10 +28,11 @@ public:
 
     void write(const Block & block) override;
 
-    std::pair<MergeTreeData::DataPart::Checksums, NameSet>
+    MergeTreeData::DataPart::Checksums
     fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums);
 
     const Block & getColumnsSample() const { return writer->getColumnsSample(); }
+    const ColumnsSubstreams & getColumnsSubstreams() const { return writer->getColumnsSubstreams(); }
     void finish(bool sync);
     void cancel() noexcept override;
 };

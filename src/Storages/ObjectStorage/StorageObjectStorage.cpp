@@ -26,6 +26,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/ColumnsDescription.h>
@@ -39,6 +40,7 @@ namespace Setting
 {
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsBool allow_experimental_insert_into_iceberg;
 }
 
 namespace ErrorCodes
@@ -46,6 +48,7 @@ namespace ErrorCodes
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -90,6 +93,8 @@ StorageObjectStorage::StorageObjectStorage(
     const String & comment,
     std::optional<FormatSettings> format_settings_,
     LoadingStrictnessLevel mode,
+    bool if_not_exists_,
+    bool is_datalake_query,
     bool distributed_processing_,
     ASTPtr partition_by_,
     bool is_table_function,
@@ -108,6 +113,17 @@ StorageObjectStorage::StorageObjectStorage(
         && !configuration->isDataLakeConfiguration();
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
 
+    if (!is_table_function && !columns_.empty() && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE)
+    {
+        configuration->create(
+            object_storage,
+            context,
+            columns_,
+            partition_by_,
+            if_not_exists_
+        );
+    }
+
     bool updated_configuration = false;
     try
     {
@@ -118,7 +134,6 @@ StorageObjectStorage::StorageObjectStorage(
                 context,
                 /* if_not_updated_before */is_table_function,
                 /* check_consistent_with_previous_metadata */true);
-
             updated_configuration = true;
         }
     }
@@ -369,6 +384,26 @@ SinkToStoragePtr StorageObjectStorage::write(
             return std::make_shared<PartitionedStorageObjectStorageSink>(
                 object_storage, configuration, format_settings, sample_block, local_context, partition_by_ast);
         }
+    }
+
+    /// Delta lake does not support writes yet.
+    if (configuration->isDataLakeConfiguration() && configuration->supportsWrites())
+    {
+#if USE_AVRO
+        if (local_context->getSettingsRef()[Setting::allow_experimental_insert_into_iceberg])
+        {
+            return std::make_shared<IcebergStorageSink>(
+                object_storage,
+                configuration,
+                format_settings,
+                sample_block,
+                local_context);
+        }
+        else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Insert into iceberg is experimental. "
+                "To allow its usage, enable setting allow_experimental_insert_into_iceberg");
+#endif
     }
 
     auto paths = configuration->getPaths();

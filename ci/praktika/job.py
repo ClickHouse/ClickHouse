@@ -3,7 +3,7 @@ import fnmatch
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Any, List, Optional
+from typing import Any, Iterable, List, Optional
 
 from . import Artifact
 from .utils import Shell, Utils
@@ -21,6 +21,14 @@ class Job:
         exclude_paths: List[str] = field(default_factory=list)
         # set to true if any submodule affects the job
         with_git_submodules: bool = False
+
+    @dataclass
+    class ParamSet:
+        parameter: Optional[Any] = None
+        runs_on: Optional[List[str]] = None
+        provides: Optional[List[str]] = None
+        requires: Optional[List[str]] = None
+        timeout: Optional[int] = None
 
     @dataclass
     class Config:
@@ -63,62 +71,30 @@ class Job:
         # List of commands to call upon job completion
         post_hooks: List[str] = field(default_factory=list)
 
-        def parametrize(
-            self,
-            parameter: Optional[List[Any]] = None,
-            runs_on: Optional[List[List[str]]] = None,
-            provides: Optional[List[List[str]]] = None,
-            requires: Optional[List[List[str]]] = None,
-            timeout: Optional[List[int]] = None,
-        ):
-            assert (
-                parameter or runs_on
-            ), "Either :parameter or :runs_on must be non empty list for parametrisation"
-            if runs_on:
-                assert isinstance(runs_on, list) and isinstance(runs_on[0], list)
-            if not parameter:
-                parameter = [None] * len(runs_on)
-            if not runs_on:
-                runs_on = [None] * len(parameter)
-            if not timeout:
-                timeout = [None] * len(parameter)
-            if not provides:
-                provides = [None] * len(parameter)
-            if not requires:
-                requires = [None] * len(parameter)
-            assert (
-                len(parameter)
-                == len(runs_on)
-                == len(timeout)
-                == len(provides)
-                == len(requires)
-            ), f"Parametrization lists for job [{self.name}] must be of the same size [{len(parameter)}, {len(runs_on)}, {len(timeout)}, {len(provides)}, {len(requires)}]"
-
+        def parametrize(self, *param_sets: "Job.ParamSet"):
             res = []
-            for parameter_, runs_on_, timeout_, provides_, requires_ in zip(
-                parameter, runs_on, timeout, provides, requires
-            ):
+            for param_set in param_sets:
                 obj = copy.deepcopy(self)
                 assert (
                     not obj.provides
                 ), "Job.Config.provides must be empty for parametrized jobs"
-                if parameter_:
-                    obj.parameter = parameter_
-                    obj.command = obj.command.format(PARAMETER=parameter_)
-                if runs_on_:
-                    obj.runs_on = runs_on_
-                if timeout_:
-                    obj.timeout = timeout_
-                if provides_:
+                if param_set.parameter:
+                    obj.parameter = param_set.parameter
+                    obj.command = obj.command.format(PARAMETER=param_set.parameter)
+                if param_set.runs_on:
+                    obj.runs_on = param_set.runs_on
+                if param_set.timeout:
+                    obj.timeout = param_set.timeout
+                if param_set.provides:
                     assert (
                         not obj.provides
                     ), "Job.Config.provides must be empty for parametrized jobs"
-                    obj.provides = provides_
-                if requires_:
+                    obj.provides = param_set.provides
+                if param_set.requires:
                     assert (
                         not obj.requires
                     ), "Job.Config.requires and parametrize(requires=...) are both set"
-                    obj.requires = requires_
+                    obj.requires = param_set.requires
                 obj.name = obj.get_job_name_with_parameter()
                 res.append(obj)
             return res

@@ -135,10 +135,6 @@ public:
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
     TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t target_size) override;
-
-    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
-
-    std::vector<std::string> listUncommittedDirectory(const std::string & path) const override;
 };
 
 

@@ -90,9 +90,6 @@ namespace ErrorCodes
     extern const int NOT_ENOUGH_SPACE;
 }
 
-namespace
-{
-
 void buildScatterSelector(
         const ColumnRawPtrs & columns,
         PODArray<size_t> & partition_num_to_first_row,
@@ -160,6 +157,9 @@ void buildScatterSelector(
                          client_info.initial_user, client_info.initial_query_id, partitions_count);
     }
 }
+
+namespace
+{
 
 /// Computes ttls and updates ttl infos
 void updateTTL(
@@ -459,7 +459,7 @@ Block MergeTreeDataWriter::mergeBlock(
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<SummingSortedAlgorithm>(
                     header, 1, sort_description, merging_params.columns_to_sum,
-                    required_columns, block_size + 1, /*block_size_bytes=*/0, "sumWithOverflow");
+                    required_columns, block_size + 1, /*block_size_bytes=*/0, "sumWithOverflow", "sumMapWithOverflow", true, false);
             }
             case MergeTreeData::MergingParams::Aggregating:
                 return std::make_shared<AggregatingSortedAlgorithm>(header, 1, sort_description, block_size + 1, /*block_size_bytes=*/0);
@@ -475,7 +475,7 @@ Block MergeTreeDataWriter::mergeBlock(
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<SummingSortedAlgorithm>(
                     header, 1, sort_description, merging_params.columns_to_sum,
-                    required_columns, block_size + 1, /*block_size_bytes=*/0, "last_value");
+                    required_columns, block_size + 1, /*block_size_bytes=*/0, "last_value", "last_value", false, true);
             }
         }
     };

@@ -297,37 +297,6 @@ class ClickhouseIntegrationTestsRunner:
                     return True
         return False
 
-    def _install_clickhouse(self, debs_path):
-        for package in (
-            "clickhouse-common-static_",
-            "clickhouse-server_",
-            "clickhouse-client",
-            "clickhouse-common-static-dbg_",
-        ):  # order matters
-            logging.info("Installing package %s", package)
-            for f in os.listdir(debs_path):
-                if package in f:
-                    full_path = os.path.join(debs_path, f)
-                    logging.info("Package found in %s", full_path)
-                    log_name = "install_" + f + ".log"
-                    log_path = os.path.join(self.path(), log_name)
-                    cmd = f"dpkg -x {full_path} ."
-                    logging.info("Executing installation cmd %s", cmd)
-                    with TeePopen(cmd, log_file=log_path) as proc:
-                        if proc.wait() == 0:
-                            logging.info("Installation of %s successfull", full_path)
-                        else:
-                            raise RuntimeError(f"Installation of {full_path} failed")
-                    break
-            else:
-                raise FileNotFoundError(f"Package with {package} not found")
-
-        logging.info("All packages installed")
-        os.chmod(CLICKHOUSE_BINARY_PATH, 0o777)
-        shutil.copy(
-            CLICKHOUSE_BINARY_PATH, os.getenv("CLICKHOUSE_TESTS_SERVER_BIN_PATH")  # type: ignore
-        )
-
     @staticmethod
     def _compress_logs(directory, relpaths, result_path):
         retcode = subprocess.call(
@@ -709,7 +678,7 @@ class ClickhouseIntegrationTestsRunner:
 
         return counters, tests_times, log_paths
 
-    def run_flaky_check(self, build_path, should_fail=False):
+    def run_flaky_check(self, should_fail=False):
         pr_info = self.params["pr_info"]
 
         tests_to_run = get_changed_tests_to_run(pr_info, self.repo_path)
@@ -717,7 +686,6 @@ class ClickhouseIntegrationTestsRunner:
             logging.info("No integration tests to run found")
             return "success", NO_CHANGES_MSG, [(NO_CHANGES_MSG, "OK")], ""
 
-        self._install_clickhouse(build_path)
         logging.info("Found '%s' tests to run", " ".join(tests_to_run))
         result_state = "success"
         description_prefix = "No flaky tests: "
@@ -810,15 +778,15 @@ class ClickhouseIntegrationTestsRunner:
 
         return result_state, status_text, test_result, tests_log_paths
 
-    def run_impl(self, build_path):
+    def run_impl(self):
         stopwatch = Stopwatch()
         if self.flaky_check or self.bugfix_validate_check:
             result_state, status_text, test_result, tests_log_paths = (
-                self.run_flaky_check(build_path, should_fail=self.bugfix_validate_check)
+                self.run_flaky_check(should_fail=self.bugfix_validate_check)
             )
         else:
             result_state, status_text, test_result, tests_log_paths = (
-                self.run_normal_check(build_path)
+                self.run_normal_check()
             )
 
         if self.soft_deadline_time < time.time():
@@ -864,8 +832,7 @@ class ClickhouseIntegrationTestsRunner:
         self._tests_by_hash = groups_by_hash[self.run_by_hash_num]
         return self._tests_by_hash
 
-    def run_normal_check(self, build_path):
-        self._install_clickhouse(build_path)
+    def run_normal_check(self):
         logging.info("Pulling images")
         self._pre_pull_images()
         logging.info(
@@ -1013,11 +980,10 @@ def run():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 
     repo_path = os.environ.get("CLICKHOUSE_TESTS_REPO_PATH", "")
-    build_path = os.environ.get("CLICKHOUSE_TESTS_BUILD_PATH", "")
     result_path = os.environ.get("CLICKHOUSE_TESTS_RESULT_PATH", "")
     params_path = os.environ.get("CLICKHOUSE_TESTS_JSON_PARAMS_PATH", "")
 
-    assert all((repo_path, build_path, result_path, params_path))
+    assert all((repo_path, result_path, params_path))
 
     with open(params_path, "r", encoding="utf-8") as jfd:
         params = json.loads(jfd.read())
@@ -1030,7 +996,7 @@ def run():
         logging.info("Clearing dmesg before run")
         subprocess.check_call("sudo -E dmesg --clear", shell=True)
 
-    state, description, test_results, _test_log_paths = runner.run_impl(build_path)
+    state, description, test_results, _test_log_paths = runner.run_impl()
     logging.info("Tests finished")
 
     if IS_CI:
