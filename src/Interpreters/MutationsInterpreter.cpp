@@ -331,6 +331,11 @@ MergeTreeData::DataPartPtr MutationsInterpreter::Source::getMergeTreeDataPart() 
     return part;
 }
 
+bool MutationsInterpreter::Source::isMutatingDataPart() const
+{
+    return part != nullptr;
+}
+
 bool MutationsInterpreter::Source::supportsLightweightDelete() const
 {
     if (part)
@@ -1181,7 +1186,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
 
     /// Add persistent virtual columns if the whole part is rewritten,
     /// because we should preserve them in parts after mutation.
-    if (prepared_stages.back().isAffectingAllColumns(storage_columns))
+    if (source.isMutatingDataPart() && prepared_stages.back().isAffectingAllColumns(storage_columns))
     {
         for (const auto & column_name : available_columns)
         {
