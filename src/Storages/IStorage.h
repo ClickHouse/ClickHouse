@@ -19,6 +19,7 @@
 #include <Common/TypePromotion.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
+#include <expected>
 #include <optional>
 
 
@@ -251,6 +252,9 @@ public:
     /// Return true if storage can execute lightweight delete mutations.
     virtual bool supportsLightweightDelete() const { return false; }
 
+    /// Returns true if storage can execute lightweight update.
+    virtual std::expected<void, PreformattedMessage> supportsLightweightUpdate() const;
+
     /// Return true if storage has any projection.
     virtual bool hasProjection() const { return false; }
 
@@ -409,6 +413,7 @@ private:
 public:
     /// Other version of read which adds reading step to query plan.
     /// Default implementation creates ReadFromStorageStep and uses usual read.
+    /// Can be called after `shutdown`, but not after `drop`.
     virtual void read(
         QueryPlan & query_plan,
         const Names & /*column_names*/,
@@ -530,6 +535,9 @@ public:
         const Names & /* deduplicate_by_columns */,
         bool /*cleanup*/,
         ContextPtr /*context*/);
+
+    /// Executes update query. More lightweight than mutation.
+    virtual QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr context);
 
     /// Mutate the table contents
     virtual void mutate(const MutationCommands &, ContextPtr);

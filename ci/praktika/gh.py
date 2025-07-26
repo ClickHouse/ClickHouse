@@ -68,36 +68,16 @@ class GH:
                              -f body=\'{comment_body}\''
                     print(f"Update existing comments [{id}]")
                     return cls.do_command_with_retries(cmd)
-
-        if or_append_to_comment_with_substring:
-            print(f"check comment [{comment_body}] created")
-            pr_comments = f'gh api -H "Accept: application/vnd.github.v3+json" \
-                "/repos/{repo}/issues/{pr}/comments" \
-                --jq \'.[].body\''
-            output = Shell.get_output(pr_comments)
-            if output:
-                comment_ids = []
-                try:
-                    comment_ids = [
-                        json.loads(item.strip()) for item in output.split("\n")
-                    ]
-                except Exception as ex:
-                    print(f"Failed to retrieve PR comments with [{ex}]")
-                for id in comment_ids:
-                    cmd = f'gh api \
-                       -X PATCH \
-                          -H "Accept: application/vnd.github.v3+json" \
-                             "/repos/{repo}/issues/comments/{id}" \
-                             -f body=\'{comment_body}\''
-                    print(f"Update existing comments [{id}]")
-                    return cls.do_command_with_retries(cmd)
-
         cmd = f'gh pr comment {pr} --body "{comment_body}"'
         return cls.do_command_with_retries(cmd)
 
     @classmethod
     def post_updateable_comment(
-        cls, comment_tags_and_bodies: Dict[str, str], pr=None, repo=None
+        cls,
+        comment_tags_and_bodies: Dict[str, str],
+        pr=None,
+        repo=None,
+        only_update=False,
     ):
         if not repo:
             repo = _Environment.get().REPOSITORY
@@ -108,7 +88,7 @@ class GH:
         TAG_COMMENT_END = "<!-- CI automatic comment end :{TAG}: -->"
         cmd_check_created = f'gh api -H "Accept: application/vnd.github.v3+json" \
             "/repos/{repo}/issues/{pr}/comments" \
-            --jq \'[.[] | {{id: .id, body: .body}}]\''
+            --jq \'[.[] | {{id: .id, body: .body}}]\' --paginate'
         output = Shell.get_output(cmd_check_created, verbose=True)
 
         comments = json.loads(output)
@@ -164,9 +144,14 @@ class GH:
             print(f"Update existing comments [{id_to_update}]")
             res = cls.do_command_with_retries(cmd)
         else:
-            cmd = f'gh pr comment {pr} --body "{body}"'
-            print(f"Create new comment")
-            res = cls.do_command_with_retries(cmd)
+            if not only_update:
+                cmd = f'gh pr comment {pr} --body "{body}"'
+                print(f"Create new comment")
+                res = cls.do_command_with_retries(cmd)
+            else:
+                print(
+                    f"WARNING: comment to update not found, tags [{[k for k in comment_tags_and_bodies.keys()]}]"
+                )
 
         return res
 
@@ -288,6 +273,24 @@ class GH:
         return cls.do_command_with_retries(command)
 
     @classmethod
+    def merge_pr(cls, pr=None, repo=None, squash=False, keep_branch=False):
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        extra_args = ""
+        if not keep_branch:
+            extra_args += " --delete-branch"
+        if squash:
+            extra_args += " --squash"
+        else:
+            extra_args += " --merge"
+
+        cmd = f"gh pr merge {pr} --repo {repo} {extra_args}"
+        return cls.do_command_with_retries(cmd)
+
+    @classmethod
     def convert_to_gh_status(cls, status):
         if status in (
             Result.Status.PENDING,
@@ -372,13 +375,24 @@ class GH:
 
             if self.failed_results:
                 if len(self.failed_results) > 15:
-                    body += f"    *15 failures out of {len(self.failed_results)} shown*:\n"
+                    body += (
+                        f"    *15 failures out of {len(self.failed_results)} shown*:\n"
+                    )
                     self.failed_results = self.failed_results[:15]
                 body += "|job_name|test_name|status|info|comment|\n"
                 body += "|:--|:--|:-:|:--|:--|\n"
+                info = Info()
                 for failed_result in self.failed_results:
-                    body += "|{}|{}|{}|{}|{}|\n".format(
+                    job_report_url = info.get_specific_report_url(
+                        info.pr_number,
+                        info.git_branch,
+                        info.sha,
                         failed_result.name,
+                        info.workflow_name,
+                    )
+                    body += "|[{}]({})|{}|{}|{}|{}|\n".format(
+                        failed_result.name,
+                        job_report_url,
                         "",
                         failed_result.status,
                         "",

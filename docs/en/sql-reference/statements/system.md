@@ -160,12 +160,13 @@ If a tag is specified, only query cache entries with the specified tag are delet
 
 Clears cache for schemas loaded from [`format_schema_path`](../../operations/server-configuration-parameters/settings.md#format_schema_path).
 
-Supported formats:
-
-- Protobuf
+Supported targets:
+- Protobuf: Removes imported Protobuf message definitions from memory.
+- Files: Deletes cached schema files stored locally in the [`format_schema_path`](../../operations/server-configuration-parameters/settings.md#format_schema_path), generated when `format_schema_source` is set to `query`.
+Note: If no target is specified, both caches are cleared.
 
 ```sql
-SYSTEM DROP FORMAT SCHEMA CACHE [FOR Protobuf]
+SYSTEM DROP FORMAT SCHEMA CACHE [FOR Protobuf/Files]
 ```
 
 ## FLUSH LOGS {#flush-logs}
@@ -271,7 +272,6 @@ However, if the server on the specified port and protocol was not stopped using 
 ```sql
 SYSTEM START LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP WITH PROXY | TCP SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
 ```
-
 
 ## Managing MergeTree Tables {#managing-mergetree-tables}
 
@@ -437,11 +437,11 @@ SYSTEM SYNC REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_
 
 After running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from the common replicated log into its own replication queue, and then the query waits till the replica processes all of the fetched commands. The following modifiers are supported:
 
- - With `IF EXISTS` (available since 25.6) the query won't throw an error if the table does not exists. This is useful when adding a new replica to a cluster, when it's already part of the cluster configuration but it is still in the process of creating and synchronizing the table.
- - If a `STRICT` modifier was specified then the query waits for the replication queue to become empty. The `STRICT` version may never succeed if new entries constantly appear in the replication queue.
- - If a `LIGHTWEIGHT` modifier was specified then the query waits only for `GET_PART`, `ATTACH_PART`, `DROP_RANGE`, `REPLACE_RANGE` and `DROP_PART` entries to be processed.
-   Additionally, the LIGHTWEIGHT modifier supports an optional FROM 'srcReplicas' clause, where 'srcReplicas' is a comma-separated list of source replica names. This extension allows for more targeted synchronization by focusing only on replication tasks originating from the specified source replicas.
- - If a `PULL` modifier was specified then the query pulls new replication queue entries from ZooKeeper, but does not wait for anything to be processed.
+- With `IF EXISTS` (available since 25.6) the query won't throw an error if the table does not exists. This is useful when adding a new replica to a cluster, when it's already part of the cluster configuration but it is still in the process of creating and synchronizing the table.
+- If a `STRICT` modifier was specified then the query waits for the replication queue to become empty. The `STRICT` version may never succeed if new entries constantly appear in the replication queue.
+- If a `LIGHTWEIGHT` modifier was specified then the query waits only for `GET_PART`, `ATTACH_PART`, `DROP_RANGE`, `REPLACE_RANGE` and `DROP_PART` entries to be processed.
+  Additionally, the LIGHTWEIGHT modifier supports an optional FROM 'srcReplicas' clause, where 'srcReplicas' is a comma-separated list of source replica names. This extension allows for more targeted synchronization by focusing only on replication tasks originating from the specified source replicas.
+- If a `PULL` modifier was specified then the query pulls new replication queue entries from ZooKeeper, but does not wait for anything to be processed.
 
 ### SYNC DATABASE REPLICA {#sync-database-replica}
 
@@ -469,9 +469,9 @@ Works only on readonly `ReplicatedMergeTree` tables.
 
 One may execute query after:
 
-  - ZooKeeper root `/` loss.
-  - Replicas path `/replicas` loss.
-  - Individual replica path `/replicas/replica_name/` loss.
+- ZooKeeper root `/` loss.
+- Replicas path `/replicas` loss.
+- Individual replica path `/replicas/replica_name/` loss.
 
 Replica attaches locally found parts and sends info about them to Zookeeper.
 Parts present on a replica before metadata loss are not re-fetched from other ones if not being outdated (so replica restoration does not mean re-downloading all data over the network).
@@ -479,6 +479,31 @@ Parts present on a replica before metadata loss are not re-fetched from other on
 :::note
 Parts in all states are moved to `detached/` folder. Parts active before data loss (committed) are attached.
 :::
+
+### RESTORE DATABASE REPLICA {#restore-database-replica}
+
+Restores a replica if data is [possibly] present but Zookeeper metadata is lost.
+
+**Syntax**
+
+```sql
+SYSTEM RESTORE DATABASE REPLICA repl_db [ON CLUSTER cluster]
+```
+
+**Example**
+
+```sql
+CREATE DATABASE repl_db 
+ENGINE=Replicated("/clickhouse/repl_db", shard1, replica1);
+
+CREATE TABLE repl_db.test_table (n UInt32)
+ENGINE = ReplicatedMergeTree
+ORDER BY n PARTITION BY n % 10;
+
+-- zookeeper_delete_path("/clickhouse/repl_db", recursive=True) <- root loss.
+
+SYSTEM RESTORE DATABASE REPLICA repl_db;
+```
 
 **Syntax**
 
@@ -577,7 +602,7 @@ Trigger an immediate out-of-schedule refresh of a given view.
 SYSTEM REFRESH VIEW [db.]name
 ```
 
-### REFRESH VIEW {#refresh-view-1}
+### WAIT VIEW {#wait-view}
 
 Wait for the currently running refresh to complete. If the refresh fails, throws an exception. If no refresh is running, completes immediately, throwing an exception if previous refresh failed.
 

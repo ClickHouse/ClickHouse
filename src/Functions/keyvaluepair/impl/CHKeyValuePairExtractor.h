@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 
@@ -67,6 +66,16 @@ protected:
     }
 
 private:
+    void incrementRowOffset(uint64_t & row_offset)
+    {
+        row_offset++;
+
+        if (row_offset > max_number_of_pairs)
+        {
+            throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Number of pairs produced exceeded the limit of {}", max_number_of_pairs);
+        }
+    }
+
     NextState processState(std::string_view file, State state, auto & pair_writer, uint64_t & row_offset)
     {
         switch (state)
@@ -101,28 +110,23 @@ private:
             }
             case State::FLUSH_PAIR:
             {
-                return flushPair(file, pair_writer, row_offset);
+                incrementRowOffset(row_offset);
+                return state_handler.flushPair(file, pair_writer);
+            }
+            case State::FLUSH_PAIR_AFTER_QUOTED_VALUE:
+            {
+                incrementRowOffset(row_offset);
+                return state_handler.flushPairAfterQuotedValue(file, pair_writer);
+            }
+            case State::WAITING_PAIR_DELIMITER:
+            {
+                return state_handler.waitPairDelimiter(file);
             }
             case State::END:
             {
                 return {0, state};
             }
         }
-    }
-
-    NextState flushPair(const std::string_view & file, auto & pair_writer, uint64_t & row_offset)
-    {
-        row_offset++;
-
-        if (row_offset > max_number_of_pairs)
-        {
-            throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Number of pairs produced exceeded the limit of {}", max_number_of_pairs);
-        }
-
-        pair_writer.commitKey();
-        pair_writer.commitValue();
-
-        return {0, file.empty() ? State::END : State::WAITING_KEY};
     }
 
     void reset(auto & pair_writer)

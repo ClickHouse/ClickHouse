@@ -3,6 +3,7 @@ import os
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import wait_condition
 
 from . import http_headers_echo_server, redirect_server
 
@@ -33,19 +34,19 @@ def run_server(container_id, file_name, hostname, port, *args):
         user="root",
     )
 
-    for _ in range(0, 10):
-        ping_response = cluster.exec_in_container(
+    def check_server():
+        return cluster.exec_in_container(
             container_id,
             ["curl", "-s", f"http://{hostname}:{port}/"],
             nothrow=True,
         )
 
-        if '{"status":"ok"}' in ping_response:
-            return
-
-        print(ping_response)
-
-    raise Exception("Echo server is not responding")
+    wait_condition(
+        check_server,
+        lambda response: '{"status":"ok"}' in response,
+        max_attempts=20,
+        delay=0.5,
+    )
 
 
 def run_echo_server():

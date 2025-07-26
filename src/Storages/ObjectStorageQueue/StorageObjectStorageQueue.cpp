@@ -1,7 +1,9 @@
 #include <optional>
 
+#include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
+#include <Common/randomSeed.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
@@ -67,6 +69,7 @@ namespace FailPoints
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 keeper_multiread_batch_size;
+    extern const ServerSettingsBool s3queue_disable_streaming;
 }
 
 namespace ObjectStorageQueueSetting
@@ -93,6 +96,8 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
     extern const ObjectStorageQueueSettingsUInt64 list_objects_batch_size;
     extern const ObjectStorageQueueSettingsBool enable_hash_ring_filtering;
+    extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_rows_for_materialized_views;
+    extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
 }
 
 namespace ErrorCodes
@@ -103,30 +108,11 @@ namespace ErrorCodes
     extern const int QUERY_NOT_ALLOWED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNKNOWN_EXCEPTION;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
 {
-    std::string chooseZooKeeperPath(const StorageID & table_id, const Settings & settings, const ObjectStorageQueueSettings & queue_settings)
-    {
-        std::string zk_path_prefix = settings[Setting::s3queue_default_zookeeper_path].value;
-        if (zk_path_prefix.empty())
-            zk_path_prefix = "/";
-
-        std::string result_zk_path;
-        if (queue_settings[ObjectStorageQueueSetting::keeper_path].changed)
-        {
-            /// We do not add table uuid here on purpose.
-            result_zk_path = fs::path(zk_path_prefix) / queue_settings[ObjectStorageQueueSetting::keeper_path].value;
-        }
-        else
-        {
-            auto database_uuid = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getUUID();
-            result_zk_path = fs::path(zk_path_prefix) / toString(database_uuid) / toString(table_id.uuid);
-        }
-        return zkutil::extractZooKeeperPath(result_zk_path, true);
-    }
-
     void validateSettings(
         ObjectStorageQueueSettings & queue_settings,
         bool is_attach)
@@ -178,7 +164,7 @@ namespace
 
 StorageObjectStorageQueue::StorageObjectStorageQueue(
     std::unique_ptr<ObjectStorageQueueSettings> queue_settings_,
-    const ConfigurationPtr configuration_,
+    const StorageObjectStorageConfigurationPtr configuration_,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
@@ -186,12 +172,13 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
     ASTStorage * engine_args,
-    LoadingStrictnessLevel mode)
+    LoadingStrictnessLevel mode,
+    bool keep_data_in_keeper_)
     : IStorage(table_id_)
     , WithContext(context_)
     , type(configuration_->getType())
     , engine_name(engine_args->engine->name)
-    , zk_path(chooseZooKeeperPath(table_id_, context_->getSettingsRef(), *queue_settings_))
+    , zk_path(chooseZooKeeperPath(getContext(), table_id_, context_->getSettingsRef(), *queue_settings_))
     , enable_logging_to_queue_log((*queue_settings_)[ObjectStorageQueueSetting::enable_logging_to_queue_log])
     , polling_min_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
     , polling_max_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_max_timeout_ms])
@@ -204,10 +191,14 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         .max_processed_bytes_before_commit = (*queue_settings_)[ObjectStorageQueueSetting::max_processed_bytes_before_commit],
         .max_processing_time_sec_before_commit = (*queue_settings_)[ObjectStorageQueueSetting::max_processing_time_sec_before_commit],
     })
+    , min_insert_block_size_rows_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_rows_for_materialized_views])
+    , min_insert_block_size_bytes_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_bytes_for_materialized_views])
     , configuration{configuration_}
     , format_settings(format_settings_)
     , reschedule_processing_interval_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
     , log(getLogger(fmt::format("Storage{}Queue ({})", configuration->getEngineName(), table_id_.getFullTableName())))
+    , can_be_moved_between_databases((*queue_settings_)[ObjectStorageQueueSetting::keeper_path].changed)
+    , keep_data_in_keeper(keep_data_in_keeper_)
 {
     if (configuration->getPath().empty())
     {
@@ -264,7 +255,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         auto task = getContext()->getSchedulePool().createTask("ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
         streaming_tasks.emplace_back(std::move(task));
     }
-
 }
 
 void StorageObjectStorageQueue::startup()
@@ -274,6 +264,7 @@ void StorageObjectStorageQueue::startup()
     files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(temp_metadata), getStorageID());
     try
     {
+        ObjectStorageQueueFactory::instance().registerTable(getStorageID());
         files_metadata->startup();
         for (auto & task : streaming_tasks)
             task->activateAndSchedule();
@@ -289,6 +280,12 @@ void StorageObjectStorageQueue::startup()
 
 void StorageObjectStorageQueue::shutdown(bool is_drop)
 {
+    if (shutdown_called)
+        return;
+
+    if (is_drop)
+        ObjectStorageQueueFactory::instance().unregisterTable(getStorageID());
+
     table_is_being_dropped = is_drop;
     shutdown_called = true;
 
@@ -309,10 +306,17 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
             tryLogCurrentException(log);
         }
 
-        ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID(), is_drop);
+        ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID(), is_drop && !keep_data_in_keeper);
         files_metadata.reset();
     }
     LOG_TRACE(log, "Shut down storage");
+}
+
+void StorageObjectStorageQueue::renameInMemory(const StorageID & new_table_id)
+{
+    const auto prev_storage_id = getStorageID();
+    IStorage::renameInMemory(new_table_id);
+    ObjectStorageQueueFactory::instance().renameTable(prev_storage_id, getStorageID());
 }
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
@@ -332,7 +336,7 @@ public:
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        Block sample_block,
+        SharedHeader sample_block,
         ReadFromFormatInfo info_,
         std::shared_ptr<StorageObjectStorageQueue> storage_,
         size_t max_block_size_)
@@ -408,7 +412,7 @@ void StorageObjectStorageQueue::read(
         query_info,
         storage_snapshot,
         local_context,
-        read_from_format_info.source_header,
+        std::make_shared<const Block>(read_from_format_info.source_header),
         read_from_format_info,
         std::move(this_ptr),
         max_block_size);
@@ -423,11 +427,14 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
     size_t processing_threads_num = storage->getTableMetadata().processing_threads_num;
 
     createIterator(nullptr);
+
+    auto parser_group = std::make_shared<FormatParserGroup>(context->getSettingsRef(), /*num_streams_=*/ processing_threads_num, nullptr, nullptr);
     auto progress = std::make_shared<ObjectStorageQueueSource::ProcessingProgress>();
     for (size_t i = 0; i < processing_threads_num; ++i)
         pipes.emplace_back(storage->createSource(
                                i/* processor_id */,
                                info,
+                               parser_group,
                                progress,
                                iterator,
                                max_block_size,
@@ -436,7 +443,7 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
-        pipe = Pipe(std::make_shared<NullSource>(info.source_header));
+        pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
 
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
@@ -447,6 +454,7 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
 std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSource(
     size_t processor_id,
     const ReadFromFormatInfo & info,
+    FormatParserGroupPtr parser_group,
     ProcessingProgressPtr progress_,
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
     size_t max_block_size,
@@ -461,7 +469,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     return std::make_shared<ObjectStorageQueueSource>(
         getName(), processor_id,
         file_iterator, configuration, object_storage, progress_,
-        info, format_settings,
+        info, format_settings, parser_group,
         commit_settings_copy,
         files_metadata,
         local_context, max_block_size, shutdown_called, table_is_being_dropped,
@@ -505,41 +513,56 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
         return;
 
     const auto storage_id = getStorageID();
-    try
+
+    if (getContext()->getS3QueueDisableStreaming())
     {
-        const size_t dependencies_count = getDependencies();
-        if (dependencies_count)
+        static constexpr auto disabled_streaming_reschedule_period = 5000;
+
+        LOG_TRACE(log, "Streaming is disabled, rescheduling next check in {} ms", disabled_streaming_reschedule_period);
+
+        std::lock_guard lock(mutex);
+        reschedule_processing_interval_ms = disabled_streaming_reschedule_period;
+    }
+    else
+    {
+        try
         {
-            mv_attached.store(true);
-            SCOPE_EXIT({ mv_attached.store(false); });
-
-            LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
-
-            files_metadata->registerIfNot(storage_id, /* active */true);
-
-            if (streamToViews(streaming_tasks_index))
+            const size_t dependencies_count = getDependencies();
+            if (dependencies_count)
             {
-                /// Reset the reschedule interval.
-                std::lock_guard lock(mutex);
-                reschedule_processing_interval_ms = polling_min_timeout_ms;
+                mv_attached.store(true);
+                SCOPE_EXIT({ mv_attached.store(false); });
+
+                LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
+
+                files_metadata->registerIfNot(storage_id, /* active */true);
+
+                if (streamToViews(streaming_tasks_index))
+                {
+                    /// Reset the reschedule interval.
+                    std::lock_guard lock(mutex);
+                    reschedule_processing_interval_ms = polling_min_timeout_ms;
+                }
+                else
+                {
+                    /// Increase the reschedule interval.
+                    std::lock_guard lock(mutex);
+                    reschedule_processing_interval_ms = std::min<size_t>(
+                        polling_max_timeout_ms,
+                        reschedule_processing_interval_ms + polling_backoff_ms);
+                }
+
+                LOG_DEBUG(log, "Stopped streaming to {} attached views", dependencies_count);
             }
             else
             {
-                /// Increase the reschedule interval.
-                std::lock_guard lock(mutex);
-                reschedule_processing_interval_ms = std::min<size_t>(polling_max_timeout_ms, reschedule_processing_interval_ms + polling_backoff_ms);
+                LOG_TEST(log, "No attached dependencies");
             }
-
-            LOG_DEBUG(log, "Stopped streaming to {} attached views", dependencies_count);
         }
-        else
+        catch (...)
         {
-            LOG_TEST(log, "No attached dependencies");
+            LOG_ERROR(log, "Failed to process data: {}", getCurrentExceptionMessage(true));
         }
-    }
-    catch (...)
-    {
-        LOG_ERROR(log, "Failed to process data: {}", getCurrentExceptionMessage(true));
     }
 
     if (!shutdown_called)
@@ -583,6 +606,18 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
     auto queue_context = Context::createCopy(getContext());
     queue_context->makeQueryContext();
+
+    size_t min_insert_block_size_rows;
+    size_t min_insert_block_size_bytes;
+    {
+        std::lock_guard lock(mutex);
+        min_insert_block_size_rows = min_insert_block_size_rows_for_materialized_views;
+        min_insert_block_size_bytes = min_insert_block_size_bytes_for_materialized_views;
+    }
+    if (min_insert_block_size_rows)
+        queue_context->setSetting("min_insert_block_size_rows_for_materialized_views", min_insert_block_size_rows);
+    if (min_insert_block_size_bytes)
+        queue_context->setSetting("min_insert_block_size_bytes_for_materialized_views", min_insert_block_size_bytes);
 
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator;
     {
@@ -628,6 +663,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         pipes.reserve(threads);
         sources.reserve(threads);
 
+        auto parser_group = std::make_shared<FormatParserGroup>(queue_context->getSettingsRef(), /*num_streams_=*/ threads, nullptr, nullptr);
+
         auto processing_progress = std::make_shared<ProcessingProgress>();
         for (size_t i = 0; i < threads; ++i)
         {
@@ -635,6 +672,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
             auto source = createSource(
                 processor_id,
                 read_from_format_info,
+                parser_group,
                 processing_progress,
                 file_iterator,
                 DBMS_DEFAULT_BUFFER_SIZE,
@@ -655,6 +693,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
 
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueInsertIterations);
 
+        const auto transaction_start_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+
         try
         {
             CompletedPipelineExecutor executor(block_io.pipeline);
@@ -662,12 +702,28 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         }
         catch (...)
         {
-            commit(/*insert_succeeded=*/ false, rows, sources, getCurrentExceptionMessage(true), getCurrentExceptionCode());
-            file_iterator->releaseFinishedBuckets();
+            std::string message = getCurrentExceptionMessage(true);
+            try
+            {
+                commit(
+                    /*insert_succeeded=*/ false,
+                    rows,
+                    sources,
+                    transaction_start_time,
+                    getCurrentExceptionMessage(true),
+                    getCurrentExceptionCode());
+
+                file_iterator->releaseFinishedBuckets();
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("Previous exception: {}", message);
+                throw;
+            }
             throw;
         }
 
-        commit(/*insert_succeeded=*/ true, rows, sources);
+        commit(/*insert_succeeded=*/ true, rows, sources, transaction_start_time);
         file_iterator->releaseFinishedBuckets();
         total_rows += rows;
     }
@@ -680,6 +736,7 @@ void StorageObjectStorageQueue::commit(
     bool insert_succeeded,
     size_t inserted_rows,
     std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
+    time_t transaction_start_time,
     const std::string & exception_message,
     int error_code) const
 {
@@ -723,12 +780,25 @@ void StorageObjectStorageQueue::commit(
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueSuccessfulCommits);
 
-    for (auto & source : sources)
-        source->finalizeCommit(insert_succeeded, exception_message);
+    const auto commit_id = generateCommitID();
+    const auto commit_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
-    LOG_TRACE(
-        log, "Successfully committed {} requests for {} sources (inserted rows: {}, successful files: {})",
-        requests.size(), sources.size(), inserted_rows, successful_objects.size());
+    for (auto & source : sources)
+    {
+        source->finalizeCommit(
+            insert_succeeded, commit_id, commit_time, transaction_start_time, exception_message);
+    }
+
+    LOG_DEBUG(
+        log, "Successfully committed {} requests for {} sources with commit id {} "
+        "(inserted rows: {}, successful files: {})",
+        requests.size(), sources.size(), commit_id, inserted_rows, successful_objects.size());
+}
+
+UInt64 StorageObjectStorageQueue::generateCommitID()
+{
+    pcg64_fast rng(randomSeed());
+    return rng();
 }
 
 static const std::unordered_set<std::string_view> changeable_settings_unordered_mode
@@ -749,6 +819,8 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "max_processing_time_sec_before_commit",
     "enable_hash_ring_filtering",
     "list_objects_batch_size",
+    "min_insert_block_size_rows_for_materialized_views",
+    "min_insert_block_size_bytes_for_materialized_views",
 };
 
 static const std::unordered_set<std::string_view> changeable_settings_ordered_mode
@@ -764,6 +836,8 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "max_processing_time_sec_before_commit",
     "buckets",
     "list_objects_batch_size",
+    "min_insert_block_size_rows_for_materialized_views",
+    "min_insert_block_size_bytes_for_materialized_views",
 };
 
 static std::string normalizeSetting(const std::string & name)
@@ -1023,6 +1097,11 @@ void StorageObjectStorageQueue::alter(
             if (change.name == "max_processing_time_sec_before_commit")
                 commit_settings.max_processing_time_sec_before_commit = change.value.safeGet<UInt64>();
 
+            if (change.name == "min_insert_block_size_rows_for_materialized_views")
+                min_insert_block_size_rows_for_materialized_views = change.value.safeGet<UInt64>();
+            if (change.name == "min_insert_block_size_bytes_for_materialized_views")
+                min_insert_block_size_bytes_for_materialized_views = change.value.safeGet<UInt64>();
+
             if (change.name == "list_objects_batch_size")
                 list_objects_batch_size = change.value.safeGet<UInt64>();
             if (change.name == "enable_hash_ring_filtering")
@@ -1112,9 +1191,57 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
         settings[ObjectStorageQueueSetting::max_processing_time_sec_before_commit] = commit_settings.max_processing_time_sec_before_commit;
         settings[ObjectStorageQueueSetting::enable_hash_ring_filtering] = enable_hash_ring_filtering;
         settings[ObjectStorageQueueSetting::list_objects_batch_size] = list_objects_batch_size;
+        settings[ObjectStorageQueueSetting::min_insert_block_size_rows_for_materialized_views] = min_insert_block_size_rows_for_materialized_views;
+        settings[ObjectStorageQueueSetting::min_insert_block_size_bytes_for_materialized_views] = min_insert_block_size_bytes_for_materialized_views;
     }
 
     return settings;
+}
+
+void StorageObjectStorageQueue::checkTableCanBeRenamed(const StorageID & new_name) const
+{
+    const bool move_between_databases = getStorageID().database_name != new_name.database_name;
+    if (move_between_databases && !can_be_moved_between_databases)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot move Storage{}Queue table between databases because the `keeper_path` setting is not explicitly set."
+            "By default, the `keeper_path` includes the UUID of the database where the table was created, making it non-portable."
+            "Please set an explicit `keeper_path` to allow moving the table", configuration->getEngineName());
+    }
+}
+
+String StorageObjectStorageQueue::chooseZooKeeperPath(
+    const ContextPtr & context_,
+    const StorageID & table_id,
+    const Settings & settings,
+    const ObjectStorageQueueSettings & queue_settings,
+    UUID database_uuid)
+{
+    /// keeper_path setting can be set explicitly by the user in the CREATE query, or filled in registerQueueStorage.cpp.
+    /// We also use keeper_path to determine whether we move it between databases, since the default path contains UUID of the database.
+
+    std::string zk_path_prefix = settings[Setting::s3queue_default_zookeeper_path].value;
+    if (zk_path_prefix.empty())
+        zk_path_prefix = "/";
+
+    std::string result_zk_path;
+    if (queue_settings[ObjectStorageQueueSetting::keeper_path].changed)
+    {
+        /// We do not add table uuid here on purpose.
+        result_zk_path = fs::path(zk_path_prefix) / queue_settings[ObjectStorageQueueSetting::keeper_path].value;
+
+        Macros::MacroExpansionInfo info;
+        info.table_id.uuid = table_id.uuid;
+        result_zk_path = context_->getMacros()->expand(result_zk_path, info);
+    }
+    else
+    {
+        if (database_uuid == UUIDHelpers::Nil)
+            database_uuid = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getUUID();
+
+        result_zk_path = fs::path(zk_path_prefix) / toString(database_uuid) / toString(table_id.uuid);
+    }
+    return zkutil::extractZooKeeperPath(result_zk_path, true);
 }
 
 }

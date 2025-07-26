@@ -75,7 +75,7 @@ public:
     struct Params
     {
         WriteBuffer & out;
-        const Block & header;
+        SharedHeader header;
         InternalFormatterCreator internal_formatter_creator;
         const size_t max_threads_for_parallel_formatting;
     };
@@ -117,7 +117,8 @@ public:
 
     void flushImpl() override
     {
-        need_flush = true;
+        if (!auto_flush)
+            need_flush = true;
     }
 
     void writePrefix() override

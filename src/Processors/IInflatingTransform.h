@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 
@@ -39,7 +39,7 @@ protected:
     virtual Chunk getRemaining() { return {}; }
 
 public:
-    IInflatingTransform(Block input_header, Block output_header);
+    IInflatingTransform(SharedHeader input_header, SharedHeader output_header);
 
     Status prepare() override;
     void work() override;
