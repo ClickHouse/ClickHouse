@@ -1,5 +1,4 @@
 SET allow_experimental_analyzer = 1;
-SET serialize_query_plan = 1;
 
 DROP TABLE IF EXISTS m1;
 DROP TABLE IF EXISTS m2;
