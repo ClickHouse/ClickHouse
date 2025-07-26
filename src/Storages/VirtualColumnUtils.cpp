@@ -411,8 +411,8 @@ bool isDeterministic(const ActionsDAG::Node * node)
     if (!node->function_base->isDeterministic())
         return false;
 
-    /// In the IN function, the set must be a constant for the result to be deterministic.
-    /// For example, expressions like IN (SELECT ...) or IN (table) produce non-deterministic results.
+    /// In the IN operator, the result is deterministic iff the set on the right-hand side is constant
+    /// For example, 'IN (SELECT ...)' and 'IN (table)'' produce non-deterministic results.
     if (isNameOfInFunction(node->function_base->getName()))
     {
         for (const auto * child : node->children)

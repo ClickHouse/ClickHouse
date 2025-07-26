@@ -1,8 +1,11 @@
--- Tags: no-parallel
--- Tag no-parallel: Messes with internal cache
+-- Tags: no-parallel, long, no-asan, no-ubsan, no-debug
+-- no-parallel: Messes with internal cache
+-- Other tags because the test generates 100k rows which is slow
 
-SET allow_experimental_analyzer = 1; 
-SET use_query_condition_cache = 1; 
+-- Test for issue #84508 (recursive CTEs return wrong results if the query condition cache is on)
+
+SET allow_experimental_analyzer = 1;
+SET use_query_condition_cache = 1;
 
 -- Start from a clean query condition cache
 SYSTEM DROP QUERY CONDITION CACHE;
@@ -33,22 +36,24 @@ SELECT '-- First run';
 
 SELECT * FROM tab WHERE uuid IN (SELECT uuid FROM in_tab);
 
-SELECT '-- Cache is empty';
+-- Expect empty query condition cache
 SELECT count(*) FROM system.query_condition_cache;
 
-SELECT '-- Modify the data in the `in_tab` table to `uuid10000`';
-ALTER TABLE in_tab UPDATE uuid = 'uuid10000' WHERE uuid = 'uuid10';
+SELECT '-- Modify row in "in_tab" from "uuid10" to "uuid10000"';
+ALTER TABLE in_tab UPDATE uuid = 'uuid10000' WHERE uuid = 'uuid10' SETTINGS mutations_sync = 2;
 
-SELECT '-- Second run'; -- same query
+SELECT '-- Second run';
+
+-- Same query as before
 SELECT * FROM tab WHERE uuid IN (SELECT uuid FROM in_tab);
 
-SELECT '-- Test IN (values)';
+DROP TABLE in_tab;
+
+SELECT '-- Test that the IN operator is in principle cache-able';
 
 SYSTEM DROP QUERY CONDITION CACHE;
 
 SELECT * FROM tab WHERE uuid IN ('uuid10');
-
-SELECT '-- Cache is not empty';
 SELECT count(*) FROM system.query_condition_cache;
 
 DROP TABLE tab;
