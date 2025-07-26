@@ -358,7 +358,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     /// This improves user experience when pasting SQL queries with tabs
     auto modify_callback = [](std::string & line, int & /* cursor_position */)
     {
-        std::replace(line.begin(), line.end(), '\t', ' '); 
+        std::replace(line.begin(), line.end(), '\t', ' ');
     };
     rx.set_modify_callback(modify_callback);
 
