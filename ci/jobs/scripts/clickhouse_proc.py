@@ -197,13 +197,18 @@ class ClickHouseProc:
         )
 
     def _install_light(self):
+        """
+        Installs ClickHouse config into ci temporary directory, this way of installation does not require mounting /etc|var/clickhouse-server into docker container.
+        To be used only with start_light(). This method is suitable for jobs that do not require complex configuration, such as clickbench.
+        Jobs like functional tests are hard/not-reasonable to adapt to use this way of installation, thus they have to mount config and other directories into default directories.
+        """
         Utils.add_to_PATH(temp_dir)
         commands = [
-            f"mkdir -p {self.ch_config_dir}/users.d",
-            f"cp ./programs/server/config.xml ./programs/server/users.xml {self.ch_config_dir}",
+            f"mkdir -p {temp_dir}/users.d",
+            f"cp ./programs/server/config.xml ./programs/server/users.xml {temp_dir}",
             # make it ipv4 only
-            f'sed -i "s|<!-- <listen_host>0.0.0.0</listen_host> -->|<listen_host>0.0.0.0</listen_host>|" {self.ch_config_dir}/config.xml',
-            f"cp -r --dereference ./programs/server/config.d {self.ch_config_dir}",
+            f'sed -i "s|<!-- <listen_host>0.0.0.0</listen_host> -->|<listen_host>0.0.0.0</listen_host>|" {temp_dir}/config.xml',
+            f"cp -r --dereference ./programs/server/config.d {temp_dir}",
             f"chmod +x {temp_dir}/clickhouse",
             f"ln -sf {temp_dir}/clickhouse {temp_dir}/clickhouse-server",
             f"ln -sf {temp_dir}/clickhouse {temp_dir}/clickhouse-client",
@@ -213,6 +218,33 @@ class ClickHouseProc:
             res = res and Shell.check(command, verbose=True)
         if not res:
             print("Failed to install ClickHouse config")
+        return res
+
+    def start_light(self):
+        """
+        Start ClickHouse server with config installed with _install_config()
+        """
+        print(f"Starting ClickHouse server")
+        self.pid_file = f"{temp_dir}/clickhouse-server.pid"
+        self.start_cmd = f"{temp_dir}/clickhouse-server --config-file={temp_dir}/config.xml --pid-file {self.pid_file}"
+        print("Command: ", self.start_cmd)
+        self.log_fd = open(f"{self.log_dir}/clickhouse-server.log", "w")
+        self.proc = subprocess.Popen(
+            self.start_cmd, stderr=subprocess.STDOUT, stdout=self.log_fd, shell=True
+        )
+        time.sleep(2)
+        retcode = self.proc.poll()
+        if retcode is not None:
+            stdout = self.proc.stdout.read().strip() if self.proc.stdout else ""
+            stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
+            Utils.print_formatted_error("Failed to start ClickHouse", stdout, stderr)
+            return False
+        print(f"ClickHouse server process started -> wait ready")
+        res = self.wait_ready()
+        if res:
+            print(f"ClickHouse server ready")
+        else:
+            print(f"ClickHouse server NOT ready")
         return res
 
     def install_clickbench_config(self):
@@ -226,7 +258,7 @@ profiles:
     default:
         allow_introspection_functions: 1
 """
-        file_path = f"{self.ch_config_dir}/users.d/allow_introspection_functions.yaml"
+        file_path = f"{temp_dir}/users.d/allow_introspection_functions.yaml"
         with open(file_path, "w") as file:
             file.write(content)
         return True
@@ -449,7 +481,19 @@ profiles:
             err_log = f"{self.log_dir}/clickhouse-server.err.log"
         else:
             assert False
-        self.pid = int(Shell.get_output(f"cat {pid_file}").strip())
+        i = 0
+        self.pid = None
+        while i < 30:
+            # can take some time if decompressing
+            try:
+                self.pid = int(Shell.get_output(f"cat {pid_file}").strip())
+                break
+            except Exception as e:
+                Utils.sleep(1)
+            i += 1
+        if self.pid is None:
+            print(f"Failed to get pid from fs [{pid_file}]")
+            return False
         for attempt in range(attempts):
             res, out, err = Shell.get_res_stdout_stderr(
                 f'clickhouse-client --port {port} --query "select 1"', verbose=True
