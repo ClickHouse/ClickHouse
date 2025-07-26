@@ -15,6 +15,7 @@ IMAGES_ENV = {
     "clickhouse/python-bottle": "DOCKER_PYTHON_BOTTLE_TAG",
     "clickhouse/integration-test-with-unity-catalog": "DOCKER_BASE_WITH_UNITY_CATALOG_TAG",
     "clickhouse/integration-test-with-hms": "DOCKER_BASE_WITH_HMS_TAG",
+    "clickhouse/mysql-dotnet-client": "DOCKER_MYSQL_DOTNET_CLIENT_TAG",
 }
 
 IMAGES = list(IMAGES_ENV.keys())
