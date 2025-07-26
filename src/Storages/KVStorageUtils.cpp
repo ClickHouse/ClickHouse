@@ -52,55 +52,10 @@ bool traverseDAGFilter(
                 return false;
         return true;
     }
-    if (func_name == "equals" || func_name == "in")
+    if (func_name == "equals")
     {
         if (elem->children.size() != 2)
             return false;
-
-        if (func_name == "in")
-        {
-            const auto * key = elem->children.at(0);
-            while (key->type == ActionsDAG::ActionType::ALIAS)
-                key = key->children.at(0);
-
-            if (key->type != ActionsDAG::ActionType::INPUT)
-                return false;
-
-            if (key->result_name != primary_key)
-                return false;
-
-            const auto * value = elem->children.at(1);
-            if (value->type != ActionsDAG::ActionType::COLUMN)
-                return false;
-
-            const IColumn * value_col = value->column.get();
-            if (const auto * col_const = typeid_cast<const ColumnConst *>(value_col))
-                value_col = &col_const->getDataColumn();
-
-            const auto * col_set = typeid_cast<const ColumnSet *>(value_col);
-            if (!col_set)
-                return false;
-
-            auto future_set = col_set->getData();
-            future_set->buildOrderedSetInplace(context);
-
-            auto set = future_set->get();
-            if (!set)
-                return false;
-
-            if (!set->hasExplicitSetElements())
-                return false;
-
-            set->checkColumnsNumber(1);
-            const auto & set_column = *set->getSetElements()[0];
-
-            if (set_column.getDataType() != primary_key_type->getTypeId())
-                return false;
-
-            for (size_t row = 0; row < set_column.size(); ++row)
-                res->push_back(set_column[row]);
-            return true;
-        }
 
         const auto * key = elem->children.at(0);
         while (key->type == ActionsDAG::ActionType::ALIAS)
@@ -119,6 +74,53 @@ bool traverseDAGFilter(
         auto converted_field = convertFieldToType((*value->column)[0], *primary_key_type);
         if (!converted_field.isNull())
             res->push_back(converted_field);
+        return true;
+    }
+    if (func_name == "in" || func_name == "globalIn")
+    {
+        if (elem->children.size() != 2)
+            return false;
+
+        const auto * key = elem->children.at(0);
+        while (key->type == ActionsDAG::ActionType::ALIAS)
+            key = key->children.at(0);
+
+        if (key->type != ActionsDAG::ActionType::INPUT)
+            return false;
+
+        if (key->result_name != primary_key)
+            return false;
+
+        const auto * value = elem->children.at(1);
+        if (value->type != ActionsDAG::ActionType::COLUMN)
+            return false;
+
+        const IColumn * value_col = value->column.get();
+        if (const auto * col_const = typeid_cast<const ColumnConst *>(value_col))
+            value_col = &col_const->getDataColumn();
+
+        const auto * col_set = typeid_cast<const ColumnSet *>(value_col);
+        if (!col_set)
+            return false;
+
+        auto future_set = col_set->getData();
+        future_set->buildOrderedSetInplace(context);
+
+        auto set = future_set->get();
+        if (!set)
+            return false;
+
+        if (!set->hasExplicitSetElements())
+            return false;
+
+        set->checkColumnsNumber(1);
+        const auto & set_column = *set->getSetElements()[0];
+
+        if (set_column.getDataType() != primary_key_type->getTypeId())
+            return false;
+
+        for (size_t row = 0; row < set_column.size(); ++row)
+            res->push_back(set_column[row]);
         return true;
     }
     return false;
