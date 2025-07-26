@@ -63,6 +63,24 @@ struct HudiClusterDefinition
     static constexpr auto storage_type_name = "HudiS3Cluster";
 };
 
+struct PaimonS3ClusterDefinition
+{
+    static constexpr auto name = "paimonS3Cluster";
+    static constexpr auto storage_type_name = "PaimonS3Cluster";
+};
+
+struct PaimonAzureClusterDefinition
+{
+    static constexpr auto name = "paimonAzureCluster";
+    static constexpr auto storage_type_name = "PaimonAzureCluster";
+};
+
+struct PaimonHDFSClusterDefinition
+{
+    static constexpr auto name = "paimonHDFSCluster";
+    static constexpr auto storage_type_name = "PaimonHDFSCluster";
+};
+
 /**
 * Class implementing s3/hdfs/azureBlobStorageCluster(...) table functions,
 * which allow to process many files from S3/HDFS/Azure blob storage on a specific cluster.
@@ -121,6 +139,19 @@ using TableFunctionIcebergAzureCluster = TableFunctionObjectStorageCluster<Icebe
 #if USE_AVRO && USE_HDFS
 using TableFunctionIcebergHDFSCluster = TableFunctionObjectStorageCluster<IcebergHDFSClusterDefinition, StorageHDFSIcebergConfiguration, true>;
 #endif
+
+#if USE_AVRO && USE_AWS_S3
+using TableFunctionPaimonS3Cluster = TableFunctionObjectStorageCluster<PaimonS3ClusterDefinition, StorageS3PaimonConfiguration, true>;
+#endif
+
+#if USE_AVRO && USE_AZURE_BLOB_STORAGE
+using TableFunctionPaimonAzureCluster = TableFunctionObjectStorageCluster<PaimonAzureClusterDefinition, StorageAzurePaimonConfiguration, true>;
+#endif
+
+#if USE_AVRO && USE_HDFS
+using TableFunctionPaimonHDFSCluster = TableFunctionObjectStorageCluster<PaimonHDFSClusterDefinition, StorageHDFSPaimonConfiguration, true>;
+#endif
+
 
 #if USE_AWS_S3 && USE_PARQUET && USE_DELTA_KERNEL_RS
 using TableFunctionDeltaLakeCluster = TableFunctionObjectStorageCluster<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
