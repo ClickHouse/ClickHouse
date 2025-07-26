@@ -126,6 +126,31 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Password is not applicable, backup cannot be encrypted");
         }
 
+        if (params.open_mode == IBackup::OpenMode::UNLOCK)
+        {
+            auto reader = std::make_shared<BackupReaderAzureBlobStorage>(
+                connection_params,
+                blob_path,
+                params.allow_azure_native_copy,
+                params.read_settings,
+                params.write_settings,
+                params.context);
+
+            auto lightweight_snapshot_writer = std::make_shared<BackupWriterAzureBlobStorage>(
+                connection_params,
+                "",
+                params.allow_azure_native_copy,
+                params.read_settings,
+                params.write_settings,
+                params.context,
+                params.azure_attempt_to_create_container);
+
+            return std::make_unique<BackupImpl>(
+                params.backup_info,
+                archive_params,
+                reader,
+                lightweight_snapshot_writer);
+        }
 
         params.use_same_s3_credentials_for_base_backup = false;
 
@@ -139,7 +164,20 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 params.write_settings,
                 params.context);
 
-            return std::make_unique<BackupImpl>(params, archive_params, reader);
+            auto snapshot_reader_creator = [&](const String & endpoint, const String & container_name)
+            {
+                connection_params.endpoint.storage_account_url = endpoint;
+                connection_params.endpoint.container_name = container_name;
+                return std::make_shared<BackupReaderAzureBlobStorage>(
+                    connection_params,
+                    "",
+                    params.allow_azure_native_copy,
+                    params.read_settings,
+                    params.write_settings,
+                    params.context);
+            };
+
+            return std::make_unique<BackupImpl>(params, archive_params, reader, snapshot_reader_creator);
         }
 
         auto writer = std::make_shared<BackupWriterAzureBlobStorage>(
