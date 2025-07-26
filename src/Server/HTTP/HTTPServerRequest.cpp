@@ -1,3 +1,5 @@
+#include <cstddef>
+#include <memory>
 #include <Server/HTTP/HTTPServerRequest.h>
 
 #include <IO/EmptyReadBuffer.h>
@@ -5,6 +7,7 @@
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBuffer.h>
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Server/HTTP/ReadHeaders.h>
 
@@ -12,6 +15,7 @@
 #include <Poco/Net/HTTPStream.h>
 #include <Poco/Net/NetException.h>
 
+#include <Common/Logger.h>
 #include <Common/logger_useful.h>
 
 #if USE_SSL
@@ -55,15 +59,16 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     /// and decide that it's EOF (but it is not). It may break deduplication, because clients cannot control it
     /// and retry with exactly the same (incomplete) set of rows.
     /// That's why we have to check body size if it's provided.
+    std::unique_ptr<ReadBuffer> imp_stream;
     if (getChunkedTransferEncoding())
     {
-        stream = std::make_unique<HTTPChunkedReadBuffer>(std::move(in), HTTP_MAX_CHUNK_SIZE);
+        stream = std::make_shared<HTTPChunkedReadBuffer>(std::move(in), HTTP_MAX_CHUNK_SIZE);
         stream_is_bounded = true;
     }
     else if (hasContentLength())
     {
         size_t content_length = getContentLength();
-        stream = std::make_unique<LimitReadBuffer>(std::move(in), LimitReadBuffer::Settings{.read_no_less = content_length, .read_no_more = content_length, .expect_eof = true});
+        stream = std::make_shared<LimitReadBuffer>(std::move(in), LimitReadBuffer::Settings{.read_no_less = content_length, .read_no_more = content_length, .expect_eof = true});
         stream_is_bounded = true;
     }
     else if (getMethod() != HTTPRequest::HTTP_GET && getMethod() != HTTPRequest::HTTP_HEAD && getMethod() != HTTPRequest::HTTP_DELETE)
@@ -76,9 +81,11 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     else
     {
         /// We have to distinguish empty buffer and nullptr.
-        stream = std::make_unique<EmptyReadBuffer>();
+        stream = std::make_shared<EmptyReadBuffer>();
         stream_is_bounded = true;
     }
+
+    LOG_DEBUG(getLogger("HTTPServerRequest"), "Created request input stream with ref count {} id {}", stream.use_count(), size_t(stream.get()));
 }
 
 bool HTTPServerRequest::checkPeerConnected() const

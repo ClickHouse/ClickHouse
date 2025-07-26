@@ -1,5 +1,6 @@
 #include <Processors/ISource.h>
 #include <QueryPipeline/StreamLocalLimits.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -118,10 +119,10 @@ void ISource::work()
             }
         }
         else
+        {
+            LOG_DEBUG(getLogger("ISource"), "No data to read from source, finishing");
             finished = true;
-
-        if (isCancelled())
-            finished = true;
+        }
 
         if (finished)
             onFinish();
@@ -129,6 +130,8 @@ void ISource::work()
     catch (...)
     {
         got_exception = true;
+
+        cancel();
 
         if (!std::exchange(finished, true))
             onFinish();
@@ -152,4 +155,3 @@ std::optional<Chunk> ISource::tryGenerate()
 }
 
 }
-

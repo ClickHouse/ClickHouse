@@ -5,10 +5,12 @@
 #include <Core/ExternalTable.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/NamesAndAliases.h>
 #include <Disks/StoragePolicy.h>
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
+#include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
@@ -20,6 +22,7 @@
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
+#include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/SettingsChanges.h>
 #include <Common/StringUtils.h>
@@ -413,10 +416,14 @@ void HTTPHandler::processQuery(
     /// Request body can be compressed using algorithm specified in the Content-Encoding header.
     String http_request_compression_method_str = request.get("Content-Encoding", "");
     int zstd_window_log_max = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
+    /// TODO check
+    /// input stream are hold inside in_post instance
     auto in_post = wrapReadBufferWithCompressionMethod(
-        wrapReadBufferReference(request.getStream()),
+        wrapReadBufferPointer(request.getStream()),
         chooseCompressionMethod({}, http_request_compression_method_str),
         zstd_window_log_max);
+    LOG_DEBUG(getLogger("HTTPServerRequest"), "creating in_post id {}", size_t(in_post.get()));
+
 
     /// The data can also be compressed using incompatible internal algorithm. This is indicated by
     /// 'decompress' query parameter.
@@ -424,11 +431,15 @@ void HTTPHandler::processQuery(
     bool is_in_post_compressed = false;
     if (params.getParsedLast<bool>("decompress", false))
     {
-        in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(*in_post, /* allow_different_codecs_ = */ false, /* external_data_ = */ true);
+        in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(std::move(in_post), /* allow_different_codecs_ = */ false, /* external_data_ = */ true);
+        LOG_DEBUG(getLogger("HTTPServerRequest"), "creating in_post_maybe_compressed id {}", size_t(in_post_maybe_compressed.get()));
         is_in_post_compressed = true;
     }
     else
+    {
         in_post_maybe_compressed = std::move(in_post);
+        LOG_DEBUG(getLogger("HTTPServerRequest"), "moving in in_post_maybe_compressed id {}", size_t(in_post_maybe_compressed.get()));
+    }
 
     /// NOTE: this may create pretty huge allocations that will not be accounted in trace_log,
     /// because memory_profiler_sample_probability/memory_profiler_step are not applied yet,
@@ -482,7 +493,18 @@ void HTTPHandler::processQuery(
     }
 
     customizeContext(request, context, *in_post_maybe_compressed);
-    std::unique_ptr<ReadBuffer> in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
+    std::unique_ptr<ReadBuffer> in;
+    if (has_external_data)
+    {
+        in = std::move(in_param);
+        in_post_maybe_compressed.reset();
+        LOG_DEBUG(getLogger("HTTPServerRequest"), "releasing in_post_maybe_compressed");
+    }
+    else
+    {
+        in = std::make_unique<ConcatReadBuffer>(std::move(in_param), std::move(in_post_maybe_compressed));
+        LOG_DEBUG(getLogger("HTTPServerRequest"), "moving in_post_maybe_compressed in in id ConcatReadBuffer:{}", size_t(in.get()));
+    }
 
     applyHTTPResponseHeaders(response, http_response_headers_override);
 
@@ -567,8 +589,9 @@ void HTTPHandler::processQuery(
         used_output.finalize();
     };
 
+    LOG_DEBUG(getLogger("HTTPServerRequest"), "starting executeQuery, request input stream ref count: {}", request.getStreamRefCount());
     executeQuery(
-        *in,
+        std::move(in),
         *used_output.out_maybe_delayed_and_compressed,
         /* allow_into_outfile = */ false,
         context,
@@ -576,7 +599,8 @@ void HTTPHandler::processQuery(
         QueryFlags{},
         {},
         handle_exception_in_output_format,
-        query_finish_callback);
+        query_finish_callback,
+        [&request] () {return request.getStreamRefCount();});
 }
 
 bool HTTPHandler::trySendExceptionToClient(
@@ -800,7 +824,9 @@ std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm 
     /// Support for "external data for query processing".
     /// Used in case of POST request with form-data, but it isn't expected to be deleted after that scope.
     ExternalTablesHandler handler(context, params);
-    params.load(request, request.getStream(), handler);
+    LOG_DEBUG(getLogger("HTTPServerRequest"), "creating for DynamicQueryHandler");
+    auto input_stream = request.getStream();
+    params.load(request, *input_stream, handler);
 
     std::string full_query;
     /// Params are of both form params POST and uri (GET params)
@@ -907,7 +933,9 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
     {
         /// Support for "external data for query processing".
         ExternalTablesHandler handler(context, params);
-        params.load(request, request.getStream(), handler);
+        LOG_DEBUG(getLogger("HTTPServerRequest"), "creating for PredefinedQueryHandler");
+        auto input_stream = request.getStream();
+        params.load(request, *input_stream, handler);
     }
 
     return predefined_query;
@@ -1066,13 +1094,19 @@ void HTTPHandler::Output::pushDelayedResults() const
         if (auto * write_buf_concrete = dynamic_cast<TemporaryDataBuffer *>(write_buf.get()))
         {
             if (auto reread_buf = write_buf_concrete->read())
+            {
+                LOG_DEBUG(getLogger("HTTPServerRequest"), "TemporaryDataBuffer read, id: {} available {}", size_t(reread_buf.get()), reread_buf->available());
                 read_buffers.emplace_back(std::move(reread_buf));
+            }
         }
 
         if (auto * write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get()))
         {
             if (auto reread_buf = write_buf_concrete->tryGetReadBuffer())
+            {
+                LOG_DEBUG(getLogger("HTTPServerRequest"), "IReadableWriteBuffer read, id: {} available {}", size_t(reread_buf.get()), reread_buf->available());
                 read_buffers.emplace_back(std::move(reread_buf));
+            }
         }
     }
 

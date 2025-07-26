@@ -1,5 +1,6 @@
 #include <Server/MySQLHandler.h>
 
+#include <memory>
 #include <optional>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsConnection.h>
@@ -9,6 +10,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <IO/LimitReadBuffer.h>
+#include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -295,16 +297,16 @@ void MySQLHandler::run()
         while (tcp_server.isOpen())
         {
             packet_endpoint->resetSequenceId();
-            MySQLPacketPayloadReadBuffer payload = packet_endpoint->getPayload();
+            auto payload = packet_endpoint->getPayload();
 
             while (!in->poll(1000000))
                 if (!tcp_server.isOpen())
                     return;
             char command = 0;
-            payload.readStrict(command);
+            payload->readStrict(command);
 
             // For commands which are executed without MemoryTracker.
-            LimitReadBuffer limited_payload(payload, {.read_no_more = 1000, .expect_eof = true, .excetion_hint = "too long MySQL packet."});
+            LimitReadBuffer limited_payload(*payload, {.read_no_more = 1000, .expect_eof = true, .excetion_hint = "too long MySQL packet."});
 
             LOG_DEBUG(log, "Received command: {}. Connection id: {}.",
                 static_cast<int>(static_cast<unsigned char>(command)), connection_id);
@@ -321,7 +323,7 @@ void MySQLHandler::run()
                         comInitDB(limited_payload);
                         break;
                     case COM_QUERY:
-                        comQuery(payload, false);
+                        comQuery(std::move(payload), false);
                         break;
                     case COM_FIELD_LIST:
                         comFieldList(limited_payload);
@@ -330,13 +332,13 @@ void MySQLHandler::run()
                         comPing();
                         break;
                     case COM_STMT_PREPARE:
-                        comStmtPrepare(payload);
+                        comStmtPrepare(*payload);
                         break;
                     case COM_STMT_EXECUTE:
-                        comStmtExecute(payload);
+                        comStmtExecute(std::move(payload));
                         break;
                     case COM_STMT_CLOSE:
-                        comStmtClose(payload);
+                        comStmtClose(*payload);
                         break;
                     default:
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Command {} is not implemented.", command);
@@ -467,9 +469,9 @@ void MySQLHandler::comPing()
     packet_endpoint->sendPacket(OKPacket(0x0, client_capabilities, 0, 0, 0));
 }
 
-void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
+void MySQLHandler::comQuery(ReadBufferUniquePtr payload, bool binary_protocol)
 {
-    String query = String(payload.position(), payload.buffer().end());
+    String query = String(payload->position(), payload->buffer().end());
 
     // This is a workaround in order to support adding ClickHouse to MySQL using federated server.
     // As Clickhouse doesn't support these statements, we just send OK packet in response.
@@ -555,11 +557,13 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
 
         if (should_replace)
         {
-            ReadBufferFromString replacement(replacement_query);
-            executeQuery(replacement, *out, false, query_context, set_result_details, QueryFlags{}, format_settings);
+            auto replacement = std::make_unique<ReadBufferFromString>(replacement_query);
+            executeQuery(std::move(replacement), *out, false, query_context, set_result_details, QueryFlags{}, format_settings);
         }
         else
-            executeQuery(payload, *out, false, query_context, set_result_details, QueryFlags{}, format_settings);
+        {
+            executeQuery(std::move(payload), *out, false, query_context, set_result_details, QueryFlags{}, format_settings);
+        }
 
 
         if (!with_output)
@@ -579,14 +583,14 @@ void MySQLHandler::comStmtPrepare(DB::ReadBuffer & payload)
         packet_endpoint->sendPacket(ERRPacket());
 }
 
-void MySQLHandler::comStmtExecute(ReadBuffer & payload)
+void MySQLHandler::comStmtExecute(ReadBufferUniquePtr payload)
 {
     uint32_t statement_id;
-    payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
+    payload->readStrict(reinterpret_cast<char *>(&statement_id), 4);
 
-    auto statement_opt = getPreparedStatement(statement_id);
-    if (statement_opt.has_value())
-        MySQLHandler::comQuery(statement_opt.value(), true);
+    auto statement = getPreparedStatement(statement_id);
+    if (statement)
+        MySQLHandler::comQuery(std::move(statement), true);
     else
         packet_endpoint->sendPacket(ERRPacket());
 };
@@ -633,7 +637,7 @@ std::optional<UInt32> MySQLHandler::emplacePreparedStatement(String statement)
     return std::make_optional(statement_id);
 };
 
-std::optional<ReadBufferFromString> MySQLHandler::getPreparedStatement(UInt32 statement_id)
+ReadBufferUniquePtr MySQLHandler::getPreparedStatement(UInt32 statement_id)
 {
     std::lock_guard<std::mutex> lock(prepared_statements_mutex);
     if (!prepared_statements.contains(statement_id))
@@ -642,7 +646,7 @@ std::optional<ReadBufferFromString> MySQLHandler::getPreparedStatement(UInt32 st
         return {};
     }
     // Temporary workaround as we work only with queries that do not bind any parameters atm
-    return std::make_optional<ReadBufferFromString>(prepared_statements.at(statement_id));
+    return std::make_unique<ReadBufferFromString>(prepared_statements.at(statement_id));
 }
 
 void MySQLHandler::erasePreparedStatement(UInt32 statement_id)

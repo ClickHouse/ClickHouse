@@ -1,6 +1,7 @@
 #include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WithFileName.h>
+#include <Common/logger_useful.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
@@ -40,6 +41,10 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread
             unit.offset = successfully_read_rows_count;
             successfully_read_rows_count += currently_read_rows;
 
+            LOG_DEBUG(getLogger("ParallelParsingInputFormat"),
+                "Segmentator unit read {} bytes, offset {}, rows {}, unit number {} successfully_read_rows_count {} have_more_data {}",
+                unit.segment.size(), unit.offset, currently_read_rows, segmentator_unit_number, successfully_read_rows_count, have_more_data);
+
             unit.is_last = !have_more_data;
             unit.status = READY_TO_PARSE;
             scheduleParserThreadForUnitWithNumber(segmentator_ticket_number);
@@ -71,12 +76,15 @@ void ParallelParsingInputFormat::parserThreadFunction(size_t current_ticket_numb
          * just a 'normal' factory class that doesn't have any state, and so we
          * can use it from multiple threads simultaneously.
          */
+
+        LOG_DEBUG(getLogger("ParallelParsingInputFormat"), "IparserThreadFunction tiket {}", current_ticket_number);
         ReadBuffer read_buffer(unit.segment.data(), unit.segment.size(), 0);
 
         InputFormatPtr input_format = internal_parser_creator(read_buffer);
         input_format->setRowsReadBefore(unit.offset);
         input_format->setErrorsLogger(errors_logger);
         input_format->setSerializationHints(serialization_hints);
+
         InternalParser parser(input_format);
 
         unit.chunk_ext.chunk.clear();
@@ -164,11 +172,7 @@ Chunk ParallelParsingInputFormat::read()
           */
         std::unique_lock<std::mutex> lock(mutex);
         if (background_exception)
-        {
-            lock.unlock();
-            onCancel();
             std::rethrow_exception(background_exception);
-        }
 
         return {};
     }

@@ -16,6 +16,8 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
+#include <IO/EmptyReadBuffer.h>
+#include <IO/ReadBuffer.h>
 #include <IO/copyData.h>
 
 #include <QueryPipeline/BlockIO.h>
@@ -67,6 +69,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 
@@ -976,7 +979,7 @@ static BlockIO executeQueryImpl(
     ContextMutablePtr context,
     QueryFlags flags,
     QueryProcessingStage::Enum stage,
-    ReadBuffer * istr,
+    ReadBufferUniquePtr & istr,
     ASTPtr & out_ast,
     ImplicitTransactionControlExecutorPtr implicit_tcl_executor)
 {
@@ -1241,7 +1244,10 @@ static BlockIO executeQueryImpl(
             }
 
             if (auto * insert_query = out_ast->as<ASTInsertQuery>())
-                insert_query->tail = istr;
+            {
+                LOG_DEBUG(getLogger("executeQuery"), "attaching istr to the insert query tail");
+                insert_query->tail = std::move(istr);
+            }
 
             if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(out_ast.get()))
             {
@@ -1305,7 +1311,7 @@ static BlockIO executeQueryImpl(
         if (insert_query && insert_query->select)
         {
             /// Prepare Input storage before executing interpreter if we already got a buffer with data.
-            if (istr)
+            if (insert_query->tail)
             {
                 ASTPtr input_function;
                 insert_query->tryFindInputFunction(input_function);
@@ -1314,8 +1320,13 @@ static BlockIO executeQueryImpl(
                     StoragePtr storage = context->executeTableFunction(input_function, insert_query->select->as<ASTSelectQuery>());
                     auto & input_storage = dynamic_cast<StorageInput &>(*storage);
                     auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr();
-                    auto pipe = getSourceFromASTInsertQuery(
-                        out_ast, true, input_metadata_snapshot->getSampleBlock(), context, input_function);
+
+                    LOG_DEBUG(getLogger("executeQuery"), "insert query has tail and input function");
+                    auto format = getInputFormatFromASTInsertQuery(out_ast, true, input_metadata_snapshot->getSampleBlock(), context, input_function);
+                    /// need to check it
+                    format->addBuffer(nullptr);
+                    auto pipe = getSourceFromInputFormat(out_ast, std::move(format), context, input_function);
+
                     input_storage.setPipe(std::move(pipe));
                 }
             }
@@ -1402,7 +1413,7 @@ static BlockIO executeQueryImpl(
             else if (result.status == AsynchronousInsertQueue::PushResult::TOO_MUCH_DATA)
             {
                 async_insert = false;
-                insert_data_buffer_holder = std::move(result.insert_data_buffer);
+                //insert_data_buffer_holder = std::move(result.insert_data_buffer);
 
                 if (insert_query->data)
                 {
@@ -1412,7 +1423,8 @@ static BlockIO executeQueryImpl(
                     insert_query->data = nullptr;
                 }
 
-                insert_query->tail = insert_data_buffer_holder.get();
+                //insert_query->tail = insert_data_buffer_holder.get();
+                insert_query->tail = std::move(result.insert_data_buffer);
                 LOG_DEBUG(logger, "Setting async_insert=1, but INSERT query will be executed synchronously because it has too much data");
             }
         }
@@ -1766,7 +1778,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     ASTPtr ast;
     BlockIO res;
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
-    res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, nullptr, ast, implicit_tcl_executor);
+    ReadBufferUniquePtr no_input_buffer;
+    res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, no_input_buffer, ast, implicit_tcl_executor);
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
         String format_name = ast_query_with_output->format_ast
@@ -1781,7 +1794,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
 }
 
 void executeQuery(
-    ReadBuffer & istr,
+    ReadBufferUniquePtr istr,
     WriteBuffer & ostr,
     bool allow_into_outfile,
     ContextMutablePtr context,
@@ -1789,7 +1802,8 @@ void executeQuery(
     QueryFlags flags,
     const std::optional<FormatSettings> & output_format_settings,
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format,
-    QueryFinishCallback query_finish_callback)
+    QueryFinishCallback query_finish_callback,
+    std::function<size_t()> ref_count_cb)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -1797,7 +1811,7 @@ void executeQuery(
 
     try
     {
-        istr.nextIfAtEnd();
+        istr->nextIfAtEnd();
     }
     catch (...)
     {
@@ -1813,12 +1827,12 @@ void executeQuery(
             context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw],
             /*should_throw*/ true);
 
-    if (istr.buffer().end() - istr.position() > static_cast<ssize_t>(max_query_size))
+    if (istr->available() > max_query_size)
     {
         /// If remaining buffer space in 'istr' is enough to parse query up to 'max_query_size' bytes, then parse inplace.
-        begin = istr.position();
-        end = istr.buffer().end();
-        istr.position() += end - begin;
+        begin = istr->position();
+        end = istr->buffer().end();
+        istr->position() += end - begin;
     }
     else
     {
@@ -1826,7 +1840,7 @@ void executeQuery(
 
         /// If not - copy enough data into 'parse_buf'.
         WriteBufferFromVector<PODArray<char>> out(parse_buf);
-        LimitReadBuffer limit(istr, {.read_no_more = max_query_size + 1});
+        LimitReadBuffer limit(*istr, {.read_no_more = max_query_size + 1});
         copyData(limit, out);
         out.finalize();
 
@@ -1908,7 +1922,9 @@ void executeQuery(
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
     try
     {
-        streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, &istr, ast, implicit_tcl_executor);
+        LOG_DEBUG(getLogger("executeQuery"), "before executeQueryImpl, request input stream ref count: {}", ref_count_cb());
+        streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, istr, ast, implicit_tcl_executor);
+        LOG_DEBUG(getLogger("executeQuery"), "after executeQueryImpl, request input stream ref count: {}", ref_count_cb());
     }
     catch (...)
     {
@@ -1963,7 +1979,12 @@ void executeQuery(
     {
         if (pipeline.pushing())
         {
-            auto pipe = getSourceFromASTInsertQuery(ast, true, pipeline.getHeader(), context, nullptr);
+            auto format = getInputFormatFromASTInsertQuery(ast, true, pipeline.getHeader(), context, nullptr);
+            LOG_DEBUG(getLogger("executeQuery"), "attach input buffer to format as pushing");
+            chassert(istr);
+            format->addBuffer(std::move(istr));
+            auto pipe = getSourceFromInputFormat(ast, std::move(format), context, nullptr);
+
             pipeline.complete(std::move(pipe));
         }
         else if (pipeline.pulling())
@@ -2025,6 +2046,13 @@ void executeQuery(
             pipeline.setProgressCallback(context->getProgressCallback());
         }
 
+        if (istr)
+        {
+            LOG_DEBUG(getLogger("executeQuery"), "resetting isrt, request input stream ref count: {}", ref_count_cb());
+            istr.reset();
+            LOG_DEBUG(getLogger("executeQuery"), "reset isrt, request input stream ref count: {}", ref_count_cb());
+        }
+
         if (set_result_details)
         {
             /// The call of set_result_details itself might throw exception,
@@ -2036,6 +2064,8 @@ void executeQuery(
             set_result_details_copy(result_details);
         }
 
+        LOG_DEBUG(getLogger("executeQuery"), "execute executor.execute(), request input stream ref count: {}", ref_count_cb());
+
         if (pipeline.initialized())
         {
             CompletedPipelineExecutor executor(pipeline);
@@ -2045,6 +2075,8 @@ void executeQuery(
         {
             /// It's possible to have queries without input and output.
         }
+        LOG_DEBUG(getLogger("executeQuery"), "after executor.execute(), request input stream ref count: {}", ref_count_cb());
+
     }
     catch (...)
     {

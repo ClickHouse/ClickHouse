@@ -2144,6 +2144,8 @@ bool ClientBase::sendCancel(std::exception_ptr exception_ptr)
 
 void ClientBase::cancelQuery()
 {
+    LOG_DEBUG(getLogger("ClientBase"), "Cancelling query");
+
     sendCancel();
 
     stopKeystrokeInterceptorIfExists();

@@ -59,7 +59,7 @@ protected:
     /// Enables SSL, if client requested.
     void finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResponse &);
 
-    void comQuery(ReadBuffer & payload, bool binary_protocol);
+    void comQuery(ReadBufferUniquePtr payload, bool binary_protocol);
 
     void comFieldList(ReadBuffer & payload);
 
@@ -71,14 +71,14 @@ protected:
 
     void comStmtPrepare(ReadBuffer & payload);
 
-    void comStmtExecute(ReadBuffer & payload);
+    void comStmtExecute(ReadBufferUniquePtr payload);
 
     void comStmtClose(ReadBuffer & payload);
 
     /// Contains statement_id if the statement was emplaced successfully
     std::optional<UInt32> emplacePreparedStatement(String statement);
     /// Contains statement as a buffer if we could find previously stored statement using provided statement_id
-    std::optional<ReadBufferFromString> getPreparedStatement(UInt32 statement_id);
+    ReadBufferUniquePtr getPreparedStatement(UInt32 statement_id);
     void erasePreparedStatement(UInt32 statement_id);
 
     virtual void authPluginSSL();

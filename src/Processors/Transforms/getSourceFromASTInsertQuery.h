@@ -28,14 +28,6 @@ Pipe getSourceFromInputFormat(
     ContextPtr context,
     const ASTPtr & input_function);
 
-/// Prepares a pipe which produce data containing in INSERT query.
-Pipe getSourceFromASTInsertQuery(
-    const ASTPtr & ast,
-    bool with_buffers,
-    const Block & header,
-    ContextPtr context,
-    const ASTPtr & input_function);
-
 class ReadBuffer;
 
 /// Prepares a read buffer, that allows to read inlined data
