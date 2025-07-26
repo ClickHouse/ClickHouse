@@ -330,6 +330,7 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressionsInDis
     }
 
     auto new_or_node = std::make_shared<FunctionNode>("or");
+    new_or_node->markAsOperator();
     new_or_node->getArguments().getNodes() = std::move(new_disjuncts);
 
     resolveOrdinaryFunctionNodeByName(*new_or_node, "or", context);
@@ -439,6 +440,7 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(cons
         else
         {
             auto new_and_node = std::make_shared<FunctionNode>("and");
+            new_and_node->markAsOperator();
             new_and_node->getArguments().getNodes() = std::move(filtered_and_arguments);
             resolveOrdinaryFunctionNodeByName(*new_and_node, "and", context);
 
@@ -461,6 +463,7 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(cons
     }
 
     auto new_or_node = std::make_shared<FunctionNode>("or");
+    new_or_node->markAsOperator();
     new_or_node->getArguments().getNodes() = std::move(new_or_arguments);
 
     resolveOrdinaryFunctionNodeByName(*new_or_node, "or", context);
@@ -491,6 +494,7 @@ void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const ContextPtr 
             // The OR expression must be replaced by and AND expression that will contain the common expressions
             // and the new_node, if it is not nullptr.
             auto new_function_node = std::make_shared<FunctionNode>("and");
+            new_function_node->markAsOperator();
             new_function_node->getArguments().getNodes() = std::move(new_root_arguments);
             auto and_function_resolver = FunctionFactory::instance().get("and", context);
             new_function_node->resolveAsFunction(and_function_resolver);
@@ -538,6 +542,7 @@ void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const ContextPtr
         return;
 
     auto and_function_node = std::make_shared<FunctionNode>("and");
+    and_function_node->markAsOperator();
     and_function_node->getArguments().getNodes() = std::move(new_top_level_arguments);
     auto and_function_resolver = FunctionFactory::instance().get("and", context);
     and_function_node->resolveAsFunction(and_function_resolver);
@@ -809,6 +814,7 @@ private:
 
         /// Rebuild OR function
         auto function_node = std::make_shared<FunctionNode>("or");
+        function_node->markAsOperator();
         function_node->getArguments().getNodes() = std::move(new_or_operands);
         resolveOrdinaryFunctionNodeByName(*function_node, "or", context);
         return function_node;
@@ -1018,6 +1024,7 @@ private:
             auto rhs_node = std::make_shared<ConstantNode>(std::move(args));
 
             auto not_in_function = std::make_shared<FunctionNode>("notIn");
+            not_in_function->markAsOperator();
 
             QueryTreeNodes not_in_arguments;
             not_in_arguments.reserve(2);
@@ -1204,6 +1211,7 @@ private:
                             compare_function_name = "equals";
 
                         const auto and_node = std::make_shared<FunctionNode>(compare_function_name);
+                        and_node->markAsOperator();
                         and_node->getArguments().getNodes().push_back(left.first->clone());
                         and_node->getArguments().getNodes().push_back(constant->clone());
                         and_node->resolveAsFunction(
@@ -1321,6 +1329,7 @@ private:
             auto rhs_node = std::make_shared<ConstantNode>(std::move(args), std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));
 
             auto in_function = std::make_shared<FunctionNode>("in");
+            in_function->markAsOperator();
 
             QueryTreeNodes in_arguments;
             in_arguments.reserve(2);
@@ -1418,6 +1427,7 @@ private:
         {
             auto not_resolver = FunctionFactory::instance().get("not", getContext());
             const auto not_node = std::make_shared<FunctionNode>("not");
+            not_node->markAsOperator();
             auto & arguments = not_node->getArguments().getNodes();
             arguments.reserve(1);
             arguments.push_back(is_lhs_const ? rhs : lhs);
