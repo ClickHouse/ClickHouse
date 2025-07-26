@@ -7,6 +7,7 @@
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/GWPAsan.h>
+#include <Common/AllocationInterceptors.h>
 #include "config.h"
 
 #if USE_JEMALLOC
@@ -85,9 +86,9 @@ inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
 
     void * ptr = nullptr;
     if constexpr (sizeof...(TAlign) == 1)
-        ptr = aligned_alloc(alignToSizeT(align...), alignUp(size, alignToSizeT(align...)));
+        ptr = __real_aligned_alloc(alignToSizeT(align...), alignUp(size, alignToSizeT(align...)));
     else
-        ptr = malloc(size);
+        ptr = __real_malloc(size);
 
     if (likely(ptr != nullptr))
         return ptr;
@@ -110,7 +111,7 @@ inline ALWAYS_INLINE void * newNoExcept(std::size_t size) noexcept
         ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
     }
 #endif
-    return malloc(size);
+    return __real_malloc(size);
 }
 
 inline ALWAYS_INLINE void * newNoExcept(std::size_t size, std::align_val_t align) noexcept
@@ -127,7 +128,7 @@ inline ALWAYS_INLINE void * newNoExcept(std::size_t size, std::align_val_t align
         ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
     }
 #endif
-    return aligned_alloc(static_cast<size_t>(align), size);
+    return __real_aligned_alloc(static_cast<size_t>(align), size);
 }
 
 inline ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
@@ -140,7 +141,7 @@ inline ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
         return;
     }
 #endif
-    free(ptr);
+    __real_free(ptr);
 }
 
 #if USE_JEMALLOC
@@ -181,7 +182,7 @@ inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size [[maybe_unuse
         return;
     }
 #endif
-    free(ptr);
+    __real_free(ptr);
 }
 
 #endif

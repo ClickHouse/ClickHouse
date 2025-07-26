@@ -319,6 +319,9 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
     }
     catch (...)
     {
+        /// Function __cxa_allocate_dependent_exception in
+        /// libcxxabi/src/cxa_exception.cpp calls malloc.
+        ALLOW_ALLOCATIONS_IN_SCOPE;
         if (item->task->printExecutionException())
             printExceptionWithRespectToAbort(log, query_id);
         /// Release the task with exception context.
