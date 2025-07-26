@@ -6,6 +6,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -92,25 +93,31 @@ void ColumnFunction::get(size_t n, Field & res) const
         res_tuple.push_back((*captured_columns[i].column)[n]);
 }
 
-std::pair<String, DataTypePtr> ColumnFunction::getValueNameAndType(size_t n) const
+DataTypePtr ColumnFunction::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     size_t size = captured_columns.size();
 
-    String value_name {size > 1 ? "(" : "tuple("};
+    if (options.notFull(name_buf))
+    {
+        if (size > 1)
+            name_buf << "(";
+        else
+            name_buf << "tuple(";
+    }
     DataTypes element_types;
     element_types.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
     {
-        const auto & [value, type] = captured_columns[i].column->getValueNameAndType(n);
+        if (options.notFull(name_buf) && i > 0)
+            name_buf << ", ";
+        const auto & type = captured_columns[i].column->getValueNameAndTypeImpl(name_buf, n, options);
         element_types.push_back(type);
-        if (i > 0)
-            value_name += ", ";
-        value_name += value;
     }
-    value_name += ")";
+    if (options.notFull(name_buf))
+        name_buf << ")";
 
-    return {value_name, std::make_shared<DataTypeTuple>(element_types)};
+    return std::make_shared<DataTypeTuple>(element_types);
 }
 
 
