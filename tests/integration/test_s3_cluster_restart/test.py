@@ -264,7 +264,7 @@ def test_insert_select(started_cluster, wait_restart, missing_table):
         , query_id = uuid
     )
 
-    if (wait_restart):
+    if (not wait_restart):
         node2.wait_for_start(30)
 
     node1.query(f"SYSTEM SYNC REPLICA {table}")
