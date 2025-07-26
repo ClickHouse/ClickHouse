@@ -93,6 +93,8 @@ StorageObjectStorage::StorageObjectStorage(
     const String & comment,
     std::optional<FormatSettings> format_settings_,
     LoadingStrictnessLevel mode,
+    bool if_not_exists_,
+    bool is_datalake_query,
     bool distributed_processing_,
     ASTPtr partition_by_,
     bool is_table_function,
@@ -110,6 +112,17 @@ StorageObjectStorage::StorageObjectStorage(
         && !configuration->withPartitionWildcard()
         && !configuration->isDataLakeConfiguration();
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
+
+    if (!is_table_function && !columns_.empty() && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE)
+    {
+        configuration->create(
+            object_storage,
+            context,
+            columns_,
+            partition_by_,
+            if_not_exists_
+        );
+    }
 
     bool updated_configuration = false;
     try
