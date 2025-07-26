@@ -46,7 +46,7 @@ struct ResourceTestBase
     {
         std::stringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         stream << "<resource><node path=\"" << path << "\">" << xml << "</node></resource>";
-        Poco::AutoPtr config{new Poco::Util::XMLConfiguration(stream)};
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration(stream)};
         String config_prefix = "node";
 
         return add<TClass>(event_queue, root_node, path, std::ref(*config), config_prefix);
@@ -404,7 +404,7 @@ struct ResourceTestManager : public ResourceTestBase
     void update(const String & xml)
     {
         std::istringstream stream(xml); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        Poco::AutoPtr config{new Poco::Util::XMLConfiguration(stream)};
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration(stream)};
         manager->updateConfiguration(*config);
     }
 
