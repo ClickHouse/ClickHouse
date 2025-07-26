@@ -71,6 +71,17 @@ String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_nod
     const auto & [name, type] = constant_node.getValueNameAndType();
     bool requires_cast_call = constant_node.hasSourceExpression() || ConstantNode::requiresCastCall(type, constant_node.getResultType());
 
+    if (constant_node.hasSourceExpression())
+    {
+        // Already result of _CAST - just recreate it
+        if (auto * function_node = constant_node.getSourceExpression()->as<FunctionNode>(); function_node && function_node->getFunctionName() == "_CAST")
+        {
+            WriteBufferFromOwnString buffer;
+            buffer << "_CAST(" << name << "_" << constant_node.getColumn()->getValueNameAndType(0).second->getName() << ", '" << constant_node.getResultType()->getName() << "'_String)";
+            return buffer.str();
+        }
+    }
+
     WriteBufferFromOwnString buffer;
     if (requires_cast_call)
         buffer << "_CAST(";
