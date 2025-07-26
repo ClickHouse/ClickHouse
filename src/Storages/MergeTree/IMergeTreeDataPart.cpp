@@ -1624,26 +1624,30 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
 
 void IMergeTreeDataPart::loadTTLInfos()
 {
-    if (auto in = readFileIfExists("ttl.txt"))
+    auto metadata_snapshot = getMetadataSnapshot();
+    if (metadata_snapshot->hasAnyTTL())
     {
-        assertString("ttl format version: ", *in);
-        size_t format_version;
-        readText(format_version, *in);
-        assertChar('\n', *in);
-
-        if (format_version == 1)
+        if (auto in = readFileIfExists("ttl.txt"))
         {
-            try
+            assertString("ttl format version: ", *in);
+            size_t format_version;
+            readText(format_version, *in);
+            assertChar('\n', *in);
+
+            if (format_version == 1)
             {
-                ttl_infos.read(*in);
+                try
+                {
+                    ttl_infos.read(*in);
+                }
+                catch (const JSONException &)
+                {
+                    throw Exception(ErrorCodes::BAD_TTL_FILE, "Error while parsing file ttl.txt in part: {}", name);
+                }
             }
-            catch (const JSONException &)
-            {
-                throw Exception(ErrorCodes::BAD_TTL_FILE, "Error while parsing file ttl.txt in part: {}", name);
-            }
+            else
+                throw Exception(ErrorCodes::BAD_TTL_FILE, "Unknown ttl format version: {}", toString(format_version));
         }
-        else
-            throw Exception(ErrorCodes::BAD_TTL_FILE, "Unknown ttl format version: {}", toString(format_version));
     }
 }
 
