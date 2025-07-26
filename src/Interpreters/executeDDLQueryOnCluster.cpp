@@ -222,12 +222,26 @@ bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context)
     if (database_name.empty())
         database_name = context->getCurrentDatabase();
 
+    const auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+    if (!database)
+        return false;
+
     auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query_ptr.get());
+    if (const auto * replicated = dynamic_cast<const DatabaseReplicated *>(database.get()); replicated)
+    {
+        LOG_DEBUG(
+            getLogger("IgnoreOnClusterClauseReplicatedDatabase"),
+            "ON CLUSTER clause was ignored for query {} in Replicated database {}.",
+            query->getID(),
+            replicated->getDatabaseName());
+        query_on_cluster->cluster.clear();
+        return true;
+    }
+
     if (database_name != query_on_cluster->cluster)
         return false;
 
-    auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
-    if (database && database->shouldReplicateQuery(context, query_ptr))
+    if (database->shouldReplicateQuery(context, query_ptr))
     {
         /// It's Replicated database and query is replicated on database level,
         /// so ON CLUSTER clause is redundant.
