@@ -359,7 +359,8 @@ def main():
             "release_branch_base_sha_with_predecessors"
         )[0]
         Shell.check(
-            f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin {info.git_branch} ||:", verbose=True
+            f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin {info.git_branch} ||:",
+            verbose=True,
         )
         Shell.check(
             f"rm -rf ./tests/performance && git checkout {reference_sha} ./tests/performance",

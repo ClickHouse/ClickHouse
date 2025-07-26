@@ -35,7 +35,6 @@ ENGINE = JDBC(datasource, external_database, external_table)
 
 **Engine Parameters**
 
-
 - `datasource` — URI or name of an external DBMS.
 
     URI Format: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
