@@ -18,11 +18,6 @@ static bool sameConstants(const IColumn & a, const IColumn & b)
     return assert_cast<const ColumnConst &>(a).getField() == assert_cast<const ColumnConst &>(b).getField();
 }
 
-ColumnWithTypeAndName getLeastSuperColumn(const std::vector<const ColumnWithTypeAndName *> & columns)
-{
-    return getLeastSuperColumn(columns, false);
-}
-
 ColumnWithTypeAndName getLeastSuperColumn(const std::vector<const ColumnWithTypeAndName *> & columns, bool use_variant_as_common_type)
 {
     if (columns.empty())

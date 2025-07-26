@@ -100,7 +100,7 @@ String dumpQueryPipeline(const QueryPlan & query_plan)
     return query_pipeline_buffer.str();
 }
 
-Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode union_mode, bool use_variant_as_common_type)
+Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUnionMode union_mode, bool use_variant_as_common_type)
 {
     size_t num_selects = queries_headers.size();
     Block common_header = *queries_headers.front();
