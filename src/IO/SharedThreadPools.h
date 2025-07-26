@@ -86,6 +86,9 @@ StaticThreadPool & getDatabaseCatalogDropTablesThreadPool();
 /// ThreadPool used for parallel prefixes deserialization of subcolumns in Wide MergeTree parts.
 StaticThreadPool & getMergeTreePrefixesDeserializationThreadPool();
 
+/// ThreadPool used for parallel reading of patch parts in MergeTree.
+StaticThreadPool & getPatchPartsReadingThreadPool();
+
 StaticThreadPool & getFormatParsingThreadPool();
 
 }
