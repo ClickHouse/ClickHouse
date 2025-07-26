@@ -273,6 +273,7 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
     return result;
 }
 
+/// Constructor for tests
 KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host, int port, KeeperContextPtr keeper_context_)
     : my_server_id(server_id_)
     , secure(false)
@@ -321,6 +322,16 @@ KeeperStateManager::KeeperStateManager(
     , keeper_context(keeper_context_)
     , logger(getLogger("KeeperStateManager"))
 {
+    // TODO double check if setting raft logs to None actually works
+    // Why don't we check for overflow here the same way we do in KeeperServer?
+    if (log_store->rotate_interval <= 0)
+    {
+        LOG_FATAL(
+            logger,
+            "rotate_log_storage_interval must be greater than 0. If you wish to disable keeper logging set raft_logs_level to None."
+            );
+        std::terminate();
+    }
 }
 
 void KeeperStateManager::loadLogStore(uint64_t last_commited_index, uint64_t logs_to_keep)
