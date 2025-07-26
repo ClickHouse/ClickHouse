@@ -3,6 +3,7 @@
 #include <set>
 #include <map>
 #include <mutex>
+#include <algorithm>
 #include <optional>
 #include <functional>
 #include <filesystem>
@@ -217,7 +218,7 @@ public:
             if (!subdirectory.starts_with(path))
                 break;
 
-            auto slash_num = count(subdirectory.begin() + path.size(), subdirectory.end(), '/');
+            auto slash_num = std::count(subdirectory.begin() + path.size(), subdirectory.end(), '/');
 
             /// The directory map comparator ensures that the paths with the smallest number of
             /// hops from the local_path are iterated first. The paths do not end with '/', hence
