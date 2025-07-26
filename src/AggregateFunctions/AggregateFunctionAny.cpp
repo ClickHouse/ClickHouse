@@ -26,8 +26,22 @@ private:
 public:
     explicit AggregateFunctionAny(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionAny<Data>>(argument_types_, {}, argument_types_[0])
-        , serialization(this->result_type->getDefaultSerialization())
     {
+        if constexpr (!std::is_same_v<Data, SingleValueDataStringRef>)
+            serialization = this->result_type->getDefaultSerialization();
+    }
+
+    using IAggregateFunction::argument_types;
+
+    AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
+    {
+        if constexpr (std::is_same_v<Data, SingleValueDataString>)
+        {
+            /// Create a new aggregate function for merging final states using SingleValueDataStringRef.
+            return std::make_shared<AggregateFunctionAny<SingleValueDataStringRef>>(argument_types);
+        }
+
+        return IAggregateFunction::getAggregateFunctionForMergingFinal();
     }
 
     String getName() const override { return "any"; }
@@ -112,17 +126,23 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
+        if constexpr (std::is_same_v<Data, SingleValueDataStringRef>)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Merge for SingleValueDataStringRef is not implemented");
         if (!this->data(place).has())
             this->data(place).set(this->data(rhs), arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
+        if constexpr (std::is_same_v<Data, SingleValueDataStringRef>)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialize for SingleValueDataStringRef is not implemented");
         this->data(place).write(buf, *serialization);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
+        if constexpr (std::is_same_v<Data, SingleValueDataStringRef>)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialize for SingleValueDataStringRef is not implemented");
         this->data(place).read(buf, *serialization, this->result_type, arena);
     }
 
@@ -194,8 +214,22 @@ private:
 public:
     explicit AggregateFunctionAnyLast(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionAnyLast<Data>>(argument_types_, {}, argument_types_[0])
-        , serialization(this->result_type->getDefaultSerialization())
     {
+        if constexpr (!std::is_same_v<Data, SingleValueDataStringRef>)
+            serialization = this->result_type->getDefaultSerialization();
+    }
+
+    using IAggregateFunction::argument_types;
+
+    AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
+    {
+        if constexpr (std::is_same_v<Data, SingleValueDataString>)
+        {
+            /// Create a new aggregate function for merging final states using SingleValueDataStringRef.
+            return std::make_shared<AggregateFunctionAnyLast<SingleValueDataStringRef>>(argument_types);
+        }
+
+        return IAggregateFunction::getAggregateFunctionForMergingFinal();
     }
 
     String getName() const override { return "anyLast"; }
@@ -283,16 +317,22 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
+        if constexpr (std::is_same_v<Data, SingleValueDataStringRef>)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Merge for SingleValueDataStringRef is not implemented");
         this->data(place).set(this->data(rhs), arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
+        if constexpr (std::is_same_v<Data, SingleValueDataStringRef>)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialize for SingleValueDataStringRef is not implemented");
         this->data(place).write(buf, *serialization);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
+        if constexpr (std::is_same_v<Data, SingleValueDataStringRef>)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialize for SingleValueDataStringRef is not implemented");
         this->data(place).read(buf, *serialization, this->result_type, arena);
     }
 
