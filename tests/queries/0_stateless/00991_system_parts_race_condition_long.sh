@@ -56,7 +56,7 @@ function thread5()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        $CLICKHOUSE_CLIENT --max-execution-time 10 -q "ALTER TABLE alter_table DELETE WHERE rand() % 2 = 1" 2> /dev/null
+        $CLICKHOUSE_CLIENT --mutations-sync 1 --max-execution-time 10 -q "ALTER TABLE alter_table DELETE WHERE rand() % 2 = 1" 2> /dev/null
     done
 }
 
