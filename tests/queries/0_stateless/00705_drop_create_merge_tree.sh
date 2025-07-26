@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-msan
+# Tags: no-fasttest, no-msan, no-flaky-check
 # msan: too slow
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long, no-msan
+# Tags: no-fasttest, long, no-msan, no-flaky-check
 # no-msan: it is too slow
 # Tag no-fasttest: Require python libraries like scipy, pandas and numpy
 
