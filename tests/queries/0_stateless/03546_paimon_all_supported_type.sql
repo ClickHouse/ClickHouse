@@ -1,5 +1,6 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: Depends on AWS
+set enable_time_time64_type=1;
 
 desc paimonS3(s3_conn, filename='paimon_all_types');
 
