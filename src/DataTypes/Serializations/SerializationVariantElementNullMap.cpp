@@ -104,7 +104,11 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
     if (auto cached_discriminators = getFromSubstreamsCache(cache, settings.path))
     {
         variant_element_null_map_state = checkAndGetState<DeserializeBinaryBulkStateVariantElementNullMap>(state);
-        variant_element_null_map_state->discriminators = cached_discriminators;
+        /// If rows_offset is set, in cache we store discriminators from the current range without applied offset.
+        if (rows_offset)
+            variant_element_null_map_state->discriminators->assumeMutable()->insertRangeFrom(*cached_discriminators, 0, cached_discriminators->size());
+        else
+            variant_element_null_map_state->discriminators = cached_discriminators;
     }
     else if (auto * discriminators_stream = settings.getter(settings.path))
     {
@@ -115,6 +119,10 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
         /// If we started to read a new column, reinitialize discriminators column in deserialization state.
         if (!variant_element_null_map_state->discriminators || result_column->empty())
             variant_element_null_map_state->discriminators = ColumnVariant::ColumnDiscriminators::create();
+
+        /// Now we are sure that discriminators are not in cache and we can save the size of discriminators now to know how
+        /// many discriminators were actually deserialized to iterate over them later to calculate limits for variants.
+        variant_element_null_map_state->num_rows_read = variant_element_null_map_state->discriminators->size();
 
         /// Deserialize discriminators according to serialization mode.
         if (discriminators_state->mode.value == SerializationVariant::DiscriminatorsSerializationMode::BASIC)
@@ -137,7 +145,17 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
             variant_limit = variant_pair.second;
         }
 
-        addToSubstreamsCache(cache, settings.path, variant_element_null_map_state->discriminators);
+        /// If we have rows_offset, we must put discriminators without applied rows_offset in cache because we
+        /// need these discriminators to calculate offsets for variants after we get them from cache.
+        if (rows_offset)
+        {
+            size_t num_read_discriminators = variant_element_null_map_state->discriminators->size() - variant_element_null_map_state->num_rows_read;
+            addToSubstreamsCache(cache, settings.path, variant_element_null_map_state->discriminators->cut(variant_element_null_map_state->num_rows_read, num_read_discriminators));
+        }
+        else
+        {
+            addToSubstreamsCache(cache, settings.path, variant_element_null_map_state->discriminators);
+        }
     }
     else
     {
