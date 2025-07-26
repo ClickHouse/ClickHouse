@@ -382,7 +382,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         return;
 
     connections = create_connections(async_callback);
-    AsyncCallbackSetter async_callback_setter(connections.get(), async_callback);
+    AsyncCallbackSetter<IConnections> async_callback_setter(connections.get(), async_callback);
 
     const auto & settings = context->getSettingsRef();
     if (isReplicaUnavailable() || needToSkipUnavailableShard())
