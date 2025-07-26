@@ -519,7 +519,7 @@ class Result(MetaClasses.Serializable):
                     break
 
         # Create and return the result object with status and log file (if any)
-        MAX_LINES_IN_INFO = 100
+        MAX_LINES_IN_INFO = 300
         return Result.create_from(
             name=name,
             status=res,

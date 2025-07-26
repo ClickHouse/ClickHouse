@@ -70,7 +70,7 @@ profiles:
         # TODO figure out which ones are needed
         commands = [
             f"cp -av --dereference ./ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml {self.config_path}/users.d",
-            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/allow-nullable-key.xml {self.config_path}/config.d",
+            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/fuzz-server-settings.xml {self.config_path}/config.d",
         ]
 
         c1 = """

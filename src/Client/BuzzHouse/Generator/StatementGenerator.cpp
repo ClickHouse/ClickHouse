@@ -410,25 +410,26 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             t.setName(cmvt->mutable_est(), false);
             if (next.has_with_cols)
             {
-                for (const auto & col : t.cols)
+                std::vector<uint32_t> nids;
+
+                for (const auto & [key, val] : t.cols)
                 {
-                    if (col.second.canBeInserted())
+                    if (val.canBeInserted())
                     {
-                        filtered_columns.emplace_back(std::ref<const SQLColumn>(col.second));
+                        nids.push_back(key);
                     }
                 }
                 if (rg.nextBool())
                 {
-                    std::shuffle(filtered_columns.begin(), filtered_columns.end(), rg.generator);
+                    std::shuffle(nids.begin(), nids.end(), rg.generator);
                 }
                 for (uint32_t i = 0; i < view_ncols; i++)
                 {
-                    SQLColumn col = filtered_columns[i].get();
+                    SQLColumn col = t.cols.at(nids[i]);
 
                     addTableColumnInternal(rg, t, col.cname, false, false, ColumnSpecial::NONE, col, cmvt->add_col_list());
                     next.cols.insert(col.cname);
                 }
-                filtered_columns.clear();
             }
         }
         if (!replace && (next.is_refreshable = rg.nextBool()))
@@ -4112,8 +4113,8 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
 void StatementGenerator::generateNextStatement(RandomGenerator & rg, SQLQuery & sq)
 {
     const uint32_t nqueries = rg.nextMediumNumber() < 96 ? 1 : (rg.nextMediumNumber() % 4) + 1;
-    const uint32_t start_transaction = 2 * static_cast<uint32_t>(nqueries == 1 && !this->in_transaction);
-    const uint32_t commit = 50 * static_cast<uint32_t>(nqueries == 1 && this->in_transaction);
+    const uint32_t start_transaction = 2 * static_cast<uint32_t>(fc.allow_transactions && nqueries == 1 && !this->in_transaction);
+    const uint32_t commit = 50 * static_cast<uint32_t>(fc.allow_transactions && nqueries == 1 && this->in_transaction);
     const uint32_t explain_query = 10;
     const uint32_t run_query = 120;
     const uint32_t prob_space = start_transaction + commit + explain_query + run_query;
