@@ -27,6 +27,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/ColumnsDescription.h>
@@ -186,8 +187,18 @@ StorageObjectStorage::StorageObjectStorage(
         }
     }
 
+    bool is_delta_lake = false;
+#if USE_PARQUET
+    is_delta_lake = dynamic_cast<const StorageS3DeltaLakeConfiguration*>(configuration.get()) ||
+                   dynamic_cast<const StorageLocalDeltaLakeConfiguration*>(configuration.get())
+#if USE_AZURE_BLOB_STORAGE
+                   || dynamic_cast<const StorageAzureDeltaLakeConfiguration*>(configuration.get())
+#endif
+                   ;
+#endif
+
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
-        metadata.columns, context, sample_path, format_settings, configuration->isDataLakeConfiguration()));
+        metadata.columns, context, sample_path, format_settings, configuration->isDataLakeConfiguration(), is_delta_lake));
     setInMemoryMetadata(metadata);
 }
 

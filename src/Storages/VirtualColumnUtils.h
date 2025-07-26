@@ -77,7 +77,8 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
     const ContextPtr & context,
     const std::string & sample_path = "",
     std::optional<FormatSettings> format_settings_ = std::nullopt,
-    bool is_data_lake = false);
+    bool is_data_lake = false,
+    bool is_delta_lake = false);
 
 std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns);
 
@@ -105,6 +106,7 @@ struct VirtualsForFileLikeStorage
     const String * filename { nullptr };
     std::optional<Poco::Timestamp> last_modified { std::nullopt };
     const String * etag { nullptr };
+    std::optional<UInt64> delta_lake_version { std::nullopt };
 };
 
 void addRequestedFileLikeStorageVirtualsToChunk(
