@@ -1,0 +1,75 @@
+<clickhouse>
+    <logger>
+        <level>trace</level>
+        <size>1000M</size>
+        <count>10</count>
+    </logger>
+
+    <tcp_port>9090</tcp_port>
+    <!-- <tcp_with_proxy_port>9091</tcp_with_proxy_port> -->
+
+    <storage>
+        <servers>
+            <server>
+                <key>server-1</key>
+                <host>127.0.0.1</host>
+                <!-- port with enabled proxy header parsing -->
+                <tcp_port>9011</tcp_port>
+            </server>
+            <server>
+                <key>server-2</key>
+                <host>127.0.0.1</host>
+                <!-- port with enabled proxy header parsing -->
+                <tcp_port>9012</tcp_port>
+            </server>
+        </servers>
+    </storage>
+
+    <routing>
+        <rules>
+            <rule>
+                <user>admin</user>
+                <action>
+                    <route_to>
+                        <server>server-2</server>
+                    </route_to>
+                </action>
+            </rule>
+            <rule>
+                <database>test_database</database>
+                <!-- <host>test.clickhouse.cloud</host> -->
+                <user>test_user</user>
+                <action>
+                    <route_to>
+                        <server>server-1</server>
+                    </route_to>
+                </action>
+            </rule>
+            <rule>
+                <user>test_user</user>
+                <!-- <host>test-1.clickhouse.cloud</host> -->
+                <action>
+                    <route_to>
+                        <server>server-1</server>
+                        <server>server-2</server>
+                    </route_to>
+                    <policy>
+                        round_robin
+                    </policy>
+                </action>
+            </rule>
+            <rule>
+                <database>deprecated_database</database>
+                <!-- <host>test.clickhouse.cloud</host> -->
+                <action>
+                    <reject>true</reject>
+                </action>
+            </rule>
+        </rules>
+        <default>
+             <action>
+                <reject>true</reject>
+            </action>
+        </default>
+    </routing>
+</clickhouse>
