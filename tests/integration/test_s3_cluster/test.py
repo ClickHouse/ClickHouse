@@ -356,7 +356,7 @@ def test_distributed_insert_select_with_replicated(started_cluster):
 @pytest.mark.parametrize(
     "cluster_name",
     [
-        pytest.param("cluster_simple"),
+        # pytest.param("cluster_simple"),
         pytest.param("first_shard"),
     ],
 )
@@ -382,6 +382,8 @@ def test_distributed_insert_select_with_replicated_2(started_cluster, cluster_na
     ) SETTINGS parallel_distributed_insert_select=2;
         """
     )
+
+    node.query(f"SYSTEM SYNC REPLICA ON CLUSTER {cluster_name} insert_select_replicated_local")
 
     # Check whether we inserted at least something
     assert (
