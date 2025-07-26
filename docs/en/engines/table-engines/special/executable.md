@@ -28,18 +28,17 @@ Executable(script_name, format, [input_query...])
 Here are the relevant settings for an `Executable` table:
 
 - `send_chunk_header`
-    - Description: Send the number of rows in each chunk before sending a chunk to process. This setting can help to write your script in a more efficient way to preallocate some resources
-    - Default value: false
+  - Description: Send the number of rows in each chunk before sending a chunk to process. This setting can help to write your script in a more efficient way to preallocate some resources
+  - Default value: false
 - `command_termination_timeout`
-    - Description: Command termination timeout in seconds
-    - Default value: 10
+  - Description: Command termination timeout in seconds
+  - Default value: 10
 - `command_read_timeout`
-    - Description: Timeout for reading data from command stdout in milliseconds
-    - Default value: 10000
+  - Description: Timeout for reading data from command stdout in milliseconds
+  - Default value: 10000
 - `command_write_timeout`
-    - Description: Timeout for writing data to command stdin in milliseconds
-    - Default value: 10000
-
+  - Description: Timeout for writing data to command stdin in milliseconds
+  - Default value: 10000
 
 Let's look at an example. The following Python script is named `my_script.py` and is saved in the `user_scripts` folder. It reads in a number `i` and prints `i` random strings, with each string preceded by a number that is separated by a tab:
 
@@ -199,17 +198,16 @@ The response looks like:
 └──────────┴───────────┘
 ```
 
-
 ## Creating an `ExecutablePool` table {#creating-an-executablepool-table}
 
 The syntax for `ExecutablePool` is similar to `Executable`, but there are a couple of relevant settings unique to an `ExecutablePool` table:
 
 - `pool_size`
-    - Description: Processes pool size. If size is 0, then there are no size restrictions
-    - Default value: 16
+  - Description: Processes pool size. If size is 0, then there are no size restrictions
+  - Default value: 16
 - `max_command_execution_time`
-    - Description: Max command execution time in seconds
-    - Default value: 10
+  - Description: Max command execution time in seconds
+  - Default value: 10
 
 We can easily convert the `sentiment` table above to use `ExecutablePool` instead of `Executable`:
 

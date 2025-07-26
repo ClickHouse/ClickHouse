@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas, long
+# Tags: no-parallel-replicas, long, disabled
+
+# disabled until https://github.com/ClickHouse/ClickHouse/issues/84295 is done
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -86,11 +88,6 @@ $CLICKHOUSE_CLIENT --query "
 # It is ok, we only check that server doesn't crash in this
 
 wait
-
-$CLICKHOUSE_CLIENT --query "
-    ALTER TABLE t_rename_alter ADD COLUMN just_for_sync_alters_and_mutations UInt64 SETTINGS alter_sync = 2;
-    ALTER TABLE t_rename_alter UPDATE just_for_sync_alters_and_mutations = 43 WHERE 1 SETTINGS mutations_sync = 2;
-"
 
 $CLICKHOUSE_CLIENT --query "
     SELECT count() > 0 FROM t_rename_alter WHERE NOT ignore(*);

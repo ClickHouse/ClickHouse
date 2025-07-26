@@ -23,7 +23,6 @@ Alias: `VAR_SAMP`.
 
 **Returned value**
 
-
 - Returns the sample variance of the input data set `x`. [Float64](../../data-types/float.md).
 
 **Implementation details**

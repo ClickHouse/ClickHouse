@@ -859,7 +859,7 @@ struct ConvertImplGenericToString
         auto col_to = removeNullable(result_type)->createColumn();
 
         {
-            ColumnStringHelpers::WriteHelper write_helper(
+            ColumnStringHelpers::WriteHelper<StringColumnType> write_helper(
                     assert_cast<StringColumnType &>(*col_to),
                     size);
 
@@ -5259,7 +5259,7 @@ private:
             return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
             {
                 auto json_string = ColumnString::create();
-                ColumnStringHelpers::WriteHelper write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
+                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
                 auto & write_buffer = write_helper.getWriteBuffer();
                 FormatSettings format_settings = context ? getFormatSettings(context) : FormatSettings{};
                 auto serialization = arguments[0].type->getDefaultSerialization();

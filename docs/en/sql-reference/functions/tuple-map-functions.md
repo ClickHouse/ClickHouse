@@ -466,7 +466,6 @@ Result:
 └──────────────────────────────┴───────────────────────────────────┘
 ```
 
-
 ## mapKeys {#mapkeys}
 
 Returns the keys of a given map.
@@ -553,7 +552,6 @@ Result:
 └────────────────────────┘
 ```
 
-
 ## mapContainsKeyLike {#mapcontainskeylike}
 
 **Syntax**
@@ -630,7 +628,6 @@ Result:
 │ {}                         │
 └────────────────────────────┘
 ```
-
 
 ## mapValues {#mapvalues}
 

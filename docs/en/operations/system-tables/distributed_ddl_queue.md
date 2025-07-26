@@ -26,7 +26,6 @@ Columns:
 - `query_finish_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Query finish time.
 - `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Duration of query execution (in milliseconds).
 
-
 **Example**
 
 ```sql
