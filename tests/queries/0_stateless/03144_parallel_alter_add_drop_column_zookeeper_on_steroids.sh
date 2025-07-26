@@ -83,7 +83,7 @@ function select_thread()
 
 
 echo "Starting alters"
-TIMEOUT=20
+TIMEOUT=10
 
 # Sometimes we detach and attach tables
 alter_thread 2> /dev/null &
@@ -100,10 +100,7 @@ select_thread 2> /dev/null &
 
 optimize_thread 2> /dev/null &
 optimize_thread 2> /dev/null &
-optimize_thread 2> /dev/null &
 
-insert_thread 2> /dev/null &
-insert_thread 2> /dev/null &
 insert_thread 2> /dev/null &
 insert_thread 2> /dev/null &
 insert_thread 2> /dev/null &

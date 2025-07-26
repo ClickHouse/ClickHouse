@@ -3018,7 +3018,7 @@ def test_explanation(started_cluster, format_version, storage_type):
             [
                 "Expression ((Project names + (Projection + Change column names to column identifiers)))"
             ],
-            [f"  Iceberg{storage_type.title()}(default.{TABLE_NAME})ReadStep"],
+            [f"  ReadFromObjectStorage"],
         ]
 
         assert res == expected

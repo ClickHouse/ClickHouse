@@ -23,19 +23,19 @@ namespace ErrorCodes
 
 Block JoiningTransform::transformHeader(Block header, const JoinPtr & join)
 {
-    LOG_TRACE(getLogger("JoiningTransform"), "Before join block: '{}'", header.dumpStructure());
+    LOG_TEST(getLogger("JoiningTransform"), "Before join block: '{}'", header.dumpStructure());
     join->checkTypesOfKeys(header);
     join->initialize(header);
     ExtraBlockPtr tmp;
     join->joinBlock(header, tmp);
     materializeBlockInplace(header);
-    LOG_TRACE(getLogger("JoiningTransform"), "After join block: '{}'", header.dumpStructure());
+    LOG_TEST(getLogger("JoiningTransform"), "After join block: '{}'", header.dumpStructure());
     return header;
 }
 
 JoiningTransform::JoiningTransform(
-    const Block & input_header,
-    const Block & output_header,
+    SharedHeader input_header,
+    SharedHeader output_header,
     JoinPtr join_,
     size_t max_block_size_,
     bool on_totals_,
@@ -158,7 +158,7 @@ void JoiningTransform::work()
         }
 
         Block block = non_joined_blocks->next();
-        if (!block)
+        if (block.empty())
         {
             process_non_joined = false;
             return;
@@ -195,7 +195,7 @@ void JoiningTransform::transform(Chunk & chunk)
 
         /// Drop totals if both out stream and joined stream doesn't have ones.
         /// See comment in ExpressionTransform.h
-        if (default_totals && !right_totals)
+        if (default_totals && right_totals.empty())
             return;
 
         res.emplace_back();
@@ -245,7 +245,7 @@ Blocks JoiningTransform::readExecute(Chunk & chunk)
         if (chunk.hasColumns())
             block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
 
-        if (block)
+        if (!block.empty())
             join_block();
     }
     else if (not_processed->empty()) /// There's not processed data inside expression.
@@ -265,7 +265,7 @@ Blocks JoiningTransform::readExecute(Chunk & chunk)
     return res;
 }
 
-FillingRightJoinSideTransform::FillingRightJoinSideTransform(Block input_header, JoinPtr join_, FinishCounterPtr finish_counter_)
+FillingRightJoinSideTransform::FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_)
     : IProcessor({input_header}, {Block()}), join(std::move(join_)), finish_counter(std::move(finish_counter_))
 {
     spillable = typeid_cast<GraceHashJoin *>(join.get());
@@ -392,7 +392,7 @@ bool FillingRightJoinSideTransform::spillOnSize(size_t bytes)
 }
 
 DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(
-    Block output_header_,
+    SharedHeader output_header_,
     NonJoinedStreamBuilder non_joined_stream_builder_)
     : IProcessor(InputPorts{Block()}, OutputPorts{output_header_})
     , non_joined_stream_builder(std::move(non_joined_stream_builder_))
@@ -476,14 +476,14 @@ void DelayedJoinedBlocksWorkerTransform::work()
     if (!task->delayed_blocks->isFinished())
     {
         block = task->delayed_blocks->next();
-        if (!block)
+        if (block.empty())
             block = nextNonJoinedBlock();
     }
     else
     {
         block = nextNonJoinedBlock();
     }
-    if (!block)
+    if (block.empty())
     {
         resetTask();
         return;
