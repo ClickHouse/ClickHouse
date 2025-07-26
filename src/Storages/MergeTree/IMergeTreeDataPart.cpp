@@ -36,8 +36,10 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/FailPoint.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/StringUtils.h>
+#include <Common/thread_local_rng.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 
@@ -99,6 +101,11 @@ namespace ErrorCodes
     extern const int BAD_TTL_FILE;
     extern const int NOT_IMPLEMENTED;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+}
+
+namespace FailPoints
+{
+    extern const char remove_merge_tree_part_delay[];
 }
 
 namespace
@@ -666,6 +673,15 @@ bool IMergeTreeDataPart::mayStoreDataInCaches() const
 
 void IMergeTreeDataPart::removeIfNeeded()
 {
+    if (is_removed)
+        return;
+
+    fiu_do_on(FailPoints::remove_merge_tree_part_delay,
+    {
+        std::chrono::milliseconds sleep_time{1300 + thread_local_rng() % 200};
+        std::this_thread::sleep_for(sleep_time);
+    });
+
     chassert(assertHasValidVersionMetadata());
     std::string path;
 
@@ -720,6 +736,8 @@ void IMergeTreeDataPart::removeIfNeeded()
         {
             LOG_TRACE(storage.log, "Removed part from old location {}", path);
         }
+
+        is_removed = true;
     }
     catch (...)
     {
