@@ -30,7 +30,7 @@ def main():
         print("Start ClickHouse")
 
         def start():
-            res = ch.start()
+            res = ch.start_light()
             if Info().is_local_run:
                 return res
             return res and ch.start_log_exports(check_start_time=stop_watch.start_time)
