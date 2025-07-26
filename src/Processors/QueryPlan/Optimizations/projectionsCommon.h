@@ -87,4 +87,7 @@ void filterPartsUsingProjection(
     const SelectQueryInfo & projection_query_info,
     const ContextPtr & context);
 
+/// When parallel replicas are enabled, projections are read directly on the initial replica if both projection and part streams are present.
+void fallbackToLocalProjectionReading(const QueryPlanStepPtr & projection_reading);
+
 }
