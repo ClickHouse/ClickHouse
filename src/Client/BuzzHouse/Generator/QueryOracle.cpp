@@ -56,7 +56,8 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
 
     ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(
         FUNCcount);
-    gen.levels.erase(gen.current_level);
+    gen.levels.clear();
+    gen.ctes.clear();
     gen.setAllowNotDetermistic(true);
     gen.enforceFinal(false);
     gen.setAllowEngineUDF(true);
