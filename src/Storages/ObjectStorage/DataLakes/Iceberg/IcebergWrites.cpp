@@ -654,7 +654,6 @@ IcebergStorageSink::IcebergStorageSink(
     , context(context_)
     , configuration(configuration_)
     , format_settings(format_settings_)
-    , filename_generator(configuration_->getPathForWrite().path)
 {
     configuration->update(object_storage, context, true, false);
     auto log = getLogger("IcebergWrites");
@@ -663,7 +662,7 @@ IcebergStorageSink::IcebergStorageSink(
 
     metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, log, compression_method);
 
-    auto config_path = configuration_->getPath();
+    auto config_path = configuration_->getPathForWrite().path;
     if (config_path.empty() || config_path.back() != '/')
         config_path += "/";
     if (!context_->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata])
