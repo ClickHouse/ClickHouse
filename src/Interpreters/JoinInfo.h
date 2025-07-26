@@ -78,11 +78,10 @@ struct JoinExpressionActions
 
     JoinExpressionActions clone() const
     {
-        return  JoinExpressionActions(
+        return JoinExpressionActions(
             std::make_unique<ActionsDAG>(left_pre_join_actions->clone()),
             std::make_unique<ActionsDAG>(right_pre_join_actions->clone()),
-            std::make_unique<ActionsDAG>(post_join_actions->clone())
-        );
+            std::make_unique<ActionsDAG>(post_join_actions->clone()));
     }
 
     bool hasCorrelatedExpressions() const noexcept
