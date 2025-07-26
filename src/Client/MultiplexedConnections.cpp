@@ -1,6 +1,7 @@
 #include <Client/MultiplexedConnections.h>
 
 #include <Common/thread_local_rng.h>
+#include <Core/Names.h>
 #include <Core/Protocol.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
@@ -145,7 +146,8 @@ void MultiplexedConnections::sendQuery(
     UInt64 stage,
     ClientInfo & client_info,
     bool with_pending_data,
-    const std::vector<String> & external_roles)
+    const std::vector<String> & external_roles,
+    const NameToNameMap & query_parameters)
 {
     std::lock_guard lock(cancel_mutex);
 
@@ -198,14 +200,14 @@ void MultiplexedConnections::sendQuery(
                 modified_settings[Setting::parallel_replica_offset] = i;
 
             replica_states[i].connection->sendQuery(
-                timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, external_roles, {});
+                timeouts, query, query_parameters, query_id, stage, &modified_settings, &client_info, with_pending_data, external_roles, {});
         }
     }
     else
     {
         /// Use single replica.
         replica_states[0].connection->sendQuery(
-            timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, external_roles, {});
+            timeouts, query, query_parameters, query_id, stage, &modified_settings, &client_info, with_pending_data, external_roles, {});
     }
 
     sent_query = true;

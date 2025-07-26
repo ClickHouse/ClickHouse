@@ -517,6 +517,30 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
         /// disable hedged connections -> parallel replicas uses own logic to choose replicas
         context_mutable->setSetting("use_hedged_requests", Field{false});
     }
+    if (!settings[Setting::additional_table_filters].value.empty())
+    {
+        Map additional_filter_resolved;
+
+        auto current_database = context->getCurrentDatabase();
+
+        for (const auto & additional_filter : settings[Setting::additional_table_filters].value)
+        {
+            const auto & tuple = additional_filter.safeGet<Tuple>();
+            const auto & table = tuple.at(0).safeGet<String>();
+            const auto & filter = tuple.at(1).safeGet<String>();
+
+            const char * table_end = table.data() + table.size();
+
+            if (find_first_symbols<'.'>(table.data(), table_end) != table_end)
+            {
+                additional_filter_resolved.emplace_back(tuple);
+                continue;
+            }
+
+            additional_filter_resolved.emplace_back(Tuple{current_database + '.' + table, filter});
+        }
+        context_mutable->setSetting("additional_table_filters", additional_filter_resolved);
+    }
     return context_mutable;
 }
 
