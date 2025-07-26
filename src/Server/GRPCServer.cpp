@@ -74,7 +74,7 @@ namespace Setting
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
-    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -1022,7 +1022,7 @@ namespace
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in InputBlocksReader");
 
             Block block;
-            while (!block && pipeline_executor->pull(block));
+            while (block.empty() && pipeline_executor->pull(block));
 
             return block;
         });
@@ -1066,7 +1066,7 @@ namespace
         Block block;
         while (pipeline_executor->pull(block))
         {
-            if (block)
+            if (!block.empty())
                 executor.push(block);
         }
 
@@ -1078,7 +1078,7 @@ namespace
 
     void Call::initializePipeline(const Block & header)
     {
-        assert(!read_buffer);
+        chassert(!read_buffer);
         read_buffer = std::make_unique<ReadBufferFromCallback>([this]() -> std::pair<const void *, size_t>
         {
             if (need_input_data_from_insert_query)
@@ -1212,7 +1212,7 @@ namespace
                     QueryPipelineBuilder cur_pipeline;
                     cur_pipeline.init(Pipe(std::move(in)));
                     cur_pipeline.addTransform(std::move(sink));
-                    cur_pipeline.setSinks([&](const Block & header, Pipe::StreamType)
+                    cur_pipeline.setSinks([&](const SharedHeader & header, Pipe::StreamType)
                     {
                         return std::make_shared<EmptySink>(header);
                     });
@@ -1311,7 +1311,7 @@ namespace
                 if (!check_for_cancel())
                     break;
 
-                if (block && !io.null_format)
+                if (!block.empty() && !io.null_format)
                     output_format_processor->write(materializeBlock(block));
 
                 if (after_send_progress.elapsedMicroseconds() >= interactive_delay)
@@ -1590,7 +1590,7 @@ namespace
 
     void Call::addTotalsToResult(const Block & totals)
     {
-        if (!totals)
+        if (totals.empty())
             return;
 
         PODArray<char> memory;
@@ -1608,7 +1608,7 @@ namespace
 
     void Call::addExtremesToResult(const Block & extremes)
     {
-        if (!extremes)
+        if (extremes.empty())
             return;
 
         PODArray<char> memory;

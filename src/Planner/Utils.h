@@ -39,7 +39,7 @@ Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode 
 void addConvertingToCommonHeaderActionsIfNeeded(
     std::vector<std::unique_ptr<QueryPlan>> & query_plans,
     const Block & union_common_header,
-    Blocks & query_plans_headers);
+    SharedHeaders & query_plans_headers);
 
 /// Convert query node to ASTSelectQuery
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node, bool set_subquery_cte_name = true);

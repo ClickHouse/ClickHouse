@@ -126,8 +126,7 @@ public:
     /// Approximate number of allocated bytes in memory - for profiling and limits.
     size_t allocatedBytes() const;
 
-    explicit operator bool() const { return !!columns(); }
-    bool operator!() const { return !this->operator bool(); } /// NOLINT
+    bool empty() const { return !columns(); }
 
     /** Get a list of column names separated by commas. */
     std::string dumpNames() const;
@@ -190,15 +189,6 @@ private:
     /// It is temporary.
     friend class ExpressionActions;
     friend class ActionsDAG;
-};
-
-
-/// Extends block with extra data in derived classes
-struct ExtraBlock
-{
-    Block block;
-
-    bool empty() const { return !block; }
 };
 
 /// Compare number of columns, data types, column types, column names, and values of constant columns.

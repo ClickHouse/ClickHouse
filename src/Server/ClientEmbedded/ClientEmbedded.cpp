@@ -24,7 +24,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
 }
 
 
