@@ -2,7 +2,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include "Formats/MarkInCompressedFile.h"
+#include <Formats/MarkInCompressedFile.h>
 #include <Common/logger_useful.h>
 #include <IO/NullWriteBuffer.h>
 
@@ -197,16 +197,25 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
 
     result_block = permuteBlockIfNeeded(result_block, permutation);
 
-    if (!header)
+    if (header.empty())
         header = result_block.cloneEmpty();
 
-    columns_buffer.add(result_block.mutateColumns());
     size_t current_mark_rows = index_granularity->getMarkRows(getCurrentMark());
-    size_t rows_in_buffer = columns_buffer.size();
-
-    if (rows_in_buffer >= current_mark_rows)
+    Block flushed_block;
+    if (columns_buffer.size() == 0 && result_block.rows() >= current_mark_rows)
     {
-        Block flushed_block = header.cloneWithColumns(columns_buffer.releaseColumns());
+        flushed_block = std::move(result_block);
+    }
+    else
+    {
+        columns_buffer.add(result_block.mutateColumns());
+        size_t rows_in_buffer = columns_buffer.size();
+        if (rows_in_buffer >= current_mark_rows)
+            flushed_block = header.cloneWithColumns(columns_buffer.releaseColumns());
+    }
+
+    if (!flushed_block.empty())
+    {
         auto granules_to_write = getGranulesToWrite(*index_granularity, flushed_block.rows(), getCurrentMark(), /* last_block = */ false);
         writeDataBlockPrimaryIndexAndSkipIndices(flushed_block, granules_to_write);
         setCurrentMark(getCurrentMark() + granules_to_write.size());
@@ -372,7 +381,8 @@ void MergeTreeDataPartWriterCompact::initColumnsSubstreamsIfNeeded(const Block &
             return &buf;
         };
 
-        writeColumnSingleGranule(sample.getByName(name_and_type.name), getSerialization(name_and_type.name), buffer_getter, 0, 0, settings);
+        const auto & column = sample.getByName(name_and_type.name);
+        writeColumnSingleGranule(column, getSerialization(name_and_type.name), buffer_getter, column.column->size(), 0, settings);
     }
 }
 

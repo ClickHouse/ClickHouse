@@ -625,6 +625,8 @@
     M(743, ICEBERG_SPECIFICATION_VIOLATION) \
     M(744, SESSION_ID_EMPTY) \
     M(745, SERVER_OVERLOADED) \
+    M(746, DEPENDENCIES_NOT_FOUND) \
+    M(747, FILECACHE_CANNOT_WRITE_THROUGH_CACHE_WITH_CONCURRENT_READS) /* private error code */ \
 \
     M(900, DISTRIBUTED_CACHE_ERROR) \
     M(901, CANNOT_USE_DISTRIBUTED_CACHE) \
@@ -636,6 +638,7 @@
     M(1001, STD_EXCEPTION) \
     M(1002, UNKNOWN_EXCEPTION) \
     M(1003, SSH_EXCEPTION) \
+    M(1004, STARTUP_SCRIPTS_ERROR) \
 /* See END */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
@@ -652,7 +655,7 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
-    constexpr ErrorCode END = 1003;
+    constexpr ErrorCode END = 1004;
     ErrorPairHolder values[END + 1]{};
 
     struct ErrorCodesNames
@@ -668,7 +671,7 @@ namespace ErrorCodes
 
     std::string_view getName(ErrorCode error_code)
     {
-        if (error_code < 0 || error_code >= END)
+        if (error_code < 0 || error_code > END)
             return std::string_view();
         return error_codes_names.names[error_code];
     }

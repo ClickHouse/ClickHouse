@@ -11,10 +11,12 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/typeid_cast.h>
+#include <Columns/IColumn_fwd.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
@@ -33,6 +35,7 @@
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string.hpp>
 #include <algorithm>
+#include <vector>
 
 
 namespace DB
@@ -127,18 +130,26 @@ class ZooKeeperSink : public SinkToStorage
     ZkNodeCache cache;
 
 public:
-    ZooKeeperSink(const Block & header, ContextPtr context) : SinkToStorage(header), zookeeper(context->getZooKeeper()) { }
+    ZooKeeperSink(SharedHeader header, ContextPtr context)
+        : SinkToStorage(header), zookeeper(context->getZooKeeper())
+    {}
+
     String getName() const override { return "ZooKeeperSink"; }
 
     void consume(Chunk & chunk) override
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
+
+        ColumnPtr name_column = block.getByName("name").column;
+        ColumnPtr value_column = block.getByName("value").column;
+        ColumnPtr path_column = block.getByName("path").column;
+
         size_t rows = block.rows();
         for (size_t i = 0; i < rows; i++)
         {
-            String name = block.getByPosition(0).column->getDataAt(i).toString();
-            String value = block.getByPosition(1).column->getDataAt(i).toString();
-            String path = block.getByPosition(2).column->getDataAt(i).toString();
+            String name = name_column->getDataAt(i).toString();
+            String value = value_column->getDataAt(i).toString();
+            String path = path_column->getDataAt(i).toString();
 
             /// We don't expect a "name" contains a path.
             if (name.contains('/'))
@@ -207,6 +218,7 @@ public:
 private:
     std::shared_ptr<const StorageLimitsList> storage_limits;
     const UInt64 max_block_size;
+    String name;
     Paths paths;
 };
 
@@ -215,12 +227,14 @@ class SystemZooKeeperSource : public ISource
 {
 public:
     SystemZooKeeperSource(
+        String && zookeeper_name_,
         Paths && paths_,
-        Block header_,
+        SharedHeader header_,
         UInt64 max_block_size_,
         ContextPtr context_)
         : ISource(header_)
         , max_block_size(max_block_size_)
+        , name(std::move(zookeeper_name_))
         , paths(std::move(paths_))
         , context(std::move(context_))
     {
@@ -233,9 +247,10 @@ protected:
 
 private:
     const UInt64 max_block_size;
+    String name;
     Paths paths;
     ContextPtr context;
-    ZooKeeperWithFaultInjection::Ptr zookeeper;
+    std::map<String, ZooKeeperWithFaultInjection::Ptr> zookeepers;
     bool started = false;
     std::unordered_set<String> visited;
 };
@@ -270,15 +285,12 @@ void StorageSystemZooKeeper::read(
     query_plan.addStep(std::move(read_step));
 }
 
-SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, bool /*async_insert*/)
+SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMetadataPtr & metadata, ContextPtr context, bool /*async_insert*/)
 {
     if (!context->getConfigRef().getBool("allow_zookeeper_write", false))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prohibit writing to system.zookeeper, unless config `allow_zookeeper_write` as true");
-    Block write_header;
-    write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "name"));
-    write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "value"));
-    write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "path"));
-    return std::make_shared<ZooKeeperSink>(write_header, context);
+
+    return std::make_shared<ZooKeeperSink>(std::make_shared<const Block>(metadata->getSampleBlock()), context);
 }
 
 ColumnsDescription StorageSystemZooKeeper::getColumnsDescription()
@@ -287,6 +299,7 @@ ColumnsDescription StorageSystemZooKeeper::getColumnsDescription()
     {
         {"name",           std::make_shared<DataTypeString>(), "The name of the node."},
         {"value",          std::make_shared<DataTypeString>(), "Node value."},
+        {"zookeeperName",  std::make_shared<DataTypeString>(), "The name of default or one of auxiliary ZooKeeper cluster."},
         {"czxid",          std::make_shared<DataTypeInt64>(), "ID of the transaction that created the node."},
         {"mzxid",          std::make_shared<DataTypeInt64>(), "ID of the transaction that last changed the node."},
         {"ctime",          std::make_shared<DataTypeDateTime>(), "Time of node creation."},
@@ -328,12 +341,65 @@ static String pathCorrected(const String & path)
     return path_corrected;
 }
 
+static bool isNameNode(const ActionsDAG::Node * node)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.at(0);
+
+    return node->result_name == "zookeeperName";
+}
+
 static bool isPathNode(const ActionsDAG::Node * node)
 {
     while (node->type == ActionsDAG::ActionType::ALIAS)
         node = node->children.at(0);
 
     return node->result_name == "path";
+}
+
+static void extractNameImpl(const ActionsDAG::Node & node, String & res, ContextPtr context)
+{
+    /// Only one name is allowed
+    if (!res.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "SELECT from system.zookeeper table cannot have multiple different filters by zookeeperName.");
+
+    if (node.type != ActionsDAG::ActionType::FUNCTION)
+        return;
+
+    auto function_name = node.function_base->getName();
+    if (function_name == "and")
+    {
+        for (const auto * child : node.children)
+            extractNameImpl(*child, res, context);
+
+        return;
+    }
+
+    if (node.children.size() != 2)
+        return;
+
+    if (function_name == "equals")
+    {
+        const ActionsDAG::Node * value = nullptr;
+
+        if (isNameNode(node.children.at(0)))
+            value = node.children.at(1);
+        else if (isNameNode(node.children.at(1)))
+            value = node.children.at(0);
+
+        if (!value || !value->column)
+            return;
+
+        if (!isString(removeNullable(removeLowCardinality(value->result_type))))
+            return;
+
+        if (value->column->size() != 1)
+            return;
+
+        /// Only inserted if the key doesn't exists already
+        res = value->column->getDataAt(0).toString();
+    }
 }
 
 static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextPtr context, bool allow_unrestricted)
@@ -458,6 +524,20 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
     }
 }
 
+/** Retrieve from the query a condition of the form `zookeeperName = 'name`, from conjunctions in the WHERE clause.
+  */
+static String extractName(const ActionsDAG::NodeRawConstPtrs & filter_nodes, ContextPtr context)
+{
+    String res;
+    for (const auto * node : filter_nodes)
+        extractNameImpl(*node, res, context);
+
+    if (res.empty())
+        return {String(zkutil::DEFAULT_ZOOKEEPER_NAME)};
+
+    return res;
+}
+
 
 /** Retrieve from the query a condition of the form `path = 'path'`, from conjunctions in the WHERE clause.
   */
@@ -487,12 +567,19 @@ void ReadFromSystemZooKeeper::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(added_filter_nodes);
 
+    name = extractName(added_filter_nodes.nodes, context);
     paths = extractPath(added_filter_nodes.nodes, context, context->getSettingsRef()[Setting::allow_unrestricted_reads_from_keeper]);
 }
 
 
 Chunk SystemZooKeeperSource::generate()
 {
+    if (name.empty())
+    {
+        chassert(0); // In fact, it must always have a default value.
+        name = zkutil::DEFAULT_ZOOKEEPER_NAME;
+    }
+
     if (paths.empty())
     {
         if (!started)
@@ -524,16 +611,17 @@ Chunk SystemZooKeeperSource::generate()
     /// Handles reconnects when needed
     auto get_zookeeper = [&] ()
     {
-        if (!zookeeper || zookeeper->expired())
+        auto zookeeper = zookeepers.find(name);
+        if (zookeeper == zookeepers.end() || zookeeper->second->expired())
         {
-            zookeeper = ZooKeeperWithFaultInjection::createInstance(
+            zookeepers[name] = ZooKeeperWithFaultInjection::createInstance(
                 settings[Setting::insert_keeper_fault_injection_probability],
                 settings[Setting::insert_keeper_fault_injection_seed],
-                context->getZooKeeper(),
+                context->getDefaultOrAuxiliaryZooKeeper(name),
                 "",
                 nullptr);
         }
-        return zookeeper;
+        return zookeepers[name];
     };
 
     const Int64 max_inflight_requests = std::max<Int64>(1, context->getSettingsRef()[Setting::max_download_threads].value);
@@ -671,6 +759,7 @@ Chunk SystemZooKeeperSource::generate()
             size_t col_num = 0;
             res_columns[col_num++]->insert(get_task.node);
             res_columns[col_num++]->insert(res.data);
+            res_columns[col_num++]->insert(name);
             res_columns[col_num++]->insert(stat.czxid);
             res_columns[col_num++]->insert(stat.mzxid);
             res_columns[col_num++]->insert(UInt64(stat.ctime / 1000));
@@ -705,7 +794,7 @@ ReadFromSystemZooKeeper::ReadFromSystemZooKeeper(
     const Block & header,
     UInt64 max_block_size_)
     : SourceStepWithFilter(
-        header,
+        std::make_shared<const Block>(header),
         column_names_,
         query_info_,
         storage_snapshot_,
@@ -718,7 +807,8 @@ ReadFromSystemZooKeeper::ReadFromSystemZooKeeper(
 void ReadFromSystemZooKeeper::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     const auto & header = getOutputHeader();
-    auto source = std::make_shared<SystemZooKeeperSource>(std::move(paths), header, max_block_size, context);
+
+    auto source = std::make_shared<SystemZooKeeperSource>(std::move(name), std::move(paths), header, max_block_size, context);
     source->setStorageLimits(storage_limits);
     processors.emplace_back(source);
     pipeline.init(Pipe(std::move(source)));

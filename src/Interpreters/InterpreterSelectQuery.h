@@ -4,6 +4,7 @@
 #include <optional>
 
 #include <Access/EnabledRowPolicies.h>
+#include <Core/Block.h>
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
@@ -232,7 +233,7 @@ private:
     /// List of columns to read to execute the query.
     Names required_columns;
     /// Structure of query source (table, subquery, etc).
-    Block source_header;
+    SharedHeader source_header;
 
     /// Actions to calculate ALIAS if required.
     std::optional<ActionsDAG> alias_actions;

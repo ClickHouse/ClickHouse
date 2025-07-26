@@ -234,7 +234,6 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 
 - [REMOVE TTL](ttl.md).
 
-
 ## MODIFY COLUMN MODIFY SETTING {#modify-column-modify-setting}
 
 Modify a column setting.

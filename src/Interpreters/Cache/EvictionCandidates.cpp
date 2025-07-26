@@ -137,8 +137,8 @@ void EvictionCandidates::evict()
         auto locked_key = key_candidates.key_metadata->tryLock();
         if (!locked_key)
         {
-            /// key could become invalid after we released
-            /// the key lock above, just skip it.
+            /// key could become invalid (meaning all cache by this key was dropped)
+            /// after we released the key lock above, just skip it.
             continue;
         }
 

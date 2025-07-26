@@ -136,39 +136,15 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerValidator("bloom_filter", bloomFilterIndexValidator);
 
     registerCreator("hypothesis", hypothesisIndexCreator);
-
     registerValidator("hypothesis", hypothesisIndexValidator);
 
 #if USE_USEARCH
     registerCreator("vector_similarity", vectorSimilarityIndexCreator);
     registerValidator("vector_similarity", vectorSimilarityIndexValidator);
 #endif
-    /// ------
-    /// TODO: remove this block at the end of 2024.
-    /// Index types 'annoy' and 'usearch' are no longer supported as of June 2024. Their successor is index type 'vector_similarity'.
-    /// To support loading tables with old indexes during a transition period, register dummy indexes which allow load/attaching but
-    /// throw an exception when the user attempts to use them.
-    registerCreator("annoy", legacyVectorSimilarityIndexCreator);
-    registerValidator("annoy", legacyVectorSimilarityIndexValidator);
-    registerCreator("usearch", legacyVectorSimilarityIndexCreator);
-    registerValidator("usearch", legacyVectorSimilarityIndexValidator);
-    /// ------
 
-    registerCreator("gin", ginIndexCreator);
-    registerValidator("gin", ginIndexValidator);
-
-    /// ------
-    /// Index type 'inverted' was renamed to 'full_text' in May 2024.
-    /// Index type 'full_text' was renamed to 'gin' in April 2025.
-    ///
-    /// To support loading tables with old indexes during a transition period, register GIN indexes under their old names.
-    ///
-    /// TODO: remove this block one year after GIN indexes became GA.
-    registerCreator("full_text", ginIndexCreator);
-    registerValidator("full_text", ginIndexValidator);
-    registerCreator("inverted", ginIndexCreator);
-    registerValidator("inverted", ginIndexValidator);
-    /// ------
+    registerCreator("text", ginIndexCreator);
+    registerValidator("text", ginIndexValidator);
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()

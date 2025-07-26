@@ -12,6 +12,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/ReplicatedTableStatus.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
@@ -36,6 +37,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int QUERY_WAS_CANCELLED;
 }
 
@@ -272,7 +274,7 @@ public:
         size_t max_block_size_,
         std::shared_ptr<StorageSystemReplicasImpl> impl_)
         : SourceStepWithFilter(
-            std::move(sample_block),
+            std::make_shared<const Block>(std::move(sample_block)),
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -380,7 +382,7 @@ class SystemReplicasSource : public ISource
 {
 public:
     SystemReplicasSource(
-        Block header_,
+        SharedHeader header_,
         size_t max_block_size_,
         ColumnPtr col_database_,
         ColumnPtr col_table_,
@@ -502,6 +504,8 @@ Chunk SystemReplicasSource::generate()
 
     bool rows_added = false;
 
+    LoggerPtr logger = getLogger("SystemReplicasSource::generate");
+
     for (; i < futures.size(); ++i)
     {
         if (query_status)
@@ -524,50 +528,64 @@ Chunk SystemReplicasSource::generate()
             }
         }
 
+        const ReplicatedTableStatus * status;
+        try
+        {
+            status = &futures[i].get();
+        }
+        catch (Exception & e)
+        {
+            if (e.code() == ErrorCodes::ABORTED)
+            {
+                tryLogCurrentException(logger, "Received the ABORTED error while trying to get the status of a storage, this is likely because it has been shut down");
+                continue;
+            }
+            throw;
+        }
+
         res_columns[0]->insert((*col_database)[i]);
         res_columns[1]->insert((*col_table)[i]);
         res_columns[2]->insert((*col_engine)[i]);
 
-        const auto & status = futures[i].get();
         size_t col_num = 3;
-        res_columns[col_num++]->insert(status.is_leader);
-        res_columns[col_num++]->insert(status.can_become_leader);
-        res_columns[col_num++]->insert(status.is_readonly);
-        if (status.readonly_start_time != 0)
-            res_columns[col_num++]->insert(status.readonly_start_time);
+        res_columns[col_num++]->insert(status->is_leader);
+        res_columns[col_num++]->insert(status->can_become_leader);
+        res_columns[col_num++]->insert(status->is_readonly);
+        if (status->readonly_start_time != 0)
+            res_columns[col_num++]->insert(status->readonly_start_time);
         else
             res_columns[col_num++]->insertDefault();
-        res_columns[col_num++]->insert(status.is_session_expired);
-        res_columns[col_num++]->insert(status.queue.future_parts);
-        res_columns[col_num++]->insert(status.parts_to_check);
-        res_columns[col_num++]->insert(status.zookeeper_info.zookeeper_name);
-        res_columns[col_num++]->insert(status.zookeeper_info.path);
-        res_columns[col_num++]->insert(status.zookeeper_info.replica_name);
-        res_columns[col_num++]->insert(status.replica_path);
-        res_columns[col_num++]->insert(status.columns_version);
-        res_columns[col_num++]->insert(status.queue.queue_size);
-        res_columns[col_num++]->insert(status.queue.inserts_in_queue);
-        res_columns[col_num++]->insert(status.queue.merges_in_queue);
-        res_columns[col_num++]->insert(status.queue.part_mutations_in_queue);
-        res_columns[col_num++]->insert(status.queue.queue_oldest_time);
-        res_columns[col_num++]->insert(status.queue.inserts_oldest_time);
-        res_columns[col_num++]->insert(status.queue.merges_oldest_time);
-        res_columns[col_num++]->insert(status.queue.part_mutations_oldest_time);
-        res_columns[col_num++]->insert(status.queue.oldest_part_to_get);
-        res_columns[col_num++]->insert(status.queue.oldest_part_to_merge_to);
-        res_columns[col_num++]->insert(status.queue.oldest_part_to_mutate_to);
-        res_columns[col_num++]->insert(status.log_max_index);
-        res_columns[col_num++]->insert(status.log_pointer);
-        res_columns[col_num++]->insert(status.queue.last_queue_update);
-        res_columns[col_num++]->insert(status.absolute_delay);
-        res_columns[col_num++]->insert(status.total_replicas);
-        res_columns[col_num++]->insert(status.active_replicas);
-        res_columns[col_num++]->insert(status.lost_part_count);
-        res_columns[col_num++]->insert(status.last_queue_update_exception);
-        res_columns[col_num++]->insert(status.zookeeper_exception);
+        res_columns[col_num++]->insert(status->is_session_expired);
+        res_columns[col_num++]->insert(status->queue.future_parts);
+        res_columns[col_num++]->insert(status->parts_to_check);
+        res_columns[col_num++]->insert(status->zookeeper_info.zookeeper_name);
+        res_columns[col_num++]->insert(status->zookeeper_info.path);
+        res_columns[col_num++]->insert(status->zookeeper_info.replica_name);
+        res_columns[col_num++]->insert(status->replica_path);
+        res_columns[col_num++]->insert(status->columns_version);
+        res_columns[col_num++]->insert(status->queue.queue_size);
+        res_columns[col_num++]->insert(status->queue.inserts_in_queue);
+        res_columns[col_num++]->insert(status->queue.merges_in_queue);
+        res_columns[col_num++]->insert(status->queue.part_mutations_in_queue);
+        res_columns[col_num++]->insert(status->queue.queue_oldest_time);
+        res_columns[col_num++]->insert(status->queue.inserts_oldest_time);
+        res_columns[col_num++]->insert(status->queue.merges_oldest_time);
+        res_columns[col_num++]->insert(status->queue.part_mutations_oldest_time);
+        res_columns[col_num++]->insert(status->queue.oldest_part_to_get);
+        res_columns[col_num++]->insert(status->queue.oldest_part_to_merge_to);
+        res_columns[col_num++]->insert(status->queue.oldest_part_to_mutate_to);
+        res_columns[col_num++]->insert(status->log_max_index);
+        res_columns[col_num++]->insert(status->log_pointer);
+        res_columns[col_num++]->insert(status->queue.last_queue_update);
+        res_columns[col_num++]->insert(status->absolute_delay);
+        res_columns[col_num++]->insert(status->total_replicas);
+        res_columns[col_num++]->insert(status->active_replicas);
+        res_columns[col_num++]->insert(status->lost_part_count);
+        res_columns[col_num++]->insert(status->last_queue_update_exception);
+        res_columns[col_num++]->insert(status->zookeeper_exception);
 
         Map replica_is_active_values;
-        for (const auto & [name, is_active] : status.replica_is_active)
+        for (const auto & [name, is_active] : status->replica_is_active)
         {
             Tuple is_replica_active_value;
             is_replica_active_value.emplace_back(name);
