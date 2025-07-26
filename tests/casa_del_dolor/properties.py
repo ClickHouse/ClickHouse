@@ -139,6 +139,7 @@ possible_properties = {
     "concurrent_threads_soft_limit_ratio_to_cores": threads_lambda,
     "database_catalog_drop_table_concurrency": threads_lambda,
     "database_replicated_allow_detach_permanently": true_false_lambda,
+    "database_replicated_logs_to_keep": threshold_generator(0.2, 0.2, 0, 1000, 32),
     "dictionaries_lazy_load": true_false_lambda,
     "disable_insertion_and_mutation": true_false_lambda,
     "disable_internal_dns_cache": true_false_lambda,
