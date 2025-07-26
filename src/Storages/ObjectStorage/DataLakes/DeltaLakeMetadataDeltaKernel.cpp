@@ -78,7 +78,9 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     if (!physical_names_map.empty())
     {
         for (auto & [column_name, _] : info.requested_columns)
+        {
             column_name = DeltaLake::getPhysicalName(column_name, physical_names_map);
+        }
     }
     return info;
 }
