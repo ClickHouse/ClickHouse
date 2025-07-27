@@ -268,9 +268,6 @@ def test_insert_select(started_cluster, wait_restart, missing_table):
         node2.wait_for_start(30)
 
     node1.query(f"SYSTEM SYNC REPLICA {table}")
-    node2.query(f"SYSTEM SYNC REPLICA {table}")
-    if (not missing_table):
-        node3.query(f"SYSTEM SYNC REPLICA {table}")
 
     # Check whether we inserted at least something
     assert (

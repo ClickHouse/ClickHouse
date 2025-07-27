@@ -133,7 +133,6 @@ def test_distributed_insert_select_to_rmt(started_cluster):
 
     node1.query(f"SYSTEM SYNC REPLICA ON CLUSTER {cluster_name} {table}")
 
-    # Check whether we inserted at least something
     assert (
         int(
             node1.query(
