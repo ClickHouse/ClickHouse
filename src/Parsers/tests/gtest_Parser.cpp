@@ -437,7 +437,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserKQLTest,
         },
         {
             "Customers |where Education contains_cs  'Degree'",
-            "SELECT *\nFROM Customers\nWHERE Education LIKE '%Degree%'"
+            "SELECT *\nFROM Customers\nWHERE like(Education, '%Degree%')"
         },
         {
             "Customers | where Occupation startswith_cs  'Skil'",
@@ -481,19 +481,19 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserKQLTest,
         },
         {
             "Customers | where FirstName contains 'pet'",
-            "SELECT *\nFROM Customers\nWHERE FirstName ILIKE '%pet%'"
+            "SELECT *\nFROM Customers\nWHERE ilike(FirstName, '%pet%')"
         },
         {
             "Customers | where FirstName !contains 'pet'",
-            "SELECT *\nFROM Customers\nWHERE NOT (FirstName ILIKE '%pet%')"
+            "SELECT *\nFROM Customers\nWHERE NOT ilike(FirstName, '%pet%')"
         },
         {
             "Customers | where FirstName endswith 'er'",
-            "SELECT *\nFROM Customers\nWHERE FirstName ILIKE '%er'"
+            "SELECT *\nFROM Customers\nWHERE ilike(FirstName, '%er')"
         },
         {
             "Customers | where FirstName !endswith 'er'",
-            "SELECT *\nFROM Customers\nWHERE NOT (FirstName ILIKE '%er')"
+            "SELECT *\nFROM Customers\nWHERE NOT ilike(FirstName, '%er')"
         },
         {
             "Customers | where Education has 'School'",
@@ -517,11 +517,11 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserKQLTest,
         },
         {
             "Customers | where FirstName startswith 'pet'",
-            "SELECT *\nFROM Customers\nWHERE FirstName ILIKE 'pet%'"
+            "SELECT *\nFROM Customers\nWHERE ilike(FirstName, 'pet%')"
         },
         {
             "Customers | where FirstName !startswith 'pet'",
-            "SELECT *\nFROM Customers\nWHERE NOT (FirstName ILIKE 'pet%')"
+            "SELECT *\nFROM Customers\nWHERE NOT ilike(FirstName, 'pet%')"
         },
         {
             "Customers | where Age in ((Customers|project Age|where Age < 30))",
@@ -581,7 +581,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserKQLTest,
         },
         {
             "Customers | project split('aaa_bbb_ccc', '_', 1)",
-            "SELECT multiIf((length(if(empty('_'), splitByString(' ', 'aaa_bbb_ccc'), splitByString('_', 'aaa_bbb_ccc'))) >= 2) AND (2 > 0), arrayPushBack([], if(empty('_'), splitByString(' ', 'aaa_bbb_ccc'), splitByString('_', 'aaa_bbb_ccc'))[2]), 2 = 0, if(empty('_'), splitByString(' ', 'aaa_bbb_ccc'), splitByString('_', 'aaa_bbb_ccc')), arrayPushBack([], NULL[1]))\nFROM Customers"
+            "SELECT multiIf((length(if(empty('_'), splitByString(' ', 'aaa_bbb_ccc'), splitByString('_', 'aaa_bbb_ccc'))) >= 2) AND (2 > 0), arrayPushBack([], arrayElement(if(empty('_'), splitByString(' ', 'aaa_bbb_ccc'), splitByString('_', 'aaa_bbb_ccc')), 2)), 2 = 0, if(empty('_'), splitByString(' ', 'aaa_bbb_ccc'), splitByString('_', 'aaa_bbb_ccc')), arrayPushBack([], arrayElement(NULL, 1)))\nFROM Customers"
         },
         {
             "Customers | project strcat_delim('-', '1', '2', 'A')",
@@ -609,7 +609,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserKQLTest,
         },
         {
             "print parse_url('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment')",
-            "SELECT concat('{', concat('\"Scheme\":\"', protocol('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'), '\"'), ',', concat('\"Host\":\"', domain('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'), '\"'), ',', concat('\"Port\":\"', toString(port('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment')), '\"'), ',', concat('\"Path\":\"', path('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'), '\"'), ',', concat('\"Username\":\"', splitByChar(':', splitByChar('@', netloc('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'))[1])[1], '\"'), ',', concat('\"Password\":\"', splitByChar(':', splitByChar('@', netloc('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'))[1])[2], '\"'), ',', concat('\"Query Parameters\":', concat('{\"', replace(replace(queryString('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'), '=', '\":\"'), '&', '\",\"'), '\"}')), ',', concat('\"Fragment\":\"', fragment('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'), '\"'), '}')"
+            "SELECT concat('{', concat('\\\"Scheme\\\":\\\"', protocol('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'), '\\\"'), ',', concat('\\\"Host\\\":\\\"', domain('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'), '\\\"'), ',', concat('\\\"Port\\\":\\\"', toString(port('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment')), '\\\"'), ',', concat('\\\"Path\\\":\\\"', path('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'), '\\\"'), ',', concat('\\\"Username\\\":\\\"', arrayElement(splitByChar(':', arrayElement(splitByChar('@', netloc('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment')), 1)), 1), '\\\"'), ',', concat('\\\"Password\\\":\\\"', arrayElement(splitByChar(':', arrayElement(splitByChar('@', netloc('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment')), 1)), 2), '\\\"'), ',', concat('\\\"Query Parameters\\\":', concat('{\\\"', replace(replace(queryString('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'), '=', '\\\":\\\"'), '&', '\\\",\\\"'), '\\\"}')), ',', concat('\\\"Fragment\\\":\\\"', fragment('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'), '\\\"'), '}')"
         },
         {
             "Customers | summarize t = make_list(FirstName) by FirstName",

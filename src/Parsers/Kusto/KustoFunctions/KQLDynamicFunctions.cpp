@@ -64,7 +64,7 @@ bool ArrayReverse::convertImpl(String & out, IParser::Pos & pos)
         return false;
 
     const auto array = getArgument(function_name, pos);
-    out = fmt::format("if(throwIf(not startsWith(toTypeName({0}), 'Array'), 'Only arrays are supported'), [], reverse({0}))", array);
+    out = fmt::format("reverse({0})", array);
 
     return true;
 }
