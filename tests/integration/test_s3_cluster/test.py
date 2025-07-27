@@ -23,12 +23,9 @@ S3_DATA = [
     "data/database/partition675.csv",
 ]
 
-generated_rows = 0
 
 def create_buckets_s3(cluster):
     minio = cluster.minio_client
-
-    global generated_rows
 
     for file_number in range(100):
         file_name = f"data/generated/file_{file_number}.csv"
@@ -43,7 +40,6 @@ def create_buckets_s3(cluster):
                 data.append(
                     ["str_" + str(number + file_number) * 10, number + file_number]
                 )
-                generated_rows += 1
 
             writer = csv.writer(f)
             writer.writerows(data)
@@ -346,7 +342,8 @@ def test_distributed_insert_select_with_replicated(started_cluster):
             second_replica_first_shard.query(
                 """SELECT count(*) FROM insert_select_replicated_local;"""
             ).strip()
-        ) != 0
+        )
+        != 0
     )
 
     first_replica_first_shard.query(

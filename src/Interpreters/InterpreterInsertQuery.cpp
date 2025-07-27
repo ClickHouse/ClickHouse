@@ -895,8 +895,6 @@ BlockIO InterpreterInsertQuery::execute()
             {
                 if (auto pipeline = distributedWriteIntoReplicatedMergeTreeFromClusterStorage(query, context))
                     res.pipeline = std::move(*pipeline);
-                else
-                 LOG_DEBUG(logger, "distributedWriteIntoReplicatedMergeTreeFromClusterStorage() returned empty pipeline");
             }
             if (!res.pipeline.initialized() && context->canUseParallelReplicasOnInitiator())
             {
