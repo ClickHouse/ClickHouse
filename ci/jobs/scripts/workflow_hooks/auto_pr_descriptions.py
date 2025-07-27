@@ -3,7 +3,6 @@ import sys
 from praktika.info import Info
 from praktika.utils import Shell
 from typing import Tuple
-from claude_code_sdk import query, ClaudeCodeOptions
 from pathlib import Path
 
 def ensure_claude_code_cli():
