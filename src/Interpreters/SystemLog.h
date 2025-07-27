@@ -37,7 +37,7 @@
     M(DeadLetterQueue,       dead_letter_queue,    "Contains messages that came from a streaming engine (e.g. Kafka) and were parsed unsuccessfully.") \
 
 #define LIST_OF_CLOUD_SYSTEM_LOGS(M) \
-    M(DistributedCacheLog,   distributed_cache_log, "Contains the history of all interactions with distributed cache.") \
+    M(DistributedCacheLog, distributed_cache_log, "Contains the history of all interactions with distributed cache.") \
     M(DistributedCacheServerLog, distributed_cache_server_log, "Contains the history of all interactions with distributed cache client.") \
 
 
