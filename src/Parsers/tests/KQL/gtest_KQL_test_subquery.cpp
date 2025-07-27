@@ -52,23 +52,23 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_TestSubquery, ParserKQLTest,
         },
         {
             "Customers | where FirstName in ((Customers | project FirstName  | where FirstName !hasprefix 'Peter'));",
-            "SELECT *\nFROM Customers\nWHERE FirstName IN (\n    SELECT FirstName\n    FROM Customers\n    WHERE (NOT (FirstName ILIKE 'Peter%')) AND (NOT (FirstName ILIKE '% Peter%'))\n)"
+            "SELECT *\nFROM Customers\nWHERE FirstName IN (\n    SELECT FirstName\n    FROM Customers\n    WHERE (NOT ilike(FirstName, 'Peter%')) AND (NOT ilike(FirstName, '% Peter%'))\n)"
         },
         {
             "Customers | where FirstName in ((Customers | project FirstName  | where FirstName !hasprefix_cs 'Peter'));",
-            "SELECT *\nFROM Customers\nWHERE FirstName IN (\n    SELECT FirstName\n    FROM Customers\n    WHERE (NOT startsWith(FirstName, 'Peter')) AND (NOT (FirstName LIKE '% Peter%'))\n)"
+            "SELECT *\nFROM Customers\nWHERE FirstName IN (\n    SELECT FirstName\n    FROM Customers\n    WHERE (NOT startsWith(FirstName, 'Peter')) AND (NOT like(FirstName, '% Peter%'))\n)"
         },
         {
             "Customers | where FirstName in ((Customers | project FirstName  | where FirstName !hassuffix 'Peter'));",
-            "SELECT *\nFROM Customers\nWHERE FirstName IN (\n    SELECT FirstName\n    FROM Customers\n    WHERE (NOT (FirstName ILIKE '%Peter')) AND (NOT (FirstName ILIKE '%Peter %'))\n)"
+            "SELECT *\nFROM Customers\nWHERE FirstName IN (\n    SELECT FirstName\n    FROM Customers\n    WHERE (NOT ilike(FirstName, '%Peter')) AND (NOT ilike(FirstName, '%Peter %'))\n)"
         },
         {
             "Customers | where FirstName in ((Customers | project FirstName  | where FirstName !hassuffix_cs 'Peter'));",
-            "SELECT *\nFROM Customers\nWHERE FirstName IN (\n    SELECT FirstName\n    FROM Customers\n    WHERE (NOT endsWith(FirstName, 'Peter')) AND (NOT (FirstName LIKE '%Peter %'))\n)"
+            "SELECT *\nFROM Customers\nWHERE FirstName IN (\n    SELECT FirstName\n    FROM Customers\n    WHERE (NOT endsWith(FirstName, 'Peter')) AND (NOT like(FirstName, '%Peter %'))\n)"
         },
         {
             "Customers | where FirstName in ((Customers | project FirstName  | where FirstName !startswith 'Peter'));",
-            "SELECT *\nFROM Customers\nWHERE FirstName IN (\n    SELECT FirstName\n    FROM Customers\n    WHERE NOT (FirstName ILIKE 'Peter%')\n)"
+            "SELECT *\nFROM Customers\nWHERE FirstName IN (\n    SELECT FirstName\n    FROM Customers\n    WHERE NOT ilike(FirstName, 'Peter%')\n)"
         },
         {
             "Customers | where FirstName in ((Customers | project FirstName  | where FirstName !startswith_cs 'Peter'));",

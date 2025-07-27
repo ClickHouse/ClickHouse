@@ -24,15 +24,15 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_DynamicExactMatch, ParserKQLTest,
         },
         {
             "print output = array_index_of(dynamic([1, 2, 3]), 2)",
-            "SELECT indexOf([1, 2, 3], 2) - 1 AS output"
+            "SELECT minus(indexOf([1, 2, 3], 2), 1) AS output"
         },
         {
             "print output = array_index_of(dynamic(['a', 'b', 'c']), 'b')",
-            "SELECT indexOf(['a', 'b', 'c'], 'b') - 1 AS output"
+            "SELECT minus(indexOf(['a', 'b', 'c'], 'b'), 1) AS output"
         },
         {
             "print output = array_index_of(dynamic(['John', 'Denver', 'Bob', 'Marley']), 'Marley')",
-            "SELECT indexOf(['John', 'Denver', 'Bob', 'Marley'], 'Marley') - 1 AS output"
+            "SELECT minus(indexOf(['John', 'Denver', 'Bob', 'Marley'], 'Marley'), 1) AS output"
         },
         {
             "print output = array_length(dynamic([1, 2, 3]))",
@@ -64,11 +64,11 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_DynamicExactMatch, ParserKQLTest,
         },
         {
             "print jaccard_index(A, B)",
-            "SELECT length(arrayIntersect(A, B)) / length(arrayDistinct(arrayConcat(A, B)))"
+            "SELECT divide(length(arrayIntersect(A, B)), length(arrayDistinct(arrayConcat(A, B))))"
         },
         {
             "print pack_array(A, B, C, D)",
-            "SELECT [A, B, C, D]"
+            "SELECT array(A, B, C, D)"
         },
         {
             "print set_difference(A, B)",
