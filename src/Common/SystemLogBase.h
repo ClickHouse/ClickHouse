@@ -33,6 +33,11 @@
     M(QueryMetricLogElement) \
     M(DeadLetterQueueElement)
 
+#define SYSTEM_LOG_ELEMENTS_CLOUD(M) \
+    M(DistributedCacheLogElement) \
+    M(DistributedCacheServerLogElement) \
+
+
 namespace Poco
 {
 
