@@ -70,7 +70,7 @@ public:
 
         explicit const_iterator(std::shared_ptr<KVPair> pair_) : pair(std::move(pair_)) {}
 
-        explicit const_iterator(rocksdb::Iterator * iter_) : iter(iter_)
+        explicit const_iterator(std::shared_ptr<rocksdb::Iterator> iter_) : iter(iter_)
         {
             updatePairFromIter();
         }
@@ -362,7 +362,7 @@ public:
         }
         rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
 
-        auto * it = rocksdb_ptr->NewIterator(rocksdb::ReadOptions{});
+        std::unique_ptr<rocksdb::Iterator> it(rocksdb_ptr->NewIterator(rocksdb::ReadOptions{}));
         counter = 0;
         for (it->SeekToFirst(); it->Valid(); it->Next())
         {
@@ -479,7 +479,7 @@ public:
         read_options.total_order_seek = true;
         if (snapshot_mode)
             read_options.snapshot = snapshot;
-        auto * iter = rocksdb_ptr->NewIterator(read_options);
+        std::shared_ptr<rocksdb::Iterator> iter(rocksdb_ptr->NewIterator(read_options));
         iter->SeekToFirst();
         return const_iterator(iter);
     }
