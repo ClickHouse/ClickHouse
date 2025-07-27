@@ -34,9 +34,9 @@ Columns:
 - `bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of inserted bytes.
 - `exception` ([String](../../sql-reference/data-types/string.md)) — Exception message.
 - `status` ([Enum8](../../sql-reference/data-types/enum.md)) — Status of the view. Values:
-    - `'Ok' = 1` — Successful insert.
-    - `'ParsingError' = 2` — Exception when parsing the data.
-    - `'FlushError' = 3` — Exception when flushing the data.
+  - `'Ok' = 1` — Successful insert.
+  - `'ParsingError' = 2` — Exception when parsing the data.
+  - `'FlushError' = 3` — Exception when flushing the data.
 - `flush_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the flush happened.
 - `flush_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — The date and time when the flush happened with microseconds precision.
 - `flush_query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the flush query.

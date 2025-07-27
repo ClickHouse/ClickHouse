@@ -105,7 +105,6 @@ Expression must result in a `Date` or `DateTime`, e.g. `TTL date + INTERVAL 1 DA
 
 Type of the rule `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'|GROUP BY` specifies an action to be done with the part if the expression is satisfied (reaches current time): removal of expired rows, moving a part (if expression is satisfied for all rows in a part) to specified disk (`TO DISK 'xxx'`) or to volume (`TO VOLUME 'xxx'`), or aggregating values in expired rows. Default type of the rule is removal (`DELETE`). List of multiple rules can be specified, but there should be no more than one `DELETE` rule.
 
-
 For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
 
 #### SETTINGS {#settings}
@@ -210,8 +209,8 @@ The number of columns in the primary key is not explicitly limited. Depending on
 
     If the primary key is `(a, b)`, then adding another column `c` will improve the performance if the following conditions are met:
 
-    - There are queries with a condition on column `c`.
-    - Long data ranges (several times longer than the `index_granularity`) with identical values for `(a, b)` are common. In other words, when adding another column allows you to skip quite long data ranges.
+  - There are queries with a condition on column `c`.
+  - Long data ranges (several times longer than the `index_granularity`) with identical values for `(a, b)` are common. In other words, when adding another column allows you to skip quite long data ranges.
 
 - Improve data compression.
 
@@ -400,7 +399,6 @@ AS
 To use those functions,we need to specify two parameter at least.
 For example, if there 4300 ngrams in the granule and we expect false positives to be less than 0.0001. The other parameters can be estimated by executing following queries:
 
-
 ```sql
 --- estimate number of bits in the filter
 SELECT bfEstimateBmSize(4300, 0.0001) / 8 AS size_of_bloom_filter_in_bytes;
@@ -419,7 +417,6 @@ SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) as number_of_ha
 ```
 Of course, you can also use those functions to estimate parameters by other conditions.
 The functions refer to the content [here](https://hur.st/bloomfilter).
-
 
 #### Token bloom filter {#token-bloom-filter}
 
@@ -476,19 +473,18 @@ Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`
 For example:
 
 - Can be optimized:
-    - `s LIKE '%test%'`
-    - `NOT s NOT LIKE '%test%'`
-    - `s = 1`
-    - `NOT s != 1`
-    - `startsWith(s, 'test')`
+  - `s LIKE '%test%'`
+  - `NOT s NOT LIKE '%test%'`
+  - `s = 1`
+  - `NOT s != 1`
+  - `startsWith(s, 'test')`
 - Can not be optimized:
-    - `NOT s LIKE '%test%'`
-    - `s NOT LIKE '%test%'`
-    - `NOT s = 1`
-    - `s != 1`
-    - `NOT startsWith(s, 'test')`
+  - `NOT s LIKE '%test%'`
+  - `s NOT LIKE '%test%'`
+  - `NOT s = 1`
+  - `s != 1`
+  - `NOT startsWith(s, 'test')`
 :::
-
 
 ## Projections {#projections}
 Projections are like [materialized views](/sql-reference/statements/create/view) but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
@@ -1033,7 +1029,6 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 
     Syntax `countmin`
 
-
 ### Supported data types {#supported-data-types}
 
 |           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | String or FixedString |
@@ -1043,7 +1038,6 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 | TDigest   | ✔                                                  | ✗                     |
 | Uniq      | ✔                                                  | ✔                     |
 
-
 ### Supported operations {#supported-operations}
 
 |           | Equality filters (==) | Range filters (`>, >=, <, <=`) |
@@ -1052,7 +1046,6 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 | MinMax    | ✗                     | ✔                            |
 | TDigest   | ✗                     | ✔                            |
 | Uniq      | ✔                     | ✗                            |
-
 
 ## Column-level settings {#column-level-settings}
 
