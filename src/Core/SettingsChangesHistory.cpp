@@ -801,8 +801,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
-            {"text_index_sampling_threshold", 1000, 1000, "New setting."},
-            {"text_index_sampling_rate", 0.1, 0.1, "New setting."},
             {"write_marks_for_substreams_in_compact_parts", false, true, "Enable writing marks for substreams in compact parts by default"}
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.7",

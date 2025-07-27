@@ -29,7 +29,6 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Storages/MutationCommands.h>
-#include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeIndexGin.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -790,11 +789,10 @@ static NameSet collectFilesToSkip(
         if (dynamic_cast<const MergeTreeIndexGin *>(index.get()))
         {
             auto index_filename = index->getFileName();
-            files_to_skip.insert(index_filename + GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE);
-            files_to_skip.insert(index_filename + GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE);
-            files_to_skip.insert(index_filename + GinIndexStore::GIN_DICTIONARY_FILE_TYPE);
-            files_to_skip.insert(index_filename + GinIndexStore::GIN_POSTINGS_FILE_TYPE);
-            files_to_skip.insert(index_filename + GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE);
+            files_to_skip.insert(index_filename + ".gin_dict");
+            files_to_skip.insert(index_filename + ".gin_post");
+            files_to_skip.insert(index_filename + ".gin_sed");
+            files_to_skip.insert(index_filename + ".gin_sid");
         }
     }
 
@@ -873,13 +871,7 @@ static NameToNameVector collectFilesForRenames(
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
             static const std::array<String, 2> suffixes = {".idx2", ".idx"};
-            static const std::array<String, 5> gin_suffixes = {
-                GinIndexStore::GIN_SEGMENT_ID_FILE_TYPE,
-                GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE,
-                GinIndexStore::GIN_DICTIONARY_FILE_TYPE,
-                GinIndexStore::GIN_POSTINGS_FILE_TYPE,
-                GinIndexStore::GIN_BLOOM_FILTER_FILE_TYPE,
-            };
+            static const std::array<String, 4> gin_suffixes = {".gin_dict", ".gin_post", ".gin_seg", ".gin_sid"}; /// .gin_* means generalized inverted index aka. text index
 
             for (const auto & suffix : suffixes)
             {
