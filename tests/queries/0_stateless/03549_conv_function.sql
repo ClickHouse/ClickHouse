@@ -60,7 +60,3 @@ SELECT conv('FF', 16, 10) FROM system.numbers LIMIT 3; -- 255 255 255
 -- Mixed scenarios
 SELECT conv(toString(number), 10, 36), conv(toString(number), 10, 2)
 FROM system.numbers WHERE number BETWEEN 10 AND 15;
-
--- Error handling with wrong argument types (these should fail)
--- SELECT conv(123, 'invalid', 10);  -- Uncomment to test error
--- SELECT conv(123, 10, 'invalid');  -- Uncomment to test error
