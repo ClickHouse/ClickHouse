@@ -17,7 +17,7 @@ def ensure_claude_code_cli():
         except:
             print("Error: Could not install claude-code CLI")
             return False
-async def generate_description(pr_number: int) -> str:
+def generate_description(pr_number: int) -> str:
     description = Shell.get_output(
         f'echo "Generate PR description for PR #{pr_number}" | '
         f'claude-code --model claude-3-haiku-20240307 '
@@ -63,7 +63,7 @@ if __name__ == "__main__":
         sys.exit(1)
     info = Info()
 
-    description_required_body, changelog_required_body = check_body_commands(info.body)
+    description_required_body, changelog_required_body = check_body_commands(info.pr_body)
     if description_required_body:
         description = generate_description(84516)
         print(description)
