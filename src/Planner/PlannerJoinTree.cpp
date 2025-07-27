@@ -908,8 +908,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         = settings[Setting::optimize_move_to_prewhere] && (!is_final || settings[Setting::optimize_move_to_prewhere_if_final]);
 
                     auto supported_prewhere_columns = storage->supportedPrewhereColumns();
+                    bool has_table_virtual_column =
+                        filter_info.column_name == "_table" && storage->isVirtualColumn(filter_info.column_name, storage_snapshot->metadata);
                     if (!select_query_options.build_logical_plan && storage->canMoveConditionsToPrewhere() && optimize_move_to_prewhere
-                        && (!supported_prewhere_columns || supported_prewhere_columns->contains(filter_info.column_name)))
+                        && (!supported_prewhere_columns || supported_prewhere_columns->contains(filter_info.column_name))
+                        && !has_table_virtual_column)
                     {
                         if (!prewhere_info)
                         {

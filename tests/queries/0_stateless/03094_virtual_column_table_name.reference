@@ -33,12 +33,11 @@ d2	3	30
 SELECT _table FROM m2 ORDER BY _table ASC;
 d1
 d1
-d4
-d4
+d2
+d2
 SELECT count(_table) FROM m2 WHERE _table = 'd1' GROUP BY _table;
 2
 SELECT _table, key, value FROM m2 WHERE _table = 'd4' and value <= 30;
-d4	3	30
 SELECT _table, key, value FROM (SELECT _table, key, value FROM d1 UNION ALL SELECT _table, key, value FROM d2) ORDER BY key ASC;
 d1	1	10
 d1	2	20
@@ -55,3 +54,35 @@ SELECT _table, key, value FROM mv1 ORDER BY key ASC;
 mv1	10	2
 SELECT _table, key, value FROM mv2 ORDER BY key ASC;
 mv2	10	2
+SELECT _table, * FROM dist5;
+d2	3	30
+d2	4	40
+SELECT _table, * FROM dist6;
+d1	1	10
+d1	2	20
+d2	4	40
+d2	3	30
+SELECT _table, * FROM m3;
+d1	2	20
+d1	1	10
+d2	4	40
+d2	4	40
+d2	3	30
+d2	3	30
+SELECT _table, * FROM m4;
+d1	2	20
+d1	1	10
+d2	3	30
+d2	3	30
+d2	4	40
+d2	4	40
+SELECT _table, * FROM m5;
+d1	1	10
+d1	2	20
+d1	1	10
+d1	2	20
+d2	4	40
+d2	4	40
+d2	3	30
+d2	3	30
+SELECT * FROM d1 PREWHERE _table = 'd1'; -- { serverError ILLEGAL_PREWHERE }

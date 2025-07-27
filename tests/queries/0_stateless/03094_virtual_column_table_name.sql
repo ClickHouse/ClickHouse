@@ -1,7 +1,11 @@
 SET enable_analyzer = 1;
 
+DROP TABLE IF EXISTS m0;
 DROP TABLE IF EXISTS m1;
 DROP TABLE IF EXISTS m2;
+DROP TABLE IF EXISTS m3;
+DROP TABLE IF EXISTS m4;
+DROP TABLE IF EXISTS m5;
 DROP TABLE IF EXISTS d1;
 DROP TABLE IF EXISTS d2;
 DROP TABLE IF EXISTS d3;
@@ -13,11 +17,17 @@ DROP TABLE IF EXISTS buffer1;
 DROP VIEW IF EXISTS view1;
 DROP VIEW IF EXISTS mv1;
 DROP VIEW IF EXISTS mv2;
+DROP TABLE IF EXISTS dist5;
+DROP TABLE IF EXISTS dist6;
 
 CREATE TABLE d1 (key Int, value Int) ENGINE=Memory();
 CREATE TABLE d2 (key Int, value Int) ENGINE=MergeTree() ORDER BY key;
 CREATE TABLE d3 (_table Int, value Int) ENGINE=Memory();
+
+CREATE TABLE m0 ENGINE=Merge(currentDatabase(), '^(d1|d2)$');
 CREATE TABLE d4 ENGINE=Distributed('test_shard_localhost', currentDatabase(), d2, rand());
+CREATE TABLE dist5 ENGINE=Distributed('test_shard_localhost', currentDatabase(), d4, rand());
+CREATE TABLE dist6 ENGINE=Distributed('test_shard_localhost', currentDatabase(), m0, rand());
 
 INSERT INTO d1 VALUES (1, 10);
 INSERT INTO d1 VALUES (2, 20);
@@ -30,6 +40,9 @@ INSERT INTO d3 VALUES (6, 60);
 
 CREATE TABLE m1 ENGINE=Merge(currentDatabase(), '^(d1|d2)$');
 CREATE TABLE m2 ENGINE=Merge(currentDatabase(), '^(d1|d4)$');
+CREATE TABLE m3 ENGINE=Merge(currentDatabase(), '^(m1|d2)$');
+CREATE TABLE m4 ENGINE=Merge(currentDatabase(), '^(m2|d2)$');
+CREATE TABLE m5 ENGINE=Merge(currentDatabase(), '^(m1|m2)$');
 
 CREATE VIEW view1 AS SELECT key, _table FROM d1;
 
@@ -76,3 +89,11 @@ SELECT _table, key, value FROM buffer1 ORDER BY key ASC;
 
 SELECT _table, key, value FROM mv1 ORDER BY key ASC;
 SELECT _table, key, value FROM mv2 ORDER BY key ASC;
+
+SELECT _table, * FROM dist5;
+SELECT _table, * FROM dist6;
+SELECT _table, * FROM m3;
+SELECT _table, * FROM m4;
+SELECT _table, * FROM m5;
+
+SELECT * FROM d1 PREWHERE _table = 'd1'; -- { serverError ILLEGAL_PREWHERE }

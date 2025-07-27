@@ -670,6 +670,14 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             Names column_names_as_aliases;
             Names real_column_names = column_names;
+            bool use_analyzer = context->getSettingsRef()[Setting::allow_experimental_analyzer];
+            if (use_analyzer && has_table_virtual_column
+                && (common_processed_stage != QueryProcessingStage::FetchColumns
+                    || std::dynamic_pointer_cast<StorageMerge>(storage)
+                    || std::dynamic_pointer_cast<StorageDistributed>(storage)
+                    || std::dynamic_pointer_cast<StorageView>(storage)))
+                real_column_names.emplace_back("_table");
+
             /// If there are no real columns requested from this table, we will read the smallest column.
             /// We should remember it to not include this column in the result.
             bool is_smallest_column_requested = false;
@@ -934,18 +942,18 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
 
         /// Consider only non-virtual columns of storage while checking for _table and _database columns.
         /// I.e. always override virtual columns with these names from underlying table (if any).
-        if (!storage_snapshot_->tryGetColumn(get_column_options, "_table"))
-        {
-            auto table_name_node = std::make_shared<ConstantNode>(current_storage_id.table_name);
-            auto table_name_alias = std::make_shared<ConstantNode>("__table1._table");
+        /// if (!storage_snapshot_->tryGetColumn(get_column_options, "_table"))
+        /// {
+        ///     auto table_name_node = std::make_shared<ConstantNode>(current_storage_id.table_name);
+        ///     auto table_name_alias = std::make_shared<ConstantNode>("__table1._table");
 
-            auto function_node = std::make_shared<FunctionNode>("__actionName");
-            function_node->getArguments().getNodes().push_back(std::move(table_name_node));
-            function_node->getArguments().getNodes().push_back(std::move(table_name_alias));
-            function_node->resolveAsFunction(FunctionFactory::instance().get("__actionName", context));
+        ///     auto function_node = std::make_shared<FunctionNode>("__actionName");
+        ///     function_node->getArguments().getNodes().push_back(std::move(table_name_node));
+        ///     function_node->getArguments().getNodes().push_back(std::move(table_name_alias));
+        ///     function_node->resolveAsFunction(FunctionFactory::instance().get("__actionName", context));
 
-            column_name_to_node.emplace("_table", function_node);
-        }
+        ///     column_name_to_node.emplace("_table", function_node);
+        /// }
 
         if (!storage_snapshot_->tryGetColumn(get_column_options, "_database"))
         {
@@ -1093,7 +1101,7 @@ void ReadFromMerge::addVirtualColumns(
         }
 
         if (has_table_virtual_column && common_header->has(table_column)
-            && child.stage == QueryProcessingStage::FetchColumns && !plan_header->has(table_column))
+            && processed_stage == QueryProcessingStage::FetchColumns && !plan_header->has(table_column))
         {
             ColumnWithTypeAndName column;
             column.name = table_column;
