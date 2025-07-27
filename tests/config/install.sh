@@ -214,7 +214,7 @@ ln -sf $SRC_PATH/server.key $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/server.crt $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/dhparam.pem $DEST_SERVER_PATH/
 
-ln -sf $SRC_PATH/user_files/* $DEST_SERVER_PATH/
+ln -sf $SRC_PATH/user_files/* $DEST_SERVER_PATH/user_files/
 
 # Retain any pre-existing config and allow ClickHouse to load it if required
 ln -sf --backup=simple --suffix=_original.xml \

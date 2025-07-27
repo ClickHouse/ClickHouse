@@ -206,16 +206,15 @@ public:
 
     void invoke(std::string_view function_name, const std::vector<WasmVal> & params, std::vector<WasmVal> & returns) override
     {
-        LOG_TRACE(log, "Function {} invocation started", function_name);
         auto get_function_result = instance.get(store, function_name);
         if (!get_function_result.has_value())
         {
             throw Exception(ErrorCodes::WASM_ERROR, "Function '{}' is not found in compartment", function_name);
         }
 
-        auto run = std::get<wasmtime::Func>(get_function_result.value());
+        auto wasm_func = std::get<wasmtime::Func>(get_function_result.value());
 
-        size_t params_count = run.type(store)->params().size();
+        size_t params_count = wasm_func.type(store)->params().size();
 
         if (params_count != params.size())
             throw Exception(
@@ -236,7 +235,7 @@ public:
             last_exception.reset();
 
             ProfileEventTimeIncrement<Microseconds> timer(ProfileEvents::WasmExecuteMicroseconds);
-            auto call_results = run.call(store, params_values);
+            auto call_results = wasm_func.call(store, params_values);
 
             if (last_exception)
                 last_exception->rethrow();
@@ -250,7 +249,6 @@ public:
 
         returns.clear();
         std::transform(returns_values.begin(), returns_values.end(), std::back_inserter(returns), fromWasmTimeValue);
-        LOG_TRACE(log, "Function {} invocation ended", function_name);
     }
 
     wasmtime::Memory getMemory()
