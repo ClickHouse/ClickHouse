@@ -29,6 +29,7 @@ workflow = Workflow.Config(
     enable_cidb=True,
     enable_merge_ready_status=True,
     pre_hooks=[
+        "python3 ./ci/jobs/scripts/workflow_hooks/auto_pr_descriptions.py",
         "python3 ./ci/jobs/scripts/prechecks/pr_description.py",
         "python3 ./ci/jobs/scripts/prechecks/trusted.py",
         "python3 ./ci/jobs/scripts/prechecks/version_log.py",
