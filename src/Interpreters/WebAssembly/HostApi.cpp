@@ -22,7 +22,7 @@ namespace
 void wasmExportAlert(WasmCompartment * compartment, WasmPtr wasm_ptr, WasmSizeT size)
 {
     const auto * host_ptr = compartment->getMemory(wasm_ptr, size);
-    LOG_DEBUG(getLogger("WasmUdf"), "{}", std::string_view(reinterpret_cast<const char *>(host_ptr), size));
+    LOG_TRACE(getLogger("WasmUdf"), "{}", std::string_view(reinterpret_cast<const char *>(host_ptr), size));
 }
 
 Int64 wasmExportServerVer(WasmCompartment *)
