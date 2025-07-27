@@ -5,10 +5,20 @@ from praktika.utils import Shell
 from typing import Tuple
 from pathlib import Path
 
-def ensure_claude_code_cli():
-    """Install claude-code CLI"""
+def ensure_claude_API_key(info: Info) -> bool:
     try:
-        Shell.check("command -v claude-code")
+        api_key = info.get_secret("ANTHROPIC_API_KEY")
+        if not api_key:
+            print("Error: ANTHROPIC_API_KEY secret not configured")
+            return False
+        print("ANTHROPIC_API_KEY secret found")
+    except Exception as e:
+        print(f"Error: Could not access ANTHROPIC_API_KEY secret: {e}")
+        return False
+
+def ensure_claude_code_cli() -> bool:
+    try:
+        Shell.check("command -v claude")
         print("claude-code CLI already available")
         return True
     except:
@@ -20,10 +30,11 @@ def ensure_claude_code_cli():
         except:
             print("Error: Could not install claude-code CLI")
             return False
+
 def generate_description(pr_number: int) -> str:
     description = Shell.get_output(
         f'echo "Generate PR description for PR #{pr_number}" | '
-        f'claude-code --model claude-3-haiku-20240307 '
+        f'claude --model claude-3-haiku-20240307 '
         f'--allowed-tools "Read,Bash" '
         f'--system-prompt "You are a helpful assistant whose job it is to generate '
         f'a pull request description for a given pull request number. '
@@ -36,7 +47,7 @@ def generate_description(pr_number: int) -> str:
 def generate_changelog(pr_number: int) -> str:
     description = Shell.get_output(
         f'echo "Generate a change log entry for PR #{pr_number}" | '
-        f'claude-code --model claude-3-haiku-20240307 '
+        f'claude --model claude-3-haiku-20240307 '
         f'--allowed-tools "Read,Bash" '
         f'--system-prompt "You are a helpful assistant whose job it is to generate '
         f'a changelog entry for a given pull request number. '
@@ -46,7 +57,6 @@ def generate_changelog(pr_number: int) -> str:
         f'You may run \\`gh pr diff {pr_number}\\` to assist you."'
     )
     return description
-
 
 def check_body_commands(pr_body: str) -> Tuple[bool, bool]:
     lines = list(map(lambda x: x.strip(), pr_body.split("\n") if pr_body else []))
@@ -62,9 +72,9 @@ def check_body_commands(pr_body: str) -> Tuple[bool, bool]:
     return (contains_auto_description, contains_auto_changelog)
 
 if __name__ == "__main__":
-    if not ensure_claude_code_cli():
-        sys.exit(1)
     info = Info()
+    if not ensure_claude_code_cli() or not ensure_claude_API_key(info):
+        sys.exit(1)
 
     description_required_body, changelog_required_body = check_body_commands(info.pr_body)
     if description_required_body:
