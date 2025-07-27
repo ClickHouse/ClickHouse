@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.8",
         {
+            {"optimize_rewrite_regexp_functions", false, true, "A new setting"},
             {"max_joined_block_size_bytes", 0, 4 * 1024 * 1024, "New setting"},
             {"azure_max_single_part_upload_size", 100 * 1024 * 1024, 32 * 1024 * 1024, "Align with S3"},
             {"azure_max_redirects", 10, 10, "New setting"},
@@ -801,8 +802,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
-            {"text_index_sampling_threshold", 1000, 1000, "New setting."},
-            {"text_index_sampling_rate", 0.1, 0.1, "New setting."},
             {"write_marks_for_substreams_in_compact_parts", false, true, "Enable writing marks for substreams in compact parts by default"}
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.7",

@@ -5041,6 +5041,9 @@ Supported only with the analyzer (`enable_analyzer = 1`).
     DECLARE(Bool, optimize_rewrite_array_exists_to_has, false, R"(
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 )", 0) \
+    DECLARE(Bool, optimize_rewrite_regexp_functions, true, R"(
+Rewrite regular expression related functions into simpler and more efficient forms
+)", 0) \
     DECLARE(UInt64, insert_shard_id, 0, R"(
 If not `0`, specifies the shard of [Distributed](/engines/table-engines/special/distributed) table into which the data will be inserted synchronously.
 
@@ -6845,7 +6848,7 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
 )", EXPERIMENTAL, allow_experimental_statistic) \
     \
     DECLARE(Bool, allow_experimental_full_text_index, false, R"(
-If set to true, allow using the experimental text index.
+If it is set to true, allow to use experimental text index.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_lightweight_update, false, R"(
 Allow to use lightweight updates.

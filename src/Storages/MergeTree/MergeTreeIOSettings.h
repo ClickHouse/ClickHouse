@@ -97,9 +97,6 @@ struct MergeTreeWriterSettings
     bool use_v1_object_and_dynamic_serialization;
     bool use_adaptive_write_buffer_for_dynamic_subcolumns;
     size_t adaptive_write_buffer_initial_size;
-
-    size_t text_index_sampling_threshold;
-    float text_index_sampling_rate;
 };
 
 }
