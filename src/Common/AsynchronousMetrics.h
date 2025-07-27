@@ -95,6 +95,17 @@ private:
     static auto tryGetMetricValue(const AsynchronousMetricValues & values, const String & metric, size_t default_value = 0);
     void processWarningForMutationStats(const AsynchronousMetricValues & new_values) const;
 
+    // To track the state of cpu for cpu overload warnings
+    mutable std::chrono::steady_clock::time_point cpu_overload_start_time{};
+    mutable bool cpu_overload_warning_active = false;
+
+    // To track the state of memory for memory overload warnings
+    mutable std::chrono::steady_clock::time_point memory_overload_start_time{};
+    mutable bool memory_overload_warning_active = false;
+
+    void processWarningForCPUUsage(const AsynchronousMetricValues & new_values) const;
+    void processWarningForMemoryUsage(const AsynchronousMetricValues & new_values) const;
+
     ProtocolServerMetricsFunc protocol_server_metrics_func;
 
     std::unique_ptr<ThreadFromGlobalPool> thread;
