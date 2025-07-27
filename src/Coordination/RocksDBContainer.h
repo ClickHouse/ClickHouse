@@ -147,8 +147,6 @@ public:
         }
     };
 
-    bool initialized = false;
-
     const const_iterator end_ptr;
 
     void initialize(const KeeperContextPtr & context)
@@ -173,12 +171,11 @@ public:
         }
         rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
         write_options.disableWAL = true;
-        initialized = true;
     }
 
     ~RocksDBContainer()
     {
-        if (initialized)
+        if (rocksdb_ptr)
         {
             auto status = rocksdb_ptr->Close();
             if (!status.ok())
