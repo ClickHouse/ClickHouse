@@ -11,6 +11,7 @@
 #include <rocksdb/table.h>
 #include <rocksdb/snapshot.h>
 #include <rocksdb/write_batch.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -179,7 +180,11 @@ public:
     {
         if (initialized)
         {
-            rocksdb_ptr->Close();
+            auto status = rocksdb_ptr->Close();
+            if (!status.ok())
+            {
+                LOG_ERROR(getLogger("RocksDB"), "Close failed (the error will be ignored): {}", status.ToString());
+            }
             rocksdb_ptr = nullptr;
 
             std::filesystem::remove_all(rocksdb_dir);
