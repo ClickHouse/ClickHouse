@@ -614,12 +614,18 @@ void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t
 {
     SQLRelation rel("");
     std::unordered_map<uint32_t, QueryLevel> levels_backup;
+    std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
 
-    for (const auto & entry : this->levels)
+    for (const auto & [key, val] : this->levels)
     {
-        levels_backup[entry.first] = entry.second;
+        levels_backup[key] = val;
+    }
+    for (const auto & [key, val] : this->ctes)
+    {
+        ctes_backup[key] = val;
     }
     this->levels.clear();
+    this->ctes.clear();
 
     this->levels[this->current_level] = QueryLevel(this->current_level);
     for (uint32_t i = 0; i < nparams; i++)
@@ -632,9 +638,14 @@ void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t
     this->generateExpression(rg, lexpr->mutable_expr());
 
     this->levels.clear();
-    for (const auto & entry : levels_backup)
+    this->ctes.clear();
+    for (const auto & [key, val] : levels_backup)
     {
-        this->levels[entry.first] = entry.second;
+        this->levels[key] = val;
+    }
+    for (const auto & [key, val] : ctes_backup)
+    {
+        this->ctes[key] = val;
     }
 }
 
@@ -877,16 +888,30 @@ void StatementGenerator::generateFrameBound(RandomGenerator & rg, Expr * expr)
     else
     {
         std::unordered_map<uint32_t, QueryLevel> levels_backup;
+        std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
 
-        for (const auto & entry : this->levels)
+        for (const auto & [key, val] : this->levels)
         {
-            levels_backup[entry.first] = entry.second;
+            levels_backup[key] = val;
+        }
+        for (const auto & [key, val] : this->ctes)
+        {
+            ctes_backup[key] = val;
         }
         this->levels.clear();
+        this->ctes.clear();
+
         this->generateExpression(rg, expr);
-        for (const auto & entry : levels_backup)
+
+        this->levels.clear();
+        this->ctes.clear();
+        for (const auto & [key, val] : levels_backup)
         {
-            this->levels[entry.first] = entry.second;
+            this->levels[key] = val;
+        }
+        for (const auto & [key, val] : ctes_backup)
+        {
+            this->ctes[key] = val;
         }
     }
 }
@@ -995,7 +1020,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         const uint64_t type_mask_backup = this->next_type_mask;
         CastExpr * casexpr = expr->mutable_comp_expr()->mutable_cast_expr();
 
-        casexpr->set_simple(rg.nextBool());
+        casexpr->set_simple(rg.nextMediumNumber() < 16);
         this->depth++;
         this->next_type_mask = fc.type_mask & ~(allow_nested);
         auto tp

@@ -181,18 +181,18 @@ For queries and subsystems other than `Server` config is accessible using `Conte
 ## Threads and jobs {#threads-and-jobs}
 
 To execute queries and do side activities ClickHouse allocates threads from one of thread pools to avoid frequent thread creation and destruction. There are a few thread pools, which are selected depending on a purpose and structure of a job:
-  * Server pool for incoming client sessions.
-  * Global thread pool for general purpose jobs, background activities and standalone threads.
-  * IO thread pool for jobs that are mostly blocked on some IO and are not CPU-intensive.
-  * Background pools for periodic tasks.
-  * Pools for preemptable tasks that can be split into steps.
+* Server pool for incoming client sessions.
+* Global thread pool for general purpose jobs, background activities and standalone threads.
+* IO thread pool for jobs that are mostly blocked on some IO and are not CPU-intensive.
+* Background pools for periodic tasks.
+* Pools for preemptable tasks that can be split into steps.
 
 Server pool is a `Poco::ThreadPool` class instance defined in `Server::main()` method. It can have at most `max_connection` threads. Every thread is dedicated to a single active connection.
 
 Global thread pool is `GlobalThreadPool` singleton class. To allocate thread from it `ThreadFromGlobalPool` is used. It has an interface similar to `std::thread`, but pulls thread from the global pool and does all necessary initialization. It is configured with the following settings:
-  * `max_thread_pool_size` - limit on thread count in pool.
-  * `max_thread_pool_free_size` - limit on idle thread count waiting for new jobs.
-  * `thread_pool_queue_size` - limit on scheduled job count.
+* `max_thread_pool_size` - limit on thread count in pool.
+* `max_thread_pool_free_size` - limit on idle thread count waiting for new jobs.
+* `thread_pool_queue_size` - limit on scheduled job count.
 
 Global pool is universal and all pools described below are implemented on top of it. This can be thought of as a hierarchy of pools. Any specialized pool takes its threads from the global pool using `ThreadPool` class. So the main purpose of any specialized pool is to apply limit on the number of simultaneous jobs and do job scheduling. If there are more jobs scheduled than threads in a pool, `ThreadPool` accumulates jobs in a queue with priorities. Each job has an integer priority. Default priority is zero. All jobs with higher priority values are started before any job with lower priority value. But there is no difference between already executing jobs, thus priority matters only when the pool in overloaded.
 
@@ -212,9 +212,9 @@ Query that can be parallelized uses `max_threads` setting to limit itself. Defau
 Notion of CPU `slot` is introduced. Slot is a unit of concurrency: to run a thread query has to acquire a slot in advance and release it when thread stops. The number of slots is globally limited in a server. Multiple concurrent queries are competing for CPU slots if the total demand exceeds the total number of slots. `ConcurrencyControl` is responsible to resolve this competition by doing CPU slot scheduling in a fair manner.
 
 Each slot can be seen as an independent state machine with the following states:
- * `free`: slot is available to be allocated by any query.
- * `granted`: slot is `allocated` by specific query, but not yet acquired by any thread.
- * `acquired`: slot is `allocated` by specific query and acquired by a thread.
+* `free`: slot is available to be allocated by any query.
+* `granted`: slot is `allocated` by specific query, but not yet acquired by any thread.
+* `acquired`: slot is `allocated` by specific query and acquired by a thread.
 
 Note that `allocated` slot can be in two different states: `granted` and `acquired`. The former is a transitional state, that actually should be short (from the instant when a slot is allocated to a query till the moment when the up-scaling procedure is run by any thread of that query).
 

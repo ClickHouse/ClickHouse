@@ -738,12 +738,14 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
 
                 command->snapshot_name = ast_snapshot_name->as<ASTLiteral &>().value.safeGet<String>();
-                if (!s_from.ignore(pos, expected))
-                    return false;
-                if (!ParserIdentifierWithOptionalParameters{}.parse(pos, command_snapshot_desc, expected))
-                    return false;
-                command_snapshot_desc->as<ASTFunction &>().kind = ASTFunction::Kind::BACKUP_NAME;
                 command->type = ASTAlterCommand::UNLOCK_SNAPSHOT;
+                /// unlock snapshot <uuid> from s3(...), but `from (s3...)` is optional
+                if (s_from.ignore(pos, expected))
+                {
+                    if (!ParserIdentifierWithOptionalParameters{}.parse(pos, command_snapshot_desc, expected))
+                        return false;
+                    command_snapshot_desc->as<ASTFunction &>().kind = ASTFunction::Kind::BACKUP_NAME;
+                }
             }
             else if (bool is_modify = s_modify_column.ignore(pos, expected); is_modify || s_alter_column.ignore(pos, expected))
             {
