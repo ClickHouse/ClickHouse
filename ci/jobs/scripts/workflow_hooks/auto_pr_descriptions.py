@@ -8,11 +8,14 @@ from pathlib import Path
 def ensure_claude_code_cli():
     """Install claude-code CLI"""
     try:
-        Shell.get_output("claude-code --version")
+        Shell.check("command -v claude-code")
+        print("claude-code CLI already available")
         return True
     except:
+        print("claude-code not found, installing...")
         try:
-            Shell.check("npm install -g @anthropic-ai/claude-code", Verbose=True)
+            Shell.check("npm install -g @anthropic-ai/claude-code", verbose=True)
+            print("claude-code CLI installed successfully")
             return True
         except:
             print("Error: Could not install claude-code CLI")
@@ -69,4 +72,4 @@ if __name__ == "__main__":
         print(description)
     if changelog_required_body:
         changelog = generate_changelog(84516)
-        print(description)
+        print(changelog)
