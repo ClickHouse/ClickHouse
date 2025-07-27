@@ -177,6 +177,7 @@ class AsyncLoader;
 class HTTPHeaderFilter;
 struct AsyncReadCounters;
 struct ICgroupsReader;
+class WasmModuleManager;
 
 struct TemporaryTableHolder;
 using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
@@ -1019,6 +1020,9 @@ public:
 
     IWorkloadEntityStorage & getWorkloadEntityStorage() const;
 
+    bool hasWasmModuleManager() const;
+    WasmModuleManager & getWasmModuleManager() const;
+
 #if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;
     Lemmatizers & getLemmatizers() const;
@@ -1632,6 +1636,8 @@ private:
 
     /// Expect lock for shared->clusters_mutex
     std::shared_ptr<Clusters> getClustersImpl(std::lock_guard<std::mutex> & lock) const;
+
+    void initWasmModuleManager();
 
     /// Throttling
 public:
