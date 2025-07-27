@@ -8,3 +8,5 @@ SELECT code_point, lowercase_mapping FROM system.unicode WHERE code_point = 'A' 
 SELECT code_point, uppercase_mapping, simple_uppercase_mapping FROM system.unicode WHERE code_point = 'ß';
 -- no language-specific mappings 
 SELECT code_point, uppercase_mapping, simple_uppercase_mapping FROM system.unicode WHERE code_point = 'i';
+
+SELECT code_point, script_extensions, identifier_type FROM system.unicode WHERE code_point = 'A';

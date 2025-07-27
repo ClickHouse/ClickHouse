@@ -6,6 +6,7 @@
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ActionsDAG.h>
@@ -249,8 +250,10 @@ ColumnsDescription StorageSystemUnicode::getColumnsDescription()
     for (size_t i = 0; i < sizeof(other_properties) / sizeof(other_properties[0]); ++i)
     {
         const auto & [prop_name, prop] = prop_names[prop_index++];
-        // UCHAR_SCRIPT_EXTENSIONS and UCHAR_IDENTIFIER_TYPE are arrays of UInt32
-        names_and_types.emplace_back(Poco::toLower(prop_name), std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()));
+        // UCHAR_SCRIPT_EXTENSIONS and UCHAR_IDENTIFIER_TYPE are arrays of LowCardinality(String)
+        names_and_types.emplace_back(
+            Poco::toLower(prop_name),
+            std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())));
     }
 
     return ColumnsDescription::fromNamesAndTypes(names_and_types);
@@ -543,13 +546,19 @@ void StorageSystemUnicode::fillData(
                 Array arr;
                 for (int32_t j = 0; j < num_scripts; ++j)
                 {
-                    arr.push_back(scx_val_array[j]);
+                    const char * script_name = uscript_getName(scx_val_array[j]);
+                    if (script_name == nullptr)
+                    {
+                        throw Exception(
+                            ErrorCodes::UNICODE_ERROR, "Failed to get script name for code point {}: {}", code, scx_val_array[j]);
+                    }
+                    arr.emplace_back(std::string_view(script_name));
                 }
                 assert_cast<ColumnArray &>(*res_columns[column_index++]).insert(arr);
             }
             else if (other_prop == UCHAR_IDENTIFIER_TYPE)
             {
-                UIdentifierType types[12]; // 最多12种类型
+                UIdentifierType types[12];
                 err_code = U_ZERO_ERROR;
                 int32_t count = u_getIDTypes(code, types, 12, &err_code);
                 if (U_FAILURE(err_code))
@@ -560,7 +569,13 @@ void StorageSystemUnicode::fillData(
                 Array arr;
                 for (int32_t i = 0; i < count; i++)
                 {
-                    arr.push_back(types[i]);
+                    const char * type_name = u_getPropertyValueName(UCHAR_IDENTIFIER_TYPE, types[i], U_LONG_PROPERTY_NAME);
+                    if (type_name == nullptr)
+                    {
+                        throw Exception(
+                            ErrorCodes::UNICODE_ERROR, "Failed to get identifier type name for code point {}: {}", code, types[i]);
+                    }
+                    arr.emplace_back(std::string_view(type_name));
                 }
                 assert_cast<ColumnArray &>(*res_columns[column_index++]).insert(arr);
             }

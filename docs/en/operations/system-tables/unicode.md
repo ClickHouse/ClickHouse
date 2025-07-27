@@ -31,8 +31,8 @@ Mapping is somewhat special, see the icu documentation. For example, simple_uppe
 :::
 
 - `numeric_value` ([Float64](../../sql-reference/data-types/float.md)) - The numeric value of the code point.
-- `script_extensions` ([Array(Int32)](../../sql-reference/data-types/array.md)) - The script extensions of the code point.
-- `identifier_type` ([Array(Int32)](../../sql-reference/data-types/array.md)) - The identifier type of the code point.
+- `script_extensions` ([Array(LowCardinality(String))](../../sql-reference/data-types/array.md)) - The script extensions of the code point.
+- `identifier_type` ([Array(LowCardinality(String))](../../sql-reference/data-types/array.md)) - The identifier type of the code point.
 - `general_category_mask` ([Int32](../../sql-reference/data-types/int-uint.md)) - The general category mask of the code point.
 
 
@@ -162,8 +162,8 @@ simple_uppercase_mapping:        A
 titlecase_mapping:               A
 uppercase_mapping:               A
 bidi_paired_bracket:             a
-script_extensions:               [25]
-identifier_type:                 [11]
+script_extensions:               ['Latin']
+identifier_type:                 ['Recommended']
 
 ```
 
