@@ -100,10 +100,6 @@
 #include <Common/config_version.h>
 #include <base/find_symbols.h>
 
-#if USE_GWP_ASAN
-#    include <Common/GWPAsan.h>
-#endif
-
 
 namespace fs = std::filesystem;
 using namespace std::literals;

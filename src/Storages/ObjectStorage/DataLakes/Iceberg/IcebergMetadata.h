@@ -54,6 +54,14 @@ public:
         return iceberg_metadata && getVersion() == iceberg_metadata->getVersion();
     }
 
+    static void createInitial(
+        const ObjectStoragePtr & object_storage,
+        const StorageObjectStorageConfigurationWeakPtr & configuration,
+        const ContextPtr & local_context,
+        const std::optional<ColumnsDescription> & columns,
+        ASTPtr partition_by,
+        bool if_not_exists);
+
     static DataLakeMetadataPtr create(
         const ObjectStoragePtr & object_storage,
         const StorageObjectStorageConfigurationWeakPtr & configuration,

@@ -98,7 +98,6 @@ SELECT toTime(now()) AS column, toTypeName(column) AS x
    └───────────┴──────┘
 ```
 
-
 ## See Also {#see-also}
 
 - [Type conversion functions](../functions/type-conversion-functions.md)
