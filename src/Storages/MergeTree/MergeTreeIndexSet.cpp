@@ -18,9 +18,6 @@
 #include <Functions/indexHint.h>
 #include <Planner/PlannerActionsVisitor.h>
 
-#include <Storages/MergeTree/MergeTreeIndexUtils.h>
-
-
 namespace DB
 {
 
@@ -342,14 +339,14 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSet::getGranuleAndReset()
     return granule;
 }
 
-KeyCondition buildCondition(const IndexDescription & index, const ActionsDAG * filter_actions_dag, ContextPtr context)
+KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
 {
-    return KeyCondition{filter_actions_dag, context, index.column_names, index.expression};
+    return KeyCondition{filter_dag, context, index.column_names, index.expression};
 }
 
 MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     size_t max_rows_,
-    const ActionsDAG * filter_dag,
+    const ActionsDAGWithInversionPushDown & filter_dag,
     ContextPtr context,
     const IndexDescription & index_description)
     : index_name(index_description.name)
@@ -361,30 +358,27 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         if (!key_columns.contains(name))
             key_columns.insert(name);
 
-    if (!filter_dag)
+    if (!filter_dag.predicate)
         return;
 
-    /// Clone ActionsDAG with re-generated column name for constants.
-    /// DAG from the query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
-    /// DAG from the skip indexes does not use it. This breaks matching by column name sometimes.
-    auto filter_actions_dag = cloneFilterDAGForIndexesAnalysis(*filter_dag);
     std::vector<FutureSetPtr> sets_to_prepare;
-    if (checkDAGUseless(*filter_actions_dag.getOutputs().at(0), context, sets_to_prepare))
+    if (checkDAGUseless(*filter_dag.predicate, context, sets_to_prepare))
         return;
     /// Try to run subqueries, don't use index if failed (e.g. if use_index_for_in_with_subqueries is disabled).
     for (auto & set : sets_to_prepare)
         if (!set->buildOrderedSetInplace(context))
             return;
 
+    auto filter_actions_dag = filter_dag.dag->clone();
     const auto * filter_actions_dag_node = filter_actions_dag.getOutputs().at(0);
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
-    filter_actions_dag.getOutputs()[0] = &traverseDAG(*filter_actions_dag_node, filter_actions_dag, context, node_to_result_node);
+    const auto & predicate_node = traverseDAG(*filter_actions_dag_node, filter_actions_dag, context, node_to_result_node);
 
-    filter_actions_dag.removeUnusedActions();
+    auto sub_dag = ActionsDAG::cloneSubDAG({&predicate_node}, false);
 
-    actions_output_column_name = filter_actions_dag.getOutputs().at(0)->result_name;
-    actions = std::make_shared<ExpressionActions>(std::move(filter_actions_dag));
+    actions_output_column_name = sub_dag.getOutputs().at(0)->result_name;
+    actions = std::make_shared<ExpressionActions>(std::move(sub_dag));
 }
 
 bool MergeTreeIndexConditionSet::alwaysUnknownOrTrue() const
@@ -410,9 +404,13 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
     actions->execute(result);
 
     const auto & column = result.getByName(actions_output_column_name).column;
+    const bool nullable = column->isNullable();
 
     for (size_t i = 0; i < size; ++i)
-        if (!column->isNullAt(i) && (column->get64(i) & 1))
+        /// The first part of the condition checks if any of them pass the filter.
+        /// The second part of the conditions checks if column is nullable, in that case there is no need to check null map since filter function possibly handles null values.
+        /// Only in case the column is not nullable, check the null map.
+        if ((column->get64(i) & 1) && (nullable || !column->isNullAt(i)))
             return true;
 
     return false;
@@ -457,11 +455,13 @@ MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPoss
 
     const auto * col_uint8 = typeid_cast<const ColumnUInt8 *>(column.get());
     const NullMap * null_map = nullptr;
+    bool nullable = false;
 
     if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(&*column))
     {
         col_uint8 = typeid_cast<const ColumnUInt8 *>(&col_nullable->getNestedColumn());
         null_map = &col_nullable->getNullMapData();
+        nullable = true;
     }
 
     if (!col_uint8)
@@ -489,17 +489,18 @@ MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPoss
         {
             /// This granule has set elements - check if any of them pass the filter.
             chassert(current_granule == current_granule_in_block);
-            bool passed = false;
-            while (block_pos < block_size && current_granule_in_block == granule_nums[block_pos])
+            for (bool passed = false; block_pos < block_size && current_granule_in_block == granule_nums[block_pos]; ++block_pos)
             {
                 if (!passed)
                 {
-                    passed = (!null_map || !(*null_map)[block_pos]) && (filter_result[block_pos] & 1);
+                    /// The first part of the condition checks if any of them pass the filter.
+                    /// The second part of the conditions checks if column is nullable, in that case there is no need to check null map since filter function possibly handles null values.
+                    /// Only in case the column is not nullable, check the null map.
+                    passed = (filter_result[block_pos] & 1) && (nullable || !null_map || !(*null_map)[block_pos]);
                     if (passed)
                         res.push_back(current_granule);
                     /// After we found that it passes, we just iterate over the block to the next granule or the end.
                 }
-                ++block_pos;
             }
         }
     }
@@ -755,9 +756,10 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator(const Merge
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
-    const ActionsDAG * filter_actions_dag, ContextPtr context) const
+    const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionSet>(max_rows, filter_actions_dag, context, index);
+    ActionsDAGWithInversionPushDown filter_dag(predicate, context);
+    return std::make_shared<MergeTreeIndexConditionSet>(max_rows, filter_dag, context, index);
 }
 
 MergeTreeIndexPtr setIndexCreator(const IndexDescription & index)

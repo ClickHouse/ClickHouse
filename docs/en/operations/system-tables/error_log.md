@@ -2,7 +2,7 @@
 description: 'System table containing the history of error values from table `system.errors`,
   periodically flushed to disk.'
 keywords: ['system table', 'error_log']
-slug: /operations/system-tables/error_log
+slug: /operations/system-tables/system-error-log
 title: 'system.error_log'
 ---
 

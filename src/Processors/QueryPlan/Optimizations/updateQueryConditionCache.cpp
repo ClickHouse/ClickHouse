@@ -39,20 +39,28 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
 
     const auto & outputs = filter_actions_dag->getOutputs();
 
-    /// Restrict to the case that ActionsDAG has a single output. This isn't technically necessary but de-risks the
-    /// implementatino a lot while not losing much usefulness.
+    /// Restrict to the case that ActionsDAG has a single output. This isn't technically necessary but de-risks
+    /// the implementation a lot while not losing much usefulness.
     if (outputs.size() != 1)
         return;
 
     for (const auto * output : outputs)
+    {
         if (!VirtualColumnUtils::isDeterministic(output))
+        {
+            LOG_TRACE(
+                &Poco::Logger::get("updateQueryConditionCache"),
+                "Optimization has been disabled due to the non-deterministic of the query condition");
             return;
+        }
+    }
+
 
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
-            size_t condition_hash = filter_actions_dag->getOutputs()[0]->getHash();
+            UInt64 condition_hash = filter_actions_dag->getOutputs()[0]->getHash();
 
             String condition;
             if (optimization_settings.query_condition_cache_store_conditions_as_plaintext)

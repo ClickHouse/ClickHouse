@@ -4,12 +4,18 @@ from ci.defs.defs import DOCKERS, SECRETS, ArtifactConfigs
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 
+builds_for_release_branch = [
+    job.unset_provides("unittest")
+    for job in JobConfigs.build_jobs
+    if "coverage" not in job.name and "binary" not in job.name
+]
+
 workflow = Workflow.Config(
     name="ReleaseBranchCI",
     event=Workflow.Event.PUSH,
     branches=["2[1-9].[1-9][0-9]", "2[1-9].[1-9]"],
     jobs=[
-        *JobConfigs.build_jobs,
+        *builds_for_release_branch,
         *[
             job
             for job in JobConfigs.special_build_jobs
@@ -36,7 +42,6 @@ workflow = Workflow.Config(
         *JobConfigs.stress_test_jobs,
     ],
     artifacts=[
-        *ArtifactConfigs.unittests_binaries,
         *ArtifactConfigs.clickhouse_binaries,
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,

@@ -204,11 +204,6 @@ option(OMIT_HEAVY_DEBUG_SYMBOLS
     ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
 
 option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
-if (NOT BUILD_STANDALONE_KEEPER)
-    option(CREATE_KEEPER_SYMLINK "Create symlink for clickhouse-keeper to main server binary" ON)
-else ()
-    option(CREATE_KEEPER_SYMLINK "Create symlink for clickhouse-keeper to main server binary" OFF)
-endif ()
 
 # Create BuildID when using lld. For other linkers it is created by default.
 # (NOTE: LINKER_NAME can be either path or name, and in different variants)
@@ -233,6 +228,8 @@ if (SPLIT_DEBUG_SYMBOLS)
     message(STATUS "Will split binaries and debug symbols")
     set(SPLIT_DEBUG_SYMBOLS_DIR "stripped" CACHE STRING "A separate directory for stripped information")
 endif()
+
+option(BUILD_STRIPPED_BINARY "Build stripped binary (clickhouse-stripped)" OFF)
 
 cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd
 
@@ -302,9 +299,8 @@ set (CMAKE_C_STANDARD_REQUIRED ON)
 # See https://reviews.llvm.org/D112921
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
 
-# falign-functions=32 prevents from random performance regressions with the code change. Thus, providing more stable
-# benchmarks.
-set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
+# falign-functions=64 prevents from random performance regressions with the code change. Thus, providing more stable benchmarks.
+set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64")
 
 if (ARCH_AMD64)
     # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
@@ -373,6 +369,15 @@ elseif (ENABLE_THINLTO)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
 endif ()
 
+if(COMPILER_PIPE)
+    set(MAX_COMPILER_MEMORY 2500)
+else()
+    set(MAX_COMPILER_MEMORY 1500)
+endif()
+set(MAX_LINKER_MEMORY 5000)
+include(cmake/limit_jobs.cmake)
+
+
 # Turns on all external libs like s3, kafka, ODBC, ...
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 
@@ -393,15 +398,6 @@ elseif (OS_FREEBSD)
 endif ()
 link_libraries(global-group)
 target_link_libraries(global-group INTERFACE $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>)
-
-option (ENABLE_GWP_ASAN "Enable Gwp-Asan" ON)
-# We use mmap for allocations more heavily in debug builds,
-# but GWP-ASan also wants to use mmap frequently,
-# and due to a large number of memory mappings,
-# it does not work together well.
-if ((NOT OS_LINUX AND NOT OS_ANDROID) OR (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG") OR SANITIZE)
-    set(ENABLE_GWP_ASAN OFF)
-endif ()
 
 option (ENABLE_LIBFIU "Enable libfiu" ON)
 
@@ -581,6 +577,9 @@ option(CHECK_LARGE_OBJECT_SIZES "Check that there are no large object files afte
 
 add_subdirectory (base)
 add_subdirectory (src)
+if (LEXER_STANDALONE_BUILD)
+    add_subdirectory(tests/lexer)
+endif ()
 add_subdirectory (programs)
 add_subdirectory (utils)
 
@@ -618,9 +617,11 @@ endif()
 
 include (cmake/sanitize_targets.cmake)
 
-if (COMPILER_CACHE STREQUAL "chcache")
+if (COMPILER_CACHE STREQUAL "chcache" AND CHCACHE_EXECUTABLE_PATH STREQUAL "")
+    message(STATUS "Adding chcache as dependency to all other targets")
     get_all_targets(all_targets)
-    set (chcache_targets _cargo-build_chcache cargo-build_chcache cargo-prebuild_chcache)
+    set(chcache_targets _cargo-build_chcache cargo-build_chcache cargo-prebuild_chcache)
+
     foreach(target ${all_targets})
         if (target IN_LIST chcache_targets)
             continue()

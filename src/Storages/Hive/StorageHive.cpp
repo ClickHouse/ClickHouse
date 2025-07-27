@@ -23,6 +23,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/Context.h>
 #include <IO/ReadBufferFromString.h>
 #include <Disks/IO/getThreadPoolReader.h>
 #include <Parsers/ASTExpressionList.h>
@@ -62,7 +63,7 @@ namespace Setting
 {
     extern const SettingsBool input_format_parquet_case_insensitive_column_matching;
     extern const SettingsBool input_format_orc_case_insensitive_column_matching;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsInt64 max_partitions_to_read;
     extern const SettingsMaxThreads max_threads;
 }
@@ -142,7 +143,7 @@ public:
         UInt64 max_block_size_,
         const StorageHive & storage_,
         const Names & text_input_field_names_ = {})
-        : ISource(getHeader(sample_block_, source_info_))
+        : ISource(std::make_shared<const Block>(getHeader(sample_block_, source_info_)))
         , WithContext(context_)
         , source_info(std::move(source_info_))
         , hdfs_namenode_url(std::move(hdfs_namenode_url_))
@@ -278,21 +279,23 @@ public:
                 else
                     read_buf = std::move(raw_read_buf);
 
+                ContextPtr context = getContext();
+
                 auto input_format = FormatFactory::instance().getInput(
                     format,
                     *read_buf,
                     to_read_block,
-                    getContext(),
+                    context,
                     max_block_size,
                     updateFormatSettings(current_file),
-                    /* max_parsing_threads */ 1);
+                    FormatParserGroup::singleThreaded(context->getSettingsRef()));
 
                 Pipe pipe(input_format);
                 if (columns_description.hasDefaults())
                 {
-                    pipe.addSimpleTransform([&](const Block & header)
+                    pipe.addSimpleTransform([&](const SharedHeader & header)
                     {
-                        return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, getContext());
+                        return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, context);
                     });
                 }
                 pipeline = std::make_unique<QueryPipeline>(std::move(pipe));
@@ -615,14 +618,15 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
     writeString("\n", wb);
 
     ReadBufferFromString buffer(wb.str());
+    ContextPtr context = getContext();
     auto format = FormatFactory::instance().getInput(
         "CSV",
         buffer,
         partition_key_expr->getSampleBlock(),
-        getContext(),
-        getContext()->getSettingsRef()[Setting::max_block_size],
+        context,
+        context->getSettingsRef()[Setting::max_block_size],
         std::nullopt,
-        /* max_parsing_threads */ 1);
+        FormatParserGroup::singleThreaded(context->getSettingsRef()));
     auto pipeline = QueryPipeline(std::move(format));
     auto reader = std::make_unique<PullingPipelineExecutor>(pipeline);
     Block block;
@@ -641,7 +645,8 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
         for (size_t i = 0; i < partition_names.size(); ++i)
             ranges.emplace_back(fields[i]);
 
-        const KeyCondition partition_key_condition(filter_actions_dag, getContext(), partition_names, partition_minmax_idx_expr);
+        ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), context_);
+        const KeyCondition partition_key_condition(inverted_dag, context, partition_names, partition_minmax_idx_expr);
         if (!partition_key_condition.checkInHyperrectangle(ranges, partition_types).can_be_true)
             return {};
     }
@@ -709,7 +714,8 @@ HiveFilePtr StorageHive::getHiveFileIfNeeded(
 
     if (prune_level >= PruneLevel::File)
     {
-        const KeyCondition hivefile_key_condition(filter_actions_dag, getContext(), hivefile_name_types.getNames(), hivefile_minmax_idx_expr);
+        ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), context_);
+        const KeyCondition hivefile_key_condition(inverted_dag, getContext(), hivefile_name_types.getNames(), hivefile_minmax_idx_expr);
         if (hive_file->useFileMinMaxIndex())
         {
             /// Load file level minmax index and apply
@@ -782,7 +788,7 @@ public:
         LoggerPtr log_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(std::move(header), column_names_, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(std::make_shared<const Block>(std::move(header)), column_names_, query_info_, storage_snapshot_, context_)
         , storage(std::move(storage_))
         , sources_info(std::move(sources_info_))
         , builder(std::move(builder_))
@@ -1096,7 +1102,7 @@ void registerStorageHive(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .supports_sort_order = true,
-            .source_access_type = AccessType::HIVE,
+            .source_access_type = AccessTypeObjects::Source::HIVE,
             .has_builtin_setting_fn = HiveSettings::hasBuiltin,
         });
 }

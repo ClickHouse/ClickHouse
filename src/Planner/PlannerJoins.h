@@ -248,6 +248,8 @@ struct JoinAlgorithmSettings
     bool collect_hash_table_stats_during_joins;
     UInt64 max_entries_for_hash_table_stats;
 
+    UInt64 parallel_hash_join_threshold;
+
     UInt64 grace_hash_join_initial_buckets;
     UInt64 grace_hash_join_max_buckets;
 
@@ -274,10 +276,11 @@ struct JoinAlgorithmSettings
 std::shared_ptr<IJoin> chooseJoinAlgorithm(
     std::shared_ptr<TableJoin> & table_join,
     const PreparedJoinStorage & right_table_expression,
-    const Block & left_table_expression_header,
-    const Block & right_table_expression_header,
+    SharedHeader left_table_expression_header,
+    SharedHeader right_table_expression_header,
     const JoinAlgorithmSettings & settings,
-    UInt64 hash_table_key_hash);
+    UInt64 hash_table_key_hash,
+    std::optional<UInt64> rhs_size_estimation);
 
 using TableExpressionSet = std::unordered_set<const IQueryTreeNode *>;
 TableExpressionSet extractTableExpressionsSet(const QueryTreeNodePtr & node);

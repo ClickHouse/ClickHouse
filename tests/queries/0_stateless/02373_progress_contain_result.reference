@@ -1,2 +1,2 @@
+< X-ClickHouse-Summary: {"read_rows":"100","read_bytes":"800","written_rows":"0","written_bytes":"0","total_rows_to_read":"100","result_rows":"100","result_bytes":"227"}
 < Access-Control-Expose-Headers: X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-ClickHouse-Exception-Code
-< X-ClickHouse-Summary: {"read_rows":"100","read_bytes":"800","total_rows_to_read":"100","result_rows":"100","result_bytes":"227"}

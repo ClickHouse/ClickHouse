@@ -23,14 +23,14 @@ Columns:
 - `thread_name` (String) — Name of the thread from which the logging was done.
 - `thread_id` (UInt64) — OS thread ID.
 - `level` (`Enum8`) — Entry level. Possible values:
-    - `1` or `'Fatal'`.
-    - `2` or `'Critical'`.
-    - `3` or `'Error'`.
-    - `4` or `'Warning'`.
-    - `5` or `'Notice'`.
-    - `6` or `'Information'`.
-    - `7` or `'Debug'`.
-    - `8` or `'Trace'`.
+  - `1` or `'Fatal'`.
+  - `2` or `'Critical'`.
+  - `3` or `'Error'`.
+  - `4` or `'Warning'`.
+  - `5` or `'Notice'`.
+  - `6` or `'Information'`.
+  - `7` or `'Debug'`.
+  - `8` or `'Trace'`.
 - `query_id` (String) — ID of the query.
 - `logger_name` (LowCardinality(String)) — Name of the logger (i.e. `DDLWorker`).
 - `message` (String) — The message itself.

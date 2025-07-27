@@ -92,7 +92,7 @@ BackupImpl::BackupImpl(
     BackupFactory::CreateParams params_,
     const ArchiveParams & archive_params_,
     std::shared_ptr<IBackupReader> reader_,
-    std::shared_ptr<IBackupReader> lightweight_snapshot_reader_)
+    SnapshotReaderCreator lightweight_snapshot_reader_creator_)
     : params(std::move(params_))
     , backup_info(params.backup_info)
     , backup_name_for_logging(backup_info.toStringForLogging())
@@ -100,15 +100,11 @@ BackupImpl::BackupImpl(
     , archive_params(archive_params_)
     , open_mode(OpenMode::READ)
     , reader(std::move(reader_))
-    , lightweight_snapshot_reader(std::move(lightweight_snapshot_reader_))
+    , lightweight_snapshot_reader_creator(lightweight_snapshot_reader_creator_)
     , version(INITIAL_BACKUP_VERSION)
     , base_backup_info(params.base_backup_info)
     , log(getLogger("BackupImpl"))
 {
-    if (params.is_lightweight_snapshot && !lightweight_snapshot_reader_)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create lightweight backup reader");
-    }
     open();
 }
 
@@ -689,15 +685,16 @@ SizeAndChecksum BackupImpl::getFileSizeAndChecksum(const String & file_name) con
 
 std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFile(const String & file_name) const
 {
-    return readFile(getFileSizeAndChecksum(file_name));
+    return readFile(file_name, getFileSizeAndChecksum(file_name));
 }
 
-std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFile(const SizeAndChecksum & size_and_checksum) const
+std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFile(const String & file_name, const SizeAndChecksum & size_and_checksum) const
 {
-    return readFileImpl(size_and_checksum, /* read_encrypted= */ false);
+    return readFileImpl(file_name, size_and_checksum, /* read_encrypted= */ false);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFileImpl(const SizeAndChecksum & size_and_checksum, bool read_encrypted) const
+std::unique_ptr<ReadBufferFromFileBase>
+BackupImpl::readFileImpl(const String & file_name, const SizeAndChecksum & size_and_checksum, bool read_encrypted) const
 {
     if (open_mode == OpenMode::WRITE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
@@ -710,9 +707,10 @@ std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFileImpl(const SizeAndCh
         {
             throw Exception(
                 ErrorCodes::BACKUP_ENTRY_NOT_FOUND,
-                "Backup {}: Entry {} not found in the backup",
+                "Backup {}: Entry {} for file '{}' not found in the backup",
                 backup_name_for_logging,
-                formatSizeAndChecksum(size_and_checksum));
+                formatSizeAndChecksum(size_and_checksum),
+                file_name);
         }
         info = it->second;
     }
@@ -765,7 +763,7 @@ std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFileImpl(const SizeAndCh
                 backup_name_for_logging, formatSizeAndChecksum(size_and_checksum));
         }
 
-        base_read_buffer = base->readFile(std::pair{info.base_size, info.base_checksum});
+        base_read_buffer = base->readFile(info.file_name, std::pair{info.base_size, info.base_checksum});
     }
 
     {
@@ -865,7 +863,7 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
     else
     {
         /// Use the generic way to copy data. `readFile()` will update `num_read_files`.
-        auto read_buffer = readFileImpl(size_and_checksum, /* read_encrypted= */ info.encrypted_by_disk);
+        auto read_buffer = readFileImpl(info.file_name, size_and_checksum, /* read_encrypted= */ info.encrypted_by_disk);
         std::unique_ptr<WriteBuffer> write_buffer;
         size_t buf_size = std::min<size_t>(info.size, reader->getWriteBufferSize());
         if (info.encrypted_by_disk)
@@ -937,12 +935,12 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     }
     else if (src_disk && from_immutable_file)
     {
-        LOG_INFO(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
+        LOG_TRACE(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
         writer->copyFileFromDisk(info.data_file_name, src_disk, src_file_path, info.encrypted_by_disk, info.base_size, info.size - info.base_size);
     }
     else
     {
-        LOG_INFO(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
+        LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
         auto create_read_buffer = [entry, read_settings = writer->getReadSettings()] { return entry->getReadBuffer(read_settings); };
         writer->copyDataToFile(info.data_file_name, create_read_buffer, info.base_size, info.size - info.base_size);
     }

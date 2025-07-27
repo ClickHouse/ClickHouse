@@ -27,8 +27,9 @@ void test_read(const auto & handler, std::string_view input, std::string_view ex
                std::size_t expected_pos, State expected_state)
 {
     auto str = ColumnString::create();
+    auto val = ColumnString::create();
     NextState next_state;
-    InlineEscapingStateHandler::StringWriter element(*str);
+    InlineEscapingStateHandler::PairWriter element(*str, *val);
 
     if constexpr (quoted)
     {
@@ -41,7 +42,7 @@ void test_read(const auto & handler, std::string_view input, std::string_view ex
 
     ASSERT_EQ(next_state.position_in_string, expected_pos);
     ASSERT_EQ(next_state.state, expected_state);
-    ASSERT_EQ(element.uncommittedChunk(), expected_element);
+    ASSERT_EQ(element.uncommittedKeyChunk(), expected_element);
 }
 
 void test_read(const auto & handler, std::string_view input, std::string_view expected_element,
@@ -62,7 +63,7 @@ TEST(extractKVPairInlineEscapingKeyStateHandler, Wait)
 {
     auto pair_delimiters = std::vector<char>{',', ' '};
 
-    auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters);
+    auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters, Configuration::UnexpectedQuotingCharacterStrategy::PROMOTE);
 
     StateHandlerImpl<true> handler(configuration);
 
@@ -78,7 +79,7 @@ TEST(extractKVPairInlineEscapingKeyStateHandler, Read)
 {
     auto pair_delimiters = std::vector<char>{',', ' '};
 
-    auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters);
+    auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters, Configuration::UnexpectedQuotingCharacterStrategy::PROMOTE);
 
     StateHandlerImpl<true> handler(configuration);
 
@@ -102,7 +103,7 @@ TEST(extractKVPairInlineEscapingKeyStateHandler, ReadEnclosed)
 {
     auto pair_delimiters = std::vector<char>{',', ' '};
 
-    auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters);
+    auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters, Configuration::UnexpectedQuotingCharacterStrategy::PROMOTE);
 
     StateHandlerImpl<true> handler(configuration);
 

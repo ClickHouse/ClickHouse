@@ -17,6 +17,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/StorageID.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -63,7 +64,7 @@ namespace
     {
         return makeASTFunction("greaterOrEquals",
                                makeASTColumn(data_table_id, TimeSeriesColumnNames::Timestamp),
-                               std::make_shared<ASTLiteral>(Field{DecimalField{DateTime64{min_timestamp_ms}, 3}}));
+                               std::make_shared<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{min_timestamp_ms}, 3}}));
     }
 
     /// Makes an AST for condition `data_table.timestamp <= max_timestamp_ms`
@@ -71,7 +72,7 @@ namespace
     {
         return makeASTFunction("lessOrEquals",
                                makeASTColumn(data_table_id, TimeSeriesColumnNames::Timestamp),
-                               std::make_shared<ASTLiteral>(Field{DecimalField{DateTime64{max_timestamp_ms}, 3}}));
+                               std::make_shared<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{max_timestamp_ms}, 3}}));
     }
 
     /// Makes an AST for condition `tags_table.max_time >= min_timestamp_ms`
@@ -79,7 +80,7 @@ namespace
     {
         return makeASTFunction("greaterOrEquals",
                                makeASTColumn(tags_table_id, TimeSeriesColumnNames::MaxTime),
-                               std::make_shared<ASTLiteral>(Field{DecimalField{DateTime64{min_timestamp_ms}, 3}}));
+                               std::make_shared<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{min_timestamp_ms}, 3}}));
     }
 
     /// Makes an AST for condition `tags_table.min_time <= max_timestamp_ms`
@@ -87,7 +88,7 @@ namespace
     {
         return makeASTFunction("lessOrEquals",
                                makeASTColumn(tags_table_id, TimeSeriesColumnNames::MinTime),
-                               std::make_shared<ASTLiteral>(Field{DecimalField{DateTime64{max_timestamp_ms}, 3}}));
+                               std::make_shared<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{max_timestamp_ms}, 3}}));
     }
 
     /// Makes an AST for the expression referencing a tag value.
@@ -492,7 +493,7 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
         LOG_TRACE(log, "{}: Pulled block with {} columns and {} rows",
                   time_series_storage_id.getNameForLogs(), block.columns(), block.rows());
 
-        if (block)
+        if (!block.empty())
             convertBlockToProtobuf(std::move(block), out_time_series, time_series_storage_id, time_series_settings);
     }
 

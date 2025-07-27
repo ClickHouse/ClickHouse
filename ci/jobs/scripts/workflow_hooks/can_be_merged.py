@@ -9,8 +9,11 @@ def check():
     forbidden_labels = [
         Labels.CI_PERFORMANCE,
         Labels.NO_FAST_TESTS,
+        Labels.CI_INTEGRATION_FLAKY,
+        Labels.CI_FUNCTIONAL_FLAKY,
         Labels.CI_INTEGRATION,
         Labels.CI_FUNCTIONAL,
+        Labels.CI_BUILD,
     ]
 
     for label in forbidden_labels:

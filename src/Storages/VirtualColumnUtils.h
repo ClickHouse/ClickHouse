@@ -6,8 +6,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Formats/FormatSettings.h>
-
-#include <unordered_set>
+#include <absl/container/flat_hash_map.h>
 
 
 namespace DB
@@ -77,7 +76,8 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
     ColumnsDescription & storage_columns,
     const ContextPtr & context,
     const std::string & sample_path = "",
-    std::optional<FormatSettings> format_settings_ = std::nullopt);
+    std::optional<FormatSettings> format_settings_ = std::nullopt,
+    bool is_data_lake = false);
 
 std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns);
 
@@ -111,8 +111,10 @@ void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
     VirtualsForFileLikeStorage virtual_values, ContextPtr context);
 
-// exposed in the header for unit testing purposes
-std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValues(const String & path);
+using HivePartitioningKeysAndValues = absl::flat_hash_map<std::string_view, std::string_view>;
+
+HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & path);
+
 }
 
 }

@@ -164,7 +164,7 @@ struct BinomialDistribution
         if (p < 0.0f || p > 1.0f)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} should be inside [0, 1] because it is a probability", getName());
 
-        auto distribution = std::binomial_distribution(t, p);
+        auto distribution = std::binomial_distribution<UInt64>(t, p);
         for (auto & elem : container)
             elem = static_cast<UInt64>(distribution(thread_local_rng));
     }
@@ -181,7 +181,7 @@ struct NegativeBinomialDistribution
         if (p < 0.0f || p > 1.0f)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} should be inside [0, 1] because it is a probability", getName());
 
-        auto distribution = std::negative_binomial_distribution(t, p);
+        auto distribution = std::negative_binomial_distribution<UInt64>(t, p);
         for (auto & elem : container)
             elem = static_cast<UInt64>(distribution(thread_local_rng));
     }
@@ -195,7 +195,7 @@ struct PoissonDistribution
 
     static void generate(UInt64 n, ColumnUInt64::Container & container)
     {
-        auto distribution = std::poisson_distribution(n);
+        auto distribution = std::poisson_distribution<UInt64>(n);
         for (auto & elem : container)
             elem = static_cast<UInt64>(distribution(thread_local_rng));
     }
@@ -331,7 +331,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randUniform(0, 1) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+    .category = FunctionDocumentation::Category::RandomNumber
     });
 
     factory.registerFunction<FunctionRandomDistribution<NormalDistribution>>(
@@ -345,7 +345,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randNormal(0, 5) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+    .category = FunctionDocumentation::Category::RandomNumber
     });
 
 
@@ -360,7 +360,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randLogNormal(0, 5) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+    .category = FunctionDocumentation::Category::RandomNumber
     });
 
 
@@ -375,7 +375,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randExponential(0, 5) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+    .category = FunctionDocumentation::Category::RandomNumber
     });
 
 
@@ -390,7 +390,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randChiSquared(5) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+    .category = FunctionDocumentation::Category::RandomNumber
     });
 
     factory.registerFunction<FunctionRandomDistribution<StudentTDistribution>>(
@@ -404,7 +404,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randStudentT(5) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+    .category = FunctionDocumentation::Category::RandomNumber
     });
 
 
@@ -420,7 +420,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randFisherF(5) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+    .category = FunctionDocumentation::Category::RandomNumber
     });
 
 
@@ -435,7 +435,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randBernoulli(0.1) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+    .category = FunctionDocumentation::Category::RandomNumber
     });
 
 
@@ -450,7 +450,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randBinomial(10, 0.1) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+    .category = FunctionDocumentation::Category::RandomNumber
     });
 
 
@@ -465,7 +465,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randNegativeBinomial(10, 0.1) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+    .category = FunctionDocumentation::Category::RandomNumber
     });
 
 
@@ -480,7 +480,7 @@ Typical usage:
 )",
     .examples{
         {"typical", "SELECT randPoisson(3) FROM numbers(100000);", ""}},
-    .category{"Random Numbers"}
+    .category = FunctionDocumentation::Category::RandomNumber
     });
 }
 

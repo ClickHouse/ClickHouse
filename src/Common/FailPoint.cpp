@@ -13,7 +13,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
 };
 
 #if USE_LIBFIU
@@ -56,6 +56,10 @@ static struct InitFiu
     ONCE(smt_sleep_after_hardware_in_insert) \
     ONCE(smt_throw_keeper_exception_after_successful_insert) \
     ONCE(smt_lightweight_snapshot_fail) \
+    ONCE(smt_lightweight_update_sleep_after_block_allocation) \
+    ONCE(smt_merge_task_sleep_in_prepare) \
+    ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
+    ONCE(rmt_merge_task_sleep_in_prepare) \
     REGULAR(object_storage_queue_fail_commit) \
     REGULAR(smt_dont_merge_first_part) \
     REGULAR(smt_sleep_in_schedule_data_processing_job) \
@@ -88,6 +92,14 @@ static struct InitFiu
     REGULAR(plain_rewritable_object_storage_azure_not_found_on_init) \
     PAUSEABLE(storage_merge_tree_background_clear_old_parts_pause) \
     PAUSEABLE(database_replicated_startup_pause) \
+    ONCE(keeper_leader_sets_invalid_digest) \
+    ONCE(parallel_replicas_wait_for_unused_replicas) \
+    REGULAR(plain_object_storage_copy_fail_on_file_move) \
+    REGULAR(database_replicated_delay_recovery) \
+    REGULAR(database_replicated_delay_entry_execution) \
+    REGULAR(plain_object_storage_copy_temp_source_file_fail_on_file_move) \
+    REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move) \
+    REGULAR(output_format_sleep_on_progress) \
 
 
 namespace FailPoints
@@ -153,7 +165,7 @@ void FailPointInjection::enablePauseFailPoint(const String & fail_point_name, UI
 #undef PAUSEABLE_ONCE
 #undef PAUSEABLE
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find fail point {}", fail_point_name);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
 }
 
 void FailPointInjection::pauseFailPoint(const String & fail_point_name)
@@ -188,7 +200,7 @@ void FailPointInjection::enableFailPoint(const String & fail_point_name)
 #undef PAUSEABLE
 
 #endif
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find fail point {}", fail_point_name);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
 }
 
 void FailPointInjection::disableFailPoint(const String & fail_point_name)
@@ -209,7 +221,7 @@ void FailPointInjection::wait(const String & fail_point_name)
     std::unique_lock lock(mu);
     auto iter = fail_point_wait_channels.find(fail_point_name);
     if (iter == fail_point_wait_channels.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not find channel for fail point {}", fail_point_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find channel for fail point {}", fail_point_name);
 
     lock.unlock();
     auto ptr = iter->second;
