@@ -476,11 +476,6 @@ class ClickHouseCluster:
         self.docker_logs_path = p.join(self.instances_dir, "docker.log")
         self.env_file = p.join(self.instances_dir, DEFAULT_ENV_NAME)
         self.env_variables = {}
-        # Problems with glibc 2.36+ [1]
-        #
-        #    [1]: https://github.com/ClickHouse/ClickHouse/issues/43426#issuecomment-1368512678
-        self.env_variables["ASAN_OPTIONS"] = "use_sigaltstack=0"
-        self.env_variables["TSAN_OPTIONS"] = "use_sigaltstack=0"
         self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
         self.env_variables["CLICKHOUSE_NATS_TLS_SECURE"] = "0"
         self.up_called = False
