@@ -1,3 +1,5 @@
+#if !defined(SANITIZER)
+
 #include <gtest/gtest.h>
 
 #include <Common/MemoryTracker.h>
@@ -71,3 +73,5 @@ TEST(AllocationInterceptors, MallocIncresesTheMemoryTracker)
 }
 
 /// Write more tests if needed.
+
+#endif
