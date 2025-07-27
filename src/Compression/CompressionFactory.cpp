@@ -8,8 +8,10 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <Poco/String.h>
+
+#include <Columns/IColumn.h>
+#include <algorithm>
 
 #include <boost/algorithm/string/join.hpp>
 
@@ -99,7 +101,7 @@ CompressionCodecPtr CompressionCodecFactory::get(
         return std::make_shared<CompressionCodecNone>();
     }
 
-    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST structure for compression codec: {}", queryToString(ast));
+    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST structure for compression codec: {}", ast->formatForErrorMessage());
 }
 
 
@@ -113,6 +115,27 @@ CompressionCodecPtr CompressionCodecFactory::get(uint8_t byte_code) const
     return family_code_and_creator->second({}, nullptr);
 }
 
+void CompressionCodecFactory::fillCodecDescriptions(MutableColumns & res_columns) const
+{
+    std::for_each(
+        family_name_with_codec.begin(),
+        family_name_with_codec.end(),
+        [&](const auto &it)
+        {
+            const std::string &name = it.first;
+            CompressionCodecPtr tmp = it.second({}, nullptr);
+
+            res_columns[0]->insert(name);
+            res_columns[1]->insert(tmp->getMethodByte());
+            res_columns[2]->insert(tmp->isCompression());
+            res_columns[3]->insert(tmp->isGenericCompression());
+            res_columns[4]->insert(tmp->isEncryption());
+            res_columns[5]->insert(tmp->isFloatingPointTimeSeriesCodec());
+            res_columns[6]->insert(tmp->isExperimental());
+            res_columns[7]->insert(tmp->getDescription());
+        }
+    );
+}
 
 CompressionCodecPtr CompressionCodecFactory::getImpl(const String & family_name, const ASTPtr & arguments, const IDataType * column_type) const
 {
@@ -176,6 +199,9 @@ void registerCodecZSTD(CompressionCodecFactory & factory);
 void registerCodecZSTDQAT(CompressionCodecFactory & factory);
 #endif
 void registerCodecMultiple(CompressionCodecFactory & factory);
+#if USE_QPL
+void registerCodecDeflateQpl(CompressionCodecFactory & factory);
+#endif
 
 /// Keeper use only general-purpose codecs, so we don't need these special codecs
 /// in standalone build
@@ -203,6 +229,9 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecGorilla(*this);
     registerCodecEncrypted(*this);
     registerCodecFPC(*this);
+#if USE_QPL
+    registerCodecDeflateQpl(*this);
+#endif
     registerCodecGCD(*this);
 
     default_codec = get("LZ4", {});

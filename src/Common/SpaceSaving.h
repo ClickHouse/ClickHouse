@@ -12,10 +12,6 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashMap.h>
 
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadBuffer.h>
-#include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 
 
@@ -299,7 +295,7 @@ public:
 
         for (size_t i = 0; i < count; ++i)
         {
-            std::unique_ptr counter = std::make_unique<Counter>();
+            auto counter = std::make_unique<Counter>();
             counter->read(rb);
             counter->hash = counter_map.hash(counter->key);
             push(std::move(counter));

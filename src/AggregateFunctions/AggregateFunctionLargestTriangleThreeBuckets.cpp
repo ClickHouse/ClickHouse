@@ -21,16 +21,17 @@
 
 #include <boost/math/distributions/normal.hpp>
 
+namespace DB
+{
 
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-namespace DB
-{
 struct Settings;
 
 namespace
@@ -38,6 +39,8 @@ namespace
 
 struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float64>
 {
+    static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;
+
     void add(const Float64 xval, const Float64 yval, Arena * arena)
     {
         /// We need to ensure either both or neither coordinates are saved (StatisticalSample ignores NaNs)
@@ -47,68 +50,53 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
         this->addY(yval, arena);
     }
 
-    void sort(Arena * arena)
+    PODArray<std::pair<Float64, Float64>> getResult(size_t total_buckets)
     {
-        chassert(this->x.size() == this->y.size());
+        size_t size = this->x.size();
+        if (size >= MAX_ARRAY_SIZE)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in largestTriangleThreeBuckets, max: {}", MAX_ARRAY_SIZE);
+
+        /// Sort the data
+        chassert(size == this->y.size());
+
         // sort the this->x and this->y in ascending order of this->x using index
-        std::vector<size_t> index(this->x.size());
+        PODArray<UInt32> index(size);
+        iota(index.data(), size, UInt32(0));
 
-        iota(index.data(), index.size(), size_t(0));
         ::sort(index.begin(), index.end(), [&](size_t i1, size_t i2) { return this->x[i1] < this->x[i2]; });
-
-        SampleX temp_x{};
-        SampleY temp_y{};
-
-        for (size_t i = 0; i < this->x.size(); ++i)
-        {
-            temp_x.push_back(this->x[index[i]], arena);
-            temp_y.push_back(this->y[index[i]], arena);
-        }
-
-        for (size_t i = 0; i < this->x.size(); ++i)
-        {
-            this->x[i] = temp_x[i];
-            this->y[i] = temp_y[i];
-        }
-    }
-
-    PODArray<std::pair<Float64, Float64>> getResult(size_t total_buckets, Arena * arena)
-    {
-        // Sort the data
-        this->sort(arena);
 
         PODArray<std::pair<Float64, Float64>> result;
 
         // Handle special cases for small data list
-        if (this->x.size() <= total_buckets)
+        if (size <= total_buckets)
         {
-            for (size_t i = 0; i < this->x.size(); ++i)
-            {
-                result.emplace_back(std::make_pair(this->x[i], this->y[i]));
-            }
+            for (size_t i = 0; i < size; ++i)
+                result.emplace_back(this->x[index[i]], this->y[index[i]]);
             return result;
         }
 
         // Handle special cases for 0 or 1 or 2 buckets
         if (total_buckets == 0)
+        {
             return result;
+        }
         if (total_buckets == 1)
         {
-            result.emplace_back(std::make_pair(this->x.front(), this->y.front()));
+            result.emplace_back(this->x[index.front()], this->y[index.front()]);
             return result;
         }
         if (total_buckets == 2)
         {
-            result.emplace_back(std::make_pair(this->x.front(), this->y.front()));
-            result.emplace_back(std::make_pair(this->x.back(), this->y.back()));
+            result.emplace_back(this->x[index.front()], this->y[index.front()]);
+            result.emplace_back(this->x[index.back()], this->y[index.back()]);
             return result;
         }
 
         // Find the size of each bucket
-        Float64 single_bucket_size = static_cast<Float64>(this->x.size() - 2) / static_cast<Float64>(total_buckets - 2);
+        Float64 single_bucket_size = static_cast<Float64>(size - 2) / static_cast<Float64>(total_buckets - 2);
 
         // Include the first data point
-        result.emplace_back(std::make_pair(this->x[0], this->y[0]));
+        result.emplace_back(this->x[index.front()], this->y[index.front()]);
 
         // the start index of current bucket
         size_t start_index = 1;
@@ -120,15 +108,15 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
             // the end index of next bucket
             size_t end_index = 1 + static_cast<int>(floor(single_bucket_size * (i + 2)));
             // current bucket is the last bucket
-            end_index = std::min(end_index, this->x.size());
+            end_index = std::min(end_index, size);
 
             // Compute the average point in the next bucket
             Float64 avg_x = 0;
             Float64 avg_y = 0;
             for (size_t j = center_index; j < end_index; ++j)
             {
-                avg_x += this->x[j];
-                avg_y += this->y[j];
+                avg_x += this->x[index[j]];
+                avg_y += this->y[index[j]];
             }
             avg_x /= static_cast<Float64>(end_index - center_index);
             avg_y /= static_cast<Float64>(end_index - center_index);
@@ -140,8 +128,8 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
             {
                 Float64 area = std::abs(
                     0.5
-                    * (result.back().first * this->y[j] + this->x[j] * avg_y + avg_x * result.back().second - result.back().first * avg_y
-                       - this->x[j] * result.back().second - avg_x * this->y[j]));
+                    * (result.back().first * this->y[index[j]] + this->x[index[j]] * avg_y + avg_x * result.back().second - result.back().first * avg_y
+                       - this->x[index[j]] * result.back().second - avg_x * this->y[index[j]]));
                 if (area > max_area)
                 {
                     max_area = area;
@@ -150,14 +138,14 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
             }
 
             // Include the selected point
-            result.emplace_back(std::make_pair(this->x[max_index], this->y[max_index]));
+            result.emplace_back(this->x[index[max_index]], this->y[index[max_index]]);
 
             start_index = center_index;
             center_index = end_index;
         }
 
         // Include the last data point
-        result.emplace_back(std::make_pair(this->x.back(), this->y.back()));
+        result.emplace_back(this->x[index.back()], this->y[index.back()]);
 
         return result;
     }
@@ -172,7 +160,7 @@ private:
 
 public:
     explicit AggregateFunctionLargestTriangleThreeBuckets(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<LargestTriangleThreeBucketsData, AggregateFunctionLargestTriangleThreeBuckets>({arguments}, {}, createResultType(arguments))
+        : IAggregateFunctionDataHelper<LargestTriangleThreeBucketsData, AggregateFunctionLargestTriangleThreeBuckets>({arguments}, params, createResultType(arguments))
     {
         if (params.size() != 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require one parameter", getName());
@@ -283,9 +271,9 @@ public:
         data(place).read(buf, arena);
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        auto res = data(place).getResult(total_buckets, arena);
+        auto res = data(place).getResult(total_buckets);
 
         auto & col = assert_cast<ColumnArray &>(to);
         auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());

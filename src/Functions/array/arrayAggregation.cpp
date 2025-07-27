@@ -4,19 +4,16 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnsNumber.h>
 
-#include <DataTypes/DataTypeArray.h>
+#include <Core/callOnTypeIndex.h>
+
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDate32.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Functions/FunctionFactory.h>
 
-#include "FunctionArrayMapped.h"
+#include <Functions/array/FunctionArrayMapped.h>
 
 
 namespace DB
@@ -116,7 +113,7 @@ struct ArrayAggregateImpl
             using Types = std::decay_t<decltype(types)>;
             using DataType = typename Types::LeftType;
 
-            if constexpr (!IsDataTypeDateOrDateTime<DataType>)
+            if constexpr (!IsDataTypeDateOrDateTimeOrTime<DataType>)
             {
                 if constexpr (aggregate_operation == AggregateOperation::average || aggregate_operation == AggregateOperation::product)
                 {
@@ -449,11 +446,115 @@ using FunctionArrayProduct = FunctionArrayMapped<ArrayAggregateImpl<AggregateOpe
 
 REGISTER_FUNCTION(ArrayAggregation)
 {
-    factory.registerFunction<FunctionArrayMin>();
-    factory.registerFunction<FunctionArrayMax>();
-    factory.registerFunction<FunctionArraySum>();
-    factory.registerFunction<FunctionArrayAverage>();
-    factory.registerFunction<FunctionArrayProduct>();
+    FunctionDocumentation::Description description_min = R"(
+Returns the minimum element in the source array.
+
+If a lambda function `func` is specified, returns the minimum element of the lambda results.
+    )";
+    FunctionDocumentation::Syntax syntax_min = "arrayMin([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])";
+    FunctionDocumentation::Arguments arguments_min = {
+        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
+        {"source_arr", "The source array to process.", {"Array(T)"}},
+        {"cond1_arr, ...", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_min = {"Returns the minimum element in the source array, or the minimum element of the lambda results if provided."};
+    FunctionDocumentation::Examples examples_min = {
+        {"Basic example", "SELECT arrayMin([5, 3, 2, 7]);", "2"},
+        {"Usage with lambda function", "SELECT arrayMin(x, y -> x/y, [4, 8, 12, 16], [1, 2, 1, 2]);", "4"},
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_min = {21, 1};
+    FunctionDocumentation::Category category_min = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_min = {description_min, syntax_min, arguments_min, returned_value_min, examples_min, introduced_in_min, category_min};
+
+    factory.registerFunction<FunctionArrayMin>(documentation_min);
+
+    FunctionDocumentation::Description description_max = R"(
+Returns the maximum element in the source array.
+
+If a lambda function `func` is specified, returns the maximum element of the lambda results.
+    )";
+    FunctionDocumentation::Syntax syntax_max = "arrayMax([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])";
+    FunctionDocumentation::Arguments arguments_max = {
+        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
+        {"source_arr", "The source array to process.", {"Array(T)"}},
+        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_max = {"Returns the maximum element in the source array, or the maximum element of the lambda results if provided."};
+    FunctionDocumentation::Examples examples_max = {
+        {"Basic example", "SELECT arrayMax([5, 3, 2, 7]);", "7"},
+        {"Usage with lambda function", "SELECT arrayMax(x, y -> x/y, [4, 8, 12, 16], [1, 2, 1, 2]);", "12"},
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_max = {21, 1};
+    FunctionDocumentation::Category category_max = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_max = {description_max, syntax_max, arguments_max, returned_value_max, examples_max, introduced_in_max, category_max};
+
+    factory.registerFunction<FunctionArrayMax>(documentation_max);
+
+    FunctionDocumentation::Description description_sum = R"(
+Returns the sum of elements in the source array.
+
+If a lambda function `func` is specified, returns the sum of elements of the lambda results.
+    )";
+    FunctionDocumentation::Syntax syntax_sum = "arrayMax([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])";
+    FunctionDocumentation::Arguments arguments_sum = {
+        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
+        {"source_arr", "The source array to process.", {"Array(T)"}},
+        {", cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_sum = {"Returns the sum of elements in the source array, or the sum of elements of the lambda results if provided."};
+    FunctionDocumentation::Examples examples_sum = {
+        {"Basic example", "SELECT arraySum([1, 2, 3, 4]);", "10"},
+        {"Usage with lambda function", "SELECT arraySum(x, y -> x+y, [1, 1, 1, 1], [1, 1, 1, 1]);", "8"},
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_sum = {21, 1};
+    FunctionDocumentation::Category category_sum = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_sum = {description_sum, syntax_sum, arguments_sum, returned_value_sum, examples_sum, introduced_in_sum, category_sum};
+
+    factory.registerFunction<FunctionArraySum>(documentation_sum);
+
+    FunctionDocumentation::Description description_avg = R"(
+Returns the average of elements in the source array.
+
+If a lambda function `func` is specified, returns the average of elements of the lambda results.
+    )";
+    FunctionDocumentation::Syntax syntax_avg = "arrayAvg([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])";
+    FunctionDocumentation::Arguments arguments_avg = {
+        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
+        {"source_arr", "The source array to process.", {"Array(T)"}},
+        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_avg = {"Returns the average of elements in the source array, or the average of elements of the lambda results if provided.", {"Float64"}};
+    FunctionDocumentation::Examples examples_avg = {
+        {"Basic example", "SELECT arrayAvg([1, 2, 3, 4]);", "2.5"},
+        {"Usage with lambda function", "SELECT arrayAvg(x, y -> x*y, [2, 3], [2, 3]) AS res;", "6.5"},
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_avg = {21, 1};
+    FunctionDocumentation::Category category_avg = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_avg = {description_avg, syntax_avg, arguments_avg, returned_value_avg, examples_avg, introduced_in_avg, category_avg};
+
+    factory.registerFunction<FunctionArrayAverage>(documentation_avg);
+
+    FunctionDocumentation::Description description_prod = R"(
+Returns the product of elements in the source array.
+
+If a lambda function `func` is specified, returns the product of elements of the lambda results.
+    )";
+    FunctionDocumentation::Syntax syntax_prod = "arrayProduct([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])";
+    FunctionDocumentation::Arguments arguments_prod = {
+        {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
+        {"source_arr", "The source array to process.", {"Array(T)"}},
+        {"[, cond1_arr, ... , condN_arr]", "Optional. N condition arrays providing additional arguments to the lambda function.", {"Array(T)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_prod = {"Returns the product of elements in the source array, or the product of elements of the lambda results if provided.", {"Float64"}};
+    FunctionDocumentation::Examples examples_prod = {
+        {"Basic example", "SELECT arrayProduct([1, 2, 3, 4]);", "24"},
+        {"Usage with lambda function", "SELECT arrayProduct(x, y -> x+y, [2, 2], [2, 2]) AS res;", "16"},
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_prod = {21, 1};
+    FunctionDocumentation::Category category_prod = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation_prod = {description_prod, syntax_prod, arguments_prod, returned_value_prod, examples_prod, introduced_in_prod, category_prod};
+
+    factory.registerFunction<FunctionArrayProduct>(documentation_prod);
 }
 
 }

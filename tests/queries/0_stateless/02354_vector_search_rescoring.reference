@@ -1,0 +1,41 @@
+Test "SELECT id" without and with rescoring
+5
+6
+7
+-- Expect column "_distance" in EXPLAIN. Column "vec" is not expected for ReadFromMergeTree.
+_distance Float32
+5
+6
+7
+-- Dont expect column "_distance" in EXPLAIN.
+Test "SELECT id, vec" without and with rescoring
+5	[0,2]
+6	[0,2.1]
+7	[0,2.2]
+-- Dont expect column "_distance" in EXPLAIN.
+5	[0,2]
+6	[0,2.1]
+7	[0,2.2]
+-- Dont expect column "_distance" in EXPLAIN.
+Test optimization in the presence of other predicates
+0
+1
+2
+4	50
+5	50
+6	50
+Test for filter that selects full part, optimization will take effect
+-- Expect column "_distance" in EXPLAIN. Column "vec" is not expected for ReadFromMergeTree.
+_distance Float32
+_distance Float32
+5
+6
+7
+8
+9
+Predicate on non-PK attribute
+0	50
+1	50
+2	50
+3	50
+4	50

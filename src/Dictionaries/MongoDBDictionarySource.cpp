@@ -1,13 +1,16 @@
 #include "config.h"
 
-#include "DictionarySourceFactory.h"
+#include <Dictionaries/DictionarySourceFactory.h>
 #if USE_MONGODB
-#include "MongoDBDictionarySource.h"
-#include "DictionaryStructure.h"
+#include <Dictionaries/MongoDBDictionarySource.h>
+#include <Dictionaries/DictionaryStructure.h>
 
+#include <Columns/IColumn.h>
 #include <Common/logger_useful.h>
 #include <Processors/Sources/MongoDBSource.h>
 #include <Storages/NamedCollectionsHelpers.h>
+
+#include <Poco/URI.h>
 
 #include <bsoncxx/builder/basic/array.hpp>
 
@@ -32,7 +35,7 @@ namespace ErrorCodes
 void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 {
     #if USE_MONGODB
-    auto create_dictionary_source = [](
+    auto create_dictionary_source = [](const String & /*name*/,
         const DictionaryStructure & dict_struct,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & root_config_prefix,
@@ -55,8 +58,10 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
                 validateNamedCollection(*named_collection, {"host", "db", "collection"}, {"port", "user", "password", "options"});
                 String user = named_collection->get<String>("user");
                 String auth_string;
+                String escaped_password;
+                Poco::URI::encode(named_collection->get<String>("password"), "!?#/'\",;:$&()[]*+=@", escaped_password);
                 if (!user.empty())
-                    auth_string = fmt::format("{}:{}@", user, named_collection->get<String>("password"));
+                    auth_string = fmt::format("{}:{}@", user, escaped_password);
                 configuration->uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
                                                                                  auth_string,
                                                                                  named_collection->get<String>("host"),
@@ -76,8 +81,10 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
             {
                 String user = config.getString(config_prefix + ".user", "");
                 String auth_string;
+                String escaped_password;
+                Poco::URI::encode(config.getString(config_prefix + ".password", ""), "!?#/'\",;:$&()[]*+=@", escaped_password);
                 if (!user.empty())
-                    auth_string = fmt::format("{}:{}@", user, config.getString(config_prefix + ".password", ""));
+                    auth_string = fmt::format("{}:{}@", user, escaped_password);
                 configuration->uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
                                                                                  auth_string,
                                                                                  config.getString(config_prefix + ".host"),
@@ -89,10 +96,10 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 
         configuration->checkHosts(context);
 
-        return std::make_unique<MongoDBDictionarySource>(dict_struct, std::move(configuration), std::move(sample_block));
+        return std::make_unique<MongoDBDictionarySource>(dict_struct, std::move(configuration), std::make_shared<const Block>(sample_block));
     };
     #else
-    auto create_dictionary_source = [](
+    auto create_dictionary_source = [](const String & /*name*/,
         const DictionaryStructure & /* dict_struct */,
         const Poco::Util::AbstractConfiguration & /* config */,
         const std::string & /* root_config_prefix */,
@@ -116,7 +123,7 @@ static const UInt64 max_block_size = 8192;
 MongoDBDictionarySource::MongoDBDictionarySource(
     const DictionaryStructure & dict_struct_,
     std::shared_ptr<MongoDBConfiguration> configuration_,
-    Block sample_block_)
+    SharedHeader sample_block_)
     : dict_struct{dict_struct_}
     , configuration{configuration_}
     , sample_block{sample_block_}

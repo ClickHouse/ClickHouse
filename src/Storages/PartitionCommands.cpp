@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/DataDestinationType.h>
@@ -227,7 +228,7 @@ Pipe convertCommandsResultToSource(const PartitionCommandsResultInfo & commands_
     }
 
     Chunk chunk(std::move(res_columns), commands_result.size());
-    return Pipe(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
+    return Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(header)), std::move(chunk)));
 }
 
 }

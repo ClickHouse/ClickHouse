@@ -27,6 +27,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     ParserKeyword s_optimize_table(Keyword::OPTIMIZE_TABLE);
     ParserKeyword s_partition(Keyword::PARTITION);
     ParserKeyword s_final(Keyword::FINAL);
+    ParserKeyword s_force(Keyword::FORCE);
     ParserKeyword s_deduplicate(Keyword::DEDUPLICATE);
     ParserKeyword s_cleanup(Keyword::CLEANUP);
     ParserKeyword s_by(Keyword::BY);
@@ -64,7 +65,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
             return false;
     }
 
-    if (s_final.ignore(pos, expected))
+    if (s_final.ignore(pos, expected) || s_force.ignore(pos, expected))
         final = true;
 
     if (s_deduplicate.ignore(pos, expected))

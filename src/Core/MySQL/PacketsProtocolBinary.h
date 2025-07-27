@@ -1,7 +1,7 @@
 #pragma once
 
 #include <vector>
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/MySQL/IMySQLReadPacket.h>
 #include <Core/MySQL/IMySQLWritePacket.h>

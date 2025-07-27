@@ -1,7 +1,9 @@
 #pragma once
 
+#include <Columns/IColumn.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/Arena.h>
+#include <Common/PODArray.h>
 #include <absl/container/flat_hash_map.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -16,7 +18,7 @@ class PartitionedSink : public SinkToStorage
 public:
     static constexpr auto PARTITION_ID_WILDCARD = "{_partition_id}";
 
-    PartitionedSink(const ASTPtr & partition_by, ContextPtr context_, const Block & sample_block_);
+    PartitionedSink(const ASTPtr & partition_by, ContextPtr context_, SharedHeader sample_block_);
 
     ~PartitionedSink() override;
 
@@ -36,7 +38,7 @@ public:
 
 private:
     ContextPtr context;
-    Block sample_block;
+    SharedHeader sample_block;
 
     ExpressionActionsPtr partition_by_expr;
     String partition_by_column_name;

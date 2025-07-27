@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -11,6 +10,7 @@
 namespace DB
 {
 
+class Block;
 class ReadBuffer;
 
 
@@ -19,7 +19,7 @@ class JSONObjectEachRowInputFormat final : public JSONEachRowRowInputFormat
 public:
     JSONObjectEachRowInputFormat(
         ReadBuffer & in_,
-        const Block & header_,
+        SharedHeader header_,
         Params params_,
         const FormatSettings & format_settings_);
 

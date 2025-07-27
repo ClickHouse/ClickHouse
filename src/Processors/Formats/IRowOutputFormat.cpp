@@ -1,6 +1,6 @@
-#include <string>
-#include <Processors/Formats/IRowOutputFormat.h>
 #include <IO/WriteHelpers.h>
+#include <Processors/Formats/IRowOutputFormat.h>
+#include <Processors/Port.h>
 
 
 namespace DB
@@ -10,11 +10,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-IRowOutputFormat::IRowOutputFormat(const Block & header, WriteBuffer & out_)
+IRowOutputFormat::IRowOutputFormat(SharedHeader header, WriteBuffer & out_)
     : IOutputFormat(header, out_)
-    , num_columns(header.columns())
-    , types(header.getDataTypes())
-    , serializations(header.getSerializations())
+    , num_columns(header->columns())
+    , types(header->getDataTypes())
+    , serializations(header->getSerializations())
 {
 }
 

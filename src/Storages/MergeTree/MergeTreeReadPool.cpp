@@ -1,9 +1,9 @@
-#include "Storages/MergeTree/MergeTreeBlockReadUtils.h"
-#include "Storages/MergeTree/MergeTreeReadTask.h"
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <base/range.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -230,10 +230,7 @@ void MergeTreeReadPool::fillPerThreadInfo(size_t threads, size_t sum_marks)
         for (size_t i = 0; i < parts_ranges.size(); ++i)
         {
             PartInfo part_info{parts_ranges[i], per_part_sum_marks[i], i};
-            if (parts_ranges[i].data_part->isStoredOnDisk())
-                parts_per_disk[parts_ranges[i].data_part->getDataPartStorage().getDiskName()].push_back(std::move(part_info));
-            else
-                parts_per_disk[""].push_back(std::move(part_info));
+            parts_per_disk[parts_ranges[i].data_part->getDataPartStorage().getDiskName()].push_back(std::move(part_info));
         }
 
         for (auto & info : parts_per_disk)

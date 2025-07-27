@@ -1,11 +1,9 @@
 #pragma once
 
-#include <Common/FieldVisitorToString.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/IColumn.h>
-#include <Core/Field.h>
-#include <DataTypes/IDataType.h>
+#include <Columns/IColumn_fwd.h>
 #include <DataTypes/FieldToDataType.h>
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {

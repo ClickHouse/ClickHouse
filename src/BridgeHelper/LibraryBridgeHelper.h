@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequest.h>

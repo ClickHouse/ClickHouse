@@ -1,6 +1,6 @@
 #include <memory>
 
-#include "CurrentThread.h"
+#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadStatus.h>
 #include <Interpreters/ProcessList.h>

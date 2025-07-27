@@ -16,7 +16,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ColumnNode::ColumnNode(NameAndTypePair column_, QueryTreeNodePtr expression_node_, QueryTreeNodeWeakPtr column_source_)
+ColumnNode::ColumnNode(
+    NameAndTypePair column_,
+    QueryTreeNodePtr expression_node_,
+    QueryTreeNodeWeakPtr column_source_
+)
     : IQueryTreeNode(children_size, weak_pointers_size)
     , column(std::move(column_))
 {
@@ -24,10 +28,12 @@ ColumnNode::ColumnNode(NameAndTypePair column_, QueryTreeNodePtr expression_node
     getSourceWeakPointer() = std::move(column_source_);
 }
 
-ColumnNode::ColumnNode(NameAndTypePair column_, QueryTreeNodeWeakPtr column_source_)
+ColumnNode::ColumnNode(
+    NameAndTypePair column_,
+    QueryTreeNodeWeakPtr column_source_
+)
     : ColumnNode(std::move(column_), nullptr /*expression_node*/, std::move(column_source_))
-{
-}
+{}
 
 QueryTreeNodePtr ColumnNode::getColumnSource() const
 {
@@ -83,11 +89,7 @@ void ColumnNode::updateTreeHashImpl(HashState & hash_state, CompareOptions compa
     hash_state.update(column.name);
 
     if (compare_options.compare_types)
-    {
-        const auto & column_type_name = column.type->getName();
-        hash_state.update(column_type_name.size());
-        hash_state.update(column_type_name);
-    }
+        column.type->updateHash(hash_state);
 }
 
 QueryTreeNodePtr ColumnNode::cloneImpl() const

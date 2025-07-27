@@ -19,7 +19,7 @@ if (NOT ENABLE_EMBEDDED_COMPILER AND NOT ENABLE_DWARF_PARSER AND NOT ENABLE_BLAK
     return()
 endif()
 
-set (LLVM_VERSION "18.0.0bundled")
+set (LLVM_VERSION "19.0.0bundled")
 set (LLVM_INCLUDE_DIRS
     "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/llvm/include"
     "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm/include"
@@ -41,6 +41,9 @@ elseif (ARCH_RISCV64)
     set (LLVM_TARGETS_TO_BUILD "RISCV" CACHE INTERNAL "")
 endif ()
 
+if (USE_MUSL)
+    set (CMAKE_DL_LIBS "")
+endif()
 
 if (NOT ENABLE_EMBEDDED_COMPILER AND NOT ENABLE_DWARF_PARSER)
     # Only compiling blake3
@@ -146,7 +149,17 @@ endif()
 # may not exist and compilation fails. This happens with musl.
 add_compile_definitions("_LARGEFILE64_SOURCE")
 
-add_subdirectory ("${LLVM_SOURCE_DIR}" "${LLVM_BINARY_DIR}")
+block()
+    # llvm-project/llvm/cmake/modules/CrossCompile.cmake passes CMAKE_C[XX]_COMPILER_LAUNCHER
+    # to another CMake generator, but expects a value without spaces.
+    # We may replace spaces with semicolons to ensure it is unwrapped correctly later.
+    if (CMAKE_CXX_COMPILER_LAUNCHER)
+        string(REPLACE " " ";" LLVM_CMAKE_CXX_COMPILER_LAUNCHER "${CMAKE_CXX_COMPILER_LAUNCHER}")
+    endif()
+    set (CMAKE_CXX_COMPILER_LAUNCHER "${LLVM_CMAKE_CXX_COMPILER_LAUNCHER}")
+
+    add_subdirectory ("${LLVM_SOURCE_DIR}" "${LLVM_BINARY_DIR}")
+endblock()
 
 set_directory_properties (PROPERTIES
    # due to llvm crosscompile cmake does not know how to clean it, and on clean

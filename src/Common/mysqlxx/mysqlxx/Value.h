@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/DateLUT.h>
 #include <Common/LocalDateTime.h>
 #include <mysqlxx/Types.h>
 
@@ -134,46 +133,9 @@ private:
     }
 
 
-    time_t getDateTimeImpl() const
-    {
-        const auto & date_lut = DateLUT::instance();
+    time_t getDateTimeImpl() const;
 
-        if (m_length == 10)
-        {
-            return date_lut.makeDate(
-                (m_data[0] - '0') * 1000 + (m_data[1] - '0') * 100 + (m_data[2] - '0') * 10 + (m_data[3] - '0'),
-                (m_data[5] - '0') * 10 + (m_data[6] - '0'),
-                (m_data[8] - '0') * 10 + (m_data[9] - '0'));
-        }
-        if (m_length == 19)
-        {
-            return date_lut.makeDateTime(
-                (m_data[0] - '0') * 1000 + (m_data[1] - '0') * 100 + (m_data[2] - '0') * 10 + (m_data[3] - '0'),
-                (m_data[5] - '0') * 10 + (m_data[6] - '0'),
-                (m_data[8] - '0') * 10 + (m_data[9] - '0'),
-                (m_data[11] - '0') * 10 + (m_data[12] - '0'),
-                (m_data[14] - '0') * 10 + (m_data[15] - '0'),
-                (m_data[17] - '0') * 10 + (m_data[18] - '0'));
-        }
-        throwException("Cannot parse DateTime");
-    }
-
-
-    time_t getDateImpl() const
-    {
-        const auto & date_lut = DateLUT::instance();
-
-        if (m_length == 10 || m_length == 19)
-        {
-            return date_lut.makeDate(
-                (m_data[0] - '0') * 1000 + (m_data[1] - '0') * 100 + (m_data[2] - '0') * 10 + (m_data[3] - '0'),
-                (m_data[5] - '0') * 10 + (m_data[6] - '0'),
-                (m_data[8] - '0') * 10 + (m_data[9] - '0'));
-        }
-        throwException("Cannot parse Date");
-
-        return 0;    /// avoid warning. /// NOLINT
-    }
+    time_t getDateImpl() const;
 
 
     Int64 getIntImpl() const
@@ -193,17 +155,7 @@ private:
     }
 
 
-    Int64 getIntOrDate() const
-    {
-        if (unlikely(isNull()))
-            throwException("Value is NULL");
-
-        if (checkDateTime())
-            return getDateImpl();
-
-        const auto & date_lut = DateLUT::instance();
-        return date_lut.toDate(getIntImpl());
-    }
+    Int64 getIntOrDate() const;
 
 
     /// Прочитать беззнаковое целое в простом формате из не-0-terminated строки.

@@ -1,8 +1,8 @@
+#include <Compression/CompressionFactory.h>
+#include <Compression/ICompressionCodec.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/IStorage.h>
 #include <DataTypes/ObjectUtils.h>
-#include <DataTypes/NestedUtils.h>
-#include <Storages/StorageView.h>
 #include <Common/quoteString.h>
 
 #include <sparsehash/dense_hash_set>
@@ -143,47 +143,6 @@ NameAndTypePair StorageSnapshot::getColumn(const GetColumnsOptions & options, co
         throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table", column_name);
 
     return *column;
-}
-
-CompressionCodecPtr StorageSnapshot::getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
-{
-    auto get_codec_or_default = [&](const auto & column_desc)
-    {
-        return column_desc.codec
-            ? CompressionCodecFactory::instance().get(column_desc.codec, column_desc.type, default_codec)
-            : default_codec;
-    };
-
-    const auto & columns = metadata->getColumns();
-    if (const auto * column_desc = columns.tryGet(column_name))
-        return get_codec_or_default(*column_desc);
-
-    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
-        return get_codec_or_default(*virtual_desc);
-
-    return default_codec;
-}
-
-CompressionCodecPtr StorageSnapshot::getCodecOrDefault(const String & column_name) const
-{
-    return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
-}
-
-ASTPtr StorageSnapshot::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
-{
-    auto get_codec_or_default = [&](const auto & column_desc)
-    {
-        return column_desc.codec ? column_desc.codec : default_codec->getFullCodecDesc();
-    };
-
-    const auto & columns = metadata->getColumns();
-    if (const auto * column_desc = columns.tryGet(column_name))
-        return get_codec_or_default(*column_desc);
-
-    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
-        return get_codec_or_default(*virtual_desc);
-
-    return default_codec->getFullCodecDesc();
 }
 
 Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) const

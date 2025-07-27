@@ -5,8 +5,12 @@ namespace DB
 {
 template class CacheBase<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction>;
 
-UncompressedCache::UncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
-    : Base(cache_policy, max_size_in_bytes, 0, size_ratio)
+UncompressedCache::UncompressedCache(const String & cache_policy,
+    CurrentMetrics::Metric size_in_bytes_metric,
+    CurrentMetrics::Metric count_metric,
+    size_t max_size_in_bytes,
+    double size_ratio)
+    : Base(cache_policy, size_in_bytes_metric, count_metric, max_size_in_bytes, 0, size_ratio)
 {
 }
 

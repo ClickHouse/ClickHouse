@@ -2,7 +2,6 @@
 
 #if USE_AWS_S3
 #include <Core/Settings.h>
-#include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
 #include <IO/SharedThreadPools.h>
@@ -34,6 +33,7 @@ namespace Setting
     extern const SettingsBool s3_disable_checksum;
     extern const SettingsUInt64 s3_max_connections;
     extern const SettingsUInt64 s3_max_redirects;
+    extern const SettingsBool s3_slow_all_threads_after_network_error;
 }
 
 namespace S3AuthSetting
@@ -89,6 +89,7 @@ namespace
             context->getRemoteHostFilter(),
             static_cast<unsigned>(local_settings[Setting::s3_max_redirects]),
             static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_attempts]),
+            local_settings[Setting::s3_slow_all_threads_after_network_error],
             local_settings[Setting::enable_s3_requests_logging],
             /* for_disk_s3 = */ false,
             request_settings.get_request_throttler,
@@ -190,7 +191,7 @@ UInt64 BackupReaderS3::getFileSize(const String & file_name)
     return objects[0].GetSize();
 }
 
-std::unique_ptr<SeekableReadBuffer> BackupReaderS3::readFile(const String & file_name)
+std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFile(const String & file_name)
 {
     return std::make_unique<ReadBufferFromS3>(
         client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, s3_settings.request_settings, read_settings);
@@ -307,6 +308,10 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
                 [&]
                 {
                     LOG_TRACE(log, "Falling back to copy file {} from disk {} to S3 through buffers", src_path, src_disk->getName());
+
+                    if (copy_encrypted)
+                        return src_disk->readEncryptedFile(src_path, read_settings);
+
                     return src_disk->readFile(src_path, read_settings);
                 });
             return; /// copied!
@@ -319,7 +324,7 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
 
 void BackupWriterS3::copyFile(const String & destination, const String & source, size_t size)
 {
-    LOG_TRACE(log, "Copying file inside backup from {} to {} ", source, destination);
+    LOG_TRACE(log, "Copying file inside backup from {} to {}", source, destination);
 
     const auto source_key = fs::path(s3_uri.key) / source;
     copyS3File(

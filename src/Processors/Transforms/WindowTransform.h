@@ -1,11 +1,10 @@
 #pragma once
 
-#include <Interpreters/WindowDescription.h>
 #include <AggregateFunctions/WindowFunction.h>
-
+#include <Core/Block.h>
+#include <Interpreters/WindowDescription.h>
 #include <Processors/IProcessor.h>
-
-#include <Common/AlignedBuffer.h>
+#include <Processors/Port.h>
 
 #include <deque>
 
@@ -61,8 +60,8 @@ class WindowTransform final : public IProcessor
 {
 public:
     WindowTransform(
-            const Block & input_header_,
-            const Block & output_header_,
+            SharedHeader input_header_,
+            SharedHeader output_header_,
             const WindowDescription & window_description_,
             const std::vector<WindowFunctionDescription> &
                 functions);

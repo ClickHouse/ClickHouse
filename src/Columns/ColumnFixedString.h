@@ -4,7 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/PODArray.h>
-#include <Common/memcmpSmall.h>
+#include <base/memcmpSmall.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Columns/IColumn.h>
@@ -215,6 +215,8 @@ public:
             return n == rhs_concrete->n;
         return false;
     }
+
+    void updateAt(const IColumn & src, size_t dst_pos, size_t src_pos) override;
 
     bool canBeInsideNullable() const override { return true; }
 

@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Functions/FunctionUnixTimestamp64.h>
 
 namespace DB
