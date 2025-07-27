@@ -193,6 +193,9 @@ bool isCompatible(ASTPtr & node)
             if (!isCompatible(expr))
                 return false;
 
+        /// It should be formatted in the operator form.
+        function->is_operator = true;
+
         return true;
     }
 
