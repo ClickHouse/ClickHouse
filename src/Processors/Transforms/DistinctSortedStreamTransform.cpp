@@ -114,10 +114,9 @@ void DistinctSortedStreamTransform::saveLatestKey(const size_t row_pos)
 
 bool DistinctSortedStreamTransform::isKey(const size_t key_pos, const size_t row_pos) const
 {
-    for (size_t i = 0; i < sorted_columns.size(); ++i)
+    for (const auto & column : sorted_columns)
     {
-        const int res = sorted_columns[i]->compareAt(key_pos, row_pos, *sorted_columns[i], sorted_columns_descr[i].nulls_direction);
-        if (res != 0)
+        if (!column->equalsAt(key_pos, row_pos, *column))
             return false;
     }
     return true;
@@ -138,8 +137,7 @@ bool DistinctSortedStreamTransform::isLatestKeyFromPrevChunk(const size_t row_po
                 i,
                 sorted_column.getFamilyName());
 
-        const int res = prev_chunk_latest_key[i]->compareAt(0, row_pos, sorted_column, sorted_columns_descr[i].nulls_direction);
-        if (res != 0)
+        if (!prev_chunk_latest_key[i]->equalsAt(0, row_pos, sorted_column))
             return false;
     }
     return true;
