@@ -102,7 +102,7 @@ def run_specific_tests(tests, runs=1, extra_args=""):
 
 
 OPTIONS_TO_INSTALL_ARGUMENTS = {
-    "old analyzer": "--analyzer",
+    "old analyzer": "--analyzer --wasm-engine wasmedge",
     "s3 storage": "--s3-storage",
     "DatabaseReplicated": "--db-replicated",
     "DatabaseOrdinary": "--db-ordinary",
