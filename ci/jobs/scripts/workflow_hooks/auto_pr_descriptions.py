@@ -3,12 +3,15 @@ import re
 import sys
 from praktika.info import Info
 from praktika.utils import Shell
+from praktika import Secret
 from typing import Tuple
 from pathlib import Path
 
 def ensure_claude_API_key(info: Info) -> bool:
     try:
-        api_key = info.get_secret("ANTHROPIC_API_KEY")
+        api_key = Secret.Config(
+            "ANTHROPIC_API_KEY", type=Secret.Type.AWS_SSM_SECRET
+        ).get_value(),
         if not api_key:
             print("Error: ANTHROPIC_API_KEY secret not configured")
             return False
