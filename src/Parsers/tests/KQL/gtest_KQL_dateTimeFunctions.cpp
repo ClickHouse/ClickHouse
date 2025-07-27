@@ -12,19 +12,19 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Datetime, ParserKQLTest,
         },
         {
             "print startofweek(datetime(2017-01-01 10:10:17), -1)",
-            "SELECT parseDateTime64BestEffortOrNull(toString(toStartOfWeek(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC'))), 9, 'UTC') + toIntervalWeek(-1)"
+            "SELECT plus(parseDateTime64BestEffortOrNull(toString(toStartOfWeek(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC'))), 9, 'UTC'), toIntervalWeek(-1))"
         },
         {
             "print startofmonth(datetime(2017-01-01 10:10:17), -1)",
-            "SELECT parseDateTime64BestEffortOrNull(toString(toStartOfMonth(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC'))), 9, 'UTC') + toIntervalMonth(-1)"
+            "SELECT plus(parseDateTime64BestEffortOrNull(toString(toStartOfMonth(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC'))), 9, 'UTC'), toIntervalMonth(-1))"
         },
         {
             "print startofday(datetime(2017-01-01 10:10:17), -1)",
-            "SELECT parseDateTime64BestEffortOrNull(toString(toStartOfDay(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC'))), 9, 'UTC') + toIntervalDay(-1)"
+            "SELECT plus(parseDateTime64BestEffortOrNull(toString(toStartOfDay(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC'))), 9, 'UTC'), toIntervalDay(-1))"
         },
         {
             "print startofyear(datetime(2017-01-01 10:10:17), -1)",
-            "SELECT parseDateTime64BestEffortOrNull(toString(toStartOfYear(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC'), 'UTC')), 9, 'UTC') + toIntervalYear(-1)"
+            "SELECT plus(parseDateTime64BestEffortOrNull(toString(toStartOfYear(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC'), 'UTC')), 9, 'UTC'), toIntervalYear(-1))"
         },
         {
             "print monthofyear(datetime(2015-12-14))",
@@ -184,7 +184,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Datetime, ParserKQLTest,
         },
         {
             "print datetime_add('day',1,datetime(2017-10-30 01:02:03.7654321))",
-            "SELECT parseDateTime64BestEffortOrNull('2017-10-30 01:02:03.7654321', 9, 'UTC') + toIntervalDay(1)"
+            "SELECT plus(parseDateTime64BestEffortOrNull('2017-10-30 01:02:03.7654321', 9, 'UTC'), toIntervalDay(1))"
         },
         {
             "print totimespan(time(1d))",

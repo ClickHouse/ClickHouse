@@ -13,15 +13,15 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_operator_in_sql, ParserKQLTest,
         },
         {
             "select * from kql($$Customers | where FirstName !contains 'Pet'$$);",
-            "SELECT *\nFROM view(\n    SELECT *\n    FROM Customers\n    WHERE NOT (FirstName ILIKE '%Pet%')\n)"
+            "SELECT *\nFROM view(\n    SELECT *\n    FROM Customers\n    WHERE NOT ilike(FirstName, '%Pet%')\n)"
         },
         {
             "select * from kql($$Customers | where FirstName !contains_cs 'Pet'$$);",
-            "SELECT *\nFROM view(\n    SELECT *\n    FROM Customers\n    WHERE NOT (FirstName LIKE '%Pet%')\n)"
+            "SELECT *\nFROM view(\n    SELECT *\n    FROM Customers\n    WHERE NOT ilike(FirstName, '%Pet%')\n)"
         },
         {
             "select * from kql($$Customers | where FirstName !endswith 'ter'$$);",
-            "SELECT *\nFROM view(\n    SELECT *\n    FROM Customers\n    WHERE NOT (FirstName ILIKE '%ter')\n)"
+            "SELECT *\nFROM view(\n    SELECT *\n    FROM Customers\n    WHERE NOT ilike(FirstName, '%ter')\n)"
         },
         {
             "select * from kql($$Customers | where FirstName !endswith_cs 'ter'$$);"
@@ -41,11 +41,11 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_operator_in_sql, ParserKQLTest,
         },
         {
             "select * from kql($$Customers | where FirstName !hasprefix 'Peter'$$);",
-            "SELECT *\nFROM view(\n    SELECT *\n    FROM Customers\n    WHERE (NOT (FirstName ILIKE 'Peter%')) AND (NOT (FirstName ILIKE '% Peter%'))\n)"
+            "SELECT *\nFROM view(\n    SELECT *\n    FROM Customers\n    WHERE (NOT ilike(FirstName, 'Peter%')) AND (NOT ilike(FirstName, '% Peter%'))\n)"
         },
         {
             "select * from kql($$Customers | where FirstName !hasprefix_cs 'Peter'$$);",
-            "SELECT *\nFROM view(\n    SELECT *\n    FROM Customers\n    WHERE (NOT startsWith(FirstName, 'Peter')) AND (NOT (FirstName LIKE '% Peter%'))\n)"
+            "SELECT *\nFROM view(\n    SELECT *\n    FROM Customers\n    WHERE (NOT startsWith(FirstName, 'Peter')) AND (NOT like(FirstName, '% Peter%'))\n)"
         },
         {
             "select * from kql($$Customers | where FirstName !hassuffix 'Peter'$$);",
