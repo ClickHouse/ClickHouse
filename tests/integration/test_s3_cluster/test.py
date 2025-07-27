@@ -353,51 +353,6 @@ def test_distributed_insert_select_with_replicated(started_cluster):
         """DROP TABLE IF EXISTS insert_select_replicated_local ON CLUSTER 'first_shard' SYNC;"""
     )
 
-@pytest.mark.parametrize(
-    "cluster_name",
-    [
-        # pytest.param("cluster_simple"),
-        pytest.param("first_shard"),
-    ],
-)
-def test_distributed_insert_select_with_replicated_2(started_cluster, cluster_name):
-    node = started_cluster.instances["s0_0_0"]
-    node.query(
-        f"""DROP TABLE IF EXISTS insert_select_replicated_local ON CLUSTER '{cluster_name}' SYNC;"""
-    )
-
-    node.query(
-        f"""
-    CREATE TABLE insert_select_replicated_local ON CLUSTER '{cluster_name}' (a String, b UInt64)
-    ENGINE=ReplicatedMergeTree('/clickhouse/tables/{{shard}}/insert_select_with_replicated', '{{replica}}')
-    ORDER BY (a, b);
-        """
-    )
-
-    node.query(
-        f"""
-    INSERT INTO insert_select_replicated_local SELECT * FROM s3Cluster(
-        '{cluster_name}',
-        'http://minio1:9001/root/data/generated/*.csv', 'minio', '{minio_secret_key}', 'CSV','a String, b UInt64'
-    ) SETTINGS parallel_distributed_insert_select=2;
-        """
-    )
-
-    node.query(f"SYSTEM SYNC REPLICA ON CLUSTER {cluster_name} insert_select_replicated_local")
-
-    # Check whether we inserted at least something
-    assert (
-        int(
-            node.query(
-                """SELECT count(*) FROM insert_select_replicated_local;"""
-            ).strip()
-        ) == generated_rows
-    )
-
-    node.query(
-        f"""DROP TABLE IF EXISTS insert_select_replicated_local ON CLUSTER '{cluster_name}' SYNC;"""
-    )
-
 
 def test_parallel_distributed_insert_select_with_schema_inference(started_cluster):
     node = started_cluster.instances["s0_0_0"]
