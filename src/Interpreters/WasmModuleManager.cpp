@@ -118,9 +118,9 @@ static std::unique_ptr<WebAssembly::IWasmEngine> createEngine(std::string_view e
         engine_name);
 }
 
-WasmModuleManager::WasmModuleManager(DiskPtr user_sciptrs_disk_, std::filesystem::path user_sciptrs_path_, std::string_view engine_name)
-    : user_scripts_disk(std::move(user_sciptrs_disk_))
-    , user_scripts_path(std::move(user_sciptrs_path_))
+WasmModuleManager::WasmModuleManager(DiskPtr user_scripts_disk_, std::filesystem::path user_scripts_path_, std::string_view engine_name)
+    : user_scripts_disk(std::move(user_scripts_disk_))
+    , user_scripts_path(std::move(user_scripts_path_))
     , engine(createEngine(engine_name))
 {
     user_scripts_disk->createDirectories(user_scripts_path);

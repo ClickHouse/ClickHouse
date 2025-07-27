@@ -3,14 +3,7 @@
 #include <span>
 
 #include <Interpreters/WebAssembly/WasmTypes.h>
-#include <Common/Exception.h>
 
-
-namespace DB::ErrorCodes
-{
-    extern const int TOO_LARGE_STRING_SIZE;
-    extern const int WASM_ERROR;
-}
 
 namespace DB::WebAssembly
 {

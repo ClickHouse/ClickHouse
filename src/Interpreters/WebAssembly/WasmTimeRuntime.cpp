@@ -414,7 +414,7 @@ public:
                     wasmtime::Span<const wasmtime::Val> params,
                     wasmtime::Span<wasmtime::Val> results) -> wasmtime::Result<std::monostate, wasmtime::Trap>
                 {
-                    auto compartment_ptr = std::any_cast<WasmTimeCompartment *>(caller.context().get_data());
+                    auto * compartment_ptr = std::any_cast<WasmTimeCompartment *>(caller.context().get_data());
                     return callHostFunction(compartment_ptr, host_function_ptr.get(), params, results);
                 }
 
@@ -502,7 +502,12 @@ extern const int SUPPORT_IS_DISABLED;
 namespace DB::WebAssembly
 {
 
-WasmTimeRuntime::WasmTimeRuntime() = default;
+
+struct WasmTimeRuntime::Impl
+{
+};
+
+WasmTimeRuntime::WasmTimeRuntime() : impl(std::make_unique<Impl>()) { }
 
 std::unique_ptr<WasmModule> WasmTimeRuntime::createModule(std::string_view /* wasm_code */) const
 {

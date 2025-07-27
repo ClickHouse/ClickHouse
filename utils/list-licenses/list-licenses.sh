@@ -105,7 +105,7 @@ done
 # Special care for Rust
 for dependency in $(find "${LIBS_PATH}/rust_vendor/" -name 'Cargo.toml');
 do
-    # FIXME: this for now, need to figure out how to handle it
+    # FIXME: skip this for now, need to figure out how to handle it
     if [[ "$dependency" == *"ittapi"* ]]; then continue; fi
     if [[ "$dependency" == *"ring"* ]]; then continue; fi
     if [[ "$dependency" == *"ocaml-sys"* ]]; then continue; fi
