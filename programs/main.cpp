@@ -36,6 +36,7 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv);
 int mainEntryClickHouseGitImport(int argc, char ** argv);
 int mainEntryClickHouseLocal(int argc, char ** argv);
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
+int mainEntryClickHouseProxyServer(int argc, char ** argv);
 int mainEntryClickHouseSU(int argc, char ** argv);
 int mainEntryClickHouseServer(int argc, char ** argv);
 int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
@@ -100,6 +101,7 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"dig", mainEntryClickHouseChdig},
 #endif
     {"benchmark", mainEntryClickHouseBenchmark},
+    {"proxy-server", mainEntryClickHouseProxyServer},
     {"server", mainEntryClickHouseServer},
     {"extract-from-config", mainEntryClickHouseExtractFromConfig},
     {"compressor", mainEntryClickHouseCompressor},
