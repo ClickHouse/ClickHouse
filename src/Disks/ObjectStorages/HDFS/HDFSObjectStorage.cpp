@@ -209,6 +209,7 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
                     static_cast<uint64_t>(ls.file_info[i].mSize),
                     Poco::Timestamp::fromEpochTime(ls.file_info[i].mLastMod),
                     "",
+                    {},
                     {}}));
         }
 

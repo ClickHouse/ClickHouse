@@ -16,7 +16,7 @@ struct ObjectInfo
     size_t size = 0;
     time_t last_modification_time = 0;
     String etag;
-
+    std::map<String, String> tags; // Set only if getObjectInfo() is called with `with_tags = true`
     std::map<String, String> metadata = {}; /// Set only if getObjectInfo() is called with `with_metadata = true`.
 };
 
@@ -26,7 +26,8 @@ ObjectInfo getObjectInfo(
     const String & key,
     const String & version_id = {},
     bool with_metadata = false,
-    bool throw_on_error = true);
+    bool throw_on_error = true,
+    bool with_tags = false);
 
 size_t getObjectSize(
     const S3::Client & client,

@@ -82,6 +82,7 @@ struct ObjectMetadata
     uint64_t size_bytes = 0;
     Poco::Timestamp last_modified;
     std::string etag;
+    std::map<std::string, std::string> tags;
     ObjectAttributes attributes;
 };
 
