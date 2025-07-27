@@ -188,15 +188,11 @@ public:
     /// Third param determines which files cannot be removed even if second is true.
     void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override
     {
-        for (const auto & file : files)
-        {
-            auto wrapped_path = wrappedPath(file.path);
-            bool keep = keep_all_batch_data || file_names_remove_metadata_only.contains(fs::path(file.path).filename());
-            if (file.if_exists)
-                delegate_transaction->removeSharedFileIfExists(wrapped_path, keep);
-            else
-                delegate_transaction->removeSharedFile(wrapped_path, keep);
-        }
+        auto wrapped_path_files = files;
+        for (auto & file : wrapped_path_files)
+            file.path = wrappedPath(file.path);
+
+        delegate_transaction->removeSharedFiles(wrapped_path_files, keep_all_batch_data, file_names_remove_metadata_only);
     }
 
     /// Set last modified time to file or directory at `path`.

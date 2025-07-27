@@ -980,9 +980,6 @@ bool TCPHandler::receivePacketsExpectQuery(std::optional<QueryState> & state)
         default:
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet {} from client", toString(packet_type));
     }
-
-    chassert(server.isCancelled() || !tcp_server.isOpen());
-    throw Exception(ErrorCodes::ABORTED, "Server shutdown is called");
 }
 
 
@@ -1004,7 +1001,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
 
     Stopwatch watch;
 
-    while (!server.isCancelled() && tcp_server.isOpen())
+    while (!server.isCancelled())
     {
         while (!in->poll(timeout_us))
         {
@@ -1065,7 +1062,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
         }
     }
 
-    chassert(server.isCancelled() || !tcp_server.isOpen());
+    chassert(server.isCancelled());
     throw Exception(ErrorCodes::ABORTED, "Server shutdown is called");
 }
 
@@ -1980,7 +1977,7 @@ ClusterFunctionReadTaskResponsePtr TCPHandler::receiveClusterFunctionReadTaskRes
     switch (packet_type)
     {
         case Protocol::Client::Cancel:
-            processCancel(state, /* throw_exception */ true);
+            processCancel(state);
             return {};
 
         case Protocol::Client::ReadTaskResponse:
@@ -2005,7 +2002,7 @@ std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTas
     switch (packet_type)
     {
         case Protocol::Client::Cancel:
-            processCancel(state, /* throw_exception */ true);
+            processCancel(state);
             return {};
 
         case Protocol::Client::MergeTreeReadTaskResponse:
@@ -2494,7 +2491,7 @@ void TCPHandler::checkIfQueryCanceled(QueryState & state)
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Packet 'Cancel' has been received from the client, canceling the query.");
 }
 
-void TCPHandler::processCancel(QueryState & state, bool throw_exception)
+void TCPHandler::processCancel(QueryState & state)
 {
     if (state.allow_partial_result_on_first_cancel && !state.stop_read_return_partial_result)
     {
@@ -2506,10 +2503,7 @@ void TCPHandler::processCancel(QueryState & state, bool throw_exception)
     state.read_all_data = true;
     state.stop_query = true;
 
-    if (throw_exception)
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
-    else
-        LOG_INFO(log, "Received 'Cancel' packet from the client. Queries callbacks return nothing.");
+    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
 }
 
 void TCPHandler::receivePacketsExpectCancel(QueryState & state)
@@ -2522,7 +2516,7 @@ void TCPHandler::receivePacketsExpectCancel(QueryState & state)
     /// During request execution the only packet that can come from the client is stopping the query.
     if (in->poll(0))
     {
-        if (in->eof())
+        if (in->isCanceled() || in->eof())
             throw NetException(ErrorCodes::ABORTED, "Client has dropped the connection, cancel the query.");
 
         UInt64 packet_type = 0;
