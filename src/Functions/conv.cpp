@@ -86,8 +86,8 @@ public:
                 number_str = number_col->getDataAt(i).toString();
             else
                 number_str = number_const_col->getValue<String>();
-            Int64 from_base = from_base_column->getInt(i);
-            Int64 to_base = to_base_column->getInt(i);
+            const Int64 from_base = from_base_column->getInt(i);
+            const Int64 to_base = to_base_column->getInt(i);
             std::string result = convertNumber(number_str, static_cast<int>(from_base), static_cast<int>(to_base));
             result_data.insert(result.begin(), result.end());
             result_data.push_back(0);
@@ -98,7 +98,7 @@ public:
     }
 
 private:
-    static std::string convertNumber(const std::string & number, int from_base, int to_base)
+    static std::string convertNumber(const std::string & number, const int from_base, const int to_base)
     {
         if (from_base < 2 || from_base > 36 || to_base < 2 || to_base > 36)
             return "";
@@ -182,9 +182,10 @@ private:
         while (value > 0)
         {
             int digit = value % base;
-            result = digitToChar(digit) + result;
+            result.push_back(digitToChar(digit));
             value /= base;
         }
+        std::reverse(result.begin(), result.end());
         return result;
     }
 
