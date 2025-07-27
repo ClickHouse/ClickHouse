@@ -3,7 +3,6 @@
 #include <Interpreters/GinFilter.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 namespace DB
@@ -34,8 +33,7 @@ struct MergeTreeIndexAggregatorGin final : IMergeTreeIndexAggregator
         GinIndexStorePtr store_,
         const Names & index_columns_,
         const String & index_name_,
-        TokenExtractorPtr token_extractor_,
-        const MergeTreeWriterSettings & settings);
+        TokenExtractorPtr token_extractor_);
 
     ~MergeTreeIndexAggregatorGin() override = default;
 
@@ -49,9 +47,6 @@ struct MergeTreeIndexAggregatorGin final : IMergeTreeIndexAggregator
     const String index_name;
     TokenExtractorPtr token_extractor;
     MergeTreeIndexGranuleGinPtr granule;
-
-    const size_t sampling_threshold;
-    const float sampling_rate;
 };
 
 
@@ -151,7 +146,7 @@ public:
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const GinIndexStorePtr & store, const MergeTreeWriterSettings & settings) const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const GinIndexStorePtr & store, const MergeTreeWriterSettings & /*settings*/) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     GinFilterParameters gin_filter_params;
