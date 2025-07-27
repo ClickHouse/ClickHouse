@@ -14,6 +14,7 @@ from .s3 import S3
 from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
 from .utils import ContextManager, MetaClasses, Shell, Utils
+from .info import Info
 
 
 @dataclasses.dataclass
@@ -419,12 +420,21 @@ class Result(MetaClasses.Serializable):
         :param with_log:
         :return:
         """
+
+        command = f"{unit_tests_path} --gtest_output='json:{ResultTranslator.GTEST_RESULT_FILE}'"
+        # With gdb we will capture stacktrace in case of abnormal termination and timeout (30 mins)
+        # 'catch syscall exit_group' is a hack to avoid exiting with non-zero exit code when process terminated successfully
+        #
+        # Note, LSan does not compatible with debugger, so let's not run binary under gdb for sanitizers
+        if "san" not in Info().job_name:
+            command = f"timeout 30m gdb -batch -ex 'handle all nostop' -ex 'set print thread-events off' -ex 'set pagination off' -ex 'catch syscall exit_group' -ex run -ex bt -arg {command}"
+
         Shell.check(f"rm {ResultTranslator.GTEST_RESULT_FILE}")
         result = Result.from_commands_run(
             name=name,
             command=[
                 f"chmod +x {unit_tests_path}",
-                f"{unit_tests_path} --gtest_output='json:{ResultTranslator.GTEST_RESULT_FILE}'",
+                command,
             ],
             with_log=with_log,
         )
