@@ -2,16 +2,10 @@
 
 #include <memory>
 #include <utility>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <base/types.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Parser.h>
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
-#include <Common/Exception.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDecimalBase.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
@@ -20,6 +14,20 @@
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <base/types.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
+#include <Poco/Logger.h>
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
+
+namespace DB
+{
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+}
 
 namespace Paimon
 {
@@ -107,7 +115,7 @@ struct DataType
                 size_t end = type_.find(')');
                 if (!has_precision(type_))
                 {
-                    throw Exception();
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "not found precision");
                 }
                 std::vector<size_t> precision_infos;
                 String precision_str = type_.substr(start + 1, end - start - 1);
@@ -125,7 +133,7 @@ struct DataType
                         (*p != ' '));
                     if (!std::isdigit(*p) && *p != ',' && *p != ' ')
                     {
-                        throw Exception();
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "parse precision meet invalid char: {}", *p);
                     }
                     if (!token_start && std::isdigit(*p))
                     {
@@ -235,7 +243,7 @@ struct DataType
                 std::vector<size_t> n = has_precision(real_type) ? parse_precision(real_type) : std::vector<size_t>{10, 0};
                 if (n.size() != 2)
                 {
-                    throw Exception();
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "DECIMAL precision info is invaliad, precision info size: {}", n.size());
                 }
                 type.root_type = RootDataType::DECIMAL;
                 auto precision = static_cast<Int32>(n[0]);
@@ -244,7 +252,7 @@ struct DataType
             }
             else
             {
-                throw Exception();
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported type: {}", real_type);
             }
             if (nullable)
             {

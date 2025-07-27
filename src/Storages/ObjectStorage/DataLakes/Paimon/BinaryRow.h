@@ -14,6 +14,15 @@
 #include <Poco/BinaryReader.h>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Context_fwd.h>
+
+namespace DB
+{
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+}
 
 namespace Paimon
 {
@@ -83,14 +92,16 @@ public:
             Int32 sub_offset = static_cast<Int32>(offset_and_size >> 32);
             String bytes_string = copyBytes(offset() + sub_offset, size);
             LOG_DEBUG(&Poco::Logger::get("BinaryRow"), "bytes_string: {}", to_hex_string(bytes_string));
-            if (bytes_string.length() > 32)
-                throw Exception();
             auto add_leading_zero = [](const String & data, size_t target_size)
             {
                 if (data.size() == target_size)
                     return data;
                 else if (data.size() > target_size)
-                    throw Exception();
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "data size larger than target_size, data size: {}, target_size: {}.",
+                        data.size(),
+                        target_size);
                 String result(target_size, 0);
                 size_t start_pos = target_size - data.size();
                 for (size_t i = 0; i < data.size(); ++i)
@@ -109,7 +120,8 @@ public:
             if (precision <= 38)
             {
                 if (bytes_string.length() > 16)
-                    throw Exception();
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR, "Get unexpected decimal bytes length: {}, expected <= 16", bytes_string.length());
                 bytes_string = add_leading_zero(bytes_string, 16);
                 UInt64 high = get_uint64_big_endian(bytes_string);
                 UInt64 low = get_uint64_big_endian(bytes_string.substr(8));
@@ -119,7 +131,8 @@ public:
             else
             {
                 if (bytes_string.length() > 32)
-                    throw Exception();
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR, "Get unexpected decimal bytes length: {}, expected <= 32", bytes_string.length());
                 bytes_string = add_leading_zero(bytes_string, 32);
                 UInt64 ele1 = get_uint64_big_endian(bytes_string);
                 UInt64 ele2 = get_uint64_big_endian(bytes_string.substr(8));
