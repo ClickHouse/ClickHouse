@@ -9,10 +9,14 @@
 #include <Parsers/IAST.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
+#include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
+#include <Common/Scheduler/IResourceManager.h>
 #include <Common/logger_useful.h>
 #include <chrono>
+#include <memory>
 
 
 namespace CurrentMetrics
@@ -48,6 +52,7 @@ namespace Setting
     extern const SettingsString temporary_files_codec;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsBool trace_profile_events;
+    extern const SettingsMilliseconds low_priority_query_wait_time_ms;
 }
 
 namespace ErrorCodes
@@ -93,9 +98,12 @@ static bool isUnlimitedQuery(const IAST * ast)
     return false;
 }
 
-
-ProcessList::EntryPtr
-ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds)
+ProcessList::EntryPtr ProcessList::insert(
+    const String & query_,
+    UInt64 normalized_query_hash,
+    const IAST * ast,
+    ContextMutablePtr query_context,
+    UInt64 watch_start_nanoseconds)
 {
     EntryPtr res;
 
@@ -108,10 +116,24 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
     bool is_unlimited_query = isUnlimitedQuery(ast);
     std::shared_ptr<QueryStatus> query;
 
+    // Acquire a query slot from resource scheduler if necessary.
+    // NOTE: There is a separate independent limit for the whole server `max_concurrent_queries`.
+    // NOTE: If that limit is exhausted, the query will be later blocked and wait while holding a query slot.
+    QuerySlotPtr query_slot;
+    if (!is_unlimited_query)
     {
-        LockAndOverCommitTrackerBlocker<std::unique_lock, Mutex> locker(mutex); // To avoid deadlock in case of OOM
+        String query_resource_name = query_context->getWorkloadEntityStorage().getQueryResourceName();
+        if (!query_resource_name.empty())
+        {
+            if (ResourceLink link = query_context->getWorkloadClassifier()->get(query_resource_name))
+                query_slot = std::make_unique<QuerySlot>(link);
+        }
+    }
+
+    {
+        LockAndOverCommitTrackerBlocker<std::unique_lock, Mutex> locker(mutex); /// To avoid deadlock in case of OOM
         auto & lock = locker.getUnderlyingLock();
-        IAST::QueryKind query_kind = ast->getQueryKind();
+        IAST::QueryKind query_kind = ast ? ast->getQueryKind() : IAST::QueryKind::Select;
 
         const auto queue_max_wait_ms = settings[Setting::queue_max_wait_ms].totalMilliseconds();
         UInt64 waiting_queries = waiting_queries_amount.load();
@@ -292,8 +314,12 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         query = std::make_shared<QueryStatus>(
             query_context,
             query_,
+            normalized_query_hash,
             client_info,
-            priorities.insert(settings[Setting::priority]),
+            priorities.insert(
+                settings[Setting::priority],
+                std::chrono::milliseconds(settings[Setting::low_priority_query_wait_time_ms].totalMilliseconds())),
+            std::move(query_slot),
             std::move(thread_group),
             query_kind,
             settings,
@@ -390,28 +416,30 @@ ProcessListEntry::~ProcessListEntry()
 
     parent.have_space.notify_all();
 
-    /// If there are no more queries for the user, then we will reset memory tracker and network throttler.
+    /// If there are no more queries for the user, then we will reset memory tracker.
     if (user_process_list.queries.empty())
         user_process_list.resetTrackers();
 
-    /// Reset throttler, similarly (see above).
-    if (parent.processes.empty())
-        parent.total_network_throttler.reset();
+    /// NOTE: Do not reset parent.total_network_throttler, it MUST account for periods of inactivity for correct work.
 }
 
 
 QueryStatus::QueryStatus(
     ContextPtr context_,
     const String & query_,
+    UInt64 normalized_query_hash_,
     const ClientInfo & client_info_,
     QueryPriorities::Handle && priority_handle_,
+    QuerySlotPtr && query_slot_,
     ThreadGroupPtr && thread_group_,
     IAST::QueryKind query_kind_,
     const Settings & query_settings_,
     UInt64 watch_start_nanoseconds)
     : WithContext(context_)
     , query(query_)
+    , normalized_query_hash(normalized_query_hash_)
     , client_info(client_info_)
+    , query_slot(std::move(query_slot_))
     , thread_group(std::move(thread_group_))
     , watch(CLOCK_MONOTONIC, watch_start_nanoseconds, true)
     , priority_handle(std::move(priority_handle_))
@@ -504,8 +532,8 @@ void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time
         if (is_killed)
         {
             String additional_error_part;
-            if (!elapsed_ns)
-                additional_error_part = fmt::format("elapsed {} ms, ", static_cast<double>(elapsed_ns) / 1000000000ULL);
+            if (elapsed_ns)
+                additional_error_part = fmt::format("elapsed {} ms, ", static_cast<double>(elapsed_ns) / 1000000ULL);
 
             if (cancel_reason == CancelReason::TIMEOUT)
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: {}maximum: {} ms", additional_error_part, max_execution_time_ms);
@@ -703,6 +731,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     QueryStatusInfo res{};
 
     res.query             = query;
+    res.normalized_query_hash = normalized_query_hash;
     res.query_kind        = query_kind;
     res.client_info       = client_info;
     res.elapsed_microseconds = watch.elapsedMicroseconds();

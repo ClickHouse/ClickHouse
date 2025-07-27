@@ -7,7 +7,7 @@
     ("system, one",     host + ' db,name identifier'),
 ] -%}
 select * from remote('{{host}}', {{args}}) settings log_queries=1, log_comment='{{comment}}' format Null;
-system flush logs;
+system flush logs query_log;
 select count() from system.query_log where
     type = 'QueryFinish' and
     not is_initial_query and

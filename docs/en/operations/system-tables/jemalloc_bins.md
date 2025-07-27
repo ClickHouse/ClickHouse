@@ -1,9 +1,12 @@
 ---
-slug: /en/operations/system-tables/jemalloc_bins
+description: 'System table containing information about memory allocations done via
+  jemalloc allocator in different size classes (bins) aggregated from all arenas.'
+keywords: ['system table', 'jemalloc_bins']
+slug: /operations/system-tables/jemalloc_bins
+title: 'system.jemalloc_bins'
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
 
-# jemalloc_bins
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 
@@ -22,7 +25,7 @@ Columns:
 
 Find the sizes of allocations that contributed the most to the current overall memory usage.
 
-``` sql
+```sql
 SELECT
     *,
     allocations - deallocations AS active_allocations,
@@ -33,7 +36,7 @@ ORDER BY allocated_bytes DESC
 LIMIT 10
 ```
 
-``` text
+```text
 ┌─index─┬─large─┬─────size─┬─allocactions─┬─deallocations─┬─active_allocations─┬─allocated_bytes─┐
 │    82 │     1 │ 50331648 │            1 │             0 │                  1 │        50331648 │
 │    10 │     0 │      192 │       512336 │        370710 │             141626 │        27192192 │

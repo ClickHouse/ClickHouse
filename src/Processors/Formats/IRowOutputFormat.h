@@ -2,11 +2,16 @@
 
 #include <Processors/Formats/IOutputFormat.h>
 
-#include <string>
-
-
 namespace DB
 {
+
+class IDataType;
+using DataTypePtr = std::shared_ptr<const IDataType>;
+using DataTypes = std::vector<DataTypePtr>;
+
+class ISerialization;
+using SerializationPtr = std::shared_ptr<const ISerialization>;
+using Serializations = std::vector<SerializationPtr>;
 
 class WriteBuffer;
 
@@ -25,7 +30,7 @@ public:
     virtual void writeRowBetweenDelimiter() {}  /// delimiter between rows
 
 protected:
-    IRowOutputFormat(const Block & header, WriteBuffer & out_);
+    IRowOutputFormat(SharedHeader header, WriteBuffer & out_);
     void consume(Chunk chunk) override;
     void consumeTotals(Chunk chunk) override;
     void consumeExtremes(Chunk chunk) override;

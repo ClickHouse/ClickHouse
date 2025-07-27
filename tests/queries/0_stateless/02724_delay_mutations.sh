@@ -8,6 +8,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/mergetree_mutations.lib
 
 ${CLICKHOUSE_CLIENT} --query "
+SET apply_mutations_on_fly = 0;
+
 DROP TABLE IF EXISTS t_delay_mutations SYNC;
 
 CREATE TABLE t_delay_mutations (id UInt64, v UInt64)
@@ -44,7 +46,7 @@ DROP TABLE IF EXISTS t_delay_mutations SYNC;
 "
 
 ${CLICKHOUSE_CLIENT} --query "
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     query,

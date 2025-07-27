@@ -1,6 +1,8 @@
 #pragma once
 
+#include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
+#include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Processors/RowsBeforeStepCounter.h>
 
@@ -57,7 +59,7 @@ private:
 
 public:
     LimitTransform(
-        const Block & header_, UInt64 limit_, UInt64 offset_, size_t num_streams = 1,
+        SharedHeader header_, UInt64 limit_, UInt64 offset_, size_t num_streams = 1,
         bool always_read_till_end_ = false, bool with_ties_ = false,
         SortDescription description_ = {});
 

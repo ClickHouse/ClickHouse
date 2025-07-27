@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/PrettyBlockOutputFormat.h>
 #include <Processors/Formats/Impl/VerticalRowOutputFormat.h>
+#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/PrettyFormatHelpers.h>
 #include <IO/WriteBuffer.h>
@@ -19,14 +20,14 @@ namespace DB
 {
 
 PrettyBlockOutputFormat::PrettyBlockOutputFormat(
-    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, Style style_, bool mono_block_, bool color_)
-     : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_.getSerializations()), style(style_), mono_block(mono_block_), color(color_)
+    WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, Style style_, bool mono_block_, bool color_, bool glue_chunks_)
+     : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_->getSerializations()), style(style_), mono_block(mono_block_), color(color_), glue_chunks(glue_chunks_)
 {
     /// Decide whether we should print a tip near the single number value in the result.
-    if (header_.getColumns().size() == 1)
+    if (header_->getColumns().size() == 1)
     {
         /// Check if it is a numeric type, possible wrapped by Nullable or LowCardinality.
-        DataTypePtr type = removeNullable(recursiveRemoveLowCardinality(header_.getDataTypes().at(0)));
+        DataTypePtr type = removeNullable(recursiveRemoveLowCardinality(header_->getDataTypes().at(0)));
         if (isNumber(type))
             readable_number_tip = true;
     }
@@ -50,6 +51,7 @@ void PrettyBlockOutputFormat::calculateWidths(
     size_t num_displayed_rows = std::min<size_t>(num_rows, format_settings.pretty.max_rows);
 
     /// len(num_rows + total_rows) + len(". ")
+    prev_row_number_width = row_number_width;
     row_number_width = static_cast<size_t>(std::floor(std::log10(num_rows + total_rows))) + 3;
 
     size_t num_columns = chunk.getNumColumns();
@@ -159,14 +161,8 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
             {
                 thread.emplace([this, thread_group = CurrentThread::getGroup()]
                 {
-                    SCOPE_EXIT_SAFE(
-                        if (thread_group)
-                            CurrentThread::detachFromGroupIfNotDetached();
-                    );
-                    if (thread_group)
-                        CurrentThread::attachToGroupIfDetached(thread_group);
+                    ThreadGroupSwitcher switcher(thread_group, "PrettyWriter");
 
-                    setThreadName("PrettyWriter");
                     writingThread();
                 });
             }
@@ -206,7 +202,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     auto num_rows = chunk.getNumRows();
     auto num_columns = chunk.getNumColumns();
     const auto & columns = chunk.getColumns();
-    const auto & header = getPort(port_kind).getHeader();
+    const auto & header = getPort(port_kind).getSharedHeader();
 
     size_t cut_to_width = format_settings.pretty.max_value_width;
     if (!format_settings.pretty.max_value_width_apply_for_single_value && num_rows == 1 && num_columns == 1 && total_rows == 0)
@@ -217,19 +213,25 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     Widths name_widths;
     Strings names;
     bool has_newlines = false;
-    calculateWidths(header, chunk, format_settings.pretty.multiline_fields, has_newlines, widths, max_widths, name_widths, names);
+    calculateWidths(*header, chunk, format_settings.pretty.multiline_fields, has_newlines, widths, max_widths, name_widths, names);
 
     size_t table_width = 0;
     for (size_t width : max_widths)
         table_width += width;
 
     /// Fallback to Vertical format if:
-    /// enabled by the settings, this is the first chunk (or totals/extremes), the number of rows is small enough,
+    /// enabled by the settings, this is the first chunk, the number of rows is small enough,
     /// either the table width is larger than the max_value_width or any of the values contain a newline.
     if (format_settings.pretty.fallback_to_vertical
-        && (displayed_rows == 0 || port_kind != PortKind::Main)
+        && displayed_rows == 0
         && num_rows <= format_settings.pretty.fallback_to_vertical_max_rows_per_chunk
+        && num_columns >= format_settings.pretty.fallback_to_vertical_min_columns
         && (table_width >= format_settings.pretty.fallback_to_vertical_min_table_width || has_newlines))
+    {
+        use_vertical_format = true;
+    }
+
+    if (use_vertical_format)
     {
         if (!vertical_format_fallback)
         {
@@ -415,7 +417,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                     out << "   ";
             }
 
-            const auto & col = header.getByPosition(i);
+            const auto & col = header->getByPosition(i);
 
             auto write_value = [&]
             {
@@ -456,9 +458,29 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         out << "\n";
     };
 
-    writeString(header_begin, out);
-    write_names(true);
-    writeString(header_end, out);
+    if (glue_chunks
+        && port_kind == PortKind::Main
+        && (!format_settings.pretty.row_numbers || row_number_width == prev_row_number_width)
+        && max_widths == prev_chunk_max_widths)
+    {
+        /// Move cursor up to overwrite the footer of the previous chunk:
+        if (!rows_end.empty())
+            writeCString("\033[1A\033[2K\033[G", out);
+        if (had_footer)
+        {
+            size_t times = !footer_begin.empty() + !footer_end.empty() + rows_end.empty();
+            for (size_t i = 0; i < times; ++i)
+                writeCString("\033[1A\033[2K\033[G", out);
+        }
+        if (!rows_separator.empty())
+            writeString(rows_separator, out);
+    }
+    else
+    {
+        writeString(header_begin, out);
+        write_names(true);
+        writeString(header_end, out);
+    }
 
     bool vertical_filler_written = false;
     size_t displayed_row = 0;
@@ -522,7 +544,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                     else if (j != 0)
                         out << " ";
 
-                    const auto & type = *header.getByPosition(j).type;
+                    const auto & type = header->getByPosition(j).type;
                     writeValueWithPadding(
                         *columns[j],
                         *serializations[j],
@@ -531,8 +553,8 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                         widths[j].empty() ? max_widths[j] : widths[j][displayed_row],
                         max_widths[j],
                         cut_to_width,
-                        type.shouldAlignRightInPrettyFormats(),
-                        isNumber(type));
+                        type->shouldAlignRightInPrettyFormats(),
+                        isNumber(removeNullable(type)));
 
                     if (offsets_inside_serialized_values[j] != serialized_values[j]->size())
                         all_lines_printed = false;
@@ -560,13 +582,16 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         writeString(footer_begin, out);
         write_names(false);
         writeString(footer_end, out);
+        had_footer = true;
     }
     else
     {
         ///    └──────┘
         writeString(rows_end, out);
+        had_footer = false;
     }
     total_rows += num_rows;
+    prev_chunk_max_widths = std::move(max_widths);
 }
 
 
@@ -777,7 +802,9 @@ void registerOutputFormatPretty(FormatFactory & factory)
                 {
                     bool color = !no_escapes
                         && (format_settings.pretty.color == 1 || (format_settings.pretty.color == 2 && format_settings.is_writing_to_terminal));
-                    return std::make_shared<PrettyBlockOutputFormat>(buf, sample, format_settings, style, mono_block, color);
+                    bool glue_chunks = !no_escapes
+                        && (format_settings.pretty.glue_chunks == 1 || (format_settings.pretty.glue_chunks == 2 && format_settings.is_writing_to_terminal));
+                    return std::make_shared<PrettyBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings, style, mono_block, color, glue_chunks);
                 });
             }
         }

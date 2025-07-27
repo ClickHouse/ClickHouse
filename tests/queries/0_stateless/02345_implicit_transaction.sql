@@ -1,4 +1,7 @@
--- Tags: no-ordinary-database, no-fasttest
+-- Tags: no-ordinary-database, no-fasttest, no-encrypted-storage
+DROP TABLE IF EXISTS landing_to_target;
+DROP TABLE IF EXISTS target;
+DROP TABLE IF EXISTS landing;
 
 CREATE TABLE landing (n Int64) engine=MergeTree order by n;
 CREATE TABLE target  (n Int64) engine=MergeTree order by n;
@@ -6,9 +9,12 @@ CREATE MATERIALIZED VIEW landing_to_target TO target AS
     SELECT n + throwIf(n == 3333) AS n
     FROM landing;
 
-INSERT INTO landing SELECT * FROM numbers(10000); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
-SELECT 'no_transaction_landing', count() FROM landing;
-SELECT 'no_transaction_target', count() FROM target;
+-- There is no gurantee what is inserted in case if exception
+-- That initial check is meaninglessness
+-- We only sure that if the internal mv's exception is ignored then all the data is inserted to the table landing
+INSERT INTO landing SELECT * FROM numbers(10000) SETTINGS materialized_views_ignore_errors=1;
+SELECT 'no_transaction_landing', count() = 10000 FROM landing;
+SELECT 'no_transaction_target', count() < 10000 FROM target;
 
 TRUNCATE TABLE landing;
 TRUNCATE TABLE target;
@@ -67,7 +73,7 @@ SET implicit_transaction=False;
 SELECT 'Looking_at_transaction_id_True' FORMAT Null SETTINGS implicit_transaction=1;
 -- Verify that the transaction_id column is NOT populated without transaction
 SELECT 'Looking_at_transaction_id_False' FORMAT Null SETTINGS implicit_transaction=0;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     'implicit_True',

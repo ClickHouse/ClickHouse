@@ -4,19 +4,16 @@
 #include <optional>
 
 #include <Access/EnabledRowPolicies.h>
+#include <Core/Block.h>
 #include <Core/QueryProcessingStage.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableLockHolder.h>
 #include <QueryPipeline/Pipe.h>
-
-#include <Columns/FilterDescription.h>
 
 namespace Poco
 {
@@ -236,7 +233,7 @@ private:
     /// List of columns to read to execute the query.
     Names required_columns;
     /// Structure of query source (table, subquery, etc).
-    Block source_header;
+    SharedHeader source_header;
 
     /// Actions to calculate ALIAS if required.
     std::optional<ActionsDAG> alias_actions;

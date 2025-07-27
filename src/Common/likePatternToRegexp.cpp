@@ -16,7 +16,7 @@ String likePatternToRegexp(std::string_view pattern)
     res.reserve(pattern.size() * 2);
 
     const char * pos = pattern.data();
-    const char * const end = pattern.begin() + pattern.size();
+    const char * const end = pattern.data() + pattern.size();
 
     if (pos < end && *pos == '%')
         /// Eat leading %

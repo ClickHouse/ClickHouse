@@ -39,7 +39,7 @@ SELECT sleep(3);
 
 INSERT INTO landing SELECT 1 as timestamp, 1 AS value FROM numbers(10);
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 SELECT table, name, error FROM system.part_log
 WHERE database = currentDatabase()
 ORDER BY table, name;

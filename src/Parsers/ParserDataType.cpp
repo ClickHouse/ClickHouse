@@ -268,7 +268,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             DynamicArgumentParser parser;
             parser.parse(pos, arg, expected);
         }
-        else if (type_name == "JSON")
+        else if (boost::to_lower_copy(type_name) == "json")
         {
             ObjectArgumentParser parser;
             parser.parse(pos, arg, expected);

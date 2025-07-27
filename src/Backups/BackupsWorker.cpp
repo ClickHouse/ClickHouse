@@ -21,7 +21,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Common/CurrentThread.h>
+#include <Common/DateLUT.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/logger_useful.h>
@@ -29,10 +29,16 @@
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/ThreadPool.h>
+#include <Common/thread_local_rng.h>
+#include <Common/formatReadable.h>
+#include <Common/ThrottlerArray.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 
 #include <boost/range/adaptor/map.hpp>
 
+
+#include <Parsers/ASTAlterQuery.h>
 
 namespace CurrentMetrics
 {
@@ -46,6 +52,16 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool s3_disable_checksum;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool shutdown_wait_backups_and_restores;
+}
 
 namespace ErrorCodes
 {
@@ -121,8 +137,8 @@ namespace
     ReadSettings getReadSettingsForBackup(const ContextPtr & context, const BackupSettings & backup_settings)
     {
         auto read_settings = context->getReadSettings();
-        read_settings.remote_throttler = context->getBackupsThrottler();
-        read_settings.local_throttler = context->getBackupsThrottler();
+        addThrottler(read_settings.remote_throttler, context->getBackupsThrottler());
+        addThrottler(read_settings.local_throttler, context->getBackupsThrottler());
         read_settings.enable_filesystem_cache = backup_settings.read_from_filesystem_cache;
         read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = backup_settings.read_from_filesystem_cache;
         return read_settings;
@@ -138,8 +154,8 @@ namespace
     ReadSettings getReadSettingsForRestore(const ContextPtr & context)
     {
         auto read_settings = context->getReadSettings();
-        read_settings.remote_throttler = context->getBackupsThrottler();
-        read_settings.local_throttler = context->getBackupsThrottler();
+        addThrottler(read_settings.remote_throttler, context->getBackupsThrottler());
+        addThrottler(read_settings.local_throttler, context->getBackupsThrottler());
         read_settings.enable_filesystem_cache = false;
         read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
         return read_settings;
@@ -181,6 +197,9 @@ enum class BackupsWorker::ThreadPoolId : uint8_t
     ASYNC_BACKGROUND_INTERNAL_RESTORE,
     ON_CLUSTER_COORDINATION_INTERNAL_BACKUP,
     ON_CLUSTER_COORDINATION_INTERNAL_RESTORE,
+
+    /// Remove locks of snapshot from keeper and unused object
+    UNLOCK_SNAPSHOT,
 };
 
 
@@ -221,7 +240,7 @@ public:
             {
                 metric_threads = CurrentMetrics::BackupsThreads;
                 metric_active_threads = CurrentMetrics::BackupsThreadsActive;
-                metric_active_threads = CurrentMetrics::BackupsThreadsScheduled;
+                metric_scheduled_threads = CurrentMetrics::BackupsThreadsScheduled;
                 max_threads = num_backup_threads;
                 /// We don't use thread pool queues for thread pools with a lot of tasks otherwise that queue could be memory-wasting.
                 use_queue = (thread_pool_id != ThreadPoolId::BACKUP);
@@ -229,6 +248,7 @@ public:
             }
 
             case ThreadPoolId::RESTORE:
+            case ThreadPoolId::UNLOCK_SNAPSHOT:
             case ThreadPoolId::ASYNC_BACKGROUND_RESTORE:
             case ThreadPoolId::ON_CLUSTER_COORDINATION_RESTORE:
             case ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_RESTORE:
@@ -236,7 +256,7 @@ public:
             {
                 metric_threads = CurrentMetrics::RestoreThreads;
                 metric_active_threads = CurrentMetrics::RestoreThreadsActive;
-                metric_active_threads = CurrentMetrics::RestoreThreadsScheduled;
+                metric_scheduled_threads = CurrentMetrics::RestoreThreadsScheduled;
                 max_threads = num_restore_threads;
                 use_queue = true;
                 break;
@@ -299,6 +319,7 @@ BackupsWorker::BackupsWorker(ContextMutablePtr global_context, size_t num_backup
     : thread_pools(std::make_unique<ThreadPools>(num_backup_threads, num_restore_threads))
     , allow_concurrent_backups(global_context->getConfigRef().getBool("backups.allow_concurrent_backups", true))
     , allow_concurrent_restores(global_context->getConfigRef().getBool("backups.allow_concurrent_restores", true))
+    , shutdown_wait_backups_and_restores(global_context->getServerSettings()[ServerSetting::shutdown_wait_backups_and_restores])
     , remove_backup_files_after_failure(global_context->getConfigRef().getBool("backups.remove_backup_files_after_failure", true))
     , test_randomize_order(global_context->getConfigRef().getBool("backups.test_randomize_order", false))
     , test_inject_sleep(global_context->getConfigRef().getBool("backups.test_inject_sleep", false))
@@ -384,6 +405,23 @@ struct BackupsWorker::BackupStarter
         if (process_list_element)
             process_list_element_holder = process_list_element->getProcessListEntry();
 
+        // If user has customized backup bandwidth with S3 checksum enabled,
+        // warn for the effective bandwidth mismatch with user's setup
+        if (!query_context->getSettingsRef()[Setting::s3_disable_checksum]
+            && backup_info.backup_engine_name == "S3"
+            && query_context->getBackupsThrottler())
+        {
+            UInt64 queryMaxSpeed = query_context->getBackupsThrottler()->getMaxSpeed();
+            // Note: With S3 checksum enabled, each file is read twice — once for checksum, once for upload.
+            // This effectively halves the usable bandwidth relative to max_backup_bandwidth.
+            LOG_WARNING(
+                log,
+                "S3 checksum is enabled (s3_disable_checksum = 0): each file will be read twice — once for checksum and once for upload. "
+                "This effectively reduces the usable bandwidth to about half of max_backup_bandwidth (currently: {}). "
+                "To mitigate this, either disable checksum (SET s3_disable_checksum = 1) or increase max_backup_bandwidth.",
+                formatReadableSizeWithBinarySuffix(static_cast<double>(queryMaxSpeed), 0));
+        }
+
         backups_worker.addInfo(backup_id,
             backup_name_for_logging,
             base_backup_name,
@@ -403,19 +441,29 @@ struct BackupsWorker::BackupStarter
             backup_settings.cluster_host_ids = cluster->getHostIDs();
         }
         backup_coordination = backups_worker.makeBackupCoordination(on_cluster, backup_settings, backup_context);
+        backup_coordination->startup();
 
         chassert(!backup);
         backup = backups_worker.openBackupForWriting(backup_info, backup_settings, backup_coordination, backup_context);
 
-        backups_worker.doBackup(backup, backup_query, backup_id, backup_settings, backup_coordination, backup_context,
+        backups_worker.doBackup(backup, backup_query, backup_id, backup_settings, backup_coordination, backup_context, query_context,
                                 on_cluster, cluster);
 
-        backup_coordination->finish(/* throw_if_error = */ true);
-        backup.reset();
-
-        /// The backup coordination is not needed anymore.
         if (!is_internal_backup)
+            backup_coordination->waitOtherHostsFinish(/* throw_if_error = */ true);
+
+        /// Let other hosts know that the current host has finished its work.
+        backup_coordination->finish(/* throw_if_error = */ true);
+
+        if (!is_internal_backup)
+        {
+            /// All the hosts working on this backup have finished their work, so we can remove the coordination info now.
+            if (!backup_coordination->allHostsFinished())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "All hosts should have finished their work by this point");
             backup_coordination->cleanup(/* throw_if_error = */ true);
+        }
+
+        backup.reset();
         backup_coordination.reset();
 
         /// NOTE: setStatus is called after setNumFilesAndSize in order to have actual information in a backup log record
@@ -430,30 +478,36 @@ struct BackupsWorker::BackupStarter
                                (is_internal_backup ? "internal backup" : "backup"),
                                backup_name_for_logging));
 
-        bool should_remove_files_in_backup = backup && !is_internal_backup && backups_worker.remove_backup_files_after_failure;
+        bool backup_is_corrupted = (backup && backup->setIsCorrupted());
 
-        if (backup && !backup->setIsCorrupted())
-            should_remove_files_in_backup = false;
+        /// Let other hosts know we got an error.
+        if (backup_coordination)
+            backup_coordination->setError(std::current_exception(), /* throw_if_error = */ false);
 
-        bool all_hosts_finished = false;
-
-        if (backup_coordination && backup_coordination->setError(std::current_exception(), /* throw_if_error = */ false))
+        /// Let other hosts know that the current host has finished its work.
+        /// We do that only if the error is set to prevent other hosts from thinking that the current host has finished successfully.
+        if (backup_coordination && backup_coordination->isErrorSet())
         {
-            bool other_hosts_finished = !is_internal_backup
-                && (!backup_coordination->isBackupQuerySentToOtherHosts() || backup_coordination->waitOtherHostsFinish(/* throw_if_error = */ false));
-
-            all_hosts_finished = backup_coordination->finish(/* throw_if_error = */ false) && other_hosts_finished;
+            if (!is_internal_backup && backup_coordination->isBackupQuerySentToOtherHosts())
+                backup_coordination->waitOtherHostsFinish(/* throw_if_error = */ false);
+            backup_coordination->finish(/* throw_if_error = */ false);
         }
 
-        if (!all_hosts_finished)
-            should_remove_files_in_backup = false;
+        /// Remove files of the corrupted backup.
+        bool should_remove_files_in_backup = backup && backup_is_corrupted && backups_worker.remove_backup_files_after_failure
+            && backup_coordination && backup_coordination->isErrorSet() &&
+            (backup_coordination->isBackupQuerySentToOtherHosts() ? backup_coordination->allHostsFinished() : backup_coordination->finished());
 
-        if (backup && should_remove_files_in_backup)
+        if (should_remove_files_in_backup)
             backup->tryRemoveAllFiles();
 
         backup.reset();
 
-        if (backup_coordination && all_hosts_finished)
+        /// It's fine to remove the coordination info if the current host is the last host which was working on this backup.
+        bool should_cleanup_coordination = backup_coordination && backup_coordination->isErrorSet() &&
+            (backup_coordination->isBackupQuerySentToOtherHosts() ? backup_coordination->allHostsFinished() : backup_coordination->finished());
+
+        if (should_cleanup_coordination)
             backup_coordination->cleanup(/* throw_if_error = */ false);
 
         backup_coordination.reset();
@@ -509,6 +563,7 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(const BackupInfo & backup_i
     backup_create_params.password = backup_settings.password;
     backup_create_params.s3_storage_class = backup_settings.s3_storage_class;
     backup_create_params.is_internal_backup = backup_settings.internal;
+    backup_create_params.is_lightweight_snapshot = backup_settings.experimental_lightweight_snapshot;
     backup_create_params.backup_coordination = backup_coordination;
     backup_create_params.backup_uuid = backup_settings.backup_uuid;
     backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
@@ -532,6 +587,7 @@ void BackupsWorker::doBackup(
     const BackupSettings & backup_settings,
     std::shared_ptr<IBackupCoordination> backup_coordination,
     ContextMutablePtr context,
+    const ContextPtr & query_context,
     bool on_cluster,
     const ClusterPtr & cluster)
 {
@@ -541,7 +597,7 @@ void BackupsWorker::doBackup(
     /// (If this is ON CLUSTER query executeDDLQueryOnCluster() will check access rights later.)
     auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
     if (!on_cluster)
-        context->checkAccess(required_access);
+        query_context->checkAccess(required_access);
 
     maybeSleepForTesting();
 
@@ -779,14 +835,25 @@ struct BackupsWorker::RestoreStarter
             restore_settings.cluster_host_ids = cluster->getHostIDs();
         }
         restore_coordination = backups_worker.makeRestoreCoordination(on_cluster, restore_settings, restore_context);
+        restore_coordination->startup();
 
-        backups_worker.doRestore(restore_query, restore_id, backup_info, restore_settings, restore_coordination, restore_context,
+        backups_worker.doRestore(restore_query, restore_id, backup_info, restore_settings, restore_coordination, restore_context, query_context,
                                  on_cluster, cluster);
 
-        /// The restore coordination is not needed anymore.
-        restore_coordination->finish(/* throw_if_error = */ true);
         if (!is_internal_restore)
+            restore_coordination->waitOtherHostsFinish(/* throw_if_error = */ true);
+
+        /// Let other hosts know that the current host has finished its work.
+        restore_coordination->finish(/* throw_if_error = */ true);
+
+        if (!is_internal_restore)
+        {
+            /// All the hosts working on this backup have finished their work, so we can remove the coordination info now.
+            if (!restore_coordination->allHostsFinished())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "All hosts should have finished their work by this point");
             restore_coordination->cleanup(/* throw_if_error = */ true);
+        }
+
         restore_coordination.reset();
 
         LOG_INFO(log, "Restored from {} {} successfully", (is_internal_restore ? "internal backup" : "backup"), backup_name_for_logging);
@@ -798,13 +865,25 @@ struct BackupsWorker::RestoreStarter
         /// Something bad happened, some data were not restored.
         tryLogCurrentException(backups_worker.log, fmt::format("Failed to restore from {} {}", (is_internal_restore ? "internal backup" : "backup"), backup_name_for_logging));
 
-        if (restore_coordination && restore_coordination->setError(std::current_exception(), /* throw_if_error = */ false))
+        /// Let other hosts know we got an error.
+        if (restore_coordination)
+            restore_coordination->setError(std::current_exception(), /* throw_if_error = */ false);
+
+        /// Let other hosts know that the current host has finished its work.
+        /// We do that only if the error is set to prevent other hosts from thinking that the current host has finished successfully.
+        if (restore_coordination && restore_coordination->isErrorSet())
         {
-            bool other_hosts_finished = !is_internal_restore
-                && (!restore_coordination->isRestoreQuerySentToOtherHosts() || restore_coordination->waitOtherHostsFinish(/* throw_if_error = */ false));
-            if (restore_coordination->finish(/* throw_if_error = */ false) && other_hosts_finished)
-                restore_coordination->cleanup(/* throw_if_error = */ false);
+            if (!is_internal_restore && restore_coordination->isRestoreQuerySentToOtherHosts())
+                restore_coordination->waitOtherHostsFinish(/* throw_if_error = */ false);
+            restore_coordination->finish(/* throw_if_error = */ false);
         }
+
+        /// It's fine to remove the coordination info if the current host is the last host which was working on this restore.
+        bool should_cleanup_coordination = restore_coordination && restore_coordination->isErrorSet() &&
+            (restore_coordination->isRestoreQuerySentToOtherHosts() ? restore_coordination->allHostsFinished() : restore_coordination->finished());
+
+        if (should_cleanup_coordination)
+            restore_coordination->cleanup(/* throw_if_error = */ false);
 
         restore_coordination.reset();
 
@@ -856,6 +935,7 @@ BackupPtr BackupsWorker::openBackupForReading(const BackupInfo & backup_info, co
     backup_open_params.base_backup_info = restore_settings.base_backup_info;
     backup_open_params.password = restore_settings.password;
     backup_open_params.allow_s3_native_copy = restore_settings.allow_s3_native_copy;
+    backup_open_params.allow_azure_native_copy = restore_settings.allow_azure_native_copy;
     backup_open_params.use_same_s3_credentials_for_base_backup = restore_settings.use_same_s3_credentials_for_base_backup;
     backup_open_params.use_same_password_for_base_backup = restore_settings.use_same_password_for_base_backup;
     backup_open_params.read_settings = getReadSettingsForRestore(context);
@@ -874,6 +954,7 @@ void BackupsWorker::doRestore(
     RestoreSettings restore_settings,
     std::shared_ptr<IRestoreCoordination> restore_coordination,
     ContextMutablePtr context,
+    const ContextPtr & query_context,
     bool on_cluster,
     const ClusterPtr & cluster)
 {
@@ -901,7 +982,7 @@ void BackupsWorker::doRestore(
             String addr_database = address->default_database.empty() ? current_database : address->default_database;
             for (auto & element : restore_elements)
                 element.setCurrentDatabase(addr_database);
-            RestorerFromBackup dummy_restorer{restore_elements, restore_settings, nullptr, backup, context, getThreadPool(ThreadPoolId::RESTORE), {}};
+            RestorerFromBackup dummy_restorer{restore_elements, restore_settings, nullptr, backup, context, query_context, getThreadPool(ThreadPoolId::RESTORE), {}};
             dummy_restorer.run(RestorerFromBackup::CHECK_ACCESS_ONLY);
         }
     }
@@ -933,7 +1014,7 @@ void BackupsWorker::doRestore(
 
         /// Restore from the backup.
         RestorerFromBackup restorer{restore_query->elements, restore_settings, restore_coordination,
-                                    backup, context, getThreadPool(ThreadPoolId::RESTORE), after_task_callback};
+                                    backup, context, query_context, getThreadPool(ThreadPoolId::RESTORE), after_task_callback};
         restorer.run(RestorerFromBackup::RESTORE);
     }
 }
@@ -1050,7 +1131,7 @@ void BackupsWorker::addInfo(const OperationID & id, const String & name, const S
     info.query_id = query_id;
     info.internal = internal;
     info.status = status;
-    info.start_time = std::chrono::system_clock::now();
+    info.start_time_us = timeInMicroseconds(std::chrono::system_clock::now());
 
     bool is_final_status = isFinalStatus(status);
 
@@ -1062,7 +1143,7 @@ void BackupsWorker::addInfo(const OperationID & id, const String & name, const S
     }
 
     if (is_final_status)
-        info.end_time = info.start_time;
+        info.end_time_us = info.start_time_us;
 
     std::lock_guard lock{infos_mutex};
 
@@ -1111,7 +1192,7 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
     }
 
     if (is_final_status)
-        info.end_time = std::chrono::system_clock::now();
+        info.end_time_us = timeInMicroseconds(std::chrono::system_clock::now());
 
     if (isFailedOrCancelled(status))
     {
@@ -1280,8 +1361,11 @@ std::vector<BackupOperationInfo> BackupsWorker::getAllInfos() const
 
 void BackupsWorker::shutdown()
 {
-    /// Cancel running backups and restores.
-    cancelAll(/* wait= */ true);
+    /// Wait or cancel running backups and restores.
+    if (shutdown_wait_backups_and_restores)
+        waitAll();
+    else
+        cancelAll(/* wait= */ true);
 
     /// Wait for our thread pools (it must be done before destroying them).
     thread_pools->wait();

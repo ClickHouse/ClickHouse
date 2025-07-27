@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
 #include <Processors/Formats/ISchemaReader.h>
 
@@ -8,6 +7,7 @@
 namespace DB
 {
 
+class Block;
 class ReadBuffer;
 
 template <bool>
@@ -44,7 +44,7 @@ template <bool with_defaults = false>
 class BinaryRowInputFormat final : public RowInputFormatWithNamesAndTypes<BinaryFormatReader<with_defaults>>
 {
 public:
-    BinaryRowInputFormat(ReadBuffer & in_, const Block & header, IRowInputFormat::Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_);
+    BinaryRowInputFormat(ReadBuffer & in_, SharedHeader header, IRowInputFormat::Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_);
 
     String getName() const override { return "BinaryRowInputFormat"; }
 

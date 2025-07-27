@@ -7,6 +7,7 @@
 #include <Common/MultiVersion.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <Disks/DiskEncryptedTransaction.h>
+#include <Disks/MetadataStorageWithPathWrapper.h>
 
 
 namespace DB
@@ -199,11 +200,28 @@ public:
         return delegate->getBlobPath(wrapped_path);
     }
 
+    bool areBlobPathsRandom() const override
+    {
+        return delegate->areBlobPathsRandom();
+    }
+
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override
     {
         auto tx = createEncryptedTransaction();
         tx->writeFileUsingBlobWritingFunction(path, mode, std::move(write_blob_function));
         tx->commit();
+    }
+
+    StoredObjects getStorageObjects(const String & path) const override
+    {
+        auto wrapped_path = wrappedPath(path);
+        return delegate->getStorageObjects(wrapped_path);
+    }
+
+    std::optional<StoredObjects> getStorageObjectsIfExist(const String & path) const override
+    {
+        auto wrapped_path = wrappedPath(path);
+        return delegate->getStorageObjectsIfExist(wrapped_path);
     }
 
     std::unique_ptr<ReadBufferFromFileBase> readEncryptedFile(const String & path, const ReadSettings & settings) const override
@@ -281,12 +299,6 @@ public:
         return delegate->checkUniqueId(id);
     }
 
-    void onFreeze(const String & path) override
-    {
-        auto wrapped_path = wrappedPath(path);
-        delegate->onFreeze(wrapped_path);
-    }
-
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
     DataSourceDescription getDataSourceDescription() const override
@@ -340,7 +352,7 @@ public:
 
     MetadataStoragePtr getMetadataStorage() override
     {
-        return delegate->getMetadataStorage();
+        return std::make_shared<MetadataStorageWithPathWrapper>(delegate->getMetadataStorage(), disk_path);
     }
 
     std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & paths) const override;

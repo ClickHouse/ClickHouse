@@ -1,12 +1,17 @@
-#include <unordered_set>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/ISource.h>
+#include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -23,6 +28,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -39,14 +45,14 @@ class RedisDataSource : public ISource
 public:
     RedisDataSource(
         StorageRedis & storage_,
-        const Block & header,
+        SharedHeader header,
         FieldVectorPtr keys_,
         FieldVector::const_iterator begin_,
         FieldVector::const_iterator end_,
         const size_t max_block_size_)
         : ISource(header)
         , storage(storage_)
-        , primary_key_pos(getPrimaryKeyPos(header, storage.getPrimaryKey()))
+        , primary_key_pos(getPrimaryKeyPos(*header, storage.getPrimaryKey()))
         , keys(keys_)
         , begin(begin_)
         , end(end_)
@@ -55,10 +61,10 @@ public:
     {
     }
 
-    RedisDataSource(StorageRedis & storage_, const Block & header, const size_t max_block_size_, const String & pattern_ = "*")
+    RedisDataSource(StorageRedis & storage_, SharedHeader header, const size_t max_block_size_, const String & pattern_ = "*")
         : ISource(header)
         , storage(storage_)
-        , primary_key_pos(getPrimaryKeyPos(header, storage.getPrimaryKey()))
+        , primary_key_pos(getPrimaryKeyPos(*header, storage.getPrimaryKey()))
         , iterator(-1)
         , pattern(pattern_)
         , max_block_size(max_block_size_)
@@ -158,7 +164,7 @@ private:
 };
 
 RedisSink::RedisSink(StorageRedis & storage_, const StorageMetadataPtr & metadata_snapshot_)
-    : SinkToStorage(metadata_snapshot_->getSampleBlock())
+    : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
 {
@@ -205,7 +211,6 @@ StorageRedis::StorageRedis(
     const String & primary_key_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
-    , table_id(table_id_)
     , configuration(configuration_)
     , log(getLogger("StorageRedis"))
     , primary_key(primary_key_)
@@ -214,53 +219,134 @@ StorageRedis::StorageRedis(
     setInMemoryMetadata(storage_metadata);
 }
 
-Pipe StorageRedis::read(
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr context_,
-    QueryProcessingStage::Enum /*processed_stage*/,
-    size_t max_block_size,
-    size_t num_streams)
+class ReadFromRedis : public SourceStepWithFilter
 {
-    storage_snapshot->check(column_names);
+public:
+    std::string getName() const override { return "ReadFromRedis"; }
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
+    void describeActions(FormatSettings & format_settings) const override;
+    void describeActions(JSONBuilder::JSONMap & map) const override;
+
+    ReadFromRedis(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
+        SharedHeader sample_block,
+        StorageRedis & storage_,
+        size_t max_block_size_,
+        size_t num_streams_)
+        : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
+        , storage(storage_)
+        , max_block_size(max_block_size_)
+        , num_streams(num_streams_)
+    {
+    }
+
+private:
+    StorageRedis & storage;
+
+    size_t max_block_size;
+    size_t num_streams;
 
     FieldVectorPtr keys;
-    bool all_scan = false;
+    bool all_scan = true;
+};
 
-    Block header = storage_snapshot->metadata->getSampleBlock();
-    auto primary_key_data_type = header.getByName(primary_key).type;
+void StorageRedis::read(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context_,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        size_t max_block_size,
+        size_t num_streams)
+{
+    storage_snapshot->check(column_names);
+    auto sample_block = std::make_shared<const Block>(storage_snapshot->metadata->getSampleBlock());
 
-    std::tie(keys, all_scan) = getFilterKeys(primary_key, primary_key_data_type, query_info, context_);
+    auto reading = std::make_unique<ReadFromRedis>(
+        column_names, query_info, storage_snapshot, context_, std::move(sample_block), *this, max_block_size, num_streams);
+
+    query_plan.addStep(std::move(reading));
+}
+
+void ReadFromRedis::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+{
+    const auto & sample_block = getOutputHeader();
 
     if (all_scan)
     {
-        return Pipe(std::make_shared<RedisDataSource>(*this, header, max_block_size));
+        auto source = std::make_shared<RedisDataSource>(storage, sample_block, max_block_size);
+        source->setStorageLimits(query_info.storage_limits);
+        pipeline.init(Pipe(std::move(source)));
     }
-
-    if (keys->empty())
-        return {};
-
-    Pipes pipes;
-
-    ::sort(keys->begin(), keys->end());
-    keys->erase(std::unique(keys->begin(), keys->end()), keys->end());
-
-    size_t num_keys = keys->size();
-    size_t num_threads = std::min<size_t>(num_streams, keys->size());
-
-    num_threads = std::min<size_t>(num_threads, configuration.pool_size);
-    assert(num_keys <= std::numeric_limits<uint32_t>::max());
-
-    for (size_t thread_idx = 0; thread_idx < num_threads; ++thread_idx)
+    else
     {
-        size_t begin = num_keys * thread_idx / num_threads;
-        size_t end = num_keys * (thread_idx + 1) / num_threads;
+        if (keys->empty())
+        {
+            pipeline.init(Pipe(std::make_shared<NullSource>(sample_block)));
+            return;
+        }
 
-        pipes.emplace_back(
-            std::make_shared<RedisDataSource>(*this, header, keys, keys->begin() + begin, keys->begin() + end, max_block_size));
+        ::sort(keys->begin(), keys->end());
+        keys->erase(std::unique(keys->begin(), keys->end()), keys->end());
+
+        Pipes pipes;
+
+        size_t num_keys = keys->size();
+        size_t num_threads = std::min<size_t>(num_streams, keys->size());
+        num_threads = std::min<size_t>(num_threads, storage.configuration.pool_size);
+
+        assert(num_keys <= std::numeric_limits<uint32_t>::max());
+        assert(num_threads <= std::numeric_limits<uint32_t>::max());
+
+        for (size_t thread_idx = 0; thread_idx < num_threads; ++thread_idx)
+        {
+            size_t begin = num_keys * thread_idx / num_threads;
+            size_t end = num_keys * (thread_idx + 1) / num_threads;
+
+            auto source = std::make_shared<RedisDataSource>(
+                    storage, sample_block, keys, keys->begin() + begin, keys->begin() + end, max_block_size);
+            source->setStorageLimits(query_info.storage_limits);
+            pipes.emplace_back(std::move(source));
+        }
+        pipeline.init(Pipe::unitePipes(std::move(pipes)));
     }
-    return Pipe::unitePipes(std::move(pipes));
+}
+
+void ReadFromRedis::applyFilters(ActionDAGNodes added_filter_nodes)
+{
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
+    const auto & sample_block = getOutputHeader();
+    auto primary_key_data_type = sample_block->getByName(storage.primary_key).type;
+    std::tie(keys, all_scan) = getFilterKeys(storage.primary_key, primary_key_data_type, filter_actions_dag.get(), context);
+}
+
+void ReadFromRedis::describeActions(FormatSettings & format_settings) const
+{
+    std::string prefix(format_settings.offset, format_settings.indent_char);
+    if (!all_scan)
+    {
+        format_settings.out << prefix << "ReadType: GetKeys\n";
+        format_settings.out << prefix << "Keys: " << keys->size() << '\n';
+    }
+    else
+        format_settings.out << prefix << "ReadType: FullScan\n";
+}
+
+void ReadFromRedis::describeActions(JSONBuilder::JSONMap & map) const
+{
+    if (!all_scan)
+    {
+        map.add("Read Type", "GetKeys");
+        map.add("Keys", keys->size());
+    }
+    else
+        map.add("Read Type", "FullScan");
 }
 
 namespace
@@ -355,7 +441,7 @@ Chunk StorageRedis::getBySerializedKeys(const RedisArray & keys, PaddedPODArray<
 
     RedisArray values = multiGet(keys);
     if (values.isNull() || values.size() == 0)
-        return {};
+        return Chunk(std::move(columns), 0);
 
     if (null_map)
     {
@@ -403,6 +489,9 @@ std::pair<RedisIterator, RedisArray> StorageRedis::scan(RedisIterator iterator, 
 
 RedisArray StorageRedis::multiGet(const RedisArray & keys) const
 {
+    if (keys.isNull() || keys.size() == 0)
+        return {};
+
     auto connection = getRedisConnection(pool, configuration);
 
     RedisCommand cmd_mget("MGET");
@@ -422,7 +511,7 @@ void StorageRedis::multiSet(const RedisArray & data) const
 
     auto ret = connection->client->execute<RedisSimpleString>(cmd_mget);
     if (ret != "OK")
-        throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR, "Fail to write to redis table {}, for {}", table_id.getFullNameNotQuoted(), ret);
+        throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR, "Fail to write to redis table {}, for {}", getStorageID().getFullNameNotQuoted(), ret);
 }
 
 RedisInteger StorageRedis::multiDelete(const RedisArray & keys) const
@@ -440,7 +529,7 @@ RedisInteger StorageRedis::multiDelete(const RedisArray & keys) const
             "Try to delete {} rows but actually deleted {} rows from redis table {}.",
             keys.size(),
             ret,
-            table_id.getFullNameNotQuoted());
+            getStorageID().getFullNameNotQuoted());
 
     return ret;
 }
@@ -486,7 +575,7 @@ void StorageRedis::truncate(const ASTPtr & query, const StorageMetadataPtr &, Co
     auto ret = connection->client->execute<RedisSimpleString>(cmd_flush_db);
 
     if (ret != "OK")
-        throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR, "Fail to truncate redis table {}, for {}", table_id.getFullNameNotQuoted(), ret);
+        throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR, "Fail to truncate redis table {}, for {}", getStorageID().getFullNameNotQuoted(), ret);
 }
 
 void StorageRedis::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
@@ -577,7 +666,7 @@ void registerStorageRedis(StorageFactory & factory)
     StorageFactory::StorageFeatures features{
         .supports_sort_order = true,
         .supports_parallel_insert = true,
-        .source_access_type = AccessType::REDIS,
+        .source_access_type = AccessTypeObjects::Source::REDIS,
     };
 
     factory.registerStorage("Redis", createStorageRedis, features);

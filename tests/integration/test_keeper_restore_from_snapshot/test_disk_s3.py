@@ -5,6 +5,8 @@ import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
+
+# Disable `with_remote_database_disk` as the test does not use the default Keeper.
 node1 = cluster.add_instance(
     "node1",
     main_configs=[
@@ -14,6 +16,7 @@ node1 = cluster.add_instance(
     ],
     stay_alive=True,
     with_minio=True,
+    with_remote_database_disk=False,
 )
 node2 = cluster.add_instance(
     "node2",
@@ -24,6 +27,7 @@ node2 = cluster.add_instance(
     ],
     stay_alive=True,
     with_minio=True,
+    with_remote_database_disk=False,
 )
 node3 = cluster.add_instance(
     "node3",
@@ -139,5 +143,11 @@ def test_recover_from_snapshot_with_disk_s3(started_cluster):
                     node3_zk.exists("/test_snapshot_multinode_recover" + str(i)) is None
                 )
     finally:
+        for i in range(435):
+            if node1_zk.exists("/test_snapshot_multinode_recover" + str(i)):
+                node1_zk.delete("/test_snapshot_multinode_recover" + str(i))
+        if node1_zk.exists("/test_snapshot_multinode_recover"):
+            node1_zk.delete("/test_snapshot_multinode_recover")
+
         for zk in [node1_zk, node2_zk, node3_zk]:
             stop_zk(zk)

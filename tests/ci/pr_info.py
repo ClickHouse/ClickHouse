@@ -19,6 +19,7 @@ from env_helper import (
 )
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
+from synchronizer_utils import SYNC_PR_PREFIX
 
 NeedsDataType = Dict[str, Dict[str, Union[str, Dict[str, str]]]]
 
@@ -39,6 +40,13 @@ DIFF_IN_DOCUMENTATION_EXT = [
     ".py",
     ".sh",
     ".json",
+]
+DOCS_ONLY_FILES = ["docker/docs", "aspell-dict.txt"]
+
+DOCS_FILES = DOCS_ONLY_FILES + [
+    "Settings.cpp",
+    "FormatFactorySettings.h",
+    "tests/ci/docs_check.py",
 ]
 RETRY_SLEEP = 0
 
@@ -417,11 +425,8 @@ class PRInfo:
         for f in self.changed_files:
             _, ext = os.path.splitext(f)
             path_in_docs = f.startswith("docs/")
-            if (
-                (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs)
-                or "docker/docs" in f
-                or "Settings.cpp" in f
-                or "FormatFactorySettings.h" in f
+            if (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs) or any(
+                docs_path in f for docs_path in DOCS_FILES
             ):
                 return True
         return False
@@ -429,7 +434,6 @@ class PRInfo:
     def has_changes_in_documentation_only(self) -> bool:
         """
         checks if changes are docs related without other changes
-        FIXME: avoid hardcoding filenames here
         """
         if not self.changed_files_requested:
             self.fetch_changed_files()
@@ -443,10 +447,7 @@ class PRInfo:
             path_in_docs = f.startswith("docs/")
             if not (
                 (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs)
-                or "docker/docs" in f
-                or "docs_check.py" in f
-                or "aspell-dict.txt" in f
-                or ext == ".md"
+                or any(docs_path in f for docs_path in DOCS_ONLY_FILES)
             ):
                 return False
         return True
@@ -465,7 +466,7 @@ class PRInfo:
 
     def get_latest_sync_commit(self):
         gh = GitHub(get_best_robot_token(), per_page=100)
-        assert self.head_ref.startswith("sync-upstream/pr/")
+        assert self.head_ref.startswith(SYNC_PR_PREFIX)
         assert self.repo_full_name != GITHUB_UPSTREAM_REPOSITORY
         upstream_repo = gh.get_repo(GITHUB_UPSTREAM_REPOSITORY)
         upstream_pr_number = int(self.head_ref.split("/pr/", maxsplit=1)[1])

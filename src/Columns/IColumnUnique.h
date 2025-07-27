@@ -187,6 +187,16 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method hasEqualValues is not supported for ColumnUnique.");
     }
 
+    ColumnPtr updateFrom(const IColumn::Patch &) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateFrom is not supported for ColumnUnique.");
+    }
+
+    void updateInplaceFrom(const IColumn::Patch &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateInplaceFrom is not supported for ColumnUnique.");
+    }
+
     /** Given some value (usually, of type @e ColumnType) @p value that is convertible to StringRef, obtains its
      * index in the DB::ColumnUnique::reverse_index hashtable.
      *
@@ -197,7 +207,7 @@ public:
      * @see DB::ReverseIndex
      * @see DB::ColumnUnique
      *
-     * The most common example uses https://clickhouse.com/docs/en/sql-reference/data-types/lowcardinality/ columns.
+     * The most common example uses https://clickhouse.com/docs/sql-reference/data-types/lowcardinality/ columns.
      * Consider data type @e LC(String). The inner type here is @e String which is more or less a contiguous memory
      * region, so it can be easily represented as a @e StringRef. So we pass that ref to this function and get its
      * index in the dictionary, which can be used to operate with the indices column.

@@ -1,13 +1,14 @@
-#include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
-#include <Interpreters/Context.h>
 #include <Access/AccessControl.h>
+#include <Access/ContextAccess.h>
 #include <Access/User.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -80,9 +81,17 @@ namespace
 
             switch (kind)
             {
-                case Kind::currentProfiles: profile_ids = context->getCurrentProfiles(); break;
-                case Kind::enabledProfiles: profile_ids = context->getEnabledProfiles(); break;
-                case Kind::defaultProfiles: profile_ids = context->getUser()->settings.toProfileIDs(); break;
+                case Kind::currentProfiles:
+                    profile_ids = context->getCurrentProfiles();
+                    break;
+                case Kind::enabledProfiles:
+                    profile_ids = context->getEnabledProfiles();
+                    break;
+                case Kind::defaultProfiles:
+                    const auto user = context->getAccess()->tryGetUser();
+                    if (user)
+                        profile_ids = user->settings.toProfileIDs();
+                    break;
             }
 
             profile_names = manager.tryReadNames(profile_ids);

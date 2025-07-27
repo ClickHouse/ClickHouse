@@ -5,7 +5,6 @@
 #include <Common/CacheBase.h>
 #include <Common/ProfileEvents.h>
 #include <Common/HashTable/Hash.h>
-#include <Interpreters/AggregationCommon.h>
 #include <Formats/MarkInCompressedFile.h>
 
 
@@ -13,6 +12,9 @@ namespace ProfileEvents
 {
     extern const Event MarkCacheHits;
     extern const Event MarkCacheMisses;
+    extern const Event MarkCacheEvictedBytes;
+    extern const Event MarkCacheEvictedMarks;
+    extern const Event MarkCacheEvictedFiles;
 }
 
 namespace DB
@@ -40,10 +42,24 @@ private:
     using Base = CacheBase<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>;
 
 public:
-    MarkCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
+    MarkCache(const String & cache_policy,
+        CurrentMetrics::Metric size_in_bytes_metric,
+        CurrentMetrics::Metric count_metric,
+        size_t max_size_in_bytes,
+        double size_ratio);
 
-    /// Calculate key from path to file and offset.
+    /// Calculate key from path to file.
     static UInt128 hash(const String & path_to_file);
+
+    MappedPtr get(const Key & key)
+    {
+        auto result = Base::get(key);
+        if (result)
+            ProfileEvents::increment(ProfileEvents::MarkCacheHits);
+        else
+            ProfileEvents::increment(ProfileEvents::MarkCacheMisses);
+        return result;
+    }
 
     template <typename LoadFunc>
     MappedPtr getOrSet(const Key & key, LoadFunc && load)
@@ -56,6 +72,19 @@ public:
 
         return result.first;
     }
+
+private:
+    /// Called for each individual entry being evicted from cache
+    void onEntryRemoval(const size_t weight_loss, const MappedPtr & mapped_ptr) override
+    {
+        /// File is the key of MarkCache, each removal means eviction of 1 file from the cache.
+        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedFiles);
+        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedBytes, weight_loss);
+
+        const auto * marks_in_compressed_file = static_cast<const MarksInCompressedFile *>(mapped_ptr.get());
+        ProfileEvents::increment(ProfileEvents::MarkCacheEvictedMarks, marks_in_compressed_file->getNumberOfMarks());
+    }
+
 };
 
 using MarkCachePtr = std::shared_ptr<MarkCache>;

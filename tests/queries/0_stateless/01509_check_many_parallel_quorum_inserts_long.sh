@@ -32,7 +32,7 @@ for i in $(seq 1 $NUM_REPLICAS); do
 
         # Note: making 30 connections simultaneously is a mini-DoS when server is build with sanitizers and CI environment is overloaded.
         # That's why we repeat "socket timeout" errors.
-        thread $i $a 2>&1 | grep -v -P 'SOCKET_TIMEOUT|NETWORK_ERROR|^$' &
+        thread $i $a 2>&1 | tr '\n' ' ' | grep -v -P 'SOCKET_TIMEOUT|NETWORK_ERROR|Timeout while waiting for quorum|^$' &
     done
 done
 

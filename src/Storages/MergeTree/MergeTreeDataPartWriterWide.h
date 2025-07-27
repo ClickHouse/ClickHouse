@@ -39,7 +39,7 @@ public:
         const MergeTreeWriterSettings & settings,
         MergeTreeIndexGranularityPtr index_granularity_);
 
-    void write(const Block & block, const IColumn::Permutation * permutation) override;
+    void write(const Block & block, const IColumnPermutation * permutation) override;
 
     void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) final;
 
@@ -116,6 +116,10 @@ private:
     /// This function used when blocks change granularity drastically and we have unfinished mark.
     /// Also useful to have exact amount of rows in last (non-final) mark.
     void adjustLastMarkIfNeedAndFlushToDisk(size_t new_rows_in_last_mark);
+
+    void initColumnsSubstreamsIfNeeded(const Block & block);
+
+    ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const;
 
     ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column, WrittenOffsetColumns & offset_columns) const;
     const String & getStreamName(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;

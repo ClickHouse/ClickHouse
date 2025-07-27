@@ -8,7 +8,6 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/range/algorithm/find.hpp>
-#include <boost/range/algorithm_ext/erase.hpp>
 #include <Common/DNSResolver.h>
 #include <ifaddrs.h>
 #include <filesystem>

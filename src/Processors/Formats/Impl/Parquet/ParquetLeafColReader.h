@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
-#include "ParquetColumnReader.h"
-#include "ParquetDataValuesReader.h"
+#include <Processors/Formats/Impl/Parquet/ParquetColumnReader.h>
+#include <Processors/Formats/Impl/Parquet/ParquetDataValuesReader.h>
 
 namespace parquet
 {

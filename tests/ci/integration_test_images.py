@@ -13,6 +13,8 @@ IMAGES_ENV = {
     "clickhouse/nginx-dav": "DOCKER_NGINX_DAV_TAG",
     "clickhouse/postgresql-java-client": "DOCKER_POSTGRESQL_JAVA_CLIENT_TAG",
     "clickhouse/python-bottle": "DOCKER_PYTHON_BOTTLE_TAG",
+    "clickhouse/integration-test-with-unity-catalog": "DOCKER_BASE_WITH_UNITY_CATALOG_TAG",
+    "clickhouse/integration-test-with-hms": "DOCKER_BASE_WITH_HMS_TAG",
 }
 
 IMAGES = list(IMAGES_ENV.keys())

@@ -49,6 +49,11 @@ bool DataTypeArray::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this) && nested->equals(*static_cast<const DataTypeArray &>(rhs).nested);
 }
 
+void DataTypeArray::updateHashImpl(SipHash & hash) const
+{
+    nested->updateHash(hash);
+}
+
 SerializationPtr DataTypeArray::doGetDefaultSerialization() const
 {
     return std::make_shared<SerializationArray>(nested->getDefaultSerialization());
@@ -88,7 +93,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeArray::getDynamicSubcolum
 
     auto creator = SerializationArray::SubcolumnCreator(data.column ? assert_cast<const ColumnArray &>(*data.column).getOffsetsPtr() : nullptr);
     auto res = std::make_unique<ISerialization::SubstreamData>();
-    res->serialization = creator.create(nested_subcolumn_data->serialization);
+    res->serialization = creator.create(nested_subcolumn_data->serialization, nested_subcolumn_data->type);
     res->type = creator.create(nested_subcolumn_data->type);
     if (data.column)
         res->column = creator.create(nested_subcolumn_data->column);

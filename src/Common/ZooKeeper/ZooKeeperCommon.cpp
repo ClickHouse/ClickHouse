@@ -1,4 +1,5 @@
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
@@ -929,6 +930,17 @@ size_t ZooKeeperMultiResponse::sizeImpl() const
     return total_size + Coordination::size(op_num) + Coordination::size(done) + Coordination::size(error_read);
 }
 
+OpNum ZooKeeperWatchResponse::getOpNum() const
+{
+    chassert(false);
+    throw Exception::fromMessage(Error::ZRUNTIMEINCONSISTENCY, "OpNum for watch response doesn't exist");
+}
+
+void ZooKeeperCloseResponse::readImpl(ReadBuffer &)
+{
+    throw Exception::fromMessage(Error::ZRUNTIMEINCONSISTENCY, "Received response for close request");
+}
+
 ZooKeeperResponsePtr ZooKeeperHeartbeatRequest::makeResponse() const { return std::make_shared<ZooKeeperHeartbeatResponse>(); }
 ZooKeeperResponsePtr ZooKeeperSyncRequest::makeResponse() const { return std::make_shared<ZooKeeperSyncResponse>(); }
 ZooKeeperResponsePtr ZooKeeperAuthRequest::makeResponse() const { return std::make_shared<ZooKeeperAuthResponse>(); }
@@ -992,7 +1004,10 @@ void ZooKeeperSessionIDRequest::readImpl(ReadBuffer & in)
 
 Coordination::ZooKeeperResponsePtr ZooKeeperSessionIDRequest::makeResponse() const
 {
-    return std::make_shared<ZooKeeperSessionIDResponse>();
+    auto response = std::make_shared<ZooKeeperSessionIDResponse>();
+    response->server_id = server_id;
+    response->internal_id = internal_id;
+    return std::move(response);
 }
 
 void ZooKeeperSessionIDResponse::readImpl(ReadBuffer & in)
@@ -1249,6 +1264,40 @@ PathMatchResult matchPath(std::string_view path, std::string_view match_to)
         return EXACT;
 
     return *first_it == '/' ? IS_CHILD : NOT_MATCH;
+}
+
+namespace
+{
+size_t findLastSlash(StringRef path)
+{
+    if (path.size == 0)
+        return std::string::npos;
+
+    for (size_t i = path.size - 1; i > 0; --i)
+    {
+        if (path.data[i] == '/')
+            return i;
+    }
+
+    if (path.data[0] == '/')
+        return 0;
+
+    return std::string::npos;
+}
+}
+
+StringRef parentNodePath(StringRef path)
+{
+    auto rslash_pos = findLastSlash(path);
+    if (rslash_pos > 0)
+        return StringRef{path.data, rslash_pos};
+    return "/";
+}
+
+StringRef getBaseNodeName(StringRef path)
+{
+    size_t basename_start = findLastSlash(path);
+    return StringRef{path.data + basename_start + 1, path.size - basename_start - 1};
 }
 
 }
