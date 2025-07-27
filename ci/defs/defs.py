@@ -61,6 +61,10 @@ SECRETS = [
         name="woolenwolf_gh_app.clickhouse-app-key",
         type=Secret.Type.AWS_SSM_SECRET,
     ),
+    Secret.Config(
+        name="ANTHROPIC_API_KEY",
+        type=Secret.Type.AWS_SSM_SECRET,
+    )
 ]
 
 DOCKERS = [

@@ -11,7 +11,11 @@ def ensure_claude_API_key(info: Info) -> bool:
         if not api_key:
             print("Error: ANTHROPIC_API_KEY secret not configured")
             return False
+
         print("ANTHROPIC_API_KEY secret found")
+        os.environ["ANTHROPIC_API_KEY"] = api_key
+        print("ANTHROPIC_API_KEY secret found and set as environment variable")
+        return True
     except Exception as e:
         print(f"Error: Could not access ANTHROPIC_API_KEY secret: {e}")
         return False
