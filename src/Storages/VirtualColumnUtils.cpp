@@ -3,7 +3,6 @@
 
 #include <Storages/VirtualColumnUtils.h>
 
-#include <Analyzer/Utils.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/TypeId.h>
 
@@ -393,7 +392,8 @@ bool isDeterministic(const ActionsDAG::Node * node)
             return false;
     }
 
-    /// Special case: `in subquery or table` is non-deterministic
+    /// In the IN operator, the result is deterministic iff the set on the right-hand side is constant
+    /// For example, 'IN (SELECT ...)' and 'IN (table)'' produce non-deterministic results.
     if (node->type == ActionsDAG::ActionType::COLUMN)
     {
         if (const auto * column = typeid_cast<const ColumnSet *>(node->column.get()))
@@ -411,17 +411,6 @@ bool isDeterministic(const ActionsDAG::Node * node)
     if (!node->function_base->isDeterministic())
         return false;
 
-    /// In the IN operator, the result is deterministic iff the set on the right-hand side is constant
-    /// For example, 'IN (SELECT ...)' and 'IN (table)'' produce non-deterministic results.
-    if (isNameOfInFunction(node->function_base->getName()))
-    {
-        for (const auto * child : node->children)
-        {
-            if (child->type == ActionsDAG::ActionType::COLUMN
-                && !child->column->isConst())
-                return false;
-        }
-    }
     return true;
 }
 

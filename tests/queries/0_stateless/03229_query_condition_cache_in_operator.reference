@@ -1,11 +1,11 @@
 -- Prepare data
 -- Test IN (subquery)
 -- First run
-10	uuid10
+1
 0
--- Modify row in "in_tab" from "uuid10" to "uuid10000"
 -- Second run
-10000	uuid10000
+2
 -- Test that the IN operator is in principle cache-able
-10	uuid10
+1
+100001
 1

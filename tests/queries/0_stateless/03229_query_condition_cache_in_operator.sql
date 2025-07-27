@@ -1,10 +1,6 @@
--- Tags: no-parallel, long, no-asan, no-ubsan, no-debug
+-- Tags: no-parallel
 -- no-parallel: Messes with internal cache
--- Other tags because the test generates 100k rows which is slow
 
--- Test for issue #84508 (recursive CTEs return wrong results if the query condition cache is on)
-
-SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
 
 -- Start from a clean query condition cache
@@ -12,48 +8,57 @@ SYSTEM DROP QUERY CONDITION CACHE;
 
 SELECT '-- Prepare data';
 
-DROP TABLE IF EXISTS tab;
+DROP TABLE IF EXISTS tab, filter_tab;
+
 CREATE TABLE tab
 (
-    id String,
-    uuid String,
-)
-ENGINE = MergeTree
+    id UInt32 DEFAULT 0,
+) ENGINE = MergeTree()
 ORDER BY tuple();
 
-INSERT INTO tab (id, uuid) SELECT toString(number), concat('uuid', number) FROM numbers(100000);
-
 SELECT '-- Test IN (subquery)';
-CREATE TABLE in_tab
+CREATE TABLE filter_tab
 (
-    uuid String
+    id UInt32
 )
 ENGINE = Memory();
 
-INSERT INTO in_tab VALUES ('uuid10');
+INSERT INTO tab
+SELECT
+    number AS id
+FROM numbers(1000000);
+
+INSERT INTO filter_tab VALUES(1);
 
 SELECT '-- First run';
-
-SELECT * FROM tab WHERE uuid IN (SELECT uuid FROM in_tab);
+-- At this point, the result returns 1
+SELECT count()
+FROM tab
+WHERE id IN (
+    SELECT id
+    FROM filter_tab
+);
 
 -- Expect empty query condition cache
 SELECT count(*) FROM system.query_condition_cache;
 
-SELECT '-- Modify row in "in_tab" from "uuid10" to "uuid10000"';
-ALTER TABLE in_tab UPDATE uuid = 'uuid10000' WHERE uuid = 'uuid10' SETTINGS mutations_sync = 2;
+-- `filter_tab` adds 1 line of data
+INSERT INTO filter_tab VALUES(100001);
 
 SELECT '-- Second run';
-
--- Same query as before
-SELECT * FROM tab WHERE uuid IN (SELECT uuid FROM in_tab);
-
-DROP TABLE in_tab;
+-- At this point, the result should be returns 2
+SELECT count()
+FROM tab
+WHERE id IN (
+    SELECT id
+    FROM filter_tab
+);
 
 SELECT '-- Test that the IN operator is in principle cache-able';
 
 SYSTEM DROP QUERY CONDITION CACHE;
 
-SELECT * FROM tab WHERE uuid IN ('uuid10');
+SELECT * FROM tab WHERE id IN (1, 100001);
 SELECT count(*) FROM system.query_condition_cache;
 
-DROP TABLE tab;
+DROP TABLE IF EXISTS tab, filter_tab;
