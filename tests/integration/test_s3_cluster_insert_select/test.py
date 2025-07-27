@@ -107,47 +107,20 @@ def started_cluster():
         cluster.shutdown()
 
 
-def createTable(table, missing_table):
-
-    table_uuid = "b0612a53-5f58-4df0-a28f-a154e0cdb797"
-    node1.query(
-        f"""
-    CREATE TABLE {table} (a String, b UInt64)
-    ENGINE=ReplicatedMergeTree('/clickhouse/tables/{table_uuid}/{table}', '{{replica}}')
-    ORDER BY (a, b);
-        """
-    )
-    node2.query(
-        f"""
-    CREATE TABLE {table} (a String, b UInt64)
-    ENGINE=ReplicatedMergeTree('/clickhouse/tables/{table_uuid}/{table}', '{{replica}}')
-    ORDER BY (a, b);
-        """
-    )
-    if (not missing_table):
-        node3.query(
-            f"""
-        CREATE TABLE {table} (a String, b UInt64)
-        ENGINE=ReplicatedMergeTree('/clickhouse/tables/{table_uuid}/{table}', '{{replica}}')
-        ORDER BY (a, b);
-            """
-        )
-
-
-@pytest.mark.parametrize(
-    "cluster_name",
-    [
-        pytest.param("cluster_1_shard_3_replicas"),
-    ],
-)
-def test_distributed_insert_select_to_rmt(started_cluster, cluster_name):
+def test_distributed_insert_select_to_rmt(started_cluster):
     table = "t_rmt_target"
     cluster_name = "cluster_1_shard_3_replicas"
     node1.query(
         f"""DROP TABLE IF EXISTS {table} ON CLUSTER '{cluster_name}' SYNC;"""
     )
 
-    createTable(table, False)
+    node1.query(
+        f"""
+    CREATE TABLE {table} ON CLUSTER {cluster_name} (a String, b UInt64)
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/b0612a53-5f58-4df0-a28f-a154e0cdb797/{table}', '{{replica}}')
+    ORDER BY (a, b);
+        """
+    )
 
     node1.query(
         f"""
@@ -174,19 +147,22 @@ def test_distributed_insert_select_to_rmt(started_cluster, cluster_name):
     )
 
 
-@pytest.mark.parametrize(
-    "cluster_name, limit",
-    [
-        pytest.param("cluster_1_shard_3_replicas", 5000)
-    ]
-)
-def test_distributed_insert_select_to_rmt_limit(started_cluster, cluster_name, limit):
+def test_distributed_insert_select_to_rmt_limit(started_cluster):
     table = "t_rmt_target"
+    cluster_name = "cluster_1_shard_3_replicas"
+    limit = generated_rows - 1000
+
     node1.query(
         f"""DROP TABLE IF EXISTS {table} ON CLUSTER '{cluster_name}' SYNC;"""
     )
 
-    createTable(table, False)
+    node1.query(
+        f"""
+    CREATE TABLE {table} ON CLUSTER {cluster_name} (a String, b UInt64)
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/32c614a9-13af-43c5-848c-a3f62a78e390/{table}', '{{replica}}')
+    ORDER BY (a, b);
+        """
+    )
 
     node1.query(
         f"""
@@ -199,7 +175,6 @@ def test_distributed_insert_select_to_rmt_limit(started_cluster, cluster_name, l
 
     node1.query(f"SYSTEM SYNC REPLICA ON CLUSTER {cluster_name} {table}")
 
-    # Check whether we inserted at least something
     assert (
         int(
             node1.query(
