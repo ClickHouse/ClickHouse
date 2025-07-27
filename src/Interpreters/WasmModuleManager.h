@@ -23,7 +23,7 @@ namespace WebAssembly
 class WasmModuleManager
 {
 public:
-    WasmModuleManager(DiskPtr user_sciptrs_disk_, std::filesystem::path user_sciptrs_path_);
+    WasmModuleManager(DiskPtr user_sciptrs_disk_, std::filesystem::path user_sciptrs_path_, std::string_view engine_name);
 
     void saveModule(std::string_view module_name, std::string_view wasm_code, UInt256 expected_hash = {});
 

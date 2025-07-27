@@ -234,10 +234,13 @@ public:
     explicit WasmMemoryManagerV1(WasmCompartment * compartment_) : compartment(compartment_) { }
 
     WasmPtr createBuffer(WasmSizeT size) const override { return compartment->invoke<WasmPtr>(allocate_function_name, {size}); }
+    void destroyBuffer(WasmPtr handle) const override { compartment->invoke<void>(deallocate_function_name, {handle}); }
 
-    void destroyBuffer(WasmPtr ptr) const override { compartment->invoke<void>(deallocate_function_name, {ptr}); }
-
-    std::span<uint8_t> getMemoryView(WasmPtr ptr, WasmSizeT size) const override { return {compartment->getMemory(ptr, size), size}; }
+    std::span<uint8_t> getMemoryView(WasmPtr handle) const override
+    {
+        const auto & buffer = compartment->getRef<WasmBuffer>(handle);
+        return {compartment->getMemory(buffer.ptr, buffer.size), buffer.size};
+    }
 
 private:
     WasmCompartment * compartment;
@@ -306,7 +309,7 @@ public:
 
         auto wmm = std::make_unique<WasmMemoryManagerV1>(compartment);
 
-        WasmTypedMemoryHolder<WasmBuffer> wasm_data = nullptr;
+        WasmMemoryGuard wasm_data = nullptr;
         if (!block.empty())
         {
             WriteBufferFromOwnString buf;
@@ -315,30 +318,25 @@ public:
             buf.finalize();
 
             auto input_data = buf.stringView();
-            wasm_data = allocateInWasmMemory<WasmBuffer>(wmm.get(), input_data.size());
-            wasm_data.ref()->size = static_cast<WasmSizeT>(input_data.size());
-            if (!wasm_data || wasm_data.ref()->size != input_data.size())
-                throw Exception(
-                    ErrorCodes::WASM_ERROR,
-                    "Cannot allocate buffer of size {}, got buffer of size {}. "
-                    "Maybe '{}' function implementation in WebAssembly module is incorrect",
-                    input_data.size(),
-                    wasm_data.ref()->size,
-                    WasmMemoryManagerV1::allocate_function_name);
+            wasm_data = allocateInWasmMemory(wmm.get(), input_data.size());
+            auto wasm_mem = wasm_data.getMemoryView();
 
-            auto * wasm_mem = compartment->getMemory(wasm_data.ref()->ptr, wasm_data.ref()->size);
-            std::copy(input_data.data(), input_data.data() + input_data.size(), wasm_mem);
+            if (wasm_mem.size() != input_data.size())
+                throw Exception(ErrorCodes::WASM_ERROR,
+                    "Cannot allocate buffer of size {}, got {} "
+                    "Maybe '{}' function implementation in WebAssembly module is incorrect",
+                    input_data.size(), wasm_mem.size(), WasmMemoryManagerV1::allocate_function_name);
+
+            std::copy(input_data.data(), input_data.data() + input_data.size(), wasm_mem.begin());
         }
 
-        auto result_ptr = compartment->invoke<WasmPtr>(function_name, {wasm_data.getPtr(), static_cast<WasmSizeT>(num_rows)});
+        auto result_ptr = compartment->invoke<WasmPtr>(function_name, {wasm_data.getHandle(), static_cast<WasmSizeT>(num_rows)});
         if (result_ptr == 0)
             throw Exception(ErrorCodes::WASM_ERROR, "WebAssembly function '{}' returned nullptr", function_name);
 
-        WasmTypedMemoryHolder<WasmBuffer> result(wmm.get(), result_ptr);
-
-        WasmSizeT result_size = result.ref()->size;
-        auto * result_data = compartment->getMemory(result.ref()->ptr, result_size);
-        ReadBufferFromMemory inbuf(result_data, result_size);
+        WasmMemoryGuard result(wmm.get(), result_ptr);
+        auto result_data = result.getMemoryView();
+        ReadBufferFromMemory inbuf(result_data.data(), result_data.size());
 
         Block result_header({ColumnWithTypeAndName(nullptr, result_type, "result")});
         auto pipeline = QueryPipeline(
@@ -356,7 +354,6 @@ public:
         return std::move(result_columns[0]);
     }
 };
-
 
 std::unique_ptr<UserDefinedWebAssemblyFunction> UserDefinedWebAssemblyFunction::create(
     std::shared_ptr<WebAssembly::WasmModule> wasm_module_,

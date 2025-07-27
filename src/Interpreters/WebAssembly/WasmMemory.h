@@ -23,8 +23,8 @@ class WasmMemoryManager
 {
 public:
     virtual WasmPtr createBuffer(WasmSizeT size) const = 0;
-    virtual void destroyBuffer(WasmPtr ptr) const = 0;
-    virtual std::span<uint8_t> getMemoryView(WasmPtr ptr, WasmSizeT size) const = 0;
+    virtual void destroyBuffer(WasmPtr handle) const = 0;
+    virtual std::span<uint8_t> getMemoryView(WasmPtr handle) const = 0;
 
     virtual ~WasmMemoryManager() = default;
 };
@@ -48,7 +48,8 @@ public:
 
     operator bool() const { return ptr != 0; } /// NOLINT
 
-    WasmPtr getPtr() const { return ptr; }
+    std::span<uint8_t> getMemoryView() const { return wmm->getMemoryView(ptr); }
+    WasmPtr getHandle() const { return ptr; }
 
 protected:
     WasmPtr ptr = 0;
@@ -56,29 +57,6 @@ protected:
     const WasmMemoryManager * wmm = nullptr;
 };
 
-
-template <typename T>
-class WasmTypedMemoryHolder : public WasmMemoryGuard
-{
-public:
-    using WasmMemoryGuard::WasmMemoryGuard;
-
-    WasmTypedMemoryHolder(const WasmMemoryManager * wmm_, WasmPtr ptr_) : WasmMemoryGuard(wmm_, ptr_) { }
-
-    explicit WasmTypedMemoryHolder(WasmMemoryGuard && holder) : WasmMemoryGuard(std::move(holder)) { }
-    T * ref() const { return reinterpret_cast<T *>(wmm->getMemoryView(ptr, sizeof(T)).data()); }
-};
-
-template <typename T>
-WasmTypedMemoryHolder<T> allocateInWasmMemory(const WasmMemoryManager * wmm, size_t size)
-{
-    if (size > std::numeric_limits<WasmSizeT>::max())
-        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Data is too large for wasm, size: {}", size);
-
-    auto buf = wmm->createBuffer(static_cast<WasmSizeT>(size));
-    if (buf == 0)
-        throw Exception(ErrorCodes::WASM_ERROR, "Cannot allocate buffer of size {}", size);
-    return WasmTypedMemoryHolder<T>(wmm, buf);
-}
+WasmMemoryGuard allocateInWasmMemory(const WasmMemoryManager * wmm, size_t size);
 
 }

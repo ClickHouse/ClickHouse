@@ -20,6 +20,8 @@ public:
     virtual ~WasmCompartment() = default;
 
     virtual uint8_t * getMemory(WasmPtr ptr, WasmSizeT size) = 0;
+    template <typename T> T & getRef(WasmPtr ptr) { return *reinterpret_cast<T *>(getMemory(ptr, sizeof(T))); }
+
     virtual WasmPtr growMemory(WasmSizeT num_pages) = 0;
 
     /// Returns the current memory size in bytes
