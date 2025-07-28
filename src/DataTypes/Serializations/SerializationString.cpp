@@ -159,7 +159,7 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
         if constexpr (UNROLL_TIMES <= 3)
         {
             /// Optimistic case when there are many strings less than 128 bytes in size:
-            auto small_strings_begin = istr.position() + 1;
+            const auto * small_strings_begin = istr.position() + 1;
             size_t prev_offset = offset;
             while (istr.available() && i < limit)
             {
