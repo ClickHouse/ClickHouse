@@ -13,7 +13,7 @@ from helpers.mock_servers import start_mock_servers
 
 RESOLVER_CONTAINER_NAME = "resolver"
 RESOLVER_PORT = 8080
-CONNECT_TIMEOUT_MICROSECONDS = 1000000
+CONNECT_TIMEOUT_MICROSECONDS = 500000
 
 
 # Runs custom python-based S3 endpoint.
@@ -163,36 +163,22 @@ def test_latency_log(cluster):
             ), "All counters in latency log should be in non-decreasing order"
             prev = curr_cnt
 
-    below_second_connect_time_cnt = 0
-    other_connect_time_cnt = 0
-
-    # Count connect times that are below connect timeout, and then we check that
-    # for requests with connection timeout error we have correct latency log entries.
-    # Also we expect no connection timeout for requests to minio.
+    # We cannot properly check connect timeouts because we will
+    # have almost random amount of them, because of usage of bottle server
+    # as "slow mock S3 endpoint". So we just check that we have some connect
+    # times.
     for i, (bucket, cnt) in enumerate(connect_times_after):
         cnt_before = connect_times_before[i][1]
 
-        if bucket < CONNECT_TIMEOUT_MICROSECONDS:
-            below_second_connect_time_cnt = cnt - cnt_before
-        else:
-            other_connect_time_cnt = cnt - cnt_before
-            break
+        # We only have more reconnects, number doesn't decrease.
+        assert cnt >= cnt_before
+        if i > 0:
+            assert cnt >= connect_times_after[i - 1][1]
 
-    logging.debug(
-        "Below second connect time cnt - %d, other connect time cnt - %d",
-        below_second_connect_time_cnt,
-        other_connect_time_cnt,
-    )
-    assert (
-        below_second_connect_time_cnt + connect_timed_out == other_connect_time_cnt
-    ), "Number of connection timed out requests does not match the number of such requests in the latency log"
+        if i >= 1:
+            # We should have at least some connects >= 10 millisecond
+            assert cnt > 0
 
-    # Check that the number of requests to resolver is not greater than the number of such requests in the latency log.
-    # We can't check for equality, because there are requests coming to minio, and we don't know the exact number of connections
-    # to minio, as such connections can be reused.
-    assert (
-        resolver_requests_cnt + connect_timed_out <= connect_times_after[-1][1]
-    ), "Number of requests to resolver should not be greater than the number of max connect time requests in the latency log"
 
     # We won't record latency for the first byte if there was a connection error, so it is possible to have no requests in the first byte write
     # latency log for the second attempt, but there definitely should be something for second+ attempt.

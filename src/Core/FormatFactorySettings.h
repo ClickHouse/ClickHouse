@@ -891,6 +891,16 @@ When enabled, values of complex data types like Tuple/Array/Map in JSON output f
 
 Enabled by default.
 )", 0) \
+    DECLARE(Bool, output_format_json_map_as_array_of_tuples, false, R"(
+Serialize maps columns as JSON arrays of tuples.
+
+Disabled by default.
+)", 0) \
+    DECLARE(Bool, input_format_json_map_as_array_of_tuples, false, R"(
+Deserialize maps columns as JSON arrays of tuples.
+
+Disabled by default.
+)", 0) \
     \
     DECLARE(String, format_json_object_each_row_column_for_object_name, "", R"(
 The name of column that will be used for storing/writing object names in [JSONObjectEachRow](/interfaces/formats/JSONObjectEachRow) format.
@@ -1023,6 +1033,9 @@ Where in the parquet file to place the bloom filters. Bloom filters will be writ
 )", 0) \
     DECLARE(Bool, output_format_parquet_datetime_as_uint32, false, R"(
 Write DateTime values as raw unix timestamp (read back as UInt32), instead of converting to milliseconds (read back as DateTime64(3)).
+)", 0) \
+    DECLARE(Bool, output_format_parquet_enum_as_byte_array, false, R"(
+Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM
 )", 0) \
     DECLARE(String, output_format_avro_codec, "", R"(
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.

@@ -84,7 +84,6 @@ SELECT * FROM url('http://data/path/date=*/country=*/code=*/*.parquet') WHERE _d
 
 `url` function requires `CREATE TEMPORARY TABLE` permission. As such - it'll not work for users with [readonly](/operations/settings/permissions-for-queries#readonly) = 1 setting. At least readonly = 2 is required.
 
-
 ## Related {#related}
 
 - [Virtual columns](/engines/table-engines/index.md#table_engines-virtual_columns)

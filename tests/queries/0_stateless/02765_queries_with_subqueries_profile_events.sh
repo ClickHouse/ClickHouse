@@ -18,7 +18,7 @@ for enable_analyzer in 0 1; do
     query_id="$(random_str 10)"
     query="INSERT INTO input SELECT * FROM numbers(1)"
     echo "$query"
-    $CLICKHOUSE_CLIENT --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "$query"
+    $CLICKHOUSE_CLIENT --parallel_distributed_insert_select=0 --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "$query"
     $CLICKHOUSE_CLIENT -m -q "
         SYSTEM FLUSH LOGS query_log;
         SELECT

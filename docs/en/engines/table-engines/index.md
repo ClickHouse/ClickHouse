@@ -7,7 +7,7 @@ toc_title: 'Introduction'
 title: 'Table Engines'
 ---
 
-# Table Engines
+# Table engines
 
 The table engine (type of table) determines:
 
@@ -18,7 +18,7 @@ The table engine (type of table) determines:
 - Whether multithread request execution is possible.
 - Data replication parameters.
 
-## Engine Families {#engine-families}
+## Engine families {#engine-families}
 
 ### MergeTree {#mergetree}
 
@@ -49,7 +49,7 @@ Engines in the family:
 | [StripeLog](/engines/table-engines/log-family/stripelog) |
 | [Log](/engines/table-engines/log-family/log)                   |
 
-### Integration Engines {#integration-engines}
+### Integration engines {#integration-engines}
 
 Engines for communicating with other data storage and processing systems.
 
@@ -71,7 +71,7 @@ Engines in the family:
 | [S3Queue](../../engines/table-engines/integrations/s3queue.md)                  |
 | [TimeSeries](../../engines/table-engines/integrations/time-series.md)           |
 
-### Special Engines {#special-engines}
+### Special engines {#special-engines}
 
 Engines in the family:
 
@@ -94,7 +94,7 @@ Engines in the family:
 | [KeeperMap](/engines/table-engines/special/keeper-map)        |
 | [FileLog](/engines/table-engines/special/filelog)                                                   |
 
-## Virtual Columns {#table_engines-virtual_columns}
+## Virtual columns {#table_engines-virtual_columns}
 
 A virtual column is an integral table engine attribute that is defined in the engine source code.
 
