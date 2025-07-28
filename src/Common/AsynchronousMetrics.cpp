@@ -651,18 +651,11 @@ void AsynchronousMetrics::applyCgroupCPUMetricsUpdate(
 {
     new_values["CGroupUserTime"]
         = {delta_values.user * multiplier,
-           "The ratio of time the CPU core was running userspace code. This is a system-wide metric, it includes all the processes on the "
-           "host machine, not just clickhouse-server."
+           "The ratio of time the CPU core was running userspace code."
            " This includes also the time when the CPU was under-utilized due to the reasons internal to the CPU (memory loads, pipeline "
-           "stalls, branch mispredictions, running another SMT core)."
-           " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
-           "them [0..num cores]."};
+           "stalls, branch mispredictions, running another SMT core)."};
     new_values["CGroupSystemTime"]
-        = {delta_values.system * multiplier,
-           "The ratio of time the CPU core was running OS kernel (system) code. This is a system-wide metric, it includes all the "
-           "processes on the host machine, not just clickhouse-server."
-           " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
-           "them [0..num cores]."};
+        = {delta_values.system * multiplier, "The ratio of time the CPU core was running OS kernel (system) code."};
 }
 
 void AsynchronousMetrics::applyCPUMetricsUpdate(
@@ -748,14 +741,14 @@ void AsynchronousMetrics::applyCgroupNormalizedCPUMetricsUpdate(
 
     new_values["CGroupUserTimeNormalized"]
         = {delta_values_all_cpus.user * multiplier / num_cpus_to_normalize,
-           "The value is similar to `OSUserTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
-           "of the number of cores."
+           "The value is similar to `CGroupUserTime` but divided by the number of available CPU cores to be measured in the [0..1] "
+           "interval regardless of the number of cores."
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
            "non-uniform, and still get the average resource utilization metric."};
     new_values["CGroupSystemTimeNormalized"]
         = {delta_values_all_cpus.system * multiplier / num_cpus_to_normalize,
-           "The value is similar to `OSSystemTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
-           "of the number of cores."
+           "The value is similar to `CGroupSystemTime` but divided by the number of available CPU cores to be measured in the [0..1] "
+           "interval regardless of the number of cores."
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
            "non-uniform, and still get the average resource utilization metric."};
 }
