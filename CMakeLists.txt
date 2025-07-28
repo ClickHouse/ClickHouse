@@ -229,6 +229,8 @@ if (SPLIT_DEBUG_SYMBOLS)
     set(SPLIT_DEBUG_SYMBOLS_DIR "stripped" CACHE STRING "A separate directory for stripped information")
 endif()
 
+option(BUILD_STRIPPED_BINARY "Build stripped binary (clickhouse-stripped)" OFF)
+
 cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd
 
 
@@ -297,9 +299,8 @@ set (CMAKE_C_STANDARD_REQUIRED ON)
 # See https://reviews.llvm.org/D112921
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
 
-# falign-functions=32 prevents from random performance regressions with the code change. Thus, providing more stable
-# benchmarks.
-set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
+# falign-functions=64 prevents from random performance regressions with the code change. Thus, providing more stable benchmarks.
+set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64")
 
 if (ARCH_AMD64)
     # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
@@ -397,15 +398,6 @@ elseif (OS_FREEBSD)
 endif ()
 link_libraries(global-group)
 target_link_libraries(global-group INTERFACE $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>)
-
-option (ENABLE_GWP_ASAN "Enable Gwp-Asan" ON)
-# We use mmap for allocations more heavily in debug builds,
-# but GWP-ASan also wants to use mmap frequently,
-# and due to a large number of memory mappings,
-# it does not work together well.
-if ((NOT OS_LINUX AND NOT OS_ANDROID) OR (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG") OR SANITIZE)
-    set(ENABLE_GWP_ASAN OFF)
-endif ()
 
 option (ENABLE_LIBFIU "Enable libfiu" ON)
 

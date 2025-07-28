@@ -15,6 +15,9 @@
 #include <Poco/String.h>
 #include <string_view>
 
+#if USE_REPLXX
+namespace replxx { char const * ansi_color(Replxx::Color); }
+#endif
 
 namespace DB
 {
@@ -406,6 +409,73 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     {
         ReplxxLineReader::setLastIsDelimiter(false);
     }
+}
+
+String highlighted(const String & query, const Context & context)
+{
+    // Issue: https://github.com/ClickHouse/ClickHouse/issues/83987
+    /// Previously utf-8 code points were calculated in the following way:
+    /// size_t num_code_points = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(query.data()), query.size());
+    /// But, `UTF8::countCodePoints` and `UTF8::seqLength` seem to handle invalid UTF-8 sequences inconsistently
+    /// (e.g., hex literals like x'A0'), causing count mismatches and crashes.
+    /// For a quick fix, since the highlight function uses `UTF8::seqLength` for iteration, use the same logic for
+    /// counting to ensure consistency when invalid UTF-8 bytes are detected (use UTF8::countCodePoints for all other
+    /// cases to mainly for performance concerns).
+    /// TODO: @bharatnc Fix UTF8::countCodePoints to handle invalid UTF-8 sequences consistently with seqLength so that
+    /// this logic can be removed.
+    bool has_invalid_utf8 = false;
+    for (const char c : query)
+    {
+        /// Standalone UTF-8 continuation bytes (0x80-0xBF, e.g. 0xA0 from hex literals)
+        /// cause countCodePoints/seqLength inconsistency.
+        if (static_cast<unsigned char>(c) >= 0x80 && static_cast<unsigned char>(c) <= 0xBF)
+        {
+            has_invalid_utf8 = true;
+            break;
+        }
+    }
+    size_t num_code_points;
+    if (has_invalid_utf8)
+    {
+        num_code_points = 0;
+        const char * pos = query.data();
+        const char * end = pos + query.size();
+        while (pos < end)
+        {
+            pos += UTF8::seqLength(*pos);
+            ++num_code_points;
+        }
+    }
+    else
+        num_code_points = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(query.data()), query.size());
+
+    std::vector<replxx::Replxx::Color> colors(num_code_points, replxx::Replxx::Color::DEFAULT);
+    highlight(query, colors, context, 0);
+
+    String res;
+    size_t query_size = query.size();
+    res.reserve(query_size * 2);
+
+    size_t byte_pos = 0;
+    size_t code_point_pos = 0;
+    replxx::Replxx::Color prev_color = replxx::Replxx::Color::DEFAULT;
+    while (byte_pos < query_size)
+    {
+        auto curr_color = colors[code_point_pos];
+        if (curr_color != prev_color)
+        {
+            res += replxx::ansi_color(curr_color);
+            prev_color = curr_color;
+        }
+        size_t code_point_length = UTF8::seqLength(query[byte_pos]);
+        res.append(query.data() + byte_pos, code_point_length);
+        byte_pos += code_point_length;
+        ++code_point_pos;
+    }
+    if (replxx::Replxx::Color::DEFAULT != prev_color)
+        res += replxx::ansi_color(replxx::Replxx::Color::DEFAULT);
+
+    return res;
 }
 #endif
 

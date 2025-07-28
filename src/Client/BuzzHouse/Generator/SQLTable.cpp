@@ -218,20 +218,21 @@ void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow
     this->levels[this->current_level].rels.emplace_back(rel);
 }
 
-SQLRelation StatementGenerator::createViewRelation(const String & rel_name, const size_t ncols)
+SQLRelation StatementGenerator::createViewRelation(const String & rel_name, const SQLView & v)
 {
     SQLRelation rel(rel_name);
 
-    for (size_t i = 0; i < ncols; i++)
+    assert(!v.cols.empty());
+    for (const auto & entry : v.cols)
     {
-        rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(i)}));
+        rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(entry)}));
     }
     return rel;
 }
 
 void StatementGenerator::addViewRelation(const String & rel_name, const SQLView & v)
 {
-    const SQLRelation rel = createViewRelation(rel_name, v.cols.size());
+    const SQLRelation rel = createViewRelation(rel_name, v);
 
     if (rel_name.empty())
     {
@@ -333,17 +334,6 @@ void StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl
                     std::uniform_int_distribution<uint32_t> next_dist1(1, 28);
                     cp->add_params()->set_ival(next_dist1(rg.generator));
                     cp->add_params()->set_ival(rg.nextBool() ? 4 : 9);
-                }
-                break;
-            case COMP_SZ3:
-                if (rg.nextBool())
-                {
-                    static const DB::Strings & algorithms = {"ALGO_LORENZO_REG", "ALGO_INTERP_LORENZO", "ALGO_INTERP"};
-                    static const DB::Strings & errorBounds = {"ABS", "REL", "PSNR", "ABS_AND_REL"};
-
-                    cp->add_params()->set_sval(rg.pickRandomly(algorithms));
-                    cp->add_params()->set_sval(rg.pickRandomly(errorBounds));
-                    cp->add_params()->set_dval(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 1.0));
                 }
                 break;
             default:
@@ -923,17 +913,21 @@ void StatementGenerator::generateEngineDetails(
     const bool has_tables = collectionHas<SQLTable>(hasTableOrView<SQLTable>(b));
     const bool has_views = collectionHas<SQLView>(hasTableOrView<SQLView>(b));
     const bool has_dictionaries = collectionHas<SQLDictionary>(hasTableOrView<SQLDictionary>(b));
+    const bool allow_shared_tbl = supports_cloud_features && (fc.engine_mask & allow_shared) != 0;
+    static const DB::Strings & ObjectCompress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
 
     if (b.isMergeTreeFamily())
     {
-        if (te->has_engine() && !b.is_temp && (supports_cloud_features || replica_setup) && rg.nextSmallNumber() < 4)
+        const bool allow_replicated_tbl = replica_setup && (fc.engine_mask & allow_replicated) != 0;
+
+        if (te->has_engine() && !b.is_temp && (allow_replicated_tbl || allow_shared_tbl) && rg.nextSmallNumber() < 4)
         {
             chassert(this->ids.empty());
-            if (replica_setup)
+            if (allow_replicated_tbl)
             {
                 this->ids.emplace_back(TReplicated);
             }
-            if (supports_cloud_features)
+            if (allow_shared_tbl)
             {
                 this->ids.emplace_back(TShared);
             }
@@ -1085,18 +1079,16 @@ void StatementGenerator::generateEngineDetails(
         }
         connections.createExternalDatabaseTable(rg, next, b, entries, te);
     }
-    else if (te->has_engine() && (b.isAnyS3Engine() || b.isHudiEngine() || b.isDeltaLakeS3Engine() || b.isIcebergS3Engine()))
+    else if (te->has_engine() && b.isAnyS3Engine())
     {
         connections.createExternalDatabaseTable(rg, IntegrationCall::MinIO, b, entries, te);
-        if (b.isAnyS3Engine() || b.isIcebergS3Engine())
+        if (b.isAnyS3Engine())
         {
             b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
             te->add_params()->set_in_out(b.file_format);
             if (rg.nextSmallNumber() < 4)
             {
-                static const DB::Strings & S3Compress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
-
-                b.file_comp = rg.pickRandomly(S3Compress);
+                b.file_comp = rg.pickRandomly(ObjectCompress);
                 te->add_params()->set_svalue(b.file_comp);
             }
             if (b.isS3Engine() && rg.nextSmallNumber() < 5)
@@ -1209,9 +1201,7 @@ void StatementGenerator::generateEngineDetails(
         te->add_params()->set_in_out(b.file_format);
         if (rg.nextSmallNumber() < 4)
         {
-            static const DB::Strings & AzureCompress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
-
-            b.file_comp = rg.pickRandomly(AzureCompress);
+            b.file_comp = rg.pickRandomly(ObjectCompress);
             te->add_params()->set_svalue(b.file_comp);
         }
         if (b.isAzureEngine() && rg.nextSmallNumber() < 5)
@@ -1243,7 +1233,49 @@ void StatementGenerator::generateEngineDetails(
             te->add_params()->set_num(keys_limit_dist(rg.generator));
         }
     }
-    if (te->has_engine() && (b.isJoinEngine() || b.isSetEngine()) && supports_cloud_features && rg.nextSmallNumber() < 5)
+    else if (te->has_engine() && (b.isAnyIcebergEngine() || b.isAnyDeltaLakeEngine()))
+    {
+        const bool isS3 = b.isIcebergS3Engine() || b.isDeltaLakeS3Engine();
+        const bool isAzure = b.isIcebergAzureEngine() || b.isDeltaLakeAzureEngine();
+        const std::filesystem::path & fpath = fc.server_file_path / ("/datalake/t" + std::to_string(b.tname));
+
+        if (isS3 || isAzure)
+        {
+            connections.createExternalDatabaseTable(rg, isS3 ? IntegrationCall::MinIO : IntegrationCall::Azurite, b, entries, te);
+        }
+        else
+        {
+            const std::filesystem::path & fname = fc.server_file_path / ("/file" + std::to_string(b.tname));
+            te->add_params()->set_svalue(fname.generic_string());
+        }
+        /// Set path
+        const String & key = isS3 ? "filename" : (isAzure ? "blob_path" : "path");
+        KeyValuePair * kvp = te->add_params()->mutable_kvalue();
+        kvp->set_key(key);
+        kvp->set_value(fpath.generic_string());
+
+        /// Set format
+        KeyValuePair * kvp2 = te->add_params()->mutable_kvalue();
+        b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
+        kvp2->set_key("format");
+        kvp2->set_value(InOutFormat_Name(b.file_format).substr(6));
+
+        /// Optional compression
+        if (rg.nextSmallNumber() < 4)
+        {
+            KeyValuePair * kvp3 = te->add_params()->mutable_kvalue();
+
+            b.file_comp = rg.pickRandomly(ObjectCompress);
+            kvp3->set_key("compression");
+            kvp3->set_value(b.file_comp);
+        }
+        /// Optional PARTITION BY
+        if (rg.nextSmallNumber() < 5)
+        {
+            generateTableKey(rg, rel, b.teng, false, te->mutable_partition_by());
+        }
+    }
+    if (te->has_engine() && (b.isJoinEngine() || b.isSetEngine()) && allow_shared_tbl && rg.nextSmallNumber() < 5)
     {
         b.toption = TShared;
         te->set_toption(b.toption.value());
@@ -1278,8 +1310,25 @@ void StatementGenerator::generateEngineDetails(
             sv->set_property("input_format_with_names_use_header");
             sv->set_value("0");
         }
-        else if (
-            b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TShared
+        if (b.isS3QueueEngine() || b.isAzureQueueEngine())
+        {
+            /// The mode setting is mandatory
+            svs = svs ? svs : te->mutable_setting_values();
+            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+
+            sv->set_property("mode");
+            sv->set_value(fmt::format("'{}ordered'", rg.nextBool() ? "un" : ""));
+        }
+        if (b.isAnyIcebergEngine())
+        {
+            /// The iceberg_format_version setting is mandatory?
+            svs = svs ? svs : te->mutable_setting_values();
+            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+
+            sv->set_property("iceberg_format_version");
+            sv->set_value(rg.nextBool() ? "1" : "2");
+        }
+        if (b.isMergeTreeFamily() && b.toption.has_value() && b.toption.value() == TShared
             && (!fc.storage_policies.empty() || !fc.keeper_disks.empty())
             && (!svs
                 || (svs->set_value().property() != "storage_policy" && svs->set_value().property() != "disk"
@@ -1588,13 +1637,6 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
                 buf += "]";
                 idef->add_params()->set_unescaped_sval(std::move(buf));
             }
-            if (rg.nextBool())
-            {
-                std::uniform_int_distribution<uint32_t> next_dist(8192, 4194304);
-
-                idef->add_params()->set_unescaped_sval(
-                    "max_rows_per_postings_list = " + std::to_string(rg.nextSmallNumber() < 3 ? 0 : next_dist(rg.generator)));
-            }
         }
         break;
         case IndexType::IDX_vector_similarity:
@@ -1711,98 +1753,191 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         b.teng = MergeTree;
         return;
     }
+
+    chassert(this->ids.empty());
+    this->ids.emplace_back(MergeTree);
+    if ((fc.engine_mask & allow_replacing_mergetree) != 0)
+    {
+        this->ids.emplace_back(ReplacingMergeTree);
+    }
+    if ((fc.engine_mask & allow_coalescing_mergetree) != 0)
+    {
+        this->ids.emplace_back(CoalescingMergeTree);
+    }
+    if ((fc.engine_mask & allow_summing_mergetree) != 0)
+    {
+        this->ids.emplace_back(SummingMergeTree);
+    }
+    if ((fc.engine_mask & allow_aggregating_mergetree) != 0)
+    {
+        this->ids.emplace_back(AggregatingMergeTree);
+    }
+    if ((fc.engine_mask & allow_collapsing_mergetree) != 0)
+    {
+        this->ids.emplace_back(CollapsingMergeTree);
+    }
+    if ((fc.engine_mask & allow_versioned_collapsing_mergetree) != 0)
+    {
+        this->ids.emplace_back(VersionedCollapsingMergeTree);
+    }
     if (noption < 6)
     {
-        std::uniform_int_distribution<uint32_t> table_engine(1, VersionedCollapsingMergeTree);
-        b.teng = static_cast<TableEngineValues>(table_engine(rg.generator));
+        b.teng = static_cast<TableEngineValues>(rg.pickRandomly(this->ids));
+        this->ids.clear();
         return;
     }
     const bool has_tables = collectionHas<SQLTable>(hasTableOrView<SQLTable>(b));
     const bool has_views = collectionHas<SQLView>(hasTableOrView<SQLView>(b));
     const bool has_dictionaries = collectionHas<SQLDictionary>(hasTableOrView<SQLDictionary>(b));
+    const bool allow_mysql_tbl = connections.hasMySQLConnection() && (fc.engine_mask & allow_mysql) != 0;
+    const bool allow_postgresql_tbl = connections.hasPostgreSQLConnection() && (fc.engine_mask & allow_postgresql) != 0;
 
-    chassert(this->ids.empty());
-    this->ids.emplace_back(MergeTree);
-    this->ids.emplace_back(ReplacingMergeTree);
-    this->ids.emplace_back(CoalescingMergeTree);
-    this->ids.emplace_back(SummingMergeTree);
-    this->ids.emplace_back(AggregatingMergeTree);
-    this->ids.emplace_back(CollapsingMergeTree);
-    this->ids.emplace_back(VersionedCollapsingMergeTree);
-    this->ids.emplace_back(File);
-    this->ids.emplace_back(Null);
-    this->ids.emplace_back(Set);
-    this->ids.emplace_back(Join);
-    this->ids.emplace_back(StripeLog);
-    this->ids.emplace_back(Log);
-    this->ids.emplace_back(TinyLog);
-    this->ids.emplace_back(EmbeddedRocksDB);
-    if (fc.allow_memory_tables)
+    if ((fc.engine_mask & allow_file) != 0)
+    {
+        this->ids.emplace_back(File);
+    }
+    if ((fc.engine_mask & allow_null) != 0)
+    {
+        this->ids.emplace_back(Null);
+    }
+    if ((fc.engine_mask & allow_setengine) != 0)
+    {
+        this->ids.emplace_back(Set);
+    }
+    if ((fc.engine_mask & allow_join) != 0)
+    {
+        this->ids.emplace_back(Join);
+    }
+    if ((fc.engine_mask & allow_stripelog) != 0)
+    {
+        this->ids.emplace_back(StripeLog);
+    }
+    if ((fc.engine_mask & allow_log) != 0)
+    {
+        this->ids.emplace_back(Log);
+    }
+    if ((fc.engine_mask & allow_tinylog) != 0)
+    {
+        this->ids.emplace_back(TinyLog);
+    }
+    if ((fc.engine_mask & allow_embedded_rocksdb) != 0)
+    {
+        this->ids.emplace_back(EmbeddedRocksDB);
+    }
+    if ((fc.engine_mask & allow_icebergLocal) != 0)
+    {
+        this->ids.emplace_back(IcebergLocal);
+    }
+    if ((fc.engine_mask & allow_deltalakelocal) != 0)
+    {
+        this->ids.emplace_back(DeltaLakeLocal);
+    }
+    if (fc.allow_memory_tables && (fc.engine_mask & allow_memory) != 0)
     {
         this->ids.emplace_back(Memory);
     }
-    if (!fc.keeper_map_path_prefix.empty())
+    if (!fc.keeper_map_path_prefix.empty() && (fc.engine_mask & allow_keepermap) != 0)
     {
         this->ids.emplace_back(KeeperMap);
     }
     if (has_tables || has_views || has_dictionaries)
     {
-        this->ids.emplace_back(Buffer);
-        if (!fc.clusters.empty())
+        if ((fc.engine_mask & allow_buffer) != 0)
+        {
+            this->ids.emplace_back(Buffer);
+        }
+        if (!fc.clusters.empty() && (fc.engine_mask & allow_distributed) != 0)
         {
             this->ids.emplace_back(Distributed);
         }
     }
-    if (has_dictionaries)
+    if ((fc.engine_mask & allow_dictionary) != 0 && has_dictionaries)
     {
         this->ids.emplace_back(Dictionary);
     }
     if (!b.is_deterministic)
     {
-        this->ids.emplace_back(Merge);
-        if (fc.allow_infinite_tables)
+        if ((fc.engine_mask & allow_merge) != 0)
+        {
+            this->ids.emplace_back(Merge);
+        }
+        if (fc.allow_infinite_tables && (fc.engine_mask & allow_generaterandom) != 0)
         {
             this->ids.emplace_back(GenerateRandom);
         }
     }
     if (use_external_integrations)
     {
-        if (connections.hasMySQLConnection())
+        if (allow_mysql_tbl)
         {
             this->ids.emplace_back(MySQL);
         }
         if (connections.hasPostgreSQLConnection())
         {
-            this->ids.emplace_back(PostgreSQL);
-            this->ids.emplace_back(MaterializedPostgreSQL);
+            if (allow_postgresql_tbl)
+            {
+                this->ids.emplace_back(PostgreSQL);
+            }
+            if ((fc.engine_mask & allow_materialized_postgresql) != 0)
+            {
+                this->ids.emplace_back(MaterializedPostgreSQL);
+            }
         }
-        if (connections.hasSQLiteConnection())
+        if (connections.hasSQLiteConnection() && (fc.engine_mask & allow_sqlite) != 0)
         {
             this->ids.emplace_back(SQLite);
         }
-        if (connections.hasMongoDBConnection())
+        if (connections.hasMongoDBConnection() && (fc.engine_mask & allow_mongodb) != 0)
         {
             this->ids.emplace_back(MongoDB);
         }
-        if (connections.hasRedisConnection())
+        if (connections.hasRedisConnection() && (fc.engine_mask & allow_redis) != 0)
         {
             this->ids.emplace_back(Redis);
         }
         if (connections.hasMinIOConnection())
         {
-            this->ids.emplace_back(S3);
-            this->ids.emplace_back(S3Queue);
+            if ((fc.engine_mask & allow_S3) != 0)
+            {
+                this->ids.emplace_back(S3);
+            }
+            if ((fc.engine_mask & allow_S3queue) != 0)
+            {
+                this->ids.emplace_back(S3Queue);
+            }
+            if ((fc.engine_mask & allow_icebergS3) != 0)
+            {
+                this->ids.emplace_back(IcebergS3);
+            }
+            if ((fc.engine_mask & allow_deltalakeS3) != 0)
+            {
+                this->ids.emplace_back(DeltaLakeS3);
+            }
         }
         if (connections.hasAzuriteConnection())
         {
-            this->ids.emplace_back(AzureBlobStorage);
-            this->ids.emplace_back(AzureQueue);
+            if ((fc.engine_mask & allow_AzureBlobStorage) != 0)
+            {
+                this->ids.emplace_back(AzureBlobStorage);
+            }
+            if ((fc.engine_mask & allow_AzureQueue) != 0)
+            {
+                this->ids.emplace_back(AzureQueue);
+            }
+            if ((fc.engine_mask & allow_icebergAzure) != 0)
+            {
+                this->ids.emplace_back(IcebergAzure);
+            }
+            if ((fc.engine_mask & allow_deltalakeAzure) != 0)
+            {
+                this->ids.emplace_back(DeltaLakeAzure);
+            }
         }
-        if (connections.hasHTTPConnection())
+        if (connections.hasHTTPConnection() && (fc.engine_mask & allow_URL) != 0)
         {
             this->ids.emplace_back(URL);
         }
-        if (connections.hasMySQLConnection() || connections.hasPostgreSQLConnection())
+        if (allow_mysql_tbl || allow_postgresql_tbl)
         {
             this->ids.emplace_back(ExternalDistributed);
         }
@@ -1812,7 +1947,7 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     this->ids.clear();
     if (b.isExternalDistributedEngine())
     {
-        b.sub = (!connections.hasMySQLConnection() || rg.nextBool()) ? PostgreSQL : MySQL;
+        b.sub = (!allow_mysql_tbl || rg.nextBool()) ? PostgreSQL : MySQL;
     }
 }
 
@@ -1964,6 +2099,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         {
             CreateTableSelect * cts = ct->mutable_as_select_stmt();
 
+            cts->set_paren(rg.nextSmallNumber() < 9);
             cts->set_empty(rg.nextSmallNumber() < 3);
             this->levels[this->current_level] = QueryLevel(this->current_level);
             generateSelect(
@@ -1972,7 +2108,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
                 false,
                 static_cast<uint32_t>(next.numberOfInsertableColumns()),
                 std::numeric_limits<uint32_t>::max(),
-                cts->mutable_sel());
+                cts->mutable_select());
             this->levels.clear();
         }
     }
@@ -1981,10 +2117,10 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         /// Create table as
         CreateTableAs * cta = ct->mutable_table_as();
         const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(tableLikeLambda));
-        const uint32_t limit
-            = rg.nextSmallNumber() < 8 ? 3 : (this->likeEngs.size() - (next.is_deterministic ? 3 : (fc.allow_infinite_tables ? 1 : 2)));
-        std::uniform_int_distribution<size_t> table_engine(0, limit);
-        TableEngineValues val = this->likeEngs[table_engine(rg.generator)];
+        const auto & toPick
+            = next.is_deterministic ? likeEngsDeterministic : (fc.allow_infinite_tables ? likeEngsInfinite : likeEngsNotDeterministic);
+        std::uniform_int_distribution<size_t> table_engine(0, toPick.size() - UINT32_C(1));
+        TableEngineValues val = toPick[table_engine(rg.generator)];
 
         next.teng = val;
         te->set_engine(val);
@@ -2222,7 +2358,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         /// Many types are not allowed in dictionaries
         this->next_type_mask = fc.type_mask
             & ~(allow_JSON | allow_variant | allow_dynamic | allow_tuple | allow_low_cardinality | allow_map | allow_enum | allow_geo
-                | allow_fixed_strings);
+                | allow_fixed_strings | allow_time);
         col.tp = randomNextType(rg, this->next_type_mask, col_counter, dc->mutable_type()->mutable_type());
         this->next_type_mask = type_mask_backup;
 

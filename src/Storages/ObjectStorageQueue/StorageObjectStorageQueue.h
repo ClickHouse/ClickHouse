@@ -21,11 +21,9 @@ struct ObjectStorageQueueSettings;
 class StorageObjectStorageQueue : public IStorage, WithContext
 {
 public:
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
-
     StorageObjectStorageQueue(
         std::unique_ptr<ObjectStorageQueueSettings> queue_settings_,
-        ConfigurationPtr configuration_,
+        StorageObjectStorageConfigurationPtr configuration_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -56,6 +54,8 @@ public:
         const AlterCommands & commands,
         ContextPtr local_context,
         AlterLockHolder & table_lock_holder) override;
+
+    void renameInMemory(const StorageID & new_table_id) override;
 
     const auto & getFormatName() const { return configuration->format; }
 
@@ -94,7 +94,6 @@ private:
     const std::string engine_name;
     const fs::path zk_path;
     const bool enable_logging_to_queue_log;
-
     mutable std::mutex mutex;
     UInt64 polling_min_timeout_ms TSA_GUARDED_BY(mutex);
     UInt64 polling_max_timeout_ms TSA_GUARDED_BY(mutex);
@@ -102,10 +101,12 @@ private:
     UInt64 list_objects_batch_size TSA_GUARDED_BY(mutex);
     bool enable_hash_ring_filtering TSA_GUARDED_BY(mutex);
     CommitSettings commit_settings TSA_GUARDED_BY(mutex);
+    size_t min_insert_block_size_rows_for_materialized_views TSA_GUARDED_BY(mutex);
+    size_t min_insert_block_size_bytes_for_materialized_views TSA_GUARDED_BY(mutex);
 
     std::unique_ptr<ObjectStorageQueueMetadata> temp_metadata;
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
-    ConfigurationPtr configuration;
+    StorageObjectStorageConfigurationPtr configuration;
     ObjectStoragePtr object_storage;
 
     const std::optional<FormatSettings> format_settings;

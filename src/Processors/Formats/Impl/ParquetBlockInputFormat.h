@@ -56,7 +56,7 @@ class ParquetBlockInputFormat : public IInputFormat
 public:
     ParquetBlockInputFormat(
         ReadBuffer & buf,
-        const Block & header,
+        SharedHeader header,
         const FormatSettings & format_settings_,
         FormatParserGroupPtr parser_group_,
         size_t min_bytes_for_seek_);
@@ -325,8 +325,7 @@ private:
 
     // These are only used when max_decoding_threads > 1.
     size_t row_group_batches_started = 0;
-    bool use_thread_pool = false;
-    std::shared_ptr<ShutdownHelper> shutdown = std::make_shared<ShutdownHelper>();
+    std::unique_ptr<ThreadPool> pool;
     std::shared_ptr<ThreadPool> io_pool;
 
     BlockMissingValues previous_block_missing_values;
@@ -335,6 +334,7 @@ private:
     std::exception_ptr background_exception = nullptr;
     std::atomic<int> is_stopped{0};
     bool is_initialized = false;
+    std::optional<std::unordered_map<String, String>> parquet_names_to_clickhouse;
 };
 
 class ParquetSchemaReader : public ISchemaReader
