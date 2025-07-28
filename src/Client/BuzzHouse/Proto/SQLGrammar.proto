@@ -2460,10 +2460,10 @@ message JoinClause {
 message FileFunc {
     enum FName {
         file = 1;
-        deltalakeLocal = 2;
+        deltaLakeLocal = 2;
         icebergLocal = 3;
         fileCluster = 4;
-        deltalakeLocalCluster = 5;
+        deltaLakeLocalCluster = 5;
         icebergLocalCluster = 6;
     }
     required FName fname = 1;
@@ -2562,11 +2562,11 @@ message S3Func {
     enum FName {
         gcs = 1;
         s3 = 2;
-        deltalakeS3 = 3;
+        deltaLakeS3 = 3;
         icebergS3 = 4;
         gcsCluster = 5; /// Add as an alignment
         s3Cluster = 6;
-        deltalakeS3Cluster = 7;
+        deltaLakeS3Cluster = 7;
         icebergS3Cluster = 8;
     }
     required FName fname = 1;
@@ -2582,9 +2582,9 @@ message S3Func {
 message AzureBlobStorageFunc {
     enum FName {
         azureBlobStorage = 1;
-        deltalakeAzure = 2;
+        deltaLakeAzure = 2;
         icebergAzure = 3;
-        deltalakeAzureCluster = 4;
+        deltaLakeAzureCluster = 4;
         azureBlobStorageCluster = 5;
         icebergAzureCluster = 6;
     }

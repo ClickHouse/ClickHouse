@@ -273,7 +273,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             const ServerCredentials & sc = fc.minio_server.value();
             S3Func_FName val = t.isAnyS3Engine()
                 ? S3Func_FName::S3Func_FName_s3
-                : (t.isIcebergS3Engine() ? S3Func_FName::S3Func_FName_icebergS3 : S3Func_FName::S3Func_FName_deltalakeS3);
+                : (t.isIcebergS3Engine() ? S3Func_FName::S3Func_FName_icebergS3 : S3Func_FName::S3Func_FName_deltaLakeS3);
 
             if (cluster.has_value())
             {
@@ -304,7 +304,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             AzureBlobStorageFunc_FName val = t.isAnyS3Engine()
                 ? AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_azureBlobStorage
                 : (t.isIcebergS3Engine() ? AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_icebergAzure
-                                         : AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_deltalakeAzure);
+                                         : AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_deltaLakeAzure);
 
             if (cluster.has_value())
             {
@@ -335,7 +335,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             FileFunc * ffunc = tfunc->mutable_file();
             FileFunc_FName val = t.isAnyS3Engine()
                 ? FileFunc_FName::FileFunc_FName_file
-                : (t.isIcebergS3Engine() ? FileFunc_FName::FileFunc_FName_icebergLocal : FileFunc_FName::FileFunc_FName_deltalakeLocal);
+                : (t.isIcebergS3Engine() ? FileFunc_FName::FileFunc_FName_icebergLocal : FileFunc_FName::FileFunc_FName_deltaLakeLocal);
 
             if (cluster.has_value())
             {
