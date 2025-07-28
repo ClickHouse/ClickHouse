@@ -61,6 +61,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"vector_search_with_rescoring", true, true, "New setting."},
             {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},
             {"write_full_path_in_iceberg_metadata", false, false, "New setting."},
+            {"output_format_orc_compression_block_size", 65536, 262144, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
