@@ -20,7 +20,6 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
-    extern const MergeTreeSettingsUInt64 max_digestion_size_per_segment;
 }
 
 namespace ErrorCodes
@@ -301,9 +300,10 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                         settings.query_write_settings));
 
         GinIndexStorePtr store = nullptr;
-        if (typeid_cast<const MergeTreeIndexGin *>(&*skip_index) != nullptr)
+        if (const auto* gin_skip_index = typeid_cast<const MergeTreeIndexGin *>(&*skip_index); gin_skip_index != nullptr)
         {
-            store = std::make_shared<GinIndexStore>(stream_name, data_part_storage, data_part_storage, (*storage_settings)[MergeTreeSetting::max_digestion_size_per_segment]);
+            store = std::make_shared<GinIndexStore>(
+                stream_name, data_part_storage, data_part_storage, gin_skip_index->gin_filter_params.segment_digestion_threshold_bytes);
             gin_index_stores[stream_name] = store;
         }
 

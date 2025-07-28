@@ -126,7 +126,11 @@ public:
     using GinIndexPostingsBuilderContainer = absl::flat_hash_map<std::string, GinIndexPostingsBuilderPtr>;
 
     GinIndexStore(const String & name_, DataPartStoragePtr storage_);
-    GinIndexStore(const String & name_, DataPartStoragePtr storage_, MutableDataPartStoragePtr data_part_storage_builder_, UInt64 max_digestion_size_);
+    GinIndexStore(
+        const String & name_,
+        DataPartStoragePtr storage_,
+        MutableDataPartStoragePtr data_part_storage_builder_,
+        UInt64 segment_digestion_threshold_bytes_);
 
     /// Check existence by checking the existence of file .gin_sid
     bool exists() const;
@@ -209,7 +213,7 @@ private:
     /// For the segmentation of Gin indexes
     GinIndexSegment current_segment;
     UInt64 current_size = 0;
-    const UInt64 max_digestion_size = 0;
+    const UInt64 segment_digestion_threshold_bytes = 0;
 
     /// File streams for segment, dictionaries and postings lists
     std::unique_ptr<WriteBufferFromFileBase> metadata_file_stream;

@@ -36,6 +36,7 @@ namespace ErrorCodes
 static const String ARGUMENT_TOKENIZER = "tokenizer";
 static const String ARGUMENT_NGRAM_SIZE = "ngram_size";
 static const String ARGUMENT_SEPARATORS = "separators";
+static const String ARGUMENT_SEGMENT_DIGESTION_THRESHOLD_BYTES = "segment_digestion_threshold_bytes";
 
 MergeTreeIndexGranuleGin::MergeTreeIndexGranuleGin(const String & index_name_)
     : index_name(index_name_)
@@ -106,12 +107,8 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorGin::getGranuleAndReset()
 
 void MergeTreeIndexAggregatorGin::addToGinFilter(UInt32 rowID, const char * data, size_t length, GinFilter & gin_filter)
 {
-    size_t cur = 0;
-    size_t token_start = 0;
-    size_t token_len = 0;
-
-    while (cur < length && token_extractor->nextInStringPadded(data, length, &cur, &token_start, &token_len))
-        gin_filter.add(data + token_start, token_len, rowID, store);
+    for (const auto& token : token_extractor->getTokens(data, length))
+        gin_filter.add(token.data(), token.length(), rowID, store);
 }
 
 void MergeTreeIndexAggregatorGin::update(const Block & block, size_t * pos, size_t limit)
@@ -131,20 +128,15 @@ void MergeTreeIndexAggregatorGin::update(const Block & block, size_t * pos, size
     auto start_row_id = store->getNextRowIDRange(rows_read);
 
     size_t current_position = *pos;
-    auto row_id = start_row_id;
-
-    bool need_to_write = false;
     for (size_t i = 0; i < rows_read; ++i)
     {
         auto ref = column->getDataAt(current_position + i);
-        addToGinFilter(row_id, ref.data, ref.size, granule->gin_filter);
+        addToGinFilter(start_row_id + i, ref.data, ref.size, granule->gin_filter);
         store->incrementCurrentSizeBy(ref.size);
-        need_to_write |= store->needToWriteCurrentSegment();
-        row_id++;
     }
     granule->gin_filter.addRowRangeToGinFilter(store->getCurrentSegmentID(), start_row_id, static_cast<UInt32>(start_row_id + rows_read - 1));
 
-    if (need_to_write)
+    if (store->needToWriteCurrentSegment())
         store->writeSegment();
 
     granule->has_elems = true;
@@ -769,7 +761,10 @@ MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index)
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Tokenizer {} not supported", tokenizer);
 
-    GinFilterParameters params(tokenizer, ngram_size, separators);
+    const UInt64 segment_digestion_threshold_bytes
+        = getOption<UInt64>(options, ARGUMENT_SEGMENT_DIGESTION_THRESHOLD_BYTES).value_or(UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES);
+
+    GinFilterParameters params(tokenizer, segment_digestion_threshold_bytes, ngram_size, separators);
     return std::make_shared<MergeTreeIndexGin>(index, params, std::move(token_extractor));
 }
 
@@ -819,8 +814,12 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
         }
     }
 
+    const UInt64 segment_digestion_threshold_bytes
+        = getOption<UInt64>(options, ARGUMENT_SEGMENT_DIGESTION_THRESHOLD_BYTES).value_or(UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES);
+
     GinFilterParameters gin_filter_params(
         tokenizer.value(),
+        segment_digestion_threshold_bytes,
         ngram_size,
         getOptionAsStringArray(options, ARGUMENT_SEPARATORS).value_or(std::vector<String>{" "})); /// Just validate
 

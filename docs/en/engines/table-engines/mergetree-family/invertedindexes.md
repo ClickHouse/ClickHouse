@@ -8,6 +8,7 @@ title: 'Full-text Search using Text Indexes'
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
 
 # Full-text search using text indexes
 
@@ -41,7 +42,7 @@ CREATE TABLE tab
 (
     `key` UInt64,
     `str` String,
-    INDEX inv_idx(str) TYPE text(tokenizer = 'default|ngram|split|no_op' [, ngram_size = N] [, separators = []]) [GRANULARITY 64]
+    INDEX inv_idx(str) TYPE text(tokenizer = 'default|ngram|split|no_op' [, ngram_size = N] [, separators = []] [, segment_digestion_threshold_bytes = B]) [GRANULARITY 64]
 )
 ENGINE = MergeTree
 ORDER BY key
@@ -74,6 +75,24 @@ To do so, pass the separators in order of descending length.
 For example, with separators = `['%21', '%']` string `%21abc` would be tokenized as `['abc']`, whereas separators = `['%', '%21']` would tokenize to `['21ac']` (which is likely not what you wanted).
 :::
 
+<details markdown="1">
+
+<summary>Advanced settings</summary>
+
+The segment digestion threshold can be specified via the optional `segment_digestion_threshold_bytes` parameter.
+The parameter is used to control the threshold of splitting text data into multiple segments.
+
+- `segment_digestion_threshold_bytes = 0`: Unlimited, a single segment will be created per index table part.
+- `segment_digestion_threshold_bytes = B`: Once segment size is reached to `B` bytes, it will be stored separately.
+- By default it's set to `0 (unlimited)`.
+
+:::note
+The parameter below is not recommended to change.
+We advise, if possible, to use the default setting until it's necessary. i.e. text data is much bigger than the available memory.
+:::
+
+</details>
+
 Being a type of skipping index, text indexes can be dropped or added to a column after table creation:
 
 ```sql
@@ -97,11 +116,14 @@ SELECT * from tab WHERE hasToken(str, 'Hello');
 ```
 
 Like for other secondary indices, each column part has its own text index.
-Furthermore, each text index is internally divided into "segments".
-The existence and size of the segments are generally transparent to users but the segment size determines the memory consumption during index construction (e.g. when two parts are merged).
-Configuration parameter `max_digestion_size_per_segment` (default: unlimited) controls the amount of data read from the underlying column before a new segment is created.
-The default value of the parameter provides a good balance between memory usage and performance for most use cases.
-Incrementing it raises the intermediate memory consumption for index construction but also improves lookup performance since fewer segments need to be checked on average to evaluate a query.
+
+### max_digestion_size_per_segment
+
+<DeprecatedBadge/>
+
+:::warning
+This table parameter which was used to control the max segment size of the text index is deprecated and removed.
+:::
 
 ### Functions support {#functions-support}
 
