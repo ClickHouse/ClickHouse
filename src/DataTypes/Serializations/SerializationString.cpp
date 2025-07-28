@@ -178,27 +178,24 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
 
         if (size)
         {
-#ifdef __SSE2__
             /// An optimistic branch in which more efficient copying is possible.
             if (offset + 16 * UNROLL_TIMES <= data.capacity() && istr.position() + size + 16 * UNROLL_TIMES <= istr.buffer().end())
             {
-                const __m128i * sse_src_pos = reinterpret_cast<const __m128i *>(istr.position());
-                const __m128i * sse_src_end = sse_src_pos + (size + (16 * UNROLL_TIMES - 1)) / 16 / UNROLL_TIMES * UNROLL_TIMES;
-                __m128i * sse_dst_pos = reinterpret_cast<__m128i *>(&data[offset - size - 1]);
+                const char * src_pos = istr.position();
+                const char * src_end = src_pos + (size + (16 * UNROLL_TIMES - 1)) / 16 / UNROLL_TIMES * UNROLL_TIMES;
+                auto * dst_pos = &data[offset - size - 1];
 
-                while (sse_src_pos < sse_src_end)
+                while (src_pos < src_end)
                 {
-                    for (size_t j = 0; j < UNROLL_TIMES; ++j)
-                        _mm_storeu_si128(sse_dst_pos + j, _mm_loadu_si128(sse_src_pos + j));
+                    __builtin_memcpy(dst_pos, src_pos, 16 * UNROLL_TIMES);
 
-                    sse_src_pos += UNROLL_TIMES;
-                    sse_dst_pos += UNROLL_TIMES;
+                    src_pos += 16 * UNROLL_TIMES;
+                    dst_pos += 16 * UNROLL_TIMES;
                 }
 
                 istr.position() += size;
             }
             else
-#endif
             {
                 istr.readStrict(reinterpret_cast<char*>(&data[offset - size - 1]), size);
             }
