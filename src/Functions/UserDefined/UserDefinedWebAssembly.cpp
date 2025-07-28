@@ -411,14 +411,21 @@ public:
 
     explicit WasmCompartmentPool(
         unsigned limit, std::shared_ptr<WebAssembly::WasmModule> wasm_module_, WebAssembly::WasmModule::Config module_cfg_)
-        : Base(limit, getLogger("WasmCompartmentPool")), wasm_module(std::move(wasm_module_)), module_cfg(std::move(module_cfg_))
+        : Base(limit, getLogger("WasmCompartmentPool"))
+        , wasm_module(std::move(wasm_module_))
+        , module_cfg(std::move(module_cfg_))
     {
+        LOG_DEBUG(log, "WasmCompartmentPool created with limit: {}", limit);
     }
 
     Entry acquire() { return get(-1); }
 
 protected:
-    ObjectPtr allocObject() override { return wasm_module->instantiate(module_cfg); }
+    ObjectPtr allocObject() override
+    {
+        LOG_DEBUG(log, "Allocating new WasmCompartment");
+        return wasm_module->instantiate(module_cfg);
+    }
 
 private:
     std::shared_ptr<WebAssembly::WasmModule> wasm_module;
@@ -706,7 +713,7 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
         /// Limit for the number of rows in a single block
         {"max_input_block_size", SettingUInt64Range{0, DEFAULT_BLOCK_SIZE * 10}.withDefault(0)},
         /// Maximum number of instances of the webassembly module can be run in parallel for a single function
-        {"max_instances", SettingUInt64Range{1, 128}.withDefault(128)},
+        {"max_instances", SettingUInt64Range{1, 1024}.withDefault(128)},
     };
 
     std::vector<String> getAllRegisteredNames() const override

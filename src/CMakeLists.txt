@@ -686,8 +686,8 @@ if (TARGET ch_contrib::wasmedge)
     dbms_target_link_libraries(PUBLIC ch_contrib::wasmedge)
 endif()
 
-if (TARGET ch_contrib::wasmtime_cpp)
-    dbms_target_link_libraries(PRIVATE ch_contrib::wasmtime_cpp)
+if (TARGET ch_contrib::wasmtime)
+    dbms_target_link_libraries(PRIVATE ch_contrib::wasmtime)
 endif()
 
 if (ENABLE_TESTS)

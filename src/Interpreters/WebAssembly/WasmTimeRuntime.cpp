@@ -167,9 +167,10 @@ void WasmTimeRuntime::setLogLevel(LogsLevel)
 class WasmTimeCompartment : public WasmCompartment
 {
 public:
-    explicit WasmTimeCompartment(wasmtime::Store && wasm_store, wasmtime::Instance && instance_)
+    explicit WasmTimeCompartment(wasmtime::Store && wasm_store, wasmtime::Instance && instance_, WasmModule::Config cfg_)
         : store(std::move(wasm_store))
         , instance(std::move(instance_))
+        , cfg(std::move(cfg_))
     {
         store.context().set_data(this);
     }
@@ -184,9 +185,7 @@ public:
             throw Exception(
                 ErrorCodes::WASM_ERROR,
                 "Cannot get memory at offset {} and size {} from wasm compartment memory with size {}",
-                ptr,
-                size,
-                memory_span.size());
+                ptr, size, memory_span.size());
         }
         return &memory_span[ptr];
     }
@@ -206,6 +205,13 @@ public:
 
     void invoke(std::string_view function_name, const std::vector<WasmVal> & params, std::vector<WasmVal> & returns) override
     {
+        if (cfg.fuel_limit)
+        {
+            auto result = store.context().set_fuel(cfg.fuel_limit);
+            if (!result)
+                throw Exception(ErrorCodes::WASM_ERROR, "Failed to set fuel to wasm instance: {}", result.err().message());
+        }
+
         auto get_function_result = instance.get(store, function_name);
         if (!get_function_result.has_value())
         {
@@ -267,6 +273,7 @@ private:
 
     std::optional<Exception> last_exception;
 
+    WasmModule::Config cfg;
     LoggerPtr log = getLogger("WasmTimeCompartment");
 };
 
@@ -428,7 +435,7 @@ public:
         if (!instantination_result)
             throw Exception(ErrorCodes::WASM_ERROR, "Failed to instantiate wasm module: {}", instantination_result.err().message());
 
-        return std::make_unique<WasmTimeCompartment>(std::move(store), std::move(instantination_result.ok()));
+        return std::make_unique<WasmTimeCompartment>(std::move(store), std::move(instantination_result.ok()), std::move(cfg));
     }
 
 

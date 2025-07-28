@@ -369,9 +369,6 @@
 [submodule "contrib/spdlog"]
 	path = contrib/spdlog
 	url = https://github.com/gabime/spdlog.git
-[submodule "contrib/wasmtime-cpp"]
-	path = contrib/wasmtime-cpp
-	url = https://github.com/bytecodealliance/wasmtime-cpp.git
 [submodule "contrib/wasmtime"]
 	path = contrib/wasmtime
 	url = https://github.com/bytecodealliance/wasmtime.git
