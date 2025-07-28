@@ -77,6 +77,9 @@ UInt32 getSupportedArchs()
     if (CPU::CPUFlagsCache::have_GenuineIntel)
         result |= static_cast<UInt32>(TargetArch::GenuineIntel);
 
+    if (CPU::CPUFlagsCache::have_SVE)
+        result |= static_cast<UInt32>(TargetArch::SVE);
+
     return result;
 }
 
@@ -91,6 +94,7 @@ String toString(TargetArch arch)
         case TargetArch::x86_64_icelake:        return "x86-64-icelake";
         case TargetArch::x86_64_sapphirerapids: return "x86-64-sapphirerapids";
         case TargetArch::GenuineIntel:          return "GenuineIntel";
+        case TargetArch::SVE:                   return "sve";
     }
 
     // This should never be reached. If it is, someone added a new TargetArch
