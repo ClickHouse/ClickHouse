@@ -270,8 +270,7 @@ public:
 
                 object = data_files.front();
                 data_files.pop_front();
-                if (data_files.empty())
-                    schedule_next_batch_cv.notify_one();
+                schedule_next_batch_cv.notify_one();
             }
 
             chassert(object);
