@@ -158,7 +158,7 @@ String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema
             case RootDataType::TIMESTAMP_WITHOUT_TIME_ZONE:
             case RootDataType::TIMESTAMP_WITH_LOCAL_TIME_ZONE: {
                 const auto * type = typeid_cast<const DataTypeDateTime64 *>(removeNullable(data_type.clickhouse_data_type).get());
-                LOG_DEBUG(
+                LOG_TEST(
                     &Poco::Logger::get("getPartitionString"), "getPrecision: {}, getScale: {}", type->getPrecision(), type->getScale());
                 return formatDateTime(partition.getTimestamp(i, type->getScale()), 3, type->getTimeZone());
             }
@@ -167,7 +167,7 @@ String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema
         }
     };
     std::vector<std::pair<String, String>> partition_entries;
-    LOG_DEBUG(&Poco::Logger::get("getPartitionString"), "table_schema.partition_keys size: {}", table_schema.partition_keys.size());
+    LOG_TEST(&Poco::Logger::get("getPartitionString"), "table_schema.partition_keys size: {}", table_schema.partition_keys.size());
     for (size_t i = 0; i < table_schema.partition_keys.size(); ++i)
     {
         std::vector<std::pair<String, String>> partitions;
@@ -182,7 +182,7 @@ String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema
         }
         auto field = table_schema.fields[it->second];
         auto field_value = get_partition_value(static_cast<Int32>(i), field.type);
-        LOG_DEBUG(&Poco::Logger::get("getPartitionString"), "key: {} value: {} type: {}", field.name, field_value, field.type.root_type);
+        LOG_TEST(&Poco::Logger::get("getPartitionString"), "key: {} value: {} type: {}", field.name, field_value, field.type.root_type);
         partition_entries.emplace_back(field.name, field_value);
     }
 
@@ -208,7 +208,7 @@ String getBucketPath(String partition, Int32 bucket, const PaimonTableSchema & t
     Paimon::BinaryRow binary_row(partition);
     String partition_string = getPartitionString(binary_row, table_schema, partition_default_name);
     String bucket_path = fmt::format("bucket-{}", bucket);
-    LOG_DEBUG(&Poco::Logger::get("getBucketPath"), "partition_string {}, bucket_path: {}", partition_string, bucket_path);
+    LOG_TEST(&Poco::Logger::get("getBucketPath"), "partition_string {}, bucket_path: {}", partition_string, bucket_path);
     if (!partition_string.empty())
     {
         bucket_path = partition_string + bucket_path;
