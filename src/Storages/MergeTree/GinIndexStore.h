@@ -150,7 +150,7 @@ public:
     void setPostingsBuilder(const String & term, GinIndexPostingsBuilderPtr builder) { current_postings[term] = builder; }
 
     /// Check if we need to write segment to Gin index files
-    bool needToWrite() const;
+    bool needToWriteCurrentSegment() const;
 
     /// Accumulate the size of text data which has been digested
     void incrementCurrentSizeBy(UInt64 sz) { current_size += sz; }

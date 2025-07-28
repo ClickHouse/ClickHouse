@@ -87,8 +87,8 @@ tier:        Production
 Row 4:
 ──────
 name:        max_digestion_size_per_segment
-value:       268435456
-default:     268435456
+value:       0
+default:     0
 changed:     0
 description: Max number of bytes to digest per segment to build GIN index.
 min:         ᴺᵁᴸᴸ

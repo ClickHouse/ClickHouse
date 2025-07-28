@@ -263,10 +263,11 @@ GinIndexStore::Format GinIndexStore::getVersion()
     return getFormatVersion(version);
 }
 
-bool GinIndexStore::needToWrite() const
+bool GinIndexStore::needToWriteCurrentSegment() const
 {
-    assert(max_digestion_size > 0);
-    return current_size > max_digestion_size;
+    /// max_digestion_size != 0 means GinIndexStore splits the index data into separate segments.
+    /// In case it's equal to 0 (zero), segment size is unlimited. Therefore, there will be a single segment.
+    return max_digestion_size != 0 && current_size > max_digestion_size;
 }
 
 void GinIndexStore::finalize()

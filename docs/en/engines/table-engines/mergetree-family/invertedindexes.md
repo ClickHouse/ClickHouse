@@ -99,7 +99,7 @@ SELECT * from tab WHERE hasToken(str, 'Hello');
 Like for other secondary indices, each column part has its own text index.
 Furthermore, each text index is internally divided into "segments".
 The existence and size of the segments are generally transparent to users but the segment size determines the memory consumption during index construction (e.g. when two parts are merged).
-Configuration parameter `max_digestion_size_per_segment` (default: 256 MB) controls the amount of data read from the underlying column before a new segment is created.
+Configuration parameter `max_digestion_size_per_segment` (default: unlimited) controls the amount of data read from the underlying column before a new segment is created.
 The default value of the parameter provides a good balance between memory usage and performance for most use cases.
 Incrementing it raises the intermediate memory consumption for index construction but also improves lookup performance since fewer segments need to be checked on average to evaluate a query.
 

@@ -65,7 +65,7 @@ namespace ErrorCodes
     Maximum number of data rows between the marks of an index. I.e how many rows
     correspond to one primary key value.
     )", 0) \
-    DECLARE(UInt64, max_digestion_size_per_segment, 256_MiB, R"(
+    DECLARE(UInt64, max_digestion_size_per_segment, 0, R"(
     Max number of bytes to digest per segment to build GIN index.
     )", 0) \
     \

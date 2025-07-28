@@ -139,9 +139,8 @@ void MergeTreeIndexAggregatorGin::update(const Block & block, size_t * pos, size
         auto ref = column->getDataAt(current_position + i);
         addToGinFilter(row_id, ref.data, ref.size, granule->gin_filter);
         store->incrementCurrentSizeBy(ref.size);
+        need_to_write |= store->needToWriteCurrentSegment();
         row_id++;
-        if (store->needToWrite())
-            need_to_write = true;
     }
     granule->gin_filter.addRowRangeToGinFilter(store->getCurrentSegmentID(), start_row_id, static_cast<UInt32>(start_row_id + rows_read - 1));
 
