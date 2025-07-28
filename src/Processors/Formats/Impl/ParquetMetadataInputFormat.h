@@ -62,14 +62,6 @@ public:
 
     void resetParser() override;
 
-    void setStorageRelatedUniqueKey(const Settings & settings, const String & key_) override;
-
-    struct Cache
-    {
-        String key;
-        bool use_cache = false;
-    };
-
 private:
     Chunk read() override;
 
@@ -86,8 +78,6 @@ private:
     const FormatSettings format_settings;
     bool done = false;
     std::atomic<int> is_stopped{0};
-
-    Cache metadata_cache;
 };
 
 class ParquetMetadataSchemaReader : public ISchemaReader
