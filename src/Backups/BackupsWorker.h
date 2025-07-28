@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config.h"
 #include <Backups/BackupOperationInfo.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Interpreters/Context_fwd.h>
@@ -98,6 +99,10 @@ private:
     struct RestoreStarter;
 
     BackupPtr openBackupForReading(const BackupInfo & backup_info, const RestoreSettings & restore_settings, const ContextPtr & context) const;
+
+#if CLICKHOUSE_CLOUD
+    BackupMutablePtr openBackupForUnlockSnapshot(const BackupInfo & backup_info, const ContextPtr & context) const;
+#endif
 
     void doRestore(
         const std::shared_ptr<ASTBackupQuery> & restore_query,

@@ -53,6 +53,13 @@ namespace S3AuthSetting
     extern const S3AuthSettingsBool use_adaptive_timeouts;
     extern const S3AuthSettingsBool use_environment_credentials;
     extern const S3AuthSettingsBool use_insecure_imds_request;
+
+    extern const S3AuthSettingsString role_arn;
+    extern const S3AuthSettingsString role_session_name;
+    extern const S3AuthSettingsString http_client;
+    extern const S3AuthSettingsString service_account;
+    extern const S3AuthSettingsString metadata_service;
+    extern const S3AuthSettingsString request_token_path;
 }
 
 namespace ErrorCodes
@@ -126,6 +133,11 @@ std::unique_ptr<S3::Client> getClient(
     client_configuration.http_keep_alive_timeout = auth_settings[S3AuthSetting::http_keep_alive_timeout];
     client_configuration.http_keep_alive_max_requests = auth_settings[S3AuthSetting::http_keep_alive_max_requests];
 
+    client_configuration.http_client = auth_settings[S3AuthSetting::http_client];
+    client_configuration.service_account = auth_settings[S3AuthSetting::service_account];
+    client_configuration.metadata_service = auth_settings[S3AuthSetting::metadata_service];
+    client_configuration.request_token_path = auth_settings[S3AuthSetting::request_token_path];
+
     client_configuration.endpointOverride = url.endpoint;
     client_configuration.s3_use_adaptive_timeouts = auth_settings[S3AuthSetting::use_adaptive_timeouts];
 
@@ -151,6 +163,9 @@ std::unique_ptr<S3::Client> getClient(
         auth_settings[S3AuthSetting::use_insecure_imds_request],
         auth_settings[S3AuthSetting::expiration_window_seconds],
         auth_settings[S3AuthSetting::no_sign_request],
+        auth_settings[S3AuthSetting::role_arn],
+        auth_settings[S3AuthSetting::role_session_name],
+        /*sts_endpoint_override=*/""
     };
 
     return S3::ClientFactory::instance().create(
