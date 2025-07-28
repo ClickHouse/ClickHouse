@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <optional>
 #include <base/types.h>
 #include <base/simd.h>
@@ -57,67 +58,54 @@ inline size_t seqLength(const UInt8 first_octet)
     return bits - 1 - first_zero;
 }
 
-/// Check if data contains invalid UTF-8 sequences that would cause inconsistency
-/// between SIMD-optimized counting and seqLength-based iteration
-inline bool hasInvalidUTF8(const UInt8 * data, size_t size)
-{
-    for (size_t i = 0; i < size; ++i)
-    {
-        /// Standalone UTF-8 continuation bytes (0x80-0xBF) cause counting inconsistency
-        if (data[i] >= 0x80 && data[i] <= 0xBF)
-            return true;
-    }
-    return false;
-}
-
 inline size_t countCodePoints(const UInt8 * data, size_t size)
 {
-    /// If data contains invalid UTF-8, use seqLength-based counting for consistency
-    if (hasInvalidUTF8(data, size))
-    {
-        size_t res = 0;
-        const auto * pos = data;
-        const auto * end = data + size;
-        
-        while (pos < end)
-        {
-            pos += seqLength(*pos);
-            ++res;
-        }
-        
-        return res;
-    }
+    const UInt8 * p   = data;
+    const UInt8 * end = data + size;
+    size_t        res = 0;
 
-    /// Fast path: use SIMD-optimized counting for valid UTF-8
-    size_t res = 0;
-    const auto * end = data + size;
-
+    /* ---------- SIMD fast path ---------- */
 #ifdef __SSE2__
-    constexpr auto bytes_sse = sizeof(__m128i);
-    const auto * src_end_sse = data + size / bytes_sse * bytes_sse;
+    constexpr size_t V = 16;
+    const UInt8 * simd_end = p + size / V * V;
 
-    const auto threshold = _mm_set1_epi8(0xBF);
+    const __m128i thr = _mm_set1_epi8(0xBF);
+    for (; p < simd_end; p += V)
+        res += __builtin_popcount(
+                 _mm_movemask_epi8(
+                     _mm_cmpgt_epi8(_mm_loadu_si128(
+                                        reinterpret_cast<const __m128i *>(p)),
+                                    thr)));
 
-    for (; data < src_end_sse; data += bytes_sse)
-        res += __builtin_popcount(_mm_movemask_epi8(
-            _mm_cmpgt_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(data)), threshold)));
 #elif defined(__aarch64__) && defined(__ARM_NEON)
-    constexpr auto bytes_sse = 16;
-    const auto * src_end_sse = data + size / bytes_sse * bytes_sse;
+    constexpr size_t V = 16;
+    const UInt8 * simd_end = p + size / V * V;
 
-    const auto threshold = vdupq_n_s8(0xBF);
-
-    for (; data < src_end_sse; data += bytes_sse)
-        res += std::popcount(getNibbleMask(vcgtq_s8(vld1q_s8(reinterpret_cast<const int8_t *>(data)), threshold)));
-    res >>= 2;
+    const int8x16_t thr = vdupq_n_s8(0xBF);
+    for (; p < simd_end; p += V)
+    {
+        uint8x16_t gt = vcgtq_s8(vld1q_s8(reinterpret_cast<const int8_t *>(p)), thr);
+        res += std::popcount(getNibbleMask(gt));   // 4 bits per byte
+    }
+    res >>= 2;   // convert nibble mask to 1‑bit mask, matching popcount
 #endif
 
-    for (; data < end; ++data) /// Skip UTF-8 continuation bytes.
-        res += static_cast<Int8>(*data) > static_cast<Int8>(0xBF);
+    /* ---------- tail fix‑up (≤19 bytes) ---------- */
+    const UInt8 * tail = (p >= data + 3) ? p - 3 : data;   // rewind 3 bytes
 
+    /* Remove any counts for the overlap bytes (they’ll be re‑parsed) */
+    for (const UInt8 * q = tail; q < p; ++q)
+        res -= static_cast<Int8>(*q) > static_cast<Int8>(0xBF);
+
+    while (tail < end)
+    {
+        size_t len = seqLength(*tail);
+        if (tail + len > end) len = 1;   // truncated / invalid
+        ++res;
+        tail += len;
+    }
     return res;
 }
-
 
 size_t convertCodePointToUTF8(int code_point, char * out_bytes, size_t out_length);
 std::optional<uint32_t> convertUTF8ToCodePoint(const char * in_bytes, size_t in_length);
