@@ -474,6 +474,8 @@ public:
     /// Node defined as RemoveException will not be deleted.
     bool tryRemoveChildrenRecursive(const std::string & path, bool probably_flat = false, RemoveException keep_child= RemoveException{});
 
+    bool tryRemoveLeafsAndEmptiedParentsRecursive(const std::string & root_path, const std::string & node_to_remove);
+
     /// Remove all children nodes (non recursive).
     void removeChildren(const std::string & path);
 

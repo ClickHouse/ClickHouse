@@ -195,6 +195,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool detach_old_local_parts_when_cloning_replica;
     extern const MergeTreeSettingsBool disable_detach_partition_for_zero_copy_replication;
     extern const MergeTreeSettingsBool disable_fetch_partition_for_zero_copy_replication;
+    extern const MergeTreeSettingsString disk;
     extern const MergeTreeSettingsBool enable_mixed_granularity_parts;
     extern const MergeTreeSettingsBool enable_replacing_merge_with_cleanup_for_min_age_to_force_merge;
     extern const MergeTreeSettingsBool enable_the_endpoint_id_with_zookeeper_name_prefix;
@@ -223,6 +224,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 replicated_deduplication_window;
     extern const MergeTreeSettingsUInt64 replicated_deduplication_window_for_async_inserts;
     extern const MergeTreeSettingsFloat replicated_max_ratio_of_wrong_parts;
+    extern const MergeTreeSettingsString storage_policy;
     extern const MergeTreeSettingsBool use_minimalistic_checksums_in_zookeeper;
     extern const MergeTreeSettingsBool use_minimalistic_part_header_in_zookeeper;
     extern const MergeTreeSettingsMilliseconds wait_for_unique_parts_send_before_shutdown_ms;
@@ -1289,15 +1291,14 @@ zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeperIfTableShutDown() c
     return maybe_new_zookeeper;
 }
 
-std::vector<String> StorageReplicatedMergeTree::getZookeeperZeroCopyLockPaths() const
+static std::vector<String> getZookeeperZeroCopyLockPathsImpl(const MergeTreeSettingsPtr settings, const StoragePolicyPtr storage_policy, const String & table_shared_id)
 {
-    const auto settings = getSettings();
     if (!(*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
     {
         return {};
     }
 
-    const auto & disks = getStoragePolicy()->getDisks();
+    const auto & disks = storage_policy->getDisks();
     std::set<String> disk_types_with_zero_copy;
     for (const auto & disk : disks)
     {
@@ -1307,8 +1308,6 @@ std::vector<String> StorageReplicatedMergeTree::getZookeeperZeroCopyLockPaths() 
         disk_types_with_zero_copy.insert(disk->getDataSourceDescription().toString());
     }
 
-    const auto actual_table_shared_id = getTableSharedID();
-
     std::vector<String> result;
     result.reserve(disk_types_with_zero_copy.size());
 
@@ -1317,10 +1316,15 @@ std::vector<String> StorageReplicatedMergeTree::getZookeeperZeroCopyLockPaths() 
         auto zero_copy = fmt::format("zero_copy_{}", disk_type);
         auto zero_copy_path = fs::path((*settings)[MergeTreeSetting::remote_fs_zero_copy_zookeeper_path].toString()) / zero_copy;
 
-        result.push_back(zero_copy_path / actual_table_shared_id);
+        result.push_back(zero_copy_path / table_shared_id);
     }
 
     return result;
+}
+
+std::vector<String> StorageReplicatedMergeTree::getZookeeperZeroCopyLockPaths() const
+{
+    return getZookeeperZeroCopyLockPathsImpl(getSettings(), getStoragePolicy(), getTableSharedID());
 }
 
 void StorageReplicatedMergeTree::dropZookeeperZeroCopyLockPaths(zkutil::ZooKeeperPtr zookeeper, std::vector<String> zero_copy_locks_paths,
@@ -1402,7 +1406,7 @@ void StorageReplicatedMergeTree::drop()
                 LOG_INFO(log, "Dropping table with non-zero lost_part_count equal to {}", lost_part_count);
         }
 
-        bool last_replica_dropped = dropReplica(zookeeper, zookeeper_info, log.load(), getSettings(), &has_metadata_in_zookeeper);
+        bool last_replica_dropped = dropReplica(zookeeper, zookeeper_info, log.load(), getSettings(), getContext(), &has_metadata_in_zookeeper);
         if (last_replica_dropped)
         {
             dropZookeeperZeroCopyLockPaths(zookeeper, zero_copy_locks_paths, log.load());
@@ -1413,7 +1417,7 @@ void StorageReplicatedMergeTree::drop()
 
 bool StorageReplicatedMergeTree::dropReplica(
     zkutil::ZooKeeperPtr zookeeper, const TableZnodeInfo & zookeeper_info, LoggerPtr logger,
-    MergeTreeSettingsPtr table_settings, std::optional<bool> * has_metadata_out)
+    MergeTreeSettingsPtr table_settings, ContextPtr context_, std::optional<bool> * has_metadata_out)
 {
     if (zookeeper->expired())
         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Table was not dropped because ZooKeeper session has expired.");
@@ -1481,6 +1485,37 @@ bool StorageReplicatedMergeTree::dropReplica(
 
         if (zookeeper->tryRemove(remote_replica_path) != Coordination::Error::ZOK)
             LOG_ERROR(logger, "Replica was not completely removed from ZooKeeper, {} still exists and may contain some garbage.", remote_replica_path);
+
+        MergeTreeSettingsPtr table_settings_to_clean_locks;
+        if (!table_settings && context_)
+            table_settings_to_clean_locks = std::make_shared<const MergeTreeSettings>(context_->getReplicatedMergeTreeSettings());
+        else
+            table_settings_to_clean_locks = table_settings;
+
+        if (table_settings_to_clean_locks)
+        {
+            /// TODO: more code deduplication
+            StoragePolicyPtr storage_policy;
+            if ((*table_settings_to_clean_locks)[MergeTreeSetting::disk].changed)
+                storage_policy = context_->getStoragePolicyFromDisk((*table_settings_to_clean_locks)[MergeTreeSetting::disk]);
+            else
+                storage_policy = context_->getStoragePolicy((*table_settings_to_clean_locks)[MergeTreeSetting::storage_policy]);
+
+            String zookeeper_table_id_path = fs::path(zookeeper_path) / "table_shared_id";
+            String table_shared_id;
+            if (!zookeeper->tryGet(zookeeper_table_id_path, table_shared_id))
+                LOG_TRACE(logger, "Shared ID for table doesn't exist in ZooKeeper on path {}, will not try to remove zero-copy locks.", zookeeper_table_id_path);
+            else
+            {
+                for (const auto & zero_copy_locks_root : getZookeeperZeroCopyLockPathsImpl(table_settings_to_clean_locks, storage_policy, table_shared_id))
+                {
+                    if (!zookeeper->exists(zero_copy_locks_root))
+                        LOG_TRACE(logger, "Didn't find any zero-copy locks at {}.", zero_copy_locks_root);
+                    else if (!zookeeper->tryRemoveLeafsAndEmptiedParentsRecursive(zero_copy_locks_root, zookeeper_info.replica_name))
+                        LOG_WARNING(logger, "Failed to remove all zero-copy locks for replica. Some locks may still exist.");
+                }
+            }
+        }
     }
 
     /// Check that `zookeeper_path` exists: it could have been deleted by another replica after execution of previous line.
