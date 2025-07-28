@@ -4,7 +4,6 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Sources/NullSource.h>
@@ -75,9 +74,9 @@ public:
     }
     String getName() const override { return "Numbers"; }
 
-    static SharedHeader createHeader(const std::string & column_name)
+    static Block createHeader(const std::string & column_name)
     {
-        return std::make_shared<const Block>(Block{ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), column_name)});
+        return {ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), column_name)};
     }
 
 protected:
@@ -423,7 +422,7 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
     size_t max_block_size_,
     size_t num_streams_)
     : SourceStepWithFilter(
-        std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(column_names_)),
+        storage_snapshot_->getSampleBlockForColumns(column_names_),
         column_names_,
         query_info_,
         storage_snapshot_,
@@ -450,8 +449,8 @@ void ReadFromSystemNumbersStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     if (pipe.empty())
     {
-        chassert(output_header != nullptr);
-        pipe = Pipe(std::make_shared<NullSource>(output_header));
+        assert(output_header != std::nullopt);
+        pipe = Pipe(std::make_shared<NullSource>(*output_header));
     }
 
     /// Add storage limits.

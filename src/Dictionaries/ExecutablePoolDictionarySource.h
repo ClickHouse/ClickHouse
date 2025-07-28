@@ -2,7 +2,7 @@
 
 
 #include <Core/Block.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>

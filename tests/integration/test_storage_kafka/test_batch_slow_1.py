@@ -106,8 +106,6 @@ def test_bad_reschedule(kafka_cluster, create_query_generator):
 
     instance.wait_for_log_line("Committed offset 20000")
 
-    logging.debug(f"Timestamps: {instance.query('SELECT max(consume_ts), min(consume_ts) FROM test.destination')}")
-
     assert (
         int(
             instance.query(
@@ -127,7 +125,7 @@ def test_bad_reschedule(kafka_cluster, create_query_generator):
 )
 def test_kafka_unavailable(kafka_cluster, create_query_generator, do_direct_read):
     number_of_messages = 20000
-    topic_name = "test_kafka_unavailable" + k.get_topic_postfix(create_query_generator)
+    topic_name = "test_bad_reschedule" + k.get_topic_postfix(create_query_generator)
     messages = [
         json.dumps({"key": j + 1, "value": j + 1}) for j in range(number_of_messages)
     ]
@@ -137,7 +135,7 @@ def test_kafka_unavailable(kafka_cluster, create_query_generator, do_direct_read
 
         with kafka_cluster.pause_container("kafka1"):
             create_query = create_query_generator(
-                "test_kafka_unavailable",
+                "test_bad_reschedule",
                 "key UInt64, value UInt64",
                 topic_list=topic_name,
                 consumer_group=topic_name,
@@ -146,15 +144,7 @@ def test_kafka_unavailable(kafka_cluster, create_query_generator, do_direct_read
             instance.query(
                 f"""
                 {create_query};
-            """
-            )
 
-            # First read from the table in case we should, to make sure it doesn't crash when the broker is unavailable
-            if do_direct_read:
-                instance.query("SELECT * FROM test.test_kafka_unavailable")
-
-            instance.query(
-                """
                 CREATE MATERIALIZED VIEW test.destination_unavailable ENGINE=MergeTree ORDER BY tuple() AS
                 SELECT
                     key,
@@ -165,9 +155,12 @@ def test_kafka_unavailable(kafka_cluster, create_query_generator, do_direct_read
                     _offset,
                     _partition,
                     _timestamp
-                FROM test.test_kafka_unavailable;
-                """
+                FROM test.test_bad_reschedule;
+            """
             )
+
+            if do_direct_read:
+                instance.query("SELECT * FROM test.test_bad_reschedule")
             instance.query("SELECT count() FROM test.destination_unavailable")
 
             # enough to trigger issue

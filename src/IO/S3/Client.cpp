@@ -16,7 +16,6 @@
 
 #include <Poco/Net/NetException.h>
 
-#include <IO/Expect404ResponseScope.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/PocoHTTPClientFactory.h>
 #include <IO/S3/AWSLogger.h>
@@ -31,8 +30,7 @@
 #include <Core/Settings.h>
 
 #include <base/sleep.h>
-#include <Common/thread_local_rng.h>
-#include <random>
+
 
 namespace ProfileEvents
 {
@@ -270,11 +268,6 @@ Client::~Client()
 Aws::Auth::AWSCredentials Client::getCredentials() const
 {
     return credentials_provider->GetAWSCredentials();
-}
-
-bool Client::checkIfCredentialsChanged(const Aws::S3::S3Error & error) const
-{
-    return (error.GetExceptionName() == "AuthenticationRequired");
 }
 
 bool Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const
@@ -521,13 +514,13 @@ Model::UploadPartCopyOutcome Client::UploadPartCopy(UploadPartCopyRequest & requ
 Model::DeleteObjectOutcome Client::DeleteObject(DeleteObjectRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::DeleteObjectRequest & req) { Expect404ResponseScope scope; return DeleteObject(req); });
+        request, [this](const Model::DeleteObjectRequest & req) { return DeleteObject(req); });
 }
 
 Model::DeleteObjectsOutcome Client::DeleteObjects(DeleteObjectsRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::DeleteObjectsRequest & req) { Expect404ResponseScope scope; return DeleteObjects(req); });
+        request, [this](const Model::DeleteObjectsRequest & req) { return DeleteObjects(req); });
 }
 
 Client::ComposeObjectOutcome Client::ComposeObject(ComposeObjectRequest & request) const
@@ -604,13 +597,6 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
             return result;
 
         const auto & error = result.GetError();
-
-        if (checkIfCredentialsChanged(error))
-        {
-            LOG_INFO(log, "Credentials changed, attempting again");
-            credentials_provider->SetNeedRefresh();
-            continue;
-        }
 
         std::string new_region;
         if (checkIfWrongRegionDefined(bucket, error, new_region))
@@ -714,6 +700,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                     break;
 
                 sleepAfterNetworkError(error, attempt_no);
+                continue;
             }
         }
 
@@ -730,13 +717,13 @@ RequestResult Client::processRequestResult(RequestResult && outcome) const
     if (outcome.IsSuccess() || !isClientForDisk())
         return std::forward<RequestResult>(outcome);
 
-    if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY && !Expect404ResponseScope::is404Expected())
+    if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
         CurrentMetrics::add(CurrentMetrics::DiskS3NoSuchKeyErrors);
 
     String enriched_message = fmt::format(
         "{} {}",
         outcome.GetError().GetMessage(),
-        Expect404ResponseScope::is404Expected() ? "This error is expected for S3 disk."  : "This error happened for S3 disk.");
+        "This error happened for S3 disk.");
 
     auto error = outcome.GetError();
     error.SetMessage(enriched_message);
@@ -777,13 +764,6 @@ void Client::slowDownAfterNetworkError() const
         if (current_time_ms >= next_time_ms)
             break;
         UInt64 sleep_ms = next_time_ms - current_time_ms;
-
-        /// Adds jitter: a random factor in the range [100%, 110%] to the delay.
-        /// This prevents synchronized retries, reducing the risk of overwhelming the S3 server.
-        std::uniform_real_distribution<double> dist(1.0, 1.1);
-        double jitter = dist(thread_local_rng);
-        sleep_ms = static_cast<UInt64>(jitter * sleep_ms);
-
         LOG_WARNING(log, "Some request failed, now waiting {} ms before executing a request", sleep_ms);
         sleepForMilliseconds(sleep_ms);
     }

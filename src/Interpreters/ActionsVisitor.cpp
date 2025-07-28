@@ -832,7 +832,7 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
         auto func = makeASTFunction("tupleElement", tuple_ast, literal);
         if (!untuple_alias.empty())
         {
-            auto element_alias = tuple_type->hasExplicitNames() ? element_name : toString(tid);
+            auto element_alias = tuple_type->haveExplicitNames() ? element_name : toString(tid);
             func->setAlias(untuple_alias + "." + element_alias);
         }
 
@@ -1055,11 +1055,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             for (const auto & arg : node.arguments->children)
             {
                 visit(arg, index_hint_data);
-
-                if (auto name_type = getNameAndTypeFromAST(arg, index_hint_data))
-                    args.push_back({name_type->name, {}});
-                else
-                    throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Unexpected element in AST inside the indexHint function: {}", arg->getID());
+                args.push_back({arg->getColumnNameWithoutAlias(), {}});
             }
         }
 
