@@ -36,7 +36,7 @@ curl https://clickhouse.com/ | sh
 
 Join us for the [ClickHouse **25.8** Community Call](https://clickhouse.com/company/events/v25-8-community-release-call) happening on August 28.
 
-ClickHouse **Release 25.7** is published! This release included [Lightweight Updates](https://clickhouse.com/docs/sql-reference/statements/update), Iceberg INSERT support, AI for clickhouse-client and many more. [Presentation](https://presentations.clickhouse.com/2025-release-25.7/), [Video](https://www.youtube.com/watch?v=P1TsTzktl0Q), [Changelog](https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md).
+ClickHouse **Release 25.7** is published! This release included [Lightweight Updates](https://clickhouse.com/docs/sql-reference/statements/update), Iceberg INSERT support, AI for clickhouse-client and many more. [Presentation](https://presentations.clickhouse.com/2025-release-25.7/), [Video](https://www.youtube.com/watch?v=P1TsTzktl0Q), [Changelog](https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md#257).
 
 ## Upcoming Events
 
