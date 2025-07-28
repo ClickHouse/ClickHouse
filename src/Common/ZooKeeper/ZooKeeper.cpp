@@ -974,7 +974,7 @@ bool ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, bool probab
     return removed_as_expected;
 }
 
-bool ZooKeeper::tryRemoveLeafsAndEmptiedParentsRecursive(const std::string & root_path, const std::string & node_to_remove)
+bool ZooKeeper::tryRemoveLeafsAndEmptiedParentsRecursive(const std::string & root_path, std::function<bool(const std::string &)> remove_leaf_predicate)
 {
     std::function<bool(const std::string &)> remove_recursive = [&] (const std::string & path)
     {
@@ -983,7 +983,7 @@ bool ZooKeeper::tryRemoveLeafsAndEmptiedParentsRecursive(const std::string & roo
             return false;
 
         if (children.empty())
-            return path.ends_with("/" + node_to_remove);
+            return remove_leaf_predicate(path);
 
         int children_left = children.size();
         while (!children.empty())

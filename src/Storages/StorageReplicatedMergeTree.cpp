@@ -1492,7 +1492,7 @@ bool StorageReplicatedMergeTree::dropReplica(
         else
             table_settings_to_clean_locks = table_settings;
 
-        if (table_settings_to_clean_locks)
+        if (table_settings_to_clean_locks && context_)
         {
             /// TODO: more code deduplication
             StoragePolicyPtr storage_policy;
@@ -1507,11 +1507,12 @@ bool StorageReplicatedMergeTree::dropReplica(
                 LOG_TRACE(logger, "Shared ID for table doesn't exist in ZooKeeper on path {}, will not try to remove zero-copy locks.", zookeeper_table_id_path);
             else
             {
+                auto is_replicas_lock = [& zookeeper_info](const String & path) { return path.ends_with("/" + zookeeper_info.replica_name); };
                 for (const auto & zero_copy_locks_root : getZookeeperZeroCopyLockPathsImpl(table_settings_to_clean_locks, storage_policy, table_shared_id))
                 {
                     if (!zookeeper->exists(zero_copy_locks_root))
                         LOG_TRACE(logger, "Didn't find any zero-copy locks at {}.", zero_copy_locks_root);
-                    else if (!zookeeper->tryRemoveLeafsAndEmptiedParentsRecursive(zero_copy_locks_root, zookeeper_info.replica_name))
+                    else if (!zookeeper->tryRemoveLeafsAndEmptiedParentsRecursive(zero_copy_locks_root, is_replicas_lock))
                         LOG_WARNING(logger, "Failed to remove all zero-copy locks for replica. Some locks may still exist.");
                 }
             }
@@ -1584,7 +1585,7 @@ bool StorageReplicatedMergeTree::dropReplica(const String & drop_replica, Logger
 
     TableZnodeInfo info = zookeeper_info;
     info.replica_name = drop_replica;
-    return dropReplica(zookeeper, info, logger);
+    return dropReplica(zookeeper, info, logger, getSettings(), getContext());
 }
 
 
