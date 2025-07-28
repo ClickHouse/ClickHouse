@@ -12,7 +12,6 @@
 #include <Disks/DirectoryIterator.h>
 #include <Disks/WriteMode.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Disks/DiskCommitTransactionOptions.h>
 #include <Disks/DiskType.h>
 #include <Common/ErrorCodes.h>
 
@@ -53,12 +52,7 @@ using TruncateFileOperationOutcomePtr = std::shared_ptr<TruncateFileOperationOut
 class IMetadataTransaction : private boost::noncopyable
 {
 public:
-    virtual void commit(const TransactionCommitOptionsVariant & = NoCommitOptions{}) = 0; // NOLINT
-
-    virtual TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & = NoCommitOptions{}) // NOLINT
-    {
-        throwNotImplemented();
-    }
+    virtual void commit() = 0;
 
     virtual const IMetadataStorage & getStorageForNonTransactionalReads() const = 0;
 
@@ -166,9 +160,6 @@ public:
         throwNotImplemented();
     }
 
-    /// Get objects that are going to be created inside transaction if they exists
-    virtual std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string &) const = 0;
-
     virtual ~IMetadataTransaction() = default;
 
 protected:
@@ -192,9 +183,6 @@ public:
     virtual const std::string & getPath() const = 0;
 
     virtual MetadataStorageType getType() const = 0;
-
-    virtual std::string getZooKeeperName() const { return ""; }
-    virtual std::string getZooKeeperPath() const { return ""; }
 
     /// Returns true if empty file can be created without any blobs in the corresponding object storage.
     /// E.g. metadata storage can store the empty list of blobs corresponding to a file without actually storing any blobs.
@@ -263,7 +251,6 @@ public:
         throwNotImplemented();
     }
 
-    virtual void startup() {}
     virtual void shutdown()
     {
         /// This method is overridden for specific metadata implementations in ClickHouse Cloud.
@@ -298,30 +285,6 @@ public:
             return getStorageObjects(path);
         return std::nullopt;
     }
-
-    virtual bool isReadOnly() const = 0;
-
-    virtual bool isTransactional() const
-    {
-        return false;
-    }
-
-    /// Re-read paths or their full subtrees from disk and update cache.
-    /// Can return serialized description of cache update which can be used to populate cache on other nodes.
-    virtual void updateCache(const std::vector<std::string> & /* paths */, bool /* recursive */, bool /* enforce_fresh */,
-        std::string * /* serialized_cache_update_description */) {}
-    /// Allows to apply cache update from serialized description.
-    virtual void updateCacheFromSerializedDescription(const std::string & /* serialized_cache_update_description */) {}
-    virtual void invalidateCache(const std::string & /* path */) {}
-
-    /// Clear all cache content.
-    virtual void dropCache() {}
-
-    /// Apply configuration changes.
-    virtual void applyNewSettings(
-        const Poco::Util::AbstractConfiguration & /* config */,
-        const std::string & /* config_prefix */,
-        ContextPtr /* context */) {}
 
 protected:
     [[noreturn]] static void throwNotImplemented()

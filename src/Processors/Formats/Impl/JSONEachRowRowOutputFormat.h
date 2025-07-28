@@ -19,7 +19,7 @@ class JSONEachRowRowOutputFormat : public RowOutputFormatWithExceptionHandlerAda
 public:
     JSONEachRowRowOutputFormat(
         WriteBuffer & out_,
-        SharedHeader header_,
+        const Block & header_,
         const FormatSettings & settings_,
         bool pretty_json_ = false);
 

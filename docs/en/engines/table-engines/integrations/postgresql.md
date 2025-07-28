@@ -13,11 +13,11 @@ The PostgreSQL engine allows `SELECT` and `INSERT` queries on data stored on a r
 Currently, only PostgreSQL versions 12 and up are supported.
 :::
 
-:::note
-ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes) for streaming Postgres data into ClickHouse. This natively supports high-performance insertion while ensuring the separation of concerns with the ability to scale ingestion and cluster resources independently.
+:::note Replicating or migrating Postgres data with with PeerDB
+> In addition to the Postgres table engine, you can use [PeerDB](https://docs.peerdb.io/introduction) by ClickHouse to set up a continuous data pipeline from Postgres to ClickHouse. PeerDB is a tool designed specifically to replicate data from Postgres to ClickHouse using change data capture (CDC).
 :::
 
-## Creating a table {#creating-a-table}
+## Creating a Table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -65,7 +65,7 @@ Some parameters can be overridden by key value arguments:
 SELECT * FROM postgresql(postgres_creds, table='table1');
 ```
 
-## Implementation details {#implementation-details}
+## Implementation Details {#implementation-details}
 
 `SELECT` queries on PostgreSQL side run as `COPY (SELECT ...) TO STDOUT` inside read-only PostgreSQL transaction with commit after each `SELECT` query.
 
@@ -112,7 +112,7 @@ In the example below replica `example01-1` has the highest priority:
 </source>
 ```
 
-## Usage example {#usage-example}
+## Usage Example {#usage-example}
 
 ### Table in PostgreSQL {#table-in-postgresql}
 
@@ -201,7 +201,7 @@ SELECT * FROM postgresql_copy WHERE str IN ('test');
 └────────────────┴──────┴────────┘
 ```
 
-### Using non-default schema {#using-non-default-schema}
+### Using Non-default Schema {#using-non-default-schema}
 
 ```text
 postgres=# CREATE SCHEMA "nice.schema";
