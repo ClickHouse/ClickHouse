@@ -26,6 +26,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
+#include <Interpreters/StorageID.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Databases/LoadingStrictnessLevel.h>
@@ -98,6 +99,7 @@ StorageObjectStorage::StorageObjectStorage(
     const String & comment,
     std::optional<FormatSettings> format_settings_,
     LoadingStrictnessLevel mode,
+    std::shared_ptr<DataLake::ICatalog> catalog_,
     bool if_not_exists_,
     bool is_datalake_query,
     bool distributed_processing_,
@@ -110,6 +112,8 @@ StorageObjectStorage::StorageObjectStorage(
     , format_settings(format_settings_)
     , distributed_processing(distributed_processing_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
+    , catalog(catalog_)
+    , storage_id(table_id_)
 {
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
 
@@ -126,7 +130,9 @@ StorageObjectStorage::StorageObjectStorage(
             context,
             columns_in_table_or_function_definition,
             partition_by_,
-            if_not_exists_
+            if_not_exists_,
+            catalog,
+            storage_id
         );
     }
 
@@ -460,7 +466,9 @@ SinkToStoragePtr StorageObjectStorage::write(
                 configuration,
                 format_settings,
                 sample_block,
-                local_context);
+                local_context,
+                catalog,
+                storage_id);
         }
         else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
