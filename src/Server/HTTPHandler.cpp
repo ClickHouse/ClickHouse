@@ -153,8 +153,8 @@ HTTPHandlerConnectionConfig::HTTPHandlerConnectionConfig(const Poco::Util::Abstr
 
 
 HTTPHandler::HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & connection_config_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_)
-    : server(server_)
-    , log(getLogger(name))
+    : log(getLogger(name))
+    , server(server_)
     , default_settings(server.context()->getSettingsRef())
     , http_response_headers_override(http_response_headers_override_)
     , connection_config(connection_config_)

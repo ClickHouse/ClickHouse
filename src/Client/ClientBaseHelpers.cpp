@@ -413,7 +413,42 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
 String highlighted(const String & query, const Context & context)
 {
-    size_t num_code_points = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(query.data()), query.size());
+    // Issue: https://github.com/ClickHouse/ClickHouse/issues/83987
+    /// Previously utf-8 code points were calculated in the following way:
+    /// size_t num_code_points = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(query.data()), query.size());
+    /// But, `UTF8::countCodePoints` and `UTF8::seqLength` seem to handle invalid UTF-8 sequences inconsistently
+    /// (e.g., hex literals like x'A0'), causing count mismatches and crashes.
+    /// For a quick fix, since the highlight function uses `UTF8::seqLength` for iteration, use the same logic for
+    /// counting to ensure consistency when invalid UTF-8 bytes are detected (use UTF8::countCodePoints for all other
+    /// cases to mainly for performance concerns).
+    /// TODO: @bharatnc Fix UTF8::countCodePoints to handle invalid UTF-8 sequences consistently with seqLength so that
+    /// this logic can be removed.
+    bool has_invalid_utf8 = false;
+    for (const char c : query)
+    {
+        /// Standalone UTF-8 continuation bytes (0x80-0xBF, e.g. 0xA0 from hex literals)
+        /// cause countCodePoints/seqLength inconsistency.
+        if (static_cast<unsigned char>(c) >= 0x80 && static_cast<unsigned char>(c) <= 0xBF)
+        {
+            has_invalid_utf8 = true;
+            break;
+        }
+    }
+    size_t num_code_points;
+    if (has_invalid_utf8)
+    {
+        num_code_points = 0;
+        const char * pos = query.data();
+        const char * end = pos + query.size();
+        while (pos < end)
+        {
+            pos += UTF8::seqLength(*pos);
+            ++num_code_points;
+        }
+    }
+    else
+        num_code_points = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(query.data()), query.size());
+
     std::vector<replxx::Replxx::Color> colors(num_code_points, replxx::Replxx::Color::DEFAULT);
     highlight(query, colors, context, 0);
 
