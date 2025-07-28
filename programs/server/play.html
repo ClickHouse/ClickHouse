@@ -522,11 +522,6 @@
             text-overflow: ellipsis;
         }
 
-        th:hover
-        {
-            z-index: 1;
-        }
-
         .type-hint
         {
             display: none;
@@ -549,15 +544,16 @@
         .resizer {
             position: absolute;
             top: 0;
-            right: 0;
-            width: 5px;
+            right: -0.3rem;
+            width: 0.5rem;
             cursor: col-resize;
             user-select: none;
             height: 100%;
-            transform: translateX(50%);
         }
 
-        .resizer:hover {
+        .resizer:hover, .resizer-dragging
+        {
+            border-radius: 0.25rem;
             background-color: var(--border-color-selected);
         }
 
@@ -1384,12 +1380,14 @@ document.getElementById('controls').addEventListener('submit', e =>
     } else {
         post();
 
-        const cred = new PasswordCredential({
-            id: user_elem.value,
-            password: password_elem.value,
-            name: url_elem.value,
-        });
-        navigator.credentials.store(cred);
+        if (password_elem.value) {
+            const cred = new PasswordCredential({
+                id: user_elem.value,
+                password: password_elem.value,
+                name: url_elem.value,
+            });
+            navigator.credentials.store(cred);
+        }
     }
 });
 
@@ -1736,18 +1734,21 @@ function changeTableLayout() {
 
 function appendHeaderResizer(header) {
     let drag_state = {
+        elem: null,
         is_dragging: true,
         offset_x: null,
         offset_width: null
     };
 
     const start = (e) => {
-        if (e.button !== 0) { return;}
+        if (e.button !== 0) { return; }
 
         changeTableLayout();
         drag_state.offset_x = e.clientX;
         drag_state.offset_width = header.offsetWidth;
         drag_state.is_dragging = true;
+        drag_state.elem = e.target;
+        drag_state.elem.classList.add('resizer-dragging');
 
         document.addEventListener('pointermove', move);
         document.addEventListener('pointerup', stop);
@@ -1767,6 +1768,7 @@ function appendHeaderResizer(header) {
 
     const stop = (e) => {
         drag_state.is_dragging = false;
+        drag_state.elem.classList.remove('resizer-dragging');
 
         document.removeEventListener('pointermove', move);
         document.removeEventListener('pointerup', stop);
@@ -1792,6 +1794,10 @@ function appendHeader(meta) {
     th.appendChild(document.createTextNode('№'));
     thead.appendChild(th);
 
+    /// Assign z-index in the reverse order.
+    /// This is needed to make sure the contents that overflow to the right (column resizer) is visible.
+    let zIndex = meta.length;
+
     meta.forEach(elem => {
         let th = document.createElement('th');
         const name = document.createTextNode(elem.name);
@@ -1804,6 +1810,8 @@ function appendHeader(meta) {
         type_hint.appendChild(document.createTextNode(elem.type));
         th.appendChild(type_hint);
         appendHeaderResizer(th);
+        th.style.zIndex = zIndex;
+        --zIndex;
         thead.appendChild(th);
 
         column_is_number[elem.name] = !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/);

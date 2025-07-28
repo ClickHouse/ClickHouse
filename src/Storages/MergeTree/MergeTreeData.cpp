@@ -3560,7 +3560,7 @@ size_t MergeTreeData::clearEmptyParts()
 
     for (auto & name : parts_names_to_drop)
     {
-        LOG_INFO(log, "Will drop empty part {}", name);
+        LOG_TRACE(log, "Will drop empty part {}", name);
         dropPartNoWaitNoThrow(name);
     }
 
@@ -5522,10 +5522,6 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPar
             ssize_t diff_bytes = part_copy->getBytesOnDisk() - original_active_part->getBytesOnDisk();
             ssize_t diff_rows = part_copy->rows_count - original_active_part->rows_count;
             increaseDataVolume(diff_bytes, diff_rows, /* parts= */ 0);
-
-            /// Move parts are non replicated operations, so we take lock here.
-            /// All other locks are taken in StorageReplicatedMergeTree
-            lockSharedData(*part_copy, /* replace_existing_lock */ true);
 
             return;
         }
