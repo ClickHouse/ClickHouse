@@ -9,8 +9,8 @@
 #include <IO/S3/S3Capabilities.h>
 #include <IO/S3Settings.h>
 #include <Common/MultiVersion.h>
+#include <Core/SettingsEnums.h>
 #include <Common/ObjectStorageKeyGenerator.h>
-
 
 namespace DB
 {
