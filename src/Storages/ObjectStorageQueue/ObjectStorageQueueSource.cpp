@@ -513,7 +513,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
         log, "Current processor: {}, acquired bucket: {}",
         processor, current_bucket_holder ? toString(current_bucket_holder->getBucket()) : "None");
 
-    while (true)
+    while (!shutdown_called)
     {
         /// Each processing thread gets next path
         /// and checks if corresponding bucket is already acquired by someone.
@@ -711,6 +711,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
         if (listed_keys_cache.empty())
             return {};
     }
+    return {};
 }
 
 ObjectStorageQueueSource::ObjectStorageQueueSource(
