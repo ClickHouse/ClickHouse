@@ -71,7 +71,7 @@ protected:
 
     void comStmtPrepare(ReadBuffer & payload);
 
-    void comStmtExecute(ReadBufferUniquePtr payload);
+    void comStmtExecute(ReadBuffer & payload);
 
     void comStmtClose(ReadBuffer & payload);
 

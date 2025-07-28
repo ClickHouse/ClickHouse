@@ -305,9 +305,6 @@ void MySQLHandler::run()
             char command = 0;
             payload->readStrict(command);
 
-            // For commands which are executed without MemoryTracker.
-            LimitReadBuffer limited_payload(*payload, {.read_no_more = 1000, .expect_eof = true, .excetion_hint = "too long MySQL packet."});
-
             LOG_DEBUG(log, "Received command: {}. Connection id: {}.",
                 static_cast<int>(static_cast<unsigned char>(command)), connection_id);
 
@@ -320,14 +317,22 @@ void MySQLHandler::run()
                     case COM_QUIT:
                         return;
                     case COM_INIT_DB:
+                    {
+                        LimitReadBuffer limited_payload(*payload, {.read_no_more = 1000, .expect_eof = true, .excetion_hint = "too long MySQL packet."});
                         comInitDB(limited_payload);
                         break;
+                    }
                     case COM_QUERY:
+                    {
                         comQuery(std::move(payload), false);
                         break;
+                    }
                     case COM_FIELD_LIST:
+                    {
+                        LimitReadBuffer limited_payload(*payload, {.read_no_more = 1000, .expect_eof = true, .excetion_hint = "too long MySQL packet."});
                         comFieldList(limited_payload);
                         break;
+                    }
                     case COM_PING:
                         comPing();
                         break;
@@ -335,7 +340,7 @@ void MySQLHandler::run()
                         comStmtPrepare(*payload);
                         break;
                     case COM_STMT_EXECUTE:
-                        comStmtExecute(std::move(payload));
+                        comStmtExecute(*payload);
                         break;
                     case COM_STMT_CLOSE:
                         comStmtClose(*payload);
@@ -583,10 +588,10 @@ void MySQLHandler::comStmtPrepare(DB::ReadBuffer & payload)
         packet_endpoint->sendPacket(ERRPacket());
 }
 
-void MySQLHandler::comStmtExecute(ReadBufferUniquePtr payload)
+void MySQLHandler::comStmtExecute(DB::ReadBuffer & payload)
 {
     uint32_t statement_id;
-    payload->readStrict(reinterpret_cast<char *>(&statement_id), 4);
+    payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
 
     auto statement = getPreparedStatement(statement_id);
     if (statement)
