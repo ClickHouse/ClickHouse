@@ -494,7 +494,7 @@ void IcebergMetadata::createInitial(
     }
     if (catalog)
     {
-        auto catalog_filename = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/" + configuration_ptr->getPath() + "metadata/v1.metadata.json";
+        auto catalog_filename = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/" + configuration_ptr->getPathForRead() + "metadata/v1.metadata.json";
         const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
         catalog->createTable(namespace_name, table_name, catalog_filename);
     }
