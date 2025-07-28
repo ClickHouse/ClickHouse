@@ -1,4 +1,4 @@
-#include "StorageSystemDatabaseReplicas.h"
+#include <Storages/System/StorageSystemDatabaseReplicas.h>
 
 #include <future>
 #include <memory>
