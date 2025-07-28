@@ -70,9 +70,6 @@ public:
 
     void needOnlyCount() { need_only_count = true; }
 
-    /// Set additional info/key/id related to underlying storage of the ReadBuffer
-    virtual void setStorageRelatedUniqueKey(const Settings & /*settings*/, const String & /*key*/) {}
-
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }
 
