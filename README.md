@@ -34,9 +34,9 @@ curl https://clickhouse.com/ | sh
 
 ## Monthly Release & Community Call
 
-Join us for the [ClickHouse **25.7** Community Call](https://clickhouse.com/company/events/v25-7-community-release-call) happening on July 24. We'll introduce Lightweight Updates, AI for clickhouse-client and more!
+Join us for the [ClickHouse **25.8** Community Call](https://clickhouse.com/company/events/v25-8-community-release-call) happening on August 28.
 
-ClickHouse **Release 25.6** is published! This release included a new data type, a new type of MergeTree, tokenization for logs, functions for time series, the new monitoring UI, and many more. [Presentation](https://presentations.clickhouse.com/2025-release-25.6/), [Video](https://www.youtube.com/watch?v=_9IBOM3pR4U), [Changelog](https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md).
+ClickHouse **Release 25.7** is published! This release included [Lightweight Updates](https://clickhouse.com/docs/sql-reference/statements/update), Iceberg INSERT support, AI for clickhouse-client and many more. [Presentation](https://presentations.clickhouse.com/2025-release-25.7/), [Video](https://www.youtube.com/watch?v=P1TsTzktl0Q), [Changelog](https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md#257).
 
 ## Upcoming Events
 
@@ -46,12 +46,14 @@ Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com.
 You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 Upcoming meetups
-* [Tokyo Meetup](https://www.meetup.com/clickhouse-tokyo-user-group/events/309004297/) - June 29, 2025
+* [Tokyo Meetup](https://www.meetup.com/clickhouse-tokyo-user-group/events/309004297/) - July 29, 2025
 * [Bogota Meetup](https://www.meetup.com/clickhouse-latinoamerica/events/308819394/) - August 5, 2025
 * [Jakarta Meetup](https://www.meetup.com/clickhouse-indonesia-user-group/events/309468074/) - August 6, 2025
 * [Buenos Aires Meetup](https://www.meetup.com/clickhouse-latinoamerica/events/308819423/) - August 7, 2025
 * [Seoul Meetup w/ Druid](https://www.meetup.com/druid-seoul/events/310099732/) - August 7, 2025
+* [Sao Paulo Meetup](https://www.meetup.com/clickhouse-brasil-user-group/events/309874439) - August 12, 2025
 * [Manaila Meetup w/ Confluent](https://www.meetup.com/clickhouse-philippines-meetup-group/events/310101137/) - August 13, 2025
+* [Toronto Meetup](https://www.meetup.com/clickhouse-toronto-user-group/events/310164482/) - September 3, 2025
 * [Tel Aviv Meetup](https://www.meetup.com/clickhouse-meetup-israel/events/309165659) - September 9, 2025
 * [Dubai Meetup](https://www.meetup.com/clickhouse-dubai-meetup-group/events/310122820) - September 16, 2025
 * [Madrid Meetup](https://www.meetup.com/clickhouse-spain-user-group/events/310124151) - September 30, 2025
