@@ -203,7 +203,7 @@ public:
         return current_metadata->getColumnMapper();
     }
 
-    std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr context) const override
+    std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context) const override
     {
         auto catalog_parameters = DataLake::CatalogSettings{
             .storage_endpoint = (*settings)[DataLakeStorageSetting::iceberg_storage_endpoint].value,
