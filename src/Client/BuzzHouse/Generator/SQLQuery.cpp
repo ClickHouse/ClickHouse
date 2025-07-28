@@ -487,7 +487,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
     }
 }
 
-template <bool RequireMergeTree, bool hasTableFunction>
+template <TableRequirement req>
 auto StatementGenerator::getQueryTableLambda()
 {
     return [&](const SQLTable & tt)
@@ -500,9 +500,11 @@ auto StatementGenerator::getQueryTableLambda()
             /* Don't use tables backing not deterministic views in query oracles */
             && (tt.is_deterministic || this->allow_not_deterministic)
             /* May require MergeTree table */
-            && (!RequireMergeTree || tt.isMergeTreeFamily())
+            && (req != TableRequirement::RequireMergeTree || tt.isMergeTreeFamily())
             /* May by replaced by a table engine */
-            && (!hasTableFunction || tt.isEngineReplaceable());
+            && (req != TableRequirement::RequireReplaceable || tt.isEngineReplaceable())
+            /* May require a projection */
+            && (req != TableRequirement::RequireProjection || !tt.projs.empty());
     };
 }
 
@@ -579,9 +581,10 @@ bool StatementGenerator::joinedTableOrFunction(
     const SQLTable * t = nullptr;
     const SQLView * v = nullptr;
 
-    const auto has_table_lambda = getQueryTableLambda<false, false>();
-    const auto has_mergetree_table_lambda = getQueryTableLambda<true, false>();
-    const auto has_replaceable_table_lambda = getQueryTableLambda<true, true>();
+    const auto has_table_lambda = getQueryTableLambda<TableRequirement::NoRequirement>();
+    const auto has_mergetree_table_lambda = getQueryTableLambda<TableRequirement::RequireMergeTree>();
+    const auto has_replaceable_table_lambda = getQueryTableLambda<TableRequirement::RequireReplaceable>();
+    const auto has_projection_table_lambda = getQueryTableLambda<TableRequirement::RequireProjection>();
     const auto has_view_lambda
         = [&](const SQLView & vv) { return vv.isAttached() && (vv.is_deterministic || this->allow_not_deterministic); };
     const auto has_dictionary_lambda
@@ -590,6 +593,7 @@ bool StatementGenerator::joinedTableOrFunction(
     const bool has_table = collectionHas<SQLTable>(has_table_lambda);
     const bool has_mergetree_table = collectionHas<SQLTable>(has_mergetree_table_lambda);
     const bool has_replaceable_table = collectionHas<SQLTable>(has_replaceable_table_lambda);
+    const bool has_projection_table = collectionHas<SQLTable>(has_projection_table_lambda);
     const bool has_view = collectionHas<SQLView>(has_view_lambda);
     const bool has_dictionary = collectionHas<SQLDictionary>(has_dictionary_lambda);
     const bool can_recurse = this->depth < this->fc.max_depth && this->width < this->fc.max_width;
@@ -611,6 +615,7 @@ bool StatementGenerator::joinedTableOrFunction(
     const uint32_t dictionary = 15 * static_cast<uint32_t>(this->peer_query != PeerQuery::ClickHouseOnly && has_dictionary);
     const uint32_t url_encoded_table = 2 * static_cast<uint32_t>(this->allow_engine_udf && has_table);
     const uint32_t table_engine_udf = 10 * static_cast<uint32_t>(has_replaceable_table && this->allow_engine_udf);
+    const uint32_t merge_projection_udf = 4 * static_cast<uint32_t>(has_projection_table && this->allow_engine_udf);
 
     const uint32_t prob_space = derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf
         + cluster_udf + merge_index_udf + loop_udf + values_udf + random_data_udf + dictionary + url_encoded_table + table_engine_udf;
@@ -1115,6 +1120,32 @@ bool StatementGenerator::joinedTableOrFunction(
         /// I think it's not possible to call final on table functions
         setTableFunction(rg, TableFunctionUsage::EngineReplace, tt, tof->mutable_tfunc());
         addTableRelation(rg, true, rel_name, tt);
+    }
+    else if (
+        merge_projection_udf
+        && nopt
+            < (derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf + cluster_udf
+               + merge_index_udf + loop_udf + values_udf + random_data_udf + dictionary + url_encoded_table + table_engine_udf
+               + merge_projection_udf + 1))
+    {
+        std::vector<SQLRelationCol> parents;
+        TableFunction * tf = tof->mutable_tfunc();
+        MergeTreeProjectionFunc * mtudf = tf->mutable_mtproj();
+        const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_projection_table_lambda));
+
+        tt.setName(mtudf->mutable_est(), true);
+        mtudf->mutable_proj()->set_projection("p" + std::to_string(rg.pickRandomly(tt.projs)));
+        addTableRelation(rg, true, rel_name, tt);
+        SQLRelation & rel = this->levels.at(this->current_level).rels.back();
+
+        for (const auto & entry : rel.cols)
+        {
+            DB::Strings npath = entry.path;
+
+            npath.back() = "_parent" + npath.back();
+            parents.emplace_back(SQLRelationCol(rel_name, std::move(npath)));
+        }
+        rel.cols.insert(rel.cols.end(), parents.begin(), parents.end());
     }
     else
     {

@@ -2252,6 +2252,15 @@ CONV_FN(MergeTreeIndexFunc, mfunc)
     ret += ")";
 }
 
+CONV_FN(MergeTreeProjectionFunc, mfunc)
+{
+    ret += "mergeTreeProjection(";
+    FlatExprSchemaTableToString(ret, mfunc.est(), "', '");
+    ret += ", '";
+    ProjectionToString(ret, mfunc.proj());
+    ret += "')";
+}
+
 CONV_FN(GenerateRandomFunc, grfunc)
 {
     ret += "generateRandom(";
@@ -2366,6 +2375,9 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kMongodb:
             MongoDBFuncToString(ret, tf.mongodb());
+            break;
+        case TableFunctionType::kMtproj:
+            MergeTreeProjectionFuncToString(ret, tf.mtproj());
             break;
         default:
             ret += "numbers(10)";

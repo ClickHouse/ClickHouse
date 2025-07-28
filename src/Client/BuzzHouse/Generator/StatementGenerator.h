@@ -116,6 +116,14 @@ enum class TableFunctionUsage
     ClusterCall = 4,
 };
 
+enum class TableRequirement
+{
+    NoRequirement = 0,
+    RequireMergeTree = 1,
+    RequireReplaceable = 2,
+    RequireProjection = 3,
+};
+
 class StatementGenerator
 {
 public:
@@ -494,7 +502,7 @@ public:
         return [&b](const T & t) { return t.isAttached() && (t.is_deterministic || !b.is_deterministic); };
     }
 
-    template <bool RequireMergeTree, bool hasTableFunction>
+    template <TableRequirement req>
     auto getQueryTableLambda();
 
     StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, bool scf, bool rs);

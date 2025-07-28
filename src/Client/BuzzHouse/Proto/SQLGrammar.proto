@@ -1587,37 +1587,38 @@ enum SQLTableFunc {
     TFfuzzQuery = 14;
     TFgenerateRandom = 15;
     TFmergeTreeIndex = 16;
-    TFhdfs = 17;
-    TFhdfsCluster = 18;
-    TFhudi = 19;
-    TFhudiCluster = 20;
-    TFiceberg = 21;
-    TFicebergCluster = 22;
-    TFinput = 23;
-    TFjdbc = 24;
-    TFmerge = 25;
-    TFmongodb = 26;
-    TFmysql = 27;
-    TFnull = 28;
-    TFnumbers = 29;
-    TFtimeSeriesData = 30;
-    TFtimeSeriesMetrics = 31;
-    TFtimeSeriesTags = 32;
-    TFzeros = 33;
-    TFgenerateSeries = 34;
-    TFodbc = 35;
-    TFpostgresql = 36;
-    TFredis = 37;
-    TFremote = 38;
-    TFremoteSecure = 39;
-    TFS3 = 40;
-    TFS3Cluster = 41;
-    TFsqlite = 42;
-    TFurl = 43;
-    TFurlCluster = 44;
-    TFvalues = 45;
-    TFview = 46;
-    TFloop = 47;
+    TFmergeTreeProjection = 18;
+    TFhdfs = 19;
+    TFhdfsCluster = 20;
+    TFhudi = 21;
+    TFhudiCluster = 22;
+    TFiceberg = 23;
+    TFicebergCluster = 24;
+    TFinput = 25;
+    TFjdbc = 26;
+    TFmerge = 27;
+    TFmongodb = 28;
+    TFmysql = 29;
+    TFnull = 30;
+    TFnumbers = 31;
+    TFtimeSeriesData = 32;
+    TFtimeSeriesMetrics = 33;
+    TFtimeSeriesTags = 34;
+    TFzeros = 35;
+    TFgenerateSeries = 36;
+    TFodbc = 37;
+    TFpostgresql = 38;
+    TFredis = 39;
+    TFremote = 40;
+    TFremoteSecure = 41;
+    TFS3 = 42;
+    TFS3Cluster = 43;
+    TFsqlite = 44;
+    TFurl = 45;
+    TFurlCluster = 46;
+    TFvalues = 47;
+    TFview = 48;
+    TFloop = 49;
 }
 
 message Database {
@@ -2639,6 +2640,11 @@ message MergeTreeIndexFunc {
     optional bool with_minmax = 3;
 }
 
+message MergeTreeProjectionFunc {
+    required ExprSchemaTable est = 1;
+    required Projection proj = 2;
+}
+
 message GenerateRandomFunc {
     required Expr structure = 1;
     optional uint64 random_seed = 2;
@@ -2678,6 +2684,7 @@ message TableFunction {
         URLFunc url = 18;
         RedisFunc redis = 19;
         MongoDBFunc mongodb = 20;
+        MergeTreeProjectionFunc mtproj = 21;
     }
 }
 
