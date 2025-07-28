@@ -879,7 +879,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     else if (type == MODIFY_QUERY)
     {
         metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, metadata.refresh != nullptr, context);
-        Block as_select_sample;
+        SharedHeader as_select_sample;
 
         if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
@@ -893,7 +893,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 false);
         }
 
-        metadata.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
+        metadata.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
     }
     else if (type == MODIFY_REFRESH)
     {

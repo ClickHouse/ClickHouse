@@ -23,5 +23,6 @@ public:
 private:
     Mutex & mutex;
 };
+_LIBCPP_CTAD_SUPPORTED_FOR_TYPE(SharedLockGuard);
 
 }

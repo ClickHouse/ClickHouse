@@ -25,11 +25,10 @@ namespace DeltaLake
 class TableSnapshot
 {
 public:
-    using ConfigurationWeakPtr = DB::StorageObjectStorage::ConfigurationObserverPtr;
-
     explicit TableSnapshot(
         KernelHelperPtr helper_,
         DB::ObjectStoragePtr object_storage_,
+        DB::ContextPtr context_,
         LoggerPtr log_);
 
     /// Get snapshot version.
@@ -65,6 +64,7 @@ private:
     const KernelHelperPtr helper;
     const DB::ObjectStoragePtr object_storage;
     const LoggerPtr log;
+    const bool enable_expression_visitor_logging;
 
     mutable KernelExternEngine engine;
     mutable KernelSnapshot snapshot;
