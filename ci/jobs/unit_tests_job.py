@@ -7,11 +7,11 @@ if __name__ == "__main__":
     #
     # Note, LSan does not compatible with debugger, so let's not run binary under gdb for sanitizers
     if "san" not in Info().job_name:
-        command_prefix = f"timeout 30m gdb -batch -ex 'handle all nostop' -ex 'set print thread-events off' -ex 'set pagination off' -ex 'catch syscall exit_group' -ex run -ex bt -arg"
+        command_launcher = f"timeout 30m gdb -batch -ex 'handle all nostop' -ex 'set print thread-events off' -ex 'set pagination off' -ex 'catch syscall exit_group' -ex run -ex bt -arg"
     else:
-        command_prefix = ""
+        command_launcher = ""
 
     Result.from_gtest_run(
         unit_tests_path="./ci/tmp/unit_tests_dbms",
-        command_prefix=command_prefix,
+        command_launcher=command_launcher,
     ).complete_job()

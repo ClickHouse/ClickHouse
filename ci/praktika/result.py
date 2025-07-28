@@ -412,7 +412,7 @@ class Result(MetaClasses.Serializable):
 
     @classmethod
     def from_gtest_run(
-        cls, unit_tests_path, name="", with_log=False, command_prefix=""
+        cls, unit_tests_path, name="", with_log=False, command_launcher=""
     ):
         """
         Runs gtest and generates praktika Result from results
@@ -425,8 +425,8 @@ class Result(MetaClasses.Serializable):
         """
 
         command = f"{unit_tests_path} --gtest_output='json:{ResultTranslator.GTEST_RESULT_FILE}'"
-        if command_prefix:
-            command = f"{command_prefix} {command}"
+        if command_launcher:
+            command = f"{command_launcher} {command}"
 
         Shell.check(f"rm {ResultTranslator.GTEST_RESULT_FILE}")
         result = Result.from_commands_run(
@@ -435,6 +435,7 @@ class Result(MetaClasses.Serializable):
                 f"chmod +x {unit_tests_path}",
                 command,
             ],
+            with_log=with_log,
         )
         is_error = not result.is_ok()
         status, results, info = ResultTranslator.from_gtest()
