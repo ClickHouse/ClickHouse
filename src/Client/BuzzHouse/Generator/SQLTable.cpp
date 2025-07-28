@@ -338,17 +338,6 @@ void StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl
                     cp->add_params()->set_ival(rg.nextBool() ? 4 : 9);
                 }
                 break;
-            case COMP_SZ3:
-                if (rg.nextBool())
-                {
-                    static const DB::Strings & algorithms = {"ALGO_LORENZO_REG", "ALGO_INTERP_LORENZO", "ALGO_INTERP"};
-                    static const DB::Strings & errorBounds = {"ABS", "REL", "PSNR", "ABS_AND_REL"};
-
-                    cp->add_params()->set_sval(rg.pickRandomly(algorithms));
-                    cp->add_params()->set_sval(rg.pickRandomly(errorBounds));
-                    cp->add_params()->set_dval(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 1.0));
-                }
-                break;
             default:
                 break;
         }
