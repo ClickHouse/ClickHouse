@@ -279,7 +279,7 @@ bool canApplyPatchesRaw(const PatchesToApply & patches)
         {
             for (const auto & column : patch->patch_blocks.front())
             {
-                if (!isPatchPartSystemColumn(column.name) && column.column && !canApplyPatchInplace(*column.column))
+                if (!isPatchPartSystemColumn(column.name) && !canApplyPatchInplace(*column.column))
                     return false;
             }
         }
@@ -370,7 +370,6 @@ PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Applying patch parts with mode {} requires only one part, got: {}", patch.mode, patch.source_parts.size());
 
     auto patch_to_apply = std::make_shared<PatchToApply>();
-    patch_to_apply->patch_blocks.emplace_back(patch_block);
 
     size_t num_rows = result_block.rows();
     size_t patch_rows = patch_block.rows();
@@ -378,6 +377,7 @@ PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_
     if (num_rows == 0 || patch_rows == 0)
         return patch_to_apply;
 
+    patch_to_apply->patch_blocks.emplace_back(patch_block);
     Stopwatch watch;
 
     const auto & patch_name_column = assert_cast<const ColumnLowCardinality &>(*patch_block.getByName("_part").column);
@@ -451,7 +451,10 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
     patch_to_apply->patch_blocks.reserve(join_entry.blocks.size());
 
     for (const auto & block : join_entry.blocks)
-        patch_to_apply->patch_blocks.push_back(*block);
+    {
+        if (block->rows() != 0)
+            patch_to_apply->patch_blocks.push_back(*block);
+    }
 
     size_t num_rows = result_block.rows();
     if (num_rows == 0 || join_entry.hash_map.empty())
