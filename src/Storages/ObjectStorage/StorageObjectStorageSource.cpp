@@ -187,11 +187,22 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     }
     else if (configuration->supportsFileIterator())
     {
-        return configuration->iterate(
+        auto iter = configuration->iterate(
             filter_actions_dag,
             file_progress_callback,
             query_settings.list_object_keys_size,
             local_context);
+
+        if (filter_actions_dag)
+        {
+            return std::make_shared<ObjectIteratorWithPathAndFileFilter>(
+                std::move(iter),
+                *filter_actions_dag,
+                virtual_columns,
+                configuration->getNamespace(),
+                local_context);
+        }
+        return iter;
     }
     else
     {
