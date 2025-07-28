@@ -270,7 +270,6 @@ void StatementGenerator::setTableRemote(
 
         if (t.isIcebergS3Engine() || t.isDeltaLakeS3Engine() || t.isAnyS3Engine())
         {
-            String glob;
             S3Func * sfunc = tfunc->mutable_s3();
             const ServerCredentials & sc = fc.minio_server.value();
             S3Func_FName val = t.isAnyS3Engine()
@@ -286,11 +285,7 @@ void StatementGenerator::setTableRemote(
             {
                 sfunc->set_fname((val == S3Func_FName::S3Func_FName_s3 && rg.nextBool()) ? S3Func_FName::S3Func_FName_gcs : val);
             }
-            glob += t.isS3Engine() ? "" : "/";
-            glob += (!t.isS3Engine() && rg.nextBool()) ? "*" : "";
-
-            sfunc->set_resource(
-                "http://" + sc.server_hostname + ":" + std::to_string(sc.port) + sc.database + "/file" + std::to_string(t.tname) + glob);
+            sfunc->set_resource(t.getTablePath(fc, false) + ((!t.isS3Engine() && rg.nextBool()) ? "*" : ""));
             sfunc->set_user(sc.user);
             sfunc->set_password(sc.password);
             if (t.file_format.has_value())
@@ -305,7 +300,6 @@ void StatementGenerator::setTableRemote(
         }
         else if (t.isIcebergAzureEngine() || t.isDeltaLakeAzureEngine() || t.isAnyAzureEngine())
         {
-            String glob;
             AzureBlobStorageFunc * afunc = tfunc->mutable_azure();
             const ServerCredentials & sc = fc.azurite_server.value();
             AzureBlobStorageFunc_FName val = t.isAnyS3Engine()
@@ -322,12 +316,9 @@ void StatementGenerator::setTableRemote(
             {
                 afunc->set_fname(val);
             }
-            glob += t.isAzureEngine() ? "" : "/";
-            glob += (!t.isAzureEngine() && rg.nextBool()) ? "*" : "";
-
             afunc->set_connection_string(sc.server_hostname);
             afunc->set_container(sc.container);
-            afunc->set_blobpath("file" + std::to_string(t.tname) + glob);
+            afunc->set_blobpath(t.getTablePath(fc, false) + ((!t.isAzureEngine() && rg.nextBool()) ? "*" : ""));
             afunc->set_user(sc.user);
             afunc->set_password(sc.password);
             if (t.file_format.has_value())
@@ -342,10 +333,7 @@ void StatementGenerator::setTableRemote(
         }
         else if (t.isIcebergLocalEngine() || t.isDeltaLakeLocalEngine() || t.isFileEngine())
         {
-            String glob;
             FileFunc * ffunc = tfunc->mutable_file();
-            const std::filesystem::path & fname
-                = fc.server_file_path / ((t.isFileEngine() ? "/datafile" : "/datalakefile") + std::to_string(t.tname));
             FileFunc_FName val = t.isAnyS3Engine()
                 ? FileFunc_FName::FileFunc_FName_file
                 : (t.isIcebergS3Engine() ? FileFunc_FName::FileFunc_FName_icebergLocal : FileFunc_FName::FileFunc_FName_deltalakeLocal);
@@ -359,10 +347,7 @@ void StatementGenerator::setTableRemote(
             {
                 ffunc->set_fname(val);
             }
-            glob += t.isFileEngine() ? "" : "/";
-            glob += (!t.isFileEngine() && rg.nextBool()) ? "*" : "";
-
-            ffunc->set_path(fname.generic_string() + glob);
+            ffunc->set_path(t.getTablePath(fc, false) + ((!t.isFileEngine() && rg.nextBool()) ? "*" : ""));
             if (t.file_format.has_value())
             {
                 ffunc->set_inoutformat(t.file_format.value());
@@ -376,7 +361,6 @@ void StatementGenerator::setTableRemote(
         else if (t.isURLEngine())
         {
             URLFunc * ufunc = tfunc->mutable_url();
-            const ServerCredentials & sc = fc.http_server.value();
 
             if (use_cluster && cluster.has_value())
             {
@@ -387,7 +371,7 @@ void StatementGenerator::setTableRemote(
             {
                 ufunc->set_fname(URLFunc_FName::URLFunc_FName_url);
             }
-            ufunc->set_uurl("http://" + sc.server_hostname + ":" + std::to_string(sc.port) + "/file" + std::to_string(t.tname));
+            ufunc->set_uurl(t.getTablePath(fc, false));
             if (t.file_format.has_value())
             {
                 ufunc->set_inoutformat(t.file_format.value());

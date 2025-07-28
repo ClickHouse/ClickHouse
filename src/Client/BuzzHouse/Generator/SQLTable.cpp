@@ -1220,8 +1220,7 @@ void StatementGenerator::generateEngineDetails(
         }
         else
         {
-            const std::filesystem::path & fname = fc.server_file_path / ("/datalakefile" + std::to_string(b.tname) + "/");
-            te->add_params()->set_svalue(fname.generic_string());
+            te->add_params()->set_svalue(b.getTablePath(fc, false));
         }
         /// Set path, but ignore it for now
         //const std::filesystem::path & fpath = fc.server_file_path / ("/datalake/t" + std::to_string(b.tname));
