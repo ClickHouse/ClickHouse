@@ -1,8 +1,9 @@
-#include <gtest/gtest.h>
 #include "config.h"
 
 #if USE_DELTA_KERNEL_RS
 
+#include <base/scope_guard.h>
+#include <gtest/gtest.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 #include <Common/logger_useful.h>
@@ -44,6 +45,7 @@ public:
 TEST_F(DeltaKernelTest, ExpressionVisitor)
 {
     auto * expression = ffi::get_testing_kernel_expression();
+    SCOPE_EXIT(ffi::free_kernel_expression(expression));
     try
     {
         auto dag = DeltaLake::visitExpression(

@@ -485,7 +485,9 @@ class ClickHouseProc:
             strict=True,
         )
 
-        proc = subprocess.Popen(command, stderr=subprocess.STDOUT, shell=True, cwd=run_path)
+        proc = subprocess.Popen(
+            command, stderr=subprocess.STDOUT, shell=True, cwd=run_path
+        )
         if replica_num == 1:
             self.proc_1 = proc
         elif replica_num == 2:
