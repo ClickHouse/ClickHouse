@@ -120,7 +120,7 @@ def create_table(
     return catalog.create_table(
         identifier=f"{namespace}.{table}",
         schema=schema,
-        location="s3://warehouse-glue/data",
+        location=f"s3://warehouse-glue/{table}",
         partition_spec=partition_spec,
         sort_order=sort_order,
     )
