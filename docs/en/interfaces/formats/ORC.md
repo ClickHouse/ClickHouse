@@ -105,6 +105,3 @@ ORC is a binary format that does not display in a human-readable form on the ter
 | [`input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference`](/operations/settings/settings-formats.md/#input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference) | Allow skipping columns with unsupported types while schema inference for Arrow format. | `false` |
 
 To exchange data with Hadoop, you can use [HDFS table engine](/engines/table-engines/integrations/hdfs.md).
-
-
-

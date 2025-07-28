@@ -1076,10 +1076,14 @@ try
     global_context->addOrUpdateWarningMessage(Context::WarningType::SERVER_BUILT_IN_DEBUG_MODE, PreformattedMessage::create("Server was built in debug mode. It will work slowly."));
 #endif
 
-    if (ThreadFuzzer::instance().isEffective())
-        global_context->addOrUpdateWarningMessage(
-            Context::WarningType::THREAD_FUZZER_IS_ENABLED,
-            PreformattedMessage::create("ThreadFuzzer is enabled. Application will run slowly and unstable."));
+    {
+        const auto & thread_fuzzer = ThreadFuzzer::instance();
+        thread_fuzzer.setup();
+        if (thread_fuzzer.isEffective())
+            global_context->addOrUpdateWarningMessage(
+                Context::WarningType::THREAD_FUZZER_IS_ENABLED,
+                PreformattedMessage::create("ThreadFuzzer is enabled. Application will run slowly and unstable."));
+    }
 
 #if defined(SANITIZER)
     auto sanitizers = getSanitizerNames();
@@ -2719,10 +2723,6 @@ try
         ProfileEvents::increment(ProfileEvents::ServerStartupMilliseconds, startup_watch.elapsedMilliseconds());
 
         CannotAllocateThreadFaultInjector::setFaultProbability(server_settings[ServerSetting::cannot_allocate_thread_fault_injection_probability]);
-
-#if USE_GWP_ASAN
-        GWPAsan::initFinished();
-#endif
 
         try
         {

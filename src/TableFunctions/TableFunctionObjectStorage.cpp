@@ -16,6 +16,7 @@
 
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
+#include <Storages/ObjectStorage/Utils.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
@@ -24,7 +25,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Storages/ObjectStorage/Utils.h>
 
 
 namespace DB
@@ -191,6 +191,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
             StorageID(getDatabaseName(), table_name),
             columns,
             ConstraintsDescription{},
+            partition_by,
             context);
 
         storage->startup();
@@ -207,9 +208,11 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         /* comment */ String{},
         /* format_settings */ std::nullopt,
         /* mode */ LoadingStrictnessLevel::CREATE,
+        /* if_not_exists*/false,
+        /* is_datalake_query*/ false,
         /* distributed_processing */ is_secondary_query,
-        /* partition_by */ nullptr,
-        /* is_table_function */ true);
+        /* partition_by */ partition_by,
+        /* is_table_function */true);
 
     storage->startup();
     return storage;

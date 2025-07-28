@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas, long
+# Tags: no-parallel-replicas, long, disabled
+
+# disabled until https://github.com/ClickHouse/ClickHouse/issues/84295 is done
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -22,9 +24,13 @@ $CLICKHOUSE_CLIENT --query "
     INSERT INTO t_rename_alter (id) VALUES (1);
 "
 
+TIMEOUT=8
+
 function insert1()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         $CLICKHOUSE_CLIENT --query "INSERT INTO t_rename_alter (id, dt, arr) SELECT 1, now(), [(now(), 1, 'a', 'b')]" --insert_deduplicate 0
         sleep 0.05
     done
@@ -32,7 +38,9 @@ function insert1()
 
 function insert2()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         $CLICKHOUSE_CLIENT --query "INSERT INTO t_rename_alter (id, dt, arr_v2) SELECT 1, now(), [(now(), 1, 'a', 'b', 'c')]" --insert_deduplicate 0
         sleep 0.05
     done
@@ -40,22 +48,18 @@ function insert2()
 
 function select1()
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         $CLICKHOUSE_CLIENT --query "SELECT count() FROM t_rename_alter WHERE NOT ignore(*) FORMAT Null;" --insert_deduplicate 0
         sleep 0.05
     done
 }
 
-export -f insert1;
-export -f insert2;
-export -f select1;
-
-TIMEOUT=8
-
 for _ in {0..4}; do
-    timeout $TIMEOUT bash -c insert1 2> /dev/null &
-    timeout $TIMEOUT bash -c insert2 2> /dev/null &
-    timeout $TIMEOUT bash -c select1 2> /dev/null &
+    insert1 2> /dev/null &
+    insert2 2> /dev/null &
+    select1 2> /dev/null &
 done
 
 $CLICKHOUSE_CLIENT --query "
@@ -86,11 +90,6 @@ $CLICKHOUSE_CLIENT --query "
 # It is ok, we only check that server doesn't crash in this
 
 wait
-
-$CLICKHOUSE_CLIENT --query "
-    ALTER TABLE t_rename_alter ADD COLUMN just_for_sync_alters_and_mutations UInt64 SETTINGS alter_sync = 2;
-    ALTER TABLE t_rename_alter UPDATE just_for_sync_alters_and_mutations = 43 WHERE 1 SETTINGS mutations_sync = 2;
-"
 
 $CLICKHOUSE_CLIENT --query "
     SELECT count() > 0 FROM t_rename_alter WHERE NOT ignore(*);

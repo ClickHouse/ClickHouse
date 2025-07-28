@@ -43,7 +43,7 @@ void SerializationDecimalBase<T>::deserializeBinary(Field & field, ReadBuffer & 
 {
     typename FieldType::NativeType x;
     readBinaryLittleEndian(x, istr);
-    field = DecimalField(T(x), this->scale);
+    field = DecimalField<T>(T(x), this->scale);
 }
 
 template <typename T>
