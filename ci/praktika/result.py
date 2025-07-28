@@ -411,23 +411,22 @@ class Result(MetaClasses.Serializable):
         )
 
     @classmethod
-    def from_gtest_run(cls, unit_tests_path, name="", with_log=False):
+    def from_gtest_run(
+        cls, unit_tests_path, name="", with_log=False, command_prefix=""
+    ):
         """
-        Runs gtest and generates praktika Result
-        :param unit_tests_path:
+        Runs gtest and generates praktika Result from results
+        :param unit_tests_path: path to gtest binary
         :param name: Should be set if executed as a job subtask with name @name.
         If it's a job itself job.name will be taken as name by default
-        :param with_log:
-        :return:
+        :param with_log: whether to log gtest output into separate file
+        :param command_prefix: prefix to add to gtest command
+        :return: Result
         """
 
         command = f"{unit_tests_path} --gtest_output='json:{ResultTranslator.GTEST_RESULT_FILE}'"
-        # With gdb we will capture stacktrace in case of abnormal termination and timeout (30 mins)
-        # 'catch syscall exit_group' is a hack to avoid exiting with non-zero exit code when process terminated successfully
-        #
-        # Note, LSan does not compatible with debugger, so let's not run binary under gdb for sanitizers
-        if "san" not in Info().job_name:
-            command = f"timeout 30m gdb -batch -ex 'handle all nostop' -ex 'set print thread-events off' -ex 'set pagination off' -ex 'catch syscall exit_group' -ex run -ex bt -arg {command}"
+        if command_prefix:
+            command = f"{command_prefix} {command}"
 
         Shell.check(f"rm {ResultTranslator.GTEST_RESULT_FILE}")
         result = Result.from_commands_run(
