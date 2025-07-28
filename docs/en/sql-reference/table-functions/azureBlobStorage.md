@@ -18,7 +18,7 @@ Provides a table-like interface to select/insert files in [Azure Blob Storage](h
 ## Syntax {#syntax}
 
 ```sql
-azureBlobStorage(- connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
+azureBlobStorage(- connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure, extra_credentials(client_id=, tenant_id=)])
 ```
 
 ## Arguments {#arguments}
@@ -31,8 +31,9 @@ azureBlobStorage(- connection_string|storage_account_url, container_name, blobpa
 | `account_name`                             | if storage_account_url is used, then account name can be specified here                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `account_key`                              | if storage_account_url is used, then account key can be specified here                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `format`                                   | The [format](/sql-reference/formats) of the file.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `compression`                              | Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension. (same as setting to `auto`).                                                                                                                                                                                                                                                                                                                        | 
+| `compression`                              | Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension. (same as setting to `auto`).                                                                                                                                                                                                                                                                                                                        |
 | `structure`                                | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                              |
+| `extra_credentials`                        | Use `client_id` and `tenant_id` for authentication instead of `account_name` and `account_key`.                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ## Returned value {#returned_value}
 
@@ -118,7 +119,7 @@ FROM azureBlobStorage('BlobEndpoint=https://clickhousedocstest.blob.core.windows
 Alternatively, users can use the generated [Blob SAS URL](https://learn.microsoft.com/en-us/azure/ai-services/translator/document-translation/how-to-guides/create-sas-tokens?tabs=Containers):
 
 ```sql
-SELECT count() 
+SELECT count()
 FROM azureBlobStorage('https://clickhousedocstest.blob.core.windows.net/?sp=r&st=2025-01-29T14:58:11Z&se=2025-01-29T22:58:11Z&spr=https&sv=2022-11-02&sr=c&sig=Ac2U0xl4tm%2Fp7m55IilWl1yHwk%2FJG0Uk6rMVuOiD0eE%3D', 'exampledatasets', 'example.csv')
 
 ┌─count()─┐
