@@ -262,10 +262,8 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
     else if (
         usage == TableFunctionUsage::EngineReplace
         && (t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine() || t.isAnyS3Engine() || t.isAnyAzureEngine() || t.isFileEngine()
-            || t.isURLEngine()))
+            || t.isURLEngine() || t.isRedisEngine()))
     {
-        String buf;
-        bool first = true;
         Expr * structure = nullptr;
         const std::optional<String> & cluster = t.getCluster();
 
@@ -379,24 +377,65 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             }
             structure = ufunc->mutable_structure();
         }
+        else if (t.isRedisEngine())
+        {
+            RedisFunc * rfunc = tfunc->mutable_redis();
+            const ServerCredentials & sc = fc.redis_server.value();
+
+            rfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
+            flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
+            std::shuffle(this->remote_entries.begin(), this->remote_entries.end(), rg.generator);
+            rfunc->set_key(rg.pickRandomly(this->remote_entries).getBottomName());
+            this->remote_entries.clear();
+            structure = rfunc->mutable_structure();
+            if (rg.nextBool())
+            {
+                rfunc->set_db_index(rg.randomInt<uint32_t>(0, 15));
+                rfunc->set_password(sc.password);
+                rfunc->set_pool_size(rg.randomInt<uint32_t>(0, 16));
+            }
+        }
+        else if (t.isMongoDBEngine())
+        {
+            MongoDBFunc * mfunc = tfunc->mutable_mongodb();
+            const ServerCredentials & sc = fc.mongodb_server.value();
+
+            mfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
+            mfunc->set_database(sc.database);
+            mfunc->set_collection(t.getTableName());
+            mfunc->set_user(sc.user);
+            mfunc->set_password(sc.password);
+            structure = mfunc->mutable_structure();
+        }
+        else if (t.isDictionaryEngine())
+        {
+            t.setName(tfunc->mutable_dictionary(), false);
+        }
         else
         {
             chassert(0);
         }
-        flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
-        std::shuffle(this->remote_entries.begin(), this->remote_entries.end(), rg.generator);
-        for (const auto & entry : this->remote_entries)
+        if (structure)
         {
-            buf += fmt::format(
-                "{}{} {}{}",
-                first ? "" : ", ",
-                entry.getBottomName(),
-                entry.getBottomType()->typeName(true),
-                entry.nullable.has_value() ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
-            first = false;
+            String buf;
+            bool first = true;
+            const bool allCols = rg.nextSmallNumber() < 4;
+
+            flatTableColumnPath(to_remote_entries, t.cols, [&](const SQLColumn & c) { return allCols || c.canBeInserted(); });
+            std::shuffle(this->remote_entries.begin(), this->remote_entries.end(), rg.generator);
+            for (const auto & entry : this->remote_entries)
+            {
+                buf += fmt::format(
+                    "{}{} {}{}",
+                    first ? "" : ", ",
+                    entry.getBottomName(),
+                    entry.getBottomType()->typeName(true),
+                    entry.nullable.has_value() ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
+                first = false;
+            }
+            this->remote_entries.clear();
+            structure->mutable_lit_val()->set_string_lit(std::move(buf));
         }
-        this->remote_entries.clear();
-        structure->mutable_lit_val()->set_string_lit(std::move(buf));
     }
     else if (usage == TableFunctionUsage::ClusterCall)
     {
@@ -419,11 +458,11 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
     else if (usage == TableFunctionUsage::RemoteCall || (usage == TableFunctionUsage::PeerTable && t.hasClickHousePeer()))
     {
         RemoteFunc * rfunc = tfunc->mutable_remote();
-        const bool ispeer = usage == TableFunctionUsage::PeerTable && t.hasClickHousePeer();
-        const RemoteFunc_RName fname = (ispeer || rg.nextBool()) ? RemoteFunc::remote : RemoteFunc::remoteSecure;
+        const bool isPeer = usage == TableFunctionUsage::PeerTable && t.hasClickHousePeer();
+        const RemoteFunc_RName fname = (isPeer || rg.nextBool()) ? RemoteFunc::remote : RemoteFunc::remoteSecure;
 
         rfunc->set_rname(fname);
-        if (ispeer)
+        if (isPeer)
         {
             const ServerCredentials & sc = fc.clickhouse_server.value();
 
@@ -441,6 +480,10 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             rfunc->set_address(fc.getConnectionHostAndPort(fname == RemoteFunc::remoteSecure));
         }
         t.setName(rfunc->mutable_tof()->mutable_est(), true);
+    }
+    else
+    {
+        chassert(0);
     }
 }
 

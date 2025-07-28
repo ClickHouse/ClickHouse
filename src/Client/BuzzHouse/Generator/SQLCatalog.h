@@ -316,6 +316,8 @@ public:
         est->mutable_table()->set_table("t" + std::to_string(name));
     }
 
+    String getTableName() const;
+
     String getFullName(const bool setdbname) const;
 
     void setName(ExprSchemaTable * est, const bool setdbname) const { SQLTable::setName(est, setdbname, db, tname); }

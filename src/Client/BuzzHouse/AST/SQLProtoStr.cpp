@@ -2011,6 +2011,52 @@ CONV_FN(SQLiteFunc, sfunc)
     ret += "')";
 }
 
+CONV_FN(RedisFunc, rfunc)
+{
+    ret += "redis('";
+    ret += rfunc.address();
+    ret += "', '";
+    ret += rfunc.key();
+    ret += "', ";
+    ExprToString(ret, rfunc.structure());
+    if (rfunc.has_db_index())
+    {
+        ret += ", '";
+        ret += rfunc.db_index();
+        ret += "'";
+    }
+    if (rfunc.has_password())
+    {
+        ret += ", '";
+        ret += rfunc.password();
+        ret += "'";
+    }
+    if (rfunc.has_pool_size())
+    {
+        ret += ", '";
+        ret += rfunc.pool_size();
+        ret += "'";
+    }
+    ret += ")";
+}
+
+CONV_FN(MongoDBFunc, mfunc)
+{
+    ret += "mongodb('";
+    ret += mfunc.address();
+    ret += "', '";
+    ret += mfunc.database();
+    ret += "', '";
+    ret += mfunc.collection();
+    ret += "', '";
+    ret += mfunc.user();
+    ret += "', '";
+    ret += mfunc.password();
+    ret += "', ";
+    ExprToString(ret, mfunc.structure());
+    ret += ")";
+}
+
 CONV_FN(S3Func, sfunc)
 {
     ret += S3Func_FName_Name(sfunc.fname());
@@ -2309,6 +2355,12 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kUrl:
             URLFuncToString(ret, tf.url());
+            break;
+        case TableFunctionType::kRedis:
+            RedisFuncToString(ret, tf.redis());
+            break;
+        case TableFunctionType::kMongodb:
+            MongoDBFuncToString(ret, tf.mongodb());
             break;
         default:
             ret += "numbers(10)";

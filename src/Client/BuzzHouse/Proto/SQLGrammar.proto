@@ -2540,6 +2540,24 @@ message SQLiteFunc {
     required string rtable = 2;
 }
 
+message RedisFunc {
+    required string address = 1;
+    required string key = 2;
+    required Expr structure = 3;
+    optional uint32 db_index = 4;
+    optional string password = 5;
+    optional uint32 pool_size = 6;
+}
+
+message MongoDBFunc {
+    required string address = 1;
+    required string database = 2;
+    required string collection = 3;
+    required string user = 4;
+    required string password = 5;
+    required Expr structure = 6;
+}
+
 message S3Func {
     enum FName {
         gcs = 1;
@@ -2657,6 +2675,8 @@ message TableFunction {
         ExprSchemaTable dictionary = 16;
         AzureBlobStorageFunc azure = 17;
         URLFunc url = 18;
+        RedisFunc redis = 19;
+        MongoDBFunc mongodb = 20;
     }
 }
 

@@ -23,7 +23,7 @@ bool SQLBase::isNotTruncableEngine() const
 bool SQLBase::isEngineReplaceable() const
 {
     return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine()
-        || isAnyAzureEngine() || isFileEngine() || isURLEngine();
+        || isAnyAzureEngine() || isFileEngine() || isURLEngine() || isRedisEngine() || isMongoDBEngine() || isDictionaryEngine();
 }
 
 bool SQLBase::isAnotherRelationalDatabaseEngine() const
@@ -90,6 +90,11 @@ size_t SQLTable::numberOfInsertableColumns() const
         res += entry.second.canBeInserted() ? 1 : 0;
     }
     return res;
+}
+
+String SQLTable::getTableName() const
+{
+    return "t" + std::to_string(tname);
 }
 
 String SQLTable::getFullName(const bool setdbname) const
