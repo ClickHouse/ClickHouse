@@ -12,13 +12,13 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # CREATE VIEW
 
-Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), [refreshable materialized](#refreshable-materialized-view), and [window](/sql-reference/statements/create/view#window-view).
+Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), [refreshable materialized](#refreshable-materialized-view), and [window](/sql-reference/statements/create/view#window-view) (refreshable materialized view and window view are experimental features).
 
 ## Normal View {#normal-view}
 
 Syntax:
 
-```sql
+``` sql
 CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [(alias1 [, alias2 ...])] [ON CLUSTER cluster_name]
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }]
 AS SELECT ...
@@ -29,40 +29,40 @@ Normal views do not store any data. They just perform a read from another table 
 
 As an example, assume you've created a view:
 
-```sql
+``` sql
 CREATE VIEW view AS SELECT ...
 ```
 
 and written a query:
 
-```sql
+``` sql
 SELECT a, b, c FROM view
 ```
 
 This query is fully equivalent to using the subquery:
 
-```sql
+``` sql
 SELECT a, b, c FROM (SELECT ...)
 ```
 
 ## Parameterized View {#parameterized-view}
 
-Parameterized views are similar to normal views, but can be created with parameters which are not resolved immediately. These views can be used with table functions, which specify the name of the view as function name and the parameter values as its arguments.
+Parametrized views are similar to normal views, but can be created with parameters which are not resolved immediately. These views can be used with table functions, which specify the name of the view as function name and the parameter values as its arguments.
 
-```sql
+``` sql
 CREATE VIEW view AS SELECT * FROM TABLE WHERE Column1={column1:datatype1} and Column2={column2:datatype2} ...
 ```
 The above creates a view for table which can be used as table function by substituting parameters as shown below.
 
-```sql
+``` sql
 SELECT * FROM view(column1=value1, column2=value2 ...)
 ```
 
 ## Materialized View {#materialized-view}
 
-```sql
+``` sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name [(columns)]] [ENGINE = engine] [POPULATE]
-[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }]
 AS SELECT ...
 [COMMENT 'comment']
 ```
@@ -171,9 +171,8 @@ REFRESH EVERY|AFTER interval [OFFSET interval]
 [DEPENDS ON [db.]name [, [db.]name [, ...]]]
 [SETTINGS name = value [, name = value [, ...]]]
 [APPEND]
-[TO[db.]name] [(columns)] [ENGINE = engine]
+[TO[db.]name] [(columns)] [ENGINE = engine] 
 [EMPTY]
-[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
 AS SELECT ...
 [COMMENT 'comment']
 ```
@@ -183,10 +182,12 @@ number SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR
 ```
 
 Periodically runs the corresponding query and stores its result in a table.
-* If the query says `APPEND`, each refresh inserts rows into the table without deleting existing rows. The insert is not atomic, just like a regular INSERT SELECT.
-* Otherwise each refresh atomically replaces the table's previous contents.
+ * If the query says `APPEND`, each refresh inserts rows into the table without deleting existing rows. The insert is not atomic, just like a regular INSERT SELECT.
+ * Otherwise each refresh atomically replaces the table's previous contents.
+
 Differences from regular non-refreshable materialized views:
-* No insert trigger. I.e. when new data is inserted into the table specified in SELECT, it's *not* automatically pushed to the refreshable materialized view. The periodic refresh runs the entire query. * No restrictions on the SELECT query. Table functions (e.g. `url()`), views, UNION, JOIN, are all allowed.
+ * No insert trigger. I.e. when new data is inserted into the table specified in SELECT, it's *not* automatically pushed to the refreshable materialized view. The periodic refresh runs the entire query.
+ * No restrictions on the SELECT query. Table functions (e.g. `url()`), views, UNION, JOIN, are all allowed.
 
 :::note
 The settings in the `REFRESH ... SETTINGS` part of the query are refresh settings (e.g. `refresh_retries`), distinct from regular settings (e.g. `max_threads`). Regular settings can be specified using `SETTINGS` at the end of the query.
@@ -248,20 +249,20 @@ CREATE MATERIALIZED VIEW destination REFRESH AFTER 1 HOUR DEPENDS ON source AS S
 where `1 HOUR` can be any duration less than `source`'s refresh period. The dependent table won't be refreshed more frequently than any of its dependencies. This is a valid way to set up a chain of refreshable views without specifying the real refresh period more than once.
 
 A few more examples:
-* `REFRESH EVERY 1 DAY OFFSET 10 MINUTE` (`destination`) depends on `REFRESH EVERY 1 DAY` (`source`)<br/>
-  If `source` refresh takes more than 10 minutes, `destination` will wait for it.
-* `REFRESH EVERY 1 DAY OFFSET 1 HOUR` depends on `REFRESH EVERY 1 DAY OFFSET 23 HOUR`<br/>
-  Similar to the above, even though the corresponding refreshes happen on different calendar days.
-  `destination`'s refresh on day X+1 will wait for `source`'s refresh on day X (if it takes more than 2 hours).
-* `REFRESH EVERY 2 HOUR` depends on `REFRESH EVERY 1 HOUR`<br/>
-  The 2 HOUR refresh happens after the 1 HOUR refresh for every other hour, e.g. after the midnight
-  refresh, then after the 2am refresh, etc.
-* `REFRESH EVERY 1 MINUTE` depends on `REFRESH EVERY 2 HOUR`<br/>
-  `REFRESH AFTER 1 MINUTE` depends on `REFRESH EVERY 2 HOUR`<br/>
-  `REFRESH AFTER 1 MINUTE` depends on `REFRESH AFTER 2 HOUR`<br/>
-  `destination` is refreshed once after every `source` refresh, i.e. every 2 hours. The `1 MINUTE` is effectively ignored.
-* `REFRESH AFTER 1 HOUR` depends on `REFRESH AFTER 1 HOUR`<br/>
-  Currently this is not recommended.
+ * `REFRESH EVERY 1 DAY OFFSET 10 MINUTE` (`destination`) depends on `REFRESH EVERY 1 DAY` (`source`)<br/>
+   If `source` refresh takes more than 10 minutes, `destination` will wait for it.
+ * `REFRESH EVERY 1 DAY OFFSET 1 HOUR` depends on `REFRESH EVERY 1 DAY OFFSET 23 HOUR`<br/>
+   Similar to the above, even though the corresponding refreshes happen on different calendar days.
+   `destination`'s refresh on day X+1 will wait for `source`'s refresh on day X (if it takes more than 2 hours).
+ * `REFRESH EVERY 2 HOUR` depends on `REFRESH EVERY 1 HOUR`<br/>
+   The 2 HOUR refresh happens after the 1 HOUR refresh for every other hour, e.g. after the midnight
+   refresh, then after the 2am refresh, etc.
+ * `REFRESH EVERY 1 MINUTE` depends on `REFRESH EVERY 2 HOUR`<br/>
+   `REFRESH AFTER 1 MINUTE` depends on `REFRESH EVERY 2 HOUR`<br/>
+   `REFRESH AFTER 1 MINUTE` depends on `REFRESH AFTER 2 HOUR`<br/>
+   `destination` is refreshed once after every `source` refresh, i.e. every 2 hours. The `1 MINUTE` is effectively ignored.
+ * `REFRESH AFTER 1 HOUR` depends on `REFRESH AFTER 1 HOUR`<br/>
+   Currently this is not recommended.
 
 :::note
 `DEPENDS ON` only works between refreshable materialized views. Listing a regular table in the `DEPENDS ON` list will prevent the view from ever refreshing (dependencies can be removed with `ALTER`, see below).
@@ -270,9 +271,9 @@ A few more examples:
 ### Settings {#settings}
 
 Available refresh settings:
-* `refresh_retries` - How many times to retry if refresh query fails with an exception. If all retries fail, skip to the next scheduled refresh time. 0 means no retries, -1 means infinite retries. Default: 0.
-* `refresh_retry_initial_backoff_ms` - Delay before the first retry, if `refresh_retries` is not zero. Each subsequent retry doubles the delay, up to `refresh_retry_max_backoff_ms`. Default: 100 ms.
-* `refresh_retry_max_backoff_ms` - Limit on the exponential growth of delay between refresh attempts. Default: 60000 ms (1 minute).
+ * `refresh_retries` - How many times to retry if refresh query fails with an exception. If all retries fail, skip to the next scheduled refresh time. 0 means no retries, -1 means infinite retries. Default: 0.
+ * `refresh_retry_initial_backoff_ms` - Delay before the first retry, if `refresh_retries` is not zero. Each subsequent retry doubles the delay, up to `refresh_retry_max_backoff_ms`. Default: 100 ms.
+ * `refresh_retry_max_backoff_ms` - Limit on the exponential growth of delay between refresh attempts. Default: 60000 ms (1 minute).
 
 ### Changing Refresh Parameters {#changing-refresh-parameters}
 
@@ -306,7 +307,7 @@ Fun fact: the refresh query is allowed to read from the view that's being refres
 This is an experimental feature that may change in backwards-incompatible ways in the future releases. Enable usage of window views and `WATCH` query using [allow_experimental_window_view](/operations/settings/settings#allow_experimental_window_view) setting. Input the command `set allow_experimental_window_view = 1`.
 :::
 
-```sql
+``` sql
 CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [INNER ENGINE engine] [ENGINE engine] [WATERMARK strategy] [ALLOWED_LATENESS interval_function] [POPULATE]
 AS SELECT ...
 GROUP BY time_window_function
@@ -329,7 +330,7 @@ Window view supports **processing time** and **event time** process.
 
 **Processing time** allows window view to produce results based on the local machine's time and is used by default. It is the most straightforward notion of time but does not provide determinism. The processing time attribute can be defined by setting the `time_attr` of the time window function to a table column or using the function `now()`. The following query creates a window view with processing time.
 
-```sql
+``` sql
 CREATE WINDOW VIEW wv AS SELECT count(number), tumbleStart(w_id) as w_start from date GROUP BY tumble(now(), INTERVAL '5' SECOND) as w_id
 ```
 
@@ -343,7 +344,7 @@ Window view provides three watermark strategies:
 
 The following queries are examples of creating a window view with `WATERMARK`:
 
-```sql
+``` sql
 CREATE WINDOW VIEW wv WATERMARK=STRICTLY_ASCENDING AS SELECT count(number) FROM date GROUP BY tumble(timestamp, INTERVAL '5' SECOND);
 CREATE WINDOW VIEW wv WATERMARK=ASCENDING AS SELECT count(number) FROM date GROUP BY tumble(timestamp, INTERVAL '5' SECOND);
 CREATE WINDOW VIEW wv WATERMARK=INTERVAL '3' SECOND AS SELECT count(number) FROM date GROUP BY tumble(timestamp, INTERVAL '5' SECOND);
@@ -351,7 +352,7 @@ CREATE WINDOW VIEW wv WATERMARK=INTERVAL '3' SECOND AS SELECT count(number) FROM
 
 By default, the window will be fired when the watermark comes, and elements that arrived behind the watermark will be dropped. Window view supports late event processing by setting `ALLOWED_LATENESS=INTERVAL`. An example of lateness handling is:
 
-```sql
+``` sql
 CREATE WINDOW VIEW test.wv TO test.dst WATERMARK=ASCENDING ALLOWED_LATENESS=INTERVAL '2' SECOND AS SELECT count(a) AS count, tumbleEnd(wid) AS w_end FROM test.mt GROUP BY tumble(timestamp, INTERVAL '5' SECOND) AS wid;
 ```
 
@@ -363,7 +364,7 @@ You can modify `SELECT` query that was specified in the window view by using `AL
 
 Window view supports the [WATCH](../../../sql-reference/statements/watch.md) query to monitoring changes, or use `TO` syntax to output the results to a table.
 
-```sql
+``` sql
 WATCH [db.]window_view
 [EVENTS]
 [LIMIT n]
@@ -382,31 +383,31 @@ WATCH [db.]window_view
 
 Suppose we need to count the number of click logs per 10 seconds in a log table called `data`, and its table structure is:
 
-```sql
+``` sql
 CREATE TABLE data ( `id` UInt64, `timestamp` DateTime) ENGINE = Memory;
 ```
 
 First, we create a window view with tumble window of 10 seconds interval:
 
-```sql
+``` sql
 CREATE WINDOW VIEW wv as select count(id), tumbleStart(w_id) as window_start from data group by tumble(timestamp, INTERVAL '10' SECOND) as w_id
 ```
 
 Then, we use the `WATCH` query to get the results.
 
-```sql
+``` sql
 WATCH wv
 ```
 
 When logs are inserted into table `data`,
 
-```sql
+``` sql
 INSERT INTO data VALUES(1,now())
 ```
 
 The `WATCH` query should print the results as follows:
 
-```text
+``` text
 ┌─count(id)─┬────────window_start─┐
 │         1 │ 2020-01-14 16:56:40 │
 └───────────┴─────────────────────┘
@@ -414,7 +415,7 @@ The `WATCH` query should print the results as follows:
 
 Alternatively, we can attach the output to another table using `TO` syntax.
 
-```sql
+``` sql
 CREATE WINDOW VIEW wv TO dst AS SELECT count(id), tumbleStart(w_id) as window_start FROM data GROUP BY tumble(timestamp, INTERVAL '10' SECOND) as w_id
 ```
 

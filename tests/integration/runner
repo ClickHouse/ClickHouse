@@ -43,7 +43,7 @@ def physical_memory() -> int:
         return int(subprocess.check_output(["sysctl", "-n", "hw.memsize"]).strip())
 
 
-def check_args_and_update_paths(args: argparse.Namespace) -> str:
+def check_args_and_update_paths(args: argparse.Namespace) -> None:
     if args.clickhouse_root:
         if not os.path.isabs(args.clickhouse_root):
             CLICKHOUSE_ROOT = os.path.abspath(args.clickhouse_root)
@@ -124,8 +124,6 @@ def check_args_and_update_paths(args: argparse.Namespace) -> str:
         raise FileNotFoundError(
             f"No users.xml or users.yaml in {args.base_configs_dir}"
         )
-
-    return CLICKHOUSE_ROOT
 
 
 def check_iptables_legacy() -> None:
@@ -335,14 +333,6 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--distributed-plan",
-        action="store_true",
-        default=False,
-        dest="distributed_plan",
-        help="Use serialized query plan in distributed queries",
-    )
-
-    parser.add_argument(
         "--cleanup-containers",
         action="store_true",
         default=False,
@@ -358,14 +348,6 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--debug",
-        action="store_true",
-        dest="debug",
-        default=False,
-        help="Mount ClickHouse source folder from --clickhouse-root into /debug (read-only)",
-    )
-
-    parser.add_argument(
         "--ignore-iptables-legacy-check",
         action="store_true",
         default=False,
@@ -376,8 +358,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Resolve and store ClickHouse root path
-    CLICKHOUSE_ROOT = check_args_and_update_paths(args)
+    check_args_and_update_paths(args)
 
     if not args.ignore_iptables_legacy_check:
         check_iptables_legacy()
@@ -462,10 +443,6 @@ if __name__ == "__main__":
     if args.old_analyzer:
         use_old_analyzer = "-e CLICKHOUSE_USE_OLD_ANALYZER=1"
 
-    use_distributed_plan = ""
-    if args.distributed_plan:
-        use_distributed_plan = "-e CLICKHOUSE_USE_DISTRIBUTED_PLAN=1"
-
     # NOTE: since pytest options is in the argument value already we need to additionally escape '"'
     pytest_opts = " ".join(
         map(lambda x: shlex.quote(x).replace('"', '\\"'), args.pytest_args)
@@ -473,9 +450,6 @@ if __name__ == "__main__":
     tests_list = " ".join(
         map(lambda x: shlex.quote(x).replace('"', '\\"'), args.tests_list)
     )
-
-    # Mount debug root into container if debug flag is set
-    debug_mount = f"--volume={CLICKHOUSE_ROOT}:/debug:ro" if args.debug else ""
 
     cmd_base = (
         f"docker run {net} {tty} --rm --name {CONTAINER_NAME} "
@@ -485,12 +459,11 @@ if __name__ == "__main__":
         f"--cap-add=SYS_PTRACE "
         f"--volume={args.binary}:/clickhouse "
         f"--volume={args.base_configs_dir}:/clickhouse-config "
-        f"{debug_mount} "
         f"--volume={args.cases_dir}:/ClickHouse/tests/integration "
         f"--volume={args.utils_dir}/backupview:/ClickHouse/utils/backupview "
         f"--volume={args.utils_dir}/grpc-client/pb2:/ClickHouse/utils/grpc-client/pb2 "
         f"--volume=/run:/run/host:ro {dockerd_internal_volume} {env_tags} {env_cleanup} "
-        f"-e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 {use_old_analyzer} {use_distributed_plan} -e PYTHONUNBUFFERED=1 "
+        f"-e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 {use_old_analyzer} -e PYTHONUNBUFFERED=1 "
         f'-e PYTEST_ADDOPTS="{parallel_args} {repeat_args} {pytest_opts} {tests_list} {rand_args} -vvv "'
         f" {DIND_INTEGRATION_TESTS_IMAGE_NAME}:{args.docker_image_version}"
     )
@@ -514,18 +487,6 @@ if __name__ == "__main__":
     if args.pre_pull:
         print(("Running pre pull as: '" + cmd_pre_pull + "'."))
         subprocess.check_call(cmd_pre_pull, shell=True)
-
-    if args.debug:
-        print(
-            f"""
-    # =====> DEBUG MODE <=====
-    # ClickHouse root folder will be read-only mounted into /debug in all containers.
-    # Tip: place a `breakpoint()` somewhere in your integration test python code before `runner`.
-    # Open another shell and include:
-        source {CLICKHOUSE_ROOT}/tests/integration/runner-env.sh
-    # =====> DEBUG MODE <=====
-"""
-        )
 
     print(("Running pytest container as: '" + cmd + "'."))
     subprocess.check_call(cmd, shell=True, bufsize=0)

@@ -54,8 +54,6 @@ public:
 
     bool supportsStat() const override { return disk->supportsStat(); }
 
-    bool supportsPartitionCommand(const PartitionCommand & command) const override;
-
     struct stat stat(const String & path) const override { return disk->stat(path); }
 
     std::vector<std::string> listDirectory(const std::string & path) const override;
@@ -135,6 +133,7 @@ public:
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
     TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t target_size) override;
+
 };
 
 

@@ -1,8 +1,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/Serializations/SerializationDateTime.h>
 
-#include <Common/DateLUTImpl.h>
-
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 

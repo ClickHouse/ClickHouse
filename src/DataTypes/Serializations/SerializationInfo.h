@@ -121,10 +121,6 @@ public:
 
     static SerializationInfoByName readJSON(
         const NamesAndTypesList & columns, const Settings & settings, ReadBuffer & in);
-
-    static SerializationInfoByName readJSONFromString(
-        const NamesAndTypesList & columns, const Settings & settings, const std::string & str);
-
 };
 
 }
