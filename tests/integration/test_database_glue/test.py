@@ -201,6 +201,26 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
     )
 
+def create_clickhouse_glue_table(
+    started_cluster, node, database_name, table_name, schema, additional_settings={}
+):
+    settings = {
+        "iceberg_catalog_type": "glue",
+        "iceberg_warehouse": "test",
+        "iceberg_storage_endpoint": "http://minio:9000/warehouse-glue",
+        "iceberg_region": "us-east-1",
+        "iceberg_catalog_url" : BASE_URL
+    }
+
+    settings.update(additional_settings)
+
+    node.query(
+        f"""
+SET allow_experimental_database_glue_catalog=true;
+CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = IcebergS3('http://minio:9000/warehouse-glue/foo/', '{minio_access_key}', '{minio_secret_key}')
+SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
+    """
+    )
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -512,3 +532,16 @@ def test_insert(started_cluster):
     node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (NULL, 'AAPL', 193.24, 193.31, tuple('bot'), NULL);", settings={"allow_experimental_insert_into_iceberg": 1, 'write_full_path_insert_iceberg': 1})
     catalog.load_table(f"{root_namespace}.{table_name}")
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "\\N\tAAPL\t193.24\t193.31\t('bot')\t{}\n"
+
+
+def test_create(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_list_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
+    node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');", settings={"allow_experimental_insert_into_iceberg": 1, 'write_full_path_insert_iceberg': 1})
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"

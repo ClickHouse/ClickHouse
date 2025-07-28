@@ -124,8 +124,11 @@ StorageObjectStorage::StorageObjectStorage(
             context,
             columns_,
             partition_by_,
-            if_not_exists_
+            if_not_exists_,
+            catalog,
+            storage_id
         );
+        return;
     }
 
     bool updated_configuration = false;

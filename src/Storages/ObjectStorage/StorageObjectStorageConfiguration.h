@@ -7,7 +7,8 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-
+#include <Interpreters/StorageID.h>
+#include <Databases/DataLake/ICatalog.h>
 
 namespace DB
 {
@@ -144,7 +145,9 @@ public:
         ContextPtr local_context,
         const std::optional<ColumnsDescription> & columns,
         ASTPtr partition_by,
-        bool if_not_exists);
+        bool if_not_exists,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        const StorageID & table_id_);
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
     {
@@ -152,6 +155,8 @@ public:
     }
 
     virtual ColumnMapperPtr getColumnMapper() const { return nullptr; }
+
+    virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/) const { return nullptr; }
 
     String format = "auto";
     String compression_method = "auto";

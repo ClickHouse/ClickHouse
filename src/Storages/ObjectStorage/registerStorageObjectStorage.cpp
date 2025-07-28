@@ -10,6 +10,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Poco/Logger.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/Context.h>
 
@@ -71,7 +72,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         args.comment,
         format_settings,
         args.mode,
-        nullptr,
+        configuration->getCatalog(context),
         args.query.if_not_exists,
         /* is_datalake_query*/ false,
         /* distributed_processing */ false,

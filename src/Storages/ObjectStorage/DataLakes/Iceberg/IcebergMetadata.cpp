@@ -1,3 +1,4 @@
+#include "Databases/DataLake/ICatalog.h"
 #include "config.h"
 #include <memory>
 #include <optional>
@@ -7,6 +8,8 @@
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 #if USE_AVRO
+
+#include <Databases/DataLake/Common.h>
 
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
@@ -458,7 +461,9 @@ void IcebergMetadata::createInitial(
     const ContextPtr & local_context,
     const std::optional<ColumnsDescription> & columns,
     ASTPtr partition_by,
-    bool if_not_exists)
+    bool if_not_exists,
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    const StorageID & table_id_)
 {
     auto configuration_ptr = configuration.lock();
 
@@ -480,11 +485,19 @@ void IcebergMetadata::createInitial(
     }
 
     auto metadata_content = createEmptyMetadataFile(configuration_ptr->getPath(), *columns, partition_by, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
-    auto filename = configuration_ptr->getPath() + "metadata/v1.metadata.json";
-    auto buffer_metadata = object_storage->writeObject(
-        StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, local_context->getWriteSettings());
-    buffer_metadata->write(metadata_content.data(), metadata_content.size());
-    buffer_metadata->finalize();
+    {
+        auto filename = configuration_ptr->getPath() + "metadata/v1.metadata.json";
+        auto buffer_metadata = object_storage->writeObject(
+            StoredObject(filename), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, local_context->getWriteSettings());
+        buffer_metadata->write(metadata_content.data(), metadata_content.size());
+        buffer_metadata->finalize();
+    }
+    if (catalog)
+    {
+        auto catalog_filename = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/" + configuration_ptr->getPath() + "metadata/v1.metadata.json";
+        const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
+        catalog->createTable(namespace_name, table_name, catalog_filename);
+    }
 }
 
 DataLakeMetadataPtr IcebergMetadata::create(

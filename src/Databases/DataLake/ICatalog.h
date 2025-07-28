@@ -2,6 +2,7 @@
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums.h>
+#include <Common/SettingsChanges.h>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Databases/DataLake/DatabaseDataLakeStorageType.h>
@@ -110,6 +111,16 @@ private:
 };
 
 
+struct CatalogSettings
+{
+    String storage_endpoint;
+    String aws_access_key_id;
+    String aws_secret_access_key;
+    String region;
+
+    DB::SettingsChanges allChanged() const;
+};
+
 /// Base class for catalog implementation.
 /// Used for communication with the catalog.
 class ICatalog
@@ -151,6 +162,8 @@ public:
     /// Get storage type, where Iceberg tables' data is stored.
     /// E.g. one of S3, Azure, Local, HDFS.
     virtual std::optional<StorageType> getStorageType() const = 0;
+
+    virtual void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path) const;
 
     virtual void updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path) const;
 

@@ -4,6 +4,7 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Databases/DataLake/Common.h>
+#include <Databases/DataLake/ICatalog.h>
 
 #if USE_AVRO && USE_PARQUET
 
@@ -112,6 +113,13 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
     if (catalog_impl)
         return catalog_impl;
 
+    auto catalog_parameters = DataLake::CatalogSettings{
+        .storage_endpoint = settings[DatabaseDataLakeSetting::storage_endpoint].value,
+        .aws_access_key_id = settings[DatabaseDataLakeSetting::aws_access_key_id].value,
+        .aws_secret_access_key = settings[DatabaseDataLakeSetting::aws_secret_access_key].value,
+        .region = settings[DatabaseDataLakeSetting::region].value,
+    };
+
     switch (settings[DatabaseDataLakeSetting::catalog_type].value)
     {
         case DB::DatabaseDataLakeCatalogType::ICEBERG_REST:
@@ -142,7 +150,7 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
             catalog_impl = std::make_shared<DataLake::GlueCatalog>(
                 url,
                 Context::getGlobalContextInstance(),
-                settings,
+                catalog_parameters,
                 table_engine_definition);
             break;
         }

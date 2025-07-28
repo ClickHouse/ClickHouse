@@ -41,7 +41,7 @@ public:
     };
 
     FileNamesGenerator() = default;
-    explicit FileNamesGenerator(const String & table_dir, const String & storage_dir);
+    explicit FileNamesGenerator(const String & table_dir, const String & storage_dir, bool use_uuid_in_metadata_);
 
     FileNamesGenerator & operator=(const FileNamesGenerator & other);
 
@@ -49,6 +49,8 @@ public:
     Result generateManifestEntryName();
     Result generateManifestListName(Int64 snapshot_id, Int32 format_version);
     Result generateMetadataName();
+
+    String convertMetadataToStoragePath(const String & result) const;
 
     void setVersion(Int32 initial_version_) { initial_version = initial_version_; }
 
@@ -58,6 +60,7 @@ private:
     String metadata_dir;
     String storage_data_dir;
     String storage_metadata_dir;
+    bool use_uuid_in_metadata;
 
     Int32 initial_version = 0;
 };
@@ -80,6 +83,7 @@ void generateManifestList(
     const Strings & manifest_entry_names,
     Poco::JSON::Object::Ptr new_snapshot,
     Int32 manifest_length,
+    const FileNamesGenerator & generator,
     WriteBuffer & buf);
 
 class MetadataGenerator
