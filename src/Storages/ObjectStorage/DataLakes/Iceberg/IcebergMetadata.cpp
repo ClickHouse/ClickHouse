@@ -1,4 +1,3 @@
-#include "Databases/DataLake/ICatalog.h"
 #include "config.h"
 #include <memory>
 #include <optional>
@@ -13,6 +12,7 @@
 
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
