@@ -1399,12 +1399,11 @@ private:
             for (auto & it = *used_position; it != end && rows_added < max_block_size; ++it)
             {
                 const auto & mapped_block = *it;
+                size_t rows = mapped_block.columns.at(0)->size();
 
                 auto used_flags_holder = parent.getUsedFlagsHolder(&mapped_block.columns);
-
-                for (size_t i = 0; i < mapped_block.selector.size(); ++i)
+                for (size_t row = 0; row < rows; ++row)
                 {
-                    size_t row = mapped_block.selector[i];
                     if (!used_flags_holder->isUsed(row))
                     {
                         for (size_t colnum = 0; colnum < columns_keys_and_right.size(); ++colnum)
@@ -1465,15 +1464,17 @@ private:
             if (it->column)
                 nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
 
-            size_t size = columns->selector.size();
-            for (size_t i = 0; i < size; ++i)
+            size_t rows = columns->columns.at(0)->size();
+            if (nullmap)
             {
-                size_t row = columns->selector[i];
-                if (nullmap && (*nullmap)[row])
+                for (size_t i = 0; i < rows; ++i)
                 {
-                    for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
-                        columns_keys_and_right[col]->insertFrom(*columns->columns[col], row);
-                    ++rows_added;
+                    if ((*nullmap)[i])
+                    {
+                        for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
+                            columns_keys_and_right[col]->insertFrom(*columns->columns[col], i);
+                        ++rows_added;
+                    }
                 }
             }
         }
