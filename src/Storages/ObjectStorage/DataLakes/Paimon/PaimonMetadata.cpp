@@ -49,7 +49,7 @@ DataLakeMetadataPtr PaimonMetadata::create(
     const ContextPtr & local_context)
 {
     auto configuration_ptr = configuration.lock();
-    LOG_DEBUG(
+    LOG_TEST(
         &Poco::Logger::get("PaimonMetadata"), "path: {} full path: {}", configuration_ptr->getPath(), configuration_ptr->getFullPath());
     PaimonTableClientPtr table_client_ptr = std::make_shared<PaimonTableClient>(object_storage, configuration, local_context);
     auto schema_json = table_client_ptr->getTableSchemaJSON(table_client_ptr->getLastTableSchemaInfo());
@@ -153,7 +153,7 @@ ObjectIterator PaimonMetadata::iterate(
         {
             if (file_entry.kind != PaimonManifestEntry::Kind::DELETE)
             {
-                LOG_DEBUG(&Poco::Logger::get("PaimonMetadata"), "data file: {}", file_entry.file.bucket_path);
+                LOG_TEST(&Poco::Logger::get("PaimonMetadata"), "data file: {}", file_entry.file.bucket_path);
                 data_files.emplace_back(std::filesystem::path(configuration_ptr->getPath()) / file_entry.file.file_name);
             }
         }
@@ -165,7 +165,7 @@ ObjectIterator PaimonMetadata::iterate(
         {
             if (file_entry.kind != PaimonManifestEntry::Kind::DELETE)
             {
-                LOG_DEBUG(
+                LOG_TEST(
                     &Poco::Logger::get("PaimonMetadata"),
                     "data file: {}",
                     std::filesystem::path(file_entry.file.bucket_path) / file_entry.file.file_name);

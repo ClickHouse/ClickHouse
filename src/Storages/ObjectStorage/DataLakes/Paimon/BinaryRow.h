@@ -91,7 +91,7 @@ public:
             Int32 size = static_cast<Int32>(offset_and_size);
             Int32 sub_offset = static_cast<Int32>(offset_and_size >> 32);
             String bytes_string = copyBytes(offset() + sub_offset, size);
-            LOG_DEBUG(&Poco::Logger::get("BinaryRow"), "bytes_string: {}", to_hex_string(bytes_string));
+            LOG_TEST(&Poco::Logger::get("BinaryRow"), "bytes_string: {}", to_hex_string(bytes_string));
             auto add_leading_zero = [](const String & data, size_t target_size)
             {
                 if (data.size() == target_size)
@@ -164,7 +164,7 @@ private:
     Int32 getFieldOffset(Int32 pos) const
     {
         Int32 res = offset() + calculateBitSetWidthInBytes() + pos * 8;
-        LOG_DEBUG(&Poco::Logger::get("BinaryRow"), "pos: {}, offset: {}", pos, res);
+        LOG_TEST(&Poco::Logger::get("BinaryRow"), "pos: {}, offset: {}", pos, res);
         return res;
     }
     Int32 byteIndex(Int32 bit_index) const { return bit_index >> ADDRESS_BITS_PER_WORD; }

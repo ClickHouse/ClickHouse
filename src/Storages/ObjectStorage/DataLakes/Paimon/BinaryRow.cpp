@@ -61,7 +61,7 @@ BinaryRow::BinaryRow(const String & bytes_)
     /// arity stores as big endian
     if (!need_flip)
         arity = Poco::ByteOrder::flipBytes(arity);
-    LOG_DEBUG(
+    LOG_TEST(
         &Poco::Logger::get("BinaryRow"),
         "arity: {} need_flip: {} bytes_size: {} bytes: {}",
         arity,
@@ -92,7 +92,7 @@ T BinaryRow::getFixedSizeData(Int32 pos)
     seek(getFieldOffset(pos));
     T t;
     readIntBinary(t, reader);
-    LOG_DEBUG(&Poco::Logger::get("BinaryRow"), "read value: {}, need_flip: {}", t, need_flip);
+    LOG_TEST(&Poco::Logger::get("BinaryRow"), "read value: {}, need_flip: {}", t, need_flip);
 
     if (need_flip)
     {
@@ -165,13 +165,13 @@ String BinaryRow::getString(Int32 pos)
     {
         Int32 sub_offset = static_cast<Int32>((offset_and_len >> 32));
         Int32 len = static_cast<Int32>(offset_and_len);
-        LOG_DEBUG(&Poco::Logger::get("BinaryRow"), "sub_offset: {}, len: {}, offset_and_len: {}", sub_offset, len, offset_and_len);
+        LOG_TEST(&Poco::Logger::get("BinaryRow"), "sub_offset: {}, len: {}, offset_and_len: {}", sub_offset, len, offset_and_len);
         return copyBytes(offset() + sub_offset, len);
     }
     else
     {
         Int32 len = static_cast<Int32>(static_cast<UInt64>((offset_and_len & HIGHEST_SECOND_TO_EIGHTH_BIT)) >> 56);
-        LOG_DEBUG(&Poco::Logger::get("BinaryRow"), "mark: {}, len: {}, offset_and_len: {}", mark, len, offset_and_len);
+        LOG_TEST(&Poco::Logger::get("BinaryRow"), "mark: {}, len: {}, offset_and_len: {}", mark, len, offset_and_len);
         if (isLittleEndian())
         {
             return copyBytes(field_offset, len);

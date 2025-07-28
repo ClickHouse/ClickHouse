@@ -204,7 +204,7 @@ struct PaimonManifestEntry
                       .safeGet<std::string>();
             bucket_path = Paimon::getBucketPath(partition_, bucket_, table_schema, partition_default_name);
             // full_path = (std::filesystem::path(Paimon::getBucketPath(partition_, bucket_, table_schema, partition_default_name)) / file_name).string();
-            LOG_DEBUG(&Poco::Logger::get("DataFileMeta"), "bucket_path: {}", bucket_path);
+            LOG_TEST(&Poco::Logger::get("DataFileMeta"), "bucket_path: {}", bucket_path);
             file_size
                 = avro_deserializer
                       .getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_FILE_FILE_SIZE}), TypeIndex::Int64)
