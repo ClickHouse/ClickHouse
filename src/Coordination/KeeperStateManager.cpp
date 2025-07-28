@@ -325,7 +325,7 @@ KeeperStateManager::KeeperStateManager(
 {
     if (keeper_context_->getCoordinationSettings()[CoordinationSetting::rotate_log_storage_interval] <= 0)
     {
-        LOG_FATAL(logger, "rotate_log_storage_interval must be greater than 0.");
+        LOG_FATAL(logger, "Keeper parameter rotate_log_storage_interval must be greater than 0.");
         std::terminate();
     }
 }
