@@ -789,36 +789,26 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
     std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
     std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
+    const uint32_t engine_func = 15 * static_cast<uint32_t>(t.isEngineReplaceable());
     const uint32_t cluster_func = 5 * static_cast<uint32_t>(cluster.has_value() || !fc.clusters.empty());
     const uint32_t remote_func = 5;
     const uint32_t url_func = 5;
     const uint32_t insert_into_table = 95;
-    const uint32_t prob_space2 = cluster_func + remote_func + url_func + insert_into_table;
+    const uint32_t prob_space2 = engine_func + cluster_func + remote_func + url_func + insert_into_table;
     std::uniform_int_distribution<uint32_t> next_dist2(1, prob_space2);
     const uint32_t nopt2 = next_dist2(rg.generator);
 
     flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
     std::shuffle(this->entries.begin(), this->entries.end(), rg.generator);
-    if (cluster_func && (nopt2 < cluster_func + 1))
-    {
-        /// If the table is set on cluster, always insert to all replicas/shards
-        ClusterFunc * cdf = tof->mutable_tfunc()->mutable_cluster();
-
-        cdf->set_all_replicas(cluster.has_value() || rg.nextSmallNumber() < 4);
-        cdf->mutable_cluster()->set_cluster(cluster.has_value() ? cluster.value() : rg.pickRandomly(fc.clusters));
-        t.setName(cdf->mutable_tof()->mutable_est(), true);
-        if (rg.nextSmallNumber() < 4)
-        {
-            /// Optional sharding key
-            flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
-            cdf->set_sharding_key(rg.pickRandomly(this->remote_entries).getBottomName());
-            this->remote_entries.clear();
-        }
-    }
-    else if (remote_func && (nopt2 < cluster_func + remote_func + 1))
+    if ((engine_func || cluster_func || remote_func) && (nopt2 < engine_func + cluster_func + remote_func + 1))
     {
         /// Use insert into remote
-        setTableRemote(rg, true, false, t, tof->mutable_tfunc());
+        const TableFunctionUsage usage = (engine_func && nopt2 < engine_func + 1)
+            ? TableFunctionUsage::EngineReplace
+            : ((cluster_func && (nopt2 < engine_func + cluster_func + 1)) ? TableFunctionUsage::ClusterCall
+                                                                          : TableFunctionUsage::RemoteCall);
+
+        setTableFunction(rg, usage, t, tof->mutable_tfunc());
     }
     else if ((is_url = (url_func && (nopt2 < cluster_func + remote_func + url_func + 1))))
     {

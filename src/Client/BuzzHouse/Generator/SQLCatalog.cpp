@@ -20,6 +20,12 @@ bool SQLBase::isNotTruncableEngine() const
         || isExternalDistributedEngine();
 }
 
+bool SQLBase::isEngineReplaceable() const
+{
+    return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine()
+        || isAnyAzureEngine() || isFileEngine() || isURLEngine();
+}
+
 bool SQLBase::isAnotherRelationalDatabaseEngine() const
 {
     return isMySQLEngine() || isPostgreSQLEngine() || isMaterializedPostgreSQLEngine() || isSQLiteEngine() || isExternalDistributedEngine();

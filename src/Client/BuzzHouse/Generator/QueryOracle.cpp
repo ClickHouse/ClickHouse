@@ -134,29 +134,13 @@ void QueryOracle::addLimitOrOffset(RandomGenerator & rg, StatementGenerator & ge
 }
 
 void QueryOracle::insertOnTableOrCluster(
-    RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const bool remote, TableOrFunction * tof) const
+    RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const bool peer, TableOrFunction * tof) const
 {
     const std::optional<String> & cluster = t.getCluster();
 
-    if (remote)
+    if (peer || cluster.has_value())
     {
-        gen.setTableRemote(rg, false, true, t, tof->mutable_tfunc());
-    }
-    else if (cluster.has_value())
-    {
-        /// If the table is set on cluster, always insert to all replicas/shards
-        ClusterFunc * cdf = tof->mutable_tfunc()->mutable_cluster();
-
-        cdf->set_all_replicas(true);
-        cdf->mutable_cluster()->set_cluster(cluster.has_value() ? cluster.value() : rg.pickRandomly(fc.clusters));
-        t.setName(cdf->mutable_tof()->mutable_est(), true);
-        if (rg.nextSmallNumber() < 4)
-        {
-            /// Optional sharding key
-            gen.flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
-            cdf->set_sharding_key(rg.pickRandomly(gen.remote_entries).getBottomName());
-            gen.remote_entries.clear();
-        }
+        gen.setTableFunction(rg, peer ? TableFunctionUsage::PeerTable : TableFunctionUsage::ClusterCall, t, tof->mutable_tfunc());
     }
     else
     {

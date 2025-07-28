@@ -255,6 +255,8 @@ public:
 
     bool isNotTruncableEngine() const;
 
+    bool isEngineReplaceable() const;
+
     bool isAnotherRelationalDatabaseEngine() const;
 
     bool hasDatabasePeer() const;

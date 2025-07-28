@@ -2546,9 +2546,10 @@ message S3Func {
         s3 = 2;
         deltalakeS3 = 3;
         icebergS3 = 4;
-        s3Cluster = 5;
-        deltalakeS3Cluster = 6;
-        icebergS3Cluster = 7;
+        gcsCluster = 5; /// Add as an alignment
+        s3Cluster = 6;
+        deltalakeS3Cluster = 7;
+        icebergS3Cluster = 8;
     }
     required FName fname = 1;
     optional Cluster cluster = 2;

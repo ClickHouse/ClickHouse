@@ -224,10 +224,9 @@ void StatementGenerator::generateDerivedTable(
     }
 }
 
-void StatementGenerator::setTableRemote(
-    RandomGenerator & rg, const bool table_engine, const bool use_cluster, const SQLTable & t, TableFunction * tfunc)
+void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunctionUsage usage, const SQLTable & t, TableFunction * tfunc)
 {
-    if ((table_engine && t.isMySQLEngine() && rg.nextSmallNumber() < 7) || (!table_engine && t.hasMySQLPeer()))
+    if ((usage == TableFunctionUsage::EngineReplace && t.isMySQLEngine()) || (usage == TableFunctionUsage::PeerTable && t.hasMySQLPeer()))
     {
         const ServerCredentials & sc = fc.mysql_server.value();
         MySQLFunc * mfunc = tfunc->mutable_mysql();
@@ -238,7 +237,9 @@ void StatementGenerator::setTableRemote(
         mfunc->set_user(sc.user);
         mfunc->set_password(sc.password);
     }
-    else if ((table_engine && t.isPostgreSQLEngine() && rg.nextSmallNumber() < 7) || (!table_engine && t.hasPostgreSQLPeer()))
+    else if (
+        (usage == TableFunctionUsage::EngineReplace && t.isPostgreSQLEngine())
+        || (usage == TableFunctionUsage::PeerTable && t.hasPostgreSQLPeer()))
     {
         const ServerCredentials & sc = fc.postgresql_server.value();
         PostgreSQLFunc * pfunc = tfunc->mutable_postgresql();
@@ -250,7 +251,8 @@ void StatementGenerator::setTableRemote(
         pfunc->set_password(sc.password);
         pfunc->set_rschema("test");
     }
-    else if ((table_engine && t.isSQLiteEngine() && rg.nextSmallNumber() < 7) || (!table_engine && t.hasSQLitePeer()))
+    else if (
+        (usage == TableFunctionUsage::EngineReplace && t.isSQLiteEngine()) || (usage == TableFunctionUsage::PeerTable && t.hasSQLitePeer()))
     {
         SQLiteFunc * sfunc = tfunc->mutable_sqite();
 
@@ -258,10 +260,9 @@ void StatementGenerator::setTableRemote(
         sfunc->set_rtable("t" + std::to_string(t.tname));
     }
     else if (
-        table_engine
+        usage == TableFunctionUsage::EngineReplace
         && (t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine() || t.isAnyS3Engine() || t.isAnyAzureEngine() || t.isFileEngine()
-            || t.isURLEngine())
-        && rg.nextSmallNumber() < 7)
+            || t.isURLEngine()))
     {
         String buf;
         bool first = true;
@@ -276,9 +277,9 @@ void StatementGenerator::setTableRemote(
                 ? S3Func_FName::S3Func_FName_s3
                 : (t.isIcebergS3Engine() ? S3Func_FName::S3Func_FName_icebergS3 : S3Func_FName::S3Func_FName_deltalakeS3);
 
-            if (use_cluster && cluster.has_value())
+            if (cluster.has_value())
             {
-                sfunc->set_fname(static_cast<S3Func_FName>(static_cast<uint32_t>(val) + 3));
+                sfunc->set_fname(static_cast<S3Func_FName>(static_cast<uint32_t>(val) + 4));
                 sfunc->mutable_cluster()->set_cluster(cluster.value());
             }
             else
@@ -307,7 +308,7 @@ void StatementGenerator::setTableRemote(
                 : (t.isIcebergS3Engine() ? AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_icebergAzure
                                          : AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_deltalakeAzure);
 
-            if (use_cluster && cluster.has_value())
+            if (cluster.has_value())
             {
                 afunc->set_fname(static_cast<AzureBlobStorageFunc_FName>(static_cast<uint32_t>(val) + 3));
                 afunc->mutable_cluster()->set_cluster(cluster.value());
@@ -338,7 +339,7 @@ void StatementGenerator::setTableRemote(
                 ? FileFunc_FName::FileFunc_FName_file
                 : (t.isIcebergS3Engine() ? FileFunc_FName::FileFunc_FName_icebergLocal : FileFunc_FName::FileFunc_FName_deltalakeLocal);
 
-            if (use_cluster && cluster.has_value())
+            if (cluster.has_value())
             {
                 ffunc->set_fname(static_cast<FileFunc_FName>(static_cast<uint32_t>(val) + 3));
                 ffunc->mutable_cluster()->set_cluster(cluster.value());
@@ -362,7 +363,7 @@ void StatementGenerator::setTableRemote(
         {
             URLFunc * ufunc = tfunc->mutable_url();
 
-            if (use_cluster && cluster.has_value())
+            if (cluster.has_value())
             {
                 ufunc->set_fname(URLFunc_FName::URLFunc_FName_urlCluster);
                 ufunc->mutable_cluster()->set_cluster(cluster.value());
@@ -397,14 +398,32 @@ void StatementGenerator::setTableRemote(
         this->remote_entries.clear();
         structure->mutable_lit_val()->set_string_lit(std::move(buf));
     }
-    else
+    else if (usage == TableFunctionUsage::ClusterCall)
     {
-        RemoteFunc * rfunc = tfunc->mutable_remote();
-        TableOrFunction * tof = rfunc->mutable_tof();
+        /// If the table is set on cluster, always insert to all replicas/shards
+        ClusterFunc * cdf = tfunc->mutable_cluster();
         const std::optional<String> & cluster = t.getCluster();
 
-        rfunc->set_rname(RemoteFunc::remote);
-        if (!table_engine && t.hasClickHousePeer())
+        cdf->set_all_replicas(rg.nextBool());
+        cdf->mutable_cluster()->set_cluster(
+            cluster.has_value() ? cluster.value() : (fc.clusters.empty() ? "default" : rg.pickRandomly(fc.clusters)));
+        t.setName(cdf->mutable_tof()->mutable_est(), true);
+        if (rg.nextSmallNumber() < 4)
+        {
+            /// Optional sharding key
+            flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
+            cdf->set_sharding_key(rg.pickRandomly(this->remote_entries).getBottomName());
+            this->remote_entries.clear();
+        }
+    }
+    else if (usage == TableFunctionUsage::RemoteCall || (usage == TableFunctionUsage::PeerTable && t.hasClickHousePeer()))
+    {
+        RemoteFunc * rfunc = tfunc->mutable_remote();
+        const bool ispeer = usage == TableFunctionUsage::PeerTable && t.hasClickHousePeer();
+        const RemoteFunc_RName fname = (ispeer || rg.nextBool()) ? RemoteFunc::remote : RemoteFunc::remoteSecure;
+
+        rfunc->set_rname(fname);
+        if (ispeer)
         {
             const ServerCredentials & sc = fc.clickhouse_server.value();
 
@@ -419,28 +438,9 @@ void StatementGenerator::setTableRemote(
         }
         else
         {
-            chassert(table_engine);
-            rfunc->set_address(fc.getConnectionHostAndPort(false));
+            rfunc->set_address(fc.getConnectionHostAndPort(fname == RemoteFunc::remoteSecure));
         }
-        if (use_cluster && cluster.has_value())
-        {
-            ClusterFunc * cdf = tof->mutable_tfunc()->mutable_cluster();
-
-            cdf->set_all_replicas(true);
-            cdf->mutable_cluster()->set_cluster(cluster.value());
-            t.setName(cdf->mutable_tof()->mutable_est(), true);
-            if (rg.nextSmallNumber() < 4)
-            {
-                /// Optional sharding key
-                this->flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
-                cdf->set_sharding_key(rg.pickRandomly(this->remote_entries).getBottomName());
-                this->remote_entries.clear();
-            }
-        }
-        else
-        {
-            t.setName(tof->mutable_est(), true);
-        }
+        t.setName(rfunc->mutable_tof()->mutable_est(), true);
     }
 }
 
@@ -563,6 +563,8 @@ bool StatementGenerator::joinedTableOrFunction(
     const uint32_t random_data_udf = 3 * static_cast<uint32_t>(fc.allow_infinite_tables && this->allow_engine_udf);
     const uint32_t dictionary = 15 * static_cast<uint32_t>(this->peer_query != PeerQuery::ClickHouseOnly && has_dictionary);
     const uint32_t url_encoded_table = 2 * static_cast<uint32_t>(this->allow_engine_udf && has_table);
+
+
     const uint32_t prob_space = derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf
         + cluster_udf + merge_index_udf + loop_udf + values_udf + random_data_udf + dictionary + url_encoded_table;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);

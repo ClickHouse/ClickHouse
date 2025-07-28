@@ -108,6 +108,14 @@ public:
     CatalogBackup() = default;
 };
 
+enum class TableFunctionUsage
+{
+    PeerTable = 1,
+    EngineReplace = 2,
+    RemoteCall = 3,
+    ClusterCall = 4,
+};
+
 class StatementGenerator
 {
 public:
@@ -392,7 +400,7 @@ private:
     void generateWherePredicate(RandomGenerator & rg, Expr * expr);
     void addJoinClause(RandomGenerator & rg, Expr * expr);
     void generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj);
-    void setTableRemote(RandomGenerator & rg, bool table_engine, bool use_cluster, const SQLTable & t, TableFunction * tfunc);
+    void setTableFunction(RandomGenerator & rg, const TableFunctionUsage usage, const SQLTable & t, TableFunction * tfunc);
     bool joinedTableOrFunction(
         RandomGenerator & rg, const String & rel_name, uint32_t allowed_clauses, bool under_remote, TableOrFunction * tof);
     void generateFromElement(RandomGenerator & rg, uint32_t allowed_clauses, TableOrSubquery * tos);
