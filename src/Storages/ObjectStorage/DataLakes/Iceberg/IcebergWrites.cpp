@@ -296,7 +296,6 @@ void generateManifestList(
     Int32 manifest_length,
     WriteBuffer & buf)
 {
-    Poco::JSON::Stringifier::stringify(metadata, std::cerr, 4);
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
     if (version == 1)
