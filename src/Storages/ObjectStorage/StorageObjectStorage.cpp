@@ -128,7 +128,6 @@ StorageObjectStorage::StorageObjectStorage(
             catalog,
             storage_id
         );
-        return;
     }
 
     bool updated_configuration = false;
