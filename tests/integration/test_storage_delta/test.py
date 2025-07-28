@@ -2139,3 +2139,44 @@ def test_partition_columns_3(started_cluster):
         "9\tname_9\t32\tUS\t2025"
         == instance.query(f"SELECT * FROM {table_function} ORDER BY all").strip()
     )
+
+
+def test_event_tracing(started_cluster):
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    TABLE_NAME = randomize_table_name("test_event_tracing")
+    bucket = started_cluster.minio_bucket
+
+    if not minio_client.bucket_exists(bucket):
+        minio_client.make_bucket(bucket)
+
+    instance = started_cluster.instances["node1"]
+    parquet_data_path = create_initial_data_file(
+        started_cluster,
+        instance,
+        "SELECT toUInt64(number), toString(number) FROM numbers(100)",
+        TABLE_NAME,
+    )
+
+    write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+
+    query_id = f"query_{table_name}_1"
+    assert 100 == int(
+        instance.query(
+            f"""
+    SELECT count() FROM deltaLake(
+        'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{TABLE_NAME}/')
+    """, settings = {"delta_lake_tracing_level": "trace"}
+        )
+    )
+    instance.query("SYSTEM FLUSH LOGS")
+    assert 100 == int(
+        instance.query(
+            f"""
+    SELECT count() FROM deltaLake(
+        'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{TABLE_NAME}/')
+    """, settings = {"delta_lake_tracing_level": "info"}
+        )
+    )
+    instance.query("SYSTEM FLUSH LOGS")

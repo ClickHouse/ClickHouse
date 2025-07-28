@@ -421,4 +421,16 @@ enum class GeoToH3ArgumentOrder : uint8_t
 
 DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
 
+enum class DeltaLakeTracingLevel : uint8_t
+{
+    NONE,
+    ERROR,
+    WARN,
+    INFO,
+    DEBUG,
+    TRACE,
+};
+
+DECLARE_SETTING_ENUM(DeltaLakeTracingLevel)
+
 }

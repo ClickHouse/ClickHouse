@@ -65,6 +65,7 @@ private:
     const DB::ObjectStoragePtr object_storage;
     const LoggerPtr log;
     const bool enable_expression_visitor_logging;
+    DB::DeltaLakeTracingLevel tracing_level;
 
     mutable KernelExternEngine engine;
     mutable KernelSnapshot snapshot;
