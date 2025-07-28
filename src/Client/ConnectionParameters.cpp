@@ -1,4 +1,4 @@
-#include <Client/ConnectionParameters.h>
+#include "ConnectionParameters.h"
 
 #include <Core/Defines.h>
 #include <Core/Protocol.h>

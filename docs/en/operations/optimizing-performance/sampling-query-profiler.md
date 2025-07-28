@@ -3,12 +3,12 @@ description: 'Documentation for the sampling query profiler tool in ClickHouse'
 sidebar_label: 'Query Profiling'
 sidebar_position: 54
 slug: /operations/optimizing-performance/sampling-query-profiler
-title: 'Sampling query profiler'
+title: 'Sampling Query Profiler'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
 
-# Sampling query profiler
+# Sampling Query Profiler
 
 ClickHouse runs sampling profiler that allows analyzing query execution. Using profiler you can find source code routines that used the most frequently during query execution. You can trace CPU time and wall-clock time spent including idle time.
 
@@ -43,7 +43,7 @@ The default sampling frequency is one sample per second and both CPU and real ti
 
 To analyze the `trace_log` system table:
 
-- Install the `clickhouse-common-static-dbg` package. See [Install from DEB Packages](../../getting-started/install/install.mdx).
+- Install the `clickhouse-common-static-dbg` package. See [Install from DEB Packages](../../getting-started/install.md#install-from-deb-packages).
 
 - Allow introspection functions by the [allow_introspection_functions](../../operations/settings/settings.md#allow_introspection_functions) setting.
 
@@ -63,8 +63,8 @@ In this example we:
 
 - Using introspection functions, we will get a report of:
 
-  - Names of symbols and corresponding source code functions.
-  - Source code locations of these functions.
+    - Names of symbols and corresponding source code functions.
+    - Source code locations of these functions.
 
 <!-- -->
 

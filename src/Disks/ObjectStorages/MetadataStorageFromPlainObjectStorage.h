@@ -47,7 +47,6 @@ protected:
 
     ObjectStoragePtr object_storage;
     const String storage_path_prefix;
-    const String storage_path_full;
 
     mutable std::optional<CacheBase<UInt128, ObjectMetadataEntry>> object_metadata_cache;
 
@@ -89,11 +88,6 @@ public:
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
     bool supportsPartitionCommand(const PartitionCommand & command) const override;
-
-    bool isReadOnly() const override { return true; }
-
-private:
-    ObjectStorageKey getObjectKeyForPath(const std::string & path) const;
 
 protected:
     /// Get the object storage prefix for storing metadata files.
@@ -156,13 +150,9 @@ public:
 
     void moveFile(const std::string & path_from, const std::string & path_to) override;
 
-    void replaceFile(const std::string & path_from, const std::string & path_to) override;
-
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
-    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
-
-    void commit(const TransactionCommitOptionsVariant & options) override;
+    void commit() override;
 
     bool supportsChmod() const override { return false; }
 };

@@ -58,6 +58,7 @@ namespace Setting
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int BAD_TYPE_OF_FIELD;
 }
 
 /// Returns the prefix of like_pattern before the first wildcard, e.g. 'Hello\_World% ...' --> 'Hello\_World'
@@ -124,7 +125,7 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
     const char * pos = begin;
     const char * end = regexp.data() + regexp.size();
 
-    while (pos < end)
+    while (pos != end)
     {
         switch (*pos)
         {
@@ -147,22 +148,19 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
                     case '$':
                     case '.':
                     case '[':
-                    case ']':
                     case '?':
                     case '*':
                     case '+':
-                    case '\\':
                     case '{':
-                    case '}':
-                    case '-':
                         fixed_prefix += *pos;
-                        ++pos;
                     break;
                     default:
                         /// all other escape sequences are not supported
                             pos = end;
+                    break;
                 }
 
+                ++pos;
                 break;
             }
 
@@ -224,35 +222,14 @@ static String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & pr
     return res;
 }
 
-namespace
-{
-bool isNaN(const Field & field)
-{
-    if (field.getType() != Field::Types::Float64)
-        return false;
-
-    const double value = field.safeGet<Float64>();
-    return std::isnan(value);
-}
-}
-
 const KeyCondition::AtomMap KeyCondition::atom_map
 {
         {
             "notEquals",
             [] (RPNElement & out, const Field & value)
             {
-                if (isNaN(value))
-                {
-                    /// Convert data <> NaN -> data IN [-INF, INF]
-                    out.function = RPNElement::FUNCTION_IN_RANGE;
-                    out.range = Range::createWholeUniverse();
-                }
-                else
-                {
-                    out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
-                    out.range = Range(value);
-                }
+                out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
+                out.range = Range(value);
                 return true;
             }
         },
@@ -261,15 +238,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field & value)
             {
                 out.function = RPNElement::FUNCTION_IN_RANGE;
-                if (isNaN(value))
-                {
-                    /// Convert data = NaN -> data IN (INF, -INF)
-                    out.range = Range(POSITIVE_INFINITY, false, NEGATIVE_INFINITY, false);
-                }
-                else
-                {
-                    out.range = Range(value);
-                }
+                out.range = Range(value);
                 return true;
             }
         },
@@ -1805,8 +1774,6 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
 static std::set<std::string_view> date_time_parsing_functions = {
     "toDate",
     "toDate32",
-    "toTime",
-    "toTime64",
     "toDateTime",
     "toDateTime64",
     "parseDateTimeBestEffort",
@@ -2011,6 +1978,19 @@ KeyCondition::RPNElement::RPNElement(Function function_, size_t key_column_, con
     , key_column(key_column_)
     , polygon(std::make_shared<Polygon>())
 {
+}
+
+static void castValueToType(const DataTypePtr & desired_type, Field & src_value, const DataTypePtr & src_type, const String & node_column_name)
+{
+    try
+    {
+        src_value = convertFieldToType(src_value, *desired_type, src_type.get());
+    }
+    catch (...)
+    {
+        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Key expression contains comparison between inconvertible types: "
+            "{} and {} inside {}", desired_type->getName(), src_type->getName(), node_column_name);
+    }
 }
 
 
@@ -2272,12 +2252,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
                     if (!const_type->equals(*common_type))
                     {
-                        // Replace direct call that throws exception with try version
-                        Field converted = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
-                        if (converted.isNull())
-                            return false;
-
-                        const_value = converted;
+                        castValueToType(common_type, const_value, const_type, node.getColumnName());
 
                         // Need to set is_constant_transformed unless we're doing exact conversion
                         if (!key_expr_type_not_null->equals(*common_type))
@@ -2924,31 +2899,9 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 // This allows to use a more efficient lookup with no extra reads.
 bool KeyCondition::matchesExactContinuousRange() const
 {
-    const Field field{};
-    auto check_monotonicity_of_chain = [&field](const std::vector<FunctionBasePtr> & chain) -> std::pair<bool, bool>
-    {
-        bool all_always_monotonic = true;
-        bool all_strict = true;
-
-        for (const auto & func : chain)
-        {
-            if (!func || !func->hasInformationAboutMonotonicity())
-                return {false, false};
-
-            const auto & types = func->getArgumentTypes();
-            if (types.empty() || !types.front())
-                return {false, false};
-
-            const auto monotonicity = func->getMonotonicityForRange(*types.front(), field, field);
-            all_always_monotonic &= monotonicity.is_always_monotonic;
-            all_strict &= monotonicity.is_strict;
-
-            if (!all_always_monotonic && !all_strict)
-                break;
-        }
-
-        return {all_always_monotonic, all_strict};
-    };
+    // Not implemented yet.
+    if (hasMonotonicFunctionsChain())
+        return false;
 
     enum Constraint
     {
@@ -2961,56 +2914,32 @@ bool KeyCondition::matchesExactContinuousRange() const
 
     for (const auto & element : rpn)
     {
-        if (element.function == RPNElement::Function::FUNCTION_AND || element.function == RPNElement::Function::FUNCTION_UNKNOWN
-            || element.function == RPNElement::Function::ALWAYS_TRUE)
+        if (element.function == RPNElement::Function::FUNCTION_AND)
         {
             continue;
         }
 
         if (element.function == RPNElement::Function::FUNCTION_IN_SET && element.set_index && element.set_index->size() == 1)
         {
-            for (const auto & mapping : element.set_index->getIndexesMapping())
-            {
-                auto [is_chain_always_monotonic, is_chain_strict] = check_monotonicity_of_chain(mapping.functions);
-                if (!is_chain_always_monotonic)
-                    return false;
-
-                chassert(mapping.key_index < key_columns.size());
-                /// For Constraint::POINT, we need to check if the function chain is strict.
-                /// For example, `toDate(event_time) in ('2025-06-03')` means a range of `event_time`: ['2025-06-03 00:00:00','2025-06-04 00:00:00')
-                /// So, POINT needs to be converted to a RANGE
-                if (is_chain_strict)
-                    column_constraints[mapping.key_index] = Constraint::POINT;
-                else
-                {
-                    /// If this key is contained by multiple elements and has been set to POINT, do not convert it to RANGE.
-                    if (column_constraints[mapping.key_index] != Constraint::POINT)
-                        column_constraints[mapping.key_index] = Constraint::RANGE;
-                }
-            }
-
+            column_constraints[element.key_column] = Constraint::POINT;
             continue;
         }
 
         if (element.function == RPNElement::Function::FUNCTION_IN_RANGE)
         {
-            auto [is_chain_always_monotonic, is_chain_strict] = check_monotonicity_of_chain(element.monotonic_functions_chain);
-            if (!is_chain_always_monotonic)
-                return false;
-
-            chassert(element.key_column < key_columns.size());
             if (element.range.left == element.range.right)
             {
-                /// For Constraint::POINT, we need to check if the function chain is strict.
-                /// For example, `toDate(event_time) = '2025-06-03'` means a range of `event_time`: ['2025-06-03 00:00:00','2025-06-04 00:00:00')
-                /// So, POINT needs to be converted to a RANGE
-                if (is_chain_strict)
-                    column_constraints[element.key_column] = Constraint::POINT;
+                column_constraints[element.key_column] = Constraint::POINT;
             }
-
             if (column_constraints[element.key_column] != Constraint::POINT)
+            {
                 column_constraints[element.key_column] = Constraint::RANGE;
+            }
+            continue;
+        }
 
+        if (element.function == RPNElement::Function::FUNCTION_UNKNOWN)
+        {
             continue;
         }
 
@@ -3243,13 +3172,14 @@ BoolMask KeyCondition::checkInHyperrectangle(
                                 hyperrectangle.size(), element.key_column, element.toString());
             }
 
-            Range key_range = hyperrectangle[element.key_column];
+            const Range * key_range = &hyperrectangle[element.key_column];
 
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
+            Range transformed_range = Range::createWholeUniverse();
             if (!element.monotonic_functions_chain.empty())
             {
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
-                    key_range,
+                    *key_range,
                     element.monotonic_functions_chain,
                     data_types[element.key_column],
                     single_point
@@ -3260,11 +3190,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
                     rpn_stack.emplace_back(true, true);
                     continue;
                 }
-                key_range = *new_range;
+                transformed_range = *new_range;
+                key_range = &transformed_range;
             }
 
-            bool intersects = element.range.intersectsRange(key_range);
-            bool contains = element.range.containsRange(key_range);
+            bool intersects = element.range.intersectsRange(*key_range);
+            bool contains = element.range.containsRange(*key_range);
 
             rpn_stack.emplace_back(intersects, !contains);
 
@@ -3503,10 +3434,10 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(
 {
     for (auto & rpn_element : rpn)
     {
+        // this would be a problem for `where negate(x) = -58`.
+        // It would perform a bf search on `-58`, and possibly miss row groups containing this data.
         if (!rpn_element.monotonic_functions_chain.empty())
         {
-            /// We could apply the inverse functions to get the key value when possible.
-            /// This is currently not implemented.
             continue;
         }
 
@@ -3546,11 +3477,6 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(
 
             for (auto i = 0u; i < ordered_set.size(); i++)
             {
-                if (!indexes_mapping[i].functions.empty())
-                {
-                    continue;
-                }
-
                 const auto & set_column = ordered_set[i];
 
                 auto hashes_for_column_opt = hash_many(indexes_mapping[i].key_index, set_column);

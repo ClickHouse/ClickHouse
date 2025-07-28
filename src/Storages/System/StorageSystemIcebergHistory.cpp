@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/Context.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -62,7 +61,7 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
         {
             if (IcebergMetadata * iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage->getExternalMetadata(context)); iceberg_metadata)
             {
-                IcebergMetadata::IcebergHistory iceberg_history_items = iceberg_metadata->getHistory(context);
+                IcebergMetadata::IcebergHistory iceberg_history_items = iceberg_metadata->getHistory();
 
                 for (auto & iceberg_history_item : iceberg_history_items)
                 {
