@@ -55,6 +55,10 @@
 #    include <Server/CertificateReloader.h>
 #endif
 
+#if USE_GWP_ASAN
+#    include <Common/GWPAsan.h>
+#endif
+
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/KeeperTCPHandlerFactory.h>
 
@@ -652,6 +656,10 @@ try
     {
         tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
     }
+
+#if USE_GWP_ASAN
+    GWPAsan::initFinished();
+#endif
 
     LOG_INFO(log, "Ready for connections.");
 

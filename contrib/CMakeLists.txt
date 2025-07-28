@@ -108,6 +108,7 @@ if (ENABLE_TESTS)
 endif()
 
 add_contrib (libfuzzer-cmake llvm-project)
+add_contrib (gwpasan-cmake llvm-project)
 add_contrib (libxml2-cmake libxml2)
 
 add_contrib (aws-cmake
@@ -252,8 +253,6 @@ if(ENABLE_GOOGLE_CLOUD_CPP)
     add_contrib (nlohmann-json-cmake nlohmann-json)
     add_contrib (crc32c-cmake crc32c)
     add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf, absl, nlohmann's json, crc32c
-else()
-    message(STATUS "Not using Google Cloud Cpp")
 endif()
 
 add_contrib (jwt-cpp-cmake jwt-cpp)

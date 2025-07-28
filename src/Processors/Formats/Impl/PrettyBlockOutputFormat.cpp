@@ -544,7 +544,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                     else if (j != 0)
                         out << " ";
 
-                    const auto & type = header->getByPosition(j).type;
+                    const auto & type = *header->getByPosition(j).type;
                     writeValueWithPadding(
                         *columns[j],
                         *serializations[j],
@@ -553,8 +553,8 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                         widths[j].empty() ? max_widths[j] : widths[j][displayed_row],
                         max_widths[j],
                         cut_to_width,
-                        type->shouldAlignRightInPrettyFormats(),
-                        isNumber(removeNullable(type)));
+                        type.shouldAlignRightInPrettyFormats(),
+                        isNumber(type));
 
                     if (offsets_inside_serialized_values[j] != serialized_values[j]->size())
                         all_lines_printed = false;

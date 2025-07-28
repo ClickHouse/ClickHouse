@@ -284,7 +284,7 @@ bool GlueCatalog::tryGetTableMetadata(
         if (table_outcome.GetParameters().contains("table_type"))
             table_type = table_outcome.GetParameters().at("table_type");
 
-        if (Poco::toUpper(table_type) != "ICEBERG")
+        if (table_type != "ICEBERG")
         {
             std::string message_part;
             if (!table_type.empty())
@@ -293,7 +293,7 @@ bool GlueCatalog::tryGetTableMetadata(
                 message_part = "no table_type";
 
             result.setTableIsNotReadable(fmt::format("Cannot read table `{}` because it has {}. " \
-                   "It means that it's unreadable with Glue catalog in ClickHouse, readable tables must have equalsIgnoreCase(table_type, '{}')",
+                   "It means that it's unreadable with Glue catalog in ClickHouse, readable tables must have table_type == '{}'",
                    database_name + "." + table_name, message_part, "ICEBERG"));
         }
 

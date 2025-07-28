@@ -66,14 +66,12 @@ protected:
         IMetadataStorage & metadata_storage_,
         MetadataTransactionPtr metadata_transaction_);
 
-    bool is_committed = false;
-
 public:
     DiskObjectStorageTransaction(
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_);
 
-    void commit(const TransactionCommitOptionsVariant & options) override;
+    void commit() override;
     void undo() override;
 
     void createDirectory(const std::string & path) override;
@@ -122,8 +120,6 @@ public:
     void chmod(const String & path, mode_t mode) override;
     void setReadOnly(const std::string & path) override;
     void createHardLink(const std::string & src_path, const std::string & dst_path) override;
-
-    TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override;
 };
 
 struct MultipleDisksObjectStorageTransaction final : public DiskObjectStorageTransaction, std::enable_shared_from_this<MultipleDisksObjectStorageTransaction>

@@ -71,8 +71,6 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         args.comment,
         format_settings,
         args.mode,
-        args.query.if_not_exists,
-        /* is_datalake_query*/ false,
         /* distributed_processing */ false,
         partition_by);
 }
@@ -130,11 +128,6 @@ void registerStorageOSS(StorageFactory & factory)
     registerStorageS3Impl("OSS", factory);
 }
 
-void registerStorageGCS(StorageFactory & factory)
-{
-    registerStorageS3Impl("GCS", factory);
-}
-
 #endif
 
 #if USE_HDFS
@@ -161,7 +154,6 @@ void registerStorageObjectStorage(StorageFactory & factory)
     registerStorageS3(factory);
     registerStorageCOS(factory);
     registerStorageOSS(factory);
-    registerStorageGCS(factory);
 #endif
 #if USE_AZURE_BLOB_STORAGE
     registerStorageAzure(factory);
@@ -195,7 +187,6 @@ void registerStorageIceberg(StorageFactory & factory)
         },
         {
             .supports_settings = true,
-            .supports_sort_order = true,
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
@@ -211,7 +202,6 @@ void registerStorageIceberg(StorageFactory & factory)
         },
         {
             .supports_settings = true,
-            .supports_sort_order = true,
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
@@ -228,7 +218,6 @@ void registerStorageIceberg(StorageFactory & factory)
         },
         {
             .supports_settings = true,
-            .supports_sort_order = true,
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::AZURE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
@@ -245,7 +234,6 @@ void registerStorageIceberg(StorageFactory & factory)
         },
         {
             .supports_settings = true,
-            .supports_sort_order = true,
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::HDFS,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
@@ -261,7 +249,6 @@ void registerStorageIceberg(StorageFactory & factory)
         },
         {
             .supports_settings = true,
-            .supports_sort_order = true,
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::FILE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,

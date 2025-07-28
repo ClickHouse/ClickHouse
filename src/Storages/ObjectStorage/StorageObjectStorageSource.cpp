@@ -28,11 +28,6 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Context.h>
-#if ENABLE_DISTRIBUTED_CACHE
-#include <DistributedCache/DistributedCacheRegistry.h>
-#include <Disks/IO/ReadBufferFromDistributedCache.h>
-#include <IO/DistributedCacheSettings.h>
-#endif
 
 #include <fmt/ranges.h>
 
@@ -61,7 +56,6 @@ namespace Setting
     extern const SettingsUInt64 filesystem_cache_boundary_alignment;
     extern const SettingsBool use_iceberg_partition_pruning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
-    extern const SettingsBool table_engine_read_through_distributed_cache;
 }
 
 namespace ErrorCodes
@@ -572,35 +566,19 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
     const auto & settings = context_->getSettingsRef();
     const auto & effective_read_settings = read_settings.has_value() ? read_settings.value() : context_->getReadSettings();
 
-    bool use_distributed_cache = false;
-#if ENABLE_DISTRIBUTED_CACHE
-    ObjectStorageConnectionInfoPtr connection_info;
-    if (settings[Setting::table_engine_read_through_distributed_cache]
-        && DistributedCache::Registry::instance().isReady(
-            effective_read_settings.distributed_cache_settings.read_only_from_current_az))
-    {
-        connection_info = object_storage->getConnectionInfo();
-        if (connection_info)
-            use_distributed_cache = true;
-    }
-#endif
+    const auto filesystem_cache_name = settings[Setting::filesystem_cache_name].value;
+    bool use_cache = effective_read_settings.enable_filesystem_cache
+        && !filesystem_cache_name.empty()
+        && (object_storage->getType() == ObjectStorageType::Azure
+            || object_storage->getType() == ObjectStorageType::S3);
 
-    bool use_filesystem_cache = false;
-    std::string filesystem_cache_name;
-    if (!use_distributed_cache)
-    {
-        filesystem_cache_name = settings[Setting::filesystem_cache_name].value;
-        use_filesystem_cache = effective_read_settings.enable_filesystem_cache
-            && !filesystem_cache_name.empty()
-            && (object_storage->getType() == ObjectStorageType::Azure
-                || object_storage->getType() == ObjectStorageType::S3);
-    }
-
-    /// We need object metadata for two cases:
-    /// 1. object size suggests whether we need to use prefetch
-    /// 2. object etag suggests a cache key in case we use filesystem cache
     if (!object_info.metadata)
+    {
+        if (!use_cache)
+            return object_storage->readObject(StoredObject(object_info.getPath()), effective_read_settings);
+
         object_info.metadata = object_storage->getObjectMetadata(object_info.getPath());
+    }
 
     const auto & object_size = object_info.metadata->size_bytes;
 
@@ -621,7 +599,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
 
     bool use_async_buffer = false;
     ReadSettings nested_buffer_read_settings = modified_read_settings;
-    if (use_prefetch || use_filesystem_cache || use_distributed_cache)
+    if (use_prefetch || use_cache)
     {
         nested_buffer_read_settings.remote_read_buffer_use_external_buffer = true;
 
@@ -631,31 +609,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
     }
 
     std::unique_ptr<ReadBufferFromFileBase> impl;
-#if ENABLE_DISTRIBUTED_CACHE
-    if (use_distributed_cache)
-    {
-        const std::string path = object_info.getPath();
-        StoredObject object(path, "", object_size);
-        auto read_buffer_creator = [object, nested_buffer_read_settings, object_storage]()
-        {
-            return object_storage->readObject(object, nested_buffer_read_settings);
-        };
-
-        impl = std::make_unique<ReadBufferFromDistributedCache>(
-            path,
-            StoredObjects({object}),
-            effective_read_settings,
-            connection_info,
-            ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context_->getSettingsRef()),
-            read_buffer_creator,
-            /*use_external_buffer*/use_async_buffer,
-            context_->getDistributedCacheLog(),
-            /* include_credentials_in_cache_key */true);
-    }
-    else if (use_filesystem_cache)
-#else
-    if (use_filesystem_cache)
-#endif
+    if (use_cache)
     {
         chassert(object_info.metadata.has_value());
         if (object_info.metadata->etag.empty())
@@ -708,13 +662,10 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
 
     LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
 
-    bool prefer_bigger_buffer_size = effective_read_settings.filesystem_cache_prefer_bigger_buffer_size
-        && impl->isCached();
-
+    bool prefer_bigger_buffer_size = effective_read_settings.filesystem_cache_prefer_bigger_buffer_size && impl->isCached();
     size_t buffer_size = prefer_bigger_buffer_size
         ? std::max<size_t>(effective_read_settings.remote_fs_buffer_size, effective_read_settings.prefetch_buffer_size)
         : effective_read_settings.remote_fs_buffer_size;
-
     if (object_size)
         buffer_size = std::min<size_t>(object_size, buffer_size);
 

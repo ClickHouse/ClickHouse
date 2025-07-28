@@ -33,42 +33,20 @@ String removeEscapedSlashes(const String & json_str);
 class FileNamesGenerator
 {
 public:
-    struct Result
-    {
-        /// Path recorded in the Iceberg metadata files.
-        /// If `write_full_path_in_iceberg_metadata` is disabled, it will be a simple relative path (e.g., /a/b/c.avro).
-        /// Otherwise, it will include a prefix indicating the file system type (e.g., s3://a/b/c.avro).
-        String path_in_metadata;
+    explicit FileNamesGenerator(const String & table_dir);
 
-        /// Actual path to the object in the storage (e.g., /a/b/c.avro).
-        String path_in_storage;
-    };
-
-    FileNamesGenerator() = default;
-    explicit FileNamesGenerator(const String & table_dir_, const String & storage_dir_);
-
-    FileNamesGenerator & operator=(const FileNamesGenerator & other);
-
-    Result generateDataFileName();
-    Result generateManifestEntryName();
-    Result generateManifestListName(Int64 snapshot_id, Int32 format_version);
-    Result generateMetadataName();
-
-    String convertMetadataPathToStoragePath(const String & metadata_path) const;
+    String generateDataFileName();
+    String generateManifestEntryName();
+    String generateManifestListName(Int64 snapshot_id, Int32 format_version);
+    String generateMetadataName();
 
     void setVersion(Int32 initial_version_) { initial_version = initial_version_; }
 
 private:
     Poco::UUIDGenerator uuid_generator;
-    String table_dir;
-    String storage_dir;
-
     String data_dir;
     String metadata_dir;
-    String storage_data_dir;
-    String storage_metadata_dir;
-
-    Int32 initial_version = 0;
+    Int32 initial_version;
 };
 
 void generateManifestFile(
@@ -83,7 +61,6 @@ void generateManifestFile(
     WriteBuffer & buf);
 
 void generateManifestList(
-    const FileNamesGenerator & filename_generator,
     Poco::JSON::Object::Ptr metadata,
     ObjectStoragePtr object_storage,
     ContextPtr context,
@@ -97,14 +74,7 @@ class MetadataGenerator
 public:
     explicit MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_);
 
-    struct NextMetadataResult
-    {
-        Poco::JSON::Object::Ptr snapshot;
-        String metadata_path;
-        String storage_metadata_path;
-    };
-
-    NextMetadataResult generateNextMetadata(
+    std::pair<Poco::JSON::Object::Ptr, String> generateNextMetadata(
         FileNamesGenerator & generator,
         const String & metadata_filename,
         Int64 parent_snapshot_id,
