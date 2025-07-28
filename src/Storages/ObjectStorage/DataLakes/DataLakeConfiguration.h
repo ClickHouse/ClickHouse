@@ -218,7 +218,7 @@ public:
                 (*settings)[DataLakeStorageSetting::iceberg_catalog_url].value,
                 context,
                 catalog_parameters,
-                nullptr
+                /* table_engine_definition */nullptr
             );
         }
 #endif
