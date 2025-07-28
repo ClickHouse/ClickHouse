@@ -64,7 +64,7 @@ namespace
     {
         return makeASTOperator("greaterOrEquals",
                                makeASTColumn(data_table_id, TimeSeriesColumnNames::Timestamp),
-                               std::make_shared<ASTLiteral>(Field{DecimalField{DateTime64{min_timestamp_ms}, 3}}));
+                               std::make_shared<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{min_timestamp_ms}, 3}}));
     }
 
     /// Makes an AST for condition `data_table.timestamp <= max_timestamp_ms`
@@ -72,7 +72,7 @@ namespace
     {
         return makeASTOperator("lessOrEquals",
                                makeASTColumn(data_table_id, TimeSeriesColumnNames::Timestamp),
-                               std::make_shared<ASTLiteral>(Field{DecimalField{DateTime64{max_timestamp_ms}, 3}}));
+                               std::make_shared<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{max_timestamp_ms}, 3}}));
     }
 
     /// Makes an AST for condition `tags_table.max_time >= min_timestamp_ms`
@@ -80,7 +80,7 @@ namespace
     {
         return makeASTOperator("greaterOrEquals",
                                makeASTColumn(tags_table_id, TimeSeriesColumnNames::MaxTime),
-                               std::make_shared<ASTLiteral>(Field{DecimalField{DateTime64{min_timestamp_ms}, 3}}));
+                               std::make_shared<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{min_timestamp_ms}, 3}}));
     }
 
     /// Makes an AST for condition `tags_table.min_time <= max_timestamp_ms`
@@ -88,7 +88,7 @@ namespace
     {
         return makeASTOperator("lessOrEquals",
                                makeASTColumn(tags_table_id, TimeSeriesColumnNames::MinTime),
-                               std::make_shared<ASTLiteral>(Field{DecimalField{DateTime64{max_timestamp_ms}, 3}}));
+                               std::make_shared<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{max_timestamp_ms}, 3}}));
     }
 
     /// Makes an AST for the expression referencing a tag value.
