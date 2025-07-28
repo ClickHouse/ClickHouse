@@ -522,11 +522,6 @@
             text-overflow: ellipsis;
         }
 
-        th:hover
-        {
-            z-index: 1;
-        }
-
         .type-hint
         {
             display: none;
@@ -549,15 +544,16 @@
         .resizer {
             position: absolute;
             top: 0;
-            right: 0;
-            width: 5px;
+            right: -0.3rem;
+            width: 0.5rem;
             cursor: col-resize;
             user-select: none;
             height: 100%;
-            transform: translateX(50%);
         }
 
-        .resizer:hover {
+        .resizer:hover, .resizer-dragging
+        {
+            border-radius: 0.25rem;
             background-color: var(--border-color-selected);
         }
 
@@ -721,10 +717,9 @@
         .u-over, .u-under, .u-axis {position: absolute;}
         .u-under {overflow: hidden;}
         .uplot canvas {display: block;position: relative;width: 100%;height: 100%;}
-        .u-legend {margin: auto;text-align: center; margin-top: 1em; font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, monospace;}
+        .u-legend {font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, monospace; border-spacing: 0; border-collapse: collapse;}
         .u-inline {display: block;}
         .u-inline * {display: inline-block;}
-        .u-inline tr {margin-right: 16px;}
         .u-legend th {font-weight: 600;}
         .u-legend th > * {vertical-align: middle;display: inline-block;}
         .u-legend td { min-width: 13em; }
@@ -1385,12 +1380,14 @@ document.getElementById('controls').addEventListener('submit', e =>
     } else {
         post();
 
-        const cred = new PasswordCredential({
-            id: user_elem.value,
-            password: password_elem.value,
-            name: url_elem.value,
-        });
-        navigator.credentials.store(cred);
+        if (password_elem.value) {
+            const cred = new PasswordCredential({
+                id: user_elem.value,
+                password: password_elem.value,
+                name: url_elem.value,
+            });
+            navigator.credentials.store(cred);
+        }
     }
 });
 
@@ -1737,18 +1734,21 @@ function changeTableLayout() {
 
 function appendHeaderResizer(header) {
     let drag_state = {
+        elem: null,
         is_dragging: true,
         offset_x: null,
         offset_width: null
     };
 
     const start = (e) => {
-        if (e.button !== 0) { return;}
+        if (e.button !== 0) { return; }
 
         changeTableLayout();
         drag_state.offset_x = e.clientX;
         drag_state.offset_width = header.offsetWidth;
         drag_state.is_dragging = true;
+        drag_state.elem = e.target;
+        drag_state.elem.classList.add('resizer-dragging');
 
         document.addEventListener('pointermove', move);
         document.addEventListener('pointerup', stop);
@@ -1768,6 +1768,7 @@ function appendHeaderResizer(header) {
 
     const stop = (e) => {
         drag_state.is_dragging = false;
+        drag_state.elem.classList.remove('resizer-dragging');
 
         document.removeEventListener('pointermove', move);
         document.removeEventListener('pointerup', stop);
@@ -1793,6 +1794,10 @@ function appendHeader(meta) {
     th.appendChild(document.createTextNode('№'));
     thead.appendChild(th);
 
+    /// Assign z-index in the reverse order.
+    /// This is needed to make sure the contents that overflow to the right (column resizer) is visible.
+    let zIndex = meta.length;
+
     meta.forEach(elem => {
         let th = document.createElement('th');
         const name = document.createTextNode(elem.name);
@@ -1805,6 +1810,8 @@ function appendHeader(meta) {
         type_hint.appendChild(document.createTextNode(elem.type));
         th.appendChild(type_hint);
         appendHeaderResizer(th);
+        th.style.zIndex = zIndex;
+        --zIndex;
         thead.appendChild(th);
 
         column_is_number[elem.name] = !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/);
@@ -1965,6 +1972,95 @@ function loadUplot() {
     return load_uplot_promise;
 }
 
+function legendAsTooltipPlugin({ className, style = {} } = {}) {
+    let legendEl;
+    let multiline;
+
+    function init(u, opts) {
+        legendEl = u.root.querySelector(".u-legend");
+        legendEl.classList.remove("u-inline");
+        className && legendEl.classList.add(className);
+
+        uPlot.assign(legendEl.style, {
+            textAlign: "right",
+            pointerEvents: "none",
+            display: "none",
+            position: "absolute",
+            left: 0,
+            top: 0,
+            zIndex: 100,
+            boxShadow: "2px 2px 10px rgba(0, 0, 0, 0.1)",
+            ...style
+        });
+
+        const nodes = legendEl.querySelectorAll("th");
+        for (let i = 0; i < nodes.length; i++)
+            nodes[i]._order = i;
+
+        if (opts.series.length == 2) {
+            multiline = false;
+            for (let i = 0; i < nodes.length; i++)
+                nodes[i].style.display = "none";
+        } else {
+            multiline = true;
+            legendEl.querySelector("th").remove();
+            legendEl.querySelector("td").setAttribute('colspan', '2');
+            legendEl.querySelector("td").style.textAlign = 'center';
+            let footer = legendEl.insertRow().insertCell();
+            footer.setAttribute('colspan', '2');
+            footer.style.textAlign = 'center';
+            footer.classList.add('u-value');
+            footer.parentNode.classList.add('u-series','footer');
+            footer.textContent = ". . .";
+        }
+
+        const overEl = u.over;
+        overEl.style.overflow = "visible";
+
+        overEl.appendChild(legendEl);
+
+        overEl.addEventListener("mouseenter", () => {legendEl.style.display = null;});
+        overEl.addEventListener("mouseleave", () => {legendEl.style.display = "none";});
+    }
+
+    function nodeListToArray(nodeList) {
+        return Array.prototype.slice.call(nodeList);
+    }
+
+    function update(u) {
+        let { left, top } = u.cursor;
+        /// This will make the balloon to the right of the cursor when the cursor is on the left side, and vise-versa,
+        /// avoiding the borders of the chart.
+        left -= legendEl.clientWidth * (left / u.width);
+        if (top >= legendEl.clientHeight) {
+            top -= legendEl.clientHeight;
+        }
+        legendEl.style.transform = "translate(" + left + "px, " + top + "px)";
+
+        if (multiline) {
+            let nodes = nodeListToArray(legendEl.querySelectorAll("tr"));
+            let header = nodes.shift();
+            let footer = nodes.pop();
+            let showLimit = Math.floor(u.height / 30);
+            nodes.forEach(function (node) { node._sort_key = nodes.length > showLimit ? +node.querySelector("td").textContent.replace(/,/g,'') : node._order; });
+            nodes.sort((a, b) => b._sort_key - a._sort_key);
+            nodes.forEach(function (node) { node.parentNode.appendChild(node); });
+            for (let i = 0; i < nodes.length; i++) {
+                nodes[i].style.display = i < showLimit ? null : "none";
+            }
+            footer.parentNode.appendChild(footer);
+            footer.style.display = nodes.length > showLimit ? null : "none";
+        }
+    }
+
+    return {
+        hooks: {
+            init: init,
+            setCursor: update,
+        }
+    };
+}
+
 let uplot;
 async function renderChart(json)
 {
@@ -1974,11 +2070,11 @@ async function renderChart(json)
     let chart = document.getElementById('chart');
     chart.style.display = 'block';
 
-    let paths = uPlot.paths.stepped({align:  1});
+    let paths = json[0].length < chart.clientWidth / 5 ? uPlot.paths.bars() : uPlot.paths.linear();
 
     const [line_color, fill_color, grid_color, axes_color] = theme == 'light'
-        ? ["#F8C", "#F8C", "#CCC", "#444"]
-        : ["#FF6", "#FF6", "#444", "#CCC"];
+        ? ["rgba(255, 0, 200, 100%)", "rgba(255, 128, 200, 50%)", "#CCC", "#444"]
+        : ["rgba(255, 255, 0, 100%)", "rgba(255, 255, 100, 50%)", "#444", "#CCC"];
 
     const opts = {
         width: chart.clientWidth,
@@ -1991,9 +2087,9 @@ async function renderChart(json)
                     grid: { width: 1 / devicePixelRatio, stroke: grid_color },
                     ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
         series: [ { label: "x" },
-                    { label: "y", stroke: line_color, fill: fill_color,
-                    drawStyle: 0, lineInterpolation: 1, paths } ],
+                    { label: "y", stroke: line_color, fill: fill_color, paths, points: { show: false } } ],
         padding: [ null, null, null, (Math.ceil(Math.log10(Math.max(...json[1]))) + Math.floor(Math.log10(Math.max(...json[1])) / 3)) * 6 ],
+        plugins: [ legendAsTooltipPlugin() ],
     };
 
     uplot = new uPlot(opts, json, chart);

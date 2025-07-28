@@ -3,6 +3,7 @@ import argparse
 import csv
 import socket
 import ssl
+import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
@@ -26,6 +27,17 @@ def check_auth(fn):
 
 def start_server(server_address, data_path, schema, cert_path, address_family):
     class TSVHTTPHandler(BaseHTTPRequestHandler):
+        def log_message(self, format, *args):
+            sys.stderr.write(
+                "%s:%s - - [%s] %s\n"
+                % (
+                    self.address_string(),
+                    self.server.server_port,
+                    self.log_date_time_string(),
+                    format % args,
+                )
+            )
+
         @check_auth
         def do_GET(self):
             self.__send_headers()

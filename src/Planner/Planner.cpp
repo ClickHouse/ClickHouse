@@ -1620,7 +1620,7 @@ void Planner::buildPlanForQueryNode()
             planner_context);
     }
 
-    auto from_stage = join_tree_query_plan.from_stage;
+    auto from_stage = join_tree_query_plan.stage;
     query_plan = std::move(join_tree_query_plan.query_plan);
     used_row_policies = std::move(join_tree_query_plan.used_row_policies);
     auto & mapping = join_tree_query_plan.query_node_to_plan_step_mapping;

@@ -44,17 +44,12 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     if (outputs.size() != 1)
         return;
 
+    /// Issues #81506 and #84508.
     for (const auto * output : outputs)
     {
         if (!VirtualColumnUtils::isDeterministic(output))
-        {
-            LOG_TRACE(
-                &Poco::Logger::get("updateQueryConditionCache"),
-                "Optimization has been disabled due to the non-deterministic of the query condition");
             return;
-        }
     }
-
 
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {

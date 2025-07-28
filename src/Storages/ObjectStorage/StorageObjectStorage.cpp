@@ -145,7 +145,7 @@ StorageObjectStorage::StorageObjectStorage(
         {
             throw;
         }
-        tryLogCurrentException(log);
+        tryLogCurrentException(log, /*start of message = */ "", LogsLevel::warning);
     }
 
     /// We always update configuration on read for table engine,

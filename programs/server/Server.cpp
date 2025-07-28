@@ -2724,10 +2724,6 @@ try
 
         CannotAllocateThreadFaultInjector::setFaultProbability(server_settings[ServerSetting::cannot_allocate_thread_fault_injection_probability]);
 
-#if USE_GWP_ASAN
-        GWPAsan::initFinished();
-#endif
-
         try
         {
             global_context->startClusterDiscovery();

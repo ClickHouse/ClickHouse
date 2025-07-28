@@ -485,11 +485,13 @@ def test_restore_db_replica_with_diffrent_table_metadata(
         )
 
     assert node_1.query_with_retry(
-        f"SELECT count(*) FROM {exclusive_database_name}.{test_table_1}"
-    ) == TSV([count_test_table_1]) 
+        f"SELECT count(*) FROM {exclusive_database_name}.{test_table_1}",
+        check_callback=lambda x: x.strip() == str(count_test_table_1),
+    ) == TSV([count_test_table_1])
     assert node_2.query_with_retry(
-        f"SELECT count(*) FROM {exclusive_database_name}.{test_table_1}"
-    ) == TSV([count_test_table_1]) 
+        f"SELECT count(*) FROM {exclusive_database_name}.{test_table_1}",
+        check_callback=lambda x: x.strip() == str(count_test_table_1),
+    ) == TSV([count_test_table_1])
 
     expected_count = ["0"]
     if restore_firstly_node_where_created:

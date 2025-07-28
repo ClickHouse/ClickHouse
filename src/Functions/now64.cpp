@@ -51,8 +51,7 @@ Field nowSubsecond(UInt32 scale)
     else if (adjust_scale > 0)
         components.fractional /= intExp10(adjust_scale);
 
-    return DecimalField(DecimalUtils::decimalFromComponents<DateTime64>(components, scale),
-                        scale);
+    return DecimalField<DateTime64>(DecimalUtils::decimalFromComponents<DateTime64>(components, scale), scale);
 }
 
 /// Get the current time. (It is a constant, it is evaluated once for the entire query.)

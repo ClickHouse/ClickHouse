@@ -236,7 +236,6 @@ std_cerr_cout_excludes=(
     src/Bridge/IBridge.cpp
     src/Daemon/BaseDaemon.cpp
     src/Loggers/Loggers.cpp
-    src/Common/GWPAsan.cpp
     src/Common/ProgressIndication.h
     src/IO/Ask.cpp
 )

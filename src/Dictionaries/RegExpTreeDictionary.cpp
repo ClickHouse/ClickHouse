@@ -246,30 +246,26 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
         regex_nodes.emplace(id, node);
 
 #if USE_VECTORSCAN
-        String required_substring;
-        bool is_trivial;
-        bool required_substring_is_prefix;
-        std::vector<std::string> alternatives;
-
+        RegexpAnalysisResult result;
         if (use_vectorscan)
-            OptimizedRegularExpression::analyze(regex, required_substring, is_trivial, required_substring_is_prefix, alternatives);
+            result = OptimizedRegularExpression::analyze(regex);
 
-        for (auto & alter : alternatives)
+        for (auto & alter : result.alternatives)
         {
             if (alter.size() < 3)
             {
-                alternatives.clear();
+                result.alternatives.clear();
                 break;
             }
         }
-        if (!required_substring.empty())
+        if (!result.required_substring.empty())
         {
-            simple_regexps.push_back(required_substring);
+            simple_regexps.push_back(result.required_substring);
             regexp_ids.push_back(id);
         }
-        else if (!alternatives.empty())
+        else if (!result.alternatives.empty())
         {
-            for (auto & alternative : alternatives)
+            for (auto & alternative : result.alternatives)
             {
                 simple_regexps.push_back(alternative);
                 regexp_ids.push_back(id);

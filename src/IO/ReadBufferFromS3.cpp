@@ -11,6 +11,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/logger_useful.h>
+#include <Common/FailPoint.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/CurrentThread.h>
 #include <base/sleep.h>
@@ -35,6 +36,11 @@ namespace DB
 namespace S3RequestSetting
 {
     extern const S3RequestSettingsUInt64 max_single_read_retries;
+}
+
+namespace FailPoints
+{
+    extern const char s3_read_buffer_throw_expired_token[];
 }
 
 namespace ErrorCodes
@@ -87,6 +93,13 @@ bool ReadBufferFromS3::nextImpl()
 
     if (impl)
     {
+        fiu_do_on(FailPoints::s3_read_buffer_throw_expired_token,
+        {
+            throw Exception(
+                ErrorCodes::S3_ERROR,
+                "Unable to parse ExceptionName: ExpiredToken Message: The provided token has expired. This error happened for S3 disk");
+        });
+
         if (impl->isResultReleased())
             return false;
 

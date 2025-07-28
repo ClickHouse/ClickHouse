@@ -572,7 +572,7 @@ public:
 
         size_t buffer_size_in_bytes = blocks_length * block_size;
 
-        Memory read_buffer_memory(block_size * blocks_length, block_size);
+        Memory<> read_buffer_memory(block_size * blocks_length, block_size);
 
         iocb request{};
         iocb * request_ptr = &request;

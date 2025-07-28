@@ -4,7 +4,6 @@
 #include <boost/core/noncopyable.hpp>
 #include <boost/dynamic_bitset.hpp>
 #include <boost/dynamic_bitset/dynamic_bitset.hpp>
-#include <boost/pool/pool_alloc.hpp>
 
 #include <Common/Scheduler/ResourceLink.h>
 #include <Common/Scheduler/ResourceRequest.h>
