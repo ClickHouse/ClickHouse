@@ -605,7 +605,7 @@ static bool isInsertSelectTrivialEnoughForDistributedExecution(const ASTInsertQu
 {
     const auto & select = query.select->as<ASTSelectWithUnionQuery &>();
     const auto & selects = select.list_of_selects->children;
-    if (selects.empty() || selects.size() > 1)
+    if (selects.size() != 1)
         return {};
 
     if (auto * select_query = selects.front()->as<ASTSelectQuery>())
