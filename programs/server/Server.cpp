@@ -156,6 +156,10 @@
 #   include <azure/core/diagnostics/logger.hpp>
 #endif
 
+#if USE_PARQUET
+#   include <Processors/Formats/Impl/ParquetFileMetaDataCache.h>
+#endif
+
 
 #include <incbin.h>
 /// A minimal file used when the server is run without installation
@@ -326,6 +330,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
     extern const ServerSettingsFloat min_os_cpu_wait_time_ratio_to_drop_connection;
     extern const ServerSettingsFloat max_os_cpu_wait_time_ratio_to_drop_connection;
+    extern const ServerSettingsUInt64 input_format_parquet_metadata_cache_max_size;
 }
 
 namespace ErrorCodes
@@ -2422,6 +2427,10 @@ try
         dns_cache_updater->start();
 
     auto replicas_reconnector = ReplicasReconnector::init(global_context);
+
+#if USE_PARQUET
+    ParquetFileMetaDataCache::instance()->setMaxSizeInBytes(server_settings[ServerSetting::input_format_parquet_metadata_cache_max_size]);
+#endif
 
     /// Set current database name before loading tables and databases because
     /// system logs may copy global context.

@@ -72,6 +72,8 @@ public:
 
     size_t getApproxBytesReadForChunk() const override { return previous_approx_bytes_read_for_chunk; }
 
+    void setStorageRelatedUniqueKey(const Settings & settings, const String & key_) override;
+
 private:
     Chunk read() override;
 
@@ -89,6 +91,11 @@ private:
     void scheduleRowGroup(size_t row_group_batch_idx);
 
     void threadFunction(size_t row_group_batch_idx);
+
+    void createArrowFileIfNotCreated();
+    std::shared_ptr<parquet::FileMetaData> readMetadataFromFile();
+
+    std::shared_ptr<parquet::FileMetaData> getFileMetaData();
 
     inline bool supportPrefetch() const;
 
@@ -338,6 +345,13 @@ private:
     std::exception_ptr background_exception = nullptr;
     std::atomic<int> is_stopped{0};
     bool is_initialized = false;
+    struct Cache
+    {
+        String key;
+        bool use_cache = false;
+    };
+
+    Cache metadata_cache;
 };
 
 class ParquetSchemaReader : public ISchemaReader
