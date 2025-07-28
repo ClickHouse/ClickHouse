@@ -211,7 +211,7 @@ public:
             .aws_secret_access_key = (*settings)[DataLakeStorageSetting::iceberg_aws_secret_access_key].value,
             .region = (*settings)[DataLakeStorageSetting::iceberg_region].value,
         };
-
+#if USE_AWS_S3 && USE_AVRO
         if ((*settings)[DataLakeStorageSetting::iceberg_catalog_type].value == DatabaseDataLakeCatalogType::GLUE)
         {
             return std::make_shared<DataLake::GlueCatalog>(
@@ -221,6 +221,7 @@ public:
                 nullptr
             );
         }
+#endif
         return nullptr;
     }
 
