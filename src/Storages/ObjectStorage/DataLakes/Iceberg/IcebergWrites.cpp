@@ -60,7 +60,7 @@ namespace Setting
 {
 extern const SettingsUInt64 output_format_compression_level;
 extern const SettingsUInt64 output_format_compression_zstd_window_log;
-extern const SettingsBool write_full_path_insert_iceberg;
+extern const SettingsBool write_full_path_in_iceberg_metadata;
 }
 
 namespace DataLakeStorageSetting
@@ -73,12 +73,13 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 }
 
-FileNamesGenerator::FileNamesGenerator(const String & table_dir, const String & storage_dir, bool use_uuid_in_metadata_)
-    : data_dir(table_dir + "data/")
+FileNamesGenerator::FileNamesGenerator(const String & table_dir_, const String & storage_dir_)
+    : table_dir(table_dir_)
+    , storage_dir(storage_dir_)
+    , data_dir(table_dir + "data/")
     , metadata_dir(table_dir + "metadata/")
     , storage_data_dir(storage_dir + "data/")
     , storage_metadata_dir(storage_dir + "metadata/")
-    , use_uuid_in_metadata(use_uuid_in_metadata_)
 {
 }
 
@@ -92,7 +93,9 @@ FileNamesGenerator & FileNamesGenerator::operator=(const FileNamesGenerator & ot
     storage_data_dir = other.storage_data_dir;
     storage_metadata_dir = other.storage_metadata_dir;
     initial_version = other.initial_version;
-    use_uuid_in_metadata = other.use_uuid_in_metadata;
+
+    table_dir = other.table_dir;
+    storage_dir = other.storage_dir;
     return *this;
 }
 
@@ -128,28 +131,17 @@ FileNamesGenerator::Result FileNamesGenerator::generateManifestListName(Int64 sn
 
 FileNamesGenerator::Result FileNamesGenerator::generateMetadataName()
 {
-    if (!use_uuid_in_metadata)
-    {
-        return Result{
-            .path_in_metadata = fmt::format("{}v{}.metadata.json", metadata_dir, initial_version),
-            .path_in_storage = fmt::format("{}v{}.metadata.json", storage_metadata_dir, initial_version),
-        };
-    }
-    else
-    {
-        auto uuid_str = uuid_generator.createRandom().toString();
-        return Result{
-            .path_in_metadata = fmt::format("{}{}-{}.metadata.json", metadata_dir, initial_version, uuid_str),
-            .path_in_storage = fmt::format("{}{}-{}.metadata.json", storage_metadata_dir, initial_version, uuid_str),
-        };
-
-    }
+    return Result{
+        .path_in_metadata = fmt::format("{}v{}.metadata.json", metadata_dir, initial_version),
+        .path_in_storage = fmt::format("{}v{}.metadata.json", storage_metadata_dir, initial_version),
+    };
 }
 
-String FileNamesGenerator::convertMetadataToStoragePath(const String & result) const
+String FileNamesGenerator::convertMetadataPathToStoragePath(const String & metadata_path) const
 {
-    return storage_metadata_dir + result.substr(metadata_dir.size());
+    return storage_dir + metadata_path.substr(table_dir.size());
 }
+
 
 String removeEscapedSlashes(const String & json_str)
 {
@@ -295,6 +287,7 @@ void generateManifestFile(
 }
 
 void generateManifestList(
+    const FileNamesGenerator & filename_generator,
     Poco::JSON::Object::Ptr metadata,
     ObjectStoragePtr object_storage,
     ContextPtr context,
@@ -389,7 +382,7 @@ void generateManifestList(
             {
                 auto manifest_list = snapshots->getObject(static_cast<UInt32>(i))->getValue<String>(Iceberg::f_manifest_list);
 
-                StorageObjectStorage::ObjectInfo object_info(generator.convertMetadataToStoragePath(manifest_list));
+                StorageObjectStorage::ObjectInfo object_info(filename_generator.convertMetadataPathToStoragePath(manifest_list));
                 auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, getLogger("IcebergWrites"));
 
                 auto input_stream = std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf);
@@ -688,6 +681,23 @@ IcebergStorageSink::IcebergStorageSink(
     }
     filename_generator.setVersion(last_version + 1);
 
+    auto config_path = configuration_->getPath();
+    if (config_path.empty() || config_path.back() != '/')
+        config_path += "/";
+    if (!context_->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata])
+    {
+        filename_generator = FileNamesGenerator(config_path, config_path);
+    }
+    else
+    {
+        auto bucket = metadata->getValue<String>(Iceberg::f_location);
+        if (bucket.empty() || bucket.back() != '/')
+            bucket += "/";
+        filename_generator = FileNamesGenerator(bucket, config_path);
+    }
+
+    filename_generator.setVersion(last_version + 1);
+
     partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
     auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
 
@@ -809,10 +819,10 @@ void IcebergStorageSink::cancelBuffers()
 bool IcebergStorageSink::initializeMetadata()
 {
     auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
-
     Int64 parent_snapshot = -1;
     if (metadata->has(Iceberg::f_current_snapshot_id))
         parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
+
     auto [new_snapshot, manifest_list_name, storage_manifest_list_name] = MetadataGenerator(metadata).generateNextMetadata(
         filename_generator, metadata_name, parent_snapshot, write_buffers.size(), total_rows, total_chunks_size, static_cast<Int32>(data_filenames.size()));
 
@@ -837,7 +847,7 @@ bool IcebergStorageSink::initializeMetadata()
             StoredObject(storage_manifest_list_name), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
         generateManifestList(
-            metadata, object_storage, context, manifest_entries, new_snapshot, manifest_lengths, filename_generator, *buffer_manifest_list);
+            filename_generator, metadata, object_storage, context, manifest_entries, new_snapshot, manifest_lengths, *buffer_manifest_list);
         buffer_manifest_list->finalize();
     }
 
