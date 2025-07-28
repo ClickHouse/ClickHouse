@@ -305,6 +305,19 @@ inline bool haveAMXINT8() noexcept
             && ((CPUInfo(0x7, 0).registers.edx >> 25) & 1u);  // AMX-INT8 bit
 }
 
+// See https://developer.arm.com/documentation/ddi0601/2024-09/AArch64-Registers/ID-AA64PFR0-EL1--AArch64-Processor-Feature-Register-0
+inline bool haveSVE() noexcept
+{
+#if (defined(__aarch64__)) && defined(__linux__)
+    uint64_t id_aa64pfr0_el1;
+    asm volatile("mrs %0, id_aa64pfr0_el1" : "=r"(id_aa64pfr0_el1));
+    uint64_t sve = (id_aa64pfr0_el1 >> 32) & 0xf;
+    return sve == 0b0001;
+#else
+    return false;
+#endif
+}
+
 #define CPU_ID_ENUMERATE(OP) \
     OP(SSE)                  \
     OP(SSE2)                 \
@@ -345,7 +358,8 @@ inline bool haveAMXINT8() noexcept
     OP(OSXSAVE)              \
     OP(AMXBF16)              \
     OP(AMXTILE)              \
-    OP(AMXINT8)
+    OP(AMXINT8)              \
+    OP(SVE)
 
 struct CPUFlagsCache
 {
