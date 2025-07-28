@@ -146,7 +146,7 @@ ManifestFilesPruner::ManifestFilesPruner(
                     = std::make_shared<ExpressionActions>(ActionsDAG({name_and_type.value()}), ExpressionActionsSettings(context));
 
                 ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
-                min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type.name}, expression));
+                min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type->name}, expression));
             }
         }
     }

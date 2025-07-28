@@ -114,7 +114,6 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::J
         if (current_schema->getValue<int>(f_schema_id) == current_schema_id)
         {
             schema = current_schema;
-            break;
         }
     }
 
@@ -262,11 +261,7 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
     for (UInt32 j = 0; j < schemas->size(); ++j)
     {
         auto schema = schemas->getObject(j);
-        if (schema->getValue<Int32>(f_schema_id) == relevant_snapshot_schema_id)
-        {
-            schema_processor.addIcebergTableSchema(schema);
-            break;
-        }
+        schema_processor.addIcebergTableSchema(schema);
     }
     auto snapshots = metadata_object->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
     bool successfully_found_snapshot = false;
@@ -548,14 +543,19 @@ ManifestFileCacheKeys IcebergMetadata::getManifestList(ContextPtr local_context,
             const std::string file_path = manifest_list_deserializer.getValueFromRowByName(i, f_manifest_path, TypeIndex::String).safeGet<std::string>();
             const auto manifest_file_name = getProperFilePathFromMetadataInfo(file_path, configuration_ptr->getPath(), table_location);
             Int64 added_sequence_number = 0;
-            Int64 added_snapshot_id
-                = manifest_list_deserializer.getValueFromRowByName(i, f_added_snapshot_id, TypeIndex::Int64).safeGet<Int64>();
+            auto added_snapshot_id = manifest_list_deserializer.getValueFromRowByName(i, f_added_snapshot_id);
+            if (added_snapshot_id.isNull())
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Manifest list entry at index {} has null value for field '{}', but it is required",
+                    i,
+                    f_added_snapshot_id);
 
             if (format_version > 1)
             {
                 added_sequence_number = manifest_list_deserializer.getValueFromRowByName(i, f_sequence_number, TypeIndex::Int64).safeGet<Int64>();
             }
-            manifest_file_cache_keys.emplace_back(manifest_file_name, added_sequence_number, added_snapshot_id);
+            manifest_file_cache_keys.emplace_back(manifest_file_name, added_sequence_number, added_snapshot_id.safeGet<Int64>());
         }
         /// We only return the list of {file name, seq number} for cache.
         /// Because ManifestList holds a list of ManifestFilePtr which consume much memory space.
@@ -732,7 +732,7 @@ Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag, ContextPtr 
             const auto & data_files_in_manifest = manifest_file_ptr->getFiles();
             for (const auto & manifest_file_entry : data_files_in_manifest)
             {
-                if (manifest_file_entry.snapshot_id != previous_entry_schema)
+                if ((manifest_file_entry.schema_id != previous_entry_schema) && (use_partition_pruning))
                 {
                     previous_entry_schema = manifest_file_entry.schema_id;
                     pruner.emplace(
@@ -746,7 +746,11 @@ Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag, ContextPtr 
 
                 if (manifest_file_entry.status != ManifestEntryStatus::DELETED)
                 {
-                    if (!pruner->canBePruned(manifest_file_entry))
+                    LOG_DEBUG(
+                        log,
+                        "Processing manifest file entry with data file: {}",
+                        std::get<DataFileEntry>(manifest_file_entry.file).file_name);
+                    if (!use_partition_pruning || !pruner->canBePruned(manifest_file_entry))
                     {
                         if (std::holds_alternative<DataFileEntry>(manifest_file_entry.file))
                             data_files.push_back(std::get<DataFileEntry>(manifest_file_entry.file).file_name);
@@ -756,12 +760,14 @@ Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag, ContextPtr 
         }
     }
 
+    LOG_DEBUG(log, "ABCDEFGH: Found {} data files in Iceberg table {}", data_files.size(), configuration.lock()->getPath());
     if (!use_partition_pruning)
     {
         std::lock_guard cache_lock(cached_unprunned_files_for_last_processed_snapshot_mutex);
         cached_unprunned_files_for_last_processed_snapshot = data_files;
         return cached_unprunned_files_for_last_processed_snapshot.value();
     }
+
 
     return data_files;
 }
