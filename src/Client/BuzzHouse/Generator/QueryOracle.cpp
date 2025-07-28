@@ -137,10 +137,16 @@ void QueryOracle::insertOnTableOrCluster(
     RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const bool peer, TableOrFunction * tof) const
 {
     const std::optional<String> & cluster = t.getCluster();
+    const bool replaceable = !peer && !cluster.has_value() && t.isEngineReplaceable() && rg.nextBool();
 
-    if (peer || cluster.has_value())
+    if (peer || cluster.has_value() || replaceable || rg.nextMediumNumber() < 16)
     {
-        gen.setTableFunction(rg, peer ? TableFunctionUsage::PeerTable : TableFunctionUsage::ClusterCall, t, tof->mutable_tfunc());
+        const TableFunctionUsage usage = peer
+            ? TableFunctionUsage::PeerTable
+            : (cluster.has_value() ? TableFunctionUsage::ClusterCall
+                                   : (replaceable ? TableFunctionUsage::EngineReplace : TableFunctionUsage::RemoteCall));
+
+        gen.setTableFunction(rg, usage, t, tof->mutable_tfunc());
     }
     else
     {

@@ -810,7 +810,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
 
         setTableFunction(rg, usage, t, tof->mutable_tfunc());
     }
-    else if ((is_url = (url_func && (nopt2 < cluster_func + remote_func + url_func + 1))))
+    else if ((is_url = (url_func && (nopt2 < engine_func + cluster_func + remote_func + url_func + 1))))
     {
         /// Use insert into URL
         String url;
@@ -850,7 +850,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
         ufunc->set_outformat(outf);
         ufunc->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf2));
     }
-    else if (insert_into_table && (nopt2 < cluster_func + remote_func + url_func + insert_into_table + 1))
+    else if (insert_into_table && (nopt2 < engine_func + cluster_func + remote_func + url_func + insert_into_table + 1))
     {
         /// Use insert into table
         t.setName(tof->mutable_est(), false);
