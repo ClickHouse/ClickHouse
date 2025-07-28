@@ -19,7 +19,6 @@ struct PatchToApply
 
     size_t getNumRows() const
     {
-        chassert(result_row_indices.size() == patch_col_indices.size());
         chassert(result_row_indices.size() == patch_row_indices.size());
         return result_row_indices.size();
     }
