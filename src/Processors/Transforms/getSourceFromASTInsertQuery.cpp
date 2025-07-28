@@ -135,7 +135,7 @@ std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)
     }
 
     /// tail does not possess the input buffer
-    if (insert_query->tail && !insert_query->tail->eof())
+    if (insert_query->tail)
     {
         LOG_DEBUG(getLogger("getReadBufferFromASTInsertQuery"),
         "creating ConcatReadBuffer with tail buffer id {} use_count {} available {}", size_t(insert_query->tail.get()), insert_query->tail.use_count(), insert_query->tail->available());
@@ -143,6 +143,7 @@ std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)
         buffers.emplace_back(wrapReadBufferPointer(insert_query->tail));
     }
 
+    chassert(!buffers.empty());
     return std::make_unique<ConcatReadBuffer>(std::move(buffers));
 }
 
