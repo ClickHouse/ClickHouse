@@ -126,6 +126,8 @@ public:
 
     static void dropReplica(DatabaseReplicated * database, const String & database_zookeeper_path, const String & shard, const String & replica, bool throw_if_noop);
 
+    void restoreDatabaseMetadataInKeeper(ContextPtr ctx);
+
     ReplicasInfo tryGetReplicasInfo(const ClusterPtr & cluster_) const;
 
     void renameDatabase(ContextPtr query_context, const String & new_name) override;
@@ -191,6 +193,12 @@ private:
 
     void waitDatabaseStarted() const override;
     void stopLoading() override;
+
+    void initDDLWorkerUnlocked() TSA_REQUIRES(ddl_worker_mutex);
+
+    void restoreTablesMetadataInKeeper();
+
+    void reinitializeDDLWorker();
 
     static BlockIO
     getQueryStatus(const String & node_path, const String & replicas_path, ContextPtr context, const Strings & hosts_to_wait);
