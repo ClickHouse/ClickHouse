@@ -684,7 +684,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
 
         DatabaseDataLakeSettings database_settings;
         if (database_engine_define->settings)
-            database_settings.loadFromQuery(*database_engine_define);
+            database_settings.loadFromQuery(*database_engine_define, args.create_query.attach);
 
         auto catalog_type = database_settings[DB::DatabaseDataLakeSetting::catalog_type].value;
         /// Glue catalog is one per region, so it's fully identified by aws keys and region

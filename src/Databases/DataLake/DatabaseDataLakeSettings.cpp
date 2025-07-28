@@ -75,7 +75,7 @@ void DatabaseDataLakeSettings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
-void DatabaseDataLakeSettings::loadFromQuery(const ASTStorage & storage_def)
+void DatabaseDataLakeSettings::loadFromQuery(const ASTStorage & storage_def, bool is_attach)
 {
     if (storage_def.settings)
     {
@@ -83,7 +83,7 @@ void DatabaseDataLakeSettings::loadFromQuery(const ASTStorage & storage_def)
         {
             for (const auto & change : storage_def.settings->changes)
             {
-                if (change.name.starts_with("iceberg_"))
+                if (!is_attach && change.name.starts_with("iceberg_"))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting {} is used for storage. Please use the setting without `iceberg_` prefix", change.name);
             }
             impl->applyChanges(storage_def.settings->changes);
