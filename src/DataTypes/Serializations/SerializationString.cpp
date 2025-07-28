@@ -184,7 +184,7 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
             if (offset + copy_size <= data.capacity() && istr.position() + size + copy_size <= istr.buffer().end())
             {
                 const char * src_pos = istr.position();
-                const char * src_end = src_pos + (size + (copy_size - 1)) / copy_size * copy_size;
+                const char * src_end = src_pos + size;
                 auto * dst_pos = &data[offset - size - 1];
 
                 while (src_pos < src_end)
