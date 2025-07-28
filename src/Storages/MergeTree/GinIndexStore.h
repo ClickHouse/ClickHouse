@@ -114,12 +114,10 @@ using GinSegmentDictionaryPtr = std::shared_ptr<GinSegmentDictionary>;
 class GinIndexStore
 {
 public:
-    /// TODO(ahmadov): clean up versions when full-text search is not experimental feature anymore.
     enum class Format : uint8_t
     {
         v0 = 0,
         v1 = 1, /// Initial version
-        v2 = 2, /// Supports adaptive compression
     };
 
     /// Container for all term's Gin Index Postings List Builder
@@ -170,7 +168,7 @@ private:
     /// FST size less than 100KiB does not worth to compress.
     static constexpr auto FST_SIZE_COMPRESSION_THRESHOLD = 100_KiB;
     /// Current version of GinIndex to store FST
-    static constexpr auto CURRENT_GIN_FILE_FORMAT_VERSION = Format::v2;
+    static constexpr auto CURRENT_GIN_FILE_FORMAT_VERSION = Format::v1;
 
     friend class GinIndexStoreDeserializer;
 
