@@ -116,8 +116,7 @@ class GinIndexStore
 public:
     enum class Format : uint8_t
     {
-        v0 = 0,
-        v1 = 1, /// Initial version
+        v1 = 1, /// Initial version, supports adaptive compression
     };
 
     /// Container for all term's Gin Index Postings List Builder

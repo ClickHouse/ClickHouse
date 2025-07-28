@@ -22,8 +22,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_FORMAT_VERSION;
 };
 
 const CompressionCodecPtr & GinIndexCompressionFactory::zstdCodec()
@@ -208,18 +208,8 @@ GinIndexStore::Format getFormatVersion(uint8_t version)
         case static_cast<FormatAsInt>(GinIndexStore::Format::v1):
             return GinIndexStore::Format::v1;
         default:
-            return GinIndexStore::Format::v0;
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Text Index: segment ID file contains an unsupported version '{}'", version);
     }
-}
-
-void verifyFormatVersionIsSupported(GinIndexStore::Format version)
-{
-    if (version != GinIndexStore::Format::v1)
-        throw Exception(
-            ErrorCodes::UNKNOWN_FORMAT_VERSION,
-            "Unsupported text index version: currently supported version {}, but got {}",
-            GinIndexStore::Format::v1,
-            version);
 }
 }
 
@@ -239,7 +229,7 @@ UInt32 GinIndexStore::getNumOfSegments()
         uint8_t version = 0;
         readBinary(version, *istr);
 
-        verifyFormatVersionIsSupported(getFormatVersion(version));
+        getFormatVersion(version);
 
         readVarUInt(result, *istr);
     }
@@ -252,7 +242,7 @@ GinIndexStore::Format GinIndexStore::getVersion()
 {
     String segment_id_file_name = getName() + GIN_SEGMENT_ID_FILE_TYPE;
     if (!storage->existsFile(segment_id_file_name))
-        return GinIndexStore::Format::v0;
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Text Index: segment ID file does not exist");
 
     std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->storage->readFile(segment_id_file_name, {}, std::nullopt, std::nullopt);
     uint8_t version = 0;
@@ -308,7 +298,7 @@ void GinIndexStore::initSegmentId()
         uint8_t version = 0;
         readBinary(version, *istr);
 
-        verifyFormatVersionIsSupported(getFormatVersion(version));
+        getFormatVersion(version);
 
         readVarUInt(segment_id, *istr);
     }
@@ -516,8 +506,6 @@ void GinIndexStoreDeserializer::readSegmentDictionary(UInt32 segment_id)
             }
             break;
         }
-        default:
-            verifyFormatVersionIsSupported(version);
     }
 }
 

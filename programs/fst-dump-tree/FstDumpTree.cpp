@@ -154,7 +154,7 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv)
                     version = DB::GinIndexStore::Format::v1;
                     break;
                 default:
-                    printAndExit("Segment id file is corrupted: unsupported version '{}'", DB::GinIndexStore::Format::v0);
+                    printAndExit("Segment id file is corrupted: unsupported version '{}'", ver);
             }
 
             readVarUInt(number_of_segments, *segment_id_read_buffer);
