@@ -223,12 +223,6 @@ StaticThreadPool & getMergeTreePrefixesDeserializationThreadPool()
     return instance;
 }
 
-StaticThreadPool & getPatchPartsReadingThreadPool()
-{
-    static StaticThreadPool instance("PatchPartsReadingThreadPool", CurrentMetrics::MergeTreePatchPartsReadingThreads, CurrentMetrics::MergeTreePatchPartsReadingThreadsActive, CurrentMetrics::MergeTreePatchPartsReadingThreadsScheduled);
-    return instance;
-}
-
 StaticThreadPool & getFormatParsingThreadPool()
 {
     static StaticThreadPool instance("FormatParsingThreadPool", CurrentMetrics::FormatParsingThreads, CurrentMetrics::FormatParsingThreadsActive, CurrentMetrics::FormatParsingThreadsScheduled);

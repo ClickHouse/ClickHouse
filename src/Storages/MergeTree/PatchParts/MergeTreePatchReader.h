@@ -35,7 +35,7 @@ public:
     IMergeTreeReader * getReader() const { return reader.get(); }
 
 protected:
-    ReadResult readPatchRange(MarkRanges ranges);
+    ReadResult readPatchRanges(MarkRanges ranges);
 
     PatchPartInfoForReader patch_part;
     MergeTreeReaderPtr reader;

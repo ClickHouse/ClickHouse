@@ -320,9 +320,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_free_size;
     extern const ServerSettingsUInt64 prefixes_deserialization_thread_pool_thread_pool_queue_size;
-    extern const ServerSettingsUInt64 max_patch_parts_reading_thread_pool_size;
-    extern const ServerSettingsUInt64 max_patch_parts_reading_thread_pool_free_size;
-    extern const ServerSettingsUInt64 patch_parts_reading_thread_pool_queue_size;
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_size;
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
     extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
@@ -1402,11 +1399,6 @@ try
         server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
         server_settings[ServerSetting::prefixes_deserialization_thread_pool_thread_pool_queue_size]);
 
-    getPatchPartsReadingThreadPool().initialize(
-        server_settings[ServerSetting::max_patch_parts_reading_thread_pool_size],
-        server_settings[ServerSetting::max_patch_parts_reading_thread_pool_free_size],
-        server_settings[ServerSetting::patch_parts_reading_thread_pool_queue_size]);
-
     getFormatParsingThreadPool().initialize(
         server_settings[ServerSetting::max_format_parsing_thread_pool_size],
         server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
@@ -2125,11 +2117,6 @@ try
                 new_server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_size],
                 new_server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
                 new_server_settings[ServerSetting::prefixes_deserialization_thread_pool_thread_pool_queue_size]);
-
-            getPatchPartsReadingThreadPool().reloadConfiguration(
-                new_server_settings[ServerSetting::max_patch_parts_reading_thread_pool_size],
-                new_server_settings[ServerSetting::max_patch_parts_reading_thread_pool_free_size],
-                new_server_settings[ServerSetting::patch_parts_reading_thread_pool_queue_size]);
 
             getFormatParsingThreadPool().reloadConfiguration(
                 new_server_settings[ServerSetting::max_format_parsing_thread_pool_size],

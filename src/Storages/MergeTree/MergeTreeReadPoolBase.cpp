@@ -48,7 +48,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , block_size_params(block_size_params_)
     , owned_mark_cache(context_->getGlobalContext()->getMarkCache())
     , owned_uncompressed_cache(pool_settings_.use_uncompressed_cache ? context_->getGlobalContext()->getUncompressedCache() : nullptr)
-    , patch_join_cache(std::make_shared<PatchJoinCache>(8, getPatchPartsReadingThreadPool().get()))
+    , patch_join_cache(std::make_shared<PatchJoinCache>(8))
     , header(storage_snapshot->getSampleBlockForColumns(column_names))
     , ranges_in_patch_parts(context_->getSettingsRef()[Setting::merge_tree_min_read_task_size])
     , profile_callback([this](ReadBufferFromFileBase::ProfileInfo info_) { profileFeedback(info_); })

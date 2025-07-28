@@ -25,7 +25,7 @@ using PatchHashMap = absl::flat_hash_map<UInt64, OffsetsHashMap, DefaultHash<UIn
 struct PatchJoinCache
 {
     using Reader = std::function<Block(const MarkRanges &)>;
-    PatchJoinCache(size_t num_buckets_, ThreadPool & thread_pool_);
+    explicit PatchJoinCache(size_t num_buckets_) : num_buckets(num_buckets_) {}
 
     struct Entry
     {
@@ -39,7 +39,7 @@ struct PatchJoinCache
         mutable SharedMutex mutex;
 
         void addBlock(Block read_block);
-        std::vector<std::shared_future<void>> addRangesAsync(const MarkRanges & ranges, ThreadPool & pool, Reader reader);
+        std::vector<std::shared_future<void>> addRangesAsync(const MarkRanges & ranges, Reader reader);
     };
 
     using EntryPtr = std::shared_ptr<Entry>;
@@ -49,8 +49,6 @@ private:
     EntryPtr getOrEmplaceEntry(const String & patch_name);
 
     size_t num_buckets;
-    ThreadPool & thread_pool;
-
     mutable std::mutex mutex;
     absl::flat_hash_map<String, EntryPtr> cache;
     absl::flat_hash_map<String, std::map<MarkRange, size_t>> ranges_to_buckets;

@@ -21,15 +21,10 @@ static const PaddedPODArray<UInt64> & getColumnUInt64Data(const Block & block, c
     return assert_cast<const ColumnUInt64 &>(*block.getByName(column_name).column).getData();
 }
 
-PatchJoinCache::PatchJoinCache(size_t num_buckets_, ThreadPool & thread_pool_)
-    : num_buckets(num_buckets_), thread_pool(thread_pool_)
-{
-}
-
 PatchJoinCache::EntryPtr PatchJoinCache::getEntry(const String & patch_name, const MarkRanges & ranges, Reader reader)
 {
     auto entry = getOrEmplaceEntry(patch_name);
-    auto futures = entry->addRangesAsync(ranges, thread_pool, reader);
+    auto futures = entry->addRangesAsync(ranges, reader);
 
     for (const auto & future : futures)
         future.get();
@@ -48,7 +43,7 @@ PatchJoinCache::EntryPtr PatchJoinCache::getOrEmplaceEntry(const String & patch_
     return entry;
 }
 
-std::vector<std::shared_future<void>> PatchJoinCache::Entry::addRangesAsync(const MarkRanges & ranges, ThreadPool & pool, Reader reader)
+std::vector<std::shared_future<void>> PatchJoinCache::Entry::addRangesAsync(const MarkRanges & ranges, Reader reader)
 {
     std::vector<std::shared_future<void>> futures;
     std::vector<std::shared_ptr<std::promise<void>>> promises;
@@ -96,22 +91,20 @@ std::vector<std::shared_future<void>> PatchJoinCache::Entry::addRangesAsync(cons
 
     if (!ranges_to_read.empty())
     {
-        pool.scheduleOrThrowOnError([this, ranges_to_read, reader, promises]
+        try
         {
-            try
-            {
-                auto read_block = reader(ranges_to_read);
-                addBlock(std::move(read_block));
+            auto read_block = reader(ranges_to_read);
+            addBlock(std::move(read_block));
 
-                for (const auto & promise : promises)
-                    promise->set_value();
-            }
-            catch (...)
-            {
-                for (const auto & promise : promises)
-                    promise->set_exception(std::current_exception());
-            }
-        });
+            for (const auto & promise : promises)
+                promise->set_value();
+        }
+        catch (...)
+        {
+            for (const auto & promise : promises)
+                promise->set_exception(std::current_exception());
+            throw;
+        }
     }
 
     return futures;

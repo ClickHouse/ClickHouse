@@ -36,7 +36,7 @@ MergeTreePatchReader::MergeTreePatchReader(PatchPartInfoForReader patch_part_, M
 {
 }
 
-MergeTreePatchReader::ReadResult MergeTreePatchReader::readPatchRange(MarkRanges ranges)
+MergeTreePatchReader::ReadResult MergeTreePatchReader::readPatchRanges(MarkRanges ranges)
 {
     Stopwatch watch;
 
@@ -74,7 +74,7 @@ PatchReadResultPtr MergeTreePatchReaderMerge::readPatch(MarkRanges & ranges, con
     MarkRanges ranges_to_read = {ranges.front()};
     ranges.pop_front();
 
-    auto read_result = readPatchRange(ranges_to_read);
+    auto read_result = readPatchRanges(ranges_to_read);
 
     const auto & sample_block = range_reader.getReadSampleBlock();
     patch_read_result->block = sample_block.cloneWithColumns(read_result.columns);
@@ -195,18 +195,15 @@ PatchReadResultPtr MergeTreePatchReaderJoin::readPatch(MarkRanges & ranges, cons
 
     if (!patch_join_cache)
     {
-        auto read_result = readPatchRange(all_ranges);
+        auto read_result = readPatchRanges(all_ranges);
         patch_read_result->entry = std::make_shared<PatchJoinCache::Entry>();
         patch_read_result->entry->addBlock(sample_block.cloneWithColumns(read_result.columns));
         return patch_read_result;
     }
 
-    std::mutex reader_mutex;
-
-    auto reader = [this, &sample_block, &reader_mutex](const MarkRanges & ranges_to_read)
+    auto reader = [this, &sample_block](const MarkRanges & ranges_to_read)
     {
-        std::lock_guard lock(reader_mutex);
-        auto read_result = readPatchRange(ranges_to_read);
+        auto read_result = readPatchRanges(ranges_to_read);
         return sample_block.cloneWithColumns(read_result.columns);
     };
 

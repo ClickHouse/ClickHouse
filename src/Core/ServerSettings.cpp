@@ -93,19 +93,6 @@ namespace DB
     A value of `0` means unlimited.
     :::
     )", 0) \
-    DECLARE(UInt64, max_patch_parts_reading_thread_pool_size, 100, R"(
-    ClickHouse uses threads from the patch parts reading Thread pool for parallel reading of patch parts in MergeTree. `max_patch_parts_reading_thread_pool_size` limits the maximum number of threads in the pool.
-    )", 0) \
-    DECLARE(UInt64, max_patch_parts_reading_thread_pool_free_size, 0, R"(
-    If the number of **idle** threads in the patch parts reading Thread pool exceeds `max_patch_parts_reading_thread_pool_free_size`, ClickHouse will release resources occupied by idling threads and decrease the pool size. Threads can be created again if necessary.
-    )", 0) \
-    DECLARE(UInt64, patch_parts_reading_thread_pool_queue_size, 10000, R"(
-    The maximum number of jobs that can be scheduled on the patch parts reading Thread pool.
-
-    :::note
-    A value of `0` means unlimited.
-    :::
-    )", 0) \
     DECLARE(UInt64, max_format_parsing_thread_pool_size, 100, R"(
     Maximum total number of threads to use for parsing input.
     )", 0) \
@@ -1321,12 +1308,6 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
              {getMergeTreePrefixesDeserializationThreadPool().isInitialized() ? std::to_string(getMergeTreePrefixesDeserializationThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"prefixes_deserialization_thread_pool_thread_pool_queue_size",
              {getMergeTreePrefixesDeserializationThreadPool().isInitialized() ? std::to_string(getMergeTreePrefixesDeserializationThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
-            {"max_patch_parts_reading_thread_pool_size",
-             {getPatchPartsReadingThreadPool().isInitialized() ? std::to_string(getPatchPartsReadingThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
-            {"max_patch_parts_reading_thread_pool_free_size",
-             {getPatchPartsReadingThreadPool().isInitialized() ? std::to_string(getPatchPartsReadingThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
-            {"patch_parts_reading_thread_pool_queue_size",
-             {getPatchPartsReadingThreadPool().isInitialized() ? std::to_string(getPatchPartsReadingThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_format_parsing_thread_pool_size",
              {getFormatParsingThreadPool().isInitialized() ? std::to_string(getFormatParsingThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_format_parsing_thread_pool_free_size",
