@@ -41,7 +41,7 @@ RelationStats getDummyStats(ContextPtr context, const String & table_name)
     {
         Poco::JSON::Parser parser;
         Poco::Dynamic::Var result = parser.parse(it->second);
-        auto object = result.extract<Poco::JSON::Object::Ptr>();
+        const auto & object = result.extract<Poco::JSON::Object::Ptr>();
         if (!object)
             return {};
 

@@ -3,6 +3,7 @@
 #include <Common/JSONBuilder.h>
 #include <Common/safe_cast.h>
 #include <Common/typeid_cast.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Core/ColumnWithTypeAndName.h>
 
 #include <Core/Joins.h>
@@ -50,6 +51,7 @@
 
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <algorithm>
+#include <memory>
 #include <ranges>
 #include <stack>
 #include <string_view>
@@ -428,7 +430,7 @@ void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & ri
 }
 
 bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, TableJoin::JoinOnClause & table_join_clause,
-    std::unordered_set<JoinActionRef> & used_expressions, const JoinPlanningContext & planning_context)
+    std::vector<JoinActionRef> & used_expressions, const JoinPlanningContext & planning_context)
 {
     bool has_join_predicates = false;
     std::vector<JoinActionRef> new_predicates;
@@ -471,8 +473,8 @@ bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, Table
         table_join_clause.addKey(lhs.getColumnName(), rhs.getColumnName(), null_safe_comparison);
 
         /// We applied predicate, do not add it to residual conditions
-        used_expressions.insert(lhs);
-        used_expressions.insert(rhs);
+        used_expressions.push_back(lhs);
+        used_expressions.push_back(rhs);
         new_predicates.pop_back();
     }
 
@@ -521,7 +523,7 @@ JoinActionRef concatConditions(std::vector<JoinActionRef> & conditions, std::opt
 bool tryAddDisjunctiveConditions(
     std::vector<JoinActionRef> & join_expressions,
     TableJoin::Clauses & table_join_clauses,
-    std::unordered_set<JoinActionRef> & used_expressions,
+    std::vector<JoinActionRef> & used_expressions,
     const JoinPlanningContext & planning_context,
     bool throw_on_error)
 {
@@ -555,13 +557,13 @@ bool tryAddDisjunctiveConditions(
         if (auto left_pre_filter_condition = concatConditions(join_condition, JoinTableSide::Left))
         {
             table_join_clause.analyzer_left_filter_condition_column_name = left_pre_filter_condition.getColumnName();
-            used_expressions.insert(left_pre_filter_condition);
+            used_expressions.push_back(left_pre_filter_condition);
         }
 
         if (auto right_pre_filter_condition = concatConditions(join_condition, JoinTableSide::Right))
         {
             table_join_clause.analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
-            used_expressions.insert(right_pre_filter_condition);
+            used_expressions.push_back(right_pre_filter_condition);
         }
 
         if (!join_condition.empty())
@@ -788,8 +790,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
         join_expression.push_back(JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
     }
 
-    std::unordered_set<JoinActionRef> used_expressions;
-
+    std::vector<JoinActionRef> used_expressions;
 
     JoinPlanningContext planning_context;
     planning_context.is_storage_join = bool(prepared_join_storage);
@@ -863,8 +864,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
             predicateOperandsToCommonType(lhs, rhs, planning_context);
 
-            used_expressions.insert(lhs);
-            used_expressions.insert(rhs);
+            used_expressions.push_back(lhs);
+            used_expressions.push_back(rhs);
 
             table_join->setAsofInequality(*asof_inequality_op);
             table_join_clauses.front().addKey(lhs.getColumnName(), rhs.getColumnName(), /* null_safe_comparison = */ false);
@@ -879,13 +880,13 @@ static QueryPlanNode buildPhysicalJoinImpl(
     if (auto left_pre_filter_condition = concatConditions(join_expression, JoinTableSide::Left))
     {
         table_join_clauses.at(table_join_clauses.size() - 1).analyzer_left_filter_condition_column_name = left_pre_filter_condition.getColumnName();
-        used_expressions.insert(left_pre_filter_condition);
+        used_expressions.push_back(left_pre_filter_condition);
     }
 
     if (auto right_pre_filter_condition = concatConditions(join_expression, JoinTableSide::Right))
     {
         table_join_clauses.at(table_join_clauses.size() - 1).analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
-        used_expressions.insert(right_pre_filter_condition);
+        used_expressions.push_back(right_pre_filter_condition);
     }
 
     join_operator.residual_filter.append_range(join_expression);
@@ -947,18 +948,21 @@ static QueryPlanNode buildPhysicalJoinImpl(
         {
             if (prepared_join_storage && JoinActionRef(action, expression_actions).fromRight())
             {
-                /// x (Alias) -> toNullable(x) -> x (Input)
-                action = action->children.at(0)->children.at(0);
-                /// toNullable(x) -> x (Input)
+                // if (prepared_join_storage.storage_join)
+                {
+                    /// x (Alias) -> toNullable(x) -> x (Input)
+                    action = action->children.at(0)->children.at(0);
+                    /// toNullable(x) -> x (Input)
+                }
             }
             else
                 action = action->children.at(0);
         }
 
-        used_expressions.emplace(action, expression_actions);
+        used_expressions.emplace_back(action, expression_actions);
     }
     for (const auto * action : required_residual_nodes)
-        used_expressions.emplace(action, expression_actions);
+        used_expressions.emplace_back(action, expression_actions);
 
     // std::cerr << expression_actions.getActionsDAG()->dumpDAG() << std::endl;
 
@@ -967,8 +971,15 @@ static QueryPlanNode buildPhysicalJoinImpl(
         for (const auto & column : *child->step->getOutputHeader())
         {
             auto input_node = expression_actions.findNode(column.name, /* is_input */ true);
-            used_expressions.insert(std::move(input_node));
+            used_expressions.push_back(std::move(input_node));
         }
+    }
+
+    {
+        std::unordered_set<const ActionsDAG::Node *> seen_used_expressions;
+        auto it = std::remove_if(used_expressions.begin(), used_expressions.end(),
+            [&](const JoinActionRef & x) { return !seen_used_expressions.insert(x.getNode()).second; });
+        used_expressions.erase(it, used_expressions.end());
     }
 
     ActionsDAG left_dag = JoinExpressionActions::getSubDAG(used_expressions | std::views::filter([](const auto & node) { return node.fromLeft() || node.fromNone(); }));

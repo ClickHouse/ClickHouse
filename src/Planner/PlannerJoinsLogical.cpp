@@ -221,7 +221,7 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
             auto & arg = args.emplace_back(builder_context.addExpression(inner_column));
             if (!arg.getType()->equals(*result_type))
             {
-                String input_column_name = arg.getColumnName();
+                // String input_column_name = arg.getColumnName();
                 auto casted_arg = JoinActionRef::transform({arg}, cast_to_super);
                 // changed_types[input_column_name] = casted_arg.getNode();
                 arg = casted_arg;

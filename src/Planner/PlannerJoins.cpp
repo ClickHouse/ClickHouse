@@ -1059,7 +1059,13 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
       */
     Block right_table_expression_header_with_storage_column_names;
 
-    for (const auto & right_table_expression_column : *right_table_expression_header)
+    Block right_table_expression_header_ = *right_table_expression_header;
+    // if (table_join->joinUseNulls() && isLeftOrFull(table_join->kind()))
+    // {
+    //     JoinCommon::convertColumnsToNullable(right_table_expression_header_);
+    // }
+
+    for (const auto & right_table_expression_column : right_table_expression_header_)
     {
         auto table_column_name_it = right_table_expression.column_mapping.find(right_table_expression_column.name);
         if (table_column_name_it == right_table_expression.column_mapping.end())
@@ -1070,7 +1076,7 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
         right_table_expression_header_with_storage_column_names.insert(right_table_expression_column_with_storage_column_name);
     }
 
-    return std::make_shared<DirectKeyValueJoin>(table_join, *right_table_expression_header, storage, right_table_expression_header_with_storage_column_names);
+    return std::make_shared<DirectKeyValueJoin>(table_join, right_table_expression_header_, storage, right_table_expression_header_with_storage_column_names);
 }
 
 QueryTreeNodePtr getJoinExpressionFromNode(const JoinNode & join_node)

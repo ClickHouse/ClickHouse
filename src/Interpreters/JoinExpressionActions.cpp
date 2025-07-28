@@ -1,5 +1,6 @@
 #include <Interpreters/JoinExpressionActions.h>
 #include <algorithm>
+#include <cstdint>
 #include <ranges>
 #include <stack>
 #include <string_view>
@@ -75,7 +76,7 @@ int BitSet::findFirstSet() const
 size_t BitSet::hashImpl() const
 {
     if (likely(bitset.size() <= std::numeric_limits<unsigned long>::digits))
-        return std::hash<unsigned long>()(bitset.to_ulong());
+        return std::hash<uint64_t>()(bitset.to_ulong());
 
     UInt64 hash = 0;
     auto pos = bitset.find_first();
