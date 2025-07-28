@@ -10,11 +10,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
+from .info import Info
 from .s3 import S3
 from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
 from .utils import ContextManager, MetaClasses, Shell, Utils
-from .info import Info
 
 
 @dataclasses.dataclass
@@ -435,10 +435,14 @@ class Result(MetaClasses.Serializable):
                 f"chmod +x {unit_tests_path}",
                 command,
             ],
-            with_log=with_log,
         )
+        is_error = not result.is_ok()
         status, results, info = ResultTranslator.from_gtest()
         result.set_status(status).set_results(results).set_info(info)
+        if is_error:
+            # test cases can be OK but gtest binary run failed, for instance due to sanitizer error
+            result.set_info("gtest binary run has non-zero exit code - see logs")
+            result.set_status(Result.Status.FAILED)
         return result
 
     @classmethod
@@ -490,7 +494,8 @@ class Result(MetaClasses.Serializable):
 
         print(f"> Start execution for [{name}]")
         res = True  # Track success/failure status
-        error_infos = []
+        info_lines = []
+        MAX_LINES_IN_INFO = 300
         with ContextManager.cd(workdir):
             for command_ in command:
                 if callable(command_):
@@ -507,19 +512,19 @@ class Result(MetaClasses.Serializable):
                     res = result if isinstance(result, bool) else not bool(result)
                     if (with_info_on_failure and not res) or with_info:
                         if isinstance(result, bool):
-                            error_infos = buffer.getvalue().splitlines()
+                            info_lines = buffer.getvalue().splitlines()
                         else:
-                            error_infos = str(result).splitlines()
+                            info_lines = str(result).splitlines()
                 else:
                     # Run shell command in a specified directory with logging and verbosity
                     exit_code = Shell.run(
                         command_, verbose=True, log_file=log_file, retries=retries
                     )
+                    log_output = Shell.get_output(
+                        f"tail -n {MAX_LINES_IN_INFO+1} {log_file}"  # +1 to get the truncation message
+                    )
                     if with_info or (with_info_on_failure and exit_code != 0):
-                        with open(
-                            log_file, "r", encoding="utf-8", errors="ignore"
-                        ) as f:
-                            error_infos.append(f.read().strip())
+                        info_lines += log_output.splitlines()
                     res = exit_code == 0
 
                 # If fail_fast is enabled, stop on first failure
@@ -528,18 +533,17 @@ class Result(MetaClasses.Serializable):
                     break
 
         # Create and return the result object with status and log file (if any)
-        MAX_LINES_IN_INFO = 100
         return Result.create_from(
             name=name,
             status=res,
             stopwatch=stop_watch_,
             info=(
-                error_infos
-                if len(error_infos) < MAX_LINES_IN_INFO
+                info_lines
+                if len(info_lines) < MAX_LINES_IN_INFO
                 else [
-                    f"~~~~~ truncated {len(error_infos)-MAX_LINES_IN_INFO} lines ~~~~~"
+                    f"~~~~~ truncated {len(info_lines)-MAX_LINES_IN_INFO} lines ~~~~~"
                 ]
-                + error_infos[-MAX_LINES_IN_INFO:]
+                + info_lines[-MAX_LINES_IN_INFO:]
             ),
             files=[log_file] if with_log else None,
         )

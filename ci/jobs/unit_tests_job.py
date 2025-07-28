@@ -1,3 +1,4 @@
+from ci.praktika.info import Info
 from ci.praktika.result import Result
 
 if __name__ == "__main__":
