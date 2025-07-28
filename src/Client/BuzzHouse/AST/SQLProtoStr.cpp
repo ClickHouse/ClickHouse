@@ -2022,7 +2022,7 @@ CONV_FN(RedisFunc, rfunc)
     if (rfunc.has_db_index())
     {
         ret += ", '";
-        ret += rfunc.db_index();
+        ret += std::to_string(rfunc.db_index());
         ret += "'";
     }
     if (rfunc.has_password())
@@ -2034,7 +2034,7 @@ CONV_FN(RedisFunc, rfunc)
     if (rfunc.has_pool_size())
     {
         ret += ", '";
-        ret += rfunc.pool_size();
+        ret += std::to_string(rfunc.pool_size());
         ret += "'";
     }
     ret += ")";
