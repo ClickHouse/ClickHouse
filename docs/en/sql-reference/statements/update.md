@@ -66,7 +66,7 @@ A [lightweight `DELETE`](/sql-reference/statements/delete) query can be run as a
 
 **Potential performance impacts:**
 - Adds an overhead to `SELECT` queries that need to apply patches
-- [Skipping indexes](/engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-data_skipping-indexes) and [projections](/engines/table-engines/mergetree-family/mergetree.md/#projections) are not used for data parts that have patches to be applied
+- [Skipping indexes](/engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-data_skipping-indexes) and [projections](/engines/table-engines/mergetree-family/mergetree.md/#projections) will not be used if there are patch parts for a table, including for data parts that don't have patches to be applied.
 - Small updates which are too frequent may lead to a "too many parts" error. It is recommended to batch several updates into a single query, for example by putting ids for updates in a single `IN` clause in the `WHERE` clause
 - Lightweight updates are designed to update small amounts of rows (up to about 10% of the table). If you need to update a larger amount, it is recommended to use the [`ALTER TABLE ... UPDATE`](/sql-reference/statements/alter/update) mutation
 
