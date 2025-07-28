@@ -7,7 +7,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <TableFunctions/registerTableFunctions.h>
+#include "registerTableFunctions.h"
 
 
 namespace DB
