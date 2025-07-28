@@ -244,8 +244,8 @@ Block getUpdatedHeader(const PatchesToApply & patches, const Block & result_bloc
             continue;
 
         /// All blocks in one patch must have the same structure.
-        // for (size_t i = 1; i < patch->patch_blocks.size(); ++i)
-        //     assertCompatibleHeader(patch->patch_blocks[i], patch->patch_blocks[0], "patch parts");
+        for (size_t i = 1; i < patch->patch_blocks.size(); ++i)
+            assertCompatibleHeader(patch->patch_blocks[i], patch->patch_blocks[0], "patch parts");
 
         Block header = patch->patch_blocks[0].cloneEmpty();
 
@@ -279,7 +279,7 @@ bool canApplyPatchesRaw(const PatchesToApply & patches)
         {
             for (const auto & column : patch->patch_blocks.front())
             {
-                if (!isPatchPartSystemColumn(column.name) && !canApplyPatchInplace(*column.column))
+                if (!isPatchPartSystemColumn(column.name) && column.column && !canApplyPatchInplace(*column.column))
                     return false;
             }
         }
