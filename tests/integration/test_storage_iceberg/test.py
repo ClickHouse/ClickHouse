@@ -4807,28 +4807,27 @@ def test_relevant_iceberg_schema_chosen(started_cluster, format_version, storage
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = "test_relevant_iceberg_schema_chosen_" + storage_type + "_" + get_uuid_str()
-
-    def execute_spark_query(query: str):
-        return execute_spark_query_general(
-            spark,
-            started_cluster,
-            storage_type,
-            TABLE_NAME,
-            query,
-        )
     
+    spark.sql(
+        f"""
+        CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
+            a INT NOT NULL
+        ) using iceberg;
+        """
+    )
+
     for i in range(30):
         values_list = ", ".join(["(1)" for _ in range(50)])
-        execute_spark_query(f"""
+        spark.sql(f"""
             INSERT INTO {TABLE_NAME} VALUES (1);
         """)
-        execute_spark_query(
+        spark.sql(
             f"""
             INSERT INTO {TABLE_NAME} VALUES {values_list};
             """
         )
 
-    execute_spark_query(
+    spark.sql(
     f"""
         ALTER TABLE {TABLE_NAME} ADD COLUMN b INT;
     """
@@ -4836,14 +4835,21 @@ def test_relevant_iceberg_schema_chosen(started_cluster, format_version, storage
 
     for i in range(30):
         values_list = ", ".join(["(1, 2)" for _ in range(50)])
-        execute_spark_query(f"""
+        spark.sql(f"""
             INSERT INTO {TABLE_NAME} VALUES (1, 2);
-        """)
-        execute_spark_query(
+        """) 
+        spark.sql(
             f"""
             INSERT INTO {TABLE_NAME} VALUES {values_list};
             """
         )
+
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
 
     table_creation_expression = get_creation_expression(
         storage_type,
@@ -4852,13 +4858,6 @@ def test_relevant_iceberg_schema_chosen(started_cluster, format_version, storage
         table_function=True,
     )
 
-    default_download_directory(
-        started_cluster,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
-    )
-
-    instance.query(f"SELECT * FROM {table_creation_expression} ORDER BY ALL", settings={"input_format_parquet_filter_push_down": 0, "input_format_parquet_bloom_filter_push_down": 0})
+    instance.query(f"SELECT * FROM {table_creation_expression}", settings={"input_format_parquet_filter_push_down": 0, "input_format_parquet_bloom_filter_push_down": 0})
 
 
