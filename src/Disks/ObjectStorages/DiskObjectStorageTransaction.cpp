@@ -881,31 +881,43 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
         operations_to_execute.emplace_back(std::move(write_operation));
     }
 
+    [[maybe_unused]] bool use_distributed_cache = false;
+    size_t use_buffer_size = buf_size;
+#if ENABLE_DISTRIBUTED_CACHE
+    use_distributed_cache = settings.write_through_distributed_cache
+        && DistributedCache::Registry::instance().isReady(settings.distributed_cache_settings.read_only_from_current_az);
+    if (use_distributed_cache && settings.distributed_cache_settings.write_through_cache_buffer_size)
+        use_buffer_size = settings.distributed_cache_settings.write_through_cache_buffer_size;
+#endif
+
     auto impl = object_storage.writeObject(
         object,
         /// We always use mode Rewrite because we simulate append using metadata and different files
         WriteMode::Rewrite,
         object_attributes,
-        buf_size,
+        use_buffer_size,
         settings);
 
 #if ENABLE_DISTRIBUTED_CACHE
-    if (settings.write_through_distributed_cache
-        && DistributedCache::Registry::instance().isReady(settings.distributed_cache_settings.read_only_from_current_az))
+    if (use_distributed_cache)
     {
-        auto global_context = Context::getGlobalContextInstance();
-        auto query_context = CurrentThread::isInitialized() ? CurrentThread::get().getQueryContext() : nullptr;
         auto connection_info = object_storage.getConnectionInfo();
-        auto connection_timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(
-            query_context ? query_context->getSettingsRef() : global_context->getSettingsRef());
+        if (connection_info)
+        {
+            auto global_context = Context::getGlobalContextInstance();
+            auto query_context = CurrentThread::isInitialized() ? CurrentThread::get().getQueryContext() : nullptr;
 
-        impl = std::make_unique<WriteBufferFromDistributedCache>(
-            path,
-            object,
-            settings,
-            connection_info,
-            std::move(impl),
-            std::move(connection_timeouts));
+            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(
+                query_context ? query_context->getSettingsRef() : global_context->getSettingsRef());
+
+            impl = std::make_unique<WriteBufferFromDistributedCache>(
+                path,
+                object,
+                settings,
+                connection_info,
+                std::move(impl),
+                std::move(timeouts));
+        }
     }
 #endif
 

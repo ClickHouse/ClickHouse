@@ -102,9 +102,15 @@ void DiskObjectStorageMetadata::createFromSingleObject(ObjectStorageKey object_k
 }
 
 void DiskObjectStorageMetadata::deserializeFromString(const std::string & data)
+try
 {
     ReadBufferFromString buf(data);
     deserialize(buf);
+}
+catch (Exception & e)
+{
+    e.addMessage("while parsing: '{}'", data);
+    throw;
 }
 
 void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const

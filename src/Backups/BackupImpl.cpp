@@ -46,6 +46,7 @@ namespace ErrorCodes
     extern const int BACKUP_ALREADY_EXISTS;
     extern const int BACKUP_VERSION_NOT_SUPPORTED;
     extern const int BACKUP_DAMAGED;
+    extern const int BAD_ARGUMENTS;
     extern const int NO_BASE_BACKUP;
     extern const int WRONG_BASE_BACKUP;
     extern const int BACKUP_ENTRY_NOT_FOUND;
@@ -394,12 +395,11 @@ void BackupImpl::writeBackupMetadata()
         *out << "<name>" << xml << info.file_name << "</name>";
         *out << "<size>" << info.size << "</size>";
 
-
         if (!info.object_key.empty())
         {
             *out << "<object_key>" << info.object_key << "</object_key>";
             if (original_endpoint.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "In lightweight snapshot backup, the endpoint should not be empty. Please backup without `ON CLUSTER`");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "In lightweight snapshot backup, the endpoint should not be empty. Do not run this command with `ON CLUSTER`");
         }
 
         if (info.size)
