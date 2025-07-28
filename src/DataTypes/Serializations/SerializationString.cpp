@@ -156,6 +156,38 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
 
     for (size_t i = 0; i < limit; ++i)
     {
+        if constexpr (UNROLL_TIMES <= 3)
+        {
+            /// Optimistic case when there are many strings less than 128 bytes in size:
+            auto small_strings_begin = istr.position() + 1;
+            size_t prev_offset = offset;
+            while (istr.available() && i < limit)
+            {
+                UInt8 size = *istr.position();
+                if (size >= 128)
+                    break;
+
+                ++size;
+                if (istr.position() + size > istr.buffer().end())
+                    break;
+
+                *istr.position() = 0;
+                istr.position() += size;
+                offset += size;
+                offsets.push_back(offset);
+                ++i;
+            }
+            if (istr.position() >= small_strings_begin)
+            {
+                if (unlikely(offset > data.size()))
+                    data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
+                memcpy(&data[prev_offset], small_strings_begin, istr.position() - small_strings_begin);
+                data[offset - 1] = 0;
+                if (i == limit)
+                    break;
+            }
+        }
+
         if (istr.eof())
             break;
 
