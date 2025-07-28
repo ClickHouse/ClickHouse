@@ -292,6 +292,7 @@ KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host,
     configuration_wrapper.cluster_config->get_servers().push_back(peer_config);
 }
 
+// Why don't we check for overflow here in the coordination settings the same way we do in KeeperServer?
 KeeperStateManager::KeeperStateManager(
     int my_server_id_,
     const std::string & config_prefix_,
@@ -323,8 +324,7 @@ KeeperStateManager::KeeperStateManager(
     , logger(getLogger("KeeperStateManager"))
 {
     // TODO double check if setting raft logs to None actually works
-    // Why don't we check for overflow here the same way we do in KeeperServer?
-    if (log_store->rotate_interval <= 0)
+    if (keeper_context_->getCoordinationSettings()[CoordinationSetting::rotate_log_storage_interval] <= 0)
     {
         LOG_FATAL(
             logger,
