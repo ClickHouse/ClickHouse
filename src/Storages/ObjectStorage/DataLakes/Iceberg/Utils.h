@@ -11,6 +11,7 @@
 
 #if USE_AVRO
 
+#include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
@@ -52,6 +53,13 @@ struct MetadataFileWithInfo
     String path;
     CompressionMethod compression_method;
 };
+
+/// Spec: https://iceberg.apache.org/spec/?h=metadata.json#table-metadata-fields
+String createEmptyMetadataFile(
+    String path_location,
+    const ColumnsDescription & columns,
+    ASTPtr partition_by,
+    UInt64 format_version = 2);
 
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
