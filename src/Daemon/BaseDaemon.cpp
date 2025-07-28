@@ -5,7 +5,6 @@
 #include <Core/Settings.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
-#include <Common/GWPAsan.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>

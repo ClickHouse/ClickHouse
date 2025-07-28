@@ -174,7 +174,8 @@ QueryPipeline ExecutableDictionarySource::getStreamForBlock(const Block & block)
     String command = configuration.command;
     updateCommandIfNeeded(command, coordinator_configuration.execute_direct, context);
 
-    auto source = std::make_shared<SourceFromSingleChunk>(block);
+    auto header = std::make_shared<const Block>(block);
+    auto source = std::make_shared<SourceFromSingleChunk>(header);
     auto shell_input_pipe = Pipe(std::move(source));
 
     Pipes shell_input_pipes;
@@ -183,7 +184,7 @@ QueryPipeline ExecutableDictionarySource::getStreamForBlock(const Block & block)
     auto pipe = coordinator->createPipe(command, configuration.command_arguments, std::move(shell_input_pipes), sample_block, context);
 
     if (configuration.implicit_key)
-        pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
+        pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(header, pipe.getSharedHeader()));
 
     return QueryPipeline(std::move(pipe));
 }

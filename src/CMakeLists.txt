@@ -8,14 +8,6 @@ if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
 
-if(COMPILER_PIPE)
-    set(MAX_COMPILER_MEMORY 2500)
-else()
-    set(MAX_COMPILER_MEMORY 1500)
-endif()
-set(MAX_LINKER_MEMORY 3500)
-include(../cmake/limit_jobs.cmake)
-
 include (../cmake/version.cmake)
 message (STATUS "Will build ${VERSION_FULL} revision ${VERSION_REVISION} ${VERSION_OFFICIAL}")
 include (configure_config.cmake)
@@ -111,10 +103,6 @@ list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_dele
 add_headers_and_sources(clickhouse_compression Compression)
 add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhouse_compression_sources})
 
-if (TARGET ch_contrib::sz3)
-    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::sz3)
-endif()
-
 add_headers_and_sources(dbms Disks/IO)
 add_headers_and_sources(dbms Disks/ObjectStorages)
 if (TARGET ch_contrib::sqlite)
@@ -185,6 +173,10 @@ if (ENABLE_BUZZHOUSE)
     add_headers_and_sources(dbms Client/BuzzHouse/AST)
     add_headers_and_sources(dbms Client/BuzzHouse/Generator)
     add_headers_and_sources(dbms Client/BuzzHouse/Utils)
+endif()
+
+if (ENABLE_CLIENT_AI)
+    add_headers_and_sources(dbms Client/AI)
 endif()
 
 if (OS_LINUX)
@@ -337,11 +329,6 @@ if (TARGET ch_contrib::llvm)
     dbms_target_link_libraries (PUBLIC ch_contrib::llvm)
     target_link_libraries (clickhouse_compression PUBLIC ch_contrib::llvm)
 endif ()
-
-if (TARGET ch_contrib::gwp_asan)
-    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::gwp_asan)
-    target_link_libraries (clickhouse_new_delete PRIVATE ch_contrib::gwp_asan)
-endif()
 
 # Otherwise it will slow down stack traces printing too much.
 if ("${CMAKE_BUILD_TYPE_UC}" STREQUAL "DEBUG")
@@ -521,6 +508,10 @@ if (TARGET OpenSSL::Crypto)
     dbms_target_link_libraries (PRIVATE OpenSSL::Crypto)
     target_link_libraries (clickhouse_common_io PRIVATE OpenSSL::Crypto)
 endif ()
+
+if (ENABLE_CLIENT_AI AND TARGET ch_contrib::ai-sdk-cpp)
+    dbms_target_link_libraries (PUBLIC ch_contrib::ai-sdk-cpp)
+endif()
 
 if (TARGET ch_contrib::ldap)
     dbms_target_link_libraries (PRIVATE ch_contrib::ldap ch_contrib::lber)
@@ -715,8 +706,7 @@ if (ENABLE_TESTS)
         dbms
         clickhouse_common_zookeeper_base
         clickhouse_common_config
-        clickhouse_common_zookeeper
-        hilite_comparator)
+        clickhouse_common_zookeeper)
 
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)

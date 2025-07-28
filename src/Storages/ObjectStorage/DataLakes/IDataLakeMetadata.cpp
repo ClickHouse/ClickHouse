@@ -60,9 +60,9 @@ ObjectIterator IDataLakeMetadata::createKeysIterator(
     return std::make_shared<KeysIterator>(std::move(data_files_), object_storage_, callback_);
 }
 
-DB::ReadFromFormatInfo IDataLakeMetadata::prepareReadingFromFormat(
+ReadFromFormatInfo IDataLakeMetadata::prepareReadingFromFormat(
     const Strings & requested_columns,
-    const DB::StorageSnapshotPtr & storage_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
     bool supports_subset_of_columns)
 {
