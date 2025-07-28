@@ -188,18 +188,24 @@ static Block generateBlock(
 static size_t numLeftRowsForNextBlock(
     size_t next_row,
     const IColumn::Offsets & offsets,
-    size_t max_joined_block_rows)
+    size_t max_joined_block_rows,
+    size_t max_joined_block_bytes,
+    size_t avg_bytes_per_row)
 {
     /// If rows are not replicated, do not split block.
-    if (offsets.empty() || max_joined_block_rows == 0)
+    if (offsets.empty() || (max_joined_block_rows == 0 && max_joined_block_bytes == 0))
         return 0;
 
     /// If offsets does not increase block size, do not split block.
     if (offsets.back() <= offsets.size())
         return 0;
 
+    size_t max_rows = max_joined_block_rows;
+    if (max_joined_block_bytes)
+        max_rows = std::min<size_t>(max_rows, max_joined_block_bytes / std::max<size_t>(avg_bytes_per_row, 1));
+
     const size_t prev_offset = next_row ? offsets[next_row - 1] : 0;
-    const size_t next_allowed_offset = prev_offset + max_joined_block_rows;
+    const size_t next_allowed_offset = prev_offset + max_rows;
 
     if (offsets.back() <= next_allowed_offset)
         return offsets.size() - next_row;
@@ -234,12 +240,18 @@ HashJoinResult::HashJoinResult(
 {
 }
 
+static size_t getAvgBytesPerRow(const Block & block)
+{
+    return block.allocatedBytes() / std::max<size_t>(1, block.rows());
+}
+
 IJoinResult::JoinResultBlock HashJoinResult::next()
 {
     if (!scattered_block)
         return {};
 
-    auto num_lhs_rows = numLeftRowsForNextBlock(next_row, offsets, properties.max_joined_block_rows);
+    size_t avg_bytes_per_row = properties.avg_joined_bytes_per_row + getAvgBytesPerRow(scattered_block->getSourceBlock());
+    auto num_lhs_rows = numLeftRowsForNextBlock(next_row, offsets, properties.max_joined_block_rows, properties.max_joined_block_bytes, avg_bytes_per_row);
     if (num_lhs_rows == 0 || (next_row == 0 && num_lhs_rows >= scattered_block->rows()))
     {
         auto block = generateBlock(

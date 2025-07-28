@@ -631,7 +631,7 @@ DataLakeMetadataPtr DeltaLakeMetadata::create(
     bool enable_delta_kernel = query_settings_ref[Setting::allow_experimental_delta_kernel_rs];
     if (supports_delta_kernel && enable_delta_kernel)
     {
-        return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration);
+        return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration, local_context);
     }
     else
         return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
