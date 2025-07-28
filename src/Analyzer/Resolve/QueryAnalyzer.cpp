@@ -3008,7 +3008,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     catch (...)
                     {
                     }
-                
+
                     auto multi_if_function = std::make_shared<FunctionNode>("multiIf");
                     for (size_t n = 2; n < if_function_arguments.size(); ++n)
                         multi_if_function->getArguments().getNodes().push_back(std::move(if_function_arguments[n]));
