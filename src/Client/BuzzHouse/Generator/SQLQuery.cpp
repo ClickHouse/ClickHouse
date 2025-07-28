@@ -444,7 +444,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
     }
 }
 
-template <bool RequireMergeTree>
+template <bool RequireMergeTree, bool hasTableFunction>
 auto StatementGenerator::getQueryTableLambda()
 {
     return [&](const SQLTable & tt)
@@ -457,7 +457,9 @@ auto StatementGenerator::getQueryTableLambda()
             /* Don't use tables backing not deterministic views in query oracles */
             && (tt.is_deterministic || this->allow_not_deterministic)
             /* May require MergeTree table */
-            && (!RequireMergeTree || tt.isMergeTreeFamily());
+            && (!RequireMergeTree || tt.isMergeTreeFamily())
+            /* May by replaced by a table engine */
+            && (!hasTableFunction || tt.isEngineReplaceable());
     };
 }
 
@@ -534,8 +536,9 @@ bool StatementGenerator::joinedTableOrFunction(
     const SQLTable * t = nullptr;
     const SQLView * v = nullptr;
 
-    const auto has_table_lambda = getQueryTableLambda<false>();
-    const auto has_mergetree_table_lambda = getQueryTableLambda<true>();
+    const auto has_table_lambda = getQueryTableLambda<false, false>();
+    const auto has_mergetree_table_lambda = getQueryTableLambda<true, false>();
+    const auto has_replaceable_table_lambda = getQueryTableLambda<true, true>();
     const auto has_view_lambda
         = [&](const SQLView & vv) { return vv.isAttached() && (vv.is_deterministic || this->allow_not_deterministic); };
     const auto has_dictionary_lambda
@@ -543,6 +546,7 @@ bool StatementGenerator::joinedTableOrFunction(
 
     const bool has_table = collectionHas<SQLTable>(has_table_lambda);
     const bool has_mergetree_table = collectionHas<SQLTable>(has_mergetree_table_lambda);
+    const bool has_replaceable_table = collectionHas<SQLTable>(has_replaceable_table_lambda);
     const bool has_view = collectionHas<SQLView>(has_view_lambda);
     const bool has_dictionary = collectionHas<SQLDictionary>(has_dictionary_lambda);
     const bool can_recurse = this->depth < this->fc.max_depth && this->width < this->fc.max_width;
@@ -563,10 +567,10 @@ bool StatementGenerator::joinedTableOrFunction(
     const uint32_t random_data_udf = 3 * static_cast<uint32_t>(fc.allow_infinite_tables && this->allow_engine_udf);
     const uint32_t dictionary = 15 * static_cast<uint32_t>(this->peer_query != PeerQuery::ClickHouseOnly && has_dictionary);
     const uint32_t url_encoded_table = 2 * static_cast<uint32_t>(this->allow_engine_udf && has_table);
-
+    const uint32_t table_engine_udf = 10 * static_cast<uint32_t>(has_replaceable_table && this->allow_engine_udf);
 
     const uint32_t prob_space = derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf
-        + cluster_udf + merge_index_udf + loop_udf + values_udf + random_data_udf + dictionary + url_encoded_table;
+        + cluster_udf + merge_index_udf + loop_udf + values_udf + random_data_udf + dictionary + url_encoded_table + table_engine_udf;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -1042,6 +1046,18 @@ bool StatementGenerator::joinedTableOrFunction(
         ufunc->set_outformat(outf);
         ufunc->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
         addTableRelation(rg, false, rel_name, tt);
+    }
+    else if (
+        table_engine_udf
+        && nopt
+            < (derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf + cluster_udf
+               + merge_index_udf + loop_udf + values_udf + random_data_udf + dictionary + url_encoded_table + table_engine_udf + 1))
+    {
+        const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_replaceable_table_lambda)).get();
+
+        /// I think it's not possible to call final on table functions
+        setTableFunction(rg, TableFunctionUsage::EngineReplace, tt, tof->mutable_tfunc());
+        addTableRelation(rg, true, rel_name, tt);
     }
     else
     {

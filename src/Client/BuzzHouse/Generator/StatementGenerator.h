@@ -494,7 +494,7 @@ public:
         return [&b](const T & t) { return t.isAttached() && (t.is_deterministic || !b.is_deterministic); };
     }
 
-    template <bool RequireMergeTree>
+    template <bool RequireMergeTree, bool hasTableFunction>
     auto getQueryTableLambda();
 
     StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, bool scf, bool rs);
