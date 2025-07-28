@@ -690,8 +690,10 @@ VirtualColumnsDescription MergeTreeData::createVirtuals(const StorageInMemoryMet
     desc.addEphemeral("_partition_id", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of partition");
     desc.addEphemeral("_sample_factor", std::make_shared<DataTypeFloat64>(), "Sample factor (from the query)");
     desc.addEphemeral("_part_offset", std::make_shared<DataTypeUInt64>(), "Number of row in the part");
-    desc.addEphemeral(PartDataVersionColumn::name, PartDataVersionColumn::type, "Data version of part (either min block number or mutation version)");
+    desc.addEphemeral("_part_granule_offset", std::make_shared<DataTypeUInt64>(), "Number of granule in the part");
+    desc.addEphemeral(PartDataVersionColumn::name, std::make_shared<DataTypeUInt64>(), "Data version of part (either min block number or mutation version)");
     desc.addEphemeral("_disk_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Disk name");
+    desc.addEphemeral("_distance", std::make_shared<DataTypeFloat32>(), "Pre-computed distance for vector search queries");
 
     if (metadata.hasPartitionKey())
     {
@@ -791,7 +793,7 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
             /// TODO: We only have one stats file for every part.
             estimator.incrementRowCount(part.data_part->rows_count);
             for (const auto & stat : stats)
-                estimator.addStatistics(part.data_part->info.getPartNameV1(), stat);
+                estimator.addStatistics(stat);
         }
         catch (...)
         {
@@ -808,7 +810,7 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
                 auto stats = part.data_part->loadStatistics();
                 estimator.incrementRowCount(part.data_part->rows_count);
                 for (const auto & stat : stats)
-                    estimator.addStatistics(part.data_part->info.getPartNameV1(), stat);
+                    estimator.addStatistics(stat);
             }
         }
         catch (...)
@@ -2390,6 +2392,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 }
 
 void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
+try
 {
     for (auto & disk : getStoragePolicy()->getDisks())
         disk->refresh(interval_milliseconds);
@@ -2480,6 +2483,10 @@ void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
     ProfileEvents::increment(ProfileEvents::LoadedDataPartsMicroseconds, watch.elapsedMicroseconds());
 
     refresh_parts_task->scheduleAfter(interval_milliseconds);
+}
+catch (...)
+{
+    tryLogCurrentException(log, "Failed to refresh parts");
 }
 
 
@@ -3553,7 +3560,7 @@ size_t MergeTreeData::clearEmptyParts()
 
     for (auto & name : parts_names_to_drop)
     {
-        LOG_INFO(log, "Will drop empty part {}", name);
+        LOG_TRACE(log, "Will drop empty part {}", name);
         dropPartNoWaitNoThrow(name);
     }
 
@@ -3930,8 +3937,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         if (merging_params.mode != MergingParams::Mode::Ordinary
             && (*settings_from_storage)[MergeTreeSetting::deduplicate_merge_projection_mode] == DeduplicateMergeProjectionMode::THROW)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Projection is fully supported in {} with deduplicate_merge_projection_mode = throw. "
-                "Use 'drop' or 'rebuild' option of deduplicate_merge_projection_mode.",
+                "ADD PROJECTION is not supported in {} with deduplicate_merge_projection_mode = throw. "
+                "Please set setting 'deduplicate_merge_projection_mode' to 'drop' or 'rebuild'",
                 getName());
     }
 
@@ -5515,10 +5522,6 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPar
             ssize_t diff_bytes = part_copy->getBytesOnDisk() - original_active_part->getBytesOnDisk();
             ssize_t diff_rows = part_copy->rows_count - original_active_part->rows_count;
             increaseDataVolume(diff_bytes, diff_rows, /* parts= */ 0);
-
-            /// Move parts are non replicated operations, so we take lock here.
-            /// All other locks are taken in StorageReplicatedMergeTree
-            lockSharedData(*part_copy, /* replace_existing_lock */ true);
 
             return;
         }
@@ -9242,12 +9245,12 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
 
     pipeline_builder.resize(1);
     pipeline_builder.addTransform(std::make_shared<SimpleSquashingChunksTransform>(
-        pipeline_builder.getHeader(),
+        pipeline_builder.getSharedHeader(),
         query_context->getSettingsRef()[Setting::min_insert_block_size_rows],
         query_context->getSettingsRef()[Setting::min_insert_block_size_bytes]));
 
     /// Required by MergeTree sinks.
-    pipeline_builder.addSimpleTransform([&](const Block & header) -> ProcessorPtr
+    pipeline_builder.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
     {
         return std::make_shared<DeduplicationToken::AddTokenInfoTransform>(header);
     });
@@ -9680,9 +9683,10 @@ StorageSnapshotPtr MergeTreeData::createStorageSnapshot(const StorageMetadataPtr
     {
         auto lock = lockParts();
         parts = getVisibleDataPartsVectorUnlocked(query_context, lock);
-        snapshot_data->parts = RangesInDataParts(parts);
         object_columns_copy = object_columns;
     }
+    /// Avoid holding the lock while constructing RangesInDataParts
+    snapshot_data->parts = RangesInDataParts(parts);
 
     bool apply_mutations_on_fly = query_context->getSettingsRef()[Setting::apply_mutations_on_fly];
     bool apply_patch_parts = query_context->getSettingsRef()[Setting::apply_patch_parts];

@@ -127,7 +127,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         return {};
 
     const auto & header = node.step->getOutputHeader();
-    auto column_names = header.getNames();
+    auto column_names = header->getNames();
 
     StoragePtr storage;
     StorageSnapshotPtr snapshot;
@@ -240,7 +240,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     if (!reading_plan.isInitialized())
     {
         /// Create step which reads from empty source if storage has no data.
-        auto source_header = snapshot->getSampleBlockForColumns(column_names);
+        auto source_header = std::make_shared<const Block>(snapshot->getSampleBlockForColumns(column_names));
         Pipe pipe(std::make_shared<NullSource>(source_header));
         auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         read_from_pipe->setStepDescription("Read from NullSource");
@@ -248,8 +248,8 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     }
 
     auto converting_actions = ActionsDAG::makeConvertingActions(
-        reading_plan.getCurrentHeader().getColumnsWithTypeAndName(),
-        header.getColumnsWithTypeAndName(),
+        reading_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
+        header->getColumnsWithTypeAndName(),
         ActionsDAG::MatchColumnsMode::Name);
 
     node.step = std::make_unique<ExpressionStep>(reading_plan.getCurrentHeader(), std::move(converting_actions));

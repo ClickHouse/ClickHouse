@@ -95,7 +95,12 @@ ObjectStoragePtr createObjectStorage(
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "plain_rewritable metadata storage support is not implemented for '{}' object storage",
-                DataSourceDescription{DataSourceType::ObjectStorage, type, MetadataStorageType::PlainRewritable, /*description*/ ""}
+                DataSourceDescription{
+                    .type = DataSourceType::ObjectStorage,
+                    .object_storage_type = type,
+                    .metadata_type = MetadataStorageType::PlainRewritable,
+                    .description = "",
+                    .zookeeper_name = ""}
                     .toString());
 
         auto metadata_storage_metrics = DB::MetadataStorageMetrics::create<BaseObjectStorage, MetadataStorageType::PlainRewritable>();
@@ -179,9 +184,7 @@ static std::string getEndpoint(
 
 void registerS3ObjectStorage(ObjectStorageFactory & factory)
 {
-    static constexpr auto disk_type = "s3";
-
-    factory.registerObjectStorageType(disk_type, [](
+     auto creator = [](
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
@@ -200,7 +203,9 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
             ObjectStorageType::S3, config, config_prefix, std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
 
         return object_storage;
-    });
+    };
+    factory.registerObjectStorageType("s3", creator);
+    factory.registerObjectStorageType("s3_with_keeper", creator);
 }
 
 void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
@@ -295,18 +300,24 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
     {
         auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
 
+        /// AzureObjectStorage::getCommonKeyPrefix() was not implemented previousely by mistake and was always returning an empty string.
+        /// However, we use this string as ZooKeeper path for disk with metadata in Keeper.
+        /// So, all instances of azure-with-keeper were using the same (empty, or root) path.
+        /// We keep using empty prefix by default for compatibility, but allow to configure another one
+        const String & common_key_prefix = config.getString(config_prefix + ".common_key_prefix_for_azure", "");
+
         AzureBlobStorage::ConnectionParams params
         {
             .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
             .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
-            .client_options = AzureBlobStorage::getClientOptions(*azure_settings, /*for_disk=*/ true),
+            .client_options = AzureBlobStorage::getClientOptions(context, *azure_settings, /*for_disk=*/ true),
         };
 
         return createObjectStorage<AzureObjectStorage>(
             ObjectStorageType::Azure, config, config_prefix, name,
             params.auth_method, AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
-            params.endpoint.prefix.empty() ? params.endpoint.container_name : params.endpoint.container_name + "/" + params.endpoint.prefix,
-            params.endpoint.getServiceEndpoint());
+            params, params.endpoint.prefix.empty() ? params.endpoint.container_name : params.endpoint.container_name + "/" + params.endpoint.prefix,
+            params.endpoint.getServiceEndpoint(), common_key_prefix);
     };
 
     factory.registerObjectStorageType("azure_blob_storage", creator);

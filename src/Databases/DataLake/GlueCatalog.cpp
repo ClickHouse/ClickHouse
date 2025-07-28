@@ -284,7 +284,7 @@ bool GlueCatalog::tryGetTableMetadata(
         if (table_outcome.GetParameters().contains("table_type"))
             table_type = table_outcome.GetParameters().at("table_type");
 
-        if (table_type != "ICEBERG")
+        if (Poco::toUpper(table_type) != "ICEBERG")
         {
             std::string message_part;
             if (!table_type.empty())
@@ -293,7 +293,7 @@ bool GlueCatalog::tryGetTableMetadata(
                 message_part = "no table_type";
 
             result.setTableIsNotReadable(fmt::format("Cannot read table `{}` because it has {}. " \
-                   "It means that it's unreadable with Glue catalog in ClickHouse, readable tables must have table_type == '{}'",
+                   "It means that it's unreadable with Glue catalog in ClickHouse, readable tables must have equalsIgnoreCase(table_type, '{}')",
                    database_name + "." + table_name, message_part, "ICEBERG"));
         }
 
@@ -441,7 +441,7 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
         auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
         storage_settings->loadFromSettingsChanges(settings.allChanged());
         auto configuration = std::make_shared<DB::StorageS3IcebergConfiguration>(storage_settings);
-        DB::StorageObjectStorage::Configuration::initialize(*configuration, args, getContext(), false);
+        DB::StorageObjectStorageConfiguration::initialize(*configuration, args, getContext(), false);
 
         auto object_storage = configuration->createObjectStorage(getContext(), true);
         const auto & read_settings = getContext()->getReadSettings();

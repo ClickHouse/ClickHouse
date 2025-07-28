@@ -40,7 +40,6 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
-#include <Processors/SourceWithKeyCondition.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
@@ -1210,11 +1209,13 @@ StorageFileSource::StorageFileSource(
     UInt64 max_block_size_,
     FilesIteratorPtr files_iterator_,
     std::unique_ptr<ReadBuffer> read_buf_,
-    bool need_only_count_)
-    : SourceWithKeyCondition(info.source_header, false), WithContext(context_)
+    bool need_only_count_,
+    FormatParserGroupPtr parser_group_)
+    : ISource(std::make_shared<const Block>(info.source_header), false), WithContext(context_)
     , storage(std::move(storage_))
     , files_iterator(std::move(files_iterator_))
     , read_buf(std::move(read_buf_))
+    , parser_group(std::move(parser_group_))
     , columns_description(info.columns_description)
     , requested_columns(info.requested_columns)
     , requested_virtual_columns(info.requested_virtual_columns)
@@ -1286,11 +1287,6 @@ StorageFileSource::~StorageFileSource()
     beforeDestroy();
 }
 
-void StorageFileSource::setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_)
-{
-    setKeyConditionImpl(filter_actions_dag, context_, block_for_format);
-}
-
 
 bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
 {
@@ -1306,10 +1302,10 @@ bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
     /// (it can cause memory problems even with default values in columns or when virtual columns are requested).
     /// Instead, we use special ConstChunkGenerator that will generate chunks
     /// with max_block_size rows until total number of rows is reached.
-    auto const_chunk_generator = std::make_shared<ConstChunkGenerator>(block_for_format, *num_rows_from_cache, max_block_size);
+    auto const_chunk_generator = std::make_shared<ConstChunkGenerator>(std::make_shared<const Block>(block_for_format), *num_rows_from_cache, max_block_size);
     QueryPipelineBuilder builder;
     builder.init(Pipe(const_chunk_generator));
-    builder.addSimpleTransform([&](const Block & header)
+    builder.addSimpleTransform([&](const SharedHeader & header)
     {
         return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
     });
@@ -1435,8 +1431,6 @@ Chunk StorageFileSource::generate()
                 read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
             }
 
-            const Settings & settings = getContext()->getSettingsRef();
-
             size_t file_num = 0;
             if (storage->archive_info)
                 file_num = storage->archive_info->paths_to_archives.size();
@@ -1445,15 +1439,12 @@ Chunk StorageFileSource::generate()
 
             chassert(file_num > 0);
 
-            const auto max_parsing_threads = std::max<size_t>(settings[Setting::max_parsing_threads] / file_num, 1UL);
             input_format = FormatFactory::instance().getInput(
-                storage->format_name, *read_buf, block_for_format, getContext(), max_block_size, storage->format_settings,
-                max_parsing_threads, std::nullopt, /*is_remote_fs*/ false, CompressionMethod::None, need_only_count);
+                storage->format_name, *read_buf, block_for_format, getContext(), max_block_size,
+                storage->format_settings, parser_group,
+                /*is_remote_fs=*/ false, CompressionMethod::None, need_only_count);
 
             input_format->setSerializationHints(serialization_hints);
-
-            if (key_condition)
-                input_format->setKeyCondition(key_condition);
 
             if (need_only_count)
                 input_format->needOnlyCount();
@@ -1463,7 +1454,7 @@ Chunk StorageFileSource::generate()
 
             if (columns_description.hasDefaults())
             {
-                builder.addSimpleTransform([&](const Block & header)
+                builder.addSimpleTransform([&](const SharedHeader & header)
                 {
                     return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, getContext());
                 });
@@ -1471,7 +1462,7 @@ Chunk StorageFileSource::generate()
 
             /// Add ExtractColumnsTransform to extract requested columns/subcolumns
             /// from chunk read by IInputFormat.
-            builder.addSimpleTransform([&](const Block & header)
+            builder.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
             });
@@ -1509,8 +1500,7 @@ Chunk StorageFileSource::generate()
         if (storage->use_table_fd)
             finished_generate = true;
 
-        if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files] &&
-            (!key_condition || key_condition->alwaysUnknownOrTrue()))
+        if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files] && !parser_group->hasFilter())
             addNumRowsToCache(current_path, total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -1575,7 +1565,7 @@ public:
         const bool need_only_count_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(std::make_shared<const Block>(std::move(sample_block)), column_names_, query_info_, storage_snapshot_, context_)
         , storage(std::move(storage_))
         , info(std::move(info_))
         , need_only_count(need_only_count_)
@@ -1703,6 +1693,8 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     if (progress_callback && !storage->archive_info)
         progress_callback(FileProgress(0, storage->total_bytes_to_read));
 
+    auto parser_group = std::make_shared<FormatParserGroup>(ctx->getSettingsRef(), num_streams, filter_actions_dag, ctx);
+
     for (size_t i = 0; i < num_streams; ++i)
     {
         /// In case of reading from fd we have to check whether we have already created
@@ -1720,9 +1712,9 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             max_block_size,
             files_iterator,
             std::move(read_buffer),
-            need_only_count);
+            need_only_count,
+            parser_group);
 
-        source->setKeyCondition(filter_actions_dag, ctx);
         pipes.emplace_back(std::move(source));
     }
 
@@ -1733,7 +1725,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         pipe.resize(max_num_streams);
 
     if (pipe.empty())
-        pipe = Pipe(std::make_shared<NullSource>(info.source_header));
+        pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
 
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
@@ -1757,7 +1749,7 @@ public:
         const String format_name_,
         const ContextPtr & context_,
         int flags_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock()), WithContext(context_)
+        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock())), WithContext(context_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
         , table_fd(table_fd_)
@@ -1785,7 +1777,7 @@ public:
         const String format_name_,
         const ContextPtr & context_,
         int flags_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock()), WithContext(context_)
+        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock())), WithContext(context_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
         , table_fd(table_fd_)
@@ -1922,7 +1914,7 @@ public:
         const String format_name_,
         ContextPtr context_,
         int flags_)
-        : PartitionedSink(partition_by, context_, metadata_snapshot_->getSampleBlock())
+        : PartitionedSink(partition_by, context_, std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , path(path_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
