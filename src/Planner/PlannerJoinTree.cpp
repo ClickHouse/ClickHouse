@@ -24,7 +24,6 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMerge.h>
-#include <Storages/StorageView.h>
 
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -690,9 +689,6 @@ bool extractRequiredNonTableColumnsFromStorage(
         return false;
 
     if (std::dynamic_pointer_cast<StorageDistributed>(storage))
-        return false;
-
-    if (std::dynamic_pointer_cast<StorageView>(storage))
         return false;
 
     bool has_table_virtual_column = false;

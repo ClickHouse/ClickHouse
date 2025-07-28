@@ -46,6 +46,9 @@ d2	4	40
 SELECT _table, key FROM view1 ORDER BY key ASC;
 d1	1
 d1	2
+SELECT _table, key FROM view2 ORDER BY key ASC;
+view2	1
+view2	2
 SELECT _table, key, value FROM buffer1 ORDER BY key ASC;
 buffer1	7	70
 buffer1	8	80
@@ -54,35 +57,35 @@ SELECT _table, key, value FROM mv1 ORDER BY key ASC;
 mv1	10	2
 SELECT _table, key, value FROM mv2 ORDER BY key ASC;
 mv2	10	2
-SELECT _table, * FROM dist5;
+SELECT _table, * FROM dist5 ORDER BY key ASC;
 d2	3	30
 d2	4	40
-SELECT _table, * FROM dist6;
+SELECT _table, * FROM dist6 ORDER BY key ASC;
 d1	1	10
 d1	2	20
-d2	4	40
-d2	3	30
-SELECT _table, * FROM m3;
-d1	2	20
-d1	1	10
-d2	4	40
-d2	4	40
-d2	3	30
-d2	3	30
-SELECT _table, * FROM m4;
-d1	2	20
-d1	1	10
-d2	3	30
 d2	3	30
 d2	4	40
-d2	4	40
-SELECT _table, * FROM m5;
+SELECT _table, * FROM m3 ORDER BY key ASC;
 d1	1	10
 d1	2	20
+d2	3	30
+d2	3	30
+d2	4	40
+d2	4	40
+SELECT _table, * FROM m4 ORDER BY key ASC;
 d1	1	10
 d1	2	20
-d2	4	40
-d2	4	40
 d2	3	30
 d2	3	30
+d2	4	40
+d2	4	40
+SELECT _table, * FROM m5 ORDER BY key ASC;
+d1	1	10
+d1	1	10
+d1	2	20
+d1	2	20
+d2	3	30
+d2	3	30
+d2	4	40
+d2	4	40
 SELECT * FROM d1 PREWHERE _table = 'd1'; -- { serverError ILLEGAL_PREWHERE }
