@@ -86,7 +86,7 @@ struct DataType
     {
         DataType type;
         type.raw_type = json_object->getValue<String>(key);
-        LOG_DEBUG(&Poco::Logger::get("DataType::parse"), "raw_type: {}", type.raw_type);
+        LOG_TEST(&Poco::Logger::get("DataType::parse"), "raw_type: {}", type.raw_type);
         auto check_and_remove_nullable = [](const String & type_)
         {
             String result(type_);
@@ -124,7 +124,7 @@ struct DataType
                 const char * end_pos = precision_str.c_str() + precision_str.size();
                 for (; p != end_pos; ++p)
                 {
-                    LOG_DEBUG(
+                    LOG_TEST(
                         &Poco::Logger::get("parse_precision"),
                         "size: {} isdigit {} is, {} is blank {}",
                         precision_str.size(),
@@ -144,7 +144,7 @@ struct DataType
                         if (token_start && p > token_start)
                         {
                             precision_infos.emplace_back(std::stoul(String(token_start, p - token_start)));
-                            LOG_DEBUG(&Poco::Logger::get("parse_precision"), "precision_infos back {}", precision_infos.back());
+                            LOG_TEST(&Poco::Logger::get("parse_precision"), "precision_infos back {}", precision_infos.back());
                             token_start = nullptr;
                         }
                     }
