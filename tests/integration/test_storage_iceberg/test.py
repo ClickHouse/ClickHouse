@@ -4799,3 +4799,66 @@ def test_writes_create_partitioned_table(started_cluster, format_version, storag
 
     df = spark.read.format("iceberg").load(f"/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 1
+
+
+@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_relevant_iceberg_schema_chosen(started_cluster, format_version, storage_type):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = "test_relevant_iceberg_schema_chosen_" + storage_type + "_" + get_uuid_str()
+
+    def execute_spark_query(query: str):
+        return execute_spark_query_general(
+            spark,
+            started_cluster,
+            storage_type,
+            TABLE_NAME,
+            query,
+        )
+    
+    for i in range(30):
+        values_list = ", ".join(["(1)" for _ in range(50)])
+        execute_spark_query(f"""
+            INSERT INTO {TABLE_NAME} VALUES (1);
+        """)
+        execute_spark_query(
+            f"""
+            INSERT INTO {TABLE_NAME} VALUES {values_list};
+            """
+        )
+
+    execute_spark_query(
+    f"""
+        ALTER TABLE {TABLE_NAME} ADD COLUMN b INT;
+    """
+    )
+
+    for i in range(30):
+        values_list = ", ".join(["(1, 2)" for _ in range(50)])
+        execute_spark_query(f"""
+            INSERT INTO {TABLE_NAME} VALUES (1, 2);
+        """)
+        execute_spark_query(
+            f"""
+            INSERT INTO {TABLE_NAME} VALUES {values_list};
+            """
+        )
+
+    table_creation_expression = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster,
+        table_function=True,
+    )
+
+    default_download_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    instance.query(f"SELECT * FROM {table_creation_expression} ORDER BY ALL", settings={"input_format_parquet_filter_push_down": 0, "input_format_parquet_bloom_filter_push_down": 0})
+
+
