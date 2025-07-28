@@ -286,10 +286,10 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
             std::vector<std::string> paths{processed_node_path, failed_node_path};
             auto responses = zk_client->tryGet(paths);
 
-            auto check_code = [this](auto code)
+            auto check_code = [this](auto code_)
             {
-                if (!(code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE))
-                    throw zkutil::KeeperException::fromPath(code, path);
+                if (!(code_ == Coordination::Error::ZOK || code_ == Coordination::Error::ZNONODE))
+                    throw zkutil::KeeperException::fromPath(code_, path);
             };
             check_code(responses[0].error);
             check_code(responses[1].error);
