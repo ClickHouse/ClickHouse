@@ -2985,7 +2985,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         QueryTreeNodePtr function_query_node = multi_if_function;
                         resolveFunction(function_query_node, scope);
                     }
-                    catch (...)
+                    catch (...) // NOLINT(bugprone-empty-catch)
                     {
                     }
 
@@ -3005,7 +3005,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                             false /*allow_lambda_expression*/,
                             false /*allow_table_expression*/);
                     }
-                    catch (...)
+                    catch (...) // NOLINT(bugprone-empty-catch)
                     {
                     }
 
