@@ -432,13 +432,6 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
 String highlighted(const String & query, const Context & context)
 {
-    /// Issue: https://github.com/ClickHouse/ClickHouse/issues/83987
-    /// Previously utf-8 code points were calculated in the following way:
-    /// size_t num_code_points = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(query.data()), query.size());
-    /// But, `UTF8::countCodePoints` and `UTF8::seqLength` seem to handle invalid UTF-8 sequences inconsistently
-    /// (e.g., hex literals like x'A0'), causing count mismatches and crashes. For a quick fix, use countCodePointsWithSeqLength
-    /// which uses `UTF8::seqLength` to calculate the number of code points in the query string. TODO: @bharatnc fix
-    /// `UTF8::countCodePoints` to handle invalid UTF-8 sequences consistently with `UTF8::seqLength`.
     const size_t num_code_points = countCodePointsWithSeqLength(query, query.data() + query.size());
 
     std::vector<replxx::Replxx::Color> colors(num_code_points, replxx::Replxx::Color::DEFAULT);
