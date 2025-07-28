@@ -65,7 +65,6 @@
 #include <Interpreters/Context.h>
 
 #include <Parsers/ASTSystemQuery.h>
-#include <Parsers/ASTExternalDDLQuery.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
@@ -327,10 +326,6 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTShowPrivilegesQuery>())
     {
         interpreter_name = "InterpreterShowPrivilegesQuery";
-    }
-    else if (query->as<ASTExternalDDLQuery>())
-    {
-        interpreter_name = "InterpreterExternalDDLQuery";
     }
     else if (query->as<ASTTransactionControl>())
     {

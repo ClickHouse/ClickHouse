@@ -1537,9 +1537,9 @@ String MinIOIntegration::getConnectionURL(const bool client)
     return "http://" + (client ? sc.client_hostname : sc.server_hostname) + ":" + std::to_string(sc.port) + sc.database + "/";
 }
 
-void MinIOIntegration::setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te)
+void MinIOIntegration::setEngineDetails(RandomGenerator &, const SQLBase & b, const String & tname, TableEngine * te)
 {
-    te->add_params()->set_svalue(getConnectionURL(false) + "file" + tname.substr(1));
+    te->add_params()->set_svalue(getConnectionURL(false) + "file" + tname.substr(1) + (b.isS3QueueEngine() ? "/" : ""));
     te->add_params()->set_svalue(sc.user);
     te->add_params()->set_svalue(sc.password);
 }

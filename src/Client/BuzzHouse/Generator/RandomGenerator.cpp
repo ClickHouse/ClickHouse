@@ -174,7 +174,7 @@ String RandomGenerator::nextDateTime64(const bool has_subseconds)
 
 double RandomGenerator::randomGauss(const double mean, const double stddev)
 {
-    std::normal_distribution d{mean, stddev};
+    std::normal_distribution<double> d{mean, stddev};
     return d(generator);
 }
 

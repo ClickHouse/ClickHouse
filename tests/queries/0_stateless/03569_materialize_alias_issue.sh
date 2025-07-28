@@ -28,9 +28,9 @@ $CLICKHOUSE_CLIENT --query "ALTER TABLE customer_dbt_materialize MODIFY COLUMN v
 
 $CLICKHOUSE_CLIENT --query "ALTER TABLE customer_dbt_materialize MODIFY COLUMN value Array(Tuple(transaction_hash String, transaction_index_data String)) MATERIALIZED array((toString(key), toString(key)))  SETTINGS mutations_sync = 2"
 
-$CLICKHOUSE_CLIENT --query "ALTER TABLE customer_dbt_materialize MATERIALIZE COLUMN value"
+$CLICKHOUSE_CLIENT --query "ALTER TABLE customer_dbt_materialize MATERIALIZE COLUMN value SETTINGS mutations_sync = 2, alter_sync = 2"
 
-$CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA customer_dbt_materialize"
+$CLICKHOUSE_CLIENT --query "SYSTEM RESTART REPLICA customer_dbt_materialize"
 
 $CLICKHOUSE_CLIENT --query "CHECK TABLE customer_dbt_materialize"
 
