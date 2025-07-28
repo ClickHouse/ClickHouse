@@ -23,6 +23,7 @@ public:
         ObjectIterator iterator_,
         const DB::ActionsDAG & filter_,
         const NamesAndTypesList & virtual_columns_,
+        const NamesAndTypesList & hive_partition_columns_,
         const std::string & object_namespace_,
         const ContextPtr & context_);
 
@@ -33,6 +34,7 @@ private:
     const ObjectIterator iterator;
     const std::string object_namespace;
     const NamesAndTypesList virtual_columns;
+    const NamesAndTypesList hive_partition_columns;
     const std::shared_ptr<ExpressionActions> filter_actions;
 };
 

@@ -23,12 +23,14 @@ ObjectIteratorWithPathAndFileFilter::ObjectIteratorWithPathAndFileFilter(
     ObjectIterator iterator_,
     const DB::ActionsDAG & filter_,
     const NamesAndTypesList & virtual_columns_,
+    const NamesAndTypesList & hive_partition_columns_,
     const std::string & object_namespace_,
     const ContextPtr & context_)
     : WithContext(context_)
     , iterator(iterator_)
     , object_namespace(object_namespace_)
     , virtual_columns(virtual_columns_)
+    , hive_partition_columns(hive_partition_columns_)
     , filter_actions(getExpressionActions(filter_, virtual_columns, context_))
 {
 }
@@ -51,7 +53,7 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
                 path = path.substr(1);
             path = std::filesystem::path(object_namespace) / path;
 
-            VirtualColumnUtils::filterByPathOrFile(keys, std::vector<std::string>{path}, filter_actions, virtual_columns, getContext());
+            VirtualColumnUtils::filterByPathOrFile(keys, std::vector<std::string>{path}, filter_actions, virtual_columns, hive_partition_columns, getContext());
             if (keys.empty())
                 continue;
         }
