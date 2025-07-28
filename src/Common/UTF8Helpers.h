@@ -57,8 +57,38 @@ inline size_t seqLength(const UInt8 first_octet)
     return bits - 1 - first_zero;
 }
 
+/// Check if data contains invalid UTF-8 sequences that would cause inconsistency
+/// between SIMD-optimized counting and seqLength-based iteration
+inline bool hasInvalidUTF8(const UInt8 * data, size_t size)
+{
+    for (size_t i = 0; i < size; ++i)
+    {
+        /// Standalone UTF-8 continuation bytes (0x80-0xBF) cause counting inconsistency
+        if (data[i] >= 0x80 && data[i] <= 0xBF)
+            return true;
+    }
+    return false;
+}
+
 inline size_t countCodePoints(const UInt8 * data, size_t size)
 {
+    /// If data contains invalid UTF-8, use seqLength-based counting for consistency
+    if (hasInvalidUTF8(data, size))
+    {
+        size_t res = 0;
+        const auto * pos = data;
+        const auto * end = data + size;
+        
+        while (pos < end)
+        {
+            pos += seqLength(*pos);
+            ++res;
+        }
+        
+        return res;
+    }
+
+    /// Fast path: use SIMD-optimized counting for valid UTF-8
     size_t res = 0;
     const auto * end = data + size;
 
