@@ -607,7 +607,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersion(
     if (metadata_files.empty())
     {
         throw Exception(
-            ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", configuration_ptr->getPath());
+            ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", configuration_ptr->getPathForRead().path);
     }
     std::vector<ShortMetadataFileInfo> metadata_files_with_versions;
     metadata_files_with_versions.reserve(metadata_files.size());
@@ -690,7 +690,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
                 if (*it == "." || *it == "..")
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Relative paths are not allowed");
             }
-            auto prefix_storage_path = configuration_ptr->getPath();
+            auto prefix_storage_path = configuration_ptr->getPathForRead().path;
             if (!explicit_metadata_path.starts_with(prefix_storage_path))
                 explicit_metadata_path = std::filesystem::path(prefix_storage_path) / explicit_metadata_path;
             return getMetadataFileAndVersion(explicit_metadata_path);
@@ -707,7 +707,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     }
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
-        auto prefix_storage_path = configuration_ptr->getPath();
+        auto prefix_storage_path = configuration_ptr->getPathForRead().path;
         auto version_hint_path = std::filesystem::path(prefix_storage_path) / "metadata" / "version-hint.text";
         std::string metadata_file;
         StoredObject version_hint(version_hint_path);

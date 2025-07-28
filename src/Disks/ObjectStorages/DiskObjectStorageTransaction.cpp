@@ -37,6 +37,7 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int FILE_DOESNT_EXIST;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(
@@ -563,18 +564,26 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
         tx->createEmptyMetadataFile(to_path);
         auto source_blobs = metadata_storage.getStorageObjects(from_path); /// Full paths
 
-        for (const auto & object_from : source_blobs)
+        if (source_blobs.empty())
+            return;
+
+        if (!tx->supportAddingBlobToMetadata())
         {
-            auto object_key = destination_object_storage.generateObjectKeyForPath(to_path, std::nullopt /* key_prefix */);
-            auto object_to = StoredObject(object_key.serialize());
+            if (source_blobs.size() > 1)
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Unable to copy file '{}' with multiple blobs ({}), disk doesn't support addBlobToMetadata",
+                    from_path,
+                    source_blobs.size());
 
-            object_storage.copyObjectToAnotherObjectStorage(object_from, object_to,read_settings,write_settings, destination_object_storage);
-
-            tx->addBlobToMetadata(to_path, object_key, object_from.bytes_size);
-
-            created_objects.push_back(object_to);
+            copySingleObject</*support_adding_blob_to_metadata=*/false>(tx, source_blobs.front());
+            return;
         }
+
+        for (const auto & object_from : source_blobs)
+            copySingleObject</*support_adding_blob_to_metadata=*/true>(tx, object_from);
     }
+
 
     void undo() override
     {
@@ -583,6 +592,21 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 
     void finalize() override
     {
+    }
+
+    template <bool support_adding_blob_to_metadata>
+    void copySingleObject(MetadataTransactionPtr tx, const StoredObject & object_from)
+    {
+        auto object_key = destination_object_storage.generateObjectKeyForPath(to_path, /*key_prefix=*/std::nullopt);
+        auto object_to = StoredObject(object_key.serialize());
+
+        object_storage.copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, destination_object_storage);
+        created_objects.push_back(object_to);
+
+        if constexpr (support_adding_blob_to_metadata)
+            tx->addBlobToMetadata(to_path, object_key, object_from.bytes_size);
+        else
+            tx->createMetadataFile(to_path, object_key, object_from.bytes_size);
     }
 };
 
@@ -783,6 +807,9 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     const WriteSettings & settings,
     bool autocommit)
 {
+    if (mode == WriteMode::Append && !metadata_transaction->supportAddingBlobToMetadata())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support WriteMode::Append");
+
     auto object_key = object_storage.generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     std::optional<ObjectAttributes> object_attributes;
 

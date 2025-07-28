@@ -48,7 +48,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             /* if_not_exists*/false,
             /* is_datalake_query*/ false,
             /* distributed_processing */ true,
-            /* partition_by_ */nullptr,
+            /* partition_by_ */Base::partition_by,
             /* is_table_function */true,
             /* lazy_init */ true);
     }
@@ -61,6 +61,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             StorageID(Base::getDatabaseName(), table_name),
             columns,
             ConstraintsDescription{},
+            Base::partition_by,
             context);
     }
 
