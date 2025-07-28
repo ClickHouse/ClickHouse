@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import time
+import traceback
 from pathlib import Path
 
 from ci.praktika import Secret
@@ -11,7 +12,6 @@ from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
-
 
 LOG_EXPORT_CONFIG_TEMPLATE = """
 remote_servers:
@@ -181,7 +181,7 @@ profiles:
             Utils.sleep(delay)
         else:
             Utils.print_formatted_error(
-                f"Server not ready after [{attempts*delay}s]", out, err
+                f"Server not ready after [{attempts * delay}s]", out, err
             )
             return False
         self.pid = int(Shell.get_output(f"cat {self.pid_file}").strip())
@@ -276,11 +276,10 @@ class ClickHouseProc:
         self.log_dir = f"{temp_dir}/var/log/clickhouse-server"
         self.pid_file = f"{self.ch_config_dir}/clickhouse-server.pid"
         self.config_file = f"{self.ch_config_dir}/config.xml"
+        # NOTE: should be the same for all replicas (for database replicated), since some tests uses CREATE TABLE Engine=File(${USER_FILES_PATH})
         self.user_files_path = f"{self.run_path0}/user_files"
-        self.user_files_path1 = f"{self.run_path1}/user_files"
-        self.user_files_path2 = f"{self.run_path2}/user_files"
         self.test_output_file = f"{temp_dir}/test_result.txt"
-        self.command = f"cd {self.run_path0} && clickhouse-server --config-file {self.config_file} --pid-file {self.pid_file} -- --path {self.run_path0} --user_files_path {self.user_files_path} --top_level_domains_path {self.ch_config_dir}/top_level_domains --logger.stderr {self.log_dir}/stderr.log"
+        self.command = f"clickhouse-server --config-file {self.config_file} --pid-file {self.pid_file} -- --path {self.run_path0} --user_files_path {self.user_files_path} --top_level_domains_path {self.ch_config_dir}/top_level_domains --logger.stderr {self.log_dir}/stderr.log"
         self.ch_config_dir_replica_1 = f"/etc/clickhouse-server1"
         self.config_file_replica_1 = f"{self.ch_config_dir_replica_1}/config.xml"
         self.ch_config_dir_replica_2 = f"/etc/clickhouse-server2"
@@ -298,14 +297,14 @@ class ClickHouseProc:
         self.port = 9000
         self.port_1 = 19000
         self.port_2 = 29000
-        self.replica_command_1 = f"cd {self.run_path1} && clickhouse-server --config-file {self.config_file_replica_1} --daemon --pid-file {self.pid_file_replica_1} -- --path {self.run_path1} --user_files_path {self.user_files_path} --logger.stderr {self.log_dir}/stderr1.log --logger.log {self.log_dir}/clickhouse-server1.log --logger.errorlog {self.log_dir}/clickhouse-server1.err.log --tcp_port {self.port_1} --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 --mysql_port 19004 --postgresql_port 19005 --keeper_server.tcp_port 19181 --keeper_server.server_id 2 --prometheus.port 19988 --macros.replica r2"
-        self.replica_command_2 = f"cd {self.run_path2} && clickhouse-server --config-file {self.config_file_replica_2} --daemon --pid-file {self.pid_file_replica_2} -- --path {self.run_path2} --user_files_path {self.user_files_path} --logger.stderr {self.log_dir}/stderr2.log --logger.log {self.log_dir}/clickhouse-server2.log --logger.errorlog {self.log_dir}/clickhouse-server2.err.log --tcp_port {self.port_2} --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 --mysql_port 29004 --postgresql_port 29005 --keeper_server.tcp_port 29181 --keeper_server.server_id 3 --prometheus.port 29988 --macros.shard s2"
+        self.replica_command_1 = f"clickhouse-server --config-file {self.config_file_replica_1} --pid-file {self.pid_file_replica_1} -- --path {self.run_path1} --user_files_path {self.user_files_path} --logger.stderr {self.log_dir}/stderr1.log --logger.log {self.log_dir}/clickhouse-server1.log --logger.errorlog {self.log_dir}/clickhouse-server1.err.log --tcp_port {self.port_1} --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 --mysql_port 19004 --postgresql_port 19005 --keeper_server.tcp_port 19181 --keeper_server.server_id 2 --prometheus.port 19988 --macros.replica r2"
+        self.replica_command_2 = f"clickhouse-server --config-file {self.config_file_replica_2} --pid-file {self.pid_file_replica_2} -- --path {self.run_path2} --user_files_path {self.user_files_path} --logger.stderr {self.log_dir}/stderr2.log --logger.log {self.log_dir}/clickhouse-server2.log --logger.errorlog {self.log_dir}/clickhouse-server2.err.log --tcp_port {self.port_2} --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 --mysql_port 29004 --postgresql_port 29005 --keeper_server.tcp_port 29181 --keeper_server.server_id 3 --prometheus.port 29988 --macros.shard s2"
         self.proc = None
         self.proc_1 = None
         self.proc_2 = None
         self.pid = 0
         nproc = int(Utils.cpu_count() / 2)
-        self.fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' \
+        self.fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' \
         | tee -a \"{self.test_output_file}\""
         self.minio_proc = None
         self.azurite_proc = None
@@ -436,13 +435,14 @@ class ClickHouseProc:
 
         with open(config_file, "w") as f:
             f.write(config_content)
+        return True
 
     def start_log_exports(self, check_start_time):
         print("Start log export")
         os.environ["CLICKHOUSE_CI_LOGS_CLUSTER"] = CLICKHOUSE_CI_LOGS_CLUSTER
         info = Info()
         os.environ["EXTRA_COLUMNS_EXPRESSION"] = (
-            f"CAST({info.pr_number} AS UInt32) AS pull_request_number, '{info.sha}' AS commit_sha, toDateTime('{Utils.timestamp_to_str(check_start_time)}', 'UTC') AS check_start_time, toLowCardinality('{info.job_name}') AS check_name, toLowCardinality('{info.instance_type}') AS instance_type, '{info.instance_id}' AS instance_id"
+            f"toLowCardinality('{info.repo_name}') AS repo, CAST({info.pr_number} AS UInt32) AS pull_request_number, '{info.sha}' AS commit_sha, toDateTime('{Utils.timestamp_to_str(check_start_time)}', 'UTC') AS check_start_time, toLowCardinality('{info.job_name}') AS check_name, toLowCardinality('{info.instance_type}') AS instance_type, '{info.instance_id}' AS instance_id"
         )
 
         return Shell.check(
@@ -485,7 +485,9 @@ class ClickHouseProc:
             strict=True,
         )
 
-        proc = subprocess.Popen(command, stderr=subprocess.STDOUT, shell=True)
+        proc = subprocess.Popen(
+            command, stderr=subprocess.STDOUT, shell=True, cwd=run_path
+        )
         if replica_num == 1:
             self.proc_1 = proc
         elif replica_num == 2:
@@ -562,7 +564,6 @@ class ClickHouseProc:
             )
         )
         res = "success" in status
-        print(f"Clickminio restart status: {status}, res: {res}")
         if not res:
             print(f"ERROR: Failed to restart clickminio, status: {status}")
         return res
@@ -599,13 +600,14 @@ class ClickHouseProc:
             else:
                 print(f"Server replica {replica_num} not ready, err: {err}, wait")
             Utils.sleep(delay)
-            if proc.poll() is not None:
-                print(f"Server replica {replica_num} not ready, process is dead")
+            status = proc.poll()
+            if status is not None:
+                print(f"Server replica {replica_num} (pid={proc.pid}) exited: {status}")
                 Shell.check(f"echo 'Error log:' && tail -n100 {err_log}", verbose=True)
                 return False
         else:
             Utils.print_formatted_error(
-                f"Server replica {replica_num} not ready after [{attempts*delay}s]",
+                f"Server replica {replica_num} not ready after [{attempts * delay}s]",
                 out,
                 err,
             )
@@ -770,10 +772,16 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         ).exists(), f"Log directory {self.log_dir} does not exist"
         return [f for f in glob.glob(f"{self.log_dir}/*.log")]
 
-    def check_fatal_messeges_in_logs(self):
+    def check_fatal_messages_in_logs(self):
         results = []
 
         # if command exit code is 1 - it's failed test case, script output will be stored into test case info
+        results.append(
+            Result.from_commands_run(
+                name="Exception in test runner",
+                command=f"! awk 'found && /^[^[:space:]]/ {{ print; exit }} /^Traceback \(most recent call last\):/ {{ found=1 }} found {{ print }}' {temp_dir}/job.log | head -n 100 | tee /dev/stderr | grep -q .",
+            )
+        )
         results.append(
             Result.from_commands_run(
                 name="Sanitizer assert (in stderr.log)",
@@ -1033,18 +1041,25 @@ quit
 if __name__ == "__main__":
     ch = ClickHouseProc()
     command = sys.argv[1]
-    if command == "logs_export_config":
-        ch.create_log_export_config()
-    elif command == "logs_export_start":
-        # FIXME: the start_time must be preserved globally in ENV or something like that
-        # to get the same values in different DBs
-        # As a wild idea, it could be stored in a Info.check_start_timestamp
-        ch.start_log_exports(check_start_time=Utils.timestamp())
-    elif command == "logs_export_stop":
-        ch.stop_log_exports()
-    elif command == "start_minio":
-        param = sys.argv[2]
-        assert param in ["stateless"]
-        ch.start_minio(param)
-    else:
-        raise ValueError(f"Unknown command: {command}")
+    res = False
+    try:
+        if command == "logs_export_config":
+            res = ch.create_log_export_config()
+        elif command == "logs_export_start":
+            # FIXME: the start_time must be preserved globally in ENV or something like that
+            # to get the same values in different DBs
+            # As a wild idea, it could be stored in a Info.check_start_timestamp
+            res = ch.start_log_exports(check_start_time=Utils.timestamp())
+        elif command == "logs_export_stop":
+            res = ch.stop_log_exports()
+        elif command == "start_minio":
+            param = sys.argv[2]
+            assert param in ["stateless"]
+            res = ch.start_minio(param)
+        else:
+            raise ValueError(f"Unknown command: {command}")
+    except Exception as e:
+        print(f"ERROR: Failed to do [{command}]")
+        traceback.print_exc()
+
+    sys.exit(1 if not res else 0)

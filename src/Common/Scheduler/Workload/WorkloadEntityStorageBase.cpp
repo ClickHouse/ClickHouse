@@ -374,7 +374,7 @@ bool WorkloadEntityStorageBase::storeEntity(
             io_validator.initFromChanges(CostUnit::IOByte, workload->changes);
 
             WorkloadSettings cpu_validator;
-            cpu_validator.initFromChanges(CostUnit::CPUSlot, workload->changes);
+            cpu_validator.initFromChanges(CostUnit::CPUNanosecond, workload->changes);
         }
 
         // Validate resource
@@ -804,7 +804,7 @@ String WorkloadEntityStorageBase::serializeAllEntities(std::optional<Event> chan
     std::unique_lock<std::recursive_mutex> lock;
     auto ordered_entities = orderEntities(entities, change);
     WriteBufferFromOwnString buf;
-    IAST::FormatSettings settings(/*one_line=*/true, /*hilite=*/false);
+    IAST::FormatSettings settings(/*one_line=*/true);
     for (const auto & event : ordered_entities)
     {
         event.entity->format(buf, settings);

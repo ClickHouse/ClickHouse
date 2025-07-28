@@ -146,7 +146,7 @@ Header: bx String
                       ReadFromMergeTree (default.b)
                       Header: b1 UInt64
                               b2 String
-                Expression
+                Expression ((WHERE + Change column names to column identifiers))
                 Header: __table4.c1 UInt64
                         __table4.c2 String
                   ReadFromMergeTree (default.c)

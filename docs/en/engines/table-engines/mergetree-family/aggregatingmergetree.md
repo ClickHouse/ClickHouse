@@ -22,12 +22,12 @@ You can see an example of how to use the AggregatingMergeTree and Aggregate func
 
 The engine processes all columns with the following types:
 
-## [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md) {#aggregatefunction}
-## [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md) {#simpleaggregatefunction}
+- [`AggregateFunction`](../../../sql-reference/data-types/aggregatefunction.md)
+- [`SimpleAggregateFunction`](../../../sql-reference/data-types/simpleaggregatefunction.md)
 
 It is appropriate to use `AggregatingMergeTree` if it reduces the number of rows by orders.
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -76,7 +76,7 @@ When selecting data from `AggregatingMergeTree` table, use `GROUP BY` clause and
 
 In the results of `SELECT` query, the values of `AggregateFunction` type have implementation-specific binary representation for all of the ClickHouse output formats. For example, if you dump data into `TabSeparated` format with a `SELECT` query, then this dump can be loaded back using an `INSERT` query.
 
-## Example of an Aggregated Materialized View {#example-of-an-aggregated-materialized-view}
+## Example of an aggregated materialized view {#example-of-an-aggregated-materialized-view}
 
 The following example assumes that you have a database named `test`. Create it if it doesn't already exist using the command below:
 
@@ -123,25 +123,6 @@ FROM test.visits
 GROUP BY StartDate, CounterID;
 ```
 
-Note that it is necessary to include the columns which are not being aggregated in the 
-`GROUP BY` statement. Alternatively, we can make use of the [`initializeAggregation`](/sql-reference/functions/other-functions#initializeaggregation) function to avoid having to do this:
-
-```sql
-CREATE MATERIALIZED VIEW test.visits_mv TO test.agg_visits
-AS SELECT
-    StartDate,
-    CounterID,
-    initializeAggregation('sumState', Sign) AS Visits,
-    initializeAggregation('uniqState', UserID) AS Users
-FROM test.visits;
-```
-
-:::note
-When using `initializeAggregation`, an aggregate state is created for each individual row without grouping.
-Each source row produces one row in the materialized view and the actual aggregation happens later when the
-`AggregatingMergeTree` merges parts with the same day.
-:::
-
 Insert data into the `test.visits` table:
 
 ```sql
@@ -185,8 +166,28 @@ Run the `SELECT` query again, which will return the following output:
 └─────────────────────────┴────────┴───────┘
 ```
 
-Note that the result is the same regardless of which method we used for creating the materialized view.
+In some cases, you might want to avoid pre-aggregating rows at insert time to shift the cost of aggregation from insert time
+to merge time. Ordinarily, it is necessary to include the columns which are not part of the aggregation in the `GROUP BY` 
+clause of the materialized view definition to avoid an error. However, you can make use of the [`initializeAggregation`](/sql-reference/functions/other-functions#initializeaggregation) 
+function with setting `optimize_on_insert = 0` (it is turned on by default) to achieve this. Use of `GROUP BY` 
+is no longer required in this case:
 
-## Related Content {#related-content}
+```sql
+CREATE MATERIALIZED VIEW test.visits_mv TO test.agg_visits
+AS SELECT
+    StartDate,
+    CounterID,
+    initializeAggregation('sumState', Sign) AS Visits,
+    initializeAggregation('uniqState', UserID) AS Users
+FROM test.visits;
+```
+
+:::note
+When using `initializeAggregation`, an aggregate state is created for each individual row without grouping.
+Each source row produces one row in the materialized view, and the actual aggregation happens later when the
+`AggregatingMergeTree` merges parts. This is only true if `optimize_on_insert = 0`.
+:::
+
+## Related content {#related-content}
 
 - Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

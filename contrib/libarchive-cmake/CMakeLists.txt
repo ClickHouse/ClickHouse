@@ -2,8 +2,6 @@ set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/libarchive")
 
 set(SRCS
     "${LIBRARY_DIR}/libarchive/archive_acl.c"
-#    "${LIBRARY_DIR}/libarchive/archive_blake2sp_ref.c"
-#    "${LIBRARY_DIR}/libarchive/archive_blake2s_ref.c"
     "${LIBRARY_DIR}/libarchive/archive_check_magic.c"
     "${LIBRARY_DIR}/libarchive/archive_cmdline.c"
     "${LIBRARY_DIR}/libarchive/archive_cryptor.c"
@@ -20,7 +18,6 @@ set(SRCS
     "${LIBRARY_DIR}/libarchive/archive_entry_stat.c"
     "${LIBRARY_DIR}/libarchive/archive_entry_strmode.c"
     "${LIBRARY_DIR}/libarchive/archive_entry_xattr.c"
-    "${LIBRARY_DIR}/libarchive/archive_getdate.c"
     "${LIBRARY_DIR}/libarchive/archive_hmac.c"
     "${LIBRARY_DIR}/libarchive/archive_match.c"
     "${LIBRARY_DIR}/libarchive/archive_options.c"
@@ -37,7 +34,6 @@ set(SRCS
     "${LIBRARY_DIR}/libarchive/archive_read_disk_entry_from_file.c"
     "${LIBRARY_DIR}/libarchive/archive_read_disk_posix.c"
     "${LIBRARY_DIR}/libarchive/archive_read_disk_set_standard_lookup.c"
-#    "${LIBRARY_DIR}/libarchive/archive_read_disk_windows.c"
     "${LIBRARY_DIR}/libarchive/archive_read_extract2.c"
     "${LIBRARY_DIR}/libarchive/archive_read_extract.c"
     "${LIBRARY_DIR}/libarchive/archive_read_open_fd.c"
@@ -80,6 +76,7 @@ set(SRCS
     "${LIBRARY_DIR}/libarchive/archive_read_support_format_zip.c"
     "${LIBRARY_DIR}/libarchive/archive_string.c"
     "${LIBRARY_DIR}/libarchive/archive_string_sprintf.c"
+    "${LIBRARY_DIR}/libarchive/archive_time.c"
     "${LIBRARY_DIR}/libarchive/archive_util.c"
     "${LIBRARY_DIR}/libarchive/archive_version_details.c"
     "${LIBRARY_DIR}/libarchive/archive_virtual.c"
@@ -157,7 +154,13 @@ if (TARGET ch_contrib::zlib)
 endif()
 
 if (TARGET ch_contrib::zstd)
-    target_compile_definitions(_libarchive PUBLIC HAVE_ZSTD_H=1 HAVE_LIBZSTD=1 HAVE_ZSTD_compressStream=1)
+    target_compile_definitions(
+        _libarchive PUBLIC
+        HAVE_ZSTD_H=1
+        HAVE_LIBZSTD=1
+        HAVE_ZSTD_compressStream=1
+        HAVE_ZSTD_minCLevel=1
+    )
     target_link_libraries(_libarchive PRIVATE ch_contrib::zstd)
 endif()
 
