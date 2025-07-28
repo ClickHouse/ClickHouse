@@ -136,11 +136,14 @@ ManifestFilesPruner::ManifestFilesPruner(
                 if (!bounded_colums.contains(used_column_id))
                     continue;
 
-                NameAndTypePair name_and_type = schema_processor.getFieldCharacteristics(initial_schema_id, used_column_id);
-                name_and_type.name = DB::backQuote(DB::toString(used_column_id));
+                auto name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, used_column_id);
+                if (!name_and_type.has_value())
+                    continue;
 
-                ExpressionActionsPtr expression = std::make_shared<ExpressionActions>(
-                    ActionsDAG({name_and_type}), ExpressionActionsSettings(context));
+                name_and_type->name = DB::backQuote(DB::toString(used_column_id));
+
+                ExpressionActionsPtr expression
+                    = std::make_shared<ExpressionActions>(ActionsDAG({name_and_type.value()}), ExpressionActionsSettings(context));
 
                 ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
                 min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type.name}, expression));

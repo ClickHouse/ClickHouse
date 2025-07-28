@@ -90,10 +90,12 @@ class ManifestFileContent
 public:
     explicit ManifestFileContent(
         const AvroForIcebergDeserializer & manifest_file_deserializer,
+        const String & manifest_file_name,
         Int32 format_version_,
         const String & common_path,
         const DB::IcebergSchemaProcessor & schema_processor,
         Int64 inherited_sequence_number,
+        Int64 inherited_snapshot_id,
         const std::string & table_location,
         DB::ContextPtr context,
         std::unordered_map<Int64, Int32> schema_id_by_snapshot);

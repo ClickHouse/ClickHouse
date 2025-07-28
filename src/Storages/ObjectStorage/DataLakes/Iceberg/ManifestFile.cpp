@@ -117,10 +117,12 @@ using namespace DB;
 
 ManifestFileContent::ManifestFileContent(
     const AvroForIcebergDeserializer & manifest_file_deserializer,
+    const String & manifest_file_name,
     Int32 format_version_,
     const String & common_path,
     const IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number,
+    Int64 inherited_snapshot_id,
     const String & table_location,
     DB::ContextPtr context,
     std::unordered_map<Int64, Int32> schema_id_by_snapshot)
@@ -151,6 +153,17 @@ ManifestFileContent::ManifestFileContent(
     partition_key_ast->arguments = std::make_shared<DB::ASTExpressionList>();
     partition_key_ast->children.push_back(partition_key_ast->arguments);
 
+    auto schema_json_string = manifest_file_deserializer.tryGetAvroMetadataValue(f_schema);
+    if (!schema_json_string.has_value())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot read Iceberg table: manifest file '{}' doesn't have field '{}' in its metadata",
+            manifest_file_name,
+            f_schema);
+    Poco::Dynamic::Var json = parser.parse(*schema_json_string);
+    const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
+    Int32 manifest_schema_id = schema_object->getValue<int>(f_schema_id);
+
     for (size_t i = 0; i != partition_specification->size(); ++i)
     {
         auto partition_specification_field = partition_specification->getObject(static_cast<UInt32>(i));
@@ -159,14 +172,19 @@ ManifestFileContent::ManifestFileContent(
         /// NOTE: tricky part to support RENAME column in partition key. Instead of some name
         /// we use column internal number as it's name.
         auto numeric_column_name = DB::backQuote(DB::toString(source_id));
-        DB::NameAndTypePair manifest_file_column_characteristics = schema_processor.getFieldCharacteristics(schema_id, source_id);
+        std::optional<DB::NameAndTypePair> manifest_file_column_characteristics
+            = schema_processor.tryGetFieldCharacteristics(manifest_schema_id, source_id);
+        if (!manifest_file_column_characteristics.has_value())
+        {
+            continue;
+        }
         auto partition_ast = getASTFromTransform(partition_specification_field->getValue<String>(f_transform), numeric_column_name);
         /// Unsupported partition key expression
         if (partition_ast == nullptr)
             continue;
 
         partition_key_ast->arguments->children.emplace_back(std::move(partition_ast));
-        partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics.type));
+        partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics->type));
     }
 
     if (!partition_columns_description.empty())
@@ -183,7 +201,25 @@ ManifestFileContent::ManifestFileContent(
                     ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: positional and equality deletes are not supported");
         }
         const auto status = ManifestEntryStatus(manifest_file_deserializer.getValueFromRowByName(i, f_status, TypeIndex::Int32).safeGet<UInt64>());
-        const auto snapshot_id = manifest_file_deserializer.getValueFromRowByName(i, f_snapshot_id, TypeIndex::Int64).safeGet<Int64>();
+        const auto snapshot_id_value = manifest_file_deserializer.getValueFromRowByName(i, f_snapshot_id);
+        Int64 snapshot_id;
+
+        if (snapshot_id_value.isNull())
+        {
+            if (status == ManifestEntryStatus::EXISTING)
+            {
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Cannot read Iceberg table: manifest file '{}' has entry with status 'EXISTING' without snapshot id",
+                    manifest_file_name);
+            }
+            snapshot_id = inherited_snapshot_id;
+        }
+        else
+        {
+            snapshot_id = snapshot_id_value.safeGet<Int64>();
+        }
+
 
         const auto schema_id_it = schema_id_by_snapshot.find(snapshot_id);
         if (schema_id_it == schema_id_by_snapshot.end())
