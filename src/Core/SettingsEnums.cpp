@@ -327,4 +327,14 @@ IMPLEMENT_SETTING_ENUM(
     {{"lat_lon", GeoToH3ArgumentOrder::LAT_LON},
      {"lon_lat", GeoToH3ArgumentOrder::LON_LAT}})
 
+IMPLEMENT_SETTING_ENUM(
+    DeltaLakeTracingLevel,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"none", DeltaLakeTracingLevel::NONE},
+     {"error", DeltaLakeTracingLevel::ERROR},
+     {"warning", DeltaLakeTracingLevel::WARN},
+     {"info", DeltaLakeTracingLevel::INFO},
+     {"debug", DeltaLakeTracingLevel::DEBUG},
+     {"trace", DeltaLakeTracingLevel::TRACE}})
+
 }

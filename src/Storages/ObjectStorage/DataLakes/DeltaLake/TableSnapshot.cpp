@@ -39,6 +39,7 @@ namespace DB::ErrorCodes
 namespace DB::Setting
 {
     extern const SettingsBool delta_lake_enable_expression_visitor_logging;
+    extern const SettingsDeltaLakeTracingLevel delta_lake_tracing_level;
 }
 
 namespace ProfileEvents
@@ -351,6 +352,57 @@ private:
 };
 
 
+static ffi::Level getTracingLevel(DB::DeltaLakeTracingLevel level)
+{
+    switch (level)
+    {
+        case DB::DeltaLakeTracingLevel::ERROR:
+            return ffi::Level::ERROR;
+        case DB::DeltaLakeTracingLevel::WARN:
+            return ffi::Level::WARN;
+        case DB::DeltaLakeTracingLevel::INFO:
+            return ffi::Level::INFO;
+        case DB::DeltaLakeTracingLevel::DEBUG:
+            return ffi::Level::DEBUG;
+        case DB::DeltaLakeTracingLevel::TRACE:
+            return ffi::Level::TRACE;
+        default:
+            throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Cannot disable tracing level");
+    }
+}
+
+static void tracingCallback(struct ffi::Event event)
+{
+    if (event.message.len > 100)
+        return;
+
+    LOG_TEST(getLogger("DeltaKernelTracing"),
+             "Level: {}, message: {}, code line: {}:{}, target: {}",
+             event.level, std::string_view(event.message.ptr, event.message.len),
+             KernelUtils::fromDeltaString(event.file), event.line, KernelUtils::fromDeltaString(event.target));
+}
+
+static void enableEventTracing(DB::DeltaLakeTracingLevel level)
+{
+    static std::mutex mutex;
+    static std::atomic<DB::DeltaLakeTracingLevel> current_level = DB::DeltaLakeTracingLevel::NONE;
+
+    if (current_level.load() == level)
+        return;
+
+    LOG_TEST(getLogger("DeltaLake"),
+             "Desired event tracing: {}, current event tracing level: {}", level, current_level.load());
+
+    std::lock_guard lock(mutex);
+
+    if (current_level.load(std::memory_order_relaxed) != level)
+    {
+        const auto desired_level = getTracingLevel(level);
+        ffi::enable_event_tracing(tracingCallback, desired_level);
+        current_level = level;
+    }
+}
+
 TableSnapshot::TableSnapshot(
     KernelHelperPtr helper_,
     DB::ObjectStoragePtr object_storage_,
@@ -360,7 +412,10 @@ TableSnapshot::TableSnapshot(
     , object_storage(object_storage_)
     , log(log_)
     , enable_expression_visitor_logging(context_->getSettingsRef()[DB::Setting::delta_lake_enable_expression_visitor_logging])
+    , tracing_level(context_->getSettingsRef()[DB::Setting::delta_lake_tracing_level].value)
 {
+    if (tracing_level != DB::DeltaLakeTracingLevel::NONE)
+        enableEventTracing(tracing_level);
 }
 
 size_t TableSnapshot::getVersion() const
