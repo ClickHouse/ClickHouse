@@ -2161,7 +2161,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
 
     PreparedJoinStorage prepared_join;
     bool allow_storage_join = right_join_tree_query_plan.used_row_policies.empty()
-        && right_join_tree_query_plan.from_stage == QueryProcessingStage::FetchColumns
+        && right_join_tree_query_plan.stage == QueryProcessingStage::FetchColumns
         && right_join_tree_query_plan.useful_sets.empty();
     if (allow_storage_join)
         prepared_join = tryGetStorageInTableJoin(join_node.getRightTableExpression(), planner_context);
