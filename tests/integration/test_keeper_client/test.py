@@ -26,7 +26,7 @@ def started_cluster():
 
 @pytest.fixture(scope="function")
 def client(started_cluster):
-    with KeeperClient.from_cluster(cluster, "zoo1") as keeper_client:
+    with KeeperClient.from_cluster(cluster, "zoo1", identity="clickhouse:password") as keeper_client:
         yield keeper_client
 
 
@@ -250,3 +250,7 @@ def test_get_all_children_number(client: KeeperClient):
     client.touch("/test_get_all_children_number/2/4")
 
     assert client.get_all_children_number("/test_get_all_children_number") == "11"
+
+def test_get_acl(client: KeeperClient):
+    client.touch("/test_get_acl")
+    assert client.get_acl("/test_get_acl") == "[digest] clickhouse:sMa7nZnCETJITpLiCPtfC4GnbwY= ALL"

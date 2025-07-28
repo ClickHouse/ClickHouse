@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
@@ -437,6 +438,16 @@ public:
         return tryGetChildren(paths.begin(), paths.end(), list_request_type);
     }
 
+    Coordination::ACLs getACL(const std::string & path, Coordination::Stat * stat = nullptr);
+
+    /// Doesn't not throw in the following cases:
+    /// * The node doesn't exist. Returns false in this case.
+    bool tryGetACL(
+        const std::string & path,
+        Coordination::ACLs & res,
+        Coordination::Stat * stat = nullptr,
+        Coordination::Error * code = nullptr);
+
     /// Performs several operations in a transaction.
     /// Throws on every error.
     /// For check_session_valid see addCheckSessionOp
@@ -561,6 +572,11 @@ public:
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureSync asyncTrySyncNoThrow(const std::string & path);
 
+    using FutureGetACL = std::future<Coordination::GetACLResponse>;
+    FutureGetACL asyncGetACL(const std::string & path);
+    /// Like the previous one but don't throw any exceptions on future.get()
+    FutureGetACL asyncTryGetACLNoThrow(const std::string & path);
+
     /// Very specific methods introduced without following general style. Implements
     /// some custom throw/no throw logic on future.get().
     ///
@@ -639,6 +655,7 @@ private:
         Coordination::Stat * stat,
         Coordination::WatchCallbackPtr watch_callback,
         Coordination::ListRequestType list_request_type);
+    Coordination::Error getACLImpl(const std::string & path, Coordination::ACLs & res, Coordination::Stat * stat);
 
     /// returns error code with optional reason
     std::pair<Coordination::Error, std::string>
