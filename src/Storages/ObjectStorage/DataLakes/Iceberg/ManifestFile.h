@@ -89,19 +89,15 @@ public:
         const AvroForIcebergDeserializer & manifest_file_deserializer,
         Int32 format_version_,
         const String & common_path,
-        Int32 schema_id_,
-        Poco::JSON::Object::Ptr schema_object_,
         const DB::IcebergSchemaProcessor & schema_processor,
         Int64 inherited_sequence_number,
         const std::string & table_location,
         DB::ContextPtr context);
 
     const std::vector<ManifestFileEntry> & getFiles() const;
-    Int32 getSchemaId() const;
 
     bool hasPartitionKey() const;
     const DB::KeyDescription & getPartitionKeyDescription() const;
-    Poco::JSON::Object::Ptr getSchemaObject() const { return schema_object; }
     /// Get size in bytes of how much memory one instance of this ManifestFileContent class takes.
     /// Used for in-memory caches size accounting.
     size_t getSizeInMemory() const;
@@ -113,10 +109,8 @@ public:
 
     bool hasBoundsInfoInManifests() const;
     const std::set<Int32> & getColumnsIDsWithBounds() const;
-private:
 
-    Int32 schema_id;
-    Poco::JSON::Object::Ptr schema_object;
+private:
     std::optional<DB::KeyDescription> partition_key_description;
     // Size - number of files
     std::vector<ManifestFileEntry> files;

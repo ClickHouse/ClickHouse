@@ -177,9 +177,28 @@ bool ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
 
         /// There is no such column in this manifest file
         if (!name_and_type.has_value())
+        {
+            LOG_DEBUG(
+                &Poco::Logger::get("ManifestFilesPruning::canBePruned"),
+                "Column with id {} is not found in manifest file with schema id {}, so it cannot be pruned",
+                column_id,
+                manifest_schema_id);
             continue;
+        }
 
-        auto hyperrectangle = entry.columns_infos.at(column_id).hyperrectangle;
+        auto it = entry.columns_infos.find(column_id);
+        if (it == entry.columns_infos.end())
+        {
+            LOG_DEBUG(
+                &Poco::Logger::get("ManifestFilesPruning::canBePruned"),
+                "Column with id {} is not found in manifest entry columns info so it cannot be pruned, manifest file path: {}",
+                column_id,
+                std::get<DataFileEntry>(entry.file).file_name);
+            continue;
+        }
+
+
+        auto hyperrectangle = it->second.hyperrectangle;
         if (hyperrectangle.has_value() && !key_condition.mayBeTrueInRange(1, &hyperrectangle->left, &hyperrectangle->right, {name_and_type->type}))
         {
             ProfileEvents::increment(ProfileEvents::IcebergMinMaxIndexPrunedFiles);

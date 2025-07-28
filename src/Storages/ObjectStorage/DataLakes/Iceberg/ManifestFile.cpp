@@ -112,10 +112,6 @@ const std::vector<ManifestFileEntry> & ManifestFileContent::getFiles() const
     return files;
 }
 
-Int32 ManifestFileContent::getSchemaId() const
-{
-    return schema_id;
-}
 
 using namespace DB;
 
@@ -123,16 +119,11 @@ ManifestFileContent::ManifestFileContent(
     const AvroForIcebergDeserializer & manifest_file_deserializer,
     Int32 format_version_,
     const String & common_path,
-    Int32 schema_id_,
-    Poco::JSON::Object::Ptr schema_object_,
     const IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number,
     const String & table_location,
     DB::ContextPtr context)
 {
-    this->schema_id = schema_id_;
-    this->schema_object = schema_object_;
-
     for (const auto & column_name : {f_status, f_data_file})
     {
         if (!manifest_file_deserializer.hasPath(column_name))
@@ -265,6 +256,8 @@ ManifestFileContent::ManifestFileContent(
             /// name generation for such subfields (we support names of nested subfields in structs only).
             if (!field_characteristics)
             {
+                LOG_DEBUG(
+                    &Poco::Logger::get("ManifestFileContent::ManifestFileContent"), "Column with id {}, so bounds are ignored", column_id);
                 continue;
             }
             const auto & name_and_type = *field_characteristics;
@@ -272,12 +265,34 @@ ManifestFileContent::ManifestFileContent(
             String right_str;
             /// lower_bound and upper_bound may be NULL.
             if (!bounds.first.tryGet(left_str) || !bounds.second.tryGet(right_str))
+            {
+                LOG_DEBUG(
+                    &Poco::Logger::get("ManifestFileContent::ManifestFileContent"),
+                    "Some of the bounds for column with id {} are NULL, so bounds are ignored, left bound {}, right bound {}",
+                    column_id,
+                    left_str,
+                    right_str);
                 continue;
+            }
 
             auto left = deserializeFieldFromBinaryRepr(left_str, name_and_type.type, true);
             auto right = deserializeFieldFromBinaryRepr(right_str, name_and_type.type, false);
             if (!left || !right)
+            {
+                LOG_DEBUG(
+                    &Poco::Logger::get("ManifestFileContent::ManifestFileContent"),
+                    "Failed to deserialize bounds for column with id {}, left bound {}, right bound {}",
+                    column_id,
+                    left_str,
+                    right_str);
                 continue;
+            }
+
+            LOG_DEBUG(
+                &Poco::Logger::get("ManifestFileContent::ManifestFileContent"),
+                "Can deserialize bounds for column with id {}, file_path: {}",
+                column_id,
+                file_path);
 
             columns_infos[column_id].hyperrectangle.emplace(*left, true, *right, true);
         }

@@ -72,28 +72,6 @@ extern const SettingsBool use_iceberg_partition_pruning;
 
 using namespace Iceberg;
 
-namespace
-{
-
-std::pair<Int32, Poco::JSON::Object::Ptr>
-parseTableSchemaFromManifestFile(const AvroForIcebergDeserializer & deserializer, const String & manifest_file_name)
-{
-    auto schema_json_string = deserializer.tryGetAvroMetadataValue(f_schema);
-    if (!schema_json_string.has_value())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Cannot read Iceberg table: manifest file '{}' doesn't have field '{}' in its metadata",
-            manifest_file_name, f_schema);
-    Poco::JSON::Parser parser;
-    Poco::Dynamic::Var json = parser.parse(*schema_json_string);
-    const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
-    Int32 schema_object_id = schema_object->getValue<int>(f_schema_id);
-    return {schema_object_id, schema_object};
-}
-
-}
-
-
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationWeakPtr configuration_,
@@ -280,10 +258,23 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
             "No snapshot set found in metadata for iceberg table `{}`, it is impossible to get manifest list by snapshot id `{}`",
             configuration_ptr->getPath(),
             relevant_snapshot_id);
+    auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
+    for (UInt32 j = 0; j < schemas->size(); ++j)
+    {
+        auto schema = schemas->getObject(j);
+        if (schema->getValue<Int32>(f_schema_id) == relevant_snapshot_schema_id)
+        {
+            schema_processor.addIcebergTableSchema(schema);
+            break;
+        }
+    }
     auto snapshots = metadata_object->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
+        auto current_snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
+        auto current_schema_id = snapshot->getValue<Int32>(f_schema_id);
+        schema_id_by_snapshot[current_snapshot_id] = current_schema_id;
         if (snapshot->getValue<Int64>(f_metadata_snapshot_id) == relevant_snapshot_id)
         {
             if (!snapshot->has(f_manifest_list))
@@ -344,7 +335,6 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
                     configuration_ptr->getPath());
             relevant_snapshot_schema_id = snapshot->getValue<Int32>(f_schema_id);
             addTableSchemaById(relevant_snapshot_schema_id, metadata_object);
-            return;
         }
     }
     throw Exception(
@@ -675,14 +665,14 @@ ManifestFilePtr IcebergMetadata::getManifestFile(ContextPtr local_context, const
 
         auto buffer = StorageObjectStorageSource::createReadBuffer(manifest_object_info, object_storage, local_context, log, read_settings);
         AvroForIcebergDeserializer manifest_file_deserializer(std::move(buffer), filename, getFormatSettings(local_context));
-        auto [schema_id, schema_object] = parseTableSchemaFromManifestFile(manifest_file_deserializer, filename);
-        schema_processor.addIcebergTableSchema(schema_object);
+        auto snapshot_id = manifest_file_deserializer.getSnapshotId(); //TODO
+        auto schema_id = schema_id_by_snapshot[snapshot_id];
         return std::make_shared<ManifestFileContent>(
             manifest_file_deserializer,
             format_version,
             configuration_ptr->getPath(),
             schema_id,
-            schema_object,
+            schema_processor.getIcebergTableSchemaById(schema_id),
             schema_processor,
             inherited_sequence_number,
             table_location,

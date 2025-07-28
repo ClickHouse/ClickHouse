@@ -423,6 +423,16 @@ std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformatio
         = getSchemaTransformationDag(old_schema_it->second, new_schema_it->second, old_id, new_id);
 }
 
+Poco::JSON::Object::Ptr IcebergSchemaProcessor::getIcebergTableSchemaById(Int32 id) const
+{
+    SharedLockGuard lock(mutex);
+
+    auto it = iceberg_table_schemas_by_ids.find(id);
+    if (it == iceberg_table_schemas_by_ids.end())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with id {} is unknown", id);
+    return it->second;
+}
+
 std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSchemaById(Int32 id)
 {
     SharedLockGuard lock(mutex);
