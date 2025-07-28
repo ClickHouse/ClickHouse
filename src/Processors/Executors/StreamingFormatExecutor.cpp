@@ -3,6 +3,7 @@
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 
 #include <base/scope_guard.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -89,7 +90,12 @@ size_t StreamingFormatExecutor::execute(ReadBuffer & buffer, size_t num_bytes)
 size_t StreamingFormatExecutor::execute(size_t num_bytes)
 {
     for (size_t i = 0; i < result_columns.size(); ++i)
+    {
+        LOG_DEBUG(getLogger("StreamingFormatExecutor"),
+            "Update checkpoint for column {} with size {}",
+            i, result_columns[i]->size());
         result_columns[i]->updateCheckpoint(*checkpoints[i]);
+    }
 
     try
     {

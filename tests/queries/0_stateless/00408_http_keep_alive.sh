@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
+
+# no-parallel because of the `FLUSH ASYNC INSERT QUEUE` command
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -13,3 +16,44 @@ ${CLICKHOUSE_CURL} -vsS "${URL}"ping  2>&1 | perl -lnE 'print if /Keep-Alive/' |
 
 # no keep-alive:
 ${CLICKHOUSE_CURL} -vsS "${URL}"404/not/found/ 2>&1 | perl -lnE 'print if /Keep-Alive/';
+
+# async inserts
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS async_inserts"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE async_inserts (id UInt32, s String) ENGINE = MergeTree ORDER BY id"
+
+file_1="$(mktemp "$CURDIR/file_1.tmp.XXXXXX")"
+file_2="$(mktemp "$CURDIR/file_2.tmp.XXXXXX")"
+file_3="$(mktemp "$CURDIR/file_3.tmp.XXXXXX")"
+clean() {
+    rm -f "$file_1" "$file_2" "$file_3"
+}
+trap clean EXIT
+
+for wait_for_async_insert in 0 1
+do
+    echo "wait_for_async_insert=$wait_for_async_insert"
+
+    settings="wait_for_async_insert=$wait_for_async_insert&async_insert=1&async_insert_busy_timeout_ms=600000&async_insert_max_query_number=3&async_insert_deduplicate=0&async_insert_use_adaptive_busy_timeout=0"
+
+    ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&${settings}&query_id=00408-wait-$wait_for_async_insert-1" -d 'INSERT INTO async_inserts FORMAT CSV
+    1,"a"
+    2,"b"' |& grep 'Connection:' > $file_1 &
+
+    ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&${settings}&query_id=00408-wait-$wait_for_async_insert-2" -d 'INSERT INTO async_inserts FORMAT CSV
+    qqqqqqqqqqq' |& grep 'Connection:' > $file_2  &
+
+    ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&${settings}&query_id=00408-wait-$wait_for_async_insert-3" -d 'INSERT INTO async_inserts FORMAT CSV
+    4,"c"
+    3,"d"' |& grep 'Connection:' > $file_3 &
+
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE;"
+
+    wait
+
+    echo "good async insert"
+    cat $file_1
+    echo "bad async insert"
+    cat $file_2
+    echo "good async insert"
+    cat $file_3
+done

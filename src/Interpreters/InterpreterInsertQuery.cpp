@@ -51,7 +51,6 @@
 #include <Interpreters/JoinedTables.h>
 
 #include <memory>
-#include <math.h>
 
 
 namespace DB

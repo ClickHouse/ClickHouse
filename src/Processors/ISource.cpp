@@ -131,8 +131,6 @@ void ISource::work()
     {
         got_exception = true;
 
-        cancel();
-
         if (!std::exchange(finished, true))
             onFinish();
 

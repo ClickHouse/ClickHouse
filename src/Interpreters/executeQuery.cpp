@@ -1323,9 +1323,8 @@ static BlockIO executeQueryImpl(
 
                     LOG_DEBUG(getLogger("executeQuery"), "insert query has tail and input function");
                     auto format = getInputFormatFromASTInsertQuery(out_ast, true, input_metadata_snapshot->getSampleBlock(), context, input_function);
-                    /// need to check it
-                    format->addBuffer(nullptr);
                     auto pipe = getSourceFromInputFormat(out_ast, std::move(format), context, input_function);
+                    insert_query->tail.reset();
 
                     input_storage.setPipe(std::move(pipe));
                 }
@@ -1409,6 +1408,9 @@ static BlockIO executeQueryImpl(
                 const auto & table_id = insert_query->table_id;
                 if (!table_id.empty())
                     context->setInsertionTable(table_id);
+
+                insert_query->tail.reset();
+                LOG_DEBUG(logger, "Setting async_insert=1, reset tail");
             }
             else if (result.status == AsynchronousInsertQueue::PushResult::TOO_MUCH_DATA)
             {
@@ -1423,7 +1425,6 @@ static BlockIO executeQueryImpl(
                     insert_query->data = nullptr;
                 }
 
-                //insert_query->tail = insert_data_buffer_holder.get();
                 insert_query->tail = std::move(result.insert_data_buffer);
                 LOG_DEBUG(logger, "Setting async_insert=1, but INSERT query will be executed synchronously because it has too much data");
             }
@@ -1979,16 +1980,15 @@ void executeQuery(
     {
         if (pipeline.pushing())
         {
+            LOG_DEBUG(getLogger("executeQuery"), "pushing pipeline");
             auto format = getInputFormatFromASTInsertQuery(ast, true, pipeline.getHeader(), context, nullptr);
-            LOG_DEBUG(getLogger("executeQuery"), "attach input buffer to format as pushing");
-            chassert(istr);
-            format->addBuffer(std::move(istr));
             auto pipe = getSourceFromInputFormat(ast, std::move(format), context, nullptr);
 
             pipeline.complete(std::move(pipe));
         }
         else if (pipeline.pulling())
         {
+            LOG_DEBUG(getLogger("executeQuery"), "pulling pipeline");
             const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
             format_name = ast_query_with_output && ast_query_with_output->format_ast != nullptr
                 ? getIdentifierName(ast_query_with_output->format_ast)
@@ -2043,6 +2043,7 @@ void executeQuery(
         }
         else
         {
+            LOG_DEBUG(getLogger("executeQuery"), "completed pipeline");
             pipeline.setProgressCallback(context->getProgressCallback());
         }
 
@@ -2051,6 +2052,10 @@ void executeQuery(
             LOG_DEBUG(getLogger("executeQuery"), "resetting isrt, request input stream ref count: {}", ref_count_cb());
             istr.reset();
             LOG_DEBUG(getLogger("executeQuery"), "reset isrt, request input stream ref count: {}", ref_count_cb());
+        }
+        else
+        {
+            LOG_DEBUG(getLogger("executeQuery"), "no isrt, request input stream ref count: {}", ref_count_cb());
         }
 
         if (set_result_details)
