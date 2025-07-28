@@ -294,7 +294,6 @@ void generateManifestList(
     const Strings & manifest_entry_names,
     Poco::JSON::Object::Ptr new_snapshot,
     Int32 manifest_length,
-    const FileNamesGenerator & generator,
     WriteBuffer & buf)
 {
     Poco::JSON::Stringifier::stringify(metadata, std::cerr, 4);
@@ -668,16 +667,16 @@ IcebergStorageSink::IcebergStorageSink(
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_, nullptr, context_, log.get());
 
     metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, log, compression_method);
-    if (!context_->getSettingsRef()[Setting::write_full_path_insert_iceberg])
+    if (!context_->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata])
     {
-        filename_generator = FileNamesGenerator(configuration_->getPath(), configuration_->getPath(), catalog_ != nullptr);
+        filename_generator = FileNamesGenerator(configuration_->getPath(), configuration_->getPath());
     }
     else
     {
         auto bucket = metadata->getValue<String>(Iceberg::f_location);
         if (bucket.back() != '/')
             bucket += "/";
-        filename_generator = FileNamesGenerator(bucket, configuration_->getPath(), catalog_ != nullptr);
+        filename_generator = FileNamesGenerator(bucket, configuration_->getPath());
     }
     filename_generator.setVersion(last_version + 1);
 

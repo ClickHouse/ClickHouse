@@ -91,7 +91,6 @@ void generateManifestList(
     const Strings & manifest_entry_names,
     Poco::JSON::Object::Ptr new_snapshot,
     Int32 manifest_length,
-    const FileNamesGenerator & generator,
     WriteBuffer & buf);
 
 class MetadataGenerator
