@@ -28,8 +28,12 @@ def fill_nodes_zero_copy(nodes, shard):
                 shard=shard, replica=node.name
             )
         )
-    node.query("INSERT INTO test_zero_copy.test_table_1 VALUES (toDate('2025-06-01'), 1), (toDate('2025-07-02'), 2)")
-    node.query("INSERT INTO test_zero_copy.test_table_2 VALUES (toDate('2025-06-01'), 1), (toDate('2025-07-02'), 2)")
+    node.query(
+        "INSERT INTO test_zero_copy.test_table_1 VALUES (toDate('2025-06-01'), 1), (toDate('2025-07-02'), 2)"
+    )
+    node.query(
+        "INSERT INTO test_zero_copy.test_table_2 VALUES (toDate('2025-06-01'), 1), (toDate('2025-07-02'), 2)"
+    )
 
 
 cluster = ClickHouseCluster(__file__)
@@ -73,33 +77,27 @@ def test_drop_replica_zero_copy_locks(start_cluster):
     zk_path = "/clickhouse/zero_copy/zero_copy_s3"
     table_path = f"{zk_path}/10000000-0000-0000-0000-000000000001"
     part_path = f"{table_path}/202506_0_0_0"
-    check_children(
-        zk,
-        table_path,
-        ["202506_0_0_0", "202507_0_0_0"]
-    )
+    check_children(zk, table_path, ["202506_0_0_0", "202507_0_0_0"])
 
     blob_path = zk.get_children(part_path)[0]
-    check_children(
-        zk,
-        f"{part_path}/{blob_path}",
-        ["node_1_1", "node_1_2"]
-    )
+    check_children(zk, f"{part_path}/{blob_path}", ["node_1_1", "node_1_2"])
 
     node_1_2.query("DETACH TABLE test_zero_copy.test_table_1")
-    node_1_2.query("SYSTEM DROP REPLICA 'node_1_2' FROM ZKPATH '/clickhouse/tables/test/shard1/replicated/test_table_1'")
-
-    check_children(
-        zk,
-        f"{part_path}/{blob_path}",
-        ["node_1_1"]
+    node_1_2.query(
+        "SYSTEM DROP REPLICA 'node_1_2' FROM ZKPATH '/clickhouse/tables/test/shard1/replicated/test_table_1'"
     )
+
+    check_children(zk, f"{part_path}/{blob_path}", ["node_1_1"])
 
     node_1_1.query("DETACH TABLE test_zero_copy.test_table_1")
-    node_1_1.query("SYSTEM DROP REPLICA 'node_1_1' FROM ZKPATH '/clickhouse/tables/test/shard1/replicated/test_table_1'")
-
-    check_children(
-        zk,
-        zk_path,
-        ["10000000-0000-0000-0000-000000000002"]
+    node_1_1.query(
+        "SYSTEM DROP REPLICA 'node_1_1' FROM ZKPATH '/clickhouse/tables/test/shard1/replicated/test_table_1'"
     )
+
+    check_children(zk, zk_path, ["10000000-0000-0000-0000-000000000002"])
+
+    node_1_1.query("DROP TABLE test_zero_copy.test_table_2 SYNC")
+    node_1_2.query("DROP TABLE test_zero_copy.test_table_2 SYNC")
+
+    check_children(zk, zk_path, [])
+
