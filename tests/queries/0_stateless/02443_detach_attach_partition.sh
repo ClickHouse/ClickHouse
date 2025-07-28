@@ -18,6 +18,7 @@ $CLICKHOUSE_CLIENT -q "
 
 function thread_detach()
 {
+    table_id=${1:$((RANDOM % 2))}
     while true; do
         $CLICKHOUSE_CLIENT -mn -q "ALTER TABLE alter_table$table_id DETACH PARTITION ID 'all'; SELECT sleep($RANDOM / 32000) format Null;" 2>/dev/null ||:
     done
@@ -53,10 +54,13 @@ function insert()
     fi
 }
 
-thread_detach & PID_1=$!
-thread_attach & PID_2=$!
-thread_detach & PID_3=$!
-thread_attach & PID_4=$!
+# Make sure that at least one thread for detach/attach thread per table is running.
+thread_detach 0 &
+thread_attach 0 &
+thread_detach 1 &
+thread_attach 1 &
+thread_detach   &
+thread_attach   &
 
 function do_inserts()
 {
@@ -69,7 +73,8 @@ $CLICKHOUSE_CLIENT -q "SELECT '$CLICKHOUSE_DATABASE', 'begin inserts'"
 do_inserts 2>&1| grep -Fa "Exception: " | grep -Fv "was cancelled by concurrent ALTER PARTITION"
 $CLICKHOUSE_CLIENT -q "SELECT '$CLICKHOUSE_DATABASE', 'end inserts'"
 
-kill -TERM $PID_1 && kill -TERM $PID_2 && kill -TERM $PID_3 && kill -TERM $PID_4
+# Kill detach/attach threads at once
+jobs -p | xargs --no-run-if-empty --max-args=10 --max-procs=1 kill -TERM
 wait
 
 $CLICKHOUSE_CLIENT -q "SELECT '$CLICKHOUSE_DATABASE', 'threads finished'"
