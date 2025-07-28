@@ -455,7 +455,7 @@ bool MergeTreeIndexConditionVectorSimilarity::alwaysUnknownOrTrue() const
     return false;
 }
 
-std::vector<UInt64> MergeTreeIndexConditionVectorSimilarity::calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule_) const
+NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule_) const
 {
     if (!parameters)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected vector_search_parameters to be set");
@@ -483,25 +483,23 @@ std::vector<UInt64> MergeTreeIndexConditionVectorSimilarity::calculateApproximat
     if (!search_result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index. Error: {}", search_result.error.release());
 
-    std::vector<USearchIndex::vector_key_t> neighbors(search_result.size()); /// indexes of vectors which were closest to the reference vector
-    search_result.dump_to(neighbors.data());
-
-    std::sort(neighbors.begin(), neighbors.end());
-
-    /// Duplicates should in theory not be possible but who knows ...
-    const bool has_duplicates = std::adjacent_find(neighbors.begin(), neighbors.end()) != neighbors.end();
-    if (has_duplicates)
-#ifndef NDEBUG
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Usearch returned duplicate row numbers");
-#else
-        neighbors.erase(std::unique(neighbors.begin(), neighbors.end()), neighbors.end());
-#endif
+    NearestNeighbours result;
+    result.rows.resize(search_result.size());
+    if (parameters->return_distances)
+    {
+        result.distances = std::vector<float>(search_result.size());
+        search_result.dump_to(result.rows.data(), result.distances.value().data());
+    }
+    else
+    {
+        search_result.dump_to(result.rows.data());
+    }
 
     ProfileEvents::increment(ProfileEvents::USearchSearchCount);
     ProfileEvents::increment(ProfileEvents::USearchSearchVisitedMembers, search_result.visited_members);
     ProfileEvents::increment(ProfileEvents::USearchSearchComputedDistances, search_result.computed_distances);
 
-    return neighbors;
+    return result;
 }
 
 MergeTreeIndexVectorSimilarity::MergeTreeIndexVectorSimilarity(

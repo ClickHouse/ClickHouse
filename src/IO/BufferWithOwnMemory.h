@@ -139,6 +139,8 @@ private:
     }
 };
 
+Memory() -> Memory<Allocator<false>>;
+
 
 /** Buffer that could own its working memory.
   * Template parameter: ReadBuffer or WriteBuffer

@@ -1539,7 +1539,7 @@ String MinIOIntegration::getConnectionURL(const bool client)
 
 void MinIOIntegration::setEngineDetails(RandomGenerator &, const SQLBase & b, const String & tname, TableEngine * te)
 {
-    te->add_params()->set_svalue(getConnectionURL(false) + "file" + tname.substr(1) + (b.isS3QueueEngine() ? "/*" : ""));
+    te->add_params()->set_svalue(getConnectionURL(false) + "file" + tname.substr(1) + (b.isS3QueueEngine() ? "/" : ""));
     te->add_params()->set_svalue(sc.user);
     te->add_params()->set_svalue(sc.password);
 }
