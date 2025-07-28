@@ -275,7 +275,7 @@ public:
 
     bool isDettached() const;
 
-    String getTablePath(const FuzzConfig & fc, const bool client) const;
+    String getTablePath(const FuzzConfig & fc, bool client) const;
 };
 
 struct SQLTable : SQLBase
@@ -318,7 +318,7 @@ public:
 
     String getTableName() const;
 
-    String getFullName(const bool setdbname) const;
+    String getFullName(bool setdbname) const;
 
     void setName(ExprSchemaTable * est, const bool setdbname) const { SQLTable::setName(est, setdbname, db, tname); }
 
