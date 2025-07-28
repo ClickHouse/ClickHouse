@@ -51,6 +51,9 @@ struct ManifestFileEntry
     ManifestEntryStatus status;
     Int64 added_sequence_number;
 
+    Int64 snapshot_id;
+    Int64 schema_id;
+
     FileEntry file;
     DB::Row partition_key_value;
     std::unordered_map<Int32, ColumnInfo> columns_infos;
@@ -92,7 +95,8 @@ public:
         const DB::IcebergSchemaProcessor & schema_processor,
         Int64 inherited_sequence_number,
         const std::string & table_location,
-        DB::ContextPtr context);
+        DB::ContextPtr context,
+        std::unordered_map<Int64, Int32> schema_id_by_snapshot);
 
     const std::vector<ManifestFileEntry> & getFiles() const;
 

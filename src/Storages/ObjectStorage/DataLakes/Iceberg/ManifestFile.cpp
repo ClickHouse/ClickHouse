@@ -122,7 +122,8 @@ ManifestFileContent::ManifestFileContent(
     const IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number,
     const String & table_location,
-    DB::ContextPtr context)
+    DB::ContextPtr context,
+    std::unordered_map<Int64, Int32> schema_id_by_snapshot)
 {
     for (const auto & column_name : {f_status, f_data_file})
     {
@@ -182,6 +183,14 @@ ManifestFileContent::ManifestFileContent(
                     ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: positional and equality deletes are not supported");
         }
         const auto status = ManifestEntryStatus(manifest_file_deserializer.getValueFromRowByName(i, f_status, TypeIndex::Int32).safeGet<UInt64>());
+        const auto snapshot_id = manifest_file_deserializer.getValueFromRowByName(i, f_snapshot_id, TypeIndex::Int64).safeGet<Int64>();
+
+        const auto schema_id_it = schema_id_by_snapshot.find(snapshot_id);
+        if (schema_id_it == schema_id_by_snapshot.end())
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Cannot find schema id for snapshot id {} in manifest file", snapshot_id);
+        const auto schema_id = schema_id_by_snapshot.at(snapshot_id);
+
 
         const auto file_path = getProperFilePathFromMetadataInfo(manifest_file_deserializer.getValueFromRowByName(i, c_data_file_file_path, TypeIndex::String).safeGet<String>(), common_path, table_location);
 
@@ -323,8 +332,31 @@ ManifestFileContent::ManifestFileContent(
                     break;
             }
         }
-        this->files.emplace_back(status, added_sequence_number, file, partition_key_value, columns_infos);
+        this->files.emplace_back(status, added_sequence_number, snapshot_id, schema_id, file, partition_key_value, columns_infos);
     }
+
+    std::vector<size_t> indices(files.size());
+    std::iota(indices.begin(), indices.end(), 0);
+
+    std::sort(
+        indices.begin(),
+        indices.end(),
+        [&](size_t i, size_t j)
+        {
+            if (files[i].snapshot_id != files[j].snapshot_id)
+            {
+                return files[i].snapshot_id < files[j].snapshot_id;
+            }
+            return i < j;
+        });
+
+    std::vector<ManifestFileEntry> sorted_files;
+    sorted_files.reserve(files.size());
+    for (const auto & index : indices)
+    {
+        sorted_files.emplace_back(std::move(files[index]));
+    }
+    files = std::move(sorted_files);
 }
 
 bool ManifestFileContent::hasPartitionKey() const

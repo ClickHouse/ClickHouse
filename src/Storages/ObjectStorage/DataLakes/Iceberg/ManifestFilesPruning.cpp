@@ -85,7 +85,7 @@ std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManife
             continue;
 
         /// We take data type from manifest schema, not latest type
-        auto column_from_manifest = schema_processor.tryGetFieldCharacteristics(manifest_schema_id, column_id);
+        auto column_from_manifest = schema_processor.tryGetFieldCharacteristics(initial_schema_id, column_id);
         if (!column_from_manifest.has_value())
             continue;
 
@@ -104,12 +104,13 @@ std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManife
 ManifestFilesPruner::ManifestFilesPruner(
     const DB::IcebergSchemaProcessor & schema_processor_,
     Int32 current_schema_id_,
+    Int32 initial_schema_id_,
     const DB::ActionsDAG * filter_dag,
     const ManifestFileContent & manifest_file,
     DB::ContextPtr context)
     : schema_processor(schema_processor_)
     , current_schema_id(current_schema_id_)
-    , manifest_schema_id(manifest_file.getSchemaId())
+    , initial_schema_id(initial_schema_id_)
 {
     std::unique_ptr<ActionsDAG> transformed_dag;
     std::vector<Int32> used_columns_in_filter;
@@ -135,7 +136,7 @@ ManifestFilesPruner::ManifestFilesPruner(
                 if (!bounded_colums.contains(used_column_id))
                     continue;
 
-                NameAndTypePair name_and_type = schema_processor.getFieldCharacteristics(manifest_schema_id, used_column_id);
+                NameAndTypePair name_and_type = schema_processor.getFieldCharacteristics(initial_schema_id, used_column_id);
                 name_and_type.name = DB::backQuote(DB::toString(used_column_id));
 
                 ExpressionActionsPtr expression = std::make_shared<ExpressionActions>(
@@ -173,7 +174,7 @@ bool ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
 
     for (const auto & [column_id, key_condition] : min_max_key_conditions)
     {
-        std::optional<NameAndTypePair> name_and_type = schema_processor.tryGetFieldCharacteristics(manifest_schema_id, column_id);
+        std::optional<NameAndTypePair> name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, column_id);
 
         /// There is no such column in this manifest file
         if (!name_and_type.has_value())
@@ -182,7 +183,7 @@ bool ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
                 &Poco::Logger::get("ManifestFilesPruning::canBePruned"),
                 "Column with id {} is not found in manifest file with schema id {}, so it cannot be pruned",
                 column_id,
-                manifest_schema_id);
+                initial_schema_id);
             continue;
         }
 

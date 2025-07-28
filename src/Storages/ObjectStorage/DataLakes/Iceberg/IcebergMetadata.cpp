@@ -665,14 +665,12 @@ ManifestFilePtr IcebergMetadata::getManifestFile(ContextPtr local_context, const
 
         auto buffer = StorageObjectStorageSource::createReadBuffer(manifest_object_info, object_storage, local_context, log, read_settings);
         AvroForIcebergDeserializer manifest_file_deserializer(std::move(buffer), filename, getFormatSettings(local_context));
-        auto snapshot_id = manifest_file_deserializer.getSnapshotId(); //TODO
-        auto schema_id = schema_id_by_snapshot[snapshot_id];
+        // auto snapshot_id = manifest_file_deserializer.getSnapshotId(); //TODO
+        // auto schema_id = schema_id_by_snapshot[snapshot_id];
         return std::make_shared<ManifestFileContent>(
             manifest_file_deserializer,
             format_version,
             configuration_ptr->getPath(),
-            schema_id,
-            schema_processor.getIcebergTableSchemaById(schema_id),
             schema_processor,
             inherited_sequence_number,
             table_location,
@@ -705,19 +703,22 @@ Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag, ContextPtr 
         if (!relevant_snapshot)
             return {};
 
+
         for (const auto & manifest_list_entry : relevant_snapshot->manifest_list_entries)
         {
-            auto manifest_file_ptr = getManifestFile(local_context, manifest_list_entry.manifest_file_path, manifest_list_entry.added_sequence_number);
-            ManifestFilesPruner pruner(
-                schema_processor, relevant_snapshot_schema_id,
-                use_partition_pruning ? filter_dag : nullptr,
-                *manifest_file_ptr, local_context);
+            Int64 previous_entry_snapshot = -1;
+            std::optional<ManifestFilesPruner> pruner;
+            auto manifest_file_ptr
+                = getManifestFile(local_context, manifest_list_entry.manifest_file_path, manifest_list_entry.added_sequence_number);
             const auto & data_files_in_manifest = manifest_file_ptr->getFiles();
             for (const auto & manifest_file_entry : data_files_in_manifest)
             {
+                pruner = std::optional{ManifestFilesPruner(
+                    schema_processor, relevant_snapshot_schema_id, filter_dag ? filter_dag : nullptr, *manifest_file_ptr, local_context)};
+
                 if (manifest_file_entry.status != ManifestEntryStatus::DELETED)
                 {
-                    if (!pruner.canBePruned(manifest_file_entry))
+                    if (!pruner->canBePruned(manifest_file_entry))
                     {
                         if (std::holds_alternative<DataFileEntry>(manifest_file_entry.file))
                             data_files.push_back(std::get<DataFileEntry>(manifest_file_entry.file).file_name);
