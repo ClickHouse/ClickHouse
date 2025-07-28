@@ -116,11 +116,12 @@ def create_table(
     schema=DEFAULT_SCHEMA,
     partition_spec=DEFAULT_PARTITION_SPEC,
     sort_order=DEFAULT_SORT_ORDER,
+    dir="data"
 ):
     return catalog.create_table(
         identifier=f"{namespace}.{table}",
         schema=schema,
-        location=f"s3://warehouse-glue/{table}",
+        location=f"s3://warehouse-glue/{dir}",
         partition_spec=partition_spec,
         sort_order=sort_order,
     )
@@ -526,7 +527,7 @@ def test_insert(started_cluster):
     catalog = load_catalog_impl(started_cluster)
     catalog.create_namespace(root_namespace)
 
-    create_table(catalog, root_namespace, table_name, DEFAULT_SCHEMA, PartitionSpec())
+    create_table(catalog, root_namespace, table_name, DEFAULT_SCHEMA, PartitionSpec(), DEFAULT_SORT_ORDER, table_name)
 
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
     node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (NULL, 'AAPL', 193.24, 193.31, tuple('bot'), NULL);", settings={"allow_experimental_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
