@@ -205,15 +205,16 @@ public:
 
     std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context) const override
     {
-        auto catalog_parameters = DataLake::CatalogSettings{
-            .storage_endpoint = (*settings)[DataLakeStorageSetting::iceberg_storage_endpoint].value,
-            .aws_access_key_id = (*settings)[DataLakeStorageSetting::iceberg_aws_access_key_id].value,
-            .aws_secret_access_key = (*settings)[DataLakeStorageSetting::iceberg_aws_secret_access_key].value,
-            .region = (*settings)[DataLakeStorageSetting::iceberg_region].value,
-        };
 #if USE_AWS_S3 && USE_AVRO
         if ((*settings)[DataLakeStorageSetting::iceberg_catalog_type].value == DatabaseDataLakeCatalogType::GLUE)
         {
+            auto catalog_parameters = DataLake::CatalogSettings{
+                .storage_endpoint = (*settings)[DataLakeStorageSetting::iceberg_storage_endpoint].value,
+                .aws_access_key_id = (*settings)[DataLakeStorageSetting::iceberg_aws_access_key_id].value,
+                .aws_secret_access_key = (*settings)[DataLakeStorageSetting::iceberg_aws_secret_access_key].value,
+                .region = (*settings)[DataLakeStorageSetting::iceberg_region].value,
+            };
+
             return std::make_shared<DataLake::GlueCatalog>(
                 (*settings)[DataLakeStorageSetting::iceberg_catalog_url].value,
                 context,
