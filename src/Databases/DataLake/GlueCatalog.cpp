@@ -483,7 +483,7 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
     return false;
 }
 
-void GlueCatalog::createDatabaseIfNotExists(const String & namespace_name) const
+void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name) const
 {
     Aws::Glue::Model::CreateDatabaseRequest create_request;
     Aws::Glue::Model::DatabaseInput db_input;
@@ -495,7 +495,7 @@ void GlueCatalog::createDatabaseIfNotExists(const String & namespace_name) const
 
 void GlueCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path) const
 {
-    createDatabaseIfNotExists(namespace_name);
+    createNamespaceIfNotExists(namespace_name);
 
     Aws::Glue::Model::CreateTableRequest request;
     request.SetDatabaseName(namespace_name);
