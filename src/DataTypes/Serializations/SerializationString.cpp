@@ -178,19 +178,21 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
 
         if (size)
         {
+            static constexpr size_t copy_size = 16 * UNROLL_TIMES;
+
             /// An optimistic branch in which more efficient copying is possible.
-            if (offset + 16 * UNROLL_TIMES <= data.capacity() && istr.position() + size + 16 * UNROLL_TIMES <= istr.buffer().end())
+            if (offset + copy_size <= data.capacity() && istr.position() + size + copy_size <= istr.buffer().end())
             {
                 const char * src_pos = istr.position();
-                const char * src_end = src_pos + (size + (16 * UNROLL_TIMES - 1)) / 16 / UNROLL_TIMES * UNROLL_TIMES;
+                const char * src_end = src_pos + (size + (copy_size - 1)) / copy_size * copy_size;
                 auto * dst_pos = &data[offset - size - 1];
 
                 while (src_pos < src_end)
                 {
-                    __builtin_memcpy(dst_pos, src_pos, 16 * UNROLL_TIMES);
+                    __builtin_memcpy(dst_pos, src_pos, copy_size);
 
-                    src_pos += 16 * UNROLL_TIMES;
-                    dst_pos += 16 * UNROLL_TIMES;
+                    src_pos += copy_size;
+                    dst_pos += copy_size;
                 }
 
                 istr.position() += size;
