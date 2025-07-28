@@ -22,11 +22,13 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ObjectInfoWithPartitionColumns.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/HivePartitioningUtils.h>
 #include <Common/parseGlobs.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheKey.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Context.h>
 
 #include <fmt/ranges.h>
@@ -130,6 +132,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     const ActionsDAG::Node * predicate,
     const std::optional<ActionsDAG> & filter_actions_dag,
     const NamesAndTypesList & virtual_columns,
+    const NamesAndTypesList & hive_columns,
     ObjectInfos * read_keys,
     std::function<void(FileProgress)> file_progress_callback,
     bool ignore_archive_globs,
@@ -147,17 +150,13 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         return distributed_iterator;
     }
 
-    if (configuration->isNamespaceWithGlobs())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Expression can not have wildcards inside {} name", configuration->getNamespaceType());
-
     std::unique_ptr<IObjectIterator> iterator;
-    if (configuration->isPathWithGlobs())
+    const auto & reading_path = configuration->getPathForRead();
+    if (reading_path.hasGlobs())
     {
-        auto path = configuration->getPath();
-        if (hasExactlyOneBracketsExpansion(path))
+        if (hasExactlyOneBracketsExpansion(reading_path.path))
         {
-            auto paths = expandSelectionGlob(configuration->getPath());
+            auto paths = expandSelectionGlob(reading_path.path);
             iterator = std::make_unique<KeysIterator>(
                 paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
                 query_settings.ignore_non_existent_file, skip_object_metadata, file_progress_callback);
@@ -165,7 +164,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         else
             /// Iterate through disclosed globs and make a source for each file
             iterator = std::make_unique<GlobIterator>(
-                object_storage, configuration, predicate, virtual_columns,
+                object_storage, configuration, predicate, virtual_columns, hive_columns,
                 local_context, is_archive ? nullptr : read_keys, query_settings.list_object_keys_size,
                 query_settings.throw_on_zero_files_match, file_progress_callback);
     }
@@ -181,22 +180,36 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     {
         Strings paths;
 
-        auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
+        auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, hive_columns);
         if (filter_dag)
         {
-            auto keys = configuration->getPaths();
+            const auto configuration_paths = configuration->getPaths();
+
+            std::vector<std::string> keys;
+            keys.reserve(configuration_paths.size());
+
+            for (const auto & path: configuration_paths)
+            {
+                keys.emplace_back(path.path);
+            }
+
             paths.reserve(keys.size());
             for (const auto & key : keys)
                 paths.push_back(fs::path(configuration->getNamespace()) / key);
 
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context);
             auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-            VirtualColumnUtils::filterByPathOrFile(keys, paths, actions, virtual_columns, local_context);
+            VirtualColumnUtils::filterByPathOrFile(keys, paths, actions, virtual_columns, hive_columns, local_context);
             paths = keys;
         }
         else
         {
-            paths = configuration->getPaths();
+            const auto configuration_paths = configuration->getPaths();
+            paths.reserve(configuration_paths.size());
+            for (const auto & path: configuration_paths)
+            {
+                paths.emplace_back(path.path);
+            }
         }
 
         iterator = std::make_unique<KeysIterator>(
@@ -253,20 +266,33 @@ Chunk StorageObjectStorageSource::generate()
             const auto & filename = object_info->getFileName();
             std::string full_path = object_info->getPath();
 
-            if (!full_path.starts_with(configuration->getPath()))
-                full_path = fs::path(configuration->getPath()) / object_info->getPath();
+            const auto reading_path = configuration->getPathForRead().path;
+
+            if (!full_path.starts_with(reading_path))
+                full_path = fs::path(reading_path) / object_info->getPath();
 
             chassert(object_info->metadata);
+
+            const auto path = getUniqueStoragePathIdentifier(*configuration, *object_info, false);
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
                 read_from_format_info.requested_virtual_columns,
-                {.path = getUniqueStoragePathIdentifier(*configuration, *object_info, false),
+                {.path = path,
                  .size = object_info->isArchive() ? object_info->fileSizeInArchive() : object_info->metadata->size_bytes,
                  .filename = &filename,
                  .last_modified = object_info->metadata->last_modified,
                  .etag = &(object_info->metadata->etag)},
                 read_context);
+
+            // The order is important, it must be added after virtual columns..
+            if (!read_from_format_info.hive_partition_columns_to_read_from_file_path.empty())
+            {
+                HivePartitioningUtils::addPartitionColumnsToChunk(
+                    chunk,
+                    read_from_format_info.hive_partition_columns_to_read_from_file_path,
+                    path);
+            }
 
             if (chunk_size && chunk.hasColumns())
             {
@@ -692,6 +718,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     ConfigurationPtr configuration_,
     const ActionsDAG::Node * predicate,
     const NamesAndTypesList & virtual_columns_,
+    const NamesAndTypesList & hive_columns_,
     ContextPtr context_,
     ObjectInfos * read_keys_,
     size_t list_object_keys_size,
@@ -701,31 +728,29 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     , object_storage(object_storage_)
     , configuration(configuration_)
     , virtual_columns(virtual_columns_)
+    , hive_columns(hive_columns_)
     , throw_on_zero_files_match(throw_on_zero_files_match_)
     , log(getLogger("GlobIterator"))
     , read_keys(read_keys_)
     , local_context(context_)
     , file_progress_callback(file_progress_callback_)
 {
-    if (configuration->isNamespaceWithGlobs())
+    const auto & reading_path = configuration->getPathForRead();
+    if (reading_path.hasGlobs())
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression can not have wildcards inside namespace name");
-    }
-    if (configuration->isPathWithGlobs())
-    {
-        const auto key_with_globs = configuration_->getPath();
-        const auto key_prefix = configuration->getPathWithoutGlobs();
+        const auto & key_with_globs = reading_path;
+        const auto key_prefix = reading_path.cutGlobs(configuration->supportsPartialPathPrefix());
 
         object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size);
 
-        matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs));
+        matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs.path));
         if (!matcher->ok())
         {
-            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", key_with_globs, matcher->error());
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", key_with_globs.path, matcher->error());
         }
 
-        recursive = key_with_globs == "/**";
-        if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns))
+        recursive = key_with_globs.path == "/**";
+        if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, hive_columns))
         {
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, getContext());
             filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag));
@@ -736,7 +761,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Using glob iterator with path without globs is not allowed (used path: {})",
-            configuration->getPath());
+            reading_path.path);
     }
 }
 
@@ -761,7 +786,7 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
     {
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
                         "Can not match any files with path {}",
-                        configuration->getPath());
+                        configuration->getPathForRead().path);
     }
     first_iteration = false;
     return object_info;
@@ -801,7 +826,7 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
                 for (const auto & object_info : new_batch)
                     paths.push_back(getUniqueStoragePathIdentifier(*configuration, *object_info, false));
 
-                VirtualColumnUtils::filterByPathOrFile(new_batch, paths, filter_expr, virtual_columns, local_context);
+                VirtualColumnUtils::filterByPathOrFile(new_batch, paths, filter_expr, virtual_columns, hive_columns, local_context);
 
                 LOG_TEST(log, "Filtered files: {} -> {}", paths.size(), new_batch.size());
             }

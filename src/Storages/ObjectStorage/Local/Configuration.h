@@ -45,8 +45,7 @@ public:
     std::string getSignatures(bool with_structure = true) const { return with_structure ? signatures_with_structure : signatures_without_structure; }
     size_t getMaxNumberOfArguments(bool with_structure = true) const { return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure; }
 
-    Path getPath() const override { return path; }
-    void setPath(const Path & path_) override { path = path_; }
+    Path getRawPath() const override { return path; }
 
     const Paths & getPaths() const override { return paths; }
     void setPaths(const Paths & paths_) override { paths = paths_; }
