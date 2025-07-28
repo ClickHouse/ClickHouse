@@ -2636,6 +2636,7 @@ message ClusterFunc {
 message MergeTreeIndexFunc {
     required ExprSchemaTable est = 1;
     optional bool with_marks = 2;
+    optional bool with_minmax = 3;
 }
 
 message GenerateRandomFunc {

@@ -2244,6 +2244,11 @@ CONV_FN(MergeTreeIndexFunc, mfunc)
         ret += ", with_marks = ";
         ret += mfunc.with_marks() ? "true" : "false";
     }
+    if (mfunc.has_with_minmax())
+    {
+        ret += ", with_minmax = ";
+        ret += mfunc.with_minmax() ? "true" : "false";
+    }
     ret += ")";
 }
 

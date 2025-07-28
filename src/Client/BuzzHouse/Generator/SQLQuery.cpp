@@ -933,7 +933,7 @@ bool StatementGenerator::joinedTableOrFunction(
             < (derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf + cluster_udf
                + merge_index_udf + 1))
     {
-        SQLRelation rel(rel_name);
+        std::vector<SQLRelationCol> marks;
         TableFunction * tf = tof->mutable_tfunc();
         MergeTreeIndexFunc * mtudf = tf->mutable_mtindex();
         const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_mergetree_table_lambda));
@@ -944,10 +944,24 @@ bool StatementGenerator::joinedTableOrFunction(
         {
             mtudf->set_with_marks(rg.nextBool());
         }
+        if (rg.nextBool())
+        {
+            mtudf->set_with_minmax(rg.nextBool());
+        }
+        addTableRelation(rg, true, rel_name, tt);
+        SQLRelation & rel = this->levels.at(this->current_level).rels.back();
+
+        for (const auto & entry : rel.cols)
+        {
+            DB::Strings npath = entry.path;
+
+            npath.push_back("mark");
+            marks.emplace_back(SQLRelationCol(rel_name, std::move(npath)));
+        }
+        rel.cols.insert(rel.cols.end(), marks.begin(), marks.end());
         rel.cols.emplace_back(SQLRelationCol(rel_name, {"part_name"}));
         rel.cols.emplace_back(SQLRelationCol(rel_name, {"mark_number"}));
         rel.cols.emplace_back(SQLRelationCol(rel_name, {"rows_in_granule"}));
-        this->levels[this->current_level].rels.emplace_back(rel);
     }
     else if (
         loop_udf
