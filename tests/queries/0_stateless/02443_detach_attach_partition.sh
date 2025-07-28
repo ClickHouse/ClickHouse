@@ -83,6 +83,7 @@ wait_for_queries_to_finish 600
 $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA alter_table0"
 $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA alter_table1"
 query_with_retry "ALTER TABLE alter_table0 ATTACH PARTITION ID 'all'" 2>/dev/null;
+# Why this is done without retry, but twice?
 $CLICKHOUSE_CLIENT -q "ALTER TABLE alter_table1 ATTACH PARTITION ID 'all'" 2>/dev/null
 $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA alter_table1"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE alter_table1 ATTACH PARTITION ID 'all'"
