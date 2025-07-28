@@ -352,7 +352,7 @@ INDEX nested_2_index col.nested_col2 TYPE bloom_filter
 Syntax: `minmax`
 
 Stores for each index granule the minimum and maximum values of an expression.
-(If the expression is of type `tuple`, it stores the minumum/maximum for each tuple element.)
+(If the expression is of type `tuple`, it stores the minimum and maximum for each tuple element.)
 
 #### Set {#set}
 
