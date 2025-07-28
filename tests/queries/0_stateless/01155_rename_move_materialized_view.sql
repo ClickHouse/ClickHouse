@@ -1,5 +1,6 @@
 -- Tags: no-parallel
 
+SET enable_analyzer = 1;
 SET send_logs_level = 'fatal';
 SET prefer_localhost_replica = 1;
 
