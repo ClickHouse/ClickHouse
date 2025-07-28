@@ -39,9 +39,6 @@ namespace CurrentMetrics
     extern const Metric FormatParsingThreads;
     extern const Metric FormatParsingThreadsActive;
     extern const Metric FormatParsingThreadsScheduled;
-    extern const Metric MergeTreePatchPartsReadingThreads;
-    extern const Metric MergeTreePatchPartsReadingThreadsActive;
-    extern const Metric MergeTreePatchPartsReadingThreadsScheduled;
 }
 
 namespace DB

@@ -246,9 +246,6 @@
     M(MergeTreeSubcolumnsReaderThreads, "Number of threads in the thread pool used for subcolumns reading in MergeTree.") \
     M(MergeTreeSubcolumnsReaderThreadsActive, "Number of threads in the thread pool used for subcolumns reading in MergeTree running a task.") \
     M(MergeTreeSubcolumnsReaderThreadsScheduled, "Number of queued or active jobs in the thread pool used for subcolumns reading in MergeTree.") \
-    M(MergeTreePatchPartsReadingThreads, "Number of threads in the thread pool used for reading patch parts in MergeTree.") \
-    M(MergeTreePatchPartsReadingThreadsActive, "Number of threads in the thread pool used for reading patch parts in MergeTree running a task.") \
-    M(MergeTreePatchPartsReadingThreadsScheduled, "Number of queued or active jobs in the thread pool used for reading patch parts in MergeTree.") \
     M(FormatParsingThreads, "Number of threads in the thread pool used for parsing input.") \
     M(FormatParsingThreadsActive, "Number of threads in the thread pool used for parsing input running a task.") \
     M(FormatParsingThreadsScheduled, "Number of queued or active jobs in the thread pool used for parsing input.") \
