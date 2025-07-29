@@ -160,6 +160,12 @@ class Result(MetaClasses.Serializable):
     def is_completed(self):
         return self.status not in (Result.Status.PENDING, Result.Status.RUNNING)
 
+    def is_skipped(self):
+        return self.status in (Result.Status.SKIPPED,)
+
+    def is_dropped(self):
+        return self.status in (Result.Status.DROPPED,)
+
     def is_running(self):
         return self.status in (Result.Status.RUNNING,)
 
@@ -335,12 +341,13 @@ class Result(MetaClasses.Serializable):
         assert self.results, "BUG?"
         for i, result_ in enumerate(self.results):
             if result_.name == result.name:
-                if result_.is_completed() and i > 0:
-                    # i = 0 - it's a current job's result - must be always updated
-                    # i > 0 and result_.is_completed() - job was skipped in workflow configuration by user' hook
+                if result_.is_skipped():
+                    # job was skipped in workflow configuration by a user' hook
                     print(
-                        f"NOTE: Job [{result.name}] has completed status [{result_.status}] - do not escalate status to dropped"
+                        f"NOTE: Job [{result.name}] has completed status [{result_.status}] - do not switch status to [{result.status}]"
                     )
+                    if not result.is_dropped():
+                        print(f"ERROR: Unexpected new result status [{result.status}]")
                     continue
                 if drop_nested_results:
                     # self.results[i] = self._filter_out_ok_results(result)
