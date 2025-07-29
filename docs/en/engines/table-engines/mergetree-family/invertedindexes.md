@@ -41,7 +41,7 @@ CREATE TABLE tab
 (
     `key` UInt64,
     `str` String,
-    INDEX inv_idx(str) TYPE text(tokenizer = 'default|ngram|split|no_op' [, ngram_size = N] [, separators = []]) [GRANULARITY 64]
+    INDEX inv_idx(str) TYPE text(tokenizer = 'default|ngram|split|no_op' [, ngram_size = N] [, separators = []] [, segment_digestion_threshold_bytes = B]) [GRANULARITY 64]
 )
 ENGINE = MergeTree
 ORDER BY key
@@ -74,6 +74,24 @@ To do so, pass the separators in order of descending length.
 For example, with separators = `['%21', '%']` string `%21abc` would be tokenized as `['abc']`, whereas separators = `['%', '%21']` would tokenize to `['21ac']` (which is likely not what you wanted).
 :::
 
+<details markdown="1">
+
+<summary>Advanced settings</summary>
+
+Optional parameter `segment_digestion_threshold_bytes` parameter determines the byte size of index segments.
+
+- `segment_digestion_threshold_bytes = 0`: Unlimited size, a single segment is created for each index granule.
+- `segment_digestion_threshold_bytes = B`: A new segment is created every `B` bytes of text input.
+
+Default value: `0`.
+
+We do not recommend changing `segment_digestion_threshold_bytes`.
+The default value will work well in virtually all situations.
+The presence of more than one segment causes redundant data storage and slower full-text search queries.
+The only reason to provide a non-zero value (e.g. `256MB`) for `segment_digestion_threshold_bytes` is if you get out-of-memory exceptions during index creation.
+
+</details>
+
 Being a type of skipping index, text indexes can be dropped or added to a column after table creation:
 
 ```sql
@@ -97,11 +115,6 @@ SELECT * from tab WHERE hasToken(str, 'Hello');
 ```
 
 Like for other secondary indices, each column part has its own text index.
-Furthermore, each text index is internally divided into "segments".
-The existence and size of the segments are generally transparent to users but the segment size determines the memory consumption during index construction (e.g. when two parts are merged).
-Configuration parameter `max_digestion_size_per_segment` (default: 256 MB) controls the amount of data read from the underlying column before a new segment is created.
-The default value of the parameter provides a good balance between memory usage and performance for most use cases.
-Incrementing it raises the intermediate memory consumption for index construction but also improves lookup performance since fewer segments need to be checked on average to evaluate a query.
 
 ### Functions support {#functions-support}
 
