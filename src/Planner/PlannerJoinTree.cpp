@@ -610,6 +610,21 @@ std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(const StoragePtr & s
                 settings[Setting::max_parser_backtracks]);
             break;
         }
+
+        // Relax condition for cases where the current database of a user is different from the one in the context
+        // e.g. parallel replicas
+        if (table == storage_id.getTableName())
+        {
+            ParserExpression parser;
+            additional_filter_ast = parseQuery(
+                parser,
+                filter.data(),
+                filter.data() + filter.size(),
+                "additional filter",
+                settings[Setting::max_query_size],
+                settings[Setting::max_parser_depth],
+                settings[Setting::max_parser_backtracks]);
+        }
     }
 
     if (!additional_filter_ast)
