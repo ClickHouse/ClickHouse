@@ -860,10 +860,11 @@ bool StatementGenerator::joinedTableOrFunction(
         tt.setName(mtudf->mutable_est(), true);
         if (rg.nextBool())
         {
-            std::uniform_int_distribution<uint32_t> param_range(1, static_cast<uint32_t>(MergeTreeIndexFunc::MergeTreeIndexFuncParam_MAX));
-
-            mtudf->set_param(static_cast<MergeTreeIndexFunc_MergeTreeIndexFuncParam>(param_range(rg.generator)));
-            mtudf->set_param_value(rg.nextBool());
+            mtudf->set_with_marks(rg.nextBool());
+        }
+        if (rg.nextBool())
+        {
+            mtudf->set_with_minmax(rg.nextBool());
         }
         addTableRelation(rg, true, rel_name, tt);
         SQLRelation & rel = this->levels.at(this->current_level).rels.back();

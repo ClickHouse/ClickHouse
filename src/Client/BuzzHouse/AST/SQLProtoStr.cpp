@@ -2232,12 +2232,15 @@ CONV_FN(MergeTreeIndexFunc, mfunc)
 {
     ret += "mergeTreeIndex(";
     FlatExprSchemaTableToString(ret, mfunc.est(), "', '");
-    if (mfunc.has_param())
+    if (mfunc.has_with_marks())
     {
-        ret += ", ";
-        ret += MergeTreeIndexFunc_MergeTreeIndexFuncParam_Name(mfunc.param());
-        ret += " = ";
-        ret += mfunc.param_value() ? "true" : "false";
+        ret += ", with_marks = ";
+        ret += mfunc.with_marks() ? "true" : "false";
+    }
+    if (mfunc.has_with_minmax())
+    {
+        ret += ", with_minmax = ";
+        ret += mfunc.with_minmax() ? "true" : "false";
     }
     ret += ")";
 }
