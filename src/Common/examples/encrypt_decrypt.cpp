@@ -86,15 +86,9 @@ int main(int argc, char ** argv)
 
             zkutil::validateZooKeeperConfig(*bootstrap_configuration);
 
-            std::string path_str = bootstrap_configuration->getString("path", Coordination::DBMS_DEFAULT_PATH);
-            fs::path path(path_str);
-            fs::path preprocessed_configs_path("preprocessed_configs");
-            constexpr std::string config_name = "encrypt_decrypt.xml";
-            DB::ConfigProcessor::LoadedConfig loaded_config
-                = DB::ConfigProcessor::LoadedConfig{bootstrap_configuration, has_zk_includes, true, config_xml, config_name};
-            processor.savePreprocessedConfig(loaded_config, path_str, true);
             EncryptDecryptApplication app;
-            app.loadConfiguration((path / preprocessed_configs_path / config_name).string());
+            Poco::Util::LayeredConfiguration& conf = Poco::Util::Application::instance().config();
+            conf.add(bootstrap_configuration);
 
             auto zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(
                 *bootstrap_configuration, bootstrap_configuration->has("zookeeper") ? "zookeeper" : "keeper");
