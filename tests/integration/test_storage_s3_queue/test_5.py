@@ -1035,3 +1035,114 @@ def test_mv_settings(started_cluster, mode, limit):
             f"SELECT count() FROM system.parts WHERE table = '{dst_table_name}' AND level = 0"
         )
     )
+
+
+def test_detach_attach_table(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_detach_attach_table_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    mv_table_name = f"{table_name}_mv"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    format = "column1 Int32, column2 String"
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        format=format,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "polling_max_timeout_ms": 0,
+            "polling_min_timeout_ms": 0,
+        }
+    )
+
+    node.query(f"DETACH TABLE {table_name}")
+    node.query(f"ATTACH TABLE {table_name}")
+
+    num_rows = 10000
+    file_count = [0]
+    def insert():
+        table_name_suffix = f"{uuid.uuid4()}"
+        file_count[0] += 1
+        file_name = f"file_{table_name}_{table_name_suffix}_{file_count[0]}.csv"
+        s3_function = f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{files_path}/{file_name}', 'minio', '{minio_secret_key}')"
+        node.query(
+            f"INSERT INTO FUNCTION {s3_function} select number, randomString(100) FROM numbers({num_rows})"
+        )
+
+    insert()
+
+    create_mv(
+        node,
+        table_name,
+        dst_table_name,
+        mv_name=mv_table_name,
+        format=format,
+    )
+
+    def get_count():
+        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    for _ in range(20):
+        if num_rows == get_count():
+            break
+        time.sleep(1)
+
+    assert num_rows == get_count()
+
+
+def test_failed_startup(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_failed_startup_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    mv_table_name = f"{table_name}_mv"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    format = "column1 Int32, column2 String"
+    node.query(f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_startup")
+    assert "Failed to startup" in create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        format=format,
+        expect_error=True,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "polling_max_timeout_ms": 0,
+            "polling_min_timeout_ms": 0,
+        }
+    )
+    node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_startup")
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    try:
+        zk.get(f"{keeper_path}")
+        assert False
+    except NoNodeError:
+        pass
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        format=format,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "polling_max_timeout_ms": 0,
+            "polling_min_timeout_ms": 0,
+        }
+    )
+
+    assert len(zk.get(f"{keeper_path}")) > 0

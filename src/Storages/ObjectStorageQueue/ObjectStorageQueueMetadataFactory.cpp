@@ -48,7 +48,10 @@ void ObjectStorageQueueFactory::unregisterTable(const StorageID & storage, bool 
     if (it == storages.end())
     {
         if (if_exists)
+        {
+            LOG_DEBUG(getLogger("ObjectStorageQueueFactory"), "Table does not exist, nothing to unregister");
             return;
+        }
 
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -122,7 +125,8 @@ ObjectStorageQueueMetadataFactory & ObjectStorageQueueMetadataFactory::instance(
 ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFactory::getOrCreate(
     const std::string & zookeeper_path,
     ObjectStorageQueueMetadataPtr metadata,
-    const StorageID & storage_id)
+    const StorageID & storage_id,
+    bool & created_new_metadata)
 {
     std::lock_guard lock(mutex);
     auto it = metadata_by_path.find(zookeeper_path);
@@ -139,12 +143,16 @@ ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFa
         metadata_from_table.checkEquals(metadata_from_keeper);
     }
 
-    it->second.metadata->registerIfNot(storage_id, false);
+    it->second.metadata->registerNonActive(storage_id, created_new_metadata);
     *it->second.ref_count += 1;
     return it->second.metadata;
 }
 
-void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_path, const StorageID & storage_id, bool remove_metadata_if_no_registered)
+void ObjectStorageQueueMetadataFactory::remove(
+    const std::string & zookeeper_path,
+    const StorageID & storage_id,
+    bool is_drop,
+    bool keep_data_in_keeper)
 {
     std::lock_guard lock(mutex);
     auto it = metadata_by_path.find(zookeeper_path);
@@ -154,18 +162,22 @@ void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_pat
 
     *it->second.ref_count -= 1;
 
-    try
-    {
-        const auto registry_size = it->second.metadata->unregister(
-            storage_id,
-            /* active */ false,
-            remove_metadata_if_no_registered);
+    LOG_TRACE(
+        log, "Removed table {} (is drop: {}, keep data in keeper: {})",
+        storage_id.getNameForLogs(), is_drop, keep_data_in_keeper);
 
-        LOG_TRACE(log, "Remaining registry size: {}", registry_size);
-    }
-    catch (...)
+    if (is_drop)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        try
+        {
+            it->second.metadata->unregisterNonActive(
+                storage_id,
+                /* remove_metadata_if_no_registered */is_drop && !keep_data_in_keeper);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 
     if (*it->second.ref_count == 0)
