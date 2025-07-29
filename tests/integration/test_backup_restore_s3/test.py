@@ -914,6 +914,7 @@ def test_backup_restore_s3_plain(cluster):
         query_id=restore_query_id,
     )
     assert "READONLY" in err
+    instance.query("DROP TABLE IF EXISTS sample SYNC")
     instance.query("DROP TABLE sample_restored SYNC")
 
 
@@ -978,6 +979,8 @@ def test_backup_restore_with_s3_throttle(cluster, broken_s3):
             query_id=restore_query_id,
         )
     finally:
+        for i in range(0, table_count):
+            node.query(f"DROP TABLE IF EXISTS data_{i} SYNC")
         node.query(
             """
             DROP DATABASE IF EXISTS restored SYNC;
