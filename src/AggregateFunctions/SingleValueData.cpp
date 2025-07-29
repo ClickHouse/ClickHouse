@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 extern const int TOO_LARGE_STRING_SIZE;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -1312,82 +1313,6 @@ bool SingleValueDataString::setIfGreater(const SingleValueDataBase & other, Aren
     return false;
 }
 
-void SingleValueDataStringRef::insertResultInto(DB::IColumn & to, const DataTypePtr &) const
-{
-    if (has())
-        to.insertFrom(*column_ref, row_number);
-    else
-        assert_cast<ColumnString &>(to).insertDefault();
-}
-
-void SingleValueDataStringRef::write(WriteBuffer & /*buf*/, const ISerialization & /*serialization*/) const
-{
-    /// Not support
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SingleValueDataStringRef::write is not implemented");
-}
-
-void SingleValueDataStringRef::read(ReadBuffer & /*buf*/, const ISerialization & /*serialization*/, const DataTypePtr & /*type*/, Arena * /*arena*/)
-{
-    /// Not support
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SingleValueDataStringRef::read is not implemented");
-}
-
-bool SingleValueDataStringRef::isEqualTo(const DB::IColumn & column, size_t row_num) const
-{
-    return has()
-        && column_ref->compareAt(row_number, row_num, column, -1) == 0;
-}
-
-bool SingleValueDataStringRef::isEqualTo(const SingleValueDataBase & /*other*/) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SingleValueDataStringRef::isEqualTo is not implemented");
-}
-
-void SingleValueDataStringRef::set(const IColumn & column, size_t row_num, Arena * /*arena*/)
-{
-    column_ref.reset();
-    column_ref = column.getPtr();
-    row_number = row_num;
-}
-
-void SingleValueDataStringRef::set(const SingleValueDataBase & /*other*/, Arena * /*arena*/)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SingleValueDataString::set is not implemented");
-}
-
-bool SingleValueDataStringRef::setIfSmaller(const IColumn & column, size_t row_num, Arena * arena)
-{
-    if (!has()
-        || column_ref->compareAt(row_number, row_num, column, -1) > 0)
-    {
-        set(column, row_num, arena);
-        return true;
-    }
-    return false;
-}
-
-bool SingleValueDataStringRef::setIfSmaller(const SingleValueDataBase & /*other*/, Arena * /*arena*/)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SingleValueDataStringRef::setIfSmaller is not implemented");
-}
-
-
-bool SingleValueDataStringRef::setIfGreater(const IColumn & column, size_t row_num, Arena * arena)
-{
-    if (!has()
-        || column_ref->compareAt(row_number, row_num, column, -1) < 0)
-    {
-        set(column, row_num, arena);
-        return true;
-    }
-    return false;
-}
-
-bool SingleValueDataStringRef::setIfGreater(const SingleValueDataBase & /*other*/, Arena * /*arena*/)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SingleValueDataStringRef::setIfGreater is not implemented");
-}
-
 void SingleValueDataGeneric::insertResultInto(IColumn & to, const DataTypePtr & type) const
 {
     if (has())
@@ -1608,6 +1533,82 @@ bool SingleValueDataGenericWithColumn::setIfGreater(const SingleValueDataBase & 
         return true;
     }
     return false;
+}
+
+void SingleValueReference::insertResultInto(DB::IColumn & to, const DataTypePtr &) const
+{
+    if (has())
+        to.insertFrom(*column_ref, row_number);
+    else
+        assert_cast<ColumnString &>(to).insertDefault();
+}
+
+void SingleValueReference::write(WriteBuffer & /*buf*/, const ISerialization & /*serialization*/) const
+{
+    /// Not support
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SingleValueReference::write is not implemented");
+}
+
+void SingleValueReference::read(ReadBuffer & /*buf*/, const ISerialization & /*serialization*/, const DataTypePtr & /*type*/, Arena * /*arena*/)
+{
+    /// Not support
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SingleValueReference::read is not implemented");
+}
+
+bool SingleValueReference::isEqualTo(const DB::IColumn & column, size_t row_num) const
+{
+    return has()
+        && column_ref->compareAt(row_number, row_num, column, -1) == 0;
+}
+
+bool SingleValueReference::isEqualTo(const SingleValueDataBase & /*other*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SingleValueReference::isEqualTo is not implemented");
+}
+
+void SingleValueReference::set(const IColumn & column, size_t row_num, Arena * /*arena*/)
+{
+    column_ref.reset();
+    column_ref = column.getPtr();
+    row_number = row_num;
+}
+
+void SingleValueReference::set(const SingleValueDataBase & /*other*/, Arena * /*arena*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SingleValueDataString::set is not implemented");
+}
+
+bool SingleValueReference::setIfSmaller(const IColumn & column, size_t row_num, Arena * arena)
+{
+    if (!has()
+        || column_ref->compareAt(row_number, row_num, column, -1) > 0)
+    {
+        set(column, row_num, arena);
+        return true;
+    }
+    return false;
+}
+
+bool SingleValueReference::setIfSmaller(const SingleValueDataBase & /*other*/, Arena * /*arena*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SingleValueReference::setIfSmaller is not implemented");
+}
+
+
+bool SingleValueReference::setIfGreater(const IColumn & column, size_t row_num, Arena * arena)
+{
+    if (!has()
+        || column_ref->compareAt(row_number, row_num, column, -1) < 0)
+    {
+        set(column, row_num, arena);
+        return true;
+    }
+    return false;
+}
+
+bool SingleValueReference::setIfGreater(const SingleValueDataBase & /*other*/, Arena * /*arena*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SingleValueReference::setIfGreater is not implemented");
 }
 
 bool canUseFieldForValueData(const DataTypePtr & value_type)

@@ -1,5 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/SingleValueData.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <base/defines.h>
@@ -27,7 +28,7 @@ public:
     explicit AggregateFunctionAny(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionAny<Data>>(argument_types_, {}, argument_types_[0])
     {
-        if constexpr (!std::is_same_v<Data, SingleValueDataStringRef>)
+        if constexpr (!std::is_same_v<Data, SingleValueReference>)
             serialization = this->result_type->getDefaultSerialization();
     }
 
@@ -35,10 +36,14 @@ public:
 
     AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
     {
-        if constexpr (std::is_same_v<Data, SingleValueDataString>)
+        /// For types that are potentially large, we use SingleValueReference to avoid unnecessary memory allocations during merging final
+        /// Large types are: String, FixedString (N > 20), Array, Map, Object, Variant, Dynamic
+        const auto which = WhichDataType(argument_types[0]);
+        auto * type_fixed_string = typeid_cast<const DataTypeFixedString *>(argument_types[0].get());
+        if (which.isString() || which.isFixedString() || which.isArray() || which.isMap() || which.isObject() || which.isVariant()
+            || which.isDynamic() || (type_fixed_string && type_fixed_string->getN() > 20))
         {
-            /// Create a new aggregate function for merging final states using SingleValueDataStringRef.
-            return std::make_shared<AggregateFunctionAny<SingleValueDataStringRef>>(argument_types);
+            return std::make_shared<AggregateFunctionAny<SingleValueReference>>(argument_types);
         }
 
         return IAggregateFunction::getAggregateFunctionForMergingFinal();
@@ -126,23 +131,17 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        if constexpr (std::is_same_v<Data, SingleValueDataStringRef>)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Merge for SingleValueDataStringRef is not implemented");
         if (!this->data(place).has())
             this->data(place).set(this->data(rhs), arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        if constexpr (std::is_same_v<Data, SingleValueDataStringRef>)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialize for SingleValueDataStringRef is not implemented");
         this->data(place).write(buf, *serialization);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        if constexpr (std::is_same_v<Data, SingleValueDataStringRef>)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialize for SingleValueDataStringRef is not implemented");
         this->data(place).read(buf, *serialization, this->result_type, arena);
     }
 
@@ -215,7 +214,7 @@ public:
     explicit AggregateFunctionAnyLast(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionAnyLast<Data>>(argument_types_, {}, argument_types_[0])
     {
-        if constexpr (!std::is_same_v<Data, SingleValueDataStringRef>)
+        if constexpr (!std::is_same_v<Data, SingleValueReference>)
             serialization = this->result_type->getDefaultSerialization();
     }
 
@@ -223,10 +222,14 @@ public:
 
     AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
     {
-        if constexpr (std::is_same_v<Data, SingleValueDataString>)
+        /// For types that are potentially large, we use SingleValueReference to avoid unnecessary memory allocations during merging final
+        /// Large types are: String, FixedString (N >= 20), Array, Map, Object, Variant, Dynamic
+        const auto which = WhichDataType(argument_types[0]);
+        auto * type_fixed_string = typeid_cast<const DataTypeFixedString *>(argument_types[0].get());
+        if (which.isString() || which.isFixedString() || which.isArray() || which.isMap() || which.isObject() || which.isVariant()
+            || which.isDynamic() || (type_fixed_string && type_fixed_string->getN() >= 20))
         {
-            /// Create a new aggregate function for merging final states using SingleValueDataStringRef.
-            return std::make_shared<AggregateFunctionAnyLast<SingleValueDataStringRef>>(argument_types);
+            return std::make_shared<AggregateFunctionAnyLast<SingleValueReference>>(argument_types);
         }
 
         return IAggregateFunction::getAggregateFunctionForMergingFinal();
@@ -317,22 +320,16 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        if constexpr (std::is_same_v<Data, SingleValueDataStringRef>)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Merge for SingleValueDataStringRef is not implemented");
         this->data(place).set(this->data(rhs), arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        if constexpr (std::is_same_v<Data, SingleValueDataStringRef>)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialize for SingleValueDataStringRef is not implemented");
         this->data(place).write(buf, *serialization);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        if constexpr (std::is_same_v<Data, SingleValueDataStringRef>)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialize for SingleValueDataStringRef is not implemented");
         this->data(place).read(buf, *serialization, this->result_type, arena);
     }
 
