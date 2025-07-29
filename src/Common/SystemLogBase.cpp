@@ -2,7 +2,6 @@
 #include <Interpreters/CrashLog.h>
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
-#include <Interpreters/TransposedMetricLog.h>
 #include <Interpreters/LatencyLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
@@ -15,10 +14,6 @@
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/ObjectStorageQueueLog.h>
-#if CLICKHOUSE_CLOUD
-#include <Interpreters/DistributedCacheLog.h>
-#include <Interpreters/DistributedCacheServerLog.h>
-#endif
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/ZooKeeperLog.h>
@@ -26,7 +21,6 @@
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/BackupLog.h>
 #include <Interpreters/PeriodicLog.h>
-#include <Interpreters/DeadLetterQueue.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -314,16 +308,10 @@ void SystemLogBase<LogElement>::add(LogElement element)
 
 #define INSTANTIATE_SYSTEM_LOG_BASE(ELEMENT) template class SystemLogBase<ELEMENT>;
 SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_BASE)
-#if CLICKHOUSE_CLOUD
-    SYSTEM_LOG_ELEMENTS_CLOUD(INSTANTIATE_SYSTEM_LOG_BASE)
-#endif
 SYSTEM_PERIODIC_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_BASE)
 
 #define INSTANTIATE_SYSTEM_LOG_QUEUE(ELEMENT) template class SystemLogQueue<ELEMENT>;
 SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_QUEUE)
-#if CLICKHOUSE_CLOUD
-SYSTEM_LOG_ELEMENTS_CLOUD(INSTANTIATE_SYSTEM_LOG_QUEUE)
-#endif
 SYSTEM_PERIODIC_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_QUEUE)
 
 }

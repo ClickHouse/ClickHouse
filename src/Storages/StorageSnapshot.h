@@ -1,4 +1,5 @@
 #pragma once
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/VirtualColumnsDescription.h>
 
 namespace DB
@@ -8,9 +9,6 @@ class IStorage;
 class ICompressionCodec;
 
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
-
-struct StorageInMemoryMetadata;
-using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /// Snapshot of storage that fixes set columns that can be read in query.
 /// There are 3 sources of columns: regular columns from metadata,
@@ -66,6 +64,10 @@ struct StorageSnapshot
     /// Get column with type according to options for requested name.
     std::optional<NameAndTypePair> tryGetColumn(const GetColumnsOptions & options, const String & column_name) const;
     NameAndTypePair getColumn(const GetColumnsOptions & options, const String & column_name) const;
+
+    CompressionCodecPtr getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
+    CompressionCodecPtr getCodecOrDefault(const String & column_name) const;
+    ASTPtr getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
 
     /// Block with ordinary + materialized + aliases + virtuals + subcolumns.
     Block getSampleBlockForColumns(const Names & column_names) const;

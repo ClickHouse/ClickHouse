@@ -42,11 +42,9 @@
 
 #include <Core/Settings.h>
 
-#include <Planner/CollectSets.h>
-#include <Planner/CollectTableExpressionData.h>
 #include <Planner/PlannerActionsVisitor.h>
-
-#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Planner/CollectTableExpressionData.h>
+#include <Planner/CollectSets.h>
 
 #include <stack>
 
@@ -99,10 +97,10 @@ String dumpQueryPipeline(const QueryPlan & query_plan)
     return query_pipeline_buffer.str();
 }
 
-Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUnionMode union_mode)
+Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode union_mode)
 {
     size_t num_selects = queries_headers.size();
-    Block common_header = *queries_headers.front();
+    Block common_header = queries_headers.front();
     size_t columns_size = common_header.columns();
 
     for (size_t query_number = 1; query_number < num_selects; ++query_number)
@@ -116,12 +114,12 @@ Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUni
         else
             error_code = ErrorCodes::INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH;
 
-        if (queries_headers.at(query_number)->columns() != columns_size)
+        if (queries_headers.at(query_number).columns() != columns_size)
             throw Exception(error_code,
                             "Different number of columns in {} elements: {} and {}",
                             toString(union_mode),
                             common_header.dumpNames(),
-                            queries_headers[query_number]->dumpNames());
+                            queries_headers[query_number].dumpNames());
     }
 
     std::vector<const ColumnWithTypeAndName *> columns(num_selects);
@@ -129,37 +127,13 @@ Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUni
     for (size_t column_number = 0; column_number < columns_size; ++column_number)
     {
         for (size_t i = 0; i < num_selects; ++i)
-            columns[i] = &queries_headers[i]->getByPosition(column_number);
+            columns[i] = &queries_headers[i].getByPosition(column_number);
 
         ColumnWithTypeAndName & result_element = common_header.getByPosition(column_number);
         result_element = getLeastSuperColumn(columns);
     }
 
     return common_header;
-}
-
-void addConvertingToCommonHeaderActionsIfNeeded(
-    std::vector<std::unique_ptr<QueryPlan>> & query_plans,
-    const Block & union_common_header,
-    SharedHeaders & query_plans_headers)
-{
-    size_t queries_size = query_plans.size();
-    for (size_t i = 0; i < queries_size; ++i)
-    {
-        auto & query_node_plan = query_plans[i];
-        if (blocksHaveEqualStructure(*query_node_plan->getCurrentHeader(), union_common_header))
-            continue;
-
-        auto actions_dag = ActionsDAG::makeConvertingActions(
-            query_node_plan->getCurrentHeader()->getColumnsWithTypeAndName(),
-            union_common_header.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position);
-        auto converting_step = std::make_unique<ExpressionStep>(query_node_plan->getCurrentHeader(), std::move(actions_dag));
-        converting_step->setStepDescription("Conversion before UNION");
-        query_node_plan->addStep(std::move(converting_step));
-
-        query_plans_headers[i] = query_node_plan->getCurrentHeader();
-    }
 }
 
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node, bool set_subquery_cte_name)
@@ -254,19 +228,16 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
     return {limits, leaf_limits};
 }
 
-std::pair<ActionsDAG, CorrelatedSubtrees> buildActionsDAGFromExpressionNode(
-    const QueryTreeNodePtr & expression_node,
+ActionsDAG buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
     const ColumnsWithTypeAndName & input_columns,
-    const PlannerContextPtr & planner_context,
-    const ColumnNodePtrWithHashSet & correlated_columns_set,
-    bool use_column_identifier_as_action_node_name)
+    const PlannerContextPtr & planner_context)
 {
     ActionsDAG action_dag(input_columns);
-    PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set, use_column_identifier_as_action_node_name);
-    auto [expression_dag_index_nodes, correlated_subtrees] = actions_visitor.visit(action_dag, expression_node);
+    PlannerActionsVisitor actions_visitor(planner_context);
+    auto expression_dag_index_nodes = actions_visitor.visit(action_dag, expression_node);
     action_dag.getOutputs() = std::move(expression_dag_index_nodes);
 
-    return std::make_pair(std::move(action_dag), std::move(correlated_subtrees));
+    return action_dag;
 }
 
 bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescription & full)
@@ -506,10 +477,8 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
 
     ActionsDAG filter_actions_dag;
 
-    ColumnNodePtrWithHashSet empty_correlated_columns_set;
-    PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
-    auto [expression_nodes, correlated_subtrees] = actions_visitor.visit(filter_actions_dag, filter_query_tree);
-    correlated_subtrees.assertEmpty("in row-policy and additional table filters");
+    PlannerActionsVisitor actions_visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
+    auto expression_nodes = actions_visitor.visit(filter_actions_dag, filter_query_tree);
     if (expression_nodes.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Filter actions must return single output node. Actual {}",
@@ -588,40 +557,6 @@ std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node)
         return win_func->getDefaultFrame();
     }
     return {};
-}
-
-ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate)
-{
-    /// Parts of predicate in case predicate is conjunction (or just predicate itself).
-    ActionsDAG::NodeRawConstPtrs conjuncts;
-    {
-        std::vector<const ActionsDAG::Node *> stack;
-        std::unordered_set<const ActionsDAG::Node *> visited_nodes;
-        stack.push_back(predicate);
-        visited_nodes.insert(predicate);
-        while (!stack.empty())
-        {
-            const auto * node = stack.back();
-            stack.pop_back();
-            bool is_conjunction = node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and";
-            if (is_conjunction)
-            {
-                for (const auto & child : node->children)
-                {
-                    if (!visited_nodes.contains(child))
-                    {
-                        visited_nodes.insert(child);
-                        stack.push_back(child);
-                    }
-                }
-            }
-            else if (node->type == ActionsDAG::ActionType::ALIAS)
-                stack.push_back(node->children.front());
-            else
-                conjuncts.push_back(node);
-        }
-    }
-    return conjuncts;
 }
 
 }

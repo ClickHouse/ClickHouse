@@ -9,7 +9,7 @@
 
 #include <Common/LatencyBuckets.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/IThrottler.h>
+#include <Common/Throttler_fwd.h>
 #include <Common/ProxyConfiguration.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
@@ -47,17 +47,11 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;
     unsigned int s3_retry_attempts;
-    bool s3_slow_all_threads_after_network_error;
     bool enable_s3_requests_logging;
     bool for_disk_s3;
     ThrottlerPtr get_request_throttler;
     ThrottlerPtr put_request_throttler;
-
     HTTPHeaderEntries extra_headers;
-    String http_client;
-    String service_account;
-    String metadata_service;
-    String request_token_path;
 
     /// See PoolBase::BehaviourOnLimit
     bool s3_use_adaptive_timeouts = true;
@@ -79,7 +73,6 @@ private:
         const RemoteHostFilter & remote_host_filter_,
         unsigned int s3_max_redirects_,
         unsigned int s3_retry_attempts,
-        bool s3_slow_all_threads_after_network_error_,
         bool enable_s3_requests_logging_,
         bool for_disk_s3_,
         bool s3_use_adaptive_timeouts_,
@@ -146,6 +139,12 @@ public:
 
 private:
 
+    void makeRequestInternal(
+        Aws::Http::HttpRequest & request,
+        std::shared_ptr<PocoHTTPResponse> & response,
+        Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
+        Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const;
+
     enum class S3MetricType : uint8_t
     {
         Microseconds,
@@ -175,23 +174,17 @@ private:
         EnumSize,
     };
 
-    ConnectionTimeouts getTimeouts(const String & method, bool first_attempt, bool first_byte) const;
-
     void makeRequestInternalImpl(
         Aws::Http::HttpRequest & request,
         std::shared_ptr<PocoHTTPResponse> & response,
         Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const;
 
+    ConnectionTimeouts getTimeouts(const String & method, bool first_attempt, bool first_byte) const;
+
     static S3LatencyType getFirstByteLatencyType(const String & sdk_attempt, const String & ch_attempt);
 
 protected:
-    virtual void makeRequestInternal(
-        Aws::Http::HttpRequest & request,
-        std::shared_ptr<PocoHTTPResponse> & response,
-        Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
-        Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const;
-
     static S3MetricKind getMetricKind(const Aws::Http::HttpRequest & request);
     void addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount = 1) const;
     void addLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, LatencyBuckets::Count amount = 1) const;
@@ -218,35 +211,6 @@ protected:
     ThrottlerPtr put_request_throttler;
 
     const HTTPHeaderEntries extra_headers;
-};
-
-class PocoHTTPClientGCPOAuth : public PocoHTTPClient
-{
-public:
-    explicit PocoHTTPClientGCPOAuth(const PocoHTTPClientConfiguration & client_configuration);
-
-    std::string getBearerToken() const;
-private:
-    void makeRequestInternal(
-        Aws::Http::HttpRequest & request,
-        std::shared_ptr<PocoHTTPResponse> & response,
-        Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
-        Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const override;
-
-    struct BearerToken
-    {
-        String token;
-        std::chrono::system_clock::time_point is_valid_to;
-    };
-
-    const String service_account;
-    const String metadata_service;
-    const String request_token_path;
-
-    mutable std::mutex mutex;
-    mutable std::optional<BearerToken> bearer_token TSA_GUARDED_BY(mutex);
-
-    BearerToken requestBearerToken() const TSA_REQUIRES(mutex);
 };
 
 }

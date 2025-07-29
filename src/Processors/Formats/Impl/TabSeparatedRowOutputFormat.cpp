@@ -11,7 +11,7 @@ namespace DB
 {
 TabSeparatedRowOutputFormat::TabSeparatedRowOutputFormat(
     WriteBuffer & out_,
-    SharedHeader header_,
+    const Block & header_,
     bool with_names_,
     bool with_types_,
     bool is_raw_,
@@ -89,12 +89,10 @@ void registerOutputFormatTabSeparated(FormatFactory & factory)
                 const Block & sample,
                 const FormatSettings & settings)
             {
-                return std::make_shared<TabSeparatedRowOutputFormat>(buf, std::make_shared<const Block>(sample), with_names, with_types, is_raw, settings);
+                return std::make_shared<TabSeparatedRowOutputFormat>(buf, sample, with_names, with_types, is_raw, settings);
             });
 
             factory.markOutputFormatSupportsParallelFormatting(format_name);
-            /// https://www.iana.org/assignments/media-types/text/tab-separated-values
-            factory.setContentType(format_name, "text/tab-separated-values; charset=UTF-8");
         };
 
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);

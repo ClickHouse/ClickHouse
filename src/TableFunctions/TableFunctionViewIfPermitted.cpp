@@ -13,8 +13,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/Context.h>
-#include <TableFunctions/registerTableFunctions.h>
+#include "registerTableFunctions.h"
 
 
 namespace DB
@@ -115,7 +114,7 @@ StoragePtr TableFunctionViewIfPermitted::executeImpl(
 
 bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const ColumnsDescription & else_columns) const
 {
-    SharedHeader sample_block;
+    Block sample_block;
 
     try
     {
@@ -137,7 +136,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
     }
 
     /// We check that columns match only if permitted (otherwise we could reveal the structure to an user who must not know it).
-    ColumnsDescription columns{sample_block->getNamesAndTypesList()};
+    ColumnsDescription columns{sample_block.getNamesAndTypesList()};
     if (columns != else_columns)
     {
         throw Exception(

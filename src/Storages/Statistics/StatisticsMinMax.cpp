@@ -35,13 +35,6 @@ void StatisticsMinMax::build(const ColumnPtr & column)
     row_count += column->size();
 }
 
-void StatisticsMinMax::merge(const StatisticsPtr & other_stats)
-{
-    const StatisticsMinMax * other = typeid_cast<const StatisticsMinMax *>(other_stats.get());
-    min = std::min(min, other->min);
-    max = std::max(max, other->max);
-}
-
 void StatisticsMinMax::serialize(WriteBuffer & buf)
 {
     writeIntBinary(row_count, buf);
