@@ -33,7 +33,6 @@ cluster.add_instance(
     user_configs=["configs/default_passwd.xml"],
     with_postgres=True,
     with_postgresql_java_client=True,
-    env_variables={"UBSAN_OPTIONS": "print_stacktrace=1"},
 )
 
 cluster.add_instance(
@@ -49,7 +48,6 @@ cluster.add_instance(
     user_configs=["configs/default_passwd.xml"],
     with_postgres=True,
     with_postgresql_java_client=True,
-    env_variables={"UBSAN_OPTIONS": "print_stacktrace=1"},
 )
 
 server_port = 5433
