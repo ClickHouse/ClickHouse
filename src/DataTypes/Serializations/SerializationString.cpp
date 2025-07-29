@@ -16,10 +16,6 @@
 
 #include <base/unit.h>
 
-#ifdef __SSE2__
-    #include <emmintrin.h>
-#endif
-
 
 namespace DB
 {
@@ -148,7 +144,7 @@ void SerializationString::serializeBinaryBulk(const IColumn & column, WriteBuffe
 }
 
 template <int UNROLL_TIMES>
-static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit)
+static NO_INLINE void deserializeBinaryImpl(ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit)
 {
     size_t offset = data.size();
     /// Avoiding calling resize in a loop improves the performance.
@@ -255,13 +251,13 @@ void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
     offsets.reserve(offsets.size() + limit);
 
     if (avg_chars_size >= 64)
-        deserializeBinarySSE2<4>(data, offsets, istr, limit);
+        deserializeBinaryImpl<4>(data, offsets, istr, limit);
     else if (avg_chars_size >= 48)
-        deserializeBinarySSE2<3>(data, offsets, istr, limit);
+        deserializeBinaryImpl<3>(data, offsets, istr, limit);
     else if (avg_chars_size >= 32)
-        deserializeBinarySSE2<2>(data, offsets, istr, limit);
+        deserializeBinaryImpl<2>(data, offsets, istr, limit);
     else
-        deserializeBinarySSE2<1>(data, offsets, istr, limit);
+        deserializeBinaryImpl<1>(data, offsets, istr, limit);
 }
 
 
