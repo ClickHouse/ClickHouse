@@ -415,6 +415,10 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
             copyData(limit_buf, write_buf);
         }
 
+        if (auto * insert_query = query->as<ASTInsertQuery>())
+            if (insert_query->tail)
+                insert_query->tail.reset();
+
         if (!read_buf->eof())
         {
             /// Concat read buffer with already extracted from insert
