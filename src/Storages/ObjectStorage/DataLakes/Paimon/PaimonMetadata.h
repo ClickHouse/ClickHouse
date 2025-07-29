@@ -3,19 +3,19 @@
 
 #if USE_AVRO
 
-#include <optional>
-#include <vector>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Core/Block.h>
-#include <Disks/IStoragePolicy.h>
-#include <Interpreters/Context_fwd.h>
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/BinaryRow.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonTableSchema.h>
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Parser.h>
+#    include <optional>
+#    include <vector>
+#    include <Core/Block.h>
+#    include <Disks/IStoragePolicy.h>
+#    include <Interpreters/Context_fwd.h>
+#    include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#    include <Storages/ObjectStorage/DataLakes/Paimon/BinaryRow.h>
+#    include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
+#    include <Storages/ObjectStorage/DataLakes/Paimon/PaimonTableSchema.h>
+#    include <Storages/ObjectStorage/StorageObjectStorage.h>
+#    include <Poco/JSON/Array.h>
+#    include <Poco/JSON/Object.h>
+#    include <Poco/JSON/Parser.h>
 
 
 namespace DB
@@ -43,7 +43,9 @@ public:
         const ContextPtr & /*local_context*/,
         const std::optional<ColumnsDescription> & /*columns*/,
         ASTPtr /*partition_by*/,
-        bool /*if_not_exists*/)
+        bool /*if_not_exists*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/,
+        const StorageID & /*table_id_*/)
     {
     }
 
