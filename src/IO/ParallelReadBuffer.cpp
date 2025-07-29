@@ -228,7 +228,6 @@ bool ParallelReadBuffer::nextImpl()
         next_condvar.wait_for(lock, std::chrono::seconds(10));
     }
     chassert(false);
-    return false;
 }
 
 void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)

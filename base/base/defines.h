@@ -120,8 +120,8 @@
         /// Here sizeof() trick is used to suppress unused warning for result,
         /// since simple "(void)x" will evaluate the expression, while
         /// "sizeof(!(x))" will not.
-        #define chassert_1(x, ...) (void)sizeof(!(x))
-        #define chassert_2(x, comment, ...) (void)sizeof(!(x))
+        #define chassert_1(x, ...) [[assume(static_cast<bool>(x))]]
+        #define chassert_2(x, comment, ...) [[assume(static_cast<bool>(x))]]
         #define UNREACHABLE() __builtin_unreachable()
     #endif
         #define CHASSERT_DISPATCH(_1,_2, N,...) N(_1, _2)
