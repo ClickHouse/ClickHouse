@@ -261,7 +261,7 @@ public:
   * NOTE: User code should use 'ThreadFromGlobalPool' declared below instead of directly using this class.
   *
   */
-template <bool propagate_opentelemetry_context = true, bool global_trace_collector_allowed = true>
+template <bool propagate_opentelemetry_context = true>
 class ThreadFromGlobalPoolImpl : boost::noncopyable
 {
 public:
@@ -298,16 +298,8 @@ public:
             /// Thread status holds raw pointer on query context, thus it always must be destroyed
             /// before sending signal that permits to join this thread.
             DB::ThreadStatus thread_status;
-            if constexpr (global_trace_collector_allowed)
-            {
-                if (unlikely(global_profiler_real_time_period != 0 || global_profiler_cpu_time_period != 0))
-                    thread_status.initGlobalProfiler(global_profiler_real_time_period, global_profiler_cpu_time_period);
-            }
-            else
-            {
-                UNUSED(global_profiler_real_time_period);
-                UNUSED(global_profiler_cpu_time_period);
-            }
+            if (unlikely(global_profiler_real_time_period != 0 || global_profiler_cpu_time_period != 0))
+                thread_status.initGlobalProfiler(global_profiler_real_time_period, global_profiler_cpu_time_period);
 
             std::apply(function, arguments);
         },
@@ -393,12 +385,11 @@ protected:
 /// you need to use class, or you need to use ThreadFromGlobalPool below.
 ///
 /// See the comments of ThreadPool below to know how it works.
-using ThreadFromGlobalPoolNoTracingContextPropagation = ThreadFromGlobalPoolImpl<false, true>;
+using ThreadFromGlobalPoolNoTracingContextPropagation = ThreadFromGlobalPoolImpl<false>;
 
 /// An alias of thread that execute jobs/tasks on global thread pool by implicit passing tracing context on current thread to underlying worker as parent tracing context.
 /// If jobs/tasks are directly scheduled by using APIs of this class, you need to use this class or you need to use class above.
-using ThreadFromGlobalPool = ThreadFromGlobalPoolImpl<true, true>;
-using ThreadFromGlobalPoolWithoutTraceCollector = ThreadFromGlobalPoolImpl<true, false>;
+using ThreadFromGlobalPool = ThreadFromGlobalPoolImpl<true>;
 
 /// Recommended thread pool for the case when multiple thread pools are created and destroyed.
 ///

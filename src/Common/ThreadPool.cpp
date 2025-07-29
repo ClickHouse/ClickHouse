@@ -861,11 +861,9 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
 }
 
 template class ThreadPoolImpl<std::thread>;
-template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false, true>>;
-template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false, false>>;
-template class ThreadFromGlobalPoolImpl<true, true>;
-template class ThreadFromGlobalPoolImpl<true, false>;
-template class ThreadFromGlobalPoolImpl<false, false>;
+template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false>>;
+template class ThreadFromGlobalPoolImpl<true>;
+template class ThreadFromGlobalPoolImpl<false>;
 
 std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
 
