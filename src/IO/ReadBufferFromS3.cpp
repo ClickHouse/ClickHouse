@@ -11,9 +11,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/logger_useful.h>
-#include <Common/FailPoint.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <Common/CurrentThread.h>
 #include <base/sleep.h>
 
 #include <utility>
@@ -28,6 +26,8 @@ namespace ProfileEvents
     extern const Event ReadBufferSeekCancelConnection;
     extern const Event S3GetObject;
     extern const Event DiskS3GetObject;
+    extern const Event RemoteReadThrottlerBytes;
+    extern const Event RemoteReadThrottlerSleepMicroseconds;
 }
 
 namespace DB
@@ -36,11 +36,6 @@ namespace DB
 namespace S3RequestSetting
 {
     extern const S3RequestSettingsUInt64 max_single_read_retries;
-}
-
-namespace FailPoints
-{
-    extern const char s3_read_buffer_throw_expired_token[];
 }
 
 namespace ErrorCodes
@@ -93,13 +88,6 @@ bool ReadBufferFromS3::nextImpl()
 
     if (impl)
     {
-        fiu_do_on(FailPoints::s3_read_buffer_throw_expired_token,
-        {
-            throw Exception(
-                ErrorCodes::S3_ERROR,
-                "Unable to parse ExceptionName: ExpiredToken Message: The provided token has expired. This error happened for S3 disk");
-        });
-
         if (impl->isResultReleased())
             return false;
 
@@ -192,7 +180,7 @@ bool ReadBufferFromS3::nextImpl()
         impl->releaseResult();
 
     if (read_settings.remote_throttler)
-        read_settings.remote_throttler->add(working_buffer.size());
+        read_settings.remote_throttler->add(working_buffer.size(), ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
 
     return true;
 }
@@ -225,7 +213,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
                 return initial_n - n + bytes_copied;
 
             if (read_settings.remote_throttler)
-                read_settings.remote_throttler->add(bytes_copied);
+                read_settings.remote_throttler->add(bytes_copied, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
 
             /// Read remaining bytes after the end of the payload
             istr.ignore(INT64_MAX);

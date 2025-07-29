@@ -18,7 +18,7 @@ class JSONRowOutputFormat : public RowOutputFormatWithExceptionHandlerAdaptor<Ro
 public:
     JSONRowOutputFormat(
         WriteBuffer & out_,
-        SharedHeader header,
+        const Block & header,
         const FormatSettings & settings_,
         bool yield_strings_);
 

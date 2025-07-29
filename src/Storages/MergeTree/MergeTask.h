@@ -71,7 +71,6 @@ using MergedPartOffsetsPtr = std::shared_ptr<MergedPartOffsets>;
 class MergeTask
 {
 public:
-    static constexpr auto TEMP_DIRECTORY_PREFIX = "tmp_merge_";
 
     MergeTask(
         FutureMergedMutatedPartPtr future_part_,
@@ -200,7 +199,7 @@ private:
         NamesAndTypesList merging_columns{};
         NamesAndTypesList storage_columns{};
         MergeTreeData::DataPart::Checksums checksums_gathered_columns{};
-        ColumnsSubstreams gathered_columns_substreams{};
+        ColumnsWithTypeAndName gathered_columns_samples{};
 
         IndicesDescription merging_skip_indexes;
         std::unordered_map<String, IndicesDescription> skip_indexes_by_column;
@@ -238,9 +237,6 @@ private:
         scope_guard temporary_directory_lock;
 
         UInt64 prev_elapsed_ms{0};
-
-        /// Current merge may or may not reduce number of rows. It's not known until the horizontal stage is finished.
-        bool merge_may_reduce_rows{false};
 
         // will throw an exception if merge was cancelled in any way.
         void checkOperationIsNotCanceled() const;

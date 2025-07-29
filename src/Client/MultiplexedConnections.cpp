@@ -2,7 +2,6 @@
 
 #include <Common/thread_local_rng.h>
 #include <Core/Protocol.h>
-#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <IO/ConnectionTimeouts.h>
@@ -228,12 +227,12 @@ void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuid
 }
 
 
-void MultiplexedConnections::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
+void MultiplexedConnections::sendReadTaskResponse(const String & response)
 {
     std::lock_guard lock(cancel_mutex);
     if (cancelled)
         return;
-    current_connection->sendClusterFunctionReadTaskResponse(response);
+    current_connection->sendReadTaskResponse(response);
 }
 
 
@@ -362,7 +361,7 @@ UInt64 MultiplexedConnections::receivePacketTypeUnlocked(AsyncCallback async_cal
 
     try
     {
-        AsyncCallbackSetter<Connection> async_setter(current_connection, std::move(async_callback));
+        AsyncCallbackSetter async_setter(current_connection, std::move(async_callback));
         return current_connection->receivePacketType();
     }
     catch (Exception & e)
@@ -393,7 +392,7 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
     Packet packet;
     try
     {
-        AsyncCallbackSetter<Connection> async_setter(current_connection, std::move(async_callback));
+        AsyncCallbackSetter async_setter(current_connection, std::move(async_callback));
         packet = current_connection->receivePacket();
     }
     catch (Exception & e)

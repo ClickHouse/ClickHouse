@@ -8,7 +8,7 @@ namespace DB
 class ReadFromTableFunctionStep : public ISourceStep
 {
 public:
-    ReadFromTableFunctionStep(SharedHeader header, std::string serialized_ast_, TableExpressionModifiers table_expression_modifiers_);
+    ReadFromTableFunctionStep(Block header, std::string serialized_ast_, TableExpressionModifiers table_expression_modifiers_);
 
     String getName() const override { return "ReadFromTableFunction"; }
 
