@@ -25,7 +25,7 @@ template <typename Mutex>
 class TSA_SCOPED_LOCKABLE SharedLockGuard
 {
 public:
-    explicit SharedLockGuard(Mutex & mutex_) TSA_ACQUIRE_SHARED(mutex_) : shared_lock(mutex_) { locked = true; }
+    explicit SharedLockGuard(Mutex & mutex_) TSA_ACQUIRE_SHARED(mutex_) : shared_lock(mutex_) {}
     ~SharedLockGuard() TSA_RELEASE() = default;
 
     void lock() TSA_ACQUIRE_SHARED()
