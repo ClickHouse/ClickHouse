@@ -7,7 +7,7 @@ if __name__ == "__main__":
     #
     # Note, LSan does not compatible with debugger
     if "asan" not in Info().job_name:
-        command_launcher = f"timeout 30m gdb -batch -ex 'handle all nostop' -ex 'set print thread-events off' -ex 'set pagination off' -ex 'catch syscall 231' -ex run -ex bt -arg"
+        command_launcher = f"timeout -v 30m gdb -batch -ex 'handle all nostop' -ex 'set print thread-events off' -ex 'set pagination off' -ex 'catch syscall 231' -ex run -ex bt -arg"
     else:
         command_launcher = ""
 
