@@ -11,6 +11,7 @@
 #include <Poco/BinaryReader.h>
 #include <Poco/ByteOrder.h>
 #include <Poco/Logger.h>
+#include "Common/Logger.h"
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
@@ -41,6 +42,7 @@ inline UInt64 flipBytes(UInt64 value)
 BinaryRow::BinaryRow(const String & bytes_)
     : reader(bytes_)
     , need_flip(!isLittleEndian())
+    , log(getLogger("BinaryRow"))
 {
     auto to_hex_string = [](const std::string & input)
     {
@@ -62,7 +64,7 @@ BinaryRow::BinaryRow(const String & bytes_)
     if (!need_flip)
         arity = Poco::ByteOrder::flipBytes(arity);
     LOG_TEST(
-        &Poco::Logger::get("BinaryRow"),
+        log,
         "arity: {} need_flip: {} bytes_size: {} bytes: {}",
         arity,
         need_flip,
@@ -92,7 +94,7 @@ T BinaryRow::getFixedSizeData(Int32 pos)
     seek(getFieldOffset(pos));
     T t;
     readIntBinary(t, reader);
-    LOG_TEST(&Poco::Logger::get("BinaryRow"), "read value: {}, need_flip: {}", t, need_flip);
+    LOG_TEST(log, "read value: {}, need_flip: {}", t, need_flip);
 
     if (need_flip)
     {
@@ -165,13 +167,13 @@ String BinaryRow::getString(Int32 pos)
     {
         Int32 sub_offset = static_cast<Int32>((offset_and_len >> 32));
         Int32 len = static_cast<Int32>(offset_and_len);
-        LOG_TEST(&Poco::Logger::get("BinaryRow"), "sub_offset: {}, len: {}, offset_and_len: {}", sub_offset, len, offset_and_len);
+        LOG_TEST(log, "sub_offset: {}, len: {}, offset_and_len: {}", sub_offset, len, offset_and_len);
         return copyBytes(offset() + sub_offset, len);
     }
     else
     {
         Int32 len = static_cast<Int32>(static_cast<UInt64>((offset_and_len & HIGHEST_SECOND_TO_EIGHTH_BIT)) >> 56);
-        LOG_TEST(&Poco::Logger::get("BinaryRow"), "mark: {}, len: {}, offset_and_len: {}", mark, len, offset_and_len);
+        LOG_TEST(log, "mark: {}, len: {}, offset_and_len: {}", mark, len, offset_and_len);
         if (isLittleEndian())
         {
             return copyBytes(field_offset, len);

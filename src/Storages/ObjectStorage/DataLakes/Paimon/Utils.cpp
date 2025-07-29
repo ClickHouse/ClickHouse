@@ -2,22 +2,22 @@
 #include <ranges>
 #include <utility>
 #include <vector>
+#include <Core/Field.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonTableSchema.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Types.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
+#include <base/Decimal_fwd.h>
+#include <base/types.h>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <Poco/Logger.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include <Core/Field.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <Interpreters/Context_fwd.h>
-#include <base/Decimal_fwd.h>
-#include <base/types.h>
 
 namespace DB
 {

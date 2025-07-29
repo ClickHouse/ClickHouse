@@ -3,31 +3,31 @@
 
 #if USE_AVRO
 
-#include <cstddef>
-#include <cstdint>
-#include <memory>
-#include <optional>
-#include <unordered_map>
-#include <vector>
-#include <Core/TypeId.h>
-#include <Disks/IStoragePolicy.h>
-#include <Disks/ObjectStorages/IObjectStorage_fwd.h>
-#include <Interpreters/Context_fwd.h>
-#include <base/Decimal.h>
-#include <base/types.h>
+#    include <cstddef>
+#    include <cstdint>
+#    include <memory>
+#    include <optional>
+#    include <unordered_map>
+#    include <vector>
+#    include <Core/TypeId.h>
+#    include <Disks/IStoragePolicy.h>
+#    include <Disks/ObjectStorages/IObjectStorage_fwd.h>
+#    include <Interpreters/Context_fwd.h>
+#    include <base/Decimal.h>
+#    include <base/types.h>
 
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/Constant.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/Types.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
-#include <fmt/format.h>
-#include <fmt/ranges.h>
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Parser.h>
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
+#    include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
+#    include <Storages/ObjectStorage/DataLakes/Paimon/Constant.h>
+#    include <Storages/ObjectStorage/DataLakes/Paimon/Types.h>
+#    include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
+#    include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#    include <fmt/format.h>
+#    include <fmt/ranges.h>
+#    include <Poco/JSON/Array.h>
+#    include <Poco/JSON/Object.h>
+#    include <Poco/JSON/Parser.h>
+#    include <Poco/Logger.h>
+#    include <Common/logger_useful.h>
 
 namespace DB
 {
