@@ -14,8 +14,6 @@
 #include <IO/VarInt.h>
 #include <IO/ReadBufferFromString.h>
 
-#include <base/unit.h>
-
 #ifdef __SSE2__
     #include <emmintrin.h>
 #endif
@@ -156,33 +154,56 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
 
     for (size_t i = 0; i < limit; ++i)
     {
+        /// If strings are not large on average.
         if constexpr (UNROLL_TIMES <= 3)
         {
-            /// Optimistic case when there are many strings less than 128 bytes in size:
+            /** Optimistic case when there are many strings less than 128 bytes in size each.
+              * We collect a consecutive range of these short strings.
+              * The sizes in between these strings, encoded as VarUInt, occupy a single byte.
+              * Which is the same in size as a zero-byte terminator after strings in the ColumnString representation.
+              * So we can collect a range and then copy it into a column using a single call to memcpy.
+              */
+
+            /// Skip the first size and start with bytes of the first string.
             const auto * small_strings_begin = istr.position() + 1;
             size_t prev_offset = offset;
+
+            /// We do it only for the data that is still inside the istr buffer.
+            /// istr.available() means we can read at least one more byte from the buffer - the size of the next string.
             while (istr.available() && i < limit)
             {
+                /// The first byte of size of the next string. The VarUInt encoding works in the way,
+                /// so that the highest bit is the "continuation" but, so if the byte is less than 128, there is no continuation.
                 UInt8 size = *istr.position();
                 if (size >= 128)
                     break;
 
+                /// Now the size contains the extra byte.
                 ++size;
-                if (istr.position() + size > istr.buffer().end())
+                /// Check that the whole string fits in the buffer.
+                if (istr.available() < size)
                     break;
 
-                *istr.position() = 0;
                 istr.position() += size;
                 offset += size;
                 offsets.push_back(offset);
                 ++i;
             }
-            if (istr.position() >= small_strings_begin)
+
+            /// If at least one string was small (including empty strings)
+            if (offset > prev_offset)
             {
+                /// Prepare the data array to fit the strings.
                 if (unlikely(offset > data.size()))
                     data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
-                memcpy(&data[prev_offset], small_strings_begin, istr.position() - small_strings_begin);
-                data[offset - 1] = 0;
+
+                /// Copy the strings.
+                size_t bytes_to_copy = istr.position() - small_strings_begin;
+
+                memset(&data[prev_offset], 0, bytes_to_copy + 1);
+                memcpy(&data[prev_offset], small_strings_begin, bytes_to_copy);
+
+                /// When no more strings needed.
                 if (i == limit)
                     break;
             }
