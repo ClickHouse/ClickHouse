@@ -1026,6 +1026,7 @@ public:
 
     BackupsWorker & getBackupsWorker() const;
     void waitAllBackupsAndRestores() const;
+    void cancelAllBackupsAndRestores() const;
     BackupsInMemoryHolder & getBackupsInMemory();
     const BackupsInMemoryHolder & getBackupsInMemory() const;
 

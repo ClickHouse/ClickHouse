@@ -3375,6 +3375,12 @@ void Context::waitAllBackupsAndRestores() const
         shared->backups_worker->waitAll();
 }
 
+void Context::cancelAllBackupsAndRestores() const
+{
+    if (shared->backups_worker)
+        shared->backups_worker->cancelAll();
+}
+
 BackupsInMemoryHolder & Context::getBackupsInMemory()
 {
     return backups_in_memory;
