@@ -254,6 +254,7 @@ public:
     /// If true, the destructor will delete the directory with the part.
     /// FIXME Why do we need this flag? What's difference from Temporary and DeleteOnDestroy state? Can we get rid of this?
     bool is_temp = false;
+    std::atomic<bool> is_removed = false;
 
     /// This type and the field remove_tmp_policy is used as a hint
     /// to help avoid communication with keeper when temporary part is deleting.
@@ -621,6 +622,8 @@ public:
     mutable std::atomic<DataPartRemovalState> removal_state = DataPartRemovalState::NOT_ATTEMPTED;
 
     mutable std::atomic<time_t> last_removal_attempt_time = 0;
+
+    void removeIfNeeded();
 
 protected:
     /// Primary key (correspond to primary.idx file).
