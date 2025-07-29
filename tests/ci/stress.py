@@ -339,6 +339,7 @@ def main():
         args.skip_func_tests,
         args.global_time_limit,
         args.upgrade_check,
+        args.encrypted_storage,
     )
 
     logging.info("Will wait functests to finish")
