@@ -125,7 +125,7 @@ void CancellationChecker::workerFunction()
                     log,
                     "Cancelling the task because of the timeout: {} ms, query_id: {}",
                     next_task_it->timeout,
-                    next_task.query->getInfo().query);
+                    next_task_it->query->getInfo().query);
 
                 tasks_to_cancel.push_back(*next_task_it);
                 query_set.erase(next_task_it);
