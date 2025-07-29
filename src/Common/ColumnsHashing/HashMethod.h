@@ -37,7 +37,7 @@ static inline std::vector<SipHash> batchSipHash(size_t keys_size, const ColumnRa
     std::vector<SipHash> hashes(rows);
     for (size_t i = 0; i < keys_size; ++i)
     {
-        const auto * denull_column = key_columns[0];
+        const auto * denull_column = key_columns[i];
         const UInt8 * nullmap = nullptr;
         if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(denull_column))
         {

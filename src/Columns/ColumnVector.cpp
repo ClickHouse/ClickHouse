@@ -75,6 +75,28 @@ ALWAYS_INLINE void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash
 }
 
 template <typename T>
+void ColumnVector<T>::batchUpdateHashWithValue(const UInt8 * nullmap, std::vector<SipHash> & hashes) const
+{
+    size_t rows = size();
+    chassert(rows = hashes.size());
+    if (!nullmap)
+    {
+        for (size_t i = 0; i < rows; ++i)
+            updateHashWithValue(i, hashes[i]);
+        return;
+    }
+
+    for (size_t i = 0; i < rows; ++i)
+    {
+        auto is_null = nullmap[i];
+        hashes[i].update(is_null);
+        if (!is_null)
+            updateHashWithValue(i, hashes[i]);
+    }
+}
+
+
+template <typename T>
 WeakHash32 ColumnVector<T>::getWeakHash32() const
 {
     auto s = data.size();
