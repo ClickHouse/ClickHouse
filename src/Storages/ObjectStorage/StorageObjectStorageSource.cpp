@@ -185,8 +185,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 std::move(iter),
                 *filter_actions_dag,
                 virtual_columns,
-                configuration->getNamespace(),
-                local_context);
+                configuration->getNamespace());
         }
         return iter;
     }
