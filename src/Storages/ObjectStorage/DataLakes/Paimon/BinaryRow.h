@@ -14,7 +14,7 @@
 #include <fmt/ranges.h>
 #include <Poco/BinaryReader.h>
 #include <Poco/Logger.h>
-#include "Common/Logger.h"
+#include <Common/Logger.h>
 #include <Common/logger_useful.h>
 
 namespace DB
