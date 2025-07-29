@@ -21,26 +21,75 @@ static const PaddedPODArray<UInt64> & getColumnUInt64Data(const Block & block, c
     return assert_cast<const ColumnUInt64 &>(*block.getByName(column_name).column).getData();
 }
 
-PatchJoinCache::EntryPtr PatchJoinCache::getEntry(const String & patch_name, const MarkRanges & ranges, Reader reader)
+void PatchJoinCache::init(const RangesInPatchParts & ranges_in_pathces)
 {
-    auto entry = getOrEmplaceEntry(patch_name);
-    auto futures = entry->addRangesAsync(ranges, reader);
+    const auto & all_ranges = ranges_in_pathces.getRanges();
+
+    for (const auto & [patch_name, ranges] : all_ranges)
+    {
+        if (ranges.empty())
+            continue;
+
+        size_t current_buckets = std::min(num_buckets, ranges.size());
+        size_t num_ranges_in_bucket = ranges.size() / current_buckets;
+
+        auto & entries = cache[patch_name];
+        auto & buckets = ranges_to_buckets[patch_name];
+
+        entries.reserve(current_buckets);
+        for (size_t i = 0; i < ranges.size(); ++i)
+        {
+            size_t idx = i / num_ranges_in_bucket;
+            buckets[ranges[i]] = idx;
+            entries.push_back(std::make_shared<PatchJoinCache::Entry>());
+        }
+    }
+}
+
+PatchJoinCache::Entries PatchJoinCache::getEntries(const String & patch_name, const MarkRanges & ranges, Reader reader)
+{
+    auto [entries, ranges_for_entries] = getEntriesAndRanges(patch_name, ranges);
+    std::vector<std::shared_future<void>> futures;
+
+    for (size_t i = 0; i < entries.size(); ++i)
+    {
+        auto entry_futures = entries[i]->addRangesAsync(ranges_for_entries[i], reader);
+        futures.insert(futures.end(), entry_futures.begin(), entry_futures.end());
+    }
 
     for (const auto & future : futures)
         future.get();
 
-    return entry;
+    return entries;
 }
 
-PatchJoinCache::EntryPtr PatchJoinCache::getOrEmplaceEntry(const String & patch_name)
+std::pair<PatchJoinCache::Entries, std::vector<MarkRanges>> PatchJoinCache::getEntriesAndRanges(const String & patch_name, const MarkRanges & ranges)
 {
     std::lock_guard lock(mutex);
+    const auto & entries = cache.at(patch_name);
 
-    auto & entry = cache[patch_name];
-    if (!entry)
-        entry = std::make_shared<Entry>();
+    if (entries.empty())
+        return {};
 
-    return entry;
+    std::map<size_t, MarkRanges> ranges_for_entries;
+    const auto & buckets = ranges_to_buckets.at(patch_name);
+
+    for (const auto & range : ranges)
+    {
+        size_t idx = buckets.at(range);
+        ranges_for_entries[idx].push_back(range);
+    }
+
+    Entries result_entries;
+    std::vector<MarkRanges> result_ranges;
+
+    for (auto & [idx, ranges_for_entry] : ranges_for_entries)
+    {
+        result_entries.push_back(entries.at(idx));
+        result_ranges.push_back(std::move(ranges_for_entry));
+    }
+
+    return {result_entries, result_ranges};
 }
 
 std::vector<std::shared_future<void>> PatchJoinCache::Entry::addRangesAsync(const MarkRanges & ranges, Reader reader)

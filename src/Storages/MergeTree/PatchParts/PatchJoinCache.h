@@ -43,14 +43,17 @@ struct PatchJoinCache
     };
 
     using EntryPtr = std::shared_ptr<Entry>;
-    EntryPtr getEntry(const String & patch_name, const MarkRanges & ranges, Reader reader);
+    using Entries = std::vector<EntryPtr>;
+
+    void init(const RangesInPatchParts & ranges_in_pathces);
+    Entries getEntries(const String & patch_name, const MarkRanges & ranges, Reader reader);
 
 private:
-    EntryPtr getOrEmplaceEntry(const String & patch_name);
+    std::pair<Entries, std::vector<MarkRanges>> getEntriesAndRanges(const String & patch_name, const MarkRanges & ranges);
 
     size_t num_buckets;
     mutable std::mutex mutex;
-    absl::flat_hash_map<String, EntryPtr> cache;
+    absl::flat_hash_map<String, Entries> cache;
     absl::flat_hash_map<String, std::map<MarkRange, size_t>> ranges_to_buckets;
 };
 

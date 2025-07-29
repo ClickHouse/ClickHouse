@@ -16,6 +16,7 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
     extern const SettingsUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool apply_deleted_mask;
+    extern const SettingsUInt64 apply_patch_parts_join_cache_buckets;
 }
 
 namespace ErrorCodes
@@ -48,7 +49,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , block_size_params(block_size_params_)
     , owned_mark_cache(context_->getGlobalContext()->getMarkCache())
     , owned_uncompressed_cache(pool_settings_.use_uncompressed_cache ? context_->getGlobalContext()->getUncompressedCache() : nullptr)
-    , patch_join_cache(std::make_shared<PatchJoinCache>(8))
+    , patch_join_cache(std::make_shared<PatchJoinCache>(context_->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]))
     , header(storage_snapshot->getSampleBlockForColumns(column_names))
     , ranges_in_patch_parts(context_->getSettingsRef()[Setting::merge_tree_min_read_task_size])
     , profile_callback([this](ReadBufferFromFileBase::ProfileInfo info_) { profileFeedback(info_); })
@@ -240,6 +241,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
     }
 
     ranges_in_patch_parts.optimize();
+    patch_join_cache->init(ranges_in_patch_parts);
 }
 
 std::vector<size_t> MergeTreeReadPoolBase::getPerPartSumMarks() const

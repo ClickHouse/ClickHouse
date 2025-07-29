@@ -43,7 +43,7 @@ struct PatchMergeReadResult : public PatchReadResult
 
 struct PatchJoinReadResult : public PatchReadResult
 {
-    PatchJoinCache::EntryPtr entry;
+    PatchJoinCache::Entries entries;
 };
 
 /// Applies patch. Returns indices in result and patch blocks for rows that should be updated.

@@ -178,26 +178,20 @@ PatchReadResultPtr MergeTreePatchReaderJoin::readPatch(MarkRanges & ranges, cons
     ranges.clear();
 
     if (all_ranges.empty())
-    {
-        patch_read_result->entry = std::make_shared<PatchJoinCache::Entry>();
         return patch_read_result;
-    }
 
     filterRangesByMinMaxIndex(all_ranges, result_block, BlockNumberColumn::name);
     if (!all_ranges.empty())
         filterRangesByMinMaxIndex(all_ranges, result_block, BlockOffsetColumn::name);
 
     if (all_ranges.empty())
-    {
-        patch_read_result->entry = std::make_shared<PatchJoinCache::Entry>();
         return patch_read_result;
-    }
 
     if (!patch_join_cache)
     {
         auto read_result = readPatchRanges(all_ranges);
-        patch_read_result->entry = std::make_shared<PatchJoinCache::Entry>();
-        patch_read_result->entry->addBlock(sample_block.cloneWithColumns(read_result.columns));
+        auto & entry = patch_read_result->entries.emplace_back(std::make_shared<PatchJoinCache::Entry>());
+        entry->addBlock(sample_block.cloneWithColumns(read_result.columns));
         return patch_read_result;
     }
 
@@ -207,7 +201,7 @@ PatchReadResultPtr MergeTreePatchReaderJoin::readPatch(MarkRanges & ranges, cons
         return sample_block.cloneWithColumns(read_result.columns);
     };
 
-    patch_read_result->entry = patch_join_cache->getEntry(patch_part.part->getPartName(), all_ranges, std::move(reader));
+    patch_read_result->entries = patch_join_cache->getEntries(patch_part.part->getPartName(), all_ranges, std::move(reader));
     return patch_read_result;
 }
 
@@ -217,7 +211,12 @@ std::vector<PatchToApplyPtr> MergeTreePatchReaderJoin::applyPatch(const Block & 
     if (!patch_join_result)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PatchJoinReadResult is expected");
 
-    return {applyPatchJoin(result_block, *patch_join_result->entry)};
+    std::vector<PatchToApplyPtr> patches;
+
+    for (const auto & entry : patch_join_result->entries)
+        patches.push_back(applyPatchJoin(result_block, *entry));
+
+    return patches;
 }
 
 MergeTreePatchReaderPtr getPatchReader(PatchPartInfoForReader patch_part, MergeTreeReaderPtr reader, PatchJoinCache * read_join_cache)
