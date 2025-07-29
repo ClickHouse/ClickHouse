@@ -602,12 +602,11 @@ bool StatementGenerator::joinedTableOrFunction(
     const uint32_t cte = 10 * static_cast<uint32_t>(!under_remote && !this->ctes.empty());
     const uint32_t table = (40 * static_cast<uint32_t>(has_table)) + (20 * static_cast<uint32_t>(this->peer_query != PeerQuery::None));
     const uint32_t view = 20 * static_cast<uint32_t>(this->peer_query != PeerQuery::ClickHouseOnly && has_view);
-    const uint32_t remote_udf = 5 * static_cast<uint32_t>(this->allow_engine_udf && (can_recurse || has_table || has_view));
+    const uint32_t remote_udf = 5 * static_cast<uint32_t>(this->allow_engine_udf && can_recurse);
     const uint32_t generate_series_udf = 10;
     const uint32_t system_table = 3 * static_cast<uint32_t>(this->allow_not_deterministic && !systemTables.empty());
     const uint32_t merge_udf = 2 * static_cast<uint32_t>(this->allow_engine_udf);
-    const uint32_t cluster_udf
-        = 5 * static_cast<uint32_t>(!fc.clusters.empty() && this->allow_engine_udf && (can_recurse || has_table || has_view));
+    const uint32_t cluster_udf = 5 * static_cast<uint32_t>(this->allow_engine_udf && can_recurse);
     const uint32_t merge_index_udf = 3 * static_cast<uint32_t>(has_mergetree_table && this->allow_engine_udf);
     const uint32_t loop_udf = 3 * static_cast<uint32_t>(fc.allow_infinite_tables && this->allow_engine_udf && can_recurse);
     const uint32_t values_udf = 3 * static_cast<uint32_t>(can_recurse);
@@ -671,52 +670,16 @@ bool StatementGenerator::joinedTableOrFunction(
     else if (remote_udf && nopt < (derived_table + cte + table + view + remote_udf + 1))
     {
         RemoteFunc * rfunc = tof->mutable_tfunc()->mutable_remote();
-        TableOrFunction * rtof = rfunc->mutable_tof();
-        const uint32_t remote_table = 10 * static_cast<uint32_t>(has_table);
-        const uint32_t remote_view = 5 * static_cast<uint32_t>(has_view);
-        const uint32_t remote_dictionary = 5 * static_cast<uint32_t>(has_dictionary);
-        const uint32_t recurse = 10 * static_cast<uint32_t>(can_recurse);
-        const uint32_t pspace = remote_table + remote_view + remote_dictionary + recurse;
-        std::uniform_int_distribution<uint32_t> ndist(1, pspace);
-        const uint32_t nopt2 = ndist(rg.generator);
         const RemoteFunc_RName fname = rg.nextBool() ? RemoteFunc::remote : RemoteFunc::remoteSecure;
 
         rfunc->set_rname(fname);
         rfunc->set_address(fc.getConnectionHostAndPort(fname == RemoteFunc::remoteSecure));
-        if (remote_table && nopt2 < (remote_table + 1))
-        {
-            t = &rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda)).get();
-
-            t->setName(rtof->mutable_est(), true);
-            addTableRelation(rg, true, rel_name, *t);
-        }
-        else if (remote_view && nopt2 < (remote_table + remote_view + 1))
-        {
-            v = &rg.pickRandomly(filterCollection<SQLView>(has_view_lambda)).get();
-
-            v->setName(rtof->mutable_est(), true);
-            addViewRelation(rel_name, *v);
-        }
-        else if (remote_dictionary && nopt2 < (remote_table + remote_view + remote_dictionary + 1))
-        {
-            const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(has_dictionary_lambda)).get();
-
-            d.setName(rtof->mutable_est(), true);
-            addDictionaryRelation(rel_name, d);
-        }
-        else if (recurse && nopt2 < (remote_table + remote_view + remote_dictionary + recurse + 1))
-        {
-            /// Here don't care about the returned result
-            this->depth++;
-            const auto u = joinedTableOrFunction(rg, rel_name, allowed_clauses, true, rtof);
-            UNUSED(u);
-            this->depth--;
-        }
-        else
-        {
-            chassert(0);
-        }
-        if (rtof->has_est() && rg.nextSmallNumber() < 4)
+        /// Here don't care about the returned result
+        this->depth++;
+        const auto u = joinedTableOrFunction(rg, rel_name, allowed_clauses, true, rfunc->mutable_tof());
+        UNUSED(u);
+        this->depth--;
+        if (rg.nextMediumNumber() < 26)
         {
             rfunc->set_sharding_key(std::to_string(rg.randomInt<uint32_t>(0, 2)));
         }
@@ -728,8 +691,7 @@ bool StatementGenerator::joinedTableOrFunction(
         std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
         const uint32_t noption = rg.nextSmallNumber();
         Expr * limit = nullptr;
-        TableFunction * tf = tof->mutable_tfunc();
-        GenerateSeriesFunc * gsf = tf->mutable_gseries();
+        GenerateSeriesFunc * gsf = tof->mutable_tfunc()->mutable_gseries();
         std::uniform_int_distribution<uint32_t> gsf_range(1, static_cast<uint32_t>(GenerateSeriesFunc_GSName_GSName_MAX));
         const GenerateSeriesFunc_GSName gname = static_cast<GenerateSeriesFunc_GSName>(gsf_range(rg.generator));
         const String & cname = gname > GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_generateSeries ? "number" : "generate_series";
@@ -843,8 +805,7 @@ bool StatementGenerator::joinedTableOrFunction(
     {
         String mergeDesc;
         SQLRelation rel(rel_name);
-        TableFunction * tf = tof->mutable_tfunc();
-        MergeFunc * mdf = tf->mutable_merge();
+        MergeFunc * mdf = tof->mutable_tfunc()->mutable_merge();
         const uint32_t nopt2 = rg.nextSmallNumber();
 
         if (rg.nextBool())
@@ -874,63 +835,19 @@ bool StatementGenerator::joinedTableOrFunction(
         cluster_udf
         && nopt < (derived_table + cte + table + view + remote_udf + generate_series_udf + system_table + merge_udf + cluster_udf + 1))
     {
-        TableFunction * tf = tof->mutable_tfunc();
-        ClusterFunc * cdf = tf->mutable_cluster();
-        TableOrFunction * ctof = cdf->mutable_tof();
-        const uint32_t remote_table = 10 * static_cast<uint32_t>(has_table);
-        const uint32_t remote_view = 5 * static_cast<uint32_t>(has_view);
-        const uint32_t remote_dictionary = 5 * static_cast<uint32_t>(has_dictionary);
-        const uint32_t recurse = 10 * static_cast<uint32_t>(can_recurse);
-        const uint32_t pspace = remote_table + remote_view + remote_dictionary + recurse;
-        std::uniform_int_distribution<uint32_t> ndist(1, pspace);
-        const uint32_t nopt2 = ndist(rg.generator);
+        ClusterFunc * cdf = tof->mutable_tfunc()->mutable_cluster();
 
         cdf->set_all_replicas(rg.nextBool());
-        cdf->mutable_cluster()->set_cluster(rg.pickRandomly(fc.clusters));
-        if (remote_table && nopt2 < (remote_table + 1))
+        cdf->mutable_cluster()->set_cluster(fc.clusters.empty() ? "default" : rg.pickRandomly(fc.clusters));
+        /// Here don't care about the returned result
+        this->depth++;
+        const auto u = joinedTableOrFunction(rg, rel_name, allowed_clauses, true, cdf->mutable_tof());
+        UNUSED(u);
+        this->depth--;
+        if (rg.nextMediumNumber() < 26)
         {
-            t = &rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda)).get();
-
-            t->setName(ctof->mutable_est(), true);
-            addTableRelation(rg, false, rel_name, *t);
-            /// For optional sharding key
-            flatTableColumnPath(to_remote_entries, t->cols, [](const SQLColumn &) { return true; });
+            cdf->set_sharding_key("c" + std::to_string(rg.randomInt<uint32_t>(0, fc.max_columns - 1)));
         }
-        else if (remote_view && nopt2 < (remote_table + remote_view + 1))
-        {
-            v = &rg.pickRandomly(filterCollection<SQLView>(has_view_lambda)).get();
-
-            v->setName(ctof->mutable_est(), true);
-            addViewRelation(rel_name, *v);
-        }
-        else if (remote_dictionary && nopt2 < (remote_table + remote_view + remote_dictionary + 1))
-        {
-            const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(has_dictionary_lambda)).get();
-
-            d.setName(ctof->mutable_est(), false);
-            addDictionaryRelation(rel_name, d);
-            /// For optional sharding key
-            flatTableColumnPath(to_remote_entries, d.cols, [](const SQLColumn &) { return true; });
-        }
-        else if (recurse && nopt2 < (remote_table + remote_view + remote_dictionary + recurse + 1))
-        {
-            /// Here don't care about the returned result
-            this->depth++;
-            const auto u = joinedTableOrFunction(rg, rel_name, allowed_clauses, true, ctof);
-            UNUSED(u);
-            this->depth--;
-        }
-        else
-        {
-            chassert(0);
-        }
-        if (ctof->has_est() && rg.nextSmallNumber() < 4)
-        {
-            cdf->set_sharding_key(
-                this->remote_entries.empty() ? ("c" + std::to_string(rg.randomInt<uint32_t>(0, fc.max_columns - 1)))
-                                             : rg.pickRandomly(this->remote_entries).getBottomName());
-        }
-        this->remote_entries.clear();
     }
     else if (
         merge_index_udf
@@ -939,8 +856,7 @@ bool StatementGenerator::joinedTableOrFunction(
                + merge_index_udf + 1))
     {
         std::vector<SQLRelationCol> marks;
-        TableFunction * tf = tof->mutable_tfunc();
-        MergeTreeIndexFunc * mtudf = tf->mutable_mtindex();
+        MergeTreeIndexFunc * mtudf = tof->mutable_tfunc()->mutable_mtindex();
         const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_mergetree_table_lambda));
 
         /// mergeTreeIndex function doesn't support final
@@ -1071,8 +987,7 @@ bool StatementGenerator::joinedTableOrFunction(
         String url;
         String buf;
         bool first = true;
-        TableFunction * tf = tof->mutable_tfunc();
-        URLFunc * ufunc = tf->mutable_url();
+        URLFunc * ufunc = tof->mutable_tfunc()->mutable_url();
         const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda));
         const std::optional<String> & cluster = tt.getCluster();
         const OutFormat outf = rg.nextBool() ? rg.pickRandomly(outIn)
@@ -1128,8 +1043,7 @@ bool StatementGenerator::joinedTableOrFunction(
                + merge_projection_udf + 1))
     {
         std::vector<SQLRelationCol> parents;
-        TableFunction * tf = tof->mutable_tfunc();
-        MergeTreeProjectionFunc * mtudf = tf->mutable_mtproj();
+        MergeTreeProjectionFunc * mtudf = tof->mutable_tfunc()->mutable_mtproj();
         const SQLTable & tt = rg.pickRandomly(filterCollection<SQLTable>(has_projection_table_lambda));
 
         tt.setName(mtudf->mutable_est(), true);
