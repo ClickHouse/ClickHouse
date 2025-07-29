@@ -11,7 +11,9 @@
 /// NOTE We already plug MemoryTracker into new/delete operators. So, everything works even with default allocator.
 /// But it is enabled only if jemalloc is used (to obtain the size of the allocation on call to delete).
 /// And jemalloc is disabled for builds with sanitizers. In these cases memory was not always tracked.
-
+///
+/// Functions __real_malloc and __real_free are used to call the MemoryTracker explicitly, so
+/// it works even with sanitizers which has its own mechanism for intercepting malloc and free.
 template <typename T>
 struct AllocatorWithMemoryTracking
 {
