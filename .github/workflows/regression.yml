@@ -279,6 +279,11 @@ jobs:
      fail-fast: false
      matrix:
       ONLY: [replace, attach, move]
+      include:
+        - ONLY: attach
+          PART: 1
+        - ONLY: attach
+          PART: 2
    needs: [runner_labels_setup]
    runs-on: ${{ fromJson(needs.runner_labels_setup.outputs.runner_labels) }}
    timeout-minutes: ${{ inputs.timeout_minutes }}
@@ -315,8 +320,8 @@ jobs:
               python3
               -u alter/regression.py
               --clickhouse-binary-path ${{ env.clickhouse_path }}
-              --only "/alter/${{ matrix.ONLY }} partition/*"
-              --attr project="$GITHUB_REPOSITORY" project.id="$GITHUB_REPOSITORY_ID" package="${{ env.clickhouse_path }}" version="${{ env.version }}" user.name="$GITHUB_ACTOR" repository="https://github.com/Altinity/clickhouse-regression" commit.hash="$(git rev-parse HEAD)" job.name="$GITHUB_JOB (${{ matrix.ONLY }})" job.retry=$GITHUB_RUN_ATTEMPT job.url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" arch="$(uname -i)"
+              --only "/alter/${{ matrix.ONLY }} partition/${{ matrix.PART && format('part {0}/', matrix.PART) || '' }}*"
+              --attr project="$GITHUB_REPOSITORY" project.id="$GITHUB_REPOSITORY_ID" package="${{ env.clickhouse_path }}" version="${{ env.version }}" user.name="$GITHUB_ACTOR" repository="https://github.com/Altinity/clickhouse-regression" commit.hash="$(git rev-parse HEAD)" job.name="$GITHUB_JOB (${{ matrix.ONLY }}${{ matrix.PART }})" job.retry=$GITHUB_RUN_ATTEMPT job.url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" arch="$(uname -i)"
               ${{ env.args }} || EXITCODE=$?;
               .github/add_link_to_logs.sh;
               exit $EXITCODE
@@ -326,7 +331,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JOB_OUTCOME: ${{ steps.run_suite.outcome }}
-          SUITE_NAME: "Regression ${{ inputs.arch }} Alter ${{ matrix.ONLY }} partition"
+          SUITE_NAME: "Regression ${{ inputs.arch }} Alter ${{ matrix.ONLY }} partition ${{ matrix.PART }}"
       - name: Create and upload logs
         if: always()
         run: .github/create_and_upload_logs.sh 1
@@ -337,7 +342,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: alter-${{ matrix.ONLY }}-${{ inputs.arch }}-artifacts
+          name: alter-${{ matrix.ONLY }}${ matrix.PART && "-${{ matrix.PART }}" || ''}-${{ inputs.arch }}-artifacts
           path: ${{ env.artifact_paths}}
 
   Benchmark:
