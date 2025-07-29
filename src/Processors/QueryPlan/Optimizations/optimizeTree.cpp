@@ -120,6 +120,8 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
     }
 }
 
+void tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+
 void optimizeTreeSecondPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
 {
@@ -150,6 +152,14 @@ void optimizeTreeSecondPass(
             optimizePrewhere(stack, nodes);
 
         auto & frame = stack.back();
+
+        if (frame.next_child == 0)
+        {
+            tryAddJoinRuntimeFilter(*frame.node, nodes, optimization_settings);
+            tryMergeExpressions(frame.node, nodes, {});
+            tryMergeFilters(frame.node, nodes, {});
+            tryPushDownFilter(frame.node, nodes, {});
+        }
 
         /// Traverse all children first.
         if (frame.next_child < frame.node->children.size())
