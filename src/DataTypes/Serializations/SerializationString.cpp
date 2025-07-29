@@ -151,7 +151,7 @@ namespace
 MULTITARGET_FUNCTION_AVX512F_AVX(
 MULTITARGET_FUNCTION_HEADER(template <int UNROLL_TIMES> static void),
 deserializeBinaryImpl,
-MULTITARGET_FUNCTION_BODY((ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit)
+MULTITARGET_FUNCTION_BODY((ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit) /// NOLINT
 {
     size_t offset = data.size();
     /// Avoiding calling resize in a loop improves the performance.
