@@ -2699,6 +2699,9 @@ punycodeEncode
 pushdown
 pwrite
 py
+paimon
+Paimon
+paimonCluster
 qryn
 quantile
 quantileBFloat
