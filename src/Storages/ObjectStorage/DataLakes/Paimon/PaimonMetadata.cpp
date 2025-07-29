@@ -1,38 +1,38 @@
 #include <filesystem>
+#include <config.h>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
-#include <config.h>
 
 #if USE_AVRO
 
-#include <cstddef>
-#include <memory>
-#include <unordered_map>
-#include <utility>
-#include <vector>
-#include <IO/ReadHelpers.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/Constant.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Common/Exception.h>
-#include <Common/assert_cast.h>
-#include <Core/NamesAndTypes.h>
-#include <Disks/IStoragePolicy.h>
-#include <IO/WriteHelpers.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadata.h>
-#include <Storages/ObjectStorage/IObjectIterator.h>
-#include <base/defines.h>
+#    include <cstddef>
+#    include <memory>
+#    include <unordered_map>
+#    include <utility>
+#    include <vector>
+#    include <Core/NamesAndTypes.h>
+#    include <Disks/IStoragePolicy.h>
+#    include <IO/ReadHelpers.h>
+#    include <IO/WriteHelpers.h>
+#    include <Storages/ObjectStorage/DataLakes/Paimon/Constant.h>
+#    include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
+#    include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadata.h>
+#    include <Storages/ObjectStorage/IObjectIterator.h>
+#    include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#    include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#    include <base/defines.h>
+#    include <Common/Exception.h>
+#    include <Common/assert_cast.h>
 
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/IColumn.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <Formats/FormatFactory.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
-#include <fmt/format.h>
+#    include <Columns/ColumnString.h>
+#    include <Columns/ColumnTuple.h>
+#    include <Columns/ColumnsNumber.h>
+#    include <Columns/IColumn.h>
+#    include <DataTypes/DataTypeTuple.h>
+#    include <Formats/FormatFactory.h>
+#    include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#    include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
+#    include <fmt/format.h>
 
 
 namespace DB
@@ -50,7 +50,7 @@ DataLakeMetadataPtr PaimonMetadata::create(
 {
     auto configuration_ptr = configuration.lock();
     LOG_TEST(
-        &Poco::Logger::get("PaimonMetadata"), "path: {} full path: {}", configuration_ptr->getPath(), configuration_ptr->getFullPath());
+        &Poco::Logger::get("PaimonMetadata"), "path: {} raw path: {}", configuration_ptr->getPathForRead().path, configuration_ptr->getRawPath().path);
     PaimonTableClientPtr table_client_ptr = std::make_shared<PaimonTableClient>(object_storage, configuration, local_context);
     auto schema_json = table_client_ptr->getTableSchemaJSON(table_client_ptr->getLastTableSchemaInfo());
     return std::make_unique<PaimonMetadata>(object_storage, configuration_ptr, local_context, schema_json, table_client_ptr);
@@ -153,8 +153,8 @@ ObjectIterator PaimonMetadata::iterate(
         {
             if (file_entry.kind != PaimonManifestEntry::Kind::DELETE)
             {
-                LOG_TEST(&Poco::Logger::get("PaimonMetadata"), "data file: {}", file_entry.file.bucket_path);
-                data_files.emplace_back(std::filesystem::path(configuration_ptr->getPath()) / file_entry.file.file_name);
+                data_files.emplace_back(std::filesystem::path(configuration_ptr->getPathForRead().path) / file_entry.file.bucket_path / file_entry.file.file_name);
+                LOG_TEST(log, "base_manifest data file: {}", data_files.back());
             }
         }
     }
@@ -165,12 +165,9 @@ ObjectIterator PaimonMetadata::iterate(
         {
             if (file_entry.kind != PaimonManifestEntry::Kind::DELETE)
             {
-                LOG_TEST(
-                    &Poco::Logger::get("PaimonMetadata"),
-                    "data file: {}",
-                    std::filesystem::path(file_entry.file.bucket_path) / file_entry.file.file_name);
                 data_files.emplace_back(
-                    std::filesystem::path(configuration_ptr->getPath()) / file_entry.file.bucket_path / file_entry.file.file_name);
+                    std::filesystem::path(configuration_ptr->getPathForRead().path) / file_entry.file.bucket_path / file_entry.file.file_name);
+                    LOG_TEST(log, "delta_manifest data file: {}", data_files.back());
             }
         }
     }

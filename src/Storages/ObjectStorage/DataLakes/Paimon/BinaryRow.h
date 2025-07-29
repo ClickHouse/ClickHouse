@@ -8,13 +8,14 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context_fwd.h>
 #include <base/Decimal.h>
 #include <base/types.h>
 #include <fmt/ranges.h>
 #include <Poco/BinaryReader.h>
 #include <Poco/Logger.h>
+#include "Common/Logger.h"
 #include <Common/logger_useful.h>
-#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -91,7 +92,7 @@ public:
             Int32 size = static_cast<Int32>(offset_and_size);
             Int32 sub_offset = static_cast<Int32>(offset_and_size >> 32);
             String bytes_string = copyBytes(offset() + sub_offset, size);
-            LOG_TEST(&Poco::Logger::get("BinaryRow"), "bytes_string: {}", to_hex_string(bytes_string));
+            LOG_TEST(log, "bytes_string: {}", to_hex_string(bytes_string));
             auto add_leading_zero = [](const String & data, size_t target_size)
             {
                 if (data.size() == target_size)
@@ -158,13 +159,14 @@ private:
     const static Int64 HIGHEST_FIRST_BIT = 0x80L << 56;
     const static Int64 HIGHEST_SECOND_TO_EIGHTH_BIT = 0x7FL << 56;
     String tmp_value;
+    LoggerPtr log;
 
     Int32 calculateBitSetWidthInBytes() const { return ((arity + 63 + HEADER_SIZE_IN_BITS) / 64) * 8; }
     Int32 offset() const { return ARITY_SIZE; }
     Int32 getFieldOffset(Int32 pos) const
     {
         Int32 res = offset() + calculateBitSetWidthInBytes() + pos * 8;
-        LOG_TEST(&Poco::Logger::get("BinaryRow"), "pos: {}, offset: {}", pos, res);
+        LOG_TEST(log, "pos: {}, offset: {}", pos, res);
         return res;
     }
     Int32 byteIndex(Int32 bit_index) const { return bit_index >> ADDRESS_BITS_PER_WORD; }

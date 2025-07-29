@@ -1,45 +1,47 @@
 #include <config.h>
+#include <Poco/Logger.h>
+#include "Common/logger_useful.h"
 
 #if USE_AVRO
 
-#include <algorithm>
-#include <charconv>
-#include <cstddef>
-#include <cstring>
-#include <filesystem>
-#include <string>
-#include <system_error>
-#include <unordered_map>
-#include <utility>
-#include <vector>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <IO/ReadHelpers.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonTableSchema.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Common/Exception.h>
-#include <Common/assert_cast.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Disks/IStoragePolicy.h>
-#include <Disks/ObjectStorages/StoredObject.h>
-#include <Interpreters/Context_fwd.h>
-#include <Storages/ObjectStorage/DataLakes/Common.h>
-#include <base/types.h>
+#    include <algorithm>
+#    include <charconv>
+#    include <cstddef>
+#    include <cstring>
+#    include <filesystem>
+#    include <string>
+#    include <system_error>
+#    include <unordered_map>
+#    include <utility>
+#    include <vector>
+#    include <DataTypes/DataTypeDateTime64.h>
+#    include <DataTypes/DataTypesDecimal.h>
+#    include <DataTypes/DataTypesNumber.h>
+#    include <Disks/IStoragePolicy.h>
+#    include <Disks/ObjectStorages/StoredObject.h>
+#    include <IO/ReadHelpers.h>
+#    include <Interpreters/Context_fwd.h>
+#    include <Storages/ObjectStorage/DataLakes/Common.h>
+#    include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
+#    include <Storages/ObjectStorage/DataLakes/Paimon/PaimonTableSchema.h>
+#    include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#    include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#    include <base/types.h>
+#    include <Common/Exception.h>
+#    include <Common/assert_cast.h>
 
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/IColumn.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <Formats/FormatFactory.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
-#include <boost/graph/properties.hpp>
-#include <fmt/format.h>
-#include <fmt/ranges.h>
+#    include <Columns/ColumnString.h>
+#    include <Columns/ColumnTuple.h>
+#    include <Columns/ColumnsNumber.h>
+#    include <Columns/IColumn.h>
+#    include <DataTypes/DataTypeTuple.h>
+#    include <Formats/FormatFactory.h>
+#    include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
+#    include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#    include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
+#    include <boost/graph/properties.hpp>
+#    include <fmt/format.h>
+#    include <fmt/ranges.h>
 
 
 namespace DB
@@ -95,9 +97,10 @@ PaimonTableClient::PaimonTableClient(
     : WithContext(context_)
     , object_storage(object_storage_)
     , configuration(configuration_)
-    , table_location(configuration.lock()->getPath())
+    , table_location(configuration.lock()->getPathForRead().path)
     , log(getLogger("PaimonTableClient"))
 {
+    LOG_DEBUG(log, "path for read: {}, raw path: {}", configuration.lock()->getPathForRead().path, configuration.lock()->getRawPath().path);
 }
 
 std::pair<Int32, String> PaimonTableClient::getLastTableSchemaInfo()
@@ -117,7 +120,7 @@ std::pair<Int32, String> PaimonTableClient::getLastTableSchemaInfo()
     if (schema_files.empty())
     {
         throw Exception(
-            ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Paimon table with path {} doesn't exist", configuration_ptr->getPath());
+            ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Paimon table with path {} doesn't exist", table_location);
     }
     /// find max schema version
     std::vector<std::pair<UInt32, String>> schema_files_with_versions;
@@ -169,7 +172,7 @@ std::pair<Int64, String> PaimonTableClient::getLastTableSnapshotInfo()
     auto configuration_ptr = configuration.lock();
     /// read latest hint
     Int64 snapshot_version;
-    ObjectInfo object_info(std::filesystem::path(configuration_ptr->getPath()) / PAIMON_SNAPSHOT_DIR / PAIMON_SNAPSHOT_LATEST_HINT);
+    ObjectInfo object_info(std::filesystem::path(table_location) / PAIMON_SNAPSHOT_DIR / PAIMON_SNAPSHOT_LATEST_HINT);
     auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, getContext(), log);
     String hint_version_string;
     readStringUntilEOF(hint_version_string, *buf);
@@ -181,13 +184,13 @@ std::pair<Int64, String> PaimonTableClient::getLastTableSnapshotInfo()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The Paimon snapshot hint file content is invalid.");
         }
     }
-    String latest_snapshot_path = std::filesystem::path(configuration_ptr->getPath()) / (PAIMON_SNAPSHOT_DIR)
+    String latest_snapshot_path = std::filesystem::path(table_location) / (PAIMON_SNAPSHOT_DIR)
         / (PAIMON_SNAPSHOT_PRIFIX + std::to_string(snapshot_version));
 
     /// check latest hint is real latest snapshot, if not, find latest snapshot
     Int64 next_snapshot_version = snapshot_version + 1;
     StoredObject store_object(
-        std::filesystem::path(configuration_ptr->getPath()) / (PAIMON_SNAPSHOT_DIR)
+        std::filesystem::path(table_location) / (PAIMON_SNAPSHOT_DIR)
         / (PAIMON_SNAPSHOT_PRIFIX + std::to_string(next_snapshot_version)));
     if (object_storage->exists(store_object))
     {
@@ -256,7 +259,7 @@ std::vector<PaimonManifestFileMeta> PaimonTableClient::getManifestMeta(String ma
 
     auto context = getContext();
     StorageObjectStorage::ObjectInfo object_info(
-        std::filesystem::path(configuration_ptr->getPath()) / (PAIMON_MANIFEST_DIR) / manifest_list_path);
+        std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_list_path);
     auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
     Iceberg::AvroForIcebergDeserializer manifest_list_deserializer(
         std::move(manifest_list_buf), manifest_list_path, getFormatSettings(getContext()));
@@ -284,7 +287,7 @@ PaimonTableClient::getDataManifest(String manifest_path, const PaimonTableSchema
 
     auto context = getContext();
     StorageObjectStorage::ObjectInfo object_info(
-        std::filesystem::path(configuration_ptr->getPath()) / (PAIMON_MANIFEST_DIR) / manifest_path);
+        std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_path);
     auto manifest_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
     Iceberg::AvroForIcebergDeserializer manifest_deserializer(std::move(manifest_buf), manifest_path, getFormatSettings(getContext()));
 
