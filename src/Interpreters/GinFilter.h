@@ -8,7 +8,6 @@ namespace DB
 
 static constexpr UInt64 UNLIMITED_ROWS_PER_POSTINGS_LIST = 0;
 static constexpr UInt64 DEFAULT_NGRAM_SIZE = 3;
-static constexpr UInt64 UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES = 0;
 
 static inline constexpr auto TEXT_INDEX_NAME = "text";
 

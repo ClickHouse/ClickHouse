@@ -86,7 +86,7 @@ Optional parameter `segment_digestion_threshold_bytes` parameter determines the 
 Default value: `0`.
 
 We do not recommend changing `segment_digestion_threshold_bytes`.
-The default value will work well in virtually all sitations.
+The default value will work well in virtually all situations.
 The presence of more than one segment causes redundant data storage and slower full-text search queries.
 The only reason to provide a non-zero value (e.g. `256MB`) for `segment_digestion_threshold_bytes` is if you get out-of-memory exceptions during index creation.
 

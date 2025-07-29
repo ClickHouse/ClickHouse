@@ -300,10 +300,10 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                         settings.query_write_settings));
 
         GinIndexStorePtr store = nullptr;
-        if (const auto* gin_skip_index = typeid_cast<const MergeTreeIndexGin *>(&*skip_index); gin_skip_index != nullptr)
+        if (const auto * gin_index = typeid_cast<const MergeTreeIndexGin *>(&*skip_index); gin_index != nullptr)
         {
             store = std::make_shared<GinIndexStore>(
-                stream_name, data_part_storage, data_part_storage, gin_skip_index->gin_filter_params.segment_digestion_threshold_bytes);
+                stream_name, data_part_storage, data_part_storage, gin_index->gin_filter_params.segment_digestion_threshold_bytes);
             gin_index_stores[stream_name] = store;
         }
 

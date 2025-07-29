@@ -37,6 +37,8 @@
 namespace DB
 {
 
+static constexpr UInt64 UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES = 0;
+
 /// GinIndexPostingsList which uses 32-bit Roaring
 using GinIndexPostingsList = roaring::Roaring;
 using GinIndexPostingsListPtr = std::shared_ptr<GinIndexPostingsList>;

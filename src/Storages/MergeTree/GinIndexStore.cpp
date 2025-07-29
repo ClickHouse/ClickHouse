@@ -271,7 +271,7 @@ bool GinIndexStore::needToWriteCurrentSegment() const
 {
     /// segment_digestion_threshold_bytes != 0 means GinIndexStore splits the index data into separate segments.
     /// In case it's equal to 0 (zero), segment size is unlimited. Therefore, there will be a single segment.
-    return segment_digestion_threshold_bytes != 0 && current_size > segment_digestion_threshold_bytes;
+    return (segment_digestion_threshold_bytes != UNLIMITED_SEGMENT_DIGESTION_THRESHOLD_BYTES) && (current_size > segment_digestion_threshold_bytes);
 }
 
 void GinIndexStore::finalize()
