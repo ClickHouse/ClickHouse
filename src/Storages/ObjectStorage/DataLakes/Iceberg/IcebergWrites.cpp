@@ -855,7 +855,8 @@ bool IcebergStorageSink::initializeMetadata()
         Poco::JSON::Stringifier::stringify(metadata, oss, 4);
         std::string json_representation = removeEscapedSlashes(oss.str());
 
-        auto cleanup = [&] () {            
+        auto cleanup = [&] ()
+        {
             for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
                 object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 

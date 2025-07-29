@@ -1,6 +1,5 @@
 #include <Poco/JSON/Object.h>
-#include "Storages/ObjectStorage/DataLakes/Iceberg/Constant.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h"
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -736,6 +735,7 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
     } 
     catch (...)
     {
+        DB::tryLogCurrentException(log);
     }
 }
 
@@ -778,7 +778,7 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 }
 
 
-bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr metadata_content) const
+bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr new_snapshot) const
 {
     const std::string endpoint = fmt::format("{}/namespaces/{}/tables/{}", base_url, namespace_name, table_name);
 
@@ -793,9 +793,9 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
         request_body->set("identifier", identifier);
     }
 
-    if (metadata_content->has("parent-snapshot-id"))
+    if (new_snapshot->has("parent-snapshot-id"))
     {
-        auto parent_snapshot_id = metadata_content->getValue<Int64>("parent-snapshot-id");
+        auto parent_snapshot_id = new_snapshot->getValue<Int64>("parent-snapshot-id");
         if (parent_snapshot_id != -1)
         {
             Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
@@ -816,7 +816,7 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
         {
             Poco::JSON::Object::Ptr add_snapshot = new Poco::JSON::Object;
             add_snapshot->set("action", "add-snapshot");
-            add_snapshot->set("snapshot", metadata_content);
+            add_snapshot->set("snapshot", new_snapshot);
             updates->add(add_snapshot);
         }
 
@@ -825,7 +825,7 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
             set_snapshot->set("action", "set-snapshot-ref");
             set_snapshot->set("ref-name", "main");
             set_snapshot->set("type", "branch");
-            set_snapshot->set("snapshot-id", metadata_content->getValue<Int64>("snapshot-id"));
+            set_snapshot->set("snapshot-id", new_snapshot->getValue<Int64>("snapshot-id"));
 
             updates->add(set_snapshot);
         }
