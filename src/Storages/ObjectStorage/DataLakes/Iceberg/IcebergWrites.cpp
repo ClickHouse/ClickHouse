@@ -139,7 +139,7 @@ FileNamesGenerator::Result FileNamesGenerator::generateMetadataName()
             .path_in_storage = fmt::format("{}v{}.metadata.json", storage_metadata_dir, initial_version),
         };
     }
-    else 
+    else
     {
         auto uuid_str = uuid_generator.createRandom().toString();
         return Result{

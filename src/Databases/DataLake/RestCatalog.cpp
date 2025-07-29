@@ -680,7 +680,7 @@ bool RestCatalog::getTableMetadataImpl(
 
 void RestCatalog::sendPOSTRequest(const String & endpoint, Poco::JSON::Object::Ptr request_body) const
 {
-    std::ostringstream oss;
+    std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     request_body->stringify(oss);
     const std::string body_str = DB::removeEscapedSlashes(oss.str());
 
@@ -713,7 +713,7 @@ void RestCatalog::sendPOSTRequest(const String & endpoint, Poco::JSON::Object::P
 void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & location) const
 {
     const std::string endpoint = fmt::format("{}/namespaces", base_url);
-    
+
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     {
         Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
@@ -725,14 +725,11 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
         properties->set("location", location);
         request_body->set("properties", properties);
     }
-    std::ostringstream oss;
-    request_body->stringify(oss);
-    const std::string body_str = DB::removeEscapedSlashes(oss.str());
 
     try
     {
         sendPOSTRequest(endpoint, request_body);
-    } 
+    }
     catch (...)
     {
         DB::tryLogCurrentException(log);
@@ -770,7 +767,7 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     try
     {
         sendPOSTRequest(endpoint, request_body);
-    } 
+    }
     catch (const DB::HTTPException & ex)
     {
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Failed to create table {}", ex.displayText());
@@ -805,14 +802,14 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
 
             Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
             requirements->add(requirement);
-        
+
             request_body->set("requirements", requirements);
         }
     }
 
     {
         Poco::JSON::Array::Ptr updates = new Poco::JSON::Array;
-        
+
         {
             Poco::JSON::Object::Ptr add_snapshot = new Poco::JSON::Object;
             add_snapshot->set("action", "add-snapshot");

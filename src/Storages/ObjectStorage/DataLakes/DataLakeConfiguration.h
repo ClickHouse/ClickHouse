@@ -20,7 +20,7 @@
 #include <string>
 
 #include <Common/ErrorCodes.h>
-#include "Databases/DataLake/RestCatalog.h"
+#include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
 
 #include <fmt/ranges.h>
