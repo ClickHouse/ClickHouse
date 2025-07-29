@@ -27,7 +27,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 log_file_overallocate_size;
     extern const CoordinationSettingsUInt64 max_flush_batch_size;
     extern const CoordinationSettingsUInt64 max_log_file_size;
-    extern const CoordinationSettingsUInt64 rotate_log_storage_interval;
+    extern const CoordinationSettingsNonZeroUInt64 rotate_log_storage_interval;
 }
 
 namespace ErrorCodes
