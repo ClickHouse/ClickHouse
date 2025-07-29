@@ -30,7 +30,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int TIMEOUT_EXCEEDED;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
-    extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
+    extern const int SHELL_COMMAND_CANNOT_WRITE_TO_FILE_DESCRIPTOR;
     extern const int CANNOT_FCNTL;
     extern const int CANNOT_POLL;
 }
@@ -275,7 +275,7 @@ public:
             ssize_t res = ::write(fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
 
             if ((-1 == res || 0 == res) && errno != EINTR)
-                throw ErrnoException(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Cannot write into pipe");
+                throw ErrnoException(ErrorCodes::SHELL_COMMAND_CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Shell command cannot write into pipe");
 
             if (res > 0)
                 bytes_written += res;
