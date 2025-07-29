@@ -163,6 +163,8 @@ public:
 
     virtual bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const;
 
+    virtual bool isTransactional() const { return false; }
+
 protected:
     /// Name of the warehouse,
     /// which is sometimes also called "catalog name".

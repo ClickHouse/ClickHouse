@@ -60,6 +60,8 @@ public:
 
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
 
+    bool isTransactional() const override { return true; }
+
 private:
     void createNamespaceIfNotExists(const String & namespace_name, const String & location) const;
 
