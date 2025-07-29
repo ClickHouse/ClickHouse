@@ -148,8 +148,7 @@ IMPLEMENT_SETTING_ENUM(DistributedDDLOutputMode, ErrorCodes::BAD_ARGUMENTS,
 
 IMPLEMENT_SETTING_ENUM(StreamingHandleErrorMode, ErrorCodes::BAD_ARGUMENTS,
     {{"default",      StreamingHandleErrorMode::DEFAULT},
-     {"stream",       StreamingHandleErrorMode::STREAM},
-     {"dead_letter_queue", StreamingHandleErrorMode::DEAD_LETTER_QUEUE}})
+     {"stream",       StreamingHandleErrorMode::STREAM}})
 
 IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS,
     {{"enable",          ShortCircuitFunctionEvaluation::ENABLE},
@@ -305,14 +304,6 @@ IMPLEMENT_SETTING_ENUM(
      {"unity", DatabaseDataLakeCatalogType::UNITY},
      {"glue", DatabaseDataLakeCatalogType::GLUE},
      {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE}})
-
-IMPLEMENT_SETTING_ENUM(
-    FileCachePolicy,
-    ErrorCodes::BAD_ARGUMENTS,
-    {{"lru", FileCachePolicy::LRU},
-     {"LRU", FileCachePolicy::LRU},
-     {"slru", FileCachePolicy::SLRU},
-     {"SLRU", FileCachePolicy::SLRU}})
 
 IMPLEMENT_SETTING_ENUM(
     VectorSearchFilterStrategy,

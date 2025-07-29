@@ -14,7 +14,6 @@
 
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
-#include <Analyzer/HashUtils.h>
 #include <Analyzer/WindowNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/InterpolateNode.h>
@@ -29,6 +28,7 @@
 #include <Planner/Utils.h>
 
 #include <Core/Settings.h>
+#include "Analyzer/HashUtils.h"
 
 namespace DB
 {
@@ -137,9 +137,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
     Names aggregation_keys;
 
     ActionsAndProjectInputsFlagPtr before_aggregation_actions = std::make_shared<ActionsAndProjectInputsFlag>();
-    /// Here it is OK to materialize const columns: if column is used in GROUP BY, it may be expected to become non-const
-    /// See https://github.com/ClickHouse/ClickHouse/issues/70655 for example
-    before_aggregation_actions->dag = ActionsDAG(input_columns, false);
+    before_aggregation_actions->dag = ActionsDAG(input_columns);
     before_aggregation_actions->dag.getOutputs().clear();
 
     std::unordered_set<std::string_view> before_aggregation_actions_output_node_names;
