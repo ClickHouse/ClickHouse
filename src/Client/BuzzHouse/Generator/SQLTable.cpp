@@ -1181,7 +1181,7 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && b.isKeeperMapEngine())
     {
-        te->add_params()->set_svalue(fc.keeper_map_path_prefix);
+        te->add_params()->set_svalue(b.getTablePath(fc, false));
         if (rg.nextBool())
         {
             std::uniform_int_distribution<uint64_t> keys_limit_dist(0, 8192);

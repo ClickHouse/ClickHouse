@@ -77,6 +77,10 @@ String SQLBase::getTablePath(const FuzzConfig & fc, const bool client) const
 
         return fmt::format("http://{}:{}/file{}", client ? sc.client_hostname : sc.server_hostname, sc.port, tname);
     }
+    if (isKeeperMapEngine())
+    {
+        return fmt::format("/kfile{}", tname);
+    }
     chassert(0);
     return "";
 }
