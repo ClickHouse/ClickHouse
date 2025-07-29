@@ -2698,7 +2698,6 @@ pushdown
 pwrite
 py
 paimon
-Paimon
 paimonCluster
 qryn
 quantile
