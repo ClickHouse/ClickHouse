@@ -97,6 +97,8 @@ FileNamesGenerator & FileNamesGenerator::operator=(const FileNamesGenerator & ot
 
     table_dir = other.table_dir;
     storage_dir = other.storage_dir;
+    use_uuid_in_metadata = other.use_uuid_in_metadata;
+
     return *this;
 }
 
