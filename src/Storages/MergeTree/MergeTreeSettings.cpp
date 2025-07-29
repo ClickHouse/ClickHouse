@@ -1834,6 +1834,16 @@ namespace ErrorCodes
         3. Default compression codec defined in `compression` settings
     Default value: an empty string (not defined).
     )", 0) \
+    DECLARE(SearchDetachedPartsDrives, search_detached_parts_drives, SearchDetachedPartsDrives::WRITEABLE, R"(
+    ClickHouse looks for detached parts upon any ATTACH or CREATE table.
+    This setting limits scope of drives to search by traits of the drives.
+
+    Possible values:
+    - any - scope is not limited.
+    - writeable - scope is limited by drives, that are not readonly and not drive once
+    - local - scope is limited by drives, that are not readonly and not drive once and have local metadata.
+    - none - empty scope, do not search
+    )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE)

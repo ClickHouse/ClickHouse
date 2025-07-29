@@ -314,8 +314,6 @@ private:
 
     void reloadDisksTask();
 
-    bool lookForDetachedParts(DiskPtr disk) const;
-
     static constexpr size_t reschedule_time_ms = 100;
 
     mutable std::mutex databases_mutex;

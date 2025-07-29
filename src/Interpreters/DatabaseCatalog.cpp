@@ -15,6 +15,8 @@
 #include <Disks/IDisk.h>
 #include <Storages/MemorySettings.h>
 #include <Storages/StorageMemory.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
@@ -81,8 +83,13 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
-    extern const SettingsSearchDetachedPartsDrives search_detached_parts_drives;
 }
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsSearchDetachedPartsDrives search_detached_parts_drives;
+}
+
 
 class DatabaseNameHints : public IHints<>
 {
@@ -1451,18 +1458,6 @@ void DatabaseCatalog::dropTableDataTask()
     rescheduleDropTableTask();
 }
 
-bool DatabaseCatalog::lookForDetachedParts(DiskPtr disk) const
-{
-    auto is_writeable = [&]() { return !disk->isReadOnly() && !disk->isWriteOnce(); };
-    auto is_local_metadata = [&]() { return !(disk->isRemote() && disk->isPlain()); };
-
-    SearchDetachedPartsDrives mode = getContext()->getSettingsRef()[Setting::search_detached_parts_drives];
-    return (
-        mode == SearchDetachedPartsDrives::ANY || (mode == SearchDetachedPartsDrives::WRITEABLE && is_writeable())
-        || (mode == SearchDetachedPartsDrives::LOCAL && is_writeable() && is_local_metadata()));
-}
-
-
 void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 {
     auto db_disk = table.db_disk;
@@ -1472,11 +1467,33 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
         table.table->drop();
     }
 
+    auto look_for_detached_parts =
+        [this](DiskPtr disk, std::shared_ptr<MergeTreeData> tbl)
+    {
+        LOG_INFO(log, "Top of look_for_detached_parts");
+        if (!tbl)
+        {
+            LOG_INFO(log, "look_for_detached_parts: no tbl - returning true");
+            return true;
+        }
+
+        auto is_writeable = [&]() { return !disk->isReadOnly() && !disk->isWriteOnce(); };
+        auto is_local_metadata = [&]() { return !(disk->isRemote() && disk->isPlain()); };
+
+        SearchDetachedPartsDrives mode = (*tbl->getSettings())[MergeTreeSetting::search_detached_parts_drives];
+        bool is_look_needed = mode == SearchDetachedPartsDrives::ANY || (mode == SearchDetachedPartsDrives::WRITEABLE && is_writeable())
+            || (mode == SearchDetachedPartsDrives::LOCAL && is_writeable() && is_local_metadata());
+
+        LOG_INFO(log, "look_for_detached_parts: mode {}, is_look_needed {}", mode, is_look_needed);
+        return is_look_needed;
+    };
+
     /// Even if table is not loaded, try remove its data from disks.
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
         String data_path = "store/" + getPathForUUID(table.table_id.uuid);
-        if (disk->isReadOnly() || !lookForDetachedParts(disk) || !disk->existsDirectory(data_path))
+        auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table.table);
+        if (disk->isReadOnly() || !look_for_detached_parts(disk, table_merge_tree) || !disk->existsDirectory(data_path))
             continue;
 
         LOG_INFO(log, "Removing data directory {} of dropped table {} from disk {}", data_path, table.table_id.getNameForLogs(), disk_name);

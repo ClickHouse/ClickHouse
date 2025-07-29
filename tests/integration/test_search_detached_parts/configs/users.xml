@@ -1,20 +1,10 @@
 <clickhouse>
     <profiles>
         <default>
-            <stream_like_engine_allow_direct_select>1</stream_like_engine_allow_direct_select>
-            <!-- One test is expecting the interruption after blocking ZooKeeper -->
-            <insert_keeper_max_retries>0</insert_keeper_max_retries>
-            <function_sleep_max_microseconds_per_block>0</function_sleep_max_microseconds_per_block>
-						<search_detached_parts_drives>none</search_detached_parts_drives>
+            <enable_s3_requests_logging>1</enable_s3_requests_logging>
+            <s3_retry_attempts>5</s3_retry_attempts>
+            <s3_use_adaptive_timeouts>0</s3_use_adaptive_timeouts>
+            <s3_validate_request_settings>0</s3_validate_request_settings>
         </default>
     </profiles>
-    <users>
-        <default>
-            <password></password>
-            <profile>default</profile>
-            <named_collection_control>1</named_collection_control>
-            <named_collection_control>1</named_collection_control>
-						<search_detached_parts_drives>none</search_detached_parts_drives>
-        </default>
-    </users>
 </clickhouse>

@@ -722,7 +722,7 @@ public:
     /// Makes sense only for ordinary MergeTree engines because for them block numbering doesn't depend on partition.
     std::optional<Int64> getMinPartDataVersion() const;
 
-  bool lookForDetachedParts(DiskPtr disk, std::string_view disk_name) const;
+    bool lookForDetachedParts(DiskPtr disk, std::string_view disk_name) const;
 
     /// Returns all detached parts
     DetachedPartsInfo getDetachedParts() const;

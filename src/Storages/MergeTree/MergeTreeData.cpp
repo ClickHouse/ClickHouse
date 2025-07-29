@@ -199,7 +199,6 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsBool apply_patch_parts;
-    extern const SettingsSearchDetachedPartsDrives search_detached_parts_drives;
     extern const SettingsBool function_date_trunc_return_type_behavior;
 
 }
@@ -267,6 +266,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
     extern const MergeTreeSettingsBool remove_unused_patch_parts;
+    extern const MergeTreeSettingsSearchDetachedPartsDrives search_detached_parts_drives;
 }
 
 namespace ServerSetting
@@ -2078,11 +2078,7 @@ bool MergeTreeData::lookForDetachedParts(DiskPtr disk, std::string_view disk_nam
     auto is_writeable = [&]() { return !disk->isReadOnly() && !disk->isWriteOnce(); };
     auto is_local_metadata = [&]() { return !(disk->isRemote() && disk->isPlain()); };
 
-    auto query_context = CurrentThread::get().getQueryContext();
-    // SearchDetachedPartsDrives mode = query_context ? query_context->getSettingsRef()[Setting::search_detached_parts_drives] : getContext()->getSettingsRef()[Setting::search_detached_parts_drives];
-
-    assert(query_context);
-    SearchDetachedPartsDrives mode = query_context->getSettingsRef()[Setting::search_detached_parts_drives];
+    SearchDetachedPartsDrives mode = (*getSettings())[MergeTreeSetting::search_detached_parts_drives];
 
     // SearchDetachedPartsDrives mode = getContext()->getSettingsRef()[Setting::search_detached_parts_drives];
     LOG_DEBUG(log, "search_detached_parts_drives {} is_writeble {} for {}", mode, is_writeable(), disk_name);
