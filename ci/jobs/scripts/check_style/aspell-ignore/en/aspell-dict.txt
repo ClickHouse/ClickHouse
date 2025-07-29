@@ -2115,6 +2115,9 @@ packetpool
 packetsize
 PagerDuty
 pageviews
+paimon
+Paimon
+paimonCluster
 ParallelFormattingOutputFormatThreads
 ParallelFormattingOutputFormatThreadsActive
 parallelization
