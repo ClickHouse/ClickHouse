@@ -342,7 +342,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: alter-${{ matrix.ONLY }}${ matrix.PART && "-${{ matrix.PART }}" || ''}-${{ inputs.arch }}-artifacts
+          name: alter-${{ matrix.ONLY }}${{ matrix.PART && format('-{0}', matrix.PART) || '' }}-${{ inputs.arch }}-artifacts
           path: ${{ env.artifact_paths}}
 
   Benchmark:
@@ -439,11 +439,7 @@ jobs:
           REPORTS_PATH=${{runner.temp}}/reports_dir
           SUITE=clickhouse_keeper
           STORAGE=/${{ matrix.PART }}/${{ matrix.SSL }}
-          if [ "${{ matrix.SSL }}" = "ssl" ]; then
-            SSL="--ssl";
-          else
-            SSL="";
-          fi
+          SSL=${{ matrix.SSL == 'ssl' && '--ssl' || '' }}
           EOF
       - name: Setup
         run: .github/setup.sh
@@ -506,12 +502,15 @@ jobs:
           ref: ${{ inputs.commit }}
       - name: Set envs
         run: |
+          if [ "$PART" -eq 1 ]; then
+            echo ICEBERG_ONLY='"/iceberg/iceberg engine/rest catalog/*" "/iceberg/s3 table function/*" "/iceberg/icebergS3 table function/*" "/iceberg/iceberg cache"' >> "$GITHUB_ENV"
+          else
+            echo ICEBERG_ONLY='"/iceberg/iceberg engine/glue catalog/*" "/iceberg/iceberg table engine/*"' >> "$GITHUB_ENV"
+          fi
           cat >> "$GITHUB_ENV" << 'EOF'
           REPORTS_PATH=${{ runner.temp }}/reports_dir
           SUITE=iceberg
           PART=${{ matrix.PART }}
-          ICEBERG_1='"/iceberg/iceberg engine/rest catalog/*" "/iceberg/s3 table function/*" "/iceberg/icebergS3 table function/*" "/iceberg/iceberg cache"'
-          ICEBERG_2='"/iceberg/iceberg engine/glue catalog/*" "/iceberg/iceberg table engine/*"'
           LOCALSTACK_AUTH_TOKEN=${{ secrets.LOCALSTACK_AUTH_TOKEN }}
           EOF
       - name: Setup
@@ -535,7 +534,7 @@ jobs:
               -u ${{ env.SUITE }}/regression.py
               --clickhouse-binary-path ${{ env.clickhouse_path }}
               --attr project="$GITHUB_REPOSITORY" project.id="$GITHUB_REPOSITORY_ID" package="${{ env.clickhouse_path }}" version="${{ env.version }}" user.name="$GITHUB_ACTOR" repository="https://github.com/Altinity/clickhouse-regression" commit.hash="$(git rev-parse HEAD)" job.name="$GITHUB_JOB (${{ matrix.PART }})" job.retry=$GITHUB_RUN_ATTEMPT job.url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" arch="$(uname -i)"
-              --only $ICEBERG_${{ matrix.PART }}
+              --only ${{ env.ICEBERG_ONLY }}
               ${{ env.args }} || EXITCODE=$?;
               .github/add_link_to_logs.sh;
               exit $EXITCODE
