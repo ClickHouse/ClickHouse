@@ -149,7 +149,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        SUITE: [aes_encryption, atomic_insert, base_58, data_types, datetime64_extended_range, disk_level_encryption, dns, engines, example, extended_precision_data_types, kafka, kerberos, key_value, lightweight_delete, memory, part_moves_between_shards, rbac, selects, session_timezone, ssl_server, swarms, tiered_storage, version, window_functions]
+        SUITE: [aes_encryption, atomic_insert, base_58, data_types, datetime64_extended_range, disk_level_encryption, dns, engines, example, extended_precision_data_types, functions, kafka, kerberos, key_value, lightweight_delete, memory, part_moves_between_shards, rbac, selects, session_timezone, ssl_server, swarms, tiered_storage, version, window_functions]
     needs: [runner_labels_setup]
     runs-on: ${{ fromJson(needs.runner_labels_setup.outputs.runner_labels) }}
     timeout-minutes: ${{ inputs.timeout_minutes }}
