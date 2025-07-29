@@ -143,7 +143,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     if (storage_prewhere_info)
         return;
 
-    /// Vector index lookup and exact row seeks is a more targetted optimization, hence priority for that.
+    /// Vector index lookup and exact row seeks is a more targeted optimization, hence priority for that.
     auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
     if (read_from_merge_tree_step && read_from_merge_tree_step->getVectorSearchParameters().has_value())
         return;

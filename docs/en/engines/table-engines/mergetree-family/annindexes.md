@@ -317,7 +317,7 @@ ClickHouse will then load these granules from disk, and repeat the distance calc
 This step is called rescoring and while it can theoretically improve accuracy - remember the vector similarity index returns only an _approximate_ result, it is obvious not optimal in terms of performance.
 
 ClickHouse therefore provides an optimization which disables rescoring and returns the most similar vectors and their distances directly from the index.
-The optimization is disabled by default, see setting [vector_search_with_rescoring](../../../operations/settings/settings#vector_search_with_rescoring).
+The optimization is enabled by default, see setting [vector_search_with_rescoring](../../../operations/settings/settings#vector_search_with_rescoring).
 The way it works at a high level is that ClickHouse makes the most similar vectors and their distances available as a virtual column `_distances`.
 To see this, run a vector search query with `EXPLAIN header = 1`:
 
@@ -351,6 +351,8 @@ Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
 14. │                 _distance Float32                                                                       │
     └─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+Rescoring using a _multiplier_ could improve search quality if the vector index is a quantized index (e.g 'i8' type).
+ClickHouse provides a setting to specify that additional results need to be fetched from the vector index and then rescoring & re-ranking will be executed using the corresponding base vectors, see setting [vector_search_rescoring_multiplier](../../../operations/settings/settings#vector_search_rescoring_multiplier).
 
 :::note
 A query run without rescoring (`vector_search_with_rescoring = 0`) and with parallel replicas enabled may fall back to rescoring.

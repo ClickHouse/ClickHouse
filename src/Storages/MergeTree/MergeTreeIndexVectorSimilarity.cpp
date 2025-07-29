@@ -483,7 +483,7 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
         /// Additional filters mean post-filtering which means that matches may be removed. To compensate, allow to fetch more rows by a factor.
         limit = std::min(static_cast<size_t>(parameters->limit * postfilter_multiplier), max_limit);
     if (is_rescoring)
-        /// If rescoring is ON and user wants to fetch more neighbours from the index (could be a quantized index), use the mulitplier.
+        /// If rescoring is ON and user wants to fetch more neighbours from the index (could be a quantized index), use the multiplier.
         limit = std::max(limit, std::min(static_cast<size_t>(parameters->limit * rescoring_multiplier), max_limit));
 
     /// We want to run the search with the user-provided value for setting hnsw_candidate_list_size_for_search (aka. expansion_search).
