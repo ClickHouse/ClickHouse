@@ -1467,13 +1467,19 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
         table.table->drop();
     }
 
-    auto look_for_detached_parts =
+    auto look_on_disk =
         [this](DiskPtr disk, std::shared_ptr<MergeTreeData> tbl)
     {
-        LOG_INFO(log, "Top of look_for_detached_parts");
+        LOG_TRACE(log, "Top of look_for_detached_parts for {}", disk->getName());
         if (!tbl)
         {
-            LOG_INFO(log, "look_for_detached_parts: no tbl - returning true");
+            LOG_TRACE(log, "look_for_detached_parts: no tbl - returning true");
+            return true;
+        }
+
+        if (tbl->getStoragePolicy()->tryGetVolumeIndexByDiskName(disk->getName()).has_value())
+        {
+            LOG_TRACE(log, "look_for_detached_parts: disk {} belongs to table policy", disk->getName());
             return true;
         }
 
@@ -1493,7 +1499,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     {
         String data_path = "store/" + getPathForUUID(table.table_id.uuid);
         auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table.table);
-        if (disk->isReadOnly() || !look_for_detached_parts(disk, table_merge_tree) || !disk->existsDirectory(data_path))
+        if (disk->isReadOnly() || !look_on_disk(disk, table_merge_tree) || !disk->existsDirectory(data_path))
             continue;
 
         LOG_INFO(log, "Removing data directory {} of dropped table {} from disk {}", data_path, table.table_id.getNameForLogs(), disk_name);
