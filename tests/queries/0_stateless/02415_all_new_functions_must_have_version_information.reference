@@ -224,6 +224,7 @@ extractTextFromHTML
 extractURLParameter
 extractURLParameterNames
 extractURLParameters
+extractXML
 factorial
 farmFingerprint64
 farmHash64
