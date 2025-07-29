@@ -1,6 +1,6 @@
 #include <config.h>
 #include <Poco/Logger.h>
-#include "Common/logger_useful.h"
+#include <Common/logger_useful.h>
 
 #if USE_AVRO
 
@@ -99,9 +99,7 @@ PaimonTableClient::PaimonTableClient(
     , configuration(configuration_)
     , table_location(configuration.lock()->getPathForRead().path)
     , log(getLogger("PaimonTableClient"))
-{
-    LOG_DEBUG(log, "path for read: {}, raw path: {}", configuration.lock()->getPathForRead().path, configuration.lock()->getRawPath().path);
-}
+{}
 
 std::pair<Int32, String> PaimonTableClient::getLastTableSchemaInfo()
 {
@@ -119,8 +117,7 @@ std::pair<Int32, String> PaimonTableClient::getLastTableSchemaInfo()
         });
     if (schema_files.empty())
     {
-        throw Exception(
-            ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Paimon table with path {} doesn't exist", table_location);
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Paimon table with path {} doesn't exist", table_location);
     }
     /// find max schema version
     std::vector<std::pair<UInt32, String>> schema_files_with_versions;
@@ -184,14 +181,13 @@ std::pair<Int64, String> PaimonTableClient::getLastTableSnapshotInfo()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The Paimon snapshot hint file content is invalid.");
         }
     }
-    String latest_snapshot_path = std::filesystem::path(table_location) / (PAIMON_SNAPSHOT_DIR)
-        / (PAIMON_SNAPSHOT_PRIFIX + std::to_string(snapshot_version));
+    String latest_snapshot_path
+        = std::filesystem::path(table_location) / (PAIMON_SNAPSHOT_DIR) / (PAIMON_SNAPSHOT_PRIFIX + std::to_string(snapshot_version));
 
     /// check latest hint is real latest snapshot, if not, find latest snapshot
     Int64 next_snapshot_version = snapshot_version + 1;
     StoredObject store_object(
-        std::filesystem::path(table_location) / (PAIMON_SNAPSHOT_DIR)
-        / (PAIMON_SNAPSHOT_PRIFIX + std::to_string(next_snapshot_version)));
+        std::filesystem::path(table_location) / (PAIMON_SNAPSHOT_DIR) / (PAIMON_SNAPSHOT_PRIFIX + std::to_string(next_snapshot_version)));
     if (object_storage->exists(store_object))
     {
         auto snapshot_files = listFiles(
@@ -258,8 +254,7 @@ std::vector<PaimonManifestFileMeta> PaimonTableClient::getManifestMeta(String ma
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
 
     auto context = getContext();
-    StorageObjectStorage::ObjectInfo object_info(
-        std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_list_path);
+    StorageObjectStorage::ObjectInfo object_info(std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_list_path);
     auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
     Iceberg::AvroForIcebergDeserializer manifest_list_deserializer(
         std::move(manifest_list_buf), manifest_list_path, getFormatSettings(getContext()));
@@ -286,8 +281,7 @@ PaimonTableClient::getDataManifest(String manifest_path, const PaimonTableSchema
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
 
     auto context = getContext();
-    StorageObjectStorage::ObjectInfo object_info(
-        std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_path);
+    StorageObjectStorage::ObjectInfo object_info(std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_path);
     auto manifest_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
     Iceberg::AvroForIcebergDeserializer manifest_deserializer(std::move(manifest_buf), manifest_path, getFormatSettings(getContext()));
 
