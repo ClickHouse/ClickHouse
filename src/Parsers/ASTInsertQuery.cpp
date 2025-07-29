@@ -52,14 +52,14 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 {
     frame.need_parens = false;
 
-    ostr << "INSERT INTO" << " ";
+    ostr << (settings.hilite ? hilite_keyword : "") << "INSERT INTO" << (settings.hilite ? hilite_none : "") << " ";
     if (table_function)
     {
-        ostr << "FUNCTION" << " ";
+        ostr << (settings.hilite ? hilite_keyword : "") << "FUNCTION" << (settings.hilite ? hilite_none : "") << " ";
         table_function->format(ostr, settings, state, frame);
         if (partition_by)
         {
-            ostr << " " << "PARTITION BY" << " ";
+            ostr << " " << (settings.hilite ? hilite_keyword : "") << "PARTITION BY" << (settings.hilite ? hilite_none : "") << " ";
             partition_by->format(ostr, settings, state, frame);
         }
     }
@@ -89,21 +89,21 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     if (infile)
     {
         ostr
-            << " "
+            << " " << (settings.hilite ? hilite_keyword : "")
             << "FROM INFILE"
-
+            << (settings.hilite ? hilite_none : "")
             << " " << quoteString(infile->as<ASTLiteral &>().value.safeGet<std::string>());
         if (compression)
             ostr
-                << " "
+                << " " << (settings.hilite ? hilite_keyword : "")
                 << "COMPRESSION"
-
+                << (settings.hilite ? hilite_none : "")
                 << " " << quoteString(compression->as<ASTLiteral &>().value.safeGet<std::string>());
     }
 
     if (settings_ast)
     {
-        ostr << settings.nl_or_ws << "SETTINGS" << " ";
+        ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS" << (settings.hilite ? hilite_none : "") << " ";
         settings_ast->format(ostr, settings, state, frame);
     }
 
@@ -129,12 +129,12 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         if (!format.empty())
         {
             ostr << delim
-                << "FORMAT" << " " << format;
+                << (settings.hilite ? hilite_keyword : "") << "FORMAT" << (settings.hilite ? hilite_none : "") << " " << format;
         }
         else if (!infile)
         {
             ostr << delim
-                << "VALUES";
+                << (settings.hilite ? hilite_keyword : "") << "VALUES" << (settings.hilite ? hilite_none : "");
         }
     }
 }

@@ -28,8 +28,8 @@
 #include <Server/TCPProtocolStackData.h>
 #include <Storages/MergeTree/RequestResponse.h>
 
-#include <Client/IServerConnection.h>
-#include <Server/IServer.h>
+#include "Client/IServerConnection.h"
+#include "IServer.h"
 
 
 namespace CurrentMetrics
@@ -50,8 +50,6 @@ struct ProfileInfo;
 class TCPServer;
 class NativeWriter;
 class NativeReader;
-struct ClusterFunctionReadTaskResponse;
-using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
 
 /// State of query processing.
 struct QueryState
@@ -275,12 +273,10 @@ private:
     bool receivePacketsExpectData(QueryState & state) TSA_REQUIRES(callback_mutex);
     bool receivePacketsExpectDataConcurrentWithExecutor(QueryState & state);
     void receivePacketsExpectCancel(QueryState & state) TSA_REQUIRES(callback_mutex);
-
-    ClusterFunctionReadTaskResponsePtr receiveClusterFunctionReadTaskResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
-
+    String receiveReadTaskResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
     std::optional<ParallelReadResponse> receivePartitionMergeTreeReadTaskResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
 
-    void processCancel(QueryState & state) TSA_REQUIRES(callback_mutex);
+    void processCancel(QueryState & state, bool throw_exception = true) TSA_REQUIRES(callback_mutex);
     void processQuery(std::optional<QueryState> & state);
     void processIgnoredPartUUIDs();
     bool processData(QueryState & state, bool scalar) TSA_REQUIRES(callback_mutex);

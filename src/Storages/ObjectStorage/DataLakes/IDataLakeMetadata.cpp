@@ -1,4 +1,4 @@
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include "IDataLakeMetadata.h"
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
 namespace DB
@@ -60,9 +60,9 @@ ObjectIterator IDataLakeMetadata::createKeysIterator(
     return std::make_shared<KeysIterator>(std::move(data_files_), object_storage_, callback_);
 }
 
-ReadFromFormatInfo IDataLakeMetadata::prepareReadingFromFormat(
+DB::ReadFromFormatInfo IDataLakeMetadata::prepareReadingFromFormat(
     const Strings & requested_columns,
-    const StorageSnapshotPtr & storage_snapshot,
+    const DB::StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
     bool supports_subset_of_columns)
 {

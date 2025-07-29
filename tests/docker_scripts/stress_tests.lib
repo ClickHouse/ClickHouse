@@ -60,7 +60,7 @@ function configure()
     # install test configs
     export USE_DATABASE_ORDINARY=1
     export EXPORT_S3_STORAGE_POLICIES=1
-    /repo/tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client --no-keeper-inject-auth
+    /repo/tests/config/install.sh
 
     # avoid too slow startup
     sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
@@ -69,8 +69,7 @@ function configure()
     sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
 
     function randomize_config_boolean_value {
-        local value=$((RANDOM % 2))
-        echo "Replacing $1 with $value"
+        value=$((RANDOM % 2))
         sudo cat "/etc/clickhouse-server/config.d/$2.xml" \
         | sed "s|<$1>[01]</$1>|<$1>$value</$1>|" \
         > "/etc/clickhouse-server/config.d/$2.xml.tmp"
@@ -195,8 +194,8 @@ EOL
 
 function stop_server()
 {
-    local max_tries=${1:-300}
-    local check_hang=${2:-true}
+    local max_tries=300
+    local check_hang=true
     local pid
     # Preserve the pid, since the server can hung after the PID will be deleted.
     pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid)"
@@ -242,7 +241,7 @@ function stop_server()
 function start_server()
 {
     counter=0
-    max_attempt=${1:-120}
+    max_attempt=120
     until clickhouse-client --query "SELECT 1"
     do
         if [ "$counter" -gt "$max_attempt" ]

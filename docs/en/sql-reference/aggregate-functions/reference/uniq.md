@@ -40,3 +40,4 @@ We recommend using this function in almost all scenarios.
 - [uniqHLL12](/sql-reference/aggregate-functions/reference/uniqhll12)
 - [uniqExact](/sql-reference/aggregate-functions/reference/uniqexact)
 - [uniqTheta](/sql-reference/aggregate-functions/reference/uniqthetasketch)
+
