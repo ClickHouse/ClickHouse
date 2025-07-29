@@ -2516,7 +2516,7 @@ message RemoteFunc {
     required TableOrFunction tof = 3;
     optional string user = 4;
     optional string password = 5;
-    optional string sharding_key = 6;
+    optional Expr sharding_key = 6;
 }
 
 message MySQLFunc {
@@ -2543,7 +2543,7 @@ message SQLiteFunc {
 
 message RedisFunc {
     required string address = 1;
-    required string key = 2;
+    required Expr key = 2;
     required Expr structure = 3;
     optional uint32 db_index = 4;
     optional string password = 5;
@@ -2631,7 +2631,7 @@ message ClusterFunc {
     optional bool all_replicas = 1;
     required Cluster cluster = 2;
     required TableOrFunction tof = 3;
-    optional string sharding_key = 4;
+    optional Expr sharding_key = 4;
 }
 
 message MergeTreeIndexFunc {

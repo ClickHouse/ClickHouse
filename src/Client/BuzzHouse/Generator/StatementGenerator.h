@@ -344,6 +344,7 @@ private:
 
     DatabaseEngineValues getNextDatabaseEngine(RandomGenerator & rg);
     void getNextTableEngine(RandomGenerator & rg, bool use_external_integrations, SQLBase & b);
+    void setRandomShardKey(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * expr);
     void getNextPeerTableDatabase(RandomGenerator & rg, SQLBase & b);
 
     void generateNextRefreshableView(RandomGenerator & rg, RefreshableView * cv);

@@ -383,10 +383,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             const ServerCredentials & sc = fc.redis_server.value();
 
             rfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
-            flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
-            std::shuffle(this->remote_entries.begin(), this->remote_entries.end(), rg.generator);
-            rfunc->set_key(rg.pickRandomly(this->remote_entries).getBottomName());
-            this->remote_entries.clear();
+            setRandomShardKey(rg, t, rfunc->mutable_key());
             structure = rfunc->mutable_structure();
             if (rg.nextBool())
             {
@@ -450,9 +447,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         if (rg.nextSmallNumber() < 4)
         {
             /// Optional sharding key
-            flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
-            cdf->set_sharding_key(rg.pickRandomly(this->remote_entries).getBottomName());
-            this->remote_entries.clear();
+            setRandomShardKey(rg, t, cdf->mutable_sharding_key());
         }
     }
     else if (usage == TableFunctionUsage::RemoteCall || (usage == TableFunctionUsage::PeerTable && t.hasClickHousePeer()))
@@ -469,17 +464,19 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
             rfunc->set_address(sc.server_hostname + ":" + std::to_string(sc.port));
             rfunc->set_user(sc.user);
             rfunc->set_password(sc.password);
-            if (rg.nextSmallNumber() < 4)
-            {
-                /// Optional sharding key
-                rfunc->set_sharding_key(std::to_string(rg.randomInt<uint32_t>(0, 2)));
-            }
         }
         else
         {
             rfunc->set_address(fc.getConnectionHostAndPort(fname == RemoteFunc::remoteSecure));
+            rfunc->set_user("default");
+            rfunc->set_password("");
         }
         t.setName(rfunc->mutable_tof()->mutable_est(), true);
+        if (rg.nextSmallNumber() < 4)
+        {
+            /// Optional sharding key
+            setRandomShardKey(rg, t, rfunc->mutable_sharding_key());
+        }
     }
     else
     {
@@ -681,7 +678,7 @@ bool StatementGenerator::joinedTableOrFunction(
         this->depth--;
         if (rg.nextMediumNumber() < 26)
         {
-            rfunc->set_sharding_key(std::to_string(rg.randomInt<uint32_t>(0, 2)));
+            setRandomShardKey(rg, std::nullopt, rfunc->mutable_sharding_key());
         }
     }
     else if (generate_series_udf && nopt < (derived_table + cte + table + view + remote_udf + generate_series_udf + 1))
@@ -846,7 +843,7 @@ bool StatementGenerator::joinedTableOrFunction(
         this->depth--;
         if (rg.nextMediumNumber() < 26)
         {
-            cdf->set_sharding_key("c" + std::to_string(rg.randomInt<uint32_t>(0, fc.max_columns - 1)));
+            setRandomShardKey(rg, std::nullopt, cdf->mutable_sharding_key());
         }
     }
     else if (

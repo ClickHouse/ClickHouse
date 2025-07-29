@@ -591,7 +591,7 @@ void StatementGenerator::colRefOrExpression(
     const uint32_t one_arg_func = 5;
     const uint32_t hash_func = 10 * static_cast<uint32_t>(teng != SummingMergeTree);
     const uint32_t rand_expr = 15;
-    const uint32_t rand_func = 5;
+    const uint32_t rand_func = 5 * static_cast<uint32_t>(this->allow_not_deterministic);
     const uint32_t col_ref = 40;
     const uint32_t prob_space = datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + rand_func + col_ref;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
@@ -633,8 +633,32 @@ void StatementGenerator::colRefOrExpression(
     else if (rand_expr && nopt < (datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + 1))
     {
         /// Use a random expression
+        std::unordered_map<uint32_t, QueryLevel> levels_backup;
+        std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
+
+        for (const auto & [key, val] : this->levels)
+        {
+            levels_backup[key] = val;
+        }
+        for (const auto & [key, val] : this->ctes)
+        {
+            ctes_backup[key] = val;
+        }
+        this->levels.clear();
+        this->ctes.clear();
+        this->levels[this->current_level] = QueryLevel(this->current_level);
         this->levels[this->current_level].rels.push_back(rel);
         generateTableExpression(rg, false, expr);
+        this->levels.clear();
+        this->ctes.clear();
+        for (const auto & [key, val] : levels_backup)
+        {
+            this->levels[key] = val;
+        }
+        for (const auto & [key, val] : ctes_backup)
+        {
+            this->ctes[key] = val;
+        }
     }
     else if (rand_func && nopt < (datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + rand_func + 1))
     {
@@ -897,6 +921,29 @@ void StatementGenerator::setClusterInfo(RandomGenerator & rg, SQLBase & b) const
     }
 }
 
+void StatementGenerator::setRandomShardKey(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * expr)
+{
+    if (this->allow_not_deterministic && rg.nextMediumNumber() < 26)
+    {
+        /// Use random sharding key sometimes
+        expr->mutable_lit_val()->set_no_quote_str("rand()");
+    }
+    else if (t.has_value())
+    {
+        const SQLTable & tt = t.value();
+
+        flatTableColumnPath(
+            to_remote_entries | flat_tuple | flat_nested | flat_json | collect_generated, tt.cols, [](const SQLColumn &) { return true; });
+        const ColumnPathChain entry = rg.pickRandomly(this->remote_entries);
+        this->remote_entries.clear();
+        colRefOrExpression(rg, createTableRelation(rg, true, "", tt), tt.teng, entry, expr);
+    }
+    else
+    {
+        expr->mutable_lit_val()->set_no_quote_str("c" + std::to_string(rg.randomInt<uint32_t>(0, (fc.max_columns - 1))));
+    }
+}
+
 void StatementGenerator::generateEngineDetails(
     RandomGenerator & rg, const SQLRelation & rel, SQLBase & b, const bool add_pkey, TableEngine * te)
 {
@@ -1083,6 +1130,7 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && b.isDistributedEngine())
     {
+        const SQLTable * t = nullptr;
         const uint32_t dist_table = 15 * static_cast<uint32_t>(has_tables);
         const uint32_t dist_view = 5 * static_cast<uint32_t>(has_views);
         const uint32_t dist_dictionary = 5 * static_cast<uint32_t>(has_dictionaries);
@@ -1093,12 +1141,11 @@ void StatementGenerator::generateEngineDetails(
         te->add_params()->set_svalue(rg.pickRandomly(fc.clusters));
         if (dist_table && nopt < (dist_table + 1))
         {
-            const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(hasTableOrView<SQLTable>(b)));
+            t = &rg.pickRandomly(filterCollection<SQLTable>(hasTableOrView<SQLTable>(b))).get();
 
-            t.setName(te);
+            t->setName(te);
             /// For the sharding key
-            flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
-            b.sub = t.teng;
+            b.sub = t->teng;
         }
         else if (dist_view && nopt < (dist_table + dist_view + 1))
         {
@@ -1112,7 +1159,6 @@ void StatementGenerator::generateEngineDetails(
             const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(hasTableOrView<SQLDictionary>(b)));
 
             d.setName(te);
-            flatTableColumnPath(to_remote_entries, d.cols, [](const SQLColumn &) { return true; });
             b.sub = d.teng;
         }
         else
@@ -1123,20 +1169,7 @@ void StatementGenerator::generateEngineDetails(
         if (rg.nextBool())
         {
             /// Optional sharding key
-            if (rg.nextMediumNumber() < 26)
-            {
-                /// Use random sharding key sometimes
-                te->add_params()->set_svalue("rand()");
-            }
-            else if (!this->remote_entries.empty())
-            {
-                colRefOrExpression(rg, rel, b.teng, rg.pickRandomly(this->remote_entries), te->add_params()->mutable_expr());
-            }
-            else
-            {
-                te->add_params()->mutable_cols()->mutable_col()->set_column(
-                    "c" + std::to_string(rg.randomInt<uint32_t>(0, (fc.max_columns - 1))));
-            }
+            setRandomShardKey(rg, t ? std::make_optional<SQLTable>(*t) : std::nullopt, te->add_params()->mutable_expr());
             /// Optional policy name
             if (!fc.storage_policies.empty() && rg.nextBool())
             {

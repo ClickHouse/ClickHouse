@@ -1941,26 +1941,22 @@ CONV_FN(RemoteFunc, rfunc)
     ret += rfunc.address();
     ret += "', ";
     TableOrFunctionToString(ret, true, tof);
-    if (tof.has_est())
+    if (rfunc.has_user())
     {
-        if (rfunc.has_user() && !rfunc.user().empty())
-        {
-            ret += ", '";
-            ret += rfunc.user();
-            ret += "'";
-        }
-        if (rfunc.has_password())
-        {
-            ret += ", '";
-            ret += rfunc.password();
-            ret += "'";
-        }
-        if (rfunc.has_sharding_key())
-        {
-            ret += ", '";
-            ret += rfunc.sharding_key();
-            ret += "'";
-        }
+        ret += ", '";
+        ret += rfunc.user();
+        ret += "'";
+    }
+    if (rfunc.has_password())
+    {
+        ret += ", '";
+        ret += rfunc.password();
+        ret += "'";
+    }
+    if (rfunc.has_sharding_key())
+    {
+        ret += ", ";
+        ExprToString(ret, rfunc.sharding_key());
     }
     ret += ")";
 }
@@ -2015,9 +2011,9 @@ CONV_FN(RedisFunc, rfunc)
 {
     ret += "redis('";
     ret += rfunc.address();
-    ret += "', '";
-    ret += rfunc.key();
     ret += "', ";
+    ExprToString(ret, rfunc.key());
+    ret += ", ";
     ExprToString(ret, rfunc.structure());
     if (rfunc.has_db_index())
     {
@@ -2224,11 +2220,10 @@ CONV_FN(ClusterFunc, cluster)
     ClusterToString(ret, false, cluster.cluster());
     ret += ", ";
     TableOrFunctionToString(ret, true, tof);
-    if (tof.has_est() && cluster.has_sharding_key())
+    if (cluster.has_sharding_key())
     {
-        ret += ", '";
-        ret += cluster.sharding_key();
-        ret += "'";
+        ret += ", ";
+        ExprToString(ret, cluster.sharding_key());
     }
     ret += ")";
 }
