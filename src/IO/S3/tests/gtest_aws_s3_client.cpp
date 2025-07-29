@@ -408,7 +408,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
         region,
         remote_host_filter,
         s3_max_redirects,
-        s3_retry_attempts,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = s3_retry_attempts},
         s3_slow_all_threads_after_network_error,
         enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
