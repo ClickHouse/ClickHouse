@@ -4,6 +4,7 @@
 
 #if USE_MONGODB
 #include <Common/JSONBuilder.h>
+#include <Interpreters/Context.h>
 #include <Processors/ISource.h>
 #include <Storages/StorageMongoDB.h>
 
@@ -24,7 +25,7 @@ public:
         const std::string & collection_name,
         const bsoncxx::document::view_or_value & query,
         const mongocxx::options::find & options,
-        SharedHeader sample_block_,
+        const Block & sample_block_,
         const UInt64 & max_block_size_);
 
     ~MongoDBSource() override;

@@ -1,6 +1,3 @@
--- Tags: no-msan
--- msan: too slow
-
 SELECT '-- Single partition by function';
 
 DROP TABLE IF EXISTS 03173_single_function;

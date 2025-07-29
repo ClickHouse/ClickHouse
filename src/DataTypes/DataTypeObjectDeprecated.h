@@ -43,8 +43,6 @@ public:
     bool hasNullableSubcolumns() const { return is_nullable; }
 
     const String & getSchemaFormat() const { return schema_format; }
-
-    void updateHashImpl(SipHash & hash) const override;
 };
 
 }

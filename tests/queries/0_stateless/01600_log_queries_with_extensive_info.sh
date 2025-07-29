@@ -14,10 +14,7 @@ ${CLICKHOUSE_CLIENT} -q "insert into test_log_queries.logtable values (1,2,3), (
 ${CLICKHOUSE_CLIENT} -q "select k from test_log_queries.logtable where i = 4" "--query_id=01600_log_queries_with_extensive_info_004"
 
 # exception query should also contain query_kind
-# NOTE:
-# - force analyzer since the behavior is different, InterpreterSelectQuery logs used database/tables **after** it starts reading, analyzer during analysis
-# - disable parallel replicas, since it also uses different code path
-${CLICKHOUSE_CLIENT} -q "select k from test_log_queries.logtable where i > ''" "--query_id=01600_log_queries_with_extensive_info_004_err" --allow_experimental_analyzer=1 --enable_parallel_replicas=0 2> /dev/null || true
+${CLICKHOUSE_CLIENT} -q "select k from test_log_queries.logtable where i > ''" "--query_id=01600_log_queries_with_extensive_info_004_err" 2> /dev/null || true
 
 ${CLICKHOUSE_CLIENT} -q "select k from test_log_queries.logtable where i = 1" "--query_id=01600_log_queries_with_extensive_info_005"
 ${CLICKHOUSE_CLIENT} -q "select * from test_log_queries.logtable where i = 1" "--query_id=01600_log_queries_with_extensive_info_006"

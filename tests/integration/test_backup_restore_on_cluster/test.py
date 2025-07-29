@@ -1183,7 +1183,7 @@ def test_shutdown_waits_for_backup():
 
     # If kill=False the pending backup must be completed
     # If kill=True the pending backup might be completed or failed
-    node2.restart_clickhouse(kill=False)
+    node2.stop_clickhouse(kill=False)
 
     assert_eq_with_retry(
         node1,
@@ -1194,6 +1194,8 @@ def test_shutdown_waits_for_backup():
 
     status = node1.query(f"SELECT status FROM system.backups WHERE id='{id}'").strip()
     assert status == "BACKUP_CREATED"
+
+    node2.start_clickhouse()
 
     node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
