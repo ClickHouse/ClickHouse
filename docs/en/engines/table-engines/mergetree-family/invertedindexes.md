@@ -8,7 +8,6 @@ title: 'Full-text Search using Text Indexes'
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
 
 # Full-text search using text indexes
 
@@ -79,17 +78,17 @@ For example, with separators = `['%21', '%']` string `%21abc` would be tokenized
 
 <summary>Advanced settings</summary>
 
-The segment digestion threshold can be specified via the optional `segment_digestion_threshold_bytes` parameter.
-The parameter is used to control the threshold of splitting text data into multiple segments.
+Optional parameter `segment_digestion_threshold_bytes` parameter determines the byte size of index segments.
 
-- `segment_digestion_threshold_bytes = 0`: Unlimited, a single segment will be created per index table part.
-- `segment_digestion_threshold_bytes = B`: Once segment size is reached to `B` bytes, it will be stored separately.
-- By default it's set to `0 (unlimited)`.
+- `segment_digestion_threshold_bytes = 0`: Unlimited size, a single segment is created for each index granule.
+- `segment_digestion_threshold_bytes = B`: A new segment is created every `B` bytes of text input.
 
-:::note
-The parameter below is not recommended to change.
-We advise, if possible, to use the default setting until it's necessary. i.e. text data is much bigger than the available memory.
-:::
+Default value: `0`.
+
+We do not recommend changing `segment_digestion_threshold_bytes`.
+The default value will work well in virtually all sitations.
+The presence of more than one segment causes redundant data storage and slower full-text search queries.
+The only reason to provide a non-zero value (e.g. `256MB`) for `segment_digestion_threshold_bytes` is if you get out-of-memory exceptions during index creation.
 
 </details>
 
@@ -116,14 +115,6 @@ SELECT * from tab WHERE hasToken(str, 'Hello');
 ```
 
 Like for other secondary indices, each column part has its own text index.
-
-### max_digestion_size_per_segment
-
-<DeprecatedBadge/>
-
-:::warning
-This table parameter which was used to control the max segment size of the text index is deprecated and removed.
-:::
 
 ### Functions support {#functions-support}
 

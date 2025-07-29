@@ -150,7 +150,6 @@ ENGINE = MergeTree
 ORDER BY tuple();
 DROP TABLE tab;
 
-
 SELECT 'Parameters are shuffled.';
 
 CREATE TABLE tab
