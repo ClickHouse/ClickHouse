@@ -508,7 +508,7 @@ JoinMask getColumnAsMask(const Block & block, const String & column_name)
 
         auto res = ColumnUInt8::create(nullable_col->size(), 0);
         for (size_t i = 0, sz = nullable_col->size(); i < sz; ++i)
-            res->getData()[i] = !null_map.getData()[i] && nest_col.getData()[i];
+            res->getData()[i] = !(null_map.getData()[i]) && !!(nest_col.getData()[i]);
         return JoinMask(std::move(res));
     }
     return JoinMask(std::move(join_condition_col));

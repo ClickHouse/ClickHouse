@@ -95,7 +95,7 @@ public:
         return std::make_unique<UsedFlagsHolder>(need_flags, nullptr);
     }
 
-    std::unique_ptr<UsedFlagsHolder> getUsedFlagsHolder() const { return getUsedFlagsHolder(nullptr); }
+    std::unique_ptr<UsedFlagsHolder> getUsedFlagsHolder() const { return std::make_unique<UsedFlagsHolder>(need_flags, &per_offset_flags); }
 
     template <bool use_flags, bool flag_per_row, typename FindResult>
     void setUsed(const FindResult & f)
