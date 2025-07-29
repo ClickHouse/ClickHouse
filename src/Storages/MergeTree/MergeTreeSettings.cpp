@@ -1692,12 +1692,6 @@ namespace ErrorCodes
     DECLARE(Bool, notify_newest_block_number, false, R"(
     Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
     )", EXPERIMENTAL) \
-    DECLARE(UInt64, text_index_sampling_threshold, 1000, R"(
-    Enable cardinality sampling in text index for index granules with more than this number of rows.
-    )", EXPERIMENTAL) \
-    DECLARE(Float, text_index_sampling_rate, 0.1f, R"(
-    Ratio of sampled rows in text index compared to all rows.
-    )", EXPERIMENTAL) \
     DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, false, R"(
     Enables writing attributes into virtual parts and committing blocks in keeper
     )", EXPERIMENTAL) \

@@ -208,11 +208,6 @@ public:
 
     UInt32 getCurrentSegmentID() const { return current_segment.segment_id; }
 
-    /// Set the unique value count, needed to size the bloom filter.
-    /// TODO: The unique row count is actually estimated per index granule but the bloom filter exists per segment.
-    ///       Also, the current calculation is for the unique _row values_ whereas the bloom filter contains unique _tokens_.
-    void setEstimatedUniqueCount(UInt64 estimated_unique_count) { segment_estimated_unique_count = estimated_unique_count; }
-
     /// Do last segment writing
     void finalize();
     void cancel() noexcept;
@@ -266,9 +261,6 @@ private:
     GinIndexSegment current_segment;
     UInt64 current_size = 0;
     const UInt64 segment_digestion_threshold_bytes = 0;
-
-    /// Approximate number of unique rows
-    UInt64 segment_estimated_unique_count = 0;
 
     /// File streams for segment, dictionaries and postings lists
     std::unique_ptr<WriteBufferFromFileBase> metadata_file_stream;

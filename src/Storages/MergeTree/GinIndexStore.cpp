@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <Columns/ColumnString.h>
 #include <Common/FST.h>
+#include <Common/HashTable/HashSet.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
 #include <DataTypes/DataTypeArray.h>
@@ -395,6 +396,20 @@ void GinIndexStore::writeSegmentId()
     ostr->finalize();
 }
 
+namespace
+{
+/// Initialize bloom filter from tokens from the term dictionary
+GinSegmentDictionaryBloomFilter initializeBloomFilter(const GinIndexStore::GinIndexPostingsBuilderContainer & postings)
+{
+    auto number_of_unique_terms = postings.size(); /// postings is a dictionary
+    const auto [bits_per_rows, hashes] = BloomFilterHash::calculationBestPractices(GIN_INDEX_BLOOM_FILTER_DEFAULT_FALSE_POSITIVE_RATE);
+    auto bloom_filter = GinSegmentDictionaryBloomFilter(number_of_unique_terms, bits_per_rows, hashes);
+    for (const auto & [token, _] : postings)
+        bloom_filter.add(token);
+    return bloom_filter;
+}
+}
+
 void GinIndexStore::writeSegment()
 {
     if (metadata_file_stream == nullptr)
@@ -408,14 +423,10 @@ void GinIndexStore::writeSegment()
 
     TokenPostingsBuilderPairs token_postings_list_pairs;
     token_postings_list_pairs.reserve(current_postings.size());
-
-    const auto [bits_per_rows, hashes] = BloomFilterHash::calculationBestPractices(GIN_INDEX_BLOOM_FILTER_DEFAULT_FALSE_POSITIVE_RATE);
-    GinSegmentDictionaryBloomFilter bloom_filter(segment_estimated_unique_count, bits_per_rows, hashes);
     for (const auto & [token, postings_list] : current_postings)
-    {
         token_postings_list_pairs.push_back({token, postings_list});
-        bloom_filter.add(token);
-    }
+
+    GinSegmentDictionaryBloomFilter bloom_filter = initializeBloomFilter(current_postings);
 
     /// Sort token-postings list pairs since all tokens have to be added in FST in sorted order
     std::sort(token_postings_list_pairs.begin(), token_postings_list_pairs.end(),
@@ -522,27 +533,7 @@ void GinIndexStoreDeserializer::readSegments()
 
     assert(metadata_file_stream != nullptr);
 
-    /// TODO(ahmadov): clean up versions and V1 handling
     if (store->getVersion() == GinIndexStore::Format::v1)
-    {
-        struct GinIndexSegmentV1
-        {
-            UInt32 segment_id;
-            UInt32 next_row_id;
-            UInt64 postings_start_offset;
-            UInt64 dict_start_offset;
-        };
-        std::vector<GinIndexSegmentV1> segments(num_segments);
-        metadata_file_stream->readStrict(reinterpret_cast<char *>(segments.data()), num_segments * sizeof(GinIndexSegmentV1));
-        for (UInt32 i = 0; i < num_segments; ++i)
-        {
-            auto seg_dict = std::make_shared<GinSegmentDictionary>();
-            seg_dict->postings_start_offset = segments[i].postings_start_offset;
-            seg_dict->dict_start_offset = segments[i].dict_start_offset;
-            store->segment_dictionaries[segments[i].segment_id] = seg_dict;
-        }
-    }
-    else
     {
         std::vector<GinIndexSegment> segments(num_segments);
         metadata_file_stream->readStrict(reinterpret_cast<char *>(segments.data()), num_segments * sizeof(GinIndexSegment));
