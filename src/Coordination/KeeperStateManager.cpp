@@ -292,7 +292,6 @@ KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host,
     configuration_wrapper.cluster_config->get_servers().push_back(peer_config);
 }
 
-// Why don't we check for overflow here in the coordination settings the same way we do in KeeperServer?
 KeeperStateManager::KeeperStateManager(
     int my_server_id_,
     const std::string & config_prefix_,
