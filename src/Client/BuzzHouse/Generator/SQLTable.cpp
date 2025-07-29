@@ -344,6 +344,22 @@ void StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl
     }
 }
 
+void StatementGenerator::generateTableExpression(RandomGenerator & rg, const bool use_global_agg, Expr * expr)
+{
+    const bool prev_allow_in_expression_alias = this->allow_in_expression_alias;
+    const bool prev_allow_subqueries = this->allow_subqueries;
+
+    this->levels[this->current_level].global_aggregate = use_global_agg && rg.nextSmallNumber() < 9;
+    this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
+    this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
+    this->allow_in_expression_alias = rg.nextMediumNumber() < 11;
+    this->allow_subqueries = rg.nextMediumNumber() < 11;
+    generateExpression(rg, expr);
+    this->allow_in_expression_alias = prev_allow_in_expression_alias;
+    this->allow_subqueries = prev_allow_subqueries;
+    this->levels.clear();
+}
+
 void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * ttl_expr)
 {
     chassert(filtered_entries.empty());
@@ -372,22 +388,12 @@ void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::
     }
     else
     {
-        const bool prev_allow_in_expression_alias = this->allow_in_expression_alias;
-        const bool prev_allow_subqueries = this->allow_subqueries;
-
         filtered_entries.clear();
         if (t.has_value() && !t.value().cols.empty())
         {
             addTableRelation(rg, true, "", t.value());
         }
-        this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
-        this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
-        this->allow_in_expression_alias = rg.nextMediumNumber() < 11;
-        this->allow_subqueries = rg.nextMediumNumber() < 11;
-        generateExpression(rg, ttl_expr);
-        this->allow_in_expression_alias = prev_allow_in_expression_alias;
-        this->allow_subqueries = prev_allow_subqueries;
-        this->levels.clear();
+        generateTableExpression(rg, false, ttl_expr);
     }
 }
 
@@ -462,8 +468,6 @@ void StatementGenerator::generateNextTTL(
             for (size_t j = 0; j < nset; j++)
             {
                 TTLSet * tset = j == 0 ? gb->mutable_ttl_set() : gb->add_other_ttl_set();
-                const bool prev_allow_in_expression_alias = this->allow_in_expression_alias;
-                const bool prev_allow_subqueries = this->allow_subqueries;
 
                 columnPathRef(entries[j], tset->mutable_col());
                 if (t.has_value() && !t.value().cols.empty())
@@ -471,13 +475,7 @@ void StatementGenerator::generateNextTTL(
                     addTableRelation(rg, true, "", t.value());
                 }
                 /// Use global aggregate most of the time
-                this->levels[this->current_level].global_aggregate = rg.nextSmallNumber() < 9;
-                this->allow_in_expression_alias = rg.nextMediumNumber() < 11;
-                this->allow_subqueries = rg.nextMediumNumber() < 11;
-                generateExpression(rg, tset->mutable_expr());
-                this->allow_in_expression_alias = prev_allow_in_expression_alias;
-                this->allow_subqueries = prev_allow_subqueries;
-                this->levels.clear();
+                generateTableExpression(rg, true, tset->mutable_expr());
             }
         }
     }
@@ -593,8 +591,9 @@ void StatementGenerator::colRefOrExpression(
     const uint32_t one_arg_func = 5;
     const uint32_t hash_func = 10 * static_cast<uint32_t>(teng != SummingMergeTree);
     const uint32_t rand_expr = 15;
+    const uint32_t rand_func = 5;
     const uint32_t col_ref = 40;
-    const uint32_t prob_space = datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + col_ref;
+    const uint32_t prob_space = datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + rand_func + col_ref;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -633,20 +632,18 @@ void StatementGenerator::colRefOrExpression(
     }
     else if (rand_expr && nopt < (datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + 1))
     {
-        const bool prev_allow_in_expression_alias = this->allow_in_expression_alias;
-        const bool prev_allow_subqueries = this->allow_subqueries;
-
+        /// Use a random expression
         this->levels[this->current_level].rels.push_back(rel);
-        this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
-        this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
-        this->allow_in_expression_alias = rg.nextMediumNumber() < 11;
-        this->allow_subqueries = rg.nextMediumNumber() < 11;
-        generateExpression(rg, expr);
-        this->allow_in_expression_alias = prev_allow_in_expression_alias;
-        this->allow_subqueries = prev_allow_subqueries;
-        this->levels.clear();
+        generateTableExpression(rg, false, expr);
     }
-    else if (col_ref && nopt < (datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + col_ref + 1))
+    else if (rand_func && nopt < (datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + rand_func + 1))
+    {
+        /// Use random func
+        SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
+
+        func_call->mutable_func()->set_catalog_func(SQLFunc::FUNCrand);
+    }
+    else if (col_ref && nopt < (datetime_func + modulo_func + one_arg_func + hash_func + rand_expr + rand_func + col_ref + 1))
     {
         columnPathRef(entry, expr);
     }
@@ -669,18 +666,9 @@ void StatementGenerator::generateTableKey(
             for (uint32_t i = 0; i < nkeys; i++)
             {
                 TableKeyExpr * tke = tkey->add_exprs();
-                const bool prev_allow_in_expression_alias = this->allow_in_expression_alias;
-                const bool prev_allow_subqueries = this->allow_subqueries;
 
                 this->levels[this->current_level].rels.push_back(rel);
-                this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
-                this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
-                this->allow_in_expression_alias = rg.nextMediumNumber() < 11;
-                this->allow_subqueries = rg.nextMediumNumber() < 11;
-                generateExpression(rg, tke->mutable_expr());
-                this->allow_in_expression_alias = prev_allow_in_expression_alias;
-                this->allow_subqueries = prev_allow_subqueries;
-                this->levels.clear();
+                generateTableExpression(rg, false, tke->mutable_expr());
                 if (allow_asc_desc && rg.nextSmallNumber() < 3)
                 {
                     tke->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
@@ -940,11 +928,9 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && b.isFileEngine())
     {
-        const std::filesystem::path & fname = fc.server_file_path / ("/datafile" + std::to_string(b.tname));
-
         b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
         te->add_params()->set_in_out(b.file_format.value());
-        te->add_params()->set_svalue(fname.generic_string());
+        te->add_params()->set_svalue(b.getTablePath(fc, false));
         if (rg.nextBool())
         {
             b.file_comp = rg.pickRandomly(fileCompress);
@@ -1137,7 +1123,12 @@ void StatementGenerator::generateEngineDetails(
         if (rg.nextBool())
         {
             /// Optional sharding key
-            if (!this->remote_entries.empty())
+            if (rg.nextMediumNumber() < 26)
+            {
+                /// Use random sharding key sometimes
+                te->add_params()->set_svalue("rand()");
+            }
+            else if (!this->remote_entries.empty())
             {
                 colRefOrExpression(rg, rel, b.teng, rg.pickRandomly(this->remote_entries), te->add_params()->mutable_expr());
             }
@@ -1146,9 +1137,9 @@ void StatementGenerator::generateEngineDetails(
                 te->add_params()->mutable_cols()->mutable_col()->set_column(
                     "c" + std::to_string(rg.randomInt<uint32_t>(0, (fc.max_columns - 1))));
             }
+            /// Optional policy name
             if (!fc.storage_policies.empty() && rg.nextBool())
             {
-                /// Optional policy name
                 te->add_params()->set_svalue(rg.pickRandomly(fc.storage_policies));
             }
         }
@@ -1372,21 +1363,11 @@ void StatementGenerator::addTableColumnInternal(
         col.dmod = std::optional<DModifier>(dmod);
         if (dmod != DModifier::DEF_EPHEMERAL || rg.nextMediumNumber() < 21)
         {
-            const bool prev_allow_in_expression_alias = this->allow_in_expression_alias;
-            const bool prev_allow_subqueries = this->allow_subqueries;
-
             if (!t.cols.empty())
             {
                 addTableRelation(rg, true, "", t);
             }
-            this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
-            this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;
-            this->allow_in_expression_alias = rg.nextMediumNumber() < 11;
-            this->allow_subqueries = rg.nextMediumNumber() < 11;
-            generateExpression(rg, def_value->mutable_expr());
-            this->allow_in_expression_alias = prev_allow_in_expression_alias;
-            this->allow_subqueries = prev_allow_subqueries;
-            this->levels.clear();
+            generateTableExpression(rg, false, def_value->mutable_expr());
         }
     }
     if (t.isMergeTreeFamily())
