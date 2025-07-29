@@ -441,8 +441,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         const std::optional<String> & cluster = t.getCluster();
 
         cdf->set_all_replicas(rg.nextBool());
-        cdf->mutable_cluster()->set_cluster(
-            cluster.has_value() ? cluster.value() : (fc.clusters.empty() ? "default" : rg.pickRandomly(fc.clusters)));
+        cdf->mutable_cluster()->set_cluster(cluster.has_value() ? cluster.value() : rg.pickRandomly(fc.clusters));
         t.setName(cdf->mutable_tof()->mutable_est(), true);
         if (rg.nextSmallNumber() < 4)
         {
@@ -603,7 +602,7 @@ bool StatementGenerator::joinedTableOrFunction(
     const uint32_t generate_series_udf = 10;
     const uint32_t system_table = 3 * static_cast<uint32_t>(this->allow_not_deterministic && !systemTables.empty());
     const uint32_t merge_udf = 2 * static_cast<uint32_t>(this->allow_engine_udf);
-    const uint32_t cluster_udf = 5 * static_cast<uint32_t>(this->allow_engine_udf && can_recurse);
+    const uint32_t cluster_udf = 5 * static_cast<uint32_t>(this->allow_engine_udf && !fc.clusters.empty() && can_recurse);
     const uint32_t merge_index_udf = 3 * static_cast<uint32_t>(has_mergetree_table && this->allow_engine_udf);
     const uint32_t loop_udf = 3 * static_cast<uint32_t>(fc.allow_infinite_tables && this->allow_engine_udf && can_recurse);
     const uint32_t values_udf = 3 * static_cast<uint32_t>(can_recurse);
@@ -835,7 +834,7 @@ bool StatementGenerator::joinedTableOrFunction(
         ClusterFunc * cdf = tof->mutable_tfunc()->mutable_cluster();
 
         cdf->set_all_replicas(rg.nextBool());
-        cdf->mutable_cluster()->set_cluster(fc.clusters.empty() ? "default" : rg.pickRandomly(fc.clusters));
+        cdf->mutable_cluster()->set_cluster(rg.pickRandomly(fc.clusters));
         /// Here don't care about the returned result
         this->depth++;
         const auto u = joinedTableOrFunction(rg, rel_name, allowed_clauses, true, cdf->mutable_tof());
