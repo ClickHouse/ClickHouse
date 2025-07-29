@@ -1216,6 +1216,10 @@ struct ConvertThroughParsing
             {
                 ToDataType check_bounds_in_ctor(scale, local_time_zone ? local_time_zone->getTimeZone() : String{});
             }
+            else if constexpr (to_time64)
+            {
+                ToDataType check_bounds_in_ctor(scale, String{});
+            }
             else
             {
                 ToDataType check_bounds_in_ctor(ToDataType::maxPrecision(), scale);
