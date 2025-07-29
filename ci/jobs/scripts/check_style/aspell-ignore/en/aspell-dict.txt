@@ -3347,6 +3347,8 @@ uploaders
 upperUTF
 uptime
 uptrace
+upsert
+upserts
 uring
 url
 urlCluster
