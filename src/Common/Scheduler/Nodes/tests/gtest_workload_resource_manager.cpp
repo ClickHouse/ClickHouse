@@ -377,9 +377,9 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueue)
     t.query("CREATE WORKLOAD all SETTINGS max_io_requests = 1");
     t.query("CREATE WORKLOAD intermediate IN all");
 
-    std::barrier sync_before_enqueue(2);
-    std::barrier sync_before_drop(3);
-    std::barrier sync_after_drop(2);
+    std::barrier<std::__empty_completion> sync_before_enqueue(2);
+    std::barrier<std::__empty_completion> sync_before_drop(3);
+    std::barrier<std::__empty_completion> sync_after_drop(2);
     t.async("intermediate", "res1", [&] (ResourceLink link)
     {
         TestGuard g(t, link, 1);
@@ -413,9 +413,9 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueueLong)
     t.query("CREATE WORKLOAD intermediate IN all");
 
     static constexpr int queue_size = 100;
-    std::barrier sync_before_enqueue(2);
-    std::barrier sync_before_drop(2 + queue_size);
-    std::barrier sync_after_drop(2);
+    std::barrier<std::__empty_completion> sync_before_enqueue(2);
+    std::barrier<std::__empty_completion> sync_before_drop(2 + queue_size);
+    std::barrier<std::__empty_completion> sync_after_drop(2);
     t.async("intermediate", "res1", [&] (ResourceLink link)
     {
         TestGuard g(t, link, 1);
@@ -1197,7 +1197,7 @@ TEST(SchedulerWorkloadResourceManager, CPUSchedulingPriorities)
 
 TEST(SchedulerWorkloadResourceManager, CPUSchedulingIndependentPools)
 {
-    std::barrier sync_start(2);
+    std::barrier<std::__empty_completion> sync_start(2);
 
     ResourceTest t;
 

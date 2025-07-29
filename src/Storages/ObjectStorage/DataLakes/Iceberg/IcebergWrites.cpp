@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
+#include <Databases/DataLake/Common.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/DateTimeTransforms.h>
@@ -647,13 +648,17 @@ IcebergStorageSink::IcebergStorageSink(
     StorageObjectStorageConfigurationPtr configuration_,
     const std::optional<FormatSettings> & format_settings_,
     SharedHeader sample_block_,
-    ContextPtr context_)
+    ContextPtr context_,
+    std::shared_ptr<DataLake::ICatalog> catalog_,
+    const StorageID & table_id_)
     : SinkToStorage(sample_block_)
     , sample_block(sample_block_)
     , object_storage(object_storage_)
     , context(context_)
     , configuration(configuration_)
     , format_settings(format_settings_)
+    , catalog(catalog_)
+    , table_id(table_id_)
 {
     configuration->update(object_storage, context, true, false);
     auto log = getLogger("IcebergWrites");
@@ -662,7 +667,7 @@ IcebergStorageSink::IcebergStorageSink(
 
     metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, log, compression_method);
 
-    auto config_path = configuration_->getPath();
+    auto config_path = configuration_->getPathForWrite().path;
     if (config_path.empty() || config_path.back() != '/')
         config_path += "/";
     if (!context_->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata])
@@ -800,7 +805,6 @@ void IcebergStorageSink::cancelBuffers()
 bool IcebergStorageSink::initializeMetadata()
 {
     auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
-
     Int64 parent_snapshot = -1;
     if (metadata->has(Iceberg::f_current_snapshot_id))
         parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
@@ -845,6 +849,16 @@ bool IcebergStorageSink::initializeMetadata()
 
             object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
             return false;
+        }
+
+        if (catalog)
+        {
+            String catalog_filename = metadata_name;
+            if (!catalog_filename.starts_with(configuration->getTypeName()))
+                catalog_filename = configuration->getTypeName() + "://" + configuration->getNamespace() + "/" + metadata_name;
+
+            const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
+            catalog->updateMetadata(namespace_name, table_name, catalog_filename);
         }
 
         auto buffer_metadata = object_storage->writeObject(

@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.8",
         {
+            {"optimize_rewrite_regexp_functions", false, true, "A new setting"},
             {"max_joined_block_size_bytes", 0, 4 * 1024 * 1024, "New setting"},
             {"azure_max_single_part_upload_size", 100 * 1024 * 1024, 32 * 1024 * 1024, "Align with S3"},
             {"azure_max_redirects", 10, 10, "New setting"},
@@ -60,6 +61,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"vector_search_with_rescoring", true, true, "New setting."},
             {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},
             {"write_full_path_in_iceberg_metadata", false, false, "New setting."},
+            {"output_format_orc_compression_block_size", 65536, 262144, "New setting"},
             {"backup_restore_s3_retry_initial_backoff_ms", 25, 25, "New setting"},
             {"backup_restore_s3_retry_max_backoff_ms", 5000, 5000, "New setting"},
             {"backup_restore_s3_retry_jitter_factor", 0.0, 0.1, "New setting"},
@@ -145,7 +147,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"alter_update_mode", "heavy", "heavy", "A new setting"},
             {"apply_patch_parts", false, true, "A new setting"},
             {"allow_experimental_lightweight_update", false, false, "A new setting"},
-            {"allow_experimental_delta_kernel_rs", true, true, "New setting"},
+            {"allow_experimental_delta_kernel_rs", false, true, "New setting"},
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
             {"vector_search_filter_strategy", "auto", "auto", "New setting"},
             {"vector_search_postfilter_multiplier", 1, 1, "New setting"},

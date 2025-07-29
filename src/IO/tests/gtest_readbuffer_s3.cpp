@@ -78,7 +78,7 @@ struct ClientFake : DB::S3::Client
         {
             auto response_stream = Aws::Utils::Stream::ResponseStream(
                 Aws::New<DB::SessionAwareIOStream<CountedSessionPtr>>("test response stream", weak_session_ptr.lock(), sb));
-            Aws::AmazonWebServiceResult aws_result(std::move(response_stream), Aws::Http::HeaderValueCollection());
+            Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> aws_result(std::move(response_stream), Aws::Http::HeaderValueCollection());
             DB::S3::Model::GetObjectResult result(std::move(aws_result));
             return DB::S3::Model::GetObjectOutcome(std::move(result));
         };

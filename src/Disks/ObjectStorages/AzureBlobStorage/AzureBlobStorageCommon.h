@@ -149,6 +149,7 @@ struct ConnectionParams
     std::unique_ptr<ContainerClient> createForContainer() const;
 };
 
+
 Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 void processURL(const String & url, const String & container_name, Endpoint & endpoint, AuthMethod & auth_method);
 

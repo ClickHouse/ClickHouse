@@ -1090,10 +1090,6 @@ The server successfully detected this situation and will download merged part fr
     M(SharedDatabaseCatalogFailedToApplyState, "Number of failures to apply new state in SharedDatabaseCatalog", ValueType::Number) \
     M(SharedDatabaseCatalogStateApplicationMicroseconds, "Total time spend on application of new state in SharedDatabaseCatalog", ValueType::Microseconds) \
     \
-    M(GWPAsanAllocateSuccess, "Number of successful allocations done by GWPAsan", ValueType::Number) \
-    M(GWPAsanAllocateFailed, "Number of failed allocations done by GWPAsan (i.e. filled pool)", ValueType::Number) \
-    M(GWPAsanFree, "Number of free operations done by GWPAsan", ValueType::Number) \
-    \
     M(MemoryWorkerRun, "Number of runs done by MemoryWorker in background", ValueType::Number) \
     M(MemoryWorkerRunElapsedMicroseconds, "Total time spent by MemoryWorker for background work", ValueType::Microseconds) \
     \
