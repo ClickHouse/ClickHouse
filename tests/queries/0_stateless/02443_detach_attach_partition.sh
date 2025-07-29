@@ -18,15 +18,24 @@ $CLICKHOUSE_CLIENT -q "
 
 function thread_detach()
 {
-    table_id=${1:$((RANDOM % 2))}
     while true; do
-        $CLICKHOUSE_CLIENT -mn -q "ALTER TABLE alter_table$table_id DETACH PARTITION ID 'all'; SELECT sleep($RANDOM / 32000) format Null;" 2>/dev/null ||:
+        # Randomly choose one of the two tables each time.
+        { $CLICKHOUSE_CLIENT -m 2>/dev/null <<SQL
+ALTER TABLE alter_table$((RANDOM % 2)) DETACH PARTITION ID 'all' SETTINGS log_comment = 'threaded detach';
+SELECT sleep($RANDOM / 32000) format Null;"
+SQL
+        } || :
     done
 }
 function thread_attach()
 {
     while true; do
-        $CLICKHOUSE_CLIENT -mn -q "ALTER TABLE alter_table$table_id ATTACH PARTITION ID 'all'; SELECT sleep($RANDOM / 32000) format Null;" 2>/dev/null ||:
+        # Randomly choose one of the two tables each time.
+        { $CLICKHOUSE_CLIENT -m 2>/dev/null <<SQL
+ALTER TABLE alter_table$((RANDOM % 2)) ATTACH PARTITION ID 'all' SETTINGS log_comment = 'threaded attach';
+SELECT sleep($RANDOM / 32000) format Null;"
+SQL
+        } || :
     done
 }
 
@@ -54,13 +63,11 @@ function insert()
     fi
 }
 
-# Make sure that at least one thread for detach/attach thread per table is running.
-thread_detach 0 &
-thread_attach 0 &
-thread_detach 1 &
-thread_attach 1 &
-thread_detach   &
-thread_attach   &
+# Launch detach/attach threads
+for i in 0 1; do
+    thread_detach &
+    thread_attach &
+done
 
 function do_inserts()
 {
@@ -83,7 +90,6 @@ wait_for_queries_to_finish 600
 $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA alter_table0"
 $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA alter_table1"
 query_with_retry "ALTER TABLE alter_table0 ATTACH PARTITION ID 'all'" 2>/dev/null;
-# Why this is done without retry, but twice?
 $CLICKHOUSE_CLIENT -q "ALTER TABLE alter_table1 ATTACH PARTITION ID 'all'" 2>/dev/null
 $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA alter_table1"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE alter_table1 ATTACH PARTITION ID 'all'"
