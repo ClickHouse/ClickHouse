@@ -56,7 +56,8 @@ Positions: 6 0 1 2 3 4
                    INPUT :: 1 -> __table2.name String : 1
                    INPUT :: 2 -> __table2.age Int16 : 2
                    COLUMN Const(UInt8) -> __lhs_const UInt8 : 3
-          Positions: 0 1 2 3
+                   INPUT :: 0 -> __table2.age Int16 : 4
+          Positions: 2 0 1 3
             Expression (Change column names to column identifiers)
             Actions: INPUT : 0 -> uid Int16 : 0
                      INPUT : 1 -> name String : 1
@@ -71,7 +72,8 @@ Positions: 6 0 1 2 3 4
                    INPUT :: 1 -> __table3.name String : 1
                    INPUT :: 2 -> __table3.age Int16 : 2
                    COLUMN Const(UInt8) -> __rhs_const UInt8 : 3
-          Positions: 0 1 2 3
+                   INPUT :: 0 -> __table3.age Int16 : 4
+          Positions: 2 0 1 3
             Expression (Change column names to column identifiers)
             Actions: INPUT : 0 -> uid Int16 : 0
                      INPUT : 1 -> name String : 1
