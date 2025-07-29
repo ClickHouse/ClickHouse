@@ -384,7 +384,6 @@ public:
     std::string readHook(const std::string & data) const override
     {
         ReadBufferFromString in(data);
-        Memory<> encrypted_buffer(data.length());
 
         FileEncryption::Header header;
         try
@@ -397,6 +396,7 @@ public:
             throw;
         }
 
+        Memory<> encrypted_buffer(in.available());
         size_t bytes_read = 0;
         while (bytes_read < encrypted_buffer.size() && !in.eof())
         {

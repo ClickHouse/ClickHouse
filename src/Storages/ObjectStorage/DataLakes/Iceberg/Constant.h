@@ -67,6 +67,7 @@ DEFINE_ICEBERG_FIELD(operation);
 DEFINE_ICEBERG_FIELD(append);
 DEFINE_ICEBERG_FIELD(file_sequence_number);
 DEFINE_ICEBERG_FIELD(snapshot_id);
+DEFINE_ICEBERG_FIELD(statistics);
 
 /// These variables replace `-` with underscore `_` to be compatible with c++ code.
 DEFINE_ICEBERG_FIELD_ALIAS(format_version, format-version);
@@ -82,6 +83,16 @@ DEFINE_ICEBERG_FIELD_ALIAS(total_files_size, total-files-size);
 DEFINE_ICEBERG_FIELD_ALIAS(manifest_list, manifest-list);
 DEFINE_ICEBERG_FIELD_ALIAS(timestamp_ms, timestamp-ms);
 DEFINE_ICEBERG_FIELD_ALIAS(last_updated_ms, last-updated-ms);
+DEFINE_ICEBERG_FIELD_ALIAS(last_column_id, last-column-id);
+DEFINE_ICEBERG_FIELD_ALIAS(element_id, element-id);
+DEFINE_ICEBERG_FIELD_ALIAS(element_required, element-required);
+DEFINE_ICEBERG_FIELD_ALIAS(key_id, key-id);
+DEFINE_ICEBERG_FIELD_ALIAS(value_id, value-id);
+DEFINE_ICEBERG_FIELD_ALIAS(value_requires, value-requires);
+DEFINE_ICEBERG_FIELD_ALIAS(last_partition_id, last-partition-id);
+DEFINE_ICEBERG_FIELD_ALIAS(order_id, order-id);
+DEFINE_ICEBERG_FIELD_ALIAS(default_sort_order_id, default-sort-order-id);
+DEFINE_ICEBERG_FIELD_ALIAS(sort_orders, sort-orders);
 DEFINE_ICEBERG_FIELD_ALIAS(source_id, source-id);
 DEFINE_ICEBERG_FIELD_ALIAS(default_spec_id, default-spec-id);
 DEFINE_ICEBERG_FIELD_ALIAS(partition_spec, partition-spec);
