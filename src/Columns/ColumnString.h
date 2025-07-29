@@ -217,7 +217,9 @@ public:
 
     const char * skipSerializedInArena(const char * pos) const override;
 
-    void updateHashWithValue(size_t n, SipHash & hash) const override;
+    ALWAYS_INLINE void updateHashWithValue(size_t n, SipHash & hash) const override;
+
+    void batchUpdateHashWithValue(const UInt8 * nullmap, std::vector<SipHash> & hashes) const override;
 
     WeakHash32 getWeakHash32() const override;
 

@@ -69,7 +69,7 @@ const char * ColumnVector<T>::skipSerializedInArena(const char * pos) const
 }
 
 template <typename T>
-void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
+ALWAYS_INLINE void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
 {
     hash.update(data[n]);
 }
