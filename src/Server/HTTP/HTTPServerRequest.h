@@ -40,14 +40,6 @@ public:
         return stream;
     }
 
-    size_t getStreamRefCount()
-    {
-        std::lock_guard lock(get_stream_mutex);
-        if (!stream)
-            return 0;
-        return stream.use_count();
-    }
-
     bool checkPeerConnected() const;
 
     bool isSecure() const { return secure; }
