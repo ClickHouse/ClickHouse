@@ -771,9 +771,9 @@ MergeTreeIndexPtr setIndexCreator(const IndexDescription & index)
 void setIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
     if (index.arguments.size() != 1)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index must have exactly one argument.");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index must have exactly one argument");
     if (index.arguments[0].getType() != Field::Types::UInt64)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index argument must be positive integer.");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index argument must be positive integer");
 }
 
 }
