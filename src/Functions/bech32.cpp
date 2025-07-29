@@ -14,7 +14,6 @@
 
 namespace
 {
-
 /** Max length of Bech32 or Bech32m encoding is 90 chars, this includes:
  *
  *      HRP: 1 - 83 human readable characters, 'bc' or 'tb' for a SegWit address
@@ -285,6 +284,7 @@ private:
             uint8_t witness_version = have_witness_version ? witness_version_col->getUInt(i) : default_witness_version;
 
             bech32_data input_5bit;
+            input_5bit.push_back(witness_version);
             convertbits<8, 5, true>(input_5bit, input); /// squash input from 8-bit -> 5-bit bytes
             std::string address = bech32::encode(human_readable_part, input_5bit, witness_version > 0 ? bech32::Encoding::BECH32M : bech32::Encoding::BECH32);
 
@@ -434,7 +434,7 @@ private:
 
             bech32_data data_8bit;
             if (dec.encoding == bech32::Encoding::INVALID
-                || !convertbits<5, 8, false>(data_8bit, bech32_data(dec.data.begin(), dec.data.end()))
+                || !convertbits<5, 8, false>(data_8bit, bech32_data(dec.data.begin() + 1 /*first val is witver*/, dec.data.end()))
                 || data_8bit.empty())
             {
                 finalizeRow(human_readable_part_offsets, human_readable_part_pos, human_readable_part_begin, i);

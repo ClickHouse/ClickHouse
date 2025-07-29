@@ -43,6 +43,9 @@ public:
     bool allHostsFinished() const override;
     void cleanup(bool throw_if_error) override;
 
+    /// Starts creating a shared database. Returns false if there is another host which is already creating this database.
+    bool acquireCreatingSharedDatabase(const String & database_name) override;
+
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) override;
 

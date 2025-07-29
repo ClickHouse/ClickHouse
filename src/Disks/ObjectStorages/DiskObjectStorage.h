@@ -35,7 +35,8 @@ public:
         MetadataStoragePtr metadata_storage_,
         ObjectStoragePtr object_storage_,
         const Poco::Util::AbstractConfiguration & config,
-        const String & config_prefix);
+        const String & config_prefix,
+        bool use_fake_transaction_ = true);
 
     /// Create fake transaction
     DiskTransactionPtr createTransaction() override;
@@ -200,6 +201,9 @@ public:
     /// MergeTree table on this disk.
     bool isWriteOnce() const override;
 
+    /// Return true if the disk is "shared-compatible", i.e. does not uses local disks
+    bool isSharedCompatible() const;
+
     bool supportsHardLinks() const override;
 
     bool supportsPartitionCommand(const PartitionCommand & command) const override;
@@ -209,6 +213,11 @@ public:
     /// DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// DiskObjectStorage(CachedObjectStorage(CachedObjectStorage(S3ObjectStorage)))
     String getStructure() const { return fmt::format("DiskObjectStorage-{}({})", getName(), object_storage->getName()); }
+
+    std::string getObjectsKeyPrefix() const
+    {
+        return object_key_prefix;
+    }
 
     /// Add a cache layer.
     /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
@@ -264,7 +273,9 @@ private:
     String read_resource_name_from_sql_any; // described by CREATE RESOURCE query with READ ANY DISK clause
     String write_resource_name_from_sql_any; // described by CREATE RESOURCE query with WRITE ANY DISK clause
     scope_guard resource_changes_subscription;
+    std::atomic_bool enable_distributed_cache;
 
+    bool use_fake_transaction;
     UInt64 remove_shared_recursive_file_limit;
 };
 
