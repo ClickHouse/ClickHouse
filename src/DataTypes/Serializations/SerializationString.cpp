@@ -14,6 +14,8 @@
 #include <IO/VarInt.h>
 #include <IO/ReadBufferFromString.h>
 
+#include <memcpy.h>
+
 #ifdef __SSE2__
     #include <emmintrin.h>
 #endif
@@ -199,9 +201,7 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
 
                 /// Copy the strings.
                 size_t bytes_to_copy = istr.position() - small_strings_begin;
-
-                memset(&data[prev_offset], 0, bytes_to_copy + 1);
-                memcpy(&data[prev_offset], small_strings_begin, bytes_to_copy);
+                inline_memcpy(&data[prev_offset], small_strings_begin, bytes_to_copy);
 
                 /// When no more strings needed.
                 if (i == limit)
