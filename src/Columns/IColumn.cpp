@@ -228,7 +228,6 @@ void IColumn::batchUpdateHashWithValue(const UInt8 * /*nullmap*/, std::vector<Si
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method batchUpdateHashWithValue is not supported for {}", getName());
 }
 
-
 size_t IColumn::sizeOfValueIfFixed() const
 {
     throw Exception(ErrorCodes::CANNOT_GET_SIZE_OF_FIELD, "Values of column {} are not fixed size.", getName());
