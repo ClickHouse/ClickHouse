@@ -812,7 +812,7 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 }
 
 
-void RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const
+bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const
 {
     const std::string endpoint = fmt::format("{}/namespaces/{}/tables/{}", base_url, namespace_name, table_name);
 
@@ -825,6 +825,23 @@ void RestCatalog::updateMetadata(const String & namespace_name, const String & t
         identifier->set("namespace", namespaces);
 
         request_body->set("identifier", identifier);
+    }
+
+    if (metadata_content->has(Iceberg::f_parent_snapshot_id))
+    {
+        auto parent_snapshot_id = metadata_content->getValue<Int64>(Iceberg::f_parent_snapshot_id);
+        if (parent_snapshot_id != -1)
+        {
+            Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
+            requirement->set(Iceberg::f_type, "assert-ref-snapshot-id");
+            requirement->set("ref", "main");
+            requirement->set("snapshot-id", parent_snapshot_id);
+
+            Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
+            requirements->add(requirement);
+        
+            request_body->set("requirements", requirements);
+        }
     }
 
     {
@@ -884,13 +901,11 @@ void RestCatalog::updateMetadata(const String & namespace_name, const String & t
         std::cerr << "response_str " << response_str << '\n';
         LOG_TEST(log, "Successfully replaced metadata-location for table {}.{} with {}", namespace_name, table_name, new_metadata_path);
     }
-    catch (const DB::HTTPException & e)
+    catch (const DB::HTTPException &)
     {
-        throw DB::Exception(
-            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-            "Failed to replace metadata-location for table '{}.{}': HTTP {}, message: {}",
-            namespace_name, table_name, e.getHTTPStatus(), e.displayText());
+        return false;
     }
+    return true;
 }
 
 
