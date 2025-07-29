@@ -63,13 +63,7 @@ BinaryRow::BinaryRow(const String & bytes_)
     /// arity stores as big endian
     if (!need_flip)
         arity = Poco::ByteOrder::flipBytes(arity);
-    LOG_TEST(
-        log,
-        "arity: {} need_flip: {} bytes_size: {} bytes: {}",
-        arity,
-        need_flip,
-        reader.length(),
-        to_hex_string(reader));
+    LOG_TEST(log, "arity: {} need_flip: {} bytes_size: {} bytes: {}", arity, need_flip, reader.length(), to_hex_string(reader));
 }
 
 bool BinaryRow::isLittleEndian()

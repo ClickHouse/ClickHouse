@@ -50,7 +50,10 @@ DataLakeMetadataPtr PaimonMetadata::create(
 {
     auto configuration_ptr = configuration.lock();
     LOG_TEST(
-        &Poco::Logger::get("PaimonMetadata"), "path: {} raw path: {}", configuration_ptr->getPathForRead().path, configuration_ptr->getRawPath().path);
+        &Poco::Logger::get("PaimonMetadata"),
+        "path: {} raw path: {}",
+        configuration_ptr->getPathForRead().path,
+        configuration_ptr->getRawPath().path);
     PaimonTableClientPtr table_client_ptr = std::make_shared<PaimonTableClient>(object_storage, configuration, local_context);
     auto schema_json = table_client_ptr->getTableSchemaJSON(table_client_ptr->getLastTableSchemaInfo());
     return std::make_unique<PaimonMetadata>(object_storage, configuration_ptr, local_context, schema_json, table_client_ptr);
@@ -153,7 +156,9 @@ ObjectIterator PaimonMetadata::iterate(
         {
             if (file_entry.kind != PaimonManifestEntry::Kind::DELETE)
             {
-                data_files.emplace_back(std::filesystem::path(configuration_ptr->getPathForRead().path) / file_entry.file.bucket_path / file_entry.file.file_name);
+                data_files.emplace_back(
+                    std::filesystem::path(configuration_ptr->getPathForRead().path) / file_entry.file.bucket_path
+                    / file_entry.file.file_name);
                 LOG_TEST(log, "base_manifest data file: {}", data_files.back());
             }
         }
@@ -166,8 +171,9 @@ ObjectIterator PaimonMetadata::iterate(
             if (file_entry.kind != PaimonManifestEntry::Kind::DELETE)
             {
                 data_files.emplace_back(
-                    std::filesystem::path(configuration_ptr->getPathForRead().path) / file_entry.file.bucket_path / file_entry.file.file_name);
-                    LOG_TEST(log, "delta_manifest data file: {}", data_files.back());
+                    std::filesystem::path(configuration_ptr->getPathForRead().path) / file_entry.file.bucket_path
+                    / file_entry.file.file_name);
+                LOG_TEST(log, "delta_manifest data file: {}", data_files.back());
             }
         }
     }
