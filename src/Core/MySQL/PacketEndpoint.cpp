@@ -1,4 +1,3 @@
-#include <memory>
 #include <Core/MySQL/PacketEndpoint.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <Common/typeid_cast.h>
@@ -24,9 +23,9 @@ PacketEndpoint::PacketEndpoint(ReadBuffer & in_, WriteBuffer & out_, uint8_t & s
 {
 }
 
-std::unique_ptr<MySQLPacketPayloadReadBuffer> PacketEndpoint::getPayload()
+MySQLPacketPayloadReadBuffer PacketEndpoint::getPayload()
 {
-    return std::make_unique<MySQLPacketPayloadReadBuffer>(*in, sequence_id);
+    return MySQLPacketPayloadReadBuffer(*in, sequence_id);
 }
 
 void PacketEndpoint::receivePacket(IMySQLReadPacket & packet)

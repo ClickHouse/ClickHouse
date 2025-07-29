@@ -1789,6 +1789,22 @@ std::pair<ASTPtr, BlockIO> executeQuery(
 }
 
 void executeQuery(
+    ReadBuffer & istr,
+    WriteBuffer & ostr,
+    bool allow_into_outfile,
+    ContextMutablePtr context,
+    SetResultDetailsFunc set_result_details,
+    QueryFlags flags,
+    const std::optional<FormatSettings> & output_format_settings,
+    HandleExceptionInOutputFormatFunc handle_exception_in_output_format,
+    QueryFinishCallback query_finish_callback)
+{
+    executeQuery(
+        wrapReadBufferReference(istr), ostr, allow_into_outfile, context, std::move(set_result_details), flags,
+        output_format_settings, std::move(handle_exception_in_output_format), std::move(query_finish_callback));
+}
+
+void executeQuery(
     ReadBufferUniquePtr istr,
     WriteBuffer & ostr,
     bool allow_into_outfile,

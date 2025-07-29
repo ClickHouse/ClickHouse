@@ -72,7 +72,6 @@ void ParallelParsingInputFormat::parserThreadFunction(size_t current_ticket_numb
          * can use it from multiple threads simultaneously.
          */
 
-        LOG_DEBUG(getLogger("ParallelParsingInputFormat"), "IparserThreadFunction tiket {}", current_ticket_number);
         ReadBuffer read_buffer(unit.segment.data(), unit.segment.size(), 0);
 
         InputFormatPtr input_format = internal_parser_creator(read_buffer);

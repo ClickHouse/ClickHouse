@@ -878,12 +878,12 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
             if (config.has(full_prefix + ".condition"))
             {
                 auto condition = config.getString(full_prefix + ".condition");
-                auto condition_read_buffer = std::make_unique<ReadBufferFromString>(condition);
+                auto condition_read_buffer = ReadBufferFromString(condition);
                 auto condition_write_buffer = WriteBufferFromOwnString();
 
                 LOG_DEBUG(log, "Checking startup query condition `{}`", condition);
                 startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
-                executeQuery(std::move(condition_read_buffer), condition_write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
+                executeQuery(condition_read_buffer, condition_write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
 
                 auto result = condition_write_buffer.str();
                 if (result != "1\n" && result != "true\n")
@@ -907,12 +907,12 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
             }
 
             auto query = config.getString(full_prefix + ".query");
-            auto read_buffer = std::make_unique<ReadBufferFromString>(query);
+            auto read_buffer = ReadBufferFromString(query);
             auto write_buffer = WriteBufferFromOwnString();
 
             LOG_DEBUG(log, "Executing query `{}`", query);
             startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
-            executeQuery(std::move(read_buffer), write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
+            executeQuery(read_buffer, write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
 
         if (!skipped_startup_scripts.empty())

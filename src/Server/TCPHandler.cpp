@@ -610,6 +610,7 @@ void TCPHandler::runImpl()
             /// Send structure of columns to client for function input()
             query_state->query_context->setInputInitializer([this, &query_state] (ContextPtr context, const StoragePtr & input_storage)
             {
+
                 if (context != query_state->query_context)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
 
@@ -627,6 +628,7 @@ void TCPHandler::runImpl()
                 {
                     sendTableColumns(query_state.value(), metadata_snapshot->getColumns());
                 }
+
                 /// Send block to the client - input storage structure.
                 query_state->input_header = metadata_snapshot->getSampleBlock();
                 sendData(query_state.value(), query_state->input_header);
@@ -1170,8 +1172,6 @@ void TCPHandler::processInsertQuery(QueryState & state)
             /// so that in case of `start` function throws an exception,
             /// client receive exception before sending data.
             executor.start();
-
-            LOG_DEBUG(log, "Processing insert query, has processed_data {}", !processed_data.empty());
 
             if (!processed_data.empty())
                 executor.push(std::move(processed_data));

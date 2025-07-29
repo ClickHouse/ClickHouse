@@ -29,7 +29,7 @@ public:
     /// For reading and writing.
     PacketEndpoint(ReadBuffer & in_, WriteBuffer & out_, uint8_t & sequence_id_);
 
-    std::unique_ptr<MySQLPacketPayloadReadBuffer> getPayload();
+    MySQLPacketPayloadReadBuffer getPayload();
 
     void receivePacket(IMySQLReadPacket & packet);
 
