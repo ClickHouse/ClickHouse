@@ -8,7 +8,7 @@ namespace DB
 
 NullWriteBuffer NullOutputFormat::empty_buffer;
 
-NullOutputFormat::NullOutputFormat(const Block & header) : IOutputFormat(header, empty_buffer) {}
+NullOutputFormat::NullOutputFormat(SharedHeader header) : IOutputFormat(header, empty_buffer) {}
 
 void registerOutputFormatNull(FormatFactory & factory)
 {
@@ -17,7 +17,7 @@ void registerOutputFormatNull(FormatFactory & factory)
         const Block & sample,
         const FormatSettings &)
     {
-        return std::make_shared<NullOutputFormat>(sample);
+        return std::make_shared<NullOutputFormat>(std::make_shared<const Block>(sample));
     });
 }
 

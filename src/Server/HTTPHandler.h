@@ -60,6 +60,9 @@ public:
 
     virtual std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) = 0;
 
+protected:
+    LoggerPtr log;
+
 private:
     struct Output
     {
@@ -118,7 +121,6 @@ private:
     };
 
     IServer & server;
-    LoggerPtr log;
 
     /// It is the name of the server that will be sent in an http-header X-ClickHouse-Server-Display-Name.
     String server_display_name;

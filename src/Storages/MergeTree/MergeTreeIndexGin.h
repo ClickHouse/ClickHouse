@@ -10,9 +10,7 @@ namespace DB
 
 struct MergeTreeIndexGranuleGin final : public IMergeTreeIndexGranule
 {
-    MergeTreeIndexGranuleGin(
-        const String & index_name_,
-        const GinFilterParameters & gin_filter_params_);
+    explicit MergeTreeIndexGranuleGin(const String & index_name_);
 
     ~MergeTreeIndexGranuleGin() override = default;
 
@@ -23,7 +21,6 @@ struct MergeTreeIndexGranuleGin final : public IMergeTreeIndexGranule
     size_t memoryUsageBytes() const override;
 
     const String index_name;
-    const GinFilterParameters gin_filter_params;
     GinFilter gin_filter;
     bool has_elems;
 };
@@ -36,7 +33,6 @@ struct MergeTreeIndexAggregatorGin final : IMergeTreeIndexAggregator
         GinIndexStorePtr store_,
         const Names & index_columns_,
         const String & index_name_,
-        const GinFilterParameters & gin_filter_params_,
         TokenExtractorPtr token_extractor_);
 
     ~MergeTreeIndexAggregatorGin() override = default;
@@ -49,7 +45,6 @@ struct MergeTreeIndexAggregatorGin final : IMergeTreeIndexAggregator
     GinIndexStorePtr store;
     Names index_columns;
     const String index_name;
-    const GinFilterParameters gin_filter_params;
     TokenExtractorPtr token_extractor;
     MergeTreeIndexGranuleGinPtr granule;
 };

@@ -410,10 +410,7 @@ CONV_FN(IntLiteral, int_val)
 
 CONV_FN(SpecialVal, val)
 {
-    if (val.paren())
-    {
-        ret += "(";
-    }
+    ret += val.paren() ? "(" : "";
     switch (val.val())
     {
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL:
@@ -623,10 +620,7 @@ CONV_FN(SpecialVal, val)
             ret += "*";
             break;
     }
-    if (val.paren())
-    {
-        ret += ")";
-    }
+    ret += val.paren() ? ")" : "";
 }
 
 CONV_FN(LiteralValue, lit_val)
@@ -675,7 +669,7 @@ CONV_FN(LiteralValue, lit_val)
 
 CONV_FN(UnaryExpr, uexpr)
 {
-    ret += "(";
+    ret += uexpr.paren() ? "(" : "";
     switch (uexpr.unary_op())
     {
         case UNOP_MINUS:
@@ -689,7 +683,7 @@ CONV_FN(UnaryExpr, uexpr)
             break;
     }
     ExprToString(ret, uexpr.expr());
-    ret += ")";
+    ret += uexpr.paren() ? ")" : "";
 }
 
 CONV_FN(BinaryOperator, bop)
@@ -1122,11 +1116,21 @@ CONV_FN_QUOTE(TypeName, tp)
 
 CONV_FN(CastExpr, cexpr)
 {
-    ret += "CAST(";
-    ExprToString(ret, cexpr.expr());
-    ret += " AS ";
-    TypeNameToString(ret, 0, cexpr.type_name());
-    ret += ")";
+    if (cexpr.simple())
+    {
+        ExprToString(ret, cexpr.expr());
+        ret += "::`";
+        TypeNameToString(ret, 1, cexpr.type_name());
+        ret += "`";
+    }
+    else
+    {
+        ret += "CAST(";
+        ExprToString(ret, cexpr.expr());
+        ret += " AS ";
+        TypeNameToString(ret, 0, cexpr.type_name());
+        ret += ")";
+    }
 }
 
 CONV_FN(ExprLike, elike)
@@ -1142,13 +1146,13 @@ CONV_FN(ExprLike, elike)
 
 CONV_FN(CondExpr, econd)
 {
-    ret += "((";
+    ret += econd.paren() ? "(" : "";
     ExprToString(ret, econd.expr1());
-    ret += ") ? (";
+    ret += " ? ";
     ExprToString(ret, econd.expr2());
-    ret += ") : (";
+    ret += " : ";
     ExprToString(ret, econd.expr3());
-    ret += "))";
+    ret += econd.paren() ? ")" : "";
 }
 
 CONV_FN(ExprNullTests, ent)
@@ -1161,16 +1165,16 @@ CONV_FN(ExprNullTests, ent)
 
 CONV_FN(ExprBetween, ebetween)
 {
-    ret += "((";
+    ret += ebetween.paren() ? "(" : "";
     ExprToString(ret, ebetween.expr1());
-    ret += ") ";
+    ret += " ";
     if (ebetween.not_())
         ret += "NOT ";
-    ret += "BETWEEN (";
+    ret += "BETWEEN ";
     ExprToString(ret, ebetween.expr2());
-    ret += ") AND (";
+    ret += " AND ";
     ExprToString(ret, ebetween.expr3());
-    ret += "))";
+    ret += ebetween.paren() ? ")" : "";
 }
 
 CONV_FN(ExplainQuery, explain);
@@ -1668,6 +1672,9 @@ CONV_FN(ComplicatedExpr, expr)
         case ExprType::kTable:
             TableToString(ret, expr.table());
             ret += ".*";
+            break;
+        case ExprType::kLambda:
+            LambdaExprToString(ret, expr.lambda());
             break;
         default:
             ret += "1";
@@ -2206,6 +2213,44 @@ CONV_FN(GenerateRandomFunc, grfunc)
     ret += ")";
 }
 
+CONV_FN(KeyValuePair, kvp)
+{
+    ret += kvp.key();
+    ret += " = '";
+    ret += kvp.value();
+    ret += "'";
+}
+
+CONV_FN(DataLakeFunc, dfunc)
+{
+    ret += DataLakeFunc_FName_Name(dfunc.fname());
+    ret += "(";
+    if (dfunc.has_cluster() && dfunc.fname() >= DataLakeFunc_FName_deltalakeS3Cluster)
+    {
+        ClusterToString(ret, false, dfunc.cluster());
+        ret += ", ";
+    }
+    for (int i = 0; i < dfunc.params_size(); i++)
+    {
+        if (i != 0)
+        {
+            ret += ", ";
+        }
+        ret += "'";
+        ret += dfunc.params(i);
+        ret += "'";
+    }
+    for (int i = 0; i < dfunc.kparams_size(); i++)
+    {
+        if (dfunc.params_size() > 0 || i != 0)
+        {
+            ret += ", ";
+        }
+        KeyValuePairToString(ret, dfunc.kparams(i));
+    }
+    ret += ")";
+}
+
 static void ValuesStatementToString(String & ret, const bool tudf, const ValuesStatement & values)
 {
     ret += "VALUES ";
@@ -2284,6 +2329,9 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kUrl:
             URLFuncToString(ret, tf.url());
+            break;
+        case TableFunctionType::kData:
+            DataLakeFuncToString(ret, tf.data());
             break;
         default:
             ret += "numbers(10)";
@@ -2597,18 +2645,20 @@ CONV_FN(SelectStatementCore, ssc)
 
 CONV_FN(SetQuery, setq)
 {
-    ret += "(";
+    ret += setq.paren1() ? "(" : "";
     ExplainQueryToString(ret, setq.sel1());
-    ret += ") ";
+    ret += setq.paren1() ? ")" : "";
+    ret += " ";
     ret += SetQuery_SetOp_Name(setq.set_op());
     if (setq.has_s_or_d())
     {
         ret += " ";
         ret += AllOrDistinct_Name(setq.s_or_d());
     }
-    ret += " (";
+    ret += " ";
+    ret += setq.paren2() ? "(" : "";
     ExplainQueryToString(ret, setq.sel2());
-    ret += ")";
+    ret += setq.paren2() ? ")" : "";
 }
 
 CONV_FN(CTEquery, cteq)
@@ -3066,6 +3116,9 @@ CONV_FN(TableEngineParam, tep)
         case TableEngineParamType::kExpr:
             ExprToString(ret, tep.expr());
             break;
+        case TableEngineParamType::kKvalue:
+            KeyValuePairToString(ret, tep.kvalue());
+            break;
         default:
             ret += "c0";
     }
@@ -3125,13 +3178,14 @@ CONV_FN(TTLGroupBy, ttl_groupby)
 CONV_FN(TTLEntry, ttl_entry)
 {
     ExprToString(ret, ttl_entry.time_expr());
-    ret += " ";
     if (ttl_entry.has_update())
     {
+        ret += " ";
         TTLUpdateToString(ret, ttl_entry.update());
     }
     else if (ttl_entry.has_group_by())
     {
+        ret += " ";
         TTLGroupByToString(ret, ttl_entry.group_by());
     }
 }
@@ -3220,9 +3274,10 @@ CONV_FN(CreateTableSelect, create_table)
     {
         ret += " EMPTY";
     }
-    ret += " AS (";
-    SelectToString(ret, create_table.sel());
-    ret += ")";
+    ret += " AS ";
+    ret += create_table.paren() ? "(" : "";
+    SelectToString(ret, create_table.select());
+    ret += create_table.paren() ? ")" : "";
 }
 
 static void CreateOrReplaceToString(String & ret, const CreateReplaceOption & cro)
@@ -3346,6 +3401,13 @@ CONV_FN(Drop, dt)
     }
 }
 
+CONV_FN(SelectParen, sel)
+{
+    ret += sel.paren() ? "(" : "";
+    SelectToString(ret, sel.select());
+    ret += sel.paren() ? ")" : "";
+}
+
 CONV_FN(Insert, insert)
 {
     if (insert.has_ctes())
@@ -3384,7 +3446,7 @@ CONV_FN(Insert, insert)
     }
     else if (insert.has_select())
     {
-        SelectToString(ret, insert.select());
+        SelectParenToString(ret, insert.select());
     }
     else if (insert.has_insert_file())
     {
@@ -3793,9 +3855,8 @@ CONV_FN(CreateView, create_view)
             ret += " EMPTY";
         }
     }
-    ret += " AS (";
-    SelectToString(ret, create_view.select());
-    ret += ")";
+    ret += " AS ";
+    SelectParenToString(ret, create_view.select());
     if (create_view.has_comment())
     {
         ret += " COMMENT ";
@@ -4083,7 +4144,7 @@ CONV_FN(RemoveColumnSetting, rcp)
 
 CONV_FN(AlterItem, alter)
 {
-    ret += "(";
+    ret += alter.paren() ? "(" : "";
     using AlterType = AlterItem::AlterOneofCase;
     switch (alter.alter_oneof_case())
     {
@@ -4340,7 +4401,7 @@ CONV_FN(AlterItem, alter)
             break;
         case AlterType::kModifyQuery:
             ret += "MODIFY QUERY ";
-            SelectToString(ret, alter.modify_query());
+            SelectParenToString(ret, alter.modify_query());
             break;
         case AlterType::kRefresh:
             ret += "MODIFY ";
@@ -4349,7 +4410,7 @@ CONV_FN(AlterItem, alter)
         default:
             ret += "DELETE WHERE TRUE";
     }
-    ret += ")";
+    ret += alter.paren() ? ")" : "";
 }
 
 CONV_FN(Alter, alter)

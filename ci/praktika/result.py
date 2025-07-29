@@ -6,7 +6,6 @@ import json
 import random
 import sys
 import time
-from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -160,6 +159,12 @@ class Result(MetaClasses.Serializable):
 
     def is_completed(self):
         return self.status not in (Result.Status.PENDING, Result.Status.RUNNING)
+
+    def is_skipped(self):
+        return self.status in (Result.Status.SKIPPED,)
+
+    def is_dropped(self):
+        return self.status in (Result.Status.DROPPED,)
 
     def is_running(self):
         return self.status in (Result.Status.RUNNING,)
@@ -336,6 +341,14 @@ class Result(MetaClasses.Serializable):
         assert self.results, "BUG?"
         for i, result_ in enumerate(self.results):
             if result_.name == result.name:
+                if result_.is_skipped():
+                    # job was skipped in workflow configuration by a user' hook
+                    print(
+                        f"NOTE: Job [{result.name}] has completed status [{result_.status}] - do not switch status to [{result.status}]"
+                    )
+                    if not result.is_dropped():
+                        print(f"ERROR: Unexpected new result status [{result.status}]")
+                    continue
                 if drop_nested_results:
                     # self.results[i] = self._filter_out_ok_results(result)
                     self.results[i] = copy.deepcopy(result)
@@ -529,12 +542,17 @@ class Result(MetaClasses.Serializable):
             files=[log_file] if with_log else None,
         )
 
-    def complete_job(self, with_job_summary_in_info=True):
+    def skip_dependee_jobs_dropping(self):
+        return self.ext.get("skip_dependee_jobs_dropping", False)
+
+    def complete_job(self, with_job_summary_in_info=True, force_ok_exit=False):
         if with_job_summary_in_info:
             self._add_job_summary_to_info()
+        if force_ok_exit:
+            self.ext["skip_dependee_jobs_dropping"] = True
         self.dump()
         print(self.to_stdout_formatted())
-        if not self.is_ok():
+        if not self.is_ok() and not force_ok_exit:
             sys.exit(1)
         else:
             sys.exit(0)
@@ -585,7 +603,7 @@ class ResultInfo:
     GH_STATUS_ERROR = "Failed to set GH commit status"
 
     NOT_FINALIZED = (
-        "Job did not provide Result: job script bug, died CI runner or praktika bug"
+        "Job failed to produce Result due to a script error or CI runner issue"
     )
 
     S3_ERROR = "S3 call failure"
