@@ -91,6 +91,17 @@ Pipe getSourceFromInputFormat(
     return pipe;
 }
 
+Pipe getSourceFromASTInsertQuery(
+    const ASTPtr & ast,
+    bool with_buffers,
+    const Block & header,
+    ContextPtr context,
+    const ASTPtr & input_function)
+{
+    auto format = getInputFormatFromASTInsertQuery(ast, with_buffers, header, context, input_function);
+    return getSourceFromInputFormat(ast, std::move(format), std::move(context), input_function);
+}
+
 std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)
 {
     const auto * insert_query = ast->as<ASTInsertQuery>();

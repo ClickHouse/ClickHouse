@@ -1318,8 +1318,8 @@ static BlockIO executeQueryImpl(
                     auto & input_storage = dynamic_cast<StorageInput &>(*storage);
                     auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr();
 
-                    auto format = getInputFormatFromASTInsertQuery(out_ast, true, input_metadata_snapshot->getSampleBlock(), context, input_function);
-                    auto pipe = getSourceFromInputFormat(out_ast, std::move(format), context, input_function);
+                    auto pipe = getSourceFromASTInsertQuery(
+                        out_ast, true, input_metadata_snapshot->getSampleBlock(), context, input_function);
                     insert_query->tail.reset();
 
                     input_storage.setPipe(std::move(pipe));
@@ -1971,9 +1971,7 @@ void executeQuery(
     {
         if (pipeline.pushing())
         {
-            auto format = getInputFormatFromASTInsertQuery(ast, true, pipeline.getHeader(), context, nullptr);
-            auto pipe = getSourceFromInputFormat(ast, std::move(format), context, nullptr);
-
+            auto pipe = getSourceFromASTInsertQuery(ast, true, pipeline.getHeader(), context, nullptr);
             pipeline.complete(std::move(pipe));
         }
         else if (pipeline.pulling())
