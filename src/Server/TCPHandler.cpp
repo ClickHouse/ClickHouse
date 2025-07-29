@@ -996,9 +996,6 @@ bool TCPHandler::receivePacketsExpectQuery(std::optional<QueryState> & state)
         default:
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet {} from client", toString(packet_type));
     }
-
-    chassert(server.isCancelled() || !tcp_server.isOpen());
-    throw Exception(ErrorCodes::ABORTED, "Server shutdown is called");
 }
 
 
@@ -1020,7 +1017,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
 
     Stopwatch watch;
 
-    while (!server.isCancelled() && tcp_server.isOpen())
+    while (!server.isCancelled())
     {
         while (!in->poll(timeout_us))
         {
@@ -1081,7 +1078,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
         }
     }
 
-    chassert(server.isCancelled() || !tcp_server.isOpen());
+    chassert(server.isCancelled());
     throw Exception(ErrorCodes::ABORTED, "Server shutdown is called");
 }
 
@@ -2535,7 +2532,7 @@ void TCPHandler::receivePacketsExpectCancel(QueryState & state)
     /// During request execution the only packet that can come from the client is stopping the query.
     if (in->poll(0))
     {
-        if (in->eof())
+        if (in->isCanceled() || in->eof())
             throw NetException(ErrorCodes::ABORTED, "Client has dropped the connection, cancel the query.");
 
         UInt64 packet_type = 0;
