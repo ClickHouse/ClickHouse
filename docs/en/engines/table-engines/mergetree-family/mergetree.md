@@ -358,14 +358,14 @@ Stores for each index granule the minimum and maximum values of an expression.
 
 Syntax: `set(max_rows)`
 
-Stores for each index granule at most `max_rows`-many unique values of the specified expression (`max_rows = 0` means "store all unique values").
+Stores for each index granule at most `max_rows` many unique values of the specified expression (`max_rows = 0` means "store all unique values").
 
 #### Bloom filter {#bloom-filter}
 
 Syntax: `bloom_filter([false_positive_rate])`
 
 Stores for each index granule a [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns.
-Parameter `false_positive_rate` with a possible value between 0 and 1 (default: 0.025) specifies the probability of generating a positive positive (which increases the amount of data to be read).
+Parameter `false_positive_rate` with a possible value between 0 and 1 (default: 0.025) specifies the probability of generating a positive (which increases the amount of data to be read).
 Supported data types: `(U)Int*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`, `Array`, `LowCardinality`, `Nullable`, `UUID` and `Map`.
 For the `Map` data type, the client can specify if the index should be created for keys or for values using [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapkeys) or [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapvalues).
 
@@ -402,8 +402,8 @@ AS
 (number_of_hash_functions, probability_of_false_positives, size_of_bloom_filter_in_bytes) -> ceil(size_of_bloom_filter_in_bytes / (-number_of_hash_functions / log(1 - exp(log(probability_of_false_positives) / number_of_hash_functions))))
 
 ```
-To use those functions, we need to specify two parameter at least.
-For example, if there 4300 ngrams in the granule and we expect false positives to be less than 0.0001.
+To use those functions, we need to specify two parameters at least.
+For example, if there are 4300 ngrams in the granule and we expect false positives to be less than 0.0001.
 The other parameters can be estimated by executing following queries:
 
 ```sql
