@@ -1421,6 +1421,7 @@ static BlockIO executeQueryImpl(
                 }
 
                 insert_query->tail = std::move(result.insert_data_buffer);
+                LOG_DEBUG(logger, "Setting async_insert=1, but INSERT query will be executed synchronously because it has too much data");
             }
         }
 
