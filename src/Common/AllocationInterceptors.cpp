@@ -210,8 +210,12 @@ extern "C" void * __wrap_malloc(size_t size) // NOLINT
 
 extern "C" void * __wrap_calloc(size_t number_of_members, size_t size) // NOLINT
 {
+    size_t real_size = 0;
+    if (__builtin_mul_overflow(number_of_members, size, &real_size))
+        return nullptr;
+
     AllocationTrace trace;
-    size_t actual_size = Memory::trackMemory(number_of_members * size, trace);
+    size_t actual_size = Memory::trackMemory(real_size, trace);
     void * res = __real_calloc(number_of_members, size);
     trace.onAlloc(res, actual_size);
     return res;
@@ -235,7 +239,7 @@ extern "C" void * __wrap_realloc(void * ptr, size_t size) // NOLINT
 extern "C" int __wrap_posix_memalign(void ** memptr, size_t alignment, size_t size) // NOLINT
 {
     AllocationTrace trace;
-    size_t actual_size = Memory::trackMemory(size, trace);
+    size_t actual_size = Memory::trackMemory(size, trace, static_cast<std::align_val_t>(alignment));
     int res = __real_posix_memalign(memptr, alignment, size);
     trace.onAlloc(*memptr, actual_size);
     return res;
@@ -244,7 +248,7 @@ extern "C" int __wrap_posix_memalign(void ** memptr, size_t alignment, size_t si
 extern "C" void * __wrap_aligned_alloc(size_t alignment, size_t size) // NOLINT
 {
     AllocationTrace trace;
-    size_t actual_size = Memory::trackMemory(size, trace);
+    size_t actual_size = Memory::trackMemory(size, trace, static_cast<std::align_val_t>(alignment));
     void * res = __real_aligned_alloc(alignment, size);
     trace.onAlloc(res, actual_size);
     return res;
@@ -262,7 +266,7 @@ extern "C" void * __wrap_valloc(size_t size) // NOLINT
 extern "C" void * __wrap_memalign(size_t alignment, size_t size) // NOLINT
 {
     AllocationTrace trace;
-    size_t actual_size = Memory::trackMemory(size, trace);
+    size_t actual_size = Memory::trackMemory(size, trace, static_cast<std::align_val_t>(alignment));
     void * res = __real_memalign(alignment, size);
     trace.onAlloc(res, actual_size);
     return res;
