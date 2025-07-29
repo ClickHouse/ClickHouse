@@ -8,6 +8,7 @@
 
 #include <fmt/format.h>
 #include "Core/ColumnWithTypeAndName.h"
+#include "DataTypes/DataTypeString.h"
 #include "Functions/FunctionsLogical.h"
 #include "Functions/IFunctionAdaptors.h"
 #include "Interpreters/ActionsDAG.h"
@@ -22,12 +23,19 @@ namespace DB
 namespace QueryPlanOptimizations
 {
 
-const ActionsDAG::Node & createRuntimeFilterCondition(ActionsDAG & actions_dag, const ColumnWithTypeAndName & key_column, const ContextPtr & context)
+const ActionsDAG::Node & createRuntimeFilterCondition(ActionsDAG & actions_dag, const String & filter_name, const ColumnWithTypeAndName & key_column, const ContextPtr & context)
 {
-    auto filter_function = FunctionFactory::instance().get("ignore", context);
-    const auto & key_column_node = actions_dag. findInOutputs(key_column.name); //actions_dag.addInput(key_column);
-    const auto & condition = actions_dag.addFunction(filter_function, {&key_column_node}, {});
-    return actions_dag.addFunction(FunctionFactory::instance().get("not", context), {&condition}, {});
+    const auto & filter_name_node = actions_dag.addColumn(
+        ColumnWithTypeAndName(
+            DataTypeString().createColumnConst(0, filter_name),
+            std::make_shared<DataTypeString>(),
+            filter_name));
+
+    const auto & key_column_node = actions_dag. findInOutputs(key_column.name);
+
+    auto filter_function = FunctionFactory::instance().get("filterContains", context);
+    const auto & condition = actions_dag.addFunction(filter_function, {&filter_name_node, &key_column_node}, {});
+    return condition;
 }
 
 void tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & /*optimization_settings*/)
@@ -70,7 +78,7 @@ void tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// TODO: make unique filter name that will be used at runtime to "connect" build side and apply side
     const String filter_name = "_runtime_filter_42";
 
-    /// Add filtering to the left subtree
+    /// Add filtering to the left subtree of join
     QueryPlan::Node * filter_a_node = nullptr;
     {
         ActionsDAG filter_dag;
@@ -83,7 +91,7 @@ void tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         {
             if (join_keys_a.size() == 1)
             {
-                const ActionsDAG::Node & filter_condition = createRuntimeFilterCondition(filter_dag, join_keys_a.front(), Context::getGlobalContextInstance());
+                const ActionsDAG::Node & filter_condition = createRuntimeFilterCondition(filter_dag, filter_name, join_keys_a.front(), Context::getGlobalContextInstance());
                 filter_dag.addOrReplaceInOutputs(filter_condition);
                 filter_column_name = filter_condition.result_name;
             }
@@ -91,7 +99,7 @@ void tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             {
                 ActionsDAG::NodeRawConstPtrs all_filter_conditions;
                 for (const auto & join_key : join_keys_a)
-                    all_filter_conditions.push_back(&createRuntimeFilterCondition(filter_dag, join_key, Context::getGlobalContextInstance()));
+                    all_filter_conditions.push_back(&createRuntimeFilterCondition(filter_dag, filter_name, join_key, Context::getGlobalContextInstance()));
 
                 FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
 
@@ -114,7 +122,7 @@ void tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         filter_a_node->children = {source_a};
     }
 
-    /// Add building filter to the right subtree join 
+    /// Add building filter to the right subtree of join
     QueryPlan::Node * build_filter_node = nullptr;
     {
         build_filter_node = &nodes.emplace_back();
