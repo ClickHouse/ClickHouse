@@ -83,13 +83,15 @@ ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(Coordinat
 std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueUnorderedFileMetadata::setProcessingImpl()
 {
     const auto zk_client = getZooKeeper();
-    while (true)
+    const size_t max_num_tries = 1000;
+    Coordination::Error code;
+    for (size_t i = 0; i < max_num_tries; ++i)
     {
         Coordination::Requests requests;
         auto result_indexes = prepareProcessingRequestsImpl(requests);
 
         Coordination::Responses responses;
-        const auto code = zk_client->tryMulti(requests, responses);
+        code = zk_client->tryMulti(requests, responses);
         auto has_request_failed = [&](size_t request_index) { return responses[request_index]->error != Coordination::Error::ZOK; };
 
         if (code == Coordination::Error::ZOK)
@@ -118,6 +120,11 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
             log, "Retrying setProcessing because processing node id path "
             "is unexpectedly missing or was created (error code: {})", code);
     }
+
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "Failed to set file processing within {} retries, last error: {}",
+        max_num_tries, code);
 }
 
 void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedAtStartRequests(

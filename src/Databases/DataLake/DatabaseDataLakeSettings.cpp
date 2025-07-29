@@ -12,6 +12,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_SETTING;
 }
 
@@ -74,12 +75,17 @@ void DatabaseDataLakeSettings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
-void DatabaseDataLakeSettings::loadFromQuery(const ASTStorage & storage_def)
+void DatabaseDataLakeSettings::loadFromQuery(const ASTStorage & storage_def, bool is_attach)
 {
     if (storage_def.settings)
     {
         try
         {
+            for (const auto & change : storage_def.settings->changes)
+            {
+                if (!is_attach && change.name.starts_with("iceberg_"))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting {} is used for storage. Please use the setting without `iceberg_` prefix", change.name);
+            }
             impl->applyChanges(storage_def.settings->changes);
         }
         catch (Exception & e)
