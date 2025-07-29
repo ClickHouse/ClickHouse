@@ -75,12 +75,12 @@ public:
 
         if (stream.use_count() > 1)
         {
-            LOG_ERROR(getLogger("HTTPServerRequest"), "Request stream is shared by multiple threads, cannot keep alive connection, use count {}, called at\n{}", stream.use_count(), StackTrace().toString());
+            LOG_ERROR(getLogger("HTTPServerRequest"), "Request stream is shared by multiple threads. HTTP keep alive is not possible. Use count {}", stream.use_count());
             return false;
         }
         else
         {
-            LOG_DEBUG(getLogger("HTTPServerRequest"), "Request stream is not shared, can keep alive connection, use count {}", stream.use_count());
+            LOG_TEST(getLogger("HTTPServerRequest"), "Request stream is not shared, can keep alive connection");
         }
 
         /// only this instance possesses the stream it is safe to read from it

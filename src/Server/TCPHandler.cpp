@@ -608,18 +608,8 @@ void TCPHandler::runImpl()
             });
 
             /// Send structure of columns to client for function input()
-            query_state->query_context->setInputInitializer([this, &query_state, log_=log] (ContextPtr context, const StoragePtr & input_storage)
+            query_state->query_context->setInputInitializer([this, &query_state] (ContextPtr context, const StoragePtr & input_storage)
             {
-                LOG_DEBUG(log_,
-                    "Input initializer for input storage: {}"
-                    ", client_tcp_protocol_version {}"
-                    ", DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA {}"
-                    ", input_format_defaults_for_omitted_fields {}"
-                    , input_storage->getStorageID().getNameForLogs()
-                    , client_tcp_protocol_version
-                    , DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA
-                    , bool(query_state->query_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields]));
-
                 if (context != query_state->query_context)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
 
@@ -637,11 +627,6 @@ void TCPHandler::runImpl()
                 {
                     sendTableColumns(query_state.value(), metadata_snapshot->getColumns());
                 }
-                else
-                {
-                    LOG_DEBUG(log_, "Not sending table columns");
-                }
-
                 /// Send block to the client - input storage structure.
                 query_state->input_header = metadata_snapshot->getSampleBlock();
                 sendData(query_state.value(), query_state->input_header);
@@ -740,7 +725,6 @@ void TCPHandler::runImpl()
 
             if (query_state->io.pipeline.pushing())
             {
-                LOG_DEBUG(log, "Processing query in PushingPipelineExecutor");
                 /// FIXME: check explicitly that insert query suggests to receive data via native protocol,
                 query_state->need_receive_data_for_insert = true;
                 processInsertQuery(query_state.value());
@@ -748,13 +732,11 @@ void TCPHandler::runImpl()
             }
             else if (query_state->io.pipeline.pulling())
             {
-                LOG_DEBUG(log, "Processing query in PullingPipelineExecutor");
                 processOrdinaryQuery(query_state.value());
                 query_state->io.onFinish();
             }
             else if (query_state->io.pipeline.completed())
             {
-                LOG_DEBUG(log, "Processing query in CompletedPipelineExecutor");
                 {
                     CompletedPipelineExecutor executor(query_state->io.pipeline);
 
@@ -1112,9 +1094,6 @@ void TCPHandler::skipData(QueryState & state)
 
 void TCPHandler::startInsertQuery(QueryState & state)
 {
-    LOG_DEBUG(log, "Starting insert query, client_tcp_protocol_version {}, DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA {}, input_format_defaults_for_omitted_fields {}",
-        client_tcp_protocol_version, DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA, bool(state.query_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields]));
-
     std::lock_guard lock(callback_mutex);
 
     /// Send ColumnsDescription for insertion table
@@ -1129,10 +1108,6 @@ void TCPHandler::startInsertQuery(QueryState & state)
                 if (!storage_ptr)
                     throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs());
                 sendTableColumns(state, storage_ptr->getInMemoryMetadataPtr()->getColumns());
-            }
-            else
-            {
-                LOG_DEBUG(log, "No insertion table specified, not sending table columns");
             }
         }
     }
@@ -2655,8 +2630,6 @@ void TCPHandler::sendLogData(QueryState & state, const Block & block)
 
 void TCPHandler::sendTableColumns(QueryState &, const ColumnsDescription & columns)
 {
-    LOG_DEBUG(log, "Sending table columns at\n{}", StackTrace().toString());
-
     writeVarUInt(Protocol::Server::TableColumns, *out);
 
     /// Send external table name (empty name is the main table)
@@ -2701,7 +2674,6 @@ void TCPHandler::updateProgress(QueryState & state, const Progress & value)
 
 void TCPHandler::sendProgress(QueryState & state)
 {
-    LOG_DEBUG(log, "Sending progress at\n{}", StackTrace().toString());
     writeVarUInt(Protocol::Server::Progress, *out);
     auto increment = state.progress.fetchValuesAndResetPiecewiseAtomically();
     UInt64 current_elapsed_ns = state.watch.elapsedNanoseconds();

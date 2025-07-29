@@ -105,8 +105,6 @@ public:
         // couple more units so that the segmentation thread doesn't spuriously
         // bump into reader thread on wraparound.
         processing_units.resize(params.max_threads + 2);
-
-        LOG_TRACE(getLogger("ParallelParsingInputFormat"), "Parallel parsing is used id {}", size_t(this));
     }
 
     ~ParallelParsingInputFormat() override
@@ -139,7 +137,6 @@ private:
 
     void onFinish() final
     {
-        LOG_DEBUG(getLogger("ParallelParsingInputFormat"), "ParallelParsingInputFormat onFinish() called id {} owned buffer size {}", size_t(this), getOwnedBuffersSize());
         /// We have to wait for all threads to finish before calling IInputFormat::onFinish()
         /// because segmentator thread still uses owned buffers.
         finishAndWait();
@@ -178,7 +175,6 @@ private:
             while (true)
             {
                 IProcessor::Status status = input_format->prepare();
-                LOG_DEBUG(getLogger("ParallelParsingInputFormat"), "InternalParser::getChunk() status: {} inst format {}", IProcessor::statusToName(status), size_t(input_format.get()));
                 switch (status)
                 {
                     case IProcessor::Status::Ready:

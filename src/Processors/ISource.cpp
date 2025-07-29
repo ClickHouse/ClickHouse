@@ -1,6 +1,5 @@
 #include <Processors/ISource.h>
 #include <QueryPipeline/StreamLocalLimits.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -119,10 +118,7 @@ void ISource::work()
             }
         }
         else
-        {
-            LOG_DEBUG(getLogger("ISource"), "No data to read from source, finishing");
             finished = true;
-        }
 
         if (finished)
             onFinish();

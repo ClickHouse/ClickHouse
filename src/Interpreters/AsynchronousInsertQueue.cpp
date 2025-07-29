@@ -3,7 +3,6 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/EnabledQuota.h>
 #include <Columns/IColumn.h>
-#include <Common/Logger.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
@@ -395,13 +394,6 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
 
         auto read_buf = getReadBufferFromASTInsertQuery(query);
 
-        if (auto * insert_query = query->as<ASTInsertQuery>())
-            if (insert_query->tail)
-                insert_query->tail.reset();
-
-        LOG_DEBUG(getLogger("AsynchronousInsertQueue"),
-            "pushQueryWithInlinedData read buffer id {} available {}", size_t(read_buf.get()), read_buf->available());
-
         LimitReadBuffer limit_buf(
             *read_buf,
             {.read_no_more = query_context->getSettingsRef()[Setting::async_insert_max_data_size]});
@@ -431,8 +423,6 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
             buffers.emplace_back(std::make_unique<ReadBufferFromOwnString>(bytes));
             buffers.emplace_back(std::move(read_buf));
 
-            LOG_DEBUG(getLogger("AsynchronousInsertQueue"),
-                "too much data in query, {} bytes, {} buffers", bytes.size(), buffers.size());
             return PushResult
             {
                 .status = PushResult::TOO_MUCH_DATA,
@@ -944,8 +934,6 @@ try
 
     try
     {
-        LOG_DEBUG(log, "Interpreter, Processing async insert query '{}', count inserts {}", key.query_str, data->entries.size());
-
         interpreter = std::make_unique<InterpreterInsertQuery>(
             key.query, insert_context, (*key.settings)[Setting::insert_allow_materialized_columns], false, false, true);
 
@@ -1070,9 +1058,6 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     LoggerPtr logger,
     LogFunc && add_to_async_insert_log)
 {
-    LOG_DEBUG(logger, "processEntriesWithParsing:: Processing async insert query '{}', count inserts {}",
-        key.query_str, data->entries.size());
-
     size_t total_rows = 0;
     InsertData::EntryPtr current_entry;
     String current_exception;
@@ -1113,11 +1098,8 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         std::move(adding_defaults_transform));
     auto chunk_info = std::make_shared<AsyncInsertInfo>();
 
-    size_t entry_index = 0;
     for (const auto & entry : data->entries)
     {
-        LOG_DEBUG(logger, "Processing async insert entry with query id {} for query '{}', entry index {}",
-            entry->query_id, key.query_str, entry_index++);
         current_entry = entry;
 
         const auto * bytes = entry->chunk.asString();

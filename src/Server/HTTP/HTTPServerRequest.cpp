@@ -15,7 +15,6 @@
 #include <Poco/Net/HTTPStream.h>
 #include <Poco/Net/NetException.h>
 
-#include <Common/Logger.h>
 #include <Common/logger_useful.h>
 
 #if USE_SSL
@@ -84,8 +83,6 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
         stream = std::make_shared<EmptyReadBuffer>();
         stream_is_bounded = true;
     }
-
-    LOG_DEBUG(getLogger("HTTPServerRequest"), "Created request input stream with ref count {} id {}", stream.use_count(), size_t(stream.get()));
 }
 
 bool HTTPServerRequest::checkPeerConnected() const

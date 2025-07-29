@@ -45,9 +45,8 @@ void executeQuery(
     QueryFlags flags = {},
     const std::optional<FormatSettings> & output_format_settings = std::nullopt, /// Format settings for output format, will be calculated from the context if not set.
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format = {}, /// If a non-empty callback is passed, it will be called on exception with created output format.
-    QueryFinishCallback query_finish_callback = {}, /// Use it to do everything you need to before the QueryFinish entry will be dumped to query_log
+    QueryFinishCallback query_finish_callback = {} /// Use it to do everything you need to before the QueryFinish entry will be dumped to query_log
                                                    /// NOTE: It will not be called in case of exception (i.e. ExceptionWhileProcessing)
-    std::function<size_t()> ref_count_cb = []() { return 0; } /// Callback to get the ref count of the request input stream.
 );
 
 

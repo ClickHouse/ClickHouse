@@ -71,11 +71,6 @@ public:
 
     void needOnlyCount() { need_only_count = true; }
 
-    size_t getOwnedBuffersSize() const
-    {
-        return owned_buffers.size();
-    }
-
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }
 

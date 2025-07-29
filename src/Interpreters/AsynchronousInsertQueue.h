@@ -6,7 +6,6 @@
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ThreadPool.h>
-#include <IO/ReadBuffer.h>
 #include <Interpreters/AsynchronousInsertQueueDataKind.h>
 
 #include <future>
@@ -43,7 +42,7 @@ public:
 
         /// Read buffer that contains extracted
         /// from query data in case of too much data.
-        ReadBufferUniquePtr insert_data_buffer{};
+        std::unique_ptr<ReadBuffer> insert_data_buffer{};
 
         /// Block that contains received by Native
         /// protocol data in case of too much data.

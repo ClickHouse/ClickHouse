@@ -1,7 +1,6 @@
 #include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WithFileName.h>
-#include <Common/logger_useful.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
@@ -40,10 +39,6 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread
             unit.original_segment_size = getDataOffsetMaybeCompressed(*in) - segment_start;
             unit.offset = successfully_read_rows_count;
             successfully_read_rows_count += currently_read_rows;
-
-            LOG_DEBUG(getLogger("ParallelParsingInputFormat"),
-                "Segmentator unit read {} bytes, offset {}, rows {}, unit number {} successfully_read_rows_count {} have_more_data {}",
-                unit.segment.size(), unit.offset, currently_read_rows, segmentator_unit_number, successfully_read_rows_count, have_more_data);
 
             unit.is_last = !have_more_data;
             unit.status = READY_TO_PARSE;
