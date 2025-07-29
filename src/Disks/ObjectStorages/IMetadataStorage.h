@@ -147,7 +147,9 @@ public:
     /// Create metadata file on paths with content (blob_name, size_in_bytes)
     virtual void createMetadataFile(const std::string & path, ObjectStorageKey key, uint64_t size_in_bytes) = 0;
 
-    /// Add to new blob to metadata file (way to implement appends)
+    virtual bool supportAddingBlobToMetadata() { return false; }
+    /// Add to new blob to metadata file (way to implement appends).
+    /// If `addBlobToMetadata` is supported, `supportAddingBlobToMetadata` must return `true`
     virtual void addBlobToMetadata(const std::string & /* path */, ObjectStorageKey /* key */, uint64_t /* size_in_bytes */)
     {
         throwNotImplemented();

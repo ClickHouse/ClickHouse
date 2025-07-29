@@ -785,56 +785,56 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         results.append(
             Result.from_commands_run(
                 name="Sanitizer assert (in stderr.log)",
-                command=f"! sed -n '/.*anitizer/,${{p}}' {self.log_dir}/stderr*.log | grep -v \"ASan doesn't fully support makecontext/swapcontext functions\" | head -n 100 | tee /dev/stderr | grep -q .",
+                command=f"! sed -n '/.*anitizer/,${{p}}' {self.log_dir}/stderr*.log | grep -a -v \"ASan doesn't fully support makecontext/swapcontext functions\" | head -n 100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
                 name="Killed by signal (in clickhouse-server.log)",
-                command=f"cd {self.log_dir} && ! grep ' <Fatal>' clickhouse-server*.log | tee /dev/stderr | grep -q .",
+                command=f"cd {self.log_dir} && ! grep -a ' <Fatal>' clickhouse-server*.log | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
                 name="Fatal messages (in clickhouse-server.log)",
-                command=f"cd {self.log_dir} && ! grep -A50 '#######################################' clickhouse-server*.log| grep '<Fatal>' | head -n100 | tee /dev/stderr | grep -q .",
+                command=f"cd {self.log_dir} && ! grep -a -A50 '#######################################' clickhouse-server*.log| grep '<Fatal>' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
                 name="Logical error thrown (see clickhouse-server.log or logical_errors.txt)",
-                command=f"cd {self.log_dir} && ! grep -A10 'Code: 49. DB::Exception: ' clickhouse-server*.log | head -n100 | tee /dev/stderr | grep -q .",
+                command=f"cd {self.log_dir} && ! grep -a -A10 'Code: 49. DB::Exception: ' clickhouse-server*.log | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
                 name="No lost s3 keys",
-                command=f"cd {self.log_dir} && ! grep 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
+                command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
                 name="Lost forever for SharedMergeTree",
-                command=f"cd {self.log_dir} && ! grep 'it is lost forever' clickhouse-server*.log | head -n100 | tee /dev/stderr | grep -q .",
+                command=f"cd {self.log_dir} && ! grep -a 'it is lost forever' clickhouse-server*.log | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
                 name="Lost forever for SharedMergeTree",
-                command=f"cd {self.log_dir} && ! grep 'it is lost forever' clickhouse-server*.log | head -n100 | tee /dev/stderr | grep -q .",
+                command=f"cd {self.log_dir} && ! grep -a 'it is lost forever' clickhouse-server*.log | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         results.append(
             Result.from_commands_run(
                 name="S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)",
-                command=f"cd {self.log_dir} && ! grep 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
+                command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
         if Shell.check(f"dmesg > {self.DMESG_LOG}"):
             results.append(
                 Result.from_commands_run(
                     name="OOM in dmesg",
-                    command=f"! cat {self.DMESG_LOG} | grep -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
+                    command=f"! cat {self.DMESG_LOG} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
                 )
             )
         else:
@@ -842,7 +842,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         results.append(
             Result.from_commands_run(
                 name="Found signal in gdb.log",
-                command=f"! cat {self.GDB_LOG} | grep -C3 ' received signal ' | tee /dev/stderr | grep -q .",
+                command=f"! cat {self.GDB_LOG} | grep -a -C3 ' received signal ' | tee /dev/stderr | grep -q .",
             )
         )
         # convert statuses to CH tests notation
