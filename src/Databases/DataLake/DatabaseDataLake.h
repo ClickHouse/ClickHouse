@@ -60,10 +60,7 @@ public:
         ContextPtr /*context*/,
         const String & /*name*/,
         const StoragePtr & /*table*/,
-        const ASTPtr & /*query*/) override {
-        for (const auto & ch : settings.allChanged())
-            std::cerr << "createTable in db " << this << ' ' << ch.name << '\n';
-    }
+        const ASTPtr & /*query*/) override {}
 
 protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;

@@ -119,8 +119,6 @@ RestCatalog::RestCatalog(
     , oauth_server_uri(oauth_server_uri_)
     , oauth_server_use_request_body(oauth_server_use_request_body_)
 {
-    std::cerr << "RestCatalog::RestCatalog " << warehouse_ << ' ' << base_url_ << ' ' << catalog_credential_ << '\n';
-
     if (!catalog_credential_.empty())
     {
         std::tie(client_id, client_secret) = parseCatalogCredential(catalog_credential_);
@@ -612,7 +610,6 @@ bool RestCatalog::getTableMetadataImpl(
         {
             location = metadata_object->get("location").extract<String>();
             result.setLocation(location);
-            std::cerr << "location " << location << '\n';
             LOG_TEST(log, "Location for table {}: {}", table_name, location);
         }
         else
@@ -675,7 +672,6 @@ bool RestCatalog::getTableMetadataImpl(
         if (object->has("metadata-location") && !object->get("metadata-location").isEmpty())
         {
             auto metadata_location = object->get("metadata-location").extract<String>();
-            std::cerr << "metadata_location " << metadata_location << '\n';
             result.setDataLakeSpecificProperties(DataLakeSpecificProperties{ .iceberg_metadata_file_location = metadata_location });
         }
     }
@@ -683,7 +679,6 @@ bool RestCatalog::getTableMetadataImpl(
     return true;
 }
 
-//{"namespace":["fooka"],"properties":{"location":"s3://iceberg_data/fooka"}}
 void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & location) const
 {
     const std::string endpoint = fmt::format("{}/namespaces", base_url);
@@ -703,7 +698,6 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
     request_body->stringify(oss);
     const std::string body_str = DB::removeEscapedSlashes(oss.str());
 
-    std::cerr << "REQUEST: " << endpoint << ' ' <<  body_str << "\n\n\n";
     DB::HTTPHeaderEntries headers = getAuthHeaders(/* update_token = */ true);
     headers.emplace_back("Content-Type", "application/json");
 
@@ -731,7 +725,6 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
         String response_str;
         readJSONObjectPossiblyInvalid(response_str, *wb);
 
-        std::cerr << "response_str " << response_str << '\n';
         LOG_TEST(log, "Successfully replaced metadata-location for table {}", namespace_name);
     }
     catch (...)
@@ -772,7 +765,6 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     request_body->stringify(oss);
     const std::string body_str = DB::removeEscapedSlashes(oss.str());
 
-    std::cerr << "REQUEST: " << endpoint << ' ' <<  body_str << "\n\n\n";
     DB::HTTPHeaderEntries headers = getAuthHeaders(/* update_token = */ true);
     headers.emplace_back("Content-Type", "application/json");
 
@@ -799,8 +791,6 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 
         String response_str;
         readJSONObjectPossiblyInvalid(response_str, *wb);
-
-        std::cerr << "response_str " << response_str << '\n';
     }
     catch (const DB::HTTPException & e)
     {
@@ -870,7 +860,6 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     request_body->stringify(oss);
     const std::string body_str = DB::removeEscapedSlashes(oss.str());
 
-    std::cerr << "REQUEST: " << endpoint << ' ' <<  body_str << "\n\n\n";
     DB::HTTPHeaderEntries headers = getAuthHeaders(/* update_token = */ true);
     headers.emplace_back("Content-Type", "application/json");
 
@@ -898,7 +887,6 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
         String response_str;
         readJSONObjectPossiblyInvalid(response_str, *wb);
 
-        std::cerr << "response_str " << response_str << '\n';
         LOG_TEST(log, "Successfully replaced metadata-location for table {}.{} with {}", namespace_name, table_name, new_metadata_path);
     }
     catch (const DB::HTTPException &)

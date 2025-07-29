@@ -180,11 +180,6 @@ def started_cluster():
         )
 
         logging.info("Starting cluster...")
-        logging.basicConfig(level=logging.DEBUG)
-
-        logging.getLogger("urllib3").setLevel(logging.DEBUG)
-        logging.getLogger("urllib3").propagate = True
-
         cluster.start()
 
         # TODO: properly wait for container

@@ -817,10 +817,6 @@ void IcebergStorageSink::cancelBuffers()
 
 bool IcebergStorageSink::initializeMetadata()
 {
-    std::cerr << "initial meta\n";
-    Poco::JSON::Stringifier::stringify(metadata, std::cerr, 4);
-    std::cerr << '\n';
-
     auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
     Int64 parent_snapshot = -1;
     if (metadata->has(Iceberg::f_current_snapshot_id))
@@ -859,9 +855,7 @@ bool IcebergStorageSink::initializeMetadata()
         Poco::JSON::Stringifier::stringify(metadata, oss, 4);
         std::string json_representation = removeEscapedSlashes(oss.str());
 
-        auto cleanup = [&] () {
-            std::cerr << "some cleanup " << storage_manifest_list_name << '\n';
-            
+        auto cleanup = [&] () {            
             for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
                 object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
