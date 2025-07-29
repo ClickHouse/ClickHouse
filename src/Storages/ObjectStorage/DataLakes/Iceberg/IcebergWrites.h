@@ -6,6 +6,7 @@
 #include <IO/WriteBuffer.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Databases/DataLake/ICatalog.h>
 
 #if USE_AVRO
 
@@ -157,7 +158,9 @@ public:
         StorageObjectStorageConfigurationPtr configuration_,
         const std::optional<FormatSettings> & format_settings_,
         SharedHeader sample_block_,
-        ContextPtr context_);
+        ContextPtr context_,
+        std::shared_ptr<DataLake::ICatalog> catalog_,
+        const StorageID & table_id_);
 
     ~IcebergStorageSink() override = default;
 
@@ -189,6 +192,9 @@ private:
     std::optional<ChunkPartitioner> partitioner;
     Poco::JSON::Object::Ptr partititon_spec;
     Int64 partition_spec_id;
+
+    std::shared_ptr<DataLake::ICatalog> catalog;
+    StorageID table_id;
 };
 
 }
