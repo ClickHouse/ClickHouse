@@ -128,6 +128,8 @@ private:
     std::string retrieveAccessToken() const;
     DB::HTTPHeaderEntries getAuthHeaders(bool update_token = false) const;
     static void parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result);
+
+    void sendPOSTRequest(const String & endpoint, Poco::JSON::Object::Ptr request_body) const;
 };
 
 }

@@ -679,6 +679,38 @@ bool RestCatalog::getTableMetadataImpl(
     return true;
 }
 
+void RestCatalog::sendPOSTRequest(const String & endpoint, Poco::JSON::Object::Ptr request_body) const
+{
+    std::ostringstream oss;
+    request_body->stringify(oss);
+    const std::string body_str = DB::removeEscapedSlashes(oss.str());
+
+    DB::HTTPHeaderEntries headers = getAuthHeaders(/* update_token = */ true);
+    headers.emplace_back("Content-Type", "application/json");
+
+    const auto & context = getContext();
+
+    DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [body_str](std::ostream & os)
+    {
+        os << body_str;
+    };
+
+    Poco::URI url(endpoint);
+    auto wb = DB::BuilderRWBufferFromHTTP(url)
+        .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
+        .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+        .withSettings(context->getReadSettings())
+        .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
+        .withHostFilter(&context->getRemoteHostFilter())
+        .withHeaders(headers)
+        .withOutCallback(out_stream_callback)
+        .withSkipNotFound(false)
+        .create(credentials);
+
+    String response_str;
+    readJSONObjectPossiblyInvalid(response_str, *wb);
+}
+
 void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & location) const
 {
     const std::string endpoint = fmt::format("{}/namespaces", base_url);
@@ -698,39 +730,13 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
     request_body->stringify(oss);
     const std::string body_str = DB::removeEscapedSlashes(oss.str());
 
-    DB::HTTPHeaderEntries headers = getAuthHeaders(/* update_token = */ true);
-    headers.emplace_back("Content-Type", "application/json");
-
-    const auto & context = getContext();
-
-    DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [body_str](std::ostream & os)
-    {
-        os << body_str;
-    };
-
     try
     {
-        Poco::URI url(endpoint);
-        auto wb = DB::BuilderRWBufferFromHTTP(url)
-            .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
-            .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
-            .withSettings(context->getReadSettings())
-            .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
-            .withHostFilter(&context->getRemoteHostFilter())
-            .withHeaders(headers)
-            .withOutCallback(out_stream_callback)
-            .withSkipNotFound(false)
-            .create(credentials);
-
-        String response_str;
-        readJSONObjectPossiblyInvalid(response_str, *wb);
-
-        LOG_TEST(log, "Successfully replaced metadata-location for table {}", namespace_name);
-    }
+        sendPOSTRequest(endpoint, request_body);
+    } 
     catch (...)
     {
     }
-
 }
 
 void RestCatalog::createTable(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr metadata_content) const
@@ -761,55 +767,25 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
     request_body->set("properties", properties);
 
-    std::ostringstream oss;
-    request_body->stringify(oss);
-    const std::string body_str = DB::removeEscapedSlashes(oss.str());
-
-    DB::HTTPHeaderEntries headers = getAuthHeaders(/* update_token = */ true);
-    headers.emplace_back("Content-Type", "application/json");
-
-    const auto & context = getContext();
-
-    DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [body_str](std::ostream & os)
-    {
-        os << body_str;
-    };
-
     try
     {
-        Poco::URI url(endpoint);
-        auto wb = DB::BuilderRWBufferFromHTTP(url)
-            .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
-            .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
-            .withSettings(context->getReadSettings())
-            .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
-            .withHostFilter(&context->getRemoteHostFilter())
-            .withHeaders(headers)
-            .withOutCallback(out_stream_callback)
-            .withSkipNotFound(false)
-            .create(credentials);
-
-        String response_str;
-        readJSONObjectPossiblyInvalid(response_str, *wb);
-    }
-    catch (const DB::HTTPException & e)
+        sendPOSTRequest(endpoint, request_body);
+    } 
+    catch (const DB::HTTPException & ex)
     {
-        throw DB::Exception(
-            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-            "Failed to replace metadata-location for table '{}.{}': HTTP {}, message: {}",
-            namespace_name, table_name, e.getHTTPStatus(), e.displayText());
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Failed to create table {}", ex.displayText());
     }
 }
 
 
-bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const
+bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr metadata_content) const
 {
     const std::string endpoint = fmt::format("{}/namespaces/{}/tables/{}", base_url, namespace_name, table_name);
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     {
         Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
-        identifier->set(Iceberg::f_name, table_name);
+        identifier->set("name", table_name);
         Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
         namespaces->add(namespace_name);
         identifier->set("namespace", namespaces);
@@ -817,13 +793,13 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
         request_body->set("identifier", identifier);
     }
 
-    if (metadata_content->has(Iceberg::f_parent_snapshot_id))
+    if (metadata_content->has("parent-snapshot-id"))
     {
-        auto parent_snapshot_id = metadata_content->getValue<Int64>(Iceberg::f_parent_snapshot_id);
+        auto parent_snapshot_id = metadata_content->getValue<Int64>("parent-snapshot-id");
         if (parent_snapshot_id != -1)
         {
             Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
-            requirement->set(Iceberg::f_type, "assert-ref-snapshot-id");
+            requirement->set("type", "assert-ref-snapshot-id");
             requirement->set("ref", "main");
             requirement->set("snapshot-id", parent_snapshot_id);
 
@@ -856,38 +832,9 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
         request_body->set("updates", updates);
     }
 
-    std::ostringstream oss;
-    request_body->stringify(oss);
-    const std::string body_str = DB::removeEscapedSlashes(oss.str());
-
-    DB::HTTPHeaderEntries headers = getAuthHeaders(/* update_token = */ true);
-    headers.emplace_back("Content-Type", "application/json");
-
-    const auto & context = getContext();
-
-    DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [body_str](std::ostream & os)
-    {
-        os << body_str;
-    };
-
     try
     {
-        Poco::URI url(endpoint);
-        auto wb = DB::BuilderRWBufferFromHTTP(url)
-            .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
-            .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
-            .withSettings(context->getReadSettings())
-            .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
-            .withHostFilter(&context->getRemoteHostFilter())
-            .withHeaders(headers)
-            .withOutCallback(out_stream_callback)
-            .withSkipNotFound(false)
-            .create(credentials);
-
-        String response_str;
-        readJSONObjectPossiblyInvalid(response_str, *wb);
-
-        LOG_TEST(log, "Successfully replaced metadata-location for table {}.{} with {}", namespace_name, table_name, new_metadata_path);
+        sendPOSTRequest(endpoint, request_body);
     }
     catch (const DB::HTTPException &)
     {
