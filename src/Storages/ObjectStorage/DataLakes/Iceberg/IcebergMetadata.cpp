@@ -484,7 +484,7 @@ void IcebergMetadata::createInitial(
             throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Iceberg table with path {} already exists", configuration_ptr->getPathForRead().path);
     }
 
-    auto metadata_content = createEmptyMetadataFile(configuration_ptr->getRawPath().path, *columns, partition_by, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
+    auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/" + configuration_ptr->getRawPath().path, *columns, partition_by, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
     {
         auto filename = configuration_ptr->getRawPath().path + "metadata/v1.metadata.json";
         auto buffer_metadata = object_storage->writeObject(
@@ -496,7 +496,7 @@ void IcebergMetadata::createInitial(
     {
         auto catalog_filename = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/" + configuration_ptr->getRawPath().path + "metadata/v1.metadata.json";
         const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
-        catalog->createTable(namespace_name, table_name, catalog_filename);
+        catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object);
     }
 }
 

@@ -20,6 +20,7 @@
 #include <string>
 
 #include <Common/ErrorCodes.h>
+#include "Databases/DataLake/RestCatalog.h"
 #include <Databases/DataLake/GlueCatalog.h>
 
 #include <fmt/ranges.h>
@@ -43,6 +44,13 @@ namespace DataLakeStorageSetting
     extern DataLakeStorageSettingsString iceberg_aws_secret_access_key;
     extern DataLakeStorageSettingsString iceberg_region;
     extern DataLakeStorageSettingsString iceberg_catalog_url;
+    extern DataLakeStorageSettingsString iceberg_warehouse;
+    extern DataLakeStorageSettingsString iceberg_catalog_credential;
+
+    extern DataLakeStorageSettingsString iceberg_auth_scope;
+    extern DataLakeStorageSettingsString iceberg_auth_header;
+    extern DataLakeStorageSettingsString iceberg_oauth_server_uri;
+    extern DataLakeStorageSettingsBool iceberg_oauth_server_use_request_body;
 }
 
 
@@ -222,6 +230,19 @@ public:
                 /* table_engine_definition */nullptr
             );
         }
+        if ((*settings)[DataLakeStorageSetting::iceberg_catalog_type].value == DatabaseDataLakeCatalogType::ICEBERG_REST)
+        {
+            return std::make_shared<DataLake::RestCatalog>(
+                (*settings)[DataLakeStorageSetting::iceberg_warehouse].value,
+                (*settings)[DataLakeStorageSetting::iceberg_catalog_url].value,
+                (*settings)[DataLakeStorageSetting::iceberg_catalog_credential].value,
+                (*settings)[DataLakeStorageSetting::iceberg_auth_scope].value,
+                (*settings)[DataLakeStorageSetting::iceberg_auth_header],
+                (*settings)[DataLakeStorageSetting::iceberg_oauth_server_uri].value,
+                (*settings)[DataLakeStorageSetting::iceberg_oauth_server_use_request_body].value,
+                context);
+        }
+
 #endif
         return nullptr;
     }

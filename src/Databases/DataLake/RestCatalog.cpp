@@ -1,3 +1,6 @@
+#include <Poco/JSON/Object.h>
+#include "Storages/ObjectStorage/DataLakes/Iceberg/Constant.h"
+#include "Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -116,6 +119,8 @@ RestCatalog::RestCatalog(
     , oauth_server_uri(oauth_server_uri_)
     , oauth_server_use_request_body(oauth_server_use_request_body_)
 {
+    std::cerr << "RestCatalog::RestCatalog " << warehouse_ << ' ' << base_url_ << ' ' << catalog_credential_ << '\n';
+
     if (!catalog_credential_.empty())
     {
         std::tie(client_id, client_secret) = parseCatalogCredential(catalog_credential_);
@@ -607,6 +612,7 @@ bool RestCatalog::getTableMetadataImpl(
         {
             location = metadata_object->get("location").extract<String>();
             result.setLocation(location);
+            std::cerr << "location " << location << '\n';
             LOG_TEST(log, "Location for table {}: {}", table_name, location);
         }
         else
@@ -669,12 +675,224 @@ bool RestCatalog::getTableMetadataImpl(
         if (object->has("metadata-location") && !object->get("metadata-location").isEmpty())
         {
             auto metadata_location = object->get("metadata-location").extract<String>();
+            std::cerr << "metadata_location " << metadata_location << '\n';
             result.setDataLakeSpecificProperties(DataLakeSpecificProperties{ .iceberg_metadata_file_location = metadata_location });
         }
     }
 
     return true;
 }
+
+//{"namespace":["fooka"],"properties":{"location":"s3://iceberg_data/fooka"}}
+void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & location) const
+{
+    const std::string endpoint = fmt::format("{}/namespaces", base_url);
+    
+    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
+    {
+        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
+        namespaces->add(namespace_name);
+        request_body->set("namespace", namespaces);
+    }
+    {
+        Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
+        properties->set("location", location);
+        request_body->set("properties", properties);
+    }
+    std::ostringstream oss;
+    request_body->stringify(oss);
+    const std::string body_str = DB::removeEscapedSlashes(oss.str());
+
+    std::cerr << "REQUEST: " << endpoint << ' ' <<  body_str << "\n\n\n";
+    DB::HTTPHeaderEntries headers = getAuthHeaders(/* update_token = */ true);
+    headers.emplace_back("Content-Type", "application/json");
+
+    const auto & context = getContext();
+
+    DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [body_str](std::ostream & os)
+    {
+        os << body_str;
+    };
+
+    try
+    {
+        Poco::URI url(endpoint);
+        auto wb = DB::BuilderRWBufferFromHTTP(url)
+            .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
+            .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+            .withSettings(context->getReadSettings())
+            .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
+            .withHostFilter(&context->getRemoteHostFilter())
+            .withHeaders(headers)
+            .withOutCallback(out_stream_callback)
+            .withSkipNotFound(false)
+            .create(credentials);
+
+        String response_str;
+        readJSONObjectPossiblyInvalid(response_str, *wb);
+
+        std::cerr << "response_str " << response_str << '\n';
+        LOG_TEST(log, "Successfully replaced metadata-location for table {}", namespace_name);
+    }
+    catch (...)
+    {
+    }
+
+}
+
+void RestCatalog::createTable(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr metadata_content) const
+{
+    createNamespaceIfNotExists(namespace_name, metadata_content->getValue<String>("location"));
+
+    const std::string endpoint = fmt::format("{}/namespaces/{}/tables", base_url, namespace_name);
+
+    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
+    request_body->set("name", table_name);
+    request_body->set("location", metadata_content->getValue<String>("location"));
+    {
+        Poco::JSON::Object::Ptr initial_schema = metadata_content->getArray("schemas")->getObject(0);
+        Poco::JSON::Array::Ptr identifier_fields = new Poco::JSON::Array;
+        initial_schema->set("identifier-field-ids", identifier_fields);
+        request_body->set("schema", initial_schema);
+    }
+    request_body->set("partition-spec", metadata_content->getArray("partition-specs")->get(0));
+
+    {
+        Poco::JSON::Object::Ptr write_order = new Poco::JSON::Object;
+        write_order->set("order-id", 0);
+        Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
+        write_order->set("fields", fields);
+        request_body->set("write-order", write_order);
+    }
+    request_body->set("stage-create", false);
+    Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
+    request_body->set("properties", properties);
+
+    std::ostringstream oss;
+    request_body->stringify(oss);
+    const std::string body_str = DB::removeEscapedSlashes(oss.str());
+
+    std::cerr << "REQUEST: " << endpoint << ' ' <<  body_str << "\n\n\n";
+    DB::HTTPHeaderEntries headers = getAuthHeaders(/* update_token = */ true);
+    headers.emplace_back("Content-Type", "application/json");
+
+    const auto & context = getContext();
+
+    DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [body_str](std::ostream & os)
+    {
+        os << body_str;
+    };
+
+    try
+    {
+        Poco::URI url(endpoint);
+        auto wb = DB::BuilderRWBufferFromHTTP(url)
+            .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
+            .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+            .withSettings(context->getReadSettings())
+            .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
+            .withHostFilter(&context->getRemoteHostFilter())
+            .withHeaders(headers)
+            .withOutCallback(out_stream_callback)
+            .withSkipNotFound(false)
+            .create(credentials);
+
+        String response_str;
+        readJSONObjectPossiblyInvalid(response_str, *wb);
+
+        std::cerr << "response_str " << response_str << '\n';
+    }
+    catch (const DB::HTTPException & e)
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Failed to replace metadata-location for table '{}.{}': HTTP {}, message: {}",
+            namespace_name, table_name, e.getHTTPStatus(), e.displayText());
+    }
+}
+
+
+void RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const
+{
+    const std::string endpoint = fmt::format("{}/namespaces/{}/tables/{}", base_url, namespace_name, table_name);
+
+    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
+    {
+        Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
+        identifier->set(Iceberg::f_name, table_name);
+        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
+        namespaces->add(namespace_name);
+        identifier->set("namespace", namespaces);
+
+        request_body->set("identifier", identifier);
+    }
+
+    {
+        Poco::JSON::Array::Ptr updates = new Poco::JSON::Array;
+        
+        {
+            Poco::JSON::Object::Ptr add_snapshot = new Poco::JSON::Object;
+            add_snapshot->set("action", "add-snapshot");
+            add_snapshot->set("snapshot", metadata_content);
+            updates->add(add_snapshot);
+        }
+
+        {
+            Poco::JSON::Object::Ptr set_snapshot = new Poco::JSON::Object;
+            set_snapshot->set("action", "set-snapshot-ref");
+            set_snapshot->set("ref-name", "main");
+            set_snapshot->set("type", "branch");
+            set_snapshot->set("snapshot-id", metadata_content->getValue<Int64>("snapshot-id"));
+
+            updates->add(set_snapshot);
+        }
+        request_body->set("updates", updates);
+    }
+
+    std::ostringstream oss;
+    request_body->stringify(oss);
+    const std::string body_str = DB::removeEscapedSlashes(oss.str());
+
+    std::cerr << "REQUEST: " << endpoint << ' ' <<  body_str << "\n\n\n";
+    DB::HTTPHeaderEntries headers = getAuthHeaders(/* update_token = */ true);
+    headers.emplace_back("Content-Type", "application/json");
+
+    const auto & context = getContext();
+
+    DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [body_str](std::ostream & os)
+    {
+        os << body_str;
+    };
+
+    try
+    {
+        Poco::URI url(endpoint);
+        auto wb = DB::BuilderRWBufferFromHTTP(url)
+            .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
+            .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+            .withSettings(context->getReadSettings())
+            .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
+            .withHostFilter(&context->getRemoteHostFilter())
+            .withHeaders(headers)
+            .withOutCallback(out_stream_callback)
+            .withSkipNotFound(false)
+            .create(credentials);
+
+        String response_str;
+        readJSONObjectPossiblyInvalid(response_str, *wb);
+
+        std::cerr << "response_str " << response_str << '\n';
+        LOG_TEST(log, "Successfully replaced metadata-location for table {}.{} with {}", namespace_name, table_name, new_metadata_path);
+    }
+    catch (const DB::HTTPException & e)
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Failed to replace metadata-location for table '{}.{}': HTTP {}, message: {}",
+            namespace_name, table_name, e.getHTTPStatus(), e.displayText());
+    }
+}
+
 
 }
 

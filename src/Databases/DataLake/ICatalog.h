@@ -159,9 +159,9 @@ public:
     /// E.g. one of S3, Azure, Local, HDFS.
     virtual std::optional<StorageType> getStorageType() const = 0;
 
-    virtual void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path) const;
+    virtual void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const;
 
-    virtual void updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path) const;
+    virtual void updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const;
 
 protected:
     /// Name of the warehouse,

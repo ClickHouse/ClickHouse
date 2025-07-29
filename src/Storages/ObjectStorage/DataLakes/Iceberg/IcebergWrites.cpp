@@ -132,8 +132,8 @@ FileNamesGenerator::Result FileNamesGenerator::generateManifestListName(Int64 sn
 FileNamesGenerator::Result FileNamesGenerator::generateMetadataName()
 {
     return Result{
-        .path_in_metadata = fmt::format("{}v{}.metadata.json", metadata_dir, initial_version),
-        .path_in_storage = fmt::format("{}v{}.metadata.json", storage_metadata_dir, initial_version),
+        .path_in_metadata = fmt::format("{}0000{}-aafe89fd-f860-4e80-b4ec-9909e70da714.metadata.json", metadata_dir, initial_version),
+        .path_in_storage = fmt::format("{}0000{}-aafe89fd-f860-4e80-b4ec-9909e70da714.metadata.json", storage_metadata_dir, initial_version),
     };
 }
 
@@ -804,6 +804,11 @@ void IcebergStorageSink::cancelBuffers()
 
 bool IcebergStorageSink::initializeMetadata()
 {
+    std::cerr << "Initial metadata\n";
+
+    Poco::JSON::Stringifier::stringify(metadata, std::cerr, 4);
+
+    std::cerr << '\n';
     auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
     Int64 parent_snapshot = -1;
     if (metadata->has(Iceberg::f_current_snapshot_id))
@@ -858,7 +863,7 @@ bool IcebergStorageSink::initializeMetadata()
                 catalog_filename = configuration->getTypeName() + "://" + configuration->getNamespace() + "/" + metadata_name;
 
             const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-            catalog->updateMetadata(namespace_name, table_name, catalog_filename);
+            catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot);
         }
 
         auto buffer_metadata = object_storage->writeObject(

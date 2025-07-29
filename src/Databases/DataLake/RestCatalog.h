@@ -55,7 +55,14 @@ public:
     {
         return DB::DatabaseDataLakeCatalogType::ICEBERG_REST;
     }
+
+    void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
+
+    void updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
+
 private:
+    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const;
+
     struct Config
     {
         /// Prefix is a path of the catalog endpoint,
