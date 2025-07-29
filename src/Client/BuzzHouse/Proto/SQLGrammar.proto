@@ -2635,9 +2635,13 @@ message ClusterFunc {
 }
 
 message MergeTreeIndexFunc {
+    enum MergeTreeIndexFuncParam {
+        with_marks = 1;
+        with_minmax = 2;
+    }
     required ExprSchemaTable est = 1;
-    optional bool with_marks = 2;
-    optional bool with_minmax = 3;
+    optional MergeTreeIndexFuncParam param = 2;
+    optional bool param_value = 3;
 }
 
 message MergeTreeProjectionFunc {

@@ -2021,9 +2021,8 @@ CONV_FN(RedisFunc, rfunc)
     ExprToString(ret, rfunc.structure());
     if (rfunc.has_db_index())
     {
-        ret += ", '";
+        ret += ", ";
         ret += std::to_string(rfunc.db_index());
-        ret += "'";
     }
     if (rfunc.has_password())
     {
@@ -2033,9 +2032,8 @@ CONV_FN(RedisFunc, rfunc)
     }
     if (rfunc.has_pool_size())
     {
-        ret += ", '";
+        ret += ", ";
         ret += std::to_string(rfunc.pool_size());
-        ret += "'";
     }
     ret += ")";
 }
@@ -2239,15 +2237,12 @@ CONV_FN(MergeTreeIndexFunc, mfunc)
 {
     ret += "mergeTreeIndex(";
     FlatExprSchemaTableToString(ret, mfunc.est(), "', '");
-    if (mfunc.has_with_marks())
+    if (mfunc.has_param())
     {
-        ret += ", with_marks = ";
-        ret += mfunc.with_marks() ? "true" : "false";
-    }
-    if (mfunc.has_with_minmax())
-    {
-        ret += ", with_minmax = ";
-        ret += mfunc.with_minmax() ? "true" : "false";
+        ret += ", ";
+        ret += MergeTreeIndexFunc_MergeTreeIndexFuncParam_Name(mfunc.param());
+        ret += " = ";
+        ret += mfunc.param_value() ? "true" : "false";
     }
     ret += ")";
 }

@@ -301,10 +301,10 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         {
             AzureBlobStorageFunc * afunc = tfunc->mutable_azure();
             const ServerCredentials & sc = fc.azurite_server.value();
-            AzureBlobStorageFunc_FName val = t.isAnyS3Engine()
+            AzureBlobStorageFunc_FName val = t.isAnyAzureEngine()
                 ? AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_azureBlobStorage
-                : (t.isIcebergS3Engine() ? AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_icebergAzure
-                                         : AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_deltaLakeAzure);
+                : (t.isIcebergAzureEngine() ? AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_icebergAzure
+                                            : AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_deltaLakeAzure);
 
             if (cluster.has_value())
             {
@@ -333,9 +333,9 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         else if (t.isIcebergLocalEngine() || t.isDeltaLakeLocalEngine() || t.isFileEngine())
         {
             FileFunc * ffunc = tfunc->mutable_file();
-            FileFunc_FName val = t.isAnyS3Engine()
+            FileFunc_FName val = t.isFileEngine()
                 ? FileFunc_FName::FileFunc_FName_file
-                : (t.isIcebergS3Engine() ? FileFunc_FName::FileFunc_FName_icebergLocal : FileFunc_FName::FileFunc_FName_deltaLakeLocal);
+                : (t.isIcebergLocalEngine() ? FileFunc_FName::FileFunc_FName_icebergLocal : FileFunc_FName::FileFunc_FName_deltaLakeLocal);
 
             if (cluster.has_value())
             {
@@ -947,11 +947,10 @@ bool StatementGenerator::joinedTableOrFunction(
         tt.setName(mtudf->mutable_est(), true);
         if (rg.nextBool())
         {
-            mtudf->set_with_marks(rg.nextBool());
-        }
-        if (rg.nextBool())
-        {
-            mtudf->set_with_minmax(rg.nextBool());
+            std::uniform_int_distribution<uint32_t> param_range(1, static_cast<uint32_t>(MergeTreeIndexFunc::MergeTreeIndexFuncParam_MAX));
+
+            mtudf->set_param(static_cast<MergeTreeIndexFunc_MergeTreeIndexFuncParam>(param_range(rg.generator)));
+            mtudf->set_param_value(rg.nextBool());
         }
         addTableRelation(rg, true, rel_name, tt);
         SQLRelation & rel = this->levels.at(this->current_level).rels.back();
