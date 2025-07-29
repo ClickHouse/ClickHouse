@@ -50,7 +50,7 @@ class ProjectionsSource : public ISource
 public:
     ProjectionsSource(
         std::vector<UInt8> columns_mask_,
-        Block header,
+        SharedHeader header,
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ContextPtr context_)
@@ -183,7 +183,7 @@ public:
         std::vector<UInt8> columns_mask_,
         size_t max_block_size_)
         : SourceStepWithFilter(
-            std::move(sample_block),
+            std::make_shared<const Block>(std::move(sample_block)),
             column_names_,
             query_info_,
             storage_snapshot_,

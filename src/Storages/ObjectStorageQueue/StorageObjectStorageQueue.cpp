@@ -96,6 +96,8 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
     extern const ObjectStorageQueueSettingsUInt64 list_objects_batch_size;
     extern const ObjectStorageQueueSettingsBool enable_hash_ring_filtering;
+    extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_rows_for_materialized_views;
+    extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
 }
 
 namespace ErrorCodes
@@ -189,6 +191,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         .max_processed_bytes_before_commit = (*queue_settings_)[ObjectStorageQueueSetting::max_processed_bytes_before_commit],
         .max_processing_time_sec_before_commit = (*queue_settings_)[ObjectStorageQueueSetting::max_processing_time_sec_before_commit],
     })
+    , min_insert_block_size_rows_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_rows_for_materialized_views])
+    , min_insert_block_size_bytes_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_bytes_for_materialized_views])
     , configuration{configuration_}
     , format_settings(format_settings_)
     , reschedule_processing_interval_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
@@ -196,15 +200,16 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , can_be_moved_between_databases((*queue_settings_)[ObjectStorageQueueSetting::keeper_path].changed)
     , keep_data_in_keeper(keep_data_in_keeper_)
 {
-    if (configuration->getPath().empty())
+    const auto & read_path = configuration->getPathForRead();
+    if (read_path.path.empty())
     {
-        configuration->setPath("/*");
+        configuration->setPathForRead({"/*"});
     }
-    else if (configuration->getPath().ends_with('/'))
+    else if (read_path.path.ends_with('/'))
     {
-        configuration->setPath(configuration->getPath() + '*');
+        configuration->setPathForRead({read_path.path + '*'});
     }
-    else if (!configuration->isPathWithGlobs())
+    else if (!read_path.hasGlobs())
     {
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");
     }
@@ -227,7 +232,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setComment(comment);
     if (engine_args->settings)
         storage_metadata.settings_changes = engine_args->settings->ptr();
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
     setInMemoryMetadata(storage_metadata);
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
@@ -332,7 +337,7 @@ public:
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        Block sample_block,
+        SharedHeader sample_block,
         ReadFromFormatInfo info_,
         std::shared_ptr<StorageObjectStorageQueue> storage_,
         size_t max_block_size_)
@@ -408,7 +413,7 @@ void StorageObjectStorageQueue::read(
         query_info,
         storage_snapshot,
         local_context,
-        read_from_format_info.source_header,
+        std::make_shared<const Block>(read_from_format_info.source_header),
         read_from_format_info,
         std::move(this_ptr),
         max_block_size);
@@ -439,7 +444,7 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
-        pipe = Pipe(std::make_shared<NullSource>(info.source_header));
+        pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
 
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
@@ -509,9 +514,8 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
         return;
 
     const auto storage_id = getStorageID();
-    const auto & settings = getContext()->getServerSettings();
 
-    if (settings[ServerSetting::s3queue_disable_streaming])
+    if (getContext()->getS3QueueDisableStreaming())
     {
         static constexpr auto disabled_streaming_reschedule_period = 5000;
 
@@ -603,6 +607,18 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
     auto queue_context = Context::createCopy(getContext());
     queue_context->makeQueryContext();
+
+    size_t min_insert_block_size_rows;
+    size_t min_insert_block_size_bytes;
+    {
+        std::lock_guard lock(mutex);
+        min_insert_block_size_rows = min_insert_block_size_rows_for_materialized_views;
+        min_insert_block_size_bytes = min_insert_block_size_bytes_for_materialized_views;
+    }
+    if (min_insert_block_size_rows)
+        queue_context->setSetting("min_insert_block_size_rows_for_materialized_views", min_insert_block_size_rows);
+    if (min_insert_block_size_bytes)
+        queue_context->setSetting("min_insert_block_size_bytes_for_materialized_views", min_insert_block_size_bytes);
 
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator;
     {
@@ -804,6 +820,8 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "max_processing_time_sec_before_commit",
     "enable_hash_ring_filtering",
     "list_objects_batch_size",
+    "min_insert_block_size_rows_for_materialized_views",
+    "min_insert_block_size_bytes_for_materialized_views",
 };
 
 static const std::unordered_set<std::string_view> changeable_settings_ordered_mode
@@ -819,6 +837,8 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "max_processing_time_sec_before_commit",
     "buckets",
     "list_objects_batch_size",
+    "min_insert_block_size_rows_for_materialized_views",
+    "min_insert_block_size_bytes_for_materialized_views",
 };
 
 static std::string normalizeSetting(const std::string & name)
@@ -1078,6 +1098,11 @@ void StorageObjectStorageQueue::alter(
             if (change.name == "max_processing_time_sec_before_commit")
                 commit_settings.max_processing_time_sec_before_commit = change.value.safeGet<UInt64>();
 
+            if (change.name == "min_insert_block_size_rows_for_materialized_views")
+                min_insert_block_size_rows_for_materialized_views = change.value.safeGet<UInt64>();
+            if (change.name == "min_insert_block_size_bytes_for_materialized_views")
+                min_insert_block_size_bytes_for_materialized_views = change.value.safeGet<UInt64>();
+
             if (change.name == "list_objects_batch_size")
                 list_objects_batch_size = change.value.safeGet<UInt64>();
             if (change.name == "enable_hash_ring_filtering")
@@ -1167,6 +1192,8 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
         settings[ObjectStorageQueueSetting::max_processing_time_sec_before_commit] = commit_settings.max_processing_time_sec_before_commit;
         settings[ObjectStorageQueueSetting::enable_hash_ring_filtering] = enable_hash_ring_filtering;
         settings[ObjectStorageQueueSetting::list_objects_batch_size] = list_objects_batch_size;
+        settings[ObjectStorageQueueSetting::min_insert_block_size_rows_for_materialized_views] = min_insert_block_size_rows_for_materialized_views;
+        settings[ObjectStorageQueueSetting::min_insert_block_size_bytes_for_materialized_views] = min_insert_block_size_bytes_for_materialized_views;
     }
 
     return settings;

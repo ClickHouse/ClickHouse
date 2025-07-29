@@ -182,6 +182,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.empty_as_default = settings[Setting::input_format_json_empty_as_default];
     format_settings.json.type_json_skip_duplicated_paths = settings[Setting::type_json_skip_duplicated_paths];
     format_settings.json.pretty_print = settings[Setting::output_format_json_pretty_print];
+    format_settings.json.write_map_as_array_of_tuples = settings[Setting::output_format_json_map_as_array_of_tuples];
+    format_settings.json.read_map_as_array_of_tuples = settings[Setting::input_format_json_map_as_array_of_tuples];
     format_settings.null_as_default = settings[Setting::input_format_null_as_default];
     format_settings.force_null_for_omitted_fields = settings[Setting::input_format_force_null_for_omitted_fields];
     format_settings.decimal_trailing_zeros = settings[Setting::output_format_decimal_trailing_zeros];
@@ -199,6 +201,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.output_string_as_string = settings[Setting::output_format_parquet_string_as_string];
     format_settings.parquet.output_fixed_string_as_fixed_byte_array = settings[Setting::output_format_parquet_fixed_string_as_fixed_byte_array];
     format_settings.parquet.output_datetime_as_uint32 = settings[Setting::output_format_parquet_datetime_as_uint32];
+    format_settings.parquet.output_enum_as_byte_array = settings[Setting::output_format_parquet_enum_as_byte_array];
     format_settings.parquet.max_block_size = settings[Setting::input_format_parquet_max_block_size];
     format_settings.parquet.prefer_block_bytes = settings[Setting::input_format_parquet_prefer_block_bytes];
     format_settings.parquet.output_compression_method = settings[Setting::output_format_parquet_compression_method];
@@ -294,6 +297,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.orc.output_compression_method = settings[Setting::output_format_orc_compression_method];
     format_settings.orc.output_row_index_stride = settings[Setting::output_format_orc_row_index_stride];
     format_settings.orc.output_dictionary_key_size_threshold = settings[Setting::output_format_orc_dictionary_key_size_threshold];
+    format_settings.orc.output_compression_block_size = settings[Setting::output_format_orc_compression_block_size];
     format_settings.orc.use_fast_decoder = settings[Setting::input_format_orc_use_fast_decoder];
     format_settings.orc.filter_push_down = settings[Setting::input_format_orc_filter_push_down];
     format_settings.orc.reader_time_zone_name = settings[Setting::input_format_orc_reader_time_zone_name];
@@ -588,7 +592,7 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
             return output_getter(output, sample, format_settings);
         };
 
-        ParallelFormattingOutputFormat::Params builder{buf, sample, formatter_creator, settings[Setting::max_threads]};
+        ParallelFormattingOutputFormat::Params builder{buf, std::make_shared<const Block>(sample), formatter_creator, settings[Setting::max_threads]};
 
         if (context->hasQueryContext() && settings[Setting::log_queries])
             context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
