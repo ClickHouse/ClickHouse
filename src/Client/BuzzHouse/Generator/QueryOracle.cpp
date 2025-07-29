@@ -266,7 +266,7 @@ void QueryOracle::generateExportQuery(
     ff->set_outformat(outf);
     if (rg.nextSmallNumber() < 4)
     {
-        ff->set_fcomp(rg.pickRandomly(gen.fileCompress));
+        ff->set_fcomp(rg.pickRandomly(BuzzHouse::StatementGenerator::fileCompress));
     }
     if (rg.nextSmallNumber() < 10)
     {
