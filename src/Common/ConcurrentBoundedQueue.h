@@ -6,7 +6,9 @@
 #include <optional>
 
 #include <base/MoveOrCopyIfThrow.h>
-
+#include <Common/DimensionalMetrics.h>
+#include <Common/getRandomASCIIString.h>
+#include <base/defines.h>
 
 /** A very simple thread-safe queue of limited size.
   * If you try to pop an item from an empty queue, the thread is blocked until the queue becomes nonempty or queue is finished.
@@ -16,6 +18,9 @@ template <typename T>
 class ConcurrentBoundedQueue
 {
 private:
+    const String id = DB::getRandomASCIIString(8);
+    const String name;
+
     using Container = std::deque<T>;
     Container queue;
 
@@ -26,6 +31,21 @@ private:
     bool is_finished = false;
 
     size_t max_fill = 0;
+
+    inline static DB::DimensionalMetrics::MetricFamily & metric_family = DB::DimensionalMetrics::Factory::instance().registerMetric(
+        "concurrent_bounded_queue_size",
+        "Size of the concurrent bounded queue, labelled by queue name and randomly generated id.",
+        {"queue_type", "queue_id"}
+    );
+    DB::DimensionalMetrics::Metric * queue_size_metric = nullptr;
+
+    void trySetQueueSizeMetricUnlocked()
+    {
+        if (queue_size_metric)
+        {
+            queue_size_metric->set(queue.size());
+        }
+    }
 
     template <bool back, typename ... Args>
     bool emplaceImpl(std::optional<UInt64> timeout_milliseconds, Args &&...args)
@@ -54,6 +74,8 @@ private:
                 queue.emplace_back(std::forward<Args>(args)...);
             else
                 queue.emplace_front(std::forward<Args>(args)...);
+
+            trySetQueueSizeMetricUnlocked();
         }
 
         pop_condition.notify_one();
@@ -93,6 +115,8 @@ private:
                 detail::moveOrCopyIfThrow(std::move(queue.back()), x);
                 queue.pop_back();
             }
+
+            trySetQueueSizeMetricUnlocked();
         }
 
         push_condition.notify_one();
@@ -101,9 +125,23 @@ private:
 
 public:
 
-    explicit ConcurrentBoundedQueue(size_t max_fill_)
-        : max_fill(max_fill_)
-    {}
+    explicit ConcurrentBoundedQueue(size_t max_fill_, String name_ = "")
+        : name(name_)
+        , max_fill(max_fill_)
+    {
+        if (!name.empty())
+        {
+            queue_size_metric = &metric_family.withLabels({name, id});
+        }
+    }
+
+    ~ConcurrentBoundedQueue()
+    {
+        if (!name.empty())
+        {
+            metric_family.unregister({name, id});
+        }
+    }
 
     /// Returns false if queue is finished
     [[nodiscard]] bool pushFront(const T & x)
@@ -171,6 +209,8 @@ public:
 
             detail::moveOrCopyIfThrow(std::move(queue.front()), x);
             queue.pop_front();
+
+            trySetQueueSizeMetricUnlocked();
         }
 
         push_condition.notify_one();
@@ -237,6 +277,8 @@ public:
 
             Container empty_queue;
             queue.swap(empty_queue);
+
+            trySetQueueSizeMetricUnlocked();
         }
 
         push_condition.notify_all();
@@ -251,6 +293,8 @@ public:
             Container empty_queue;
             queue.swap(empty_queue);
             is_finished = true;
+
+            trySetQueueSizeMetricUnlocked();
         }
 
         pop_condition.notify_all();
