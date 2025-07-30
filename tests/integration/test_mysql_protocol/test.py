@@ -961,4 +961,5 @@ def test_mysql_dotnet_client(started_cluster):
             f"dotnet run -- --host {node.hostname} --port {server_port} --username default --password 123",
         ],
     )
-    assert res == reference
+    # there is some thrash at the beggining of output, so it's better to use `in` instead of `==``
+    assert reference in res
