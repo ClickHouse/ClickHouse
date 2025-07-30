@@ -10,6 +10,17 @@
 namespace DB
 {
 
+struct ci_less {
+    bool operator()(const std::string& a, const std::string& b) const {
+        return std::lexicographical_compare(
+            a.begin(), a.end(),
+            b.begin(), b.end(),
+            [](unsigned char ac, unsigned char bc) {
+                return std::tolower(ac) < std::tolower(bc);
+            });
+    }
+};
+
 struct HTTPAuthClientParams
 {
     Poco::URI uri;
@@ -17,7 +28,7 @@ struct HTTPAuthClientParams
     size_t max_tries;
     size_t retry_initial_backoff_ms;
     size_t retry_max_backoff_ms;
-    std::set<String> forward_headers;
+    std::set<String, ci_less> forward_headers;
 };
 
 template <typename TResponseParser>
@@ -65,14 +76,14 @@ public:
     }
 
     const Poco::URI & getURI() const { return uri; }
-    const std::set<String> & getForwardHeaders() const { return forward_headers; }
+    const std::set<String, ci_less> & getForwardHeaders() const { return forward_headers; }
 
 private:
     const ConnectionTimeouts timeouts;
     const size_t max_tries;
     const size_t retry_initial_backoff_ms;
     const size_t retry_max_backoff_ms;
-    const std::set<String> forward_headers;
+    const std::set<String, ci_less> forward_headers;
     const Poco::URI uri;
     TResponseParser parser;
 };
@@ -91,7 +102,7 @@ public:
             Poco::Net::HTTPRequest::HTTP_GET, this->getURI().getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1};
 
         for (const auto & k : headers) {
-            if (this->getForwardHeaders().contains(Poco::toLower(k.first)))
+            if (this->getForwardHeaders().contains(k.first))
                 request.add(k.first, k.second);
         }
 

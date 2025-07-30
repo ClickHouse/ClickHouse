@@ -258,7 +258,7 @@ HTTPAuthClientParams parseHTTPAuthParams(const Poco::Util::AbstractConfiguration
     for (const auto & header : forward_headers)
     {
         String name = config.getString(prefix + ".forward_headers." + header);
-        http_auth_params.forward_headers.insert(Poco::toLower(name));
+        http_auth_params.forward_headers.insert(name);
     }
 
     return http_auth_params;
