@@ -16,7 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
@@ -64,8 +64,13 @@ public:
                             getName());
 
         const auto filter_name = filter_name_column->getDataAt(0);
-        (void)filter_name; /// TODO: lookup the filter by name
-        std::shared_ptr<BloomFilter> filter = std::make_shared<BloomFilter>(10*1024, 4, 42);
+        auto filter = g_bloom_filter_lookup.find(filter_name.toString());
+
+        /// FIXME: properly handle
+//        if (!filter)
+//            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+//                            "Filter '{}' not found",
+//                            filter_name.toString());
 
         auto data_column = arguments[1].column;
 
@@ -77,7 +82,7 @@ public:
         {
             /// TODO: implement efficiently
             const auto & value = data_column->getDataAt(row);
-            dst_data[row] = filter->find(value.data, value.size);
+            dst_data[row] = filter ? filter->find(value.data, value.size) : true;
         }
 
         return dst;
