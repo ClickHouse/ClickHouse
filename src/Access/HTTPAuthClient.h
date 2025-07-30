@@ -5,6 +5,7 @@
 #include <base/sleep.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 
+#include <set>
 
 namespace DB
 {
@@ -16,7 +17,7 @@ struct HTTPAuthClientParams
     size_t max_tries;
     size_t retry_initial_backoff_ms;
     size_t retry_max_backoff_ms;
-    std::vector<String> forward_headers;
+    std::set<String> forward_headers;
 };
 
 template <typename TResponseParser>
@@ -64,14 +65,14 @@ public:
     }
 
     const Poco::URI & getURI() const { return uri; }
-    const std::vector<String> & getForwardHeaders() const { return forward_headers; }
+    const std::set<String> & getForwardHeaders() const { return forward_headers; }
 
 private:
     const ConnectionTimeouts timeouts;
     const size_t max_tries;
     const size_t retry_initial_backoff_ms;
     const size_t retry_max_backoff_ms;
-    const std::vector<String> forward_headers;
+    const std::set<String> forward_headers;
     const Poco::URI uri;
     TResponseParser parser;
 };
@@ -89,11 +90,9 @@ public:
         Poco::Net::HTTPRequest request{
             Poco::Net::HTTPRequest::HTTP_GET, this->getURI().getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1};
 
-        for (const auto & k : this->getForwardHeaders())
-        {
-            auto it = headers.find(k);
-            if (it != headers.end())
-                request.add(k, it->second);
+        for (const auto & k : headers) {
+            if (this->getForwardHeaders().contains(Poco::toLower(k.first)))
+                request.add(k.first, k.second);
         }
 
         Poco::Net::HTTPBasicCredentials basic_credentials{user_name, password};
