@@ -56,6 +56,7 @@ public:
         const ActionsDAG::Node * predicate,
         const ActionsDAG * filter_actions_dag,
         const NamesAndTypesList & virtual_columns,
+        const NamesAndTypesList & hive_columns,
         ObjectInfos * read_keys,
         std::function<void(FileProgress)> file_progress_callback = {},
         bool ignore_archive_globs = false,
@@ -186,6 +187,7 @@ public:
         StorageObjectStorageConfigurationPtr configuration_,
         const ActionsDAG::Node * predicate,
         const NamesAndTypesList & virtual_columns_,
+        const NamesAndTypesList & hive_columns_,
         ContextPtr context_,
         ObjectInfos * read_keys_,
         size_t list_object_keys_size,
@@ -206,6 +208,7 @@ private:
     const ObjectStoragePtr object_storage;
     const StorageObjectStorageConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;
+    const NamesAndTypesList hive_columns;
     const bool throw_on_zero_files_match;
     const LoggerPtr log;
 

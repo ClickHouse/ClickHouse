@@ -103,16 +103,18 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     if (configuration->isNamespaceWithGlobs())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression can not have wildcards inside namespace name");
 
-    if (!configuration->isPathWithGlobs())
+    const auto & reading_path = configuration->getPathForRead();
+
+    if (!reading_path.hasGlobs())
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Using glob iterator with path without globs is not allowed (used path: {})",
-            configuration->getPath());
+            reading_path.path);
     }
 
-    const auto globbed_key = configuration_->getPath();
-    object_storage_iterator = object_storage->iterate(configuration->getPathWithoutGlobs(), list_objects_batch_size_);
+    const auto globbed_key = reading_path.path;
+    object_storage_iterator = object_storage->iterate(reading_path.cutGlobs(configuration->supportsPartialPathPrefix()), list_objects_batch_size_);
 
     matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_key));
     if (!matcher->ok())
@@ -198,8 +200,10 @@ ObjectStorageQueueSource::FileIterator::next()
                 for (const auto & object_info : new_batch)
                     paths.push_back(Source::getUniqueStoragePathIdentifier(*configuration, *object_info, false));
 
+                /// Hive partition columns were not being used in ObjectStorageQueue before the refactoring from (virtual -> physical).
+                /// So we are keeping it the way it is for now
                 VirtualColumnUtils::filterByPathOrFile(
-                    new_batch, paths, filter_expr, virtual_columns, getContext());
+                    new_batch, paths, filter_expr, virtual_columns, /* hive partition columns */{}, getContext());
 
                 LOG_TEST(log, "Filtered files: {} -> {} by path or filename", paths.size(), new_batch.size());
             }
@@ -513,7 +517,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
         log, "Current processor: {}, acquired bucket: {}",
         processor, current_bucket_holder ? toString(current_bucket_holder->getBucket()) : "None");
 
-    while (true)
+    while (!shutdown_called)
     {
         /// Each processing thread gets next path
         /// and checks if corresponding bucket is already acquired by someone.
@@ -711,6 +715,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
         if (listed_keys_cache.empty())
             return {};
     }
+    return {};
 }
 
 ObjectStorageQueueSource::ObjectStorageQueueSource(

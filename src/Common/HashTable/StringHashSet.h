@@ -97,5 +97,6 @@ public:
         LookupResult it;
         Base::emplace(key_holder, it, inserted);
     }
-
 };
+
+StringHashSet() -> StringHashSet<HashTableAllocator>;

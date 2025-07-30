@@ -20,6 +20,7 @@
 #include <string>
 
 #include <Common/ErrorCodes.h>
+#include <Databases/DataLake/GlueCatalog.h>
 
 #include <fmt/ranges.h>
 
@@ -36,6 +37,12 @@ namespace ErrorCodes
 namespace DataLakeStorageSetting
 {
     extern DataLakeStorageSettingsBool allow_dynamic_metadata_for_data_lakes;
+    extern DataLakeStorageSettingsDatabaseDataLakeCatalogType iceberg_catalog_type;
+    extern DataLakeStorageSettingsString iceberg_storage_endpoint;
+    extern DataLakeStorageSettingsString iceberg_aws_access_key_id;
+    extern DataLakeStorageSettingsString iceberg_aws_secret_access_key;
+    extern DataLakeStorageSettingsString iceberg_region;
+    extern DataLakeStorageSettingsString iceberg_catalog_url;
 }
 
 
@@ -87,10 +94,12 @@ public:
         ContextPtr local_context,
         const std::optional<ColumnsDescription> & columns,
         ASTPtr partition_by,
-        bool if_not_exists) override
+        bool if_not_exists,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        const StorageID & table_id_) override
     {
         BaseStorageConfiguration::create(
-            object_storage, local_context, columns, partition_by, if_not_exists);
+            object_storage, local_context, columns, partition_by, if_not_exists, catalog, table_id_);
 
         DataLakeMetadata::createInitial(
             object_storage,
@@ -98,7 +107,9 @@ public:
             local_context,
             columns,
             partition_by,
-            if_not_exists
+            if_not_exists,
+            catalog,
+            table_id_
         );
     }
 
@@ -192,6 +203,29 @@ public:
         return current_metadata->getColumnMapper();
     }
 
+    std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context) const override
+    {
+#if USE_AWS_S3 && USE_AVRO
+        if ((*settings)[DataLakeStorageSetting::iceberg_catalog_type].value == DatabaseDataLakeCatalogType::GLUE)
+        {
+            auto catalog_parameters = DataLake::CatalogSettings{
+                .storage_endpoint = (*settings)[DataLakeStorageSetting::iceberg_storage_endpoint].value,
+                .aws_access_key_id = (*settings)[DataLakeStorageSetting::iceberg_aws_access_key_id].value,
+                .aws_secret_access_key = (*settings)[DataLakeStorageSetting::iceberg_aws_secret_access_key].value,
+                .region = (*settings)[DataLakeStorageSetting::iceberg_region].value,
+            };
+
+            return std::make_shared<DataLake::GlueCatalog>(
+                (*settings)[DataLakeStorageSetting::iceberg_catalog_url].value,
+                context,
+                catalog_parameters,
+                /* table_engine_definition */nullptr
+            );
+        }
+#endif
+        return nullptr;
+    }
+
 private:
     DataLakeMetadataPtr current_metadata;
     LoggerPtr log = getLogger("DataLakeConfiguration");
@@ -208,7 +242,8 @@ private:
         const Strings & requested_columns,
         const StorageSnapshotPtr & storage_snapshot,
         bool supports_subset_of_columns,
-        ContextPtr local_context) override
+        ContextPtr local_context,
+        const PrepareReadingFromFormatHiveParams &) override
     {
         if (!current_metadata)
         {
