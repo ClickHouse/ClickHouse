@@ -760,7 +760,7 @@ Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag, ContextPtr 
         }
     }
 
-    LOG_DEBUG(log, "ABCDEFGH: Found {} data files in Iceberg table {}", data_files.size(), configuration.lock()->getPath());
+    LOG_DEBUG(log, "ABCDEFGH: Found {} data files in Iceberg table {}", data_files.size(), configuration.lock()->getPathForRead().path);
     if (!use_partition_pruning)
     {
         std::lock_guard cache_lock(cached_unprunned_files_for_last_processed_snapshot_mutex);
