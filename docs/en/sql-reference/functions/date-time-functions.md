@@ -2900,7 +2900,7 @@ Result:
 
 ## nowInBlock64 {#nowInBlock64}
 
-Returns the current date and time at the moment of processing of each block of data in miliseconds. In contrast to the function [now64](#now64), it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
+Returns the current date and time at the moment of processing of each block of data in milliseconds. In contrast to the function [now64](#now64), it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
 
 It makes sense to use this function to generate the current time in long-running INSERT SELECT queries.
 

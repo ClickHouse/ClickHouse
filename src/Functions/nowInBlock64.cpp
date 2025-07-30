@@ -50,12 +50,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty()) 
+        if (arguments.empty())
             return std::make_shared<DataTypeDateTime64>(DataTypeDateTime64::default_scale);
 
-        if (arguments.size() > 2) 
+        if (arguments.size() > 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 1 or 2", getName());
-        
 
         if (!isInteger(arguments[0].type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be Integer", getName());
@@ -76,7 +75,7 @@ public:
     {
         const auto * dataType64 = checkAndGetDataType<DataTypeDateTime64>(type.get());
 
-        if (!dataType64) 
+        if (!dataType64)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expected DataTypeDateTime64, got {}", type->getName());
 
         auto column_pointer = ColumnDateTime64::create(input_rows_count, dataType64->getScale());
@@ -98,7 +97,7 @@ private:
 REGISTER_FUNCTION(NowInBlock64)
 {
     FunctionDocumentation::Description description = R"(
-Returns the current date and time at the moment of processing of each block of data in miliseconds. In contrast to the function [now64](#now64), it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
+Returns the current date and time at the moment of processing of each block of data in milliseconds. In contrast to the function [now64](#now64), it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
 
 It makes sense to use this function to generate the current time in long-running INSERT SELECT queries.
     )";
