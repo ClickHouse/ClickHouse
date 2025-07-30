@@ -88,7 +88,6 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , need_only_count(need_only_count_)
     , parser_shared_resources(std::move(parser_shared_resources_))
     , format_filter_info(std::move(format_filter_info_))
-    , format_filter_info_without_key_condition(format_filter_info ? format_filter_info->cloneWithoutFilterDag() : nullptr)
     , read_from_format_info(info)
     , create_reader_pool(
           std::make_shared<ThreadPool>(
@@ -378,7 +377,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         max_block_size,
         parser_shared_resources,
         format_filter_info,
-        format_filter_info_without_key_condition,
         need_only_count);
 }
 
@@ -395,7 +393,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     size_t max_block_size,
     FormatParserSharedResourcesPtr parser_shared_resources,
     FormatFilterInfoPtr format_filter_info,
-    FormatFilterInfoPtr format_filter_info_without_key_condition,
     bool need_only_count)
 {
     ObjectInfoPtr object_info;
@@ -480,8 +477,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         Block initial_header = read_from_format_info.format_header;
 
-        bool schema_was_changed = false;
-
         if (auto initial_schema = configuration->getInitialSchemaByPath(context_, object_info->getPath()))
         {
             Block sample_header;
@@ -489,7 +484,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             {
                 sample_header.insert({type->createColumn(), type, name});
             }
-            schema_was_changed = true;
             initial_header = sample_header;
         }
 
@@ -501,7 +495,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             max_block_size,
             format_settings,
             parser_shared_resources,
-            !schema_was_changed ? format_filter_info : format_filter_info_without_key_condition,
+            format_filter_info,
             true /* is_remote_fs */,
             compression_method,
             need_only_count);
