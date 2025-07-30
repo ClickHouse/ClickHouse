@@ -32,7 +32,18 @@ namespace DB
         /// Hints for the serialization of columns.
         /// For example can be retrieved from the destination table in INSERT SELECT query.
         SerializationInfoByName serialization_hints;
+        /// The list of hive partition columns. It shall be read from the path regardless if it is present in the file
+        NamesAndTypesList hive_partition_columns_to_read_from_file_path;
         PrewhereInfoPtr prewhere_info;
+    };
+
+    struct PrepareReadingFromFormatHiveParams
+    {
+        /// Columns which exist inside data file.
+        NamesAndTypesList file_columns;
+        /// Columns which are read from path to data file.
+        /// (Hive partition columns).
+        std::unordered_map<std::string, DataTypePtr> hive_partition_columns_to_read_from_file_path_map;
     };
 
     /// Get all needed information for reading from data in some input format.
@@ -46,7 +57,13 @@ namespace DB
     /// Note: currently `supports_tuple_elements` just means ParquetV3BlockInputFormat; if in future
     /// we add support for other subcolumn types in ParquetV3BlockInputFormat, we can just rename
     /// this bool instead of adding another one.
-    ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context, bool supports_subset_of_columns, bool supports_tuple_elements = false);
+    ReadFromFormatInfo prepareReadingFromFormat(
+        const Strings & requested_columns,
+        const StorageSnapshotPtr & storage_snapshot,
+        const ContextPtr & context,
+        bool supports_subset_of_columns,
+        bool supports_tuple_elements = false,
+        const PrepareReadingFromFormatHiveParams & hive_parameters = {});
 
     ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const PrewhereInfoPtr & prewhere_info);
 

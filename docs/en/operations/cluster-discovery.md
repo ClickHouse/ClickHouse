@@ -109,7 +109,6 @@ for `node3` and `node4`:
 
 ### Observer mode {#observer-mode}
 
-
 Nodes configured in observer mode will not register themselves as replicas.
 They will solely observe and discover other active replicas in the cluster without actively participating.
 To enable observer mode, include the `<observer/>` tag within the `<discovery>` section:
@@ -120,7 +119,6 @@ To enable observer mode, include the `<observer/>` tag within the `<discovery>` 
     <observer/>
 </discovery>
 ```
-
 
 ### Discovery of clusters {#discovery-of-clusters}
 
@@ -162,8 +160,6 @@ Limitations:
 - `<multicluster_root_path>` can only be with `<observer/>`.
 - The last part of path from Keeper is used as the cluster name, while during registration the name is taken from the XML tag.
 
-
-
 ## Use cases and limitations {#use-cases-and-limitations}
 
 As nodes are added or removed from the specified ZooKeeper path, they are automatically discovered or removed from the cluster without the need for configuration changes or server restarts.
@@ -171,7 +167,6 @@ As nodes are added or removed from the specified ZooKeeper path, they are automa
 However, changes affect only cluster configuration, not the data or existing databases and tables.
 
 Consider the following example with a cluster of 3 nodes:
-
 
 ```xml
 <remote_servers>
@@ -215,7 +210,6 @@ Then, we add a new node to the cluster, starting a new node with the same entry 
 
 The fourth node is participating in the cluster, but table `event_table` still exists only on the first three nodes:
 
-
 ```sql
 SELECT hostname(), database, table FROM clusterAllReplicas(default, system.tables) WHERE table = 'event_table' FORMAT PrettyCompactMonoBlock
 
@@ -227,4 +221,3 @@ SELECT hostname(), database, table FROM clusterAllReplicas(default, system.table
 ```
 
 If you need to have tables replicated on all the nodes, you may use the [Replicated](../engines/database-engines/replicated.md) database engine in alternative to cluster discovery.
-

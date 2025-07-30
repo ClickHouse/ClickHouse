@@ -1269,6 +1269,9 @@ Target row index stride in ORC output format
     DECLARE(Double, output_format_orc_dictionary_key_size_threshold, 0.0, R"(
 For a string column in ORC output format, if the number of distinct values is greater than this fraction of the total number of non-null rows, turn off dictionary encoding. Otherwise dictionary encoding is enabled
 )", 0) \
+    DECLARE(UInt64, output_format_orc_compression_block_size, 262144, R"(
+The size of the compression block in bytes for ORC output format.
+)", 0) \
     DECLARE(String, output_format_orc_writer_time_zone_name, "GMT", R"(
 The time zone name for ORC writer, the default ORC writer's time zone is GMT.
 )", 0) \

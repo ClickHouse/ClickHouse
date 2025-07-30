@@ -5,8 +5,8 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatParserGroup.h>
-
+#include <Formats/FormatParserSharedResources.h>
+#include <Formats/FormatFilterInfo.h>
 #include <queue>
 
 namespace parquet
@@ -58,7 +58,8 @@ public:
         ReadBuffer & buf,
         SharedHeader header,
         const FormatSettings & format_settings_,
-        FormatParserGroupPtr parser_group_,
+        FormatParserSharedResourcesPtr parser_shared_resources_,
+        FormatFilterInfoPtr format_filter_info_,
         size_t min_bytes_for_seek_);
 
     ~ParquetBlockInputFormat() override;
@@ -294,7 +295,8 @@ private:
 
     const FormatSettings format_settings;
     const std::unordered_set<int> & skip_row_groups;
-    FormatParserGroupPtr parser_group;
+    FormatParserSharedResourcesPtr parser_shared_resources;
+    FormatFilterInfoPtr format_filter_info;
     size_t min_bytes_for_seek;
     const size_t max_pending_chunks_per_row_group_batch = 2;
 
@@ -325,8 +327,7 @@ private:
 
     // These are only used when max_decoding_threads > 1.
     size_t row_group_batches_started = 0;
-    bool use_thread_pool = false;
-    std::shared_ptr<ShutdownHelper> shutdown = std::make_shared<ShutdownHelper>();
+    std::unique_ptr<ThreadPool> pool;
     std::shared_ptr<ThreadPool> io_pool;
 
     BlockMissingValues previous_block_missing_values;

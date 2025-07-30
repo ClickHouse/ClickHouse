@@ -2,7 +2,8 @@
 
 #include <unistd.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatParserGroup.h>
+#include <Formats/FormatParserSharedResources.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <IO/SharedThreadPools.h>
@@ -303,6 +304,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.orc.output_compression_method = settings[Setting::output_format_orc_compression_method];
     format_settings.orc.output_row_index_stride = settings[Setting::output_format_orc_row_index_stride];
     format_settings.orc.output_dictionary_key_size_threshold = settings[Setting::output_format_orc_dictionary_key_size_threshold];
+    format_settings.orc.output_compression_block_size = settings[Setting::output_format_orc_compression_block_size];
     format_settings.orc.use_fast_decoder = settings[Setting::input_format_orc_use_fast_decoder];
     format_settings.orc.filter_push_down = settings[Setting::input_format_orc_filter_push_down];
     format_settings.orc.reader_time_zone_name = settings[Setting::input_format_orc_reader_time_zone_name];
@@ -379,7 +381,8 @@ InputFormatPtr FormatFactory::getInput(
     const ContextPtr & context,
     UInt64 max_block_size,
     const std::optional<FormatSettings> & _format_settings,
-    std::shared_ptr<FormatParserGroup> parser_group,
+    FormatParserSharedResourcesPtr parser_shared_resources,
+    FormatFilterInfoPtr format_filter_info,
     bool is_remote_fs,
     CompressionMethod compression,
     bool need_only_count) const
@@ -395,15 +398,13 @@ InputFormatPtr FormatFactory::getInput(
     const FormatSettings format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     const Settings & settings = context->getSettingsRef();
 
-    if (parser_group && parser_group->prewhere_info && (!creators.random_access_input_creator || !creators.prewhere_support_checker || !creators.prewhere_support_checker(format_settings)))
+    if (format_filter_info && format_filter_info->prewhere_info && (!creators.random_access_input_creator || !creators.prewhere_support_checker || !creators.prewhere_support_checker(format_settings)))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PREWHERE passed to format that doesn't support it");
 
-    if (!parser_group)
-        parser_group = std::make_shared<FormatParserGroup>(
+    if (!parser_shared_resources)
+        parser_shared_resources = std::make_shared<FormatParserSharedResources>(
             settings,
-            /*num_streams_=*/ 1,
-            /*filter_actions_dag_=*/ nullptr,
-            /*context_=*/ nullptr);
+            /*num_streams_=*/1);
 
     RowInputFormatParams row_input_format_params;
     row_input_format_params.max_block_size = max_block_size;
@@ -418,12 +419,12 @@ InputFormatPtr FormatFactory::getInput(
 
     // Add ParallelReadBuffer and decompression if needed.
 
-    auto owned_buf = wrapReadBufferIfNeeded(_buf, compression, creators, format_settings, settings, is_remote_fs, parser_group);
+    auto owned_buf = wrapReadBufferIfNeeded(_buf, compression, creators, format_settings, settings, is_remote_fs, parser_shared_resources);
     auto & buf = owned_buf ? *owned_buf : _buf;
 
     // Decide whether to use ParallelParsingInputFormat.
 
-    size_t max_parsing_threads = parser_group->getParsingThreadsPerReader();
+    size_t max_parsing_threads = parser_shared_resources->getParsingThreadsPerReader();
     bool parallel_parsing = max_parsing_threads > 1 && settings[Setting::input_format_parallel_parsing]
         && creators.file_segmentation_engine_creator && !creators.random_access_input_creator && !need_only_count;
 
@@ -455,7 +456,7 @@ InputFormatPtr FormatFactory::getInput(
             (ReadBuffer & input) -> InputFormatPtr
             { return input_getter(input, sample, row_input_format_params, format_settings); };
 
-        /// TODO: Try using parser_group->parsing_runner instead of creating a ThreadPool in
+        /// TODO: Try using parser_shared_resources->parsing_runner instead of creating a ThreadPool in
         ///       ParallelParsingInputFormat.
         ParallelParsingInputFormat::Params params{
             buf,
@@ -474,7 +475,7 @@ InputFormatPtr FormatFactory::getInput(
     else if (creators.random_access_input_creator)
     {
         format = creators.random_access_input_creator(
-            buf, sample, format_settings, context->getReadSettings(), is_remote_fs, parser_group);
+            buf, sample, format_settings, context->getReadSettings(), is_remote_fs, parser_shared_resources, format_filter_info);
     }
     else
     {
@@ -507,11 +508,11 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
     const FormatSettings & format_settings,
     const Settings & settings,
     bool is_remote_fs,
-    const FormatParserGroupPtr & parser_group) const
+    const FormatParserSharedResourcesPtr & parser_shared_resources) const
 {
     std::unique_ptr<ReadBuffer> res;
 
-    size_t max_download_threads = parser_group->getIOThreadsPerReader();
+    size_t max_download_threads = parser_shared_resources->getIOThreadsPerReader();
     bool parallel_read = is_remote_fs && max_download_threads > 1 && format_settings.seekable_read && isBufferWithFileSize(buf);
     if (creators.random_access_input_creator)
         parallel_read &= compression != CompressionMethod::None;
@@ -543,7 +544,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
             max_download_threads,
             settings[Setting::max_download_buffer_size].value);
 
-        /// TODO: Consider using parser_group->io_runner instead of threadPoolCallbackRunnerUnsafe.
+        /// TODO: Consider using parser_shared_resources->io_runner instead of threadPoolCallbackRunnerUnsafe.
         res = wrapInParallelReadBufferIfSupported(
             buf,
             threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "ParallelRead"),

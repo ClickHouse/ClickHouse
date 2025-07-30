@@ -41,6 +41,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.8",
         {
+            {"optimize_rewrite_regexp_functions", false, true, "A new setting"},
+            {"max_joined_block_size_bytes", 0, 4 * 1024 * 1024, "New setting"},
+            {"azure_max_single_part_upload_size", 100 * 1024 * 1024, 32 * 1024 * 1024, "Align with S3"},
             {"azure_max_redirects", 10, 10, "New setting"},
             {"azure_max_get_rps", 0, 0, "New setting"},
             {"azure_max_get_burst", 0, 0, "New setting"},
@@ -50,6 +53,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"azure_request_timeout_ms", 30000, 30000, "New setting"},
             {"azure_connect_timeout_ms", 1000, 1000, "New setting"},
             {"azure_sdk_use_native_client", false, true, "New setting"},
+            {"distributed_cache_connect_backoff_min_ms", 0, 0, "New setting"},
+            {"distributed_cache_connect_backoff_max_ms", 50, 50, "New setting"},
+            {"distributed_cache_read_request_max_tries", 20, 10, "Changed setting value"},
+            {"distributed_cache_connect_max_tries", 20, 5, "Changed setting value"},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
             {"output_format_parquet_max_dictionary_size", 1024 * 1024, 1024 * 1024, "New setting"},
             {"input_format_parquet_use_native_reader_v3", false, true, "New setting"},
@@ -57,6 +64,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_parquet_memory_high_watermark", 4ul << 30, 4ul << 30, "New setting"},
             {"input_format_parquet_page_filter_push_down", true, true, "New setting (no effect when input_format_parquet_use_native_reader_v3 is disabled)"},
             {"input_format_parquet_use_offset_index", true, true, "New setting (no effect when input_format_parquet_use_native_reader_v3 is disabled)"},
+            {"vector_search_with_rescoring", true, true, "New setting."},
+            {"delta_lake_enable_expression_visitor_logging", false, false, "New setting"},
+            {"write_full_path_in_iceberg_metadata", false, false, "New setting."},
+            {"output_format_orc_compression_block_size", 65536, 262144, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
@@ -139,7 +150,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"alter_update_mode", "heavy", "heavy", "A new setting"},
             {"apply_patch_parts", false, true, "A new setting"},
             {"allow_experimental_lightweight_update", false, false, "A new setting"},
-            {"allow_experimental_delta_kernel_rs", true, true, "New setting"},
+            {"allow_experimental_delta_kernel_rs", false, true, "New setting"},
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
             {"vector_search_filter_strategy", "auto", "auto", "New setting"},
             {"vector_search_postfilter_multiplier", 1, 1, "New setting"},
@@ -798,7 +809,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
-
+            {"write_marks_for_substreams_in_compact_parts", false, true, "Enable writing marks for substreams in compact parts by default"}
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.7",
         {
