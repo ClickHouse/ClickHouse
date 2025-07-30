@@ -230,7 +230,7 @@
     contrib-mongo-c-driver = { url = "github:ClickHouse/mongo-c-driver/4ee76b070b260de5da1e8c8144c028dfc37efbaf"; flake = false; };
     contrib-numactl = { url = "github:ClickHouse/numactl/ff32c618d63ca7ac48cce366c5a04bb3563683a0"; flake = false; };
     contrib-postgres = { url = "github:ClickHouse/postgres/9da0420d861df7542b92058342afd4723e95ef4c"; flake = false; };
-    contrib-delta-kernel-rs = { url = "github:ClickHouse/delta-kernel-rs/beb2eb808e8c7ae6992c99809331b7cc2ed85278"; flake = false; };
+    contrib-delta-kernel-rs = { url = "github:ClickHouse/delta-kernel-rs/7f8ed910479004a3195de4609134cdcedd71f2f2"; flake = false; };
     contrib-SHA3IUF = { url = "github:brainhub/SHA3IUF/fc8504750a5c2174a1874094dd05e6a0d8797753"; flake = false; };
     contrib-chdig = { url = "github:azat/chdig/e152e9dc8dad1d72c4faf011ace3573d6e01ea5d"; flake = false; };
     contrib-ai-sdk-cpp = { url = "github:ClickHouse/ai-sdk-cpp/5ae9bfe8cab2fd930764501d7203dbe3651fc9b5"; flake = false; };
