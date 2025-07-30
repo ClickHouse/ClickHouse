@@ -29,7 +29,7 @@
 #include <Common/logger_useful.h>
 #include <Common/re2.h>
 #include <Common/setThreadName.h>
-#include "IO/WriteBufferFromString.h"
+#include <IO/WriteBufferFromString.h>
 
 #if USE_SSL
 #    include <Poco/Net/SSLManager.h>
