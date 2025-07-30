@@ -42,6 +42,7 @@ namespace DB
   * That is, if a < b, then the bucket_num = a block goes before bucket_num = b.
   * This is needed for a memory-efficient merge
   * - so that you do not need to read the blocks up front, but go all the way up by bucket_num.
+  * Note, that sometimes we slightly violate this convention for performance reasons, see the comment around `input_out_of_order_buckets` below.
   *
   * In this case, not all bucket_num from the range of 0..255 can be present.
   * The overflow block can be presented in any order relative to other blocks (but it can be only one).
