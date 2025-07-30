@@ -74,6 +74,8 @@ size_t getMinMarksPerTask(size_t min_marks_per_task, const std::vector<DB::Merge
 {
     /// For each part the value of `min_marks_per_task` is capped by `sum_marks / (threads * total_query_nodes) / 2` (see calculateMinMarksPerTask()),
     /// unless `merge_tree_min_read_task_size` or `min_*_for_concurrent_read` settings are set too high. So, we can safely take the maximum of all parts.
+    /// On the flip side, it is not safe to take the minimum, because e.g. for compact parts we don't know individual column sizes, so we use whole part size as approximation,
+    /// and as the result we might end up with a very small `min_marks_per_task` that will cause too many requests to the coordinator.
     const auto max_across_parts = std::ranges::max(
         per_part_infos, [](const auto & lhs, const auto & rhs) { return lhs->min_marks_per_task < rhs->min_marks_per_task; });
     min_marks_per_task = std::max(min_marks_per_task, max_across_parts->min_marks_per_task);
