@@ -792,7 +792,7 @@ void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
         // metadata_version only makes sense for replicated tables.
         // Process metadata_version separately from the parts
         // to ensure it's captured regardless of part processing (e.g. structure_only=1)
-        if (table_info.storage->getName().starts_with("Replicated"))
+        if (table_info.storage && table_info.storage->getName().starts_with("Replicated"))
         {
             int32_t metadata_version = table_info.storage->getInMemoryMetadataPtr()->metadata_version;
             backup_entries.emplace_back(
