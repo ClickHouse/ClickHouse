@@ -258,7 +258,7 @@ DOCKERS = [
     ),
     Docker.Config(
         name="clickhouse/mysql_dotnet_client",
-        path="./docker/test/integration/mysql_dotnet_client",
+        path="./ci/docker/integration/mysql_dotnet_client",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
