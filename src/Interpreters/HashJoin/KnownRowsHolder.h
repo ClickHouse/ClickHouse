@@ -65,6 +65,7 @@ public:
             {
                 set_holder_ptr = std::make_unique<SetHolder>();
                 set_holder_ptr->set_empty_key(Type(nullptr, 0));
+                set_holder_ptr->resize(new_items + items);
                 set_holder_ptr->insert(std::cbegin(array_holder), std::cbegin(array_holder) + items);
             }
             set_holder_ptr->insert(from, to);
