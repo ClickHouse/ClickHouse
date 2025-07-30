@@ -136,6 +136,7 @@ def create_clickhouse_iceberg_database(
         f"""
 DROP DATABASE IF EXISTS {name};
 SET allow_experimental_database_iceberg=true;
+SET write_full_path_in_iceberg_metadata=1;
 CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
@@ -150,10 +151,10 @@ def create_clickhouse_iceberg_table(
 ):
     settings = {
         "storage_catalog_type": "rest",
-        "iceberg_warehouse": "demo",
-        "iceberg_storage_endpoint": "http://minio:9000/warehouse-rest",
-        "iceberg_region": "us-east-1",
-        "iceberg_catalog_url" : BASE_URL,
+        "storage_warehouse": "demo",
+        "storage_storage_endpoint": "http://minio:9000/warehouse-rest",
+        "storage_region": "us-east-1",
+        "storage_catalog_url" : BASE_URL,
     }
 
     settings.update(additional_settings)
@@ -161,6 +162,7 @@ def create_clickhouse_iceberg_table(
     node.query(
         f"""
 SET allow_experimental_database_iceberg=true;
+SET write_full_path_in_iceberg_metadata=1;
 CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = IcebergS3('http://minio:9000/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
