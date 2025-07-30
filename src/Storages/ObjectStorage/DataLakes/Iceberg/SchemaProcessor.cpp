@@ -433,6 +433,46 @@ Poco::JSON::Object::Ptr IcebergSchemaProcessor::getIcebergTableSchemaById(Int32 
     return it->second;
 }
 
+void IcebergSchemaProcessor::registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id)
+{
+    std::lock_guard lock(mutex);
+    auto it = schema_id_by_snapshot.find(snapshot_id);
+    if (it != schema_id_by_snapshot.end())
+    {
+        Int32 old_id = it->second;
+        if (old_id != schema_id)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Snapshot with id {} already registered with schema id {}, trying to register with new schema id {}",
+                snapshot_id,
+                old_id,
+                schema_id);
+        }
+    }
+    else
+    {
+        schema_id_by_snapshot[snapshot_id] = schema_id;
+    }
+}
+
+Int32 IcebergSchemaProcessor::getSchemaIdForSnapshot(Int64 snapshot_id) const
+{
+    SharedLockGuard lock(mutex);
+    return schema_id_by_snapshot.at(snapshot_id);
+}
+
+
+std::optional<Int32> IcebergSchemaProcessor::tryGetSchemaIdForSnapshot(Int64 snapshot_id) const
+{
+    SharedLockGuard lock(mutex);
+    auto it = schema_id_by_snapshot.find(snapshot_id);
+    if (it != schema_id_by_snapshot.end())
+        return it->second;
+    return std::nullopt;
+}
+
+
 std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSchemaById(Int32 id)
 {
     SharedLockGuard lock(mutex);

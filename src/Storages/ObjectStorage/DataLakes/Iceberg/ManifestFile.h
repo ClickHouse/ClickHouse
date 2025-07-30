@@ -97,8 +97,7 @@ public:
         Int64 inherited_sequence_number,
         Int64 inherited_snapshot_id,
         const std::string & table_location,
-        DB::ContextPtr context,
-        std::unordered_map<Int64, Int32> schema_id_by_snapshot);
+        DB::ContextPtr context);
 
     const std::vector<ManifestFileEntry> & getFiles() const;
 

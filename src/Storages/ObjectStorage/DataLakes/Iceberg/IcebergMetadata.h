@@ -123,8 +123,6 @@ private:
     mutable std::optional<Strings> cached_unprunned_files_for_last_processed_snapshot TSA_GUARDED_BY(cached_unprunned_files_for_last_processed_snapshot_mutex);
     mutable std::mutex cached_unprunned_files_for_last_processed_snapshot_mutex;
 
-    std::unordered_map<Int64, Int32> schema_id_by_snapshot TSA_GUARDED_BY(mutex);
-
     ColumnMapperPtr column_mapper;
 
     void updateState(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object, bool metadata_file_changed) TSA_REQUIRES(mutex);

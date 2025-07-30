@@ -125,8 +125,7 @@ ManifestFileContent::ManifestFileContent(
     Int64 inherited_sequence_number,
     Int64 inherited_snapshot_id,
     const String & table_location,
-    DB::ContextPtr context,
-    std::unordered_map<Int64, Int32> schema_id_by_snapshot)
+    DB::ContextPtr context)
 {
     for (const auto & column_name : {f_status, f_data_file})
     {
@@ -222,12 +221,7 @@ ManifestFileContent::ManifestFileContent(
         }
 
 
-        const auto schema_id_it = schema_id_by_snapshot.find(snapshot_id);
-        if (schema_id_it == schema_id_by_snapshot.end())
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Cannot find schema id for snapshot id {} in manifest file", snapshot_id);
-        const auto schema_id = schema_id_by_snapshot.at(snapshot_id);
-
+        const auto schema_id = schema_processor.getSchemaIdForSnapshot(snapshot_id);
 
         const auto file_path = getProperFilePathFromMetadataInfo(manifest_file_deserializer.getValueFromRowByName(i, c_data_file_file_path, TypeIndex::String).safeGet<String>(), common_path, table_location);
 

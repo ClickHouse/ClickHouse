@@ -273,7 +273,7 @@ void IcebergMetadata::updateSnapshot(ContextPtr local_context, Poco::JSON::Objec
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
         auto current_snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
         auto current_schema_id = snapshot->getValue<Int32>(f_schema_id);
-        schema_id_by_snapshot[current_snapshot_id] = current_schema_id;
+        schema_processor.registerSnapshotWithSchemaId(current_snapshot_id, current_schema_id);
         if (snapshot->getValue<Int64>(f_metadata_snapshot_id) == relevant_snapshot_id)
         {
             successfully_found_snapshot = true;
@@ -691,8 +691,6 @@ ManifestFilePtr IcebergMetadata::getManifestFile(
         auto buffer = StorageObjectStorageSource::createReadBuffer(manifest_object_info, object_storage, local_context, log, read_settings);
         AvroForIcebergDeserializer manifest_file_deserializer(std::move(buffer), filename, getFormatSettings(local_context));
 
-        SharedLockGuard lock(mutex);
-
         return std::make_shared<ManifestFileContent>(
             manifest_file_deserializer,
             filename,
@@ -702,8 +700,7 @@ ManifestFilePtr IcebergMetadata::getManifestFile(
             inherited_sequence_number,
             inherited_snapshot_id,
             table_location,
-            local_context,
-            schema_id_by_snapshot);
+            local_context);
     };
 
     if (manifest_cache)
