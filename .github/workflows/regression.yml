@@ -149,7 +149,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        SUITE: [aes_encryption, atomic_insert, base_58, data_types, datetime64_extended_range, disk_level_encryption, dns, engines, example, extended_precision_data_types, functions, kafka, kerberos, key_value, lightweight_delete, memory, part_moves_between_shards, rbac, selects, session_timezone, ssl_server, swarms, tiered_storage, version, window_functions]
+        SUITE: [aes_encryption, atomic_insert, base_58, data_types, datetime64_extended_range, disk_level_encryption, dns, engines, example, extended_precision_data_types, functions, kafka, kerberos, key_value, lightweight_delete, memory, part_moves_between_shards, rbac, selects, session_timezone, swarms, tiered_storage, version, window_functions]
     needs: [runner_labels_setup]
     runs-on: ${{ fromJson(needs.runner_labels_setup.outputs.runner_labels) }}
     timeout-minutes: ${{ inputs.timeout_minutes }}
@@ -750,6 +750,72 @@ jobs:
         with:
           name: ${{ env.SUITE }}-${{ env.STORAGE }}-${{ inputs.arch }}-artifacts
           path: ${{ env.artifact_paths }}
+
+  SSLServer:
+    strategy:
+      fail-fast: false
+      matrix:
+        PART: [1, 2, 3]
+    needs: [runner_labels_setup]
+    runs-on: ${{ fromJson(needs.runner_labels_setup.outputs.runner_labels) }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    steps:
+      - name: Checkout regression repo
+        uses: actions/checkout@v4
+        with:
+          repository: Altinity/clickhouse-regression
+          ref: ${{ inputs.commit }}
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          REPORTS_PATH=${{ runner.temp }}/reports_dir
+          SUITE=ssl_server
+          PART=${{ matrix.PART }}
+          EOF
+      - name: Setup
+        run: .github/setup.sh
+      - name: Get deb url
+        env:
+          S3_BASE_URL: https://altinity-build-artifacts.s3.amazonaws.com/
+          PR_NUMBER: ${{ github.event.pull_request.number || 0 }}
+        run: |
+          mkdir -p $REPORTS_PATH
+          cat > $REPORTS_PATH/workflow_config.json << 'EOF'
+          ${{ inputs.workflow_config }}
+          EOF
+
+          python3 .github/get-deb-url.py --github-env $GITHUB_ENV --workflow-config $REPORTS_PATH/workflow_config.json --s3-base-url $S3_BASE_URL --pr-number $PR_NUMBER --branch-name ${{ github.ref_name }} --commit-hash ${{ inputs.build_sha }}
+
+      - name: Run ${{ env.SUITE }} suite
+        id: run_suite
+        run: EXITCODE=0;
+              python3
+              -u ${{ env.SUITE }}/regression.py
+              --clickhouse-binary-path ${{ env.clickhouse_path }}
+              --attr project="$GITHUB_REPOSITORY" project.id="$GITHUB_REPOSITORY_ID" package="${{ env.clickhouse_path }}" version="${{ env.version }}" user.name="$GITHUB_ACTOR" repository="https://github.com/Altinity/clickhouse-regression" commit.hash="$(git rev-parse HEAD)" job.name="$GITHUB_JOB (${{ matrix.PART }})" job.retry=$GITHUB_RUN_ATTEMPT job.url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" arch="$(uname -i)"
+              --only "part ${{ matrix.PART }}/*"
+              ${{ env.args }} || EXITCODE=$?;
+              .github/add_link_to_logs.sh;
+              exit $EXITCODE
+      - name: Set Commit Status
+        if: always()
+        run: python3 .github/set_builds_status.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JOB_OUTCOME: ${{ steps.run_suite.outcome }}
+          SUITE_NAME: "Regression ${{ inputs.arch }} ${{ env.SUITE }}-${{ matrix.PART }}"
+      - name: Create and upload logs
+        if: always()
+        run: .github/create_and_upload_logs.sh 1
+      - name: Upload logs to regression results database
+        if: always()
+        timeout-minutes: 20
+        run: .github/upload_results_to_database.sh 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ env.SUITE }}-${{ matrix.PART }}-${{ inputs.arch }}-artifacts
+          path: ${{ env.artifact_paths}}
 
   S3:
     strategy:
