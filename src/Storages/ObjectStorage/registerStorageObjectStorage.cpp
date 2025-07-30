@@ -67,8 +67,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         partition_by = args.storage_def->partition_by->clone();
 
     ContextMutablePtr context_copy = Context::createCopy(args.getContext());
-    Settings settings_copy = context_copy->getSettingsCopy();
-    settings_copy[Setting::write_full_path_in_iceberg_metadata] = args.getLocalContext()->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value;
+    Settings settings_copy = args.getLocalContext()->getSettingsCopy();
     context_copy->setSettings(settings_copy);
     return std::make_shared<StorageObjectStorage>(
         configuration,

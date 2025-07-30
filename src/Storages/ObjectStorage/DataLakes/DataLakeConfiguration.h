@@ -232,7 +232,7 @@ public:
         }
         /// Attach condition is provided for compatibility.
         if ((*settings)[DataLakeStorageSetting::storage_catalog_type].value == DatabaseDataLakeCatalogType::ICEBERG_REST ||
-            (is_attach && (*settings)[DataLakeStorageSetting::storage_catalog_type].value == DatabaseDataLakeCatalogType::NONE))
+            (is_attach && (*settings)[DataLakeStorageSetting::storage_catalog_type].value == DatabaseDataLakeCatalogType::NONE && !(*settings)[DataLakeStorageSetting::storage_catalog_url].value.empty()))
         {
             return std::make_shared<DataLake::RestCatalog>(
                 (*settings)[DataLakeStorageSetting::storage_warehouse].value,
