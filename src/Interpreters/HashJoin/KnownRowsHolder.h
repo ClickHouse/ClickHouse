@@ -49,8 +49,6 @@ public:
     {
     }
 
-    size_t size() const { return items; }
-
     template<class InputIt>
     void add(InputIt from, InputIt to)
     {
@@ -86,15 +84,13 @@ template<>
 class KnownRowsHolder<false>
 {
 public:
-    template<class InputIt>
-    void add(InputIt, InputIt)
+    template <class InputIt>
+    static constexpr void add(InputIt, InputIt)
     {
     }
 
-    size_t size() const { return 0; }
-
-    template<class Needle>
-    static bool isKnown(const Needle &)
+    template <class Needle>
+    static constexpr bool isKnown(const Needle &)
     {
         return false;
     }
