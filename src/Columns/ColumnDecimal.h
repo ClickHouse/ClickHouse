@@ -122,7 +122,7 @@ public:
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
-    Field operator[](size_t n) const override { return DecimalField(data[n], scale); }
+    Field operator[](size_t n) const override { return DecimalField<ValueType>(data[n], scale); }
     void get(size_t n, Field & res) const override { res = (*this)[n]; }
     DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const override
     {
