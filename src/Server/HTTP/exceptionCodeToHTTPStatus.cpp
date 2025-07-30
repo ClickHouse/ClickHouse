@@ -6,6 +6,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_PARSE_TEXT;
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
@@ -129,6 +130,10 @@ Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int exception_code
     if (exception_code == ErrorCodes::CANNOT_SCHEDULE_TASK)
     {
         return HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
+    }
+    if (exception_code == ErrorCodes::ACCESS_DENIED)
+    {
+        return HTTPResponse::HTTP_FORBIDDEN;
     }
 
     return HTTPResponse::HTTP_INTERNAL_SERVER_ERROR;
