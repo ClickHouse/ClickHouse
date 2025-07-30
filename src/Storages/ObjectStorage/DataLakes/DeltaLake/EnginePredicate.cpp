@@ -177,7 +177,7 @@ static uintptr_t visitLiteralValue(
         case DB::TypeIndex::String:
         case DB::TypeIndex::FixedString:
         {
-            auto value_str = value.safeGet<String>();
+            auto & value_str = value.safeGet<String>();
             auto value_delta_str = KernelUtils::toDeltaString(value_str);
             return KernelUtils::unwrapResult(
                 ffi::visit_expression_literal_string(
