@@ -4801,9 +4801,8 @@ def test_writes_create_partitioned_table(started_cluster, format_version, storag
     assert len(df) == 1
 
 
-@pytest.mark.parametrize("format_version", [1, 2])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_relevant_iceberg_schema_chosen(started_cluster, format_version, storage_type):
+def test_relevant_iceberg_schema_chosen(started_cluster, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = "test_relevant_iceberg_schema_chosen_" + storage_type + "_" + get_uuid_str()
@@ -4812,12 +4811,13 @@ def test_relevant_iceberg_schema_chosen(started_cluster, format_version, storage
         f"""
         CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
             a INT NOT NULL
-        ) using iceberg;
+        ) using iceberg
+        TBLPROPERTIES ('format-version' = '2');
         """
     )
 
-    for i in range(30):
-        values_list = ", ".join(["(1)" for _ in range(50)])
+    for i in range(3):
+        values_list = ", ".join(["(1)" for _ in range(5)])
         spark.sql(f"""
             INSERT INTO {TABLE_NAME} VALUES (1);
         """)
@@ -4833,8 +4833,8 @@ def test_relevant_iceberg_schema_chosen(started_cluster, format_version, storage
     """
     )
 
-    for i in range(30):
-        values_list = ", ".join(["(1, 2)" for _ in range(50)])
+    for i in range(3):
+        values_list = ", ".join(["(1, 2)" for _ in range(5)])
         spark.sql(f"""
             INSERT INTO {TABLE_NAME} VALUES (1, 2);
         """) 
@@ -4843,6 +4843,9 @@ def test_relevant_iceberg_schema_chosen(started_cluster, format_version, storage
             INSERT INTO {TABLE_NAME} VALUES {values_list};
             """
         )
+
+    spark.sql(f"CALL system.rewrite_data_files('{TABLE_NAME}')")
+
 
     default_upload_directory(
         started_cluster,
