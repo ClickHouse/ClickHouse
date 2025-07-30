@@ -402,8 +402,8 @@ void processMatch(
     {
         setUsed<need_filter>(added_columns.filter, i);
         used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
-        auto used_flags_opt = join_features.need_flags ? &used_flags : nullptr;
-        addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
+        // We don't need to update used_flags in addFoundRowAll for it it already done
+        addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, nullptr);
     }
     else if constexpr ((join_features.is_any_join || join_features.is_semi_join) && join_features.right)
     {
@@ -411,9 +411,9 @@ void processMatch(
         bool used_once = used_flags.template setUsedOnce<join_features.need_flags, flag_per_row>(find_result);
         if (used_once)
         {
-            auto used_flags_opt = join_features.need_flags ? &used_flags : nullptr;
             setUsed<need_filter>(added_columns.filter, i);
-            addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
+            // We don't need to update used_flags in addFoundRowAll for it it already done
+            addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, nullptr);
         }
     }
     else if constexpr (join_features.is_any_join && join_features.inner)
@@ -619,8 +619,6 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
                 }
             }
         }
-
-        // std::cout << "known_rows.size() = " << known_rows.size() << std::endl;
 
         if (!right_row_found)
         {
