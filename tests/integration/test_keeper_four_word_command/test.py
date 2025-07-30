@@ -740,3 +740,30 @@ def test_cmd_ydld(started_cluster):
                     + " did not become follower after 30s of yielding leadership, maybe there is something wrong."
                 )
         assert keeper_utils.is_follower(cluster, node)
+
+def test_cmd_lgrq(started_cluster):
+    zk = None
+    try:
+        wait_nodes()
+        clear_znodes()
+        reset_conn_stats()
+
+        zk = get_fake_zk(node1.name, timeout=30.0)
+        zk.create('/test_lgrq')
+
+        assert not node1.contains_in_log('Received request:')
+
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="lgrq")
+        assert data == 'enabled'
+
+        zk.set('/test_lgrq', 'newdata'.encode())
+        assert node1.contains_in_log('Received request:')
+
+        data = keeper_utils.send_4lw_cmd(cluster, node1, cmd="lgrq")
+        assert data == 'disabled'
+        node1.rotate_logs()
+
+        zk.set('/test_lgrq', 'newdata'.encode())
+        assert not node1.contains_in_log('Received request:')
+    finally:
+        destroy_zk_client(zk)
