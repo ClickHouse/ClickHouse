@@ -545,7 +545,7 @@ def test_failed_commit(started_cluster):
 
     def check_failpoint():
         return node.contains_in_log(
-            f"StorageS3Queue (default.{table_name}): Failed to process data: Code: 1002. DB::Exception: Failed to commit processed files. (UNKNOWN_EXCEPTION)"
+            f"StorageS3Queue (default.{table_name}): Failed to process data: Code: 710. DB::Exception: Failed to commit processed files."
         )
 
     for _ in range(100):
@@ -567,7 +567,7 @@ def test_failed_commit(started_cluster):
 
     count_failed = int(
         node.count_in_log(
-            f"StorageS3Queue (default.{table_name}): Failed to process data: Code: 1002. DB::Exception: Failed to commit processed files. (UNKNOWN_EXCEPTION)"
+            f"StorageS3Queue (default.{table_name}): Failed to process data: Code: 710. DB::Exception: Failed to commit processed files."
         )
     )
     count = get_count()
