@@ -13,6 +13,7 @@ CREATE DATABASE db_3 ENGINE = Replicated('/test/db_3', '{shard}', '{replica}');
 CREATE DATABASE db_4 ENGINE = Replicated('/test/db_4', '{shard}', '{replica}');
 CREATE DATABASE db_5 ENGINE = Replicated('/test/db_5', '{shard}', '{replica}');
 CREATE DATABASE db_6 ENGINE = Replicated('/test/db_6', '{shard}', '{replica}');
+SELECT sleep(1) FORMAT Null;
 SELECT * FROM system.database_replicas ORDER BY database;
 
 SELECT database FROM system.database_replicas ORDER BY database;
