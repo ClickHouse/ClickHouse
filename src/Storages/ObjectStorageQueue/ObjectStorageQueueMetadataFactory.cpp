@@ -82,10 +82,13 @@ void ObjectStorageQueueFactory::renameTable(const StorageID & from, const Storag
     if (to_it == storages.end())
     {
         storages.emplace(to);
-        LOG_TRACE(log, "Unregistered table: {}, table {} was already registered", from.getNameForLogs(), to.getNameForLogs());
+        LOG_TRACE(log, "Unregistered table: {}, registered table: {}", from.getNameForLogs(), to.getNameForLogs());
     }
     else
-        LOG_TRACE(log, "Unregistered table: {}, registered table: {}", from.getNameForLogs(), to.getNameForLogs());
+    {
+        /// This could happen because of exchange/replace tables.
+        LOG_TRACE(log, "Unregistered table: {}, table {} was already registered", from.getNameForLogs(), to.getNameForLogs());
+    }
 }
 
 void ObjectStorageQueueFactory::shutdown()
