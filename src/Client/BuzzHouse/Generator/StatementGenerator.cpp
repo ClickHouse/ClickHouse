@@ -52,6 +52,8 @@ const std::unordered_map<OutFormat, InFormat> StatementGenerator::outIn
        {OutFormat::OUT_TSKV, InFormat::IN_TSKV},
        {OutFormat::OUT_Values, InFormat::IN_Values}};
 
+const DB::Strings StatementGenerator::fileCompress = {"auto", "none", "gzip", "deflate", "br", "xz", "zstd", "lz4", "bz2", "snappy"};
+
 StatementGenerator::StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool scf, const bool rs)
     : fc(fuzzc)
     , next_type_mask(fc.type_mask)
@@ -394,7 +396,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             }
             generateEngineDetails(rg, createViewRelation("", next), next, true, te);
         }
-        if (next.isMergeTreeFamily() && !next.is_deterministic && rg.nextMediumNumber() < 16)
+        if (next.isMergeTreeFamily() && !next.is_deterministic && rg.nextMediumNumber() < 26)
         {
             generateNextTTL(rg, std::nullopt, te, te->mutable_ttl_expr());
         }
@@ -463,6 +465,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         false,
         view_ncols,
         next.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
+        std::nullopt,
         sparen->mutable_select());
     this->levels.clear();
     this->allow_in_expression_alias = true;
@@ -740,6 +743,7 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
                 false,
                 (rg.nextLargeNumber() % 5) + 1,
                 std::numeric_limits<uint32_t>::max(),
+                std::nullopt,
                 eq->mutable_inner_query()->mutable_select()->mutable_sel());
         }
         this->levels.clear();
@@ -786,38 +790,28 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
     std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
     std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
+    const uint32_t engine_func = 15 * static_cast<uint32_t>(t.isEngineReplaceable());
     const uint32_t cluster_func = 5 * static_cast<uint32_t>(cluster.has_value() || !fc.clusters.empty());
     const uint32_t remote_func = 5;
     const uint32_t url_func = 5;
     const uint32_t insert_into_table = 95;
-    const uint32_t prob_space2 = cluster_func + remote_func + url_func + insert_into_table;
+    const uint32_t prob_space2 = engine_func + cluster_func + remote_func + url_func + insert_into_table;
     std::uniform_int_distribution<uint32_t> next_dist2(1, prob_space2);
     const uint32_t nopt2 = next_dist2(rg.generator);
 
     flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
     std::shuffle(this->entries.begin(), this->entries.end(), rg.generator);
-    if (cluster_func && (nopt2 < cluster_func + 1))
-    {
-        /// If the table is set on cluster, always insert to all replicas/shards
-        ClusterFunc * cdf = tof->mutable_tfunc()->mutable_cluster();
-
-        cdf->set_all_replicas(cluster.has_value() || rg.nextSmallNumber() < 4);
-        cdf->mutable_cluster()->set_cluster(cluster.has_value() ? cluster.value() : rg.pickRandomly(fc.clusters));
-        t.setName(cdf->mutable_tof()->mutable_est(), true);
-        if (rg.nextSmallNumber() < 4)
-        {
-            /// Optional sharding key
-            flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
-            cdf->set_sharding_key(rg.pickRandomly(this->remote_entries).getBottomName());
-            this->remote_entries.clear();
-        }
-    }
-    else if (remote_func && (nopt2 < cluster_func + remote_func + 1))
+    if ((engine_func || cluster_func || remote_func) && (nopt2 < engine_func + cluster_func + remote_func + 1))
     {
         /// Use insert into remote
-        setTableRemote(rg, true, false, t, tof->mutable_tfunc());
+        const TableFunctionUsage usage = (engine_func && nopt2 < engine_func + 1)
+            ? TableFunctionUsage::EngineReplace
+            : ((cluster_func && (nopt2 < engine_func + cluster_func + 1)) ? TableFunctionUsage::ClusterCall
+                                                                          : TableFunctionUsage::RemoteCall);
+
+        setTableFunction(rg, usage, t, tof->mutable_tfunc());
     }
-    else if ((is_url = (url_func && (nopt2 < cluster_func + remote_func + url_func + 1))))
+    else if ((is_url = (url_func && (nopt2 < engine_func + cluster_func + remote_func + url_func + 1))))
     {
         /// Use insert into URL
         String url;
@@ -857,7 +851,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
         ufunc->set_outformat(outf);
         ufunc->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf2));
     }
-    else if (insert_into_table && (nopt2 < cluster_func + remote_func + url_func + insert_into_table + 1))
+    else if (insert_into_table && (nopt2 < engine_func + cluster_func + remote_func + url_func + insert_into_table + 1))
     {
         /// Use insert into table
         t.setName(tof->mutable_est(), false);
@@ -1011,7 +1005,8 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
             {
                 this->addCTEs(rg, std::numeric_limits<uint32_t>::max(), ins->mutable_ctes());
             }
-            generateSelect(rg, true, false, static_cast<uint32_t>(this->entries.size()), std::numeric_limits<uint32_t>::max(), sel);
+            generateSelect(
+                rg, true, false, static_cast<uint32_t>(this->entries.size()), std::numeric_limits<uint32_t>::max(), std::nullopt, sel);
             this->levels.clear();
         }
         else
@@ -1344,6 +1339,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                     false,
                     v.staged_ncols,
                     v.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
+                    std::nullopt,
                     sparen->mutable_select());
                 this->levels.clear();
                 this->allow_in_expression_alias = true;
