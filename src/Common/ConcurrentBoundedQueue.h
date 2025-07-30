@@ -39,8 +39,10 @@ private:
     );
     DB::DimensionalMetrics::Metric * queue_size_metric = nullptr;
 
-    void trySetQueueSizeMetricUnlocked()
+    template <typename Lock>
+    void trySetQueueSizeMetricUnlocked(const Lock &)
     {
+        static_assert(std::is_same_v<Lock, std::lock_guard<std::mutex>> || std::is_same_v<Lock, std::unique_lock<std::mutex>>);
         if (queue_size_metric)
         {
             queue_size_metric->set(queue.size());
@@ -75,7 +77,7 @@ private:
             else
                 queue.emplace_front(std::forward<Args>(args)...);
 
-            trySetQueueSizeMetricUnlocked();
+            trySetQueueSizeMetricUnlocked(queue_lock);
         }
 
         pop_condition.notify_one();
@@ -116,7 +118,7 @@ private:
                 queue.pop_back();
             }
 
-            trySetQueueSizeMetricUnlocked();
+            trySetQueueSizeMetricUnlocked(queue_lock);
         }
 
         push_condition.notify_one();
@@ -210,7 +212,7 @@ public:
             detail::moveOrCopyIfThrow(std::move(queue.front()), x);
             queue.pop_front();
 
-            trySetQueueSizeMetricUnlocked();
+            trySetQueueSizeMetricUnlocked(queue_lock);
         }
 
         push_condition.notify_one();
@@ -278,7 +280,7 @@ public:
             Container empty_queue;
             queue.swap(empty_queue);
 
-            trySetQueueSizeMetricUnlocked();
+            trySetQueueSizeMetricUnlocked(lock);
         }
 
         push_condition.notify_all();
@@ -294,7 +296,7 @@ public:
             queue.swap(empty_queue);
             is_finished = true;
 
-            trySetQueueSizeMetricUnlocked();
+            trySetQueueSizeMetricUnlocked(lock);
         }
 
         pop_condition.notify_all();
