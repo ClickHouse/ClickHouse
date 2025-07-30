@@ -133,6 +133,7 @@ public:
         const MergeTreeData * getMergeTreeData() const;
         AlterConversionsPtr getAlterConversions() const { return alter_conversions; }
         MergeTreeData::DataPartPtr getMergeTreeDataPart() const;
+        bool isMutatingDataPart() const;
 
         bool supportsLightweightDelete() const;
         bool materializeTTLRecalculateOnly() const;
